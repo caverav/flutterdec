@@ -17,6 +17,7 @@ struct Program {
   std::string arch = "arm64";
   std::string dart_version;
   std::string snapshot_hash;
+  std::string model_source = "unknown";
 
   ObjectPool object_pool;
 

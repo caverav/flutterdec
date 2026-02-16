@@ -23,6 +23,11 @@ target_link_libraries(test_structurer_if_loop PRIVATE flutterdec_core)
 add_test(NAME unit_structurer_if_loop COMMAND test_structurer_if_loop)
 set_tests_properties(unit_structurer_if_loop PROPERTIES LABELS "unit")
 
+add_executable(test_heuristic_program_builder unit/test_heuristic_program_builder.cpp)
+target_link_libraries(test_heuristic_program_builder PRIVATE flutterdec_core)
+add_test(NAME unit_heuristic_program_builder COMMAND test_heuristic_program_builder)
+set_tests_properties(unit_heuristic_program_builder PROPERTIES LABELS "unit")
+
 add_executable(test_decompile_smoke integration/test_decompile_smoke.cpp)
 target_link_libraries(test_decompile_smoke PRIVATE flutterdec_core)
 target_compile_definitions(test_decompile_smoke PRIVATE FLUTTERDEC_BIN_PATH="$<TARGET_FILE:flutterdec>")

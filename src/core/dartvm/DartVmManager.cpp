@@ -1,14 +1,18 @@
 #include "core/dartvm/DartVmManager.h"
 
+#include <algorithm>
+#include <cctype>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <set>
 #include <sstream>
 #include <string>
 #include <vector>
 
 #include <nlohmann/json.hpp>
 
+#include "core/dartvm/HeuristicProgramBuilder.h"
 #include "util/FileIO.h"
 #include "util/Hash.h"
 
@@ -69,26 +73,6 @@ std::string SniffAsciiField(const std::vector<uint8_t>& data, const std::string&
     ++j;
   }
   return s.substr(i, j - i);
-}
-
-std::string KindToString(model::ObjKind k) {
-  switch (k) {
-    case model::ObjKind::String:
-      return "String";
-    case model::ObjKind::Int:
-      return "Int";
-    case model::ObjKind::Double:
-      return "Double";
-    case model::ObjKind::Type:
-      return "Type";
-    case model::ObjKind::FunctionRef:
-      return "FunctionRef";
-    case model::ObjKind::ClassRef:
-      return "ClassRef";
-    case model::ObjKind::Unknown:
-      return "Unknown";
-  }
-  return "Unknown";
 }
 
 model::ObjKind ParseKind(const std::string& s) {
@@ -153,7 +137,8 @@ util::StatusOr<std::filesystem::path> ResolveAdapterExecutable(const DartVersion
 }
 
 util::StatusOr<model::Program> ParseProgramJson(const std::filesystem::path& path,
-                                                const std::string& input_path) {
+                                                const std::string& input_path,
+                                                const loader::SnapshotRegions* regions) {
   std::ifstream in(path);
   if (!in) {
     return util::Status::Error(util::ErrorCode::kIoError, "failed to open adapter output: " + path.string());
@@ -175,6 +160,7 @@ util::StatusOr<model::Program> ParseProgramJson(const std::filesystem::path& pat
   program.arch = j.value("arch", "arm64");
   program.dart_version = j.value("dart_version", "unknown");
   program.snapshot_hash = j.value("snapshot_hash", "unknown");
+  program.model_source = "adapter";
 
   for (const auto& o : j.value("object_pool", json::array())) {
     model::Obj obj;
@@ -209,8 +195,103 @@ util::StatusOr<model::Program> ParseProgramJson(const std::filesystem::path& pat
     program.functions.push_back(std::move(fi));
   }
 
-  program.RebuildIndexes();
+  if (program.classes.empty()) {
+    model::ClassInfo ci;
+    ci.id = 0;
+    ci.name_obf = "Global";
+    ci.name_display = "Global";
+    ci.superclass = "Object";
+    ci.library_uri = "package:app/main.dart";
+    program.classes.push_back(std::move(ci));
+  }
+
+  std::set<std::string> libs;
+  for (const auto& c : program.classes) {
+    if (!c.library_uri.empty()) {
+      libs.insert(c.library_uri);
+    }
+  }
+  if (libs.empty()) {
+    libs.insert("package:app/main.dart");
+  }
+  program.libraries.clear();
+  size_t lib_id = 0;
+  for (const auto& uri : libs) {
+    model::LibraryInfo li;
+    li.id = lib_id++;
+    li.uri = uri;
+    li.name_display = uri;
+    program.libraries.push_back(std::move(li));
+  }
+
+  uint64_t text_start = 0;
+  uint64_t text_end = 0;
+  if (regions && regions->backing_image) {
+    const auto* text = regions->backing_image->FindSegmentByName(".text");
+    if (!text) {
+      for (const auto& seg : regions->backing_image->segments) {
+        if (seg.executable) {
+          text = &seg;
+          break;
+        }
+      }
+    }
+    if (text) {
+      text_start = text->va;
+      text_end = text->va + text->size;
+    }
+  }
+
+  std::sort(program.functions.begin(), program.functions.end(),
+            [](const model::FunctionInfo& a, const model::FunctionInfo& b) { return a.entry_va < b.entry_va; });
+  for (size_t i = 0; i < program.functions.size(); ++i) {
+    auto& fn = program.functions[i];
+    if (fn.owner_class_obf.empty()) {
+      fn.owner_class_obf = "Global";
+      fn.owner_class_display = "Global";
+    }
+    if (fn.name_obf.empty()) {
+      fn.name_obf = "fn_" + std::to_string(i);
+      fn.name_display = fn.name_obf;
+    }
+    if (fn.code_section_va == 0) {
+      fn.code_section_va = text_start;
+    }
+
+    if (fn.size_bytes == 0) {
+      const uint64_t next_va =
+          (i + 1 < program.functions.size()) ? program.functions[i + 1].entry_va : text_end;
+      if (next_va > fn.entry_va) {
+        fn.size_bytes = next_va - fn.entry_va;
+        fn.size_estimated = true;
+      } else {
+        fn.size_bytes = 128;
+        fn.size_estimated = true;
+      }
+    }
+  }
+
+  program.StableSort();
   return program;
+}
+
+bool IsHeuristicFallbackDisabled() {
+  const char* env = std::getenv("FLUTTERDEC_DISABLE_HEURISTIC_FALLBACK");
+  return env && std::string(env) == "1";
+}
+
+util::StatusOr<model::Program> TryHeuristicFallback(const loader::SnapshotRegions& regions,
+                                                    const DartVersionInfo& version_info,
+                                                    const std::string& input_path,
+                                                    const util::Status& original_status) {
+  if (IsHeuristicFallbackDisabled()) {
+    return original_status;
+  }
+  auto heuristic_or = BuildHeuristicProgram(regions, version_info, input_path);
+  if (!heuristic_or.ok()) {
+    return original_status;
+  }
+  return heuristic_or;
 }
 
 }  // namespace
@@ -248,12 +329,12 @@ util::StatusOr<model::Program> parse_snapshot_with_vm_adapter(const loader::Snap
 
   const char* fake_json = std::getenv("FLUTTERDEC_FAKE_ADAPTER_JSON");
   if (fake_json && std::filesystem::exists(fake_json)) {
-    return ParseProgramJson(fake_json, input_path);
+    return ParseProgramJson(fake_json, input_path, &regions);
   }
 
   auto adapter_or = ResolveAdapterExecutable(version_info, manifest_path, adapter_dir);
   if (!adapter_or.ok()) {
-    return adapter_or.status();
+    return TryHeuristicFallback(regions, version_info, input_path, adapter_or.status());
   }
 
   const auto tmp_dir = std::filesystem::temp_directory_path() / ("flutterdec_adapter_" + version_info.hash);
@@ -292,11 +373,17 @@ util::StatusOr<model::Program> parse_snapshot_with_vm_adapter(const loader::Snap
 
   const int rc = std::system(cmd.str().c_str());
   if (rc != 0) {
-    return util::Status::Error(util::ErrorCode::kExternalToolError,
-                               "adapter execution failed: " + adapter_or.value().string());
+    return TryHeuristicFallback(
+        regions, version_info, input_path,
+        util::Status::Error(util::ErrorCode::kExternalToolError,
+                            "adapter execution failed: " + adapter_or.value().string()));
   }
 
-  return ParseProgramJson(out_path, input_path);
+  auto parsed_or = ParseProgramJson(out_path, input_path, &regions);
+  if (!parsed_or.ok()) {
+    return TryHeuristicFallback(regions, version_info, input_path, parsed_or.status());
+  }
+  return parsed_or;
 }
 
 DartVmManager::DartVmManager(AdapterConfig cfg) : cfg_(std::move(cfg)) {}

@@ -9,6 +9,7 @@ set(FLUTTERDEC_CORE_SOURCES
   core/loader/ElfLoader.cpp
   core/loader/SnapshotLocator.cpp
   core/dartvm/DartVmManager.cpp
+  core/dartvm/HeuristicProgramBuilder.cpp
   core/model/Program.cpp
   core/model/ObjectPool.cpp
   core/disasm/CapstoneDisassembler.cpp
@@ -37,6 +38,10 @@ target_include_directories(flutterdec_core
     ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
+if(DEFINED elfio_SOURCE_DIR)
+  target_include_directories(flutterdec_core PUBLIC ${elfio_SOURCE_DIR})
+endif()
+
 target_link_libraries(flutterdec_core
   PUBLIC
     nlohmann_json::nlohmann_json
@@ -50,10 +55,6 @@ if(FLUTTERDEC_ENABLE_CAPSTONE)
     target_link_libraries(flutterdec_core PUBLIC capstone)
     target_compile_definitions(flutterdec_core PUBLIC FLUTTERDEC_HAVE_CAPSTONE=1)
   endif()
-endif()
-
-if(TARGET ELFIO::elfio)
-  target_link_libraries(flutterdec_core PUBLIC ELFIO::elfio)
 endif()
 
 add_executable(flutterdec cli/main.cpp)
