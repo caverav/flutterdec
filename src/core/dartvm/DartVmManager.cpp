@@ -123,7 +123,8 @@ util::StatusOr<std::filesystem::path> ResolveAdapterExecutable(const DartVersion
     }
   }
   if (adapter_name.empty()) {
-    adapter_name = "dart_adapter_" + (version.version.empty() ? version.hash : version.version);
+    const bool use_hash = version.version.empty() || version.version == "unknown";
+    adapter_name = "dart_adapter_" + (use_hash ? version.hash : version.version);
   }
 
   auto path = adapter_dir / adapter_name;

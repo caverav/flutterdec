@@ -32,6 +32,12 @@ def main() -> int:
     args = p.parse_args()
 
     version = resolve_version(args.dart_hash)
+    if version == "unknown":
+        print(
+            f"no pinned Dart SDK version found for hash={args.dart_hash}; "
+            "skipping SDK fetch (dynamic adapter can still be built)"
+        )
+        return 0
     out = OUT_BASE / version
     out.parent.mkdir(parents=True, exist_ok=True)
 
