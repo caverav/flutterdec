@@ -32,8 +32,14 @@ cmake --build build
 ./build/src/flutterdec setup --dart-hash <hash>
 ```
 
-If adapter binaries are not installed for a snapshot hash, `flutterdec` automatically falls back to heuristic
-function/object-pool recovery so `info`, `decompile`, and `export` still run on stripped/obfuscated AOT binaries.
+`decompile` runs in strict mode by default and requires adapter-backed metadata for correctness.
+To inspect unsupported hashes, use experimental fallback mode:
+
+```bash
+./build/src/flutterdec decompile <libapp.so|apk> -o out/ --experimental-heuristic
+```
+
+This emits `/out/quality.json` with quality-gate metrics.
 
 ## Test
 

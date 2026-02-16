@@ -12,6 +12,11 @@ int main() {
   core::ir::BasicBlock b0;
   b0.start_va = 0x1000;
   b0.succs = {1, 2};
+  b0.instrs.push_back(core::ir::IRInstr{
+      .op = core::ir::IROp::Branch,
+      .va = 0x1000,
+      .target = "#0x1008",
+  });
 
   core::ir::BasicBlock b1;
   b1.start_va = 0x1004;
