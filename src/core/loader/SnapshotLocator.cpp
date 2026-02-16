@@ -79,21 +79,62 @@ util::StatusOr<SnapshotRegions> locate_snapshots(const BinaryImage& image) {
   }
 
   const auto magic = FindMagicOffsets(image);
-  if (magic.size() < 2) {
-    return util::Status::Error(util::ErrorCode::kNotFound,
-                               "unable to locate snapshots by symbols or magic scan");
-  }
+  if (magic.size() >= 2) {
+    regions.vm_data =
+        SnapshotSpan{magic[0], std::min<size_t>(1 << 20, image.elf_bytes.size() - magic[0]), OffsetToVa(image, magic[0])};
+    regions.isolate_data =
+        SnapshotSpan{magic[1], std::min<size_t>(4 << 20, image.elf_bytes.size() - magic[1]), OffsetToVa(image, magic[1])};
+  } else {
+    const auto* rodata = image.FindSegmentByName(".rodata");
+    if (!rodata) {
+      uint64_t best_size = 0;
+      for (const auto& seg : image.segments) {
+        if (seg.readable && !seg.executable && seg.size > best_size) {
+          rodata = &seg;
+          best_size = seg.size;
+        }
+      }
+    }
+    if (!rodata) {
+      for (const auto& seg : image.segments) {
+        if (seg.size > 0) {
+          rodata = &seg;
+          break;
+        }
+      }
+    }
+    if (!rodata) {
+      return util::Status::Error(util::ErrorCode::kNotFound, "unable to locate snapshot-like data segment");
+    }
 
-  regions.vm_data = SnapshotSpan{magic[0], std::min<size_t>(1 << 20, image.elf_bytes.size() - magic[0]), OffsetToVa(image, magic[0])};
-  regions.isolate_data = SnapshotSpan{magic[1], std::min<size_t>(4 << 20, image.elf_bytes.size() - magic[1]), OffsetToVa(image, magic[1])};
+    if (rodata->file_offset >= image.elf_bytes.size()) {
+      return util::Status::Error(util::ErrorCode::kParseError, "rodata segment points outside ELF bounds");
+    }
+    const size_t ro_size = static_cast<size_t>(std::min<uint64_t>(rodata->size, image.elf_bytes.size() - rodata->file_offset));
+    const size_t vm_guess = std::min<size_t>(ro_size / 4, 1 << 20);
+    const size_t iso_guess = std::min<size_t>(ro_size - vm_guess, 4 << 20);
+
+    regions.vm_data = SnapshotSpan{rodata->file_offset, vm_guess, rodata->va};
+    regions.isolate_data = SnapshotSpan{rodata->file_offset + vm_guess, iso_guess, rodata->va + vm_guess};
+  }
 
   const auto* text = image.FindSegmentByName(".text");
-  if (text) {
-    regions.vm_instr = SnapshotSpan{text->file_offset, static_cast<size_t>(std::min<uint64_t>(text->size, 1 << 20)), text->va};
-    regions.isolate_instr = SnapshotSpan{text->file_offset, static_cast<size_t>(text->size), text->va};
-    regions.vm_instr_va = text->va;
-    regions.isolate_instr_va = text->va;
+  if (!text) {
+    for (const auto& seg : image.segments) {
+      if (seg.executable && seg.size > 0) {
+        text = &seg;
+        break;
+      }
+    }
   }
+  if (!text) {
+    return util::Status::Error(util::ErrorCode::kNotFound, "unable to locate executable code segment");
+  }
+
+  regions.vm_instr = SnapshotSpan{text->file_offset, static_cast<size_t>(std::min<uint64_t>(text->size, 1 << 20)), text->va};
+  regions.isolate_instr = SnapshotSpan{text->file_offset, static_cast<size_t>(text->size), text->va};
+  regions.vm_instr_va = text->va;
+  regions.isolate_instr_va = text->va;
   return regions;
 }
 

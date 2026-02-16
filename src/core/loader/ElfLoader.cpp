@@ -62,9 +62,9 @@ util::StatusOr<BinaryImage> LoadElfImage(const std::filesystem::path& libapp_pat
     s.size = seg->get_memory_size();
     s.file_offset = seg->get_offset();
     const auto flags = seg->get_flags();
-    s.readable = (flags & PF_R) != 0;
-    s.writable = (flags & PF_W) != 0;
-    s.executable = (flags & PF_X) != 0;
+    s.readable = (flags & ELFIO::PF_R) != 0;
+    s.writable = (flags & ELFIO::PF_W) != 0;
+    s.executable = (flags & ELFIO::PF_X) != 0;
     image.segments.push_back(s);
   }
 
@@ -95,7 +95,7 @@ util::StatusOr<BinaryImage> LoadElfImage(const std::filesystem::path& libapp_pat
       continue;
     }
     image.has_symbol_table = true;
-    ELFIO::symbol_section_accessor symbols(reader, sec);
+    ELFIO::symbol_section_accessor symbols(reader, sec.get());
     for (unsigned int i = 0; i < symbols.get_symbols_num(); ++i) {
       std::string name;
       ELFIO::Elf64_Addr value = 0;
