@@ -1,5 +1,6 @@
 #include "core/decompiler/Structurer.h"
 
+#include <algorithm>
 #include <string>
 #include <vector>
 
@@ -32,7 +33,15 @@ std::vector<std::string> Structurer::BuildStructuredBody(const ir::FunctionIR& f
     for (const auto& instr : block.instrs) {
       switch (instr.op) {
         case ir::IROp::Call:
-          lines.push_back("    " + instr.target + ";");
+          if (instr.target.empty()) {
+            lines.push_back("    call(/*unknown*/);");
+          } else {
+            std::string target = instr.target;
+            if (!target.empty() && target[0] == '#') {
+              target.erase(target.begin());
+            }
+            lines.push_back("    call(" + target + ");");
+          }
           break;
         case ir::IROp::Return:
           lines.push_back("    return null;");
