@@ -19,9 +19,14 @@ struct AdapterConfig {
   std::filesystem::path adapter_dir;
 };
 
+struct ParseOptions {
+  bool allow_heuristic_fallback = true;
+};
+
 util::StatusOr<DartVersionInfo> detect_dart_version(const loader::SnapshotRegions& regions);
 util::StatusOr<model::Program> parse_snapshot_with_vm_adapter(
     const loader::SnapshotRegions& regions, const DartVersionInfo& version_info,
-    const std::string& input_path, const AdapterConfig& cfg = {});
+    const std::string& input_path, const AdapterConfig& cfg = {},
+    const ParseOptions& options = {});
 
 }  // namespace flutterdec::core::dartvm

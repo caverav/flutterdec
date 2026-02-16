@@ -18,5 +18,7 @@ struct PipelineContext {
 };
 
 util::StatusOr<PipelineContext> BuildPipeline(const std::string& input_path, bool require_adapter);
+util::StatusOr<PipelineContext> BuildPipeline(const std::string& input_path, bool require_adapter,
+                                              bool allow_heuristic_fallback);
 
 }  // namespace flutterdec::cli::commands

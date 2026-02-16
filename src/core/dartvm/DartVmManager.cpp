@@ -275,16 +275,12 @@ util::StatusOr<model::Program> ParseProgramJson(const std::filesystem::path& pat
   return program;
 }
 
-bool IsHeuristicFallbackDisabled() {
-  const char* env = std::getenv("FLUTTERDEC_DISABLE_HEURISTIC_FALLBACK");
-  return env && std::string(env) == "1";
-}
-
 util::StatusOr<model::Program> TryHeuristicFallback(const loader::SnapshotRegions& regions,
                                                     const DartVersionInfo& version_info,
                                                     const std::string& input_path,
-                                                    const util::Status& original_status) {
-  if (IsHeuristicFallbackDisabled()) {
+                                                    const util::Status& original_status,
+                                                    const ParseOptions& options) {
+  if (!options.allow_heuristic_fallback) {
     return original_status;
   }
   auto heuristic_or = BuildHeuristicProgram(regions, version_info, input_path);
@@ -323,7 +319,8 @@ util::StatusOr<DartVersionInfo> detect_dart_version(const loader::SnapshotRegion
 util::StatusOr<model::Program> parse_snapshot_with_vm_adapter(const loader::SnapshotRegions& regions,
                                                               const DartVersionInfo& version_info,
                                                               const std::string& input_path,
-                                                              const AdapterConfig& cfg) {
+                                                              const AdapterConfig& cfg,
+                                                              const ParseOptions& options) {
   const auto manifest_path = ResolveManifestPath(cfg);
   const auto adapter_dir = ResolveAdapterDir(cfg);
 
@@ -334,7 +331,7 @@ util::StatusOr<model::Program> parse_snapshot_with_vm_adapter(const loader::Snap
 
   auto adapter_or = ResolveAdapterExecutable(version_info, manifest_path, adapter_dir);
   if (!adapter_or.ok()) {
-    return TryHeuristicFallback(regions, version_info, input_path, adapter_or.status());
+    return TryHeuristicFallback(regions, version_info, input_path, adapter_or.status(), options);
   }
 
   const auto tmp_dir = std::filesystem::temp_directory_path() / ("flutterdec_adapter_" + version_info.hash);
@@ -376,12 +373,13 @@ util::StatusOr<model::Program> parse_snapshot_with_vm_adapter(const loader::Snap
     return TryHeuristicFallback(
         regions, version_info, input_path,
         util::Status::Error(util::ErrorCode::kExternalToolError,
-                            "adapter execution failed: " + adapter_or.value().string()));
+                            "adapter execution failed: " + adapter_or.value().string()),
+        options);
   }
 
   auto parsed_or = ParseProgramJson(out_path, input_path, &regions);
   if (!parsed_or.ok()) {
-    return TryHeuristicFallback(regions, version_info, input_path, parsed_or.status());
+    return TryHeuristicFallback(regions, version_info, input_path, parsed_or.status(), options);
   }
   return parsed_or;
 }
@@ -394,8 +392,9 @@ util::StatusOr<DartVersionInfo> DartVmManager::DetectVersion(const loader::Snaps
 
 util::StatusOr<model::Program> DartVmManager::ParseProgram(const loader::SnapshotRegions& regions,
                                                            const DartVersionInfo& version_info,
-                                                           const std::string& input_path) const {
-  return parse_snapshot_with_vm_adapter(regions, version_info, input_path, cfg_);
+                                                           const std::string& input_path,
+                                                           const ParseOptions& options) const {
+  return parse_snapshot_with_vm_adapter(regions, version_info, input_path, cfg_, options);
 }
 
 }  // namespace flutterdec::core::dartvm

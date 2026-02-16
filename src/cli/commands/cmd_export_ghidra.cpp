@@ -18,6 +18,15 @@ std::optional<std::string> ParseOut(const std::vector<std::string>& args) {
   return std::nullopt;
 }
 
+bool HasExperimentalHeuristic(const std::vector<std::string>& args) {
+  for (const auto& arg : args) {
+    if (arg == "--experimental-heuristic") {
+      return true;
+    }
+  }
+  return false;
+}
+
 }  // namespace
 
 int RunExportGhidra(const std::vector<std::string>& args) {
@@ -31,7 +40,7 @@ int RunExportGhidra(const std::vector<std::string>& args) {
     return 2;
   }
 
-  auto ctx_or = BuildPipeline(args[0], true);
+  auto ctx_or = BuildPipeline(args[0], true, HasExperimentalHeuristic(args));
   if (!ctx_or.ok()) {
     std::cerr << "error: " << ctx_or.status().message << "\n";
     return 1;

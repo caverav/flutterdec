@@ -11,7 +11,8 @@ class DartVmManager {
   util::StatusOr<DartVersionInfo> DetectVersion(const loader::SnapshotRegions& regions) const;
   util::StatusOr<model::Program> ParseProgram(const loader::SnapshotRegions& regions,
                                               const DartVersionInfo& version_info,
-                                              const std::string& input_path) const;
+                                              const std::string& input_path,
+                                              const ParseOptions& options = {}) const;
 
  private:
   AdapterConfig cfg_;
