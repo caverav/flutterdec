@@ -34,7 +34,9 @@ struct DecompileOptions {
   bool experimental_heuristic = false;
   bool no_quality_gate = false;
   size_t max_placeholder_ifs = 0;
+  size_t max_unresolved_cf = 0;
   double max_indirect_call_ratio = 1.0;
+  double min_disassembly_ratio = 0.05;
   std::filesystem::path mapping;
   std::string focus;
   size_t max_functions = 0;
@@ -64,8 +66,12 @@ std::optional<DecompileOptions> ParseOptions(const std::vector<std::string>& arg
       opt.no_quality_gate = true;
     } else if (args[i] == "--max-placeholder-ifs" && i + 1 < args.size()) {
       opt.max_placeholder_ifs = static_cast<size_t>(std::stoull(args[++i]));
+    } else if (args[i] == "--max-unresolved-cf" && i + 1 < args.size()) {
+      opt.max_unresolved_cf = static_cast<size_t>(std::stoull(args[++i]));
     } else if (args[i] == "--max-indirect-call-ratio" && i + 1 < args.size()) {
       opt.max_indirect_call_ratio = std::stod(args[++i]);
+    } else if (args[i] == "--min-disassembly-ratio" && i + 1 < args.size()) {
+      opt.min_disassembly_ratio = std::stod(args[++i]);
     } else if (args[i] == "--mapping" && i + 1 < args.size()) {
       opt.mapping = args[++i];
     } else if (args[i] == "--focus" && i + 1 < args.size()) {
@@ -164,6 +170,7 @@ struct QualityMetrics {
   size_t total_calls = 0;
   size_t indirect_calls = 0;
   size_t placeholder_ifs = 0;
+  size_t unresolved_cf = 0;
   size_t raw_register_calls = 0;
   bool passed = true;
   std::vector<std::string> failures;
@@ -202,6 +209,10 @@ QualityMetrics EvaluateQuality(const core::model::Program& program,
       if (line.find("/* cond */") != std::string::npos) {
         m.placeholder_ifs += 1;
       }
+      if (line.find("unresolved branch") != std::string::npos ||
+          line.find("unresolved jump") != std::string::npos) {
+        m.unresolved_cf += 1;
+      }
       if (line.find("call(x") != std::string::npos || line.find("call(w") != std::string::npos) {
         m.raw_register_calls += 1;
       }
@@ -214,12 +225,20 @@ QualityMetrics EvaluateQuality(const core::model::Program& program,
   if (m.placeholder_ifs > opt.max_placeholder_ifs) {
     m.failures.push_back("placeholder if-count exceeded threshold");
   }
+  if (m.unresolved_cf > opt.max_unresolved_cf) {
+    m.failures.push_back("unresolved control-flow count exceeded threshold");
+  }
   if (m.raw_register_calls > 0) {
     m.failures.push_back("raw register calls emitted in pseudocode");
   }
   const double indirect_ratio = m.total_calls == 0 ? 0.0 : static_cast<double>(m.indirect_calls) / m.total_calls;
+  const double disassembly_ratio =
+      m.function_count == 0 ? 0.0 : static_cast<double>(m.disassembled_function_count) / m.function_count;
   if (indirect_ratio > opt.max_indirect_call_ratio) {
     m.failures.push_back("indirect call ratio exceeded threshold");
+  }
+  if (disassembly_ratio < opt.min_disassembly_ratio) {
+    m.failures.push_back("disassembled function ratio below threshold");
   }
 
   m.passed = m.failures.empty();
@@ -229,16 +248,20 @@ QualityMetrics EvaluateQuality(const core::model::Program& program,
 nlohmann::json QualityToJson(const QualityMetrics& q, const core::model::Program& program,
                              const DecompileOptions& opt) {
   const double indirect_ratio = q.total_calls == 0 ? 0.0 : static_cast<double>(q.indirect_calls) / q.total_calls;
+  const double disassembly_ratio =
+      q.function_count == 0 ? 0.0 : static_cast<double>(q.disassembled_function_count) / q.function_count;
   return {
       {"mode", opt.experimental_heuristic ? "experimental-heuristic" : "strict"},
       {"program_model", program.model_source},
       {"adapter_backed_model", q.adapter_backed_model},
       {"function_count", q.function_count},
       {"disassembled_function_count", q.disassembled_function_count},
+      {"disassembly_ratio", disassembly_ratio},
       {"total_calls", q.total_calls},
       {"indirect_calls", q.indirect_calls},
       {"indirect_call_ratio", indirect_ratio},
       {"placeholder_ifs", q.placeholder_ifs},
+      {"unresolved_cf", q.unresolved_cf},
       {"raw_register_calls", q.raw_register_calls},
       {"passed", q.passed},
       {"failures", q.failures},
@@ -255,7 +278,9 @@ int RunDecompile(const std::vector<std::string>& args) {
         << "  --experimental-heuristic      allow fallback without adapter (lower correctness)\n"
         << "  --no-quality-gate             do not fail command on quality checks\n"
         << "  --max-placeholder-ifs N       strict threshold (default 0)\n"
-        << "  --max-indirect-call-ratio R   strict threshold (default 1.0)\n";
+        << "  --max-unresolved-cf N         strict threshold (default 0)\n"
+        << "  --max-indirect-call-ratio R   strict threshold (default 1.0)\n"
+        << "  --min-disassembly-ratio R     strict threshold (default 0.05)\n";
     return 2;
   }
 

@@ -3,6 +3,17 @@
 #include <string>
 
 namespace flutterdec::core::ir {
+namespace {
+
+std::string ExtractCallName(const disasm::AsmInstruction& ins) {
+  static constexpr const char* kPrefix = "call ";
+  if (ins.annotation.rfind(kPrefix, 0) != 0) {
+    return "";
+  }
+  return ins.annotation.substr(std::char_traits<char>::length(kPrefix));
+}
+
+}  // namespace
 
 std::vector<IRInstr> IRBuilder::BuildLlir(const std::vector<disasm::AsmInstruction>& instrs) const {
   std::vector<IRInstr> out;
@@ -14,7 +25,10 @@ std::vector<IRInstr> IRBuilder::BuildLlir(const std::vector<disasm::AsmInstructi
 
     if (ins.is_call) {
       ir.op = IROp::Call;
-      ir.target = ins.op_str;
+      ir.target = ExtractCallName(ins);
+      if (ir.target.empty()) {
+        ir.target = ins.op_str;
+      }
       out.push_back(std::move(ir));
       continue;
     }

@@ -34,7 +34,7 @@ import argparse
 import json
 import re
 import struct
-from typing import List, Set
+from typing import Dict, List, Set
 
 VERSION = __VERSION__
 SNAPSHOT_HASH = __SNAPSHOT_HASH__
@@ -104,17 +104,23 @@ def recover_functions(instr: bytes, base_va: int) -> List[dict]:
     instr_len = len(instr)
     hi = base_va + instr_len
 
+    prologues: Set[int] = set()
+    call_target_counts: Dict[int, int] = {}
     for off in range(0, instr_len - 3, 4):
         word = struct.unpack_from("<I", instr, off)[0]
         pc = base_va + off
         tgt = decode_bl_target(pc, word)
-        if tgt is not None and base_va <= tgt < hi:
-            starts.add(tgt)
+        if tgt is not None and base_va <= tgt < hi and (tgt - base_va) % 4 == 0:
+            call_target_counts[tgt] = call_target_counts.get(tgt, 0) + 1
 
-    for off in range(0, instr_len - 3, 4):
-        word = struct.unpack_from("<I", instr, off)[0]
         if is_frame_prologue(word):
-            starts.add(base_va + off)
+            prologues.add(base_va + off)
+
+    starts.update(prologues)
+    for tgt, count in call_target_counts.items():
+        # Keep likely entry points only: known prologue starts or repeated call targets.
+        if tgt in prologues or count >= 2:
+            starts.add(tgt)
 
     sorted_starts = sorted(starts)
     funcs = []
@@ -145,10 +151,11 @@ def collect_libraries(strings: List[str]) -> List[str]:
     return libs[:512]
 
 
-def collect_function_name_candidates(strings: List[str]) -> List[str]:
-    out = []
-    seen = set()
-    pat = re.compile(r"^([A-Za-z_][A-Za-z0-9_<>$]{2,})@[0-9]{5,}$")
+def collect_function_name_candidates(strings: List[str], base_va: int, hi_va: int) -> Dict[int, str]:
+    out: Dict[int, str] = {}
+    # In many snapshots function labels appear like "foo@12345".
+    # Prefer deterministic VA matching over positional assignment.
+    pat = re.compile(r"^([A-Za-z_][A-Za-z0-9_<>$]{2,})@([0-9]{1,12})$")
     for s in strings:
         m = pat.match(s)
         if not m:
@@ -156,10 +163,24 @@ def collect_function_name_candidates(strings: List[str]) -> List[str]:
         name = m.group(1)
         if name.startswith("_") and len(name) < 3:
             continue
-        if name not in seen:
-            seen.add(name)
-            out.append(name)
-    return out[:10000]
+        try:
+            n = int(m.group(2))
+        except Exception:
+            continue
+
+        candidates: List[int] = []
+        # Some snapshots encode relative offsets, others absolute VAs.
+        rel_va = base_va + n
+        abs_va = n
+        if base_va <= rel_va < hi_va and (rel_va - base_va) % 4 == 0:
+            candidates.append(rel_va)
+        if base_va <= abs_va < hi_va and (abs_va - base_va) % 4 == 0:
+            candidates.append(abs_va)
+
+        for va in candidates:
+            if va not in out:
+                out[va] = name
+    return out
 
 
 def main():
@@ -198,14 +219,15 @@ def main():
             "code_section_va": int(args.isolate_instr_va or 4096),
         }]
 
-    name_candidates = collect_function_name_candidates(strings)
-    for i, fn in enumerate(functions):
-        if i < len(name_candidates):
-            fn["name"] = name_candidates[i]
+    name_by_va = collect_function_name_candidates(strings, args.isolate_instr_va, args.isolate_instr_va + len(iso_instr))
+    for fn in functions:
+        maybe = name_by_va.get(fn["entry_va"])
+        if maybe:
+            fn["name"] = maybe
 
     payload = {
         "schema_version": 1,
-        "adapter_kind": "dynamic_snapshot_string_model",
+        "adapter_kind": "dynamic_snapshot_string_model_v2",
         "dart_version": VERSION,
         "snapshot_hash": snapshot_hash,
         "arch": "arm64",

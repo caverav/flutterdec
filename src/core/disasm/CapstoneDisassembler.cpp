@@ -40,7 +40,7 @@ util::StatusOr<std::vector<uint8_t>> SliceFunctionBytes(const loader::BinaryImag
 }
 
 bool ParseTarget(const std::string& s, uint64_t* target) {
-  const auto pos = s.find("0x");
+  const auto pos = s.rfind("0x");
   if (pos == std::string::npos) {
     return false;
   }

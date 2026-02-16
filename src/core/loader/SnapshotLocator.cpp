@@ -18,7 +18,7 @@ constexpr std::array<const char*, 4> kSymbolNames = {
 
 constexpr std::array<uint8_t, 8> kSnapshotMagic = {'D', 'A', 'R', 'T', 'S', 'N', 'A', 'P'};
 
-std::optional<SnapshotSpan> BuildSpanFromVa(const BinaryImage& image, uint64_t va, size_t default_size) {
+std::optional<SnapshotSpan> BuildSpanFromVa(const BinaryImage& image, uint64_t va, size_t requested_size) {
   auto off_or = image.VaToFileOffset(va);
   if (!off_or.ok()) {
     return std::nullopt;
@@ -27,8 +27,19 @@ std::optional<SnapshotSpan> BuildSpanFromVa(const BinaryImage& image, uint64_t v
   if (offset >= image.elf_bytes.size()) {
     return std::nullopt;
   }
-  const size_t max_size = image.elf_bytes.size() - offset;
-  return SnapshotSpan{offset, std::min(default_size, max_size), va};
+  size_t max_size = image.elf_bytes.size() - offset;
+  if (const auto* seg = image.FindSegmentForVa(va)) {
+    const uint64_t delta = va - seg->va;
+    if (delta < seg->size) {
+      const uint64_t seg_remaining = seg->size - delta;
+      max_size = std::min<size_t>(max_size, static_cast<size_t>(seg_remaining));
+    }
+  }
+  if (max_size == 0) {
+    return std::nullopt;
+  }
+  const size_t size = std::min(requested_size, max_size);
+  return SnapshotSpan{offset, size, va};
 }
 
 std::vector<size_t> FindMagicOffsets(const BinaryImage& image) {
@@ -63,10 +74,19 @@ util::StatusOr<SnapshotRegions> locate_snapshots(const BinaryImage& image) {
 
   if (vm_data_it != image.symbols.end() && vm_instr_it != image.symbols.end() &&
       iso_data_it != image.symbols.end() && iso_instr_it != image.symbols.end()) {
-    auto vm_data = BuildSpanFromVa(image, vm_data_it->second.va, 1 << 20);
-    auto vm_instr = BuildSpanFromVa(image, vm_instr_it->second.va, 1 << 20);
-    auto iso_data = BuildSpanFromVa(image, iso_data_it->second.va, 4 << 20);
-    auto iso_instr = BuildSpanFromVa(image, iso_instr_it->second.va, 4 << 20);
+    const auto vm_data_size =
+        vm_data_it->second.size > 0 ? static_cast<size_t>(vm_data_it->second.size) : static_cast<size_t>(1 << 20);
+    const auto vm_instr_size =
+        vm_instr_it->second.size > 0 ? static_cast<size_t>(vm_instr_it->second.size) : static_cast<size_t>(1 << 20);
+    const auto iso_data_size =
+        iso_data_it->second.size > 0 ? static_cast<size_t>(iso_data_it->second.size) : static_cast<size_t>(4 << 20);
+    const auto iso_instr_size =
+        iso_instr_it->second.size > 0 ? static_cast<size_t>(iso_instr_it->second.size) : static_cast<size_t>(4 << 20);
+
+    auto vm_data = BuildSpanFromVa(image, vm_data_it->second.va, vm_data_size);
+    auto vm_instr = BuildSpanFromVa(image, vm_instr_it->second.va, vm_instr_size);
+    auto iso_data = BuildSpanFromVa(image, iso_data_it->second.va, iso_data_size);
+    auto iso_instr = BuildSpanFromVa(image, iso_instr_it->second.va, iso_instr_size);
     if (vm_data && vm_instr && iso_data && iso_instr) {
       regions.vm_data = *vm_data;
       regions.vm_instr = *vm_instr;

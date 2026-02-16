@@ -2,12 +2,24 @@
 
 #include <algorithm>
 #include <cstddef>
-#include <unordered_map>
+#include <queue>
 #include <unordered_set>
 #include <vector>
 #include <sstream>
+#include <unordered_map>
 
 namespace flutterdec::core::ir {
+namespace {
+
+void DedupeSuccs(BasicBlock* block) {
+  if (!block) {
+    return;
+  }
+  std::sort(block->succs.begin(), block->succs.end());
+  block->succs.erase(std::unique(block->succs.begin(), block->succs.end()), block->succs.end());
+}
+
+}  // namespace
 
 FunctionIR CFGBuilder::Build(const model::FunctionInfo& fn_meta,
                              const std::vector<disasm::AsmInstruction>& asm_instrs,
@@ -23,13 +35,15 @@ FunctionIR CFGBuilder::Build(const model::FunctionInfo& fn_meta,
 
   for (size_t i = 0; i < asm_instrs.size(); ++i) {
     const auto& ins = asm_instrs[i];
-    if (ins.is_branch || ins.is_call) {
+    if (ins.is_branch) {
       if (ins.branch_target != 0) {
         block_starts.insert(ins.branch_target);
       }
-      if (ins.is_conditional_branch && i + 1 < asm_instrs.size()) {
+      if (i + 1 < asm_instrs.size()) {
         block_starts.insert(asm_instrs[i + 1].va);
       }
+    } else if (ins.is_return && i + 1 < asm_instrs.size()) {
+      block_starts.insert(asm_instrs[i + 1].va);
     }
   }
 
@@ -66,7 +80,7 @@ FunctionIR CFGBuilder::Build(const model::FunctionInfo& fn_meta,
 
     const auto& term = out.blocks[i].instrs.back();
     if (term.op == IROp::Branch || term.op == IROp::Jump) {
-      auto pos = term.target.find("0x");
+      auto pos = term.target.rfind("0x");
       if (pos != std::string::npos) {
         uint64_t target_va = 0;
         std::stringstream ss;
@@ -83,6 +97,8 @@ FunctionIR CFGBuilder::Build(const model::FunctionInfo& fn_meta,
     } else if (term.op != IROp::Return && i + 1 < out.blocks.size()) {
       out.blocks[i].succs.push_back(i + 1);
     }
+
+    DedupeSuccs(&out.blocks[i]);
   }
 
   for (size_t i = 0; i < out.blocks.size(); ++i) {
@@ -93,6 +109,63 @@ FunctionIR CFGBuilder::Build(const model::FunctionInfo& fn_meta,
     }
   }
 
+  for (auto& block : out.blocks) {
+    std::sort(block.preds.begin(), block.preds.end());
+    block.preds.erase(std::unique(block.preds.begin(), block.preds.end()), block.preds.end());
+  }
+
+  // Remove unreachable blocks to avoid emitting misleading dead control flow.
+  std::vector<bool> reachable(out.blocks.size(), false);
+  std::queue<size_t> q;
+  reachable[0] = true;
+  q.push(0);
+  while (!q.empty()) {
+    const size_t b = q.front();
+    q.pop();
+    for (size_t succ : out.blocks[b].succs) {
+      if (succ < out.blocks.size() && !reachable[succ]) {
+        reachable[succ] = true;
+        q.push(succ);
+      }
+    }
+  }
+
+  if (std::all_of(reachable.begin(), reachable.end(), [](bool v) { return v; })) {
+    return out;
+  }
+
+  std::vector<size_t> remap(out.blocks.size(), static_cast<size_t>(-1));
+  std::vector<BasicBlock> kept;
+  kept.reserve(out.blocks.size());
+  for (size_t i = 0; i < out.blocks.size(); ++i) {
+    if (reachable[i]) {
+      remap[i] = kept.size();
+      kept.push_back(std::move(out.blocks[i]));
+    }
+  }
+
+  for (auto& block : kept) {
+    std::vector<size_t> new_succs;
+    for (size_t succ : block.succs) {
+      if (succ < remap.size() && remap[succ] != static_cast<size_t>(-1)) {
+        new_succs.push_back(remap[succ]);
+      }
+    }
+    block.succs = std::move(new_succs);
+    DedupeSuccs(&block);
+    block.preds.clear();
+  }
+  for (size_t i = 0; i < kept.size(); ++i) {
+    for (size_t succ : kept[i].succs) {
+      kept[succ].preds.push_back(i);
+    }
+  }
+  for (auto& block : kept) {
+    std::sort(block.preds.begin(), block.preds.end());
+    block.preds.erase(std::unique(block.preds.begin(), block.preds.end()), block.preds.end());
+  }
+
+  out.blocks = std::move(kept);
   return out;
 }
 

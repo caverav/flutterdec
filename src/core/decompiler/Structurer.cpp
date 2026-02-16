@@ -16,7 +16,7 @@ namespace flutterdec::core::decompiler {
 namespace {
 
 std::optional<uint64_t> ParseHexTarget(const std::string& target) {
-  const auto pos = target.find("0x");
+  const auto pos = target.rfind("0x");
   if (pos == std::string::npos) {
     return std::nullopt;
   }
@@ -77,6 +77,7 @@ std::vector<std::string> Structurer::BuildStructuredBody(const ir::FunctionIR& f
     lines.push_back("    " + labels[block.start_va] + ":");
 
     bool emitted_terminator = false;
+    size_t omitted_ops = 0;
     for (const auto& instr : block.instrs) {
       switch (instr.op) {
         case ir::IROp::Call:
@@ -92,27 +93,67 @@ std::vector<std::string> Structurer::BuildStructuredBody(const ir::FunctionIR& f
           }
           break;
         case ir::IROp::Branch: {
-          const auto t = ParseHexTarget(instr.target);
+          std::ostringstream cond;
+          cond << "cond_0x" << std::hex << instr.va;
+          const auto parsed_target = ParseHexTarget(instr.target);
           if (block.succs.size() == 2) {
             const auto true_label = labels[fn_ir.blocks[block.succs[0]].start_va];
             const auto false_label = labels[fn_ir.blocks[block.succs[1]].start_va];
-            std::ostringstream cond;
-            cond << "cond_0x" << std::hex << instr.va;
             lines.push_back("    if (" + cond.str() + ") goto " + true_label + "; else goto " + false_label + ";");
-          } else if (t.has_value() && labels.find(*t) != labels.end()) {
-            lines.push_back("    if (cond) goto " + labels[*t] + ";");
+          } else if (block.succs.size() == 1) {
+            if (parsed_target.has_value()) {
+              if (labels.find(*parsed_target) != labels.end()) {
+                lines.push_back("    if (" + cond.str() + ") goto " + labels[*parsed_target] + ";");
+              } else {
+                std::ostringstream target;
+                target << "0x" << std::hex << *parsed_target;
+                lines.push_back("    if (" + cond.str() + ") goto " + target.str() + ";");
+              }
+            } else {
+              lines.push_back("    /* unresolved branch at 0x" + [&] {
+                               std::ostringstream oss;
+                               oss << std::hex << instr.va;
+                               return oss.str();
+                             }() + " */");
+            }
           } else {
-            lines.push_back("    if (cond) goto /*unknown*/;");
+            if (parsed_target.has_value()) {
+              if (labels.find(*parsed_target) != labels.end()) {
+                lines.push_back("    if (" + cond.str() + ") goto " + labels[*parsed_target] + ";");
+              } else {
+                std::ostringstream target;
+                target << "0x" << std::hex << *parsed_target;
+                lines.push_back("    if (" + cond.str() + ") goto " + target.str() + ";");
+              }
+            } else {
+              lines.push_back("    /* unresolved branch at 0x" + [&] {
+                               std::ostringstream oss;
+                               oss << std::hex << instr.va;
+                               return oss.str();
+                             }() + " */");
+            }
           }
           emitted_terminator = true;
           break;
         }
         case ir::IROp::Jump: {
           const auto t = ParseHexTarget(instr.target);
-          if (t.has_value() && labels.find(*t) != labels.end()) {
-            lines.push_back("    goto " + labels[*t] + ";");
+          if (t.has_value()) {
+            if (labels.find(*t) != labels.end()) {
+              lines.push_back("    goto " + labels[*t] + ";");
+            } else {
+              std::ostringstream target;
+              target << "0x" << std::hex << *t;
+              lines.push_back("    goto " + target.str() + ";");
+            }
+          } else if (block.succs.size() == 1) {
+            lines.push_back("    goto " + labels[fn_ir.blocks[block.succs[0]].start_va] + ";");
           } else {
-            lines.push_back("    goto /*unknown*/;");
+            lines.push_back("    /* unresolved jump at 0x" + [&] {
+                             std::ostringstream oss;
+                             oss << std::hex << instr.va;
+                             return oss.str();
+                           }() + " */");
           }
           emitted_terminator = true;
           break;
@@ -125,12 +166,21 @@ std::vector<std::string> Structurer::BuildStructuredBody(const ir::FunctionIR& f
           lines.push_back("    var t = " + instr.src + ";");
           break;
         default:
+          omitted_ops += 1;
           break;
       }
     }
 
-    if (!emitted_terminator && b + 1 < fn_ir.blocks.size()) {
-      lines.push_back("    goto " + labels[fn_ir.blocks[b + 1].start_va] + ";");
+    if (omitted_ops > 0) {
+      lines.push_back("    /* " + std::to_string(omitted_ops) + " low-level ops omitted */");
+    }
+
+    if (!emitted_terminator) {
+      if (block.succs.size() == 1 && (b + 1 >= fn_ir.blocks.size() || block.succs[0] != b + 1)) {
+        lines.push_back("    goto " + labels[fn_ir.blocks[block.succs[0]].start_va] + ";");
+      } else if (block.succs.size() > 1) {
+        lines.push_back("    /* multiple successors; CFG kept unstructured */");
+      }
     }
     lines.push_back("");
   }
