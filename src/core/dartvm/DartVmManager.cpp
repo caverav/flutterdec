@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <regex>
 #include <set>
 #include <sstream>
 #include <string>
@@ -73,6 +74,20 @@ std::string SniffAsciiField(const std::vector<uint8_t>& data, const std::string&
     ++j;
   }
   return s.substr(i, j - i);
+}
+
+std::string SniffSnapshotBuildIdHash32(const std::vector<uint8_t>& data) {
+  if (data.empty()) {
+    return "";
+  }
+  const size_t window = std::min<size_t>(data.size(), 65536);
+  const std::string s(data.begin(), data.begin() + static_cast<long>(window));
+  static const std::regex kBuildIdPattern("([0-9a-f]{32})product\\s+no-code_comments");
+  std::smatch m;
+  if (std::regex_search(s, m, kBuildIdPattern) && m.size() > 1) {
+    return m[1].str();
+  }
+  return "";
 }
 
 model::ObjKind ParseKind(const std::string& s) {
@@ -162,6 +177,17 @@ util::StatusOr<model::Program> ParseProgramJson(const std::filesystem::path& pat
   program.dart_version = j.value("dart_version", "unknown");
   program.snapshot_hash = j.value("snapshot_hash", "unknown");
   program.model_source = "adapter";
+  program.adapter_kind = j.value("adapter_kind", "unknown");
+
+  if (j.contains("libraries") && j["libraries"].is_array()) {
+    for (const auto& l : j["libraries"]) {
+      model::LibraryInfo li;
+      li.id = l.value("id", 0ull);
+      li.uri = l.value("uri", "");
+      li.name_display = l.value("name_display", li.uri);
+      program.libraries.push_back(std::move(li));
+    }
+  }
 
   for (const auto& o : j.value("object_pool", json::array())) {
     model::Obj obj;
@@ -206,23 +232,24 @@ util::StatusOr<model::Program> ParseProgramJson(const std::filesystem::path& pat
     program.classes.push_back(std::move(ci));
   }
 
-  std::set<std::string> libs;
-  for (const auto& c : program.classes) {
-    if (!c.library_uri.empty()) {
-      libs.insert(c.library_uri);
+  if (program.libraries.empty()) {
+    std::set<std::string> libs;
+    for (const auto& c : program.classes) {
+      if (!c.library_uri.empty()) {
+        libs.insert(c.library_uri);
+      }
     }
-  }
-  if (libs.empty()) {
-    libs.insert("package:app/main.dart");
-  }
-  program.libraries.clear();
-  size_t lib_id = 0;
-  for (const auto& uri : libs) {
-    model::LibraryInfo li;
-    li.id = lib_id++;
-    li.uri = uri;
-    li.name_display = uri;
-    program.libraries.push_back(std::move(li));
+    if (libs.empty()) {
+      libs.insert("package:app/main.dart");
+    }
+    size_t lib_id = 0;
+    for (const auto& uri : libs) {
+      model::LibraryInfo li;
+      li.id = lib_id++;
+      li.uri = uri;
+      li.name_display = uri;
+      program.libraries.push_back(std::move(li));
+    }
   }
 
   uint64_t text_start = 0;
@@ -303,7 +330,13 @@ util::StatusOr<DartVersionInfo> detect_dart_version(const loader::SnapshotRegion
     out.version = SniffAsciiField(iso_data, "ver:");
   }
 
-  out.hash = SniffAsciiField(vm_data, "hash:");
+  out.hash = SniffSnapshotBuildIdHash32(vm_data);
+  if (out.hash.empty()) {
+    out.hash = SniffSnapshotBuildIdHash32(iso_data);
+  }
+  if (out.hash.empty()) {
+    out.hash = SniffAsciiField(vm_data, "hash:");
+  }
   if (out.hash.empty()) {
     std::vector<uint8_t> merged;
     merged.reserve(vm_data.size() + std::min<size_t>(iso_data.size(), 4096));

@@ -14,6 +14,7 @@ util::Status WriteProgramReport(const model::Program& program, const std::filesy
   j["dart_version"] = program.dart_version;
   j["snapshot_hash"] = program.snapshot_hash;
   j["model_source"] = program.model_source;
+  j["adapter_kind"] = program.adapter_kind;
   j["counts"] = {
       {"libraries", program.libraries.size()},
       {"classes", program.classes.size()},

@@ -18,6 +18,7 @@ struct Program {
   std::string dart_version;
   std::string snapshot_hash;
   std::string model_source = "unknown";
+  std::string adapter_kind = "none";
 
   ObjectPool object_pool;
 

@@ -37,6 +37,7 @@ int RunInfo(const std::vector<std::string>& args) {
     std::cout << "functions: " << ctx.program.functions.size() << "\n";
     std::cout << "object_pool: " << ctx.program.object_pool.size() << "\n";
     std::cout << "program_model: " << ctx.program.model_source << "\n";
+    std::cout << "adapter_kind: " << ctx.program.adapter_kind << "\n";
   } else {
     std::cout << "adapter: unavailable (run setup with hash)\n";
   }

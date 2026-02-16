@@ -282,6 +282,7 @@ util::StatusOr<model::Program> BuildHeuristicProgram(const loader::SnapshotRegio
   program.dart_version = version_info.version;
   program.snapshot_hash = version_info.hash;
   program.model_source = "heuristic";
+  program.adapter_kind = "heuristic_recovery";
 
   const auto vm_strings = ExtractStrings(Slice(regions, regions.vm_data), 5, 2048);
   const auto iso_strings = ExtractStrings(Slice(regions, regions.isolate_data), 5, 4096);

@@ -68,6 +68,17 @@ def extract_strings(data: bytes, min_len: int = 5, max_items: int = 20000) -> Li
     return uniq
 
 
+def detect_snapshot_hash(vm_data: bytes, iso_data: bytes) -> str:
+    probe = (vm_data + iso_data)[:65536]
+    m = re.search(rb"([0-9a-f]{32})product\\s+no-code_comments", probe)
+    if m:
+        try:
+            return m.group(1).decode("ascii")
+        except Exception:
+            pass
+    return SNAPSHOT_HASH
+
+
 def decode_bl_target(pc: int, word: int) -> int | None:
     if ((word >> 26) & 0x3F) != 0b100101:
         return None
@@ -121,6 +132,36 @@ def recover_functions(instr: bytes, base_va: int) -> List[dict]:
     return funcs
 
 
+def collect_libraries(strings: List[str]) -> List[str]:
+    libs = []
+    seen = set()
+    for s in strings:
+        if s.startswith("package:") and ".dart" in s and len(s) < 180:
+            if s not in seen:
+                seen.add(s)
+                libs.append(s)
+    if not libs:
+        libs = ["package:app/main.dart"]
+    return libs[:512]
+
+
+def collect_function_name_candidates(strings: List[str]) -> List[str]:
+    out = []
+    seen = set()
+    pat = re.compile(r"^([A-Za-z_][A-Za-z0-9_<>$]{2,})@[0-9]{5,}$")
+    for s in strings:
+        m = pat.match(s)
+        if not m:
+            continue
+        name = m.group(1)
+        if name.startswith("_") and len(name) < 3:
+            continue
+        if name not in seen:
+            seen.add(name)
+            out.append(name)
+    return out[:10000]
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--vm-data", required=True)
@@ -137,13 +178,14 @@ def main():
     iso_instr = read_bytes(args.isolate_instr)
 
     strings = extract_strings(vm_data + iso_data)
+    snapshot_hash = detect_snapshot_hash(vm_data, iso_data)
 
     object_pool = []
     for i, s in enumerate(strings):
         object_pool.append({"i": i, "kind": "String", "s": s})
 
-    lib_uri = next((s for s in strings if s.startswith("package:")), "package:app/main.dart")
-    classes = [{"id": 0, "name": "Global", "super": "Object", "lib": lib_uri}]
+    libraries = collect_libraries(strings)
+    classes = [{"id": 0, "name": "Global", "super": "Object", "lib": libraries[0]}]
 
     functions = recover_functions(iso_instr, args.isolate_instr_va)
     if not functions:
@@ -156,13 +198,19 @@ def main():
             "code_section_va": int(args.isolate_instr_va or 4096),
         }]
 
+    name_candidates = collect_function_name_candidates(strings)
+    for i, fn in enumerate(functions):
+        if i < len(name_candidates):
+            fn["name"] = name_candidates[i]
+
     payload = {
         "schema_version": 1,
-        "adapter_kind": "native_snapshot_adapter",
+        "adapter_kind": "dynamic_snapshot_string_model",
         "dart_version": VERSION,
-        "snapshot_hash": SNAPSHOT_HASH,
+        "snapshot_hash": snapshot_hash,
         "arch": "arm64",
         "object_pool": object_pool,
+        "libraries": [{"id": i, "uri": lib, "name_display": lib} for i, lib in enumerate(libraries)],
         "classes": classes,
         "functions": functions,
     }
