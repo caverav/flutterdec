@@ -1,0 +1,30 @@
+add_executable(test_snapshot_locator unit/test_snapshot_locator.cpp)
+target_link_libraries(test_snapshot_locator PRIVATE flutterdec_core)
+add_test(NAME unit_snapshot_locator COMMAND test_snapshot_locator)
+set_tests_properties(unit_snapshot_locator PROPERTIES LABELS "unit")
+
+add_executable(test_object_pool_resolve unit/test_object_pool_resolve.cpp)
+target_link_libraries(test_object_pool_resolve PRIVATE flutterdec_core)
+add_test(NAME unit_object_pool_resolve COMMAND test_object_pool_resolve)
+set_tests_properties(unit_object_pool_resolve PROPERTIES LABELS "unit")
+
+add_executable(test_disasm_annotation unit/test_disasm_annotation.cpp)
+target_link_libraries(test_disasm_annotation PRIVATE flutterdec_core)
+add_test(NAME unit_disasm_annotation COMMAND test_disasm_annotation)
+set_tests_properties(unit_disasm_annotation PROPERTIES LABELS "unit")
+
+add_executable(test_cfg_build unit/test_cfg_build.cpp)
+target_link_libraries(test_cfg_build PRIVATE flutterdec_core)
+add_test(NAME unit_cfg_build COMMAND test_cfg_build)
+set_tests_properties(unit_cfg_build PROPERTIES LABELS "unit")
+
+add_executable(test_structurer_if_loop unit/test_structurer_if_loop.cpp)
+target_link_libraries(test_structurer_if_loop PRIVATE flutterdec_core)
+add_test(NAME unit_structurer_if_loop COMMAND test_structurer_if_loop)
+set_tests_properties(unit_structurer_if_loop PROPERTIES LABELS "unit")
+
+add_executable(test_decompile_smoke integration/test_decompile_smoke.cpp)
+target_link_libraries(test_decompile_smoke PRIVATE flutterdec_core)
+target_compile_definitions(test_decompile_smoke PRIVATE FLUTTERDEC_BIN_PATH="$<TARGET_FILE:flutterdec>")
+add_test(NAME integration_decompile_smoke COMMAND test_decompile_smoke)
+set_tests_properties(integration_decompile_smoke PROPERTIES LABELS "integration")
