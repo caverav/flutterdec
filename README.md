@@ -4,10 +4,11 @@
 
 ## Status
 
-v1 scaffold implemented with these pipeline stages:
+v1 CLI implementation includes these pipeline stages:
 - input loading (`apk` or `libapp.so`)
 - snapshot location and version hashing
-- adapter-based program model import
+- adapter-based program model import (when available)
+- heuristic model recovery fallback (when adapter is missing/fails)
 - ARM64 disassembly + Dart ABI annotations
 - LLIR/CFG construction
 - pseudo-Dart emission
@@ -30,6 +31,9 @@ cmake --build build
 ./build/src/flutterdec export ghidra <libapp.so|apk> -o ghidra.json
 ./build/src/flutterdec setup --dart-hash <hash>
 ```
+
+If adapter binaries are not installed for a snapshot hash, `flutterdec` automatically falls back to heuristic
+function/object-pool recovery so `info`, `decompile`, and `export` still run on stripped/obfuscated AOT binaries.
 
 ## Test
 

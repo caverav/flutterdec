@@ -5,11 +5,12 @@
 1. Loader: input APK/ELF normalization into `BinaryImage`
 2. Snapshot locator: symbol-based lookup + stripped fallback scan
 3. Dart VM adapter: version/hash detection and adapter JSON ingestion
-4. Disassembly: ARM64 function decoding and ABI-aware annotation
-5. IR: LLIR + CFG build
-6. Decompiler: structuring + expression folding + pseudo-Dart emission
-7. Naming: deterministic heuristic pass + optional user map override
-8. Export: report JSON, IDA Python, Ghidra JSON
+4. Heuristic fallback: recover functions/object-pool strings from executable/data segments when adapter is unavailable
+5. Disassembly: ARM64 function decoding and ABI-aware annotation
+6. IR: LLIR + CFG build
+7. Decompiler: structuring + expression folding + pseudo-Dart emission
+8. Naming: deterministic heuristic pass + optional user map override
+9. Export: report JSON, IDA Python, Ghidra JSON
 
 ## Module boundaries
 
