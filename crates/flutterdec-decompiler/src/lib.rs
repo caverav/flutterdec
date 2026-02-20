@@ -513,7 +513,7 @@ impl<'a> FuncEmitter<'a> {
             } else if stats.arith_ops >= 2 && stats.field_access == 0 {
                 format!("value{idx}")
             } else {
-                arg.clone()
+                format!("param{idx}")
             };
             let name = Self::unique_name(&base, &mut used);
             if name != *arg {
