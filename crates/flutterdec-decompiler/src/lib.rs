@@ -541,12 +541,14 @@ impl<'a> FuncEmitter<'a> {
                         let next_trim = self.lines[i + 1].trim();
                         if Self::while_var(next_trim).as_deref() == Some(var.as_str()) {
                             if let Some(loop_end) = Self::find_block_end(&self.lines, i + 1) {
-                                let has_retry_true = (i + 2..loop_end)
-                                    .any(|idx| self.lines[idx].trim() == format!("{var} = true;"));
-                                if !has_retry_true {
+                                let has_continue = (i + 2..loop_end)
+                                    .any(|idx| self.lines[idx].trim() == "continue;");
+                                if !has_continue {
                                     for idx in i + 2..loop_end {
                                         let t = self.lines[idx].trim();
-                                        if t == format!("{var} = false;") {
+                                        if t == format!("{var} = false;")
+                                            || t == format!("{var} = true;")
+                                        {
                                             continue;
                                         }
                                         out.push(Self::dedent_once(&self.lines[idx]));
@@ -620,25 +622,16 @@ impl<'a> FuncEmitter<'a> {
 
                             out.push(format!("{}bool {} = true;", " ".repeat(indent), retry_var));
                             out.push(format!("{}while ({}) {{", " ".repeat(indent), retry_var));
-                            out.push(format!("{}{} = false;", " ".repeat(indent + 2), retry_var));
+                            out.push(format!("{}{} = true;", " ".repeat(indent + 2), retry_var));
 
                             for idx in i + 1..j {
                                 if Some(idx) == last_non_empty && self.lines[idx].trim() == "break;"
                                 {
                                     continue;
                                 }
-                                if self.lines[idx].trim() == "continue;" {
-                                    let c_indent = Self::leading_indent(&self.lines[idx]);
-                                    out.push(format!(
-                                        "{}{} = true;",
-                                        " ".repeat(c_indent),
-                                        retry_var
-                                    ));
-                                    out.push(self.lines[idx].clone());
-                                    continue;
-                                }
                                 out.push(self.lines[idx].clone());
                             }
+                            out.push(format!("{}{} = false;", " ".repeat(indent + 2), retry_var));
 
                             out.push(self.lines[j].clone());
                             i = j + 1;
