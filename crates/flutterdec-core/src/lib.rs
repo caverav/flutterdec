@@ -51,6 +51,10 @@ pub struct QualityReport {
     pub placeholder_ifs: usize,
     pub unresolved_cf: usize,
     pub raw_register_calls: usize,
+    pub block_helper_refs: usize,
+    pub raw_arg_name_refs: usize,
+    pub raw_register_name_refs: usize,
+    pub placeholder_cond_markers: usize,
 }
 
 fn normalize_file_name(name: &str) -> String {
@@ -63,6 +67,42 @@ fn normalize_file_name(name: &str) -> String {
         }
     }
     out
+}
+
+fn is_ident_char(c: char) -> bool {
+    c.is_ascii_alphanumeric() || c == '_'
+}
+
+fn count_ident_token(hay: &str, token: &str) -> usize {
+    if token.is_empty() {
+        return 0;
+    }
+
+    let mut count = 0usize;
+    let bytes = hay.as_bytes();
+    let mut i = 0usize;
+    while i + token.len() <= hay.len() {
+        if hay[i..].starts_with(token) {
+            let prev_ok = if i == 0 {
+                true
+            } else {
+                !is_ident_char(bytes[i - 1] as char)
+            };
+            let next_i = i + token.len();
+            let next_ok = if next_i >= hay.len() {
+                true
+            } else {
+                !is_ident_char(bytes[next_i] as char)
+            };
+            if prev_ok && next_ok {
+                count += 1;
+                i = next_i;
+                continue;
+            }
+        }
+        i += 1;
+    }
+    count
 }
 
 fn load_model(repo_root: &Path, bundle: &SnapshotBundle) -> Result<ProgramModel> {
@@ -94,6 +134,10 @@ fn quality_from_artifacts(
     let mut placeholder_ifs = 0usize;
     let mut unresolved_cf = 0usize;
     let mut raw_register_calls = 0usize;
+    let mut block_helper_refs = 0usize;
+    let mut raw_arg_name_refs = 0usize;
+    let mut raw_register_name_refs = 0usize;
+    let mut placeholder_cond_markers = 0usize;
 
     for p in pseudo {
         total_calls += p.total_calls;
@@ -101,6 +145,14 @@ fn quality_from_artifacts(
         placeholder_ifs += p.placeholder_ifs;
         unresolved_cf += p.unresolved_cf;
         raw_register_calls += p.raw_register_calls;
+        block_helper_refs += p.source.matches("_block_").count();
+        placeholder_cond_markers += p.source.matches("/* cond */").count();
+        for n in 0..=7 {
+            raw_arg_name_refs += count_ident_token(&p.source, &format!("arg{n}"));
+        }
+        for n in 0..=30 {
+            raw_register_name_refs += count_ident_token(&p.source, &format!("x{n}"));
+        }
     }
 
     let disassembly_ratio = if function_count == 0 {
@@ -141,6 +193,10 @@ fn quality_from_artifacts(
         placeholder_ifs,
         unresolved_cf,
         raw_register_calls,
+        block_helper_refs,
+        raw_arg_name_refs,
+        raw_register_name_refs,
+        placeholder_cond_markers,
     }
 }
 
