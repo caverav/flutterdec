@@ -570,7 +570,7 @@ impl<'a> FuncEmitter<'a> {
             if let Some(cmp) = &self.state.last_cmp {
                 return cond_from_cmp(mnemonic, cmp);
             }
-            return None;
+            return Some(format!("flags.{}", mnemonic.replace('.', "_")));
         }
 
         if mnemonic == "cbz" && !ops.is_empty() {
