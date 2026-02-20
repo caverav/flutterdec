@@ -395,7 +395,7 @@ The decompiler has two layers:
 
 2. post processing passes:
 - helper inlining and helper collapse
-- loop back-edge summarization
+- loop header wrapping into preliminary `while (true)` scaffolds
 - arithmetic simplification
 - naming and type hinting
 - compacting empty or redundant control flow patterns
@@ -430,6 +430,9 @@ Recent readability features include:
   - `((sp - 0x20) + 0x10)` to `(sp - 0x10)`
 - empty branch folding:
   - `if (cond) { } else { body }` to `if (!(cond)) { body }`
+- early loop structuring:
+  - detect loop headers from backward CFG edges
+  - emit `while (true)` with `continue` for back-edge paths
 
 Fallback policy for complex unresolved regions:
 
@@ -481,7 +484,7 @@ Default strict profile comes from CLI defaults in `DecompileCmd`.
 Interpretation guidance:
 
 - high `omitted_path_markers` usually means structuring depth limits were hit
-- high `loop_backedge_markers` means loop recovery still needs work
+- high `loop_backedge_markers` means loop recovery still needs work for unstructured cases
 - high `raw_register_name_refs` means naming pass regressed
 
 ## Output layout
