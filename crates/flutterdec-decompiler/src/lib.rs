@@ -670,13 +670,13 @@ impl<'a> FuncEmitter<'a> {
             .iter()
             .filter(|l| !l.trim().is_empty())
             .collect();
-        if non_empty.is_empty() || non_empty.len() > 14 {
+        if non_empty.is_empty() || non_empty.len() > 28 {
             return None;
         }
 
         for line in &non_empty {
             let t = line.trim();
-            if t.contains("/* cond */") || t.contains("_block_") {
+            if t.contains("_block_") {
                 return None;
             }
         }
@@ -697,61 +697,74 @@ impl<'a> FuncEmitter<'a> {
         // Single top-level if/else helper:
         // if (...) { ... } else { ... }
         let trimmed: Vec<&str> = non_empty.iter().map(|l| l.trim()).collect();
-        if !trimmed
+        if trimmed
             .first()
             .is_some_and(|l| l.starts_with("if (") && l.ends_with('{'))
         {
-            return None;
+            let mut depth = 0i32;
+            let mut if_end = None;
+            for (idx, line) in trimmed.iter().enumerate() {
+                depth += line.chars().filter(|&c| c == '{').count() as i32;
+                depth -= line.chars().filter(|&c| c == '}').count() as i32;
+                if depth == 0 {
+                    if_end = Some(idx);
+                    break;
+                }
+            }
+            if let Some(if_end) = if_end {
+                if if_end + 1 < trimmed.len() && trimmed[if_end + 1].starts_with("else {") {
+                    depth = 0;
+                    let mut else_end = None;
+                    for (idx, line) in trimmed.iter().enumerate().skip(if_end + 1) {
+                        depth += line.chars().filter(|&c| c == '{').count() as i32;
+                        depth -= line.chars().filter(|&c| c == '}').count() as i32;
+                        if depth == 0 {
+                            else_end = Some(idx);
+                            break;
+                        }
+                    }
+                    if let Some(else_end) = else_end {
+                        if else_end == trimmed.len() - 1 {
+                            let has_return_if = trimmed
+                                .iter()
+                                .take(if_end)
+                                .skip(1)
+                                .any(|l| l.starts_with("return ") && l.ends_with(';'));
+                            let has_return_else = trimmed
+                                .iter()
+                                .take(else_end)
+                                .skip(if_end + 2)
+                                .any(|l| l.starts_with("return ") && l.ends_with(';'));
+
+                            return Some(InlineHelperPlan {
+                                lines: meta.body_lines.clone(),
+                                append_null_return: !(has_return_if && has_return_else),
+                            });
+                        }
+                    }
+                }
+            }
         }
 
+        // Fallback: inline small mixed helpers (setup + branch) without nested _block calls.
         let mut depth = 0i32;
-        let mut if_end = None;
-        for (idx, line) in trimmed.iter().enumerate() {
+        let mut balanced = true;
+        for line in &trimmed {
             depth += line.chars().filter(|&c| c == '{').count() as i32;
             depth -= line.chars().filter(|&c| c == '}').count() as i32;
-            if depth == 0 {
-                if_end = Some(idx);
+            if depth < 0 {
+                balanced = false;
                 break;
             }
         }
-        let if_end = if_end?;
-        if if_end + 1 >= trimmed.len() {
-            return None;
-        }
-        if !trimmed[if_end + 1].starts_with("else {") {
-            return None;
-        }
-
-        depth = 0;
-        let mut else_end = None;
-        for (idx, line) in trimmed.iter().enumerate().skip(if_end + 1) {
-            depth += line.chars().filter(|&c| c == '{').count() as i32;
-            depth -= line.chars().filter(|&c| c == '}').count() as i32;
-            if depth == 0 {
-                else_end = Some(idx);
-                break;
-            }
-        }
-        let else_end = else_end?;
-        if else_end != trimmed.len() - 1 {
-            return None;
+        if balanced && depth == 0 {
+            return Some(InlineHelperPlan {
+                lines: meta.body_lines.clone(),
+                append_null_return: true,
+            });
         }
 
-        let has_return_if = trimmed
-            .iter()
-            .take(if_end)
-            .skip(1)
-            .any(|l| l.starts_with("return ") && l.ends_with(';'));
-        let has_return_else = trimmed
-            .iter()
-            .take(else_end)
-            .skip(if_end + 2)
-            .any(|l| l.starts_with("return ") && l.ends_with(';'));
-
-        Some(InlineHelperPlan {
-            lines: meta.body_lines.clone(),
-            append_null_return: !(has_return_if && has_return_else),
-        })
+        None
     }
 
     fn inline_helper_calls(&mut self, helper_id: usize, plan: &InlineHelperPlan) {
@@ -1323,7 +1336,10 @@ mod tests {
 
         emitter.inline_trivial_helpers();
         let out = emitter.lines.join("\n");
-        assert!(!out.contains("return _block_9();"), "call should be inlined:\n{out}");
+        assert!(
+            !out.contains("return _block_9();"),
+            "call should be inlined:\n{out}"
+        );
         assert!(
             !out.contains("dynamic _block_9()"),
             "unused helper should be removed:\n{out}"
