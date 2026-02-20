@@ -118,6 +118,133 @@ fn parse_int(token: &str) -> Option<i64> {
     t.parse::<i64>().ok()
 }
 
+fn parse_expr_int(expr: &str) -> Option<i64> {
+    let t = expr.trim();
+    if t.is_empty() {
+        return None;
+    }
+    if let Some(inner) = t.strip_prefix('(').and_then(|s| s.strip_suffix(')')) {
+        return parse_expr_int(inner);
+    }
+    parse_int(t)
+}
+
+fn fmt_int(v: i64) -> String {
+    if v < 0 {
+        let mag = -v;
+        if mag >= 10 {
+            format!("-0x{mag:x}")
+        } else {
+            format!("-{mag}")
+        }
+    } else if v >= 10 {
+        format!("0x{v:x}")
+    } else {
+        v.to_string()
+    }
+}
+
+fn parse_base_offset_expr(expr: &str) -> Option<(String, i64)> {
+    let mut t = expr.trim();
+    if t.is_empty() {
+        return None;
+    }
+    if let Some(inner) = t.strip_prefix('(').and_then(|s| s.strip_suffix(')')) {
+        t = inner.trim();
+    }
+
+    let bytes = t.as_bytes();
+    let mut depth = 0i32;
+    let mut op_idx = None;
+    let mut op_ch = '+';
+    let mut i = 0usize;
+    while i + 2 < bytes.len() {
+        let c = bytes[i] as char;
+        if c == '(' {
+            depth += 1;
+        } else if c == ')' {
+            depth -= 1;
+        } else if depth == 0
+            && bytes[i] == b' '
+            && (bytes[i + 1] == b'+' || bytes[i + 1] == b'-')
+            && bytes[i + 2] == b' '
+        {
+            op_idx = Some(i);
+            op_ch = bytes[i + 1] as char;
+            break;
+        }
+        i += 1;
+    }
+
+    let idx = op_idx?;
+    let lhs = t[..idx].trim();
+    let rhs = t[idx + 3..].trim();
+    if lhs.is_empty() {
+        return None;
+    }
+    let off = parse_expr_int(rhs)?;
+    let signed_off = if op_ch == '-' { -off } else { off };
+    Some((lhs.to_string(), signed_off))
+}
+
+fn simplify_bin_expr(lhs: String, op: &str, rhs: String) -> String {
+    let lt = lhs.trim();
+    let rt = rhs.trim();
+    let l_int = parse_expr_int(lt);
+    let r_int = parse_expr_int(rt);
+
+    match op {
+        "+" => {
+            if lt == "null" && r_int.is_some() {
+                return fmt_int(r_int.unwrap());
+            }
+            if rt == "null" && l_int.is_some() {
+                return fmt_int(l_int.unwrap());
+            }
+            if l_int == Some(0) {
+                return rt.to_string();
+            }
+            if r_int == Some(0) {
+                return lt.to_string();
+            }
+            if let (Some(a), Some(b)) = (l_int, r_int) {
+                return fmt_int(a + b);
+            }
+            if let (Some((base, off)), Some(delta)) = (parse_base_offset_expr(lt), r_int) {
+                let sum = off + delta;
+                if sum == 0 {
+                    return base;
+                }
+                if sum > 0 {
+                    return format!("({base} + {})", fmt_int(sum));
+                }
+                return format!("({base} - {})", fmt_int(-sum));
+            }
+        }
+        "-" => {
+            if r_int == Some(0) {
+                return lt.to_string();
+            }
+            if let (Some(a), Some(b)) = (l_int, r_int) {
+                return fmt_int(a - b);
+            }
+            if let (Some((base, off)), Some(delta)) = (parse_base_offset_expr(lt), r_int) {
+                let sum = off - delta;
+                if sum == 0 {
+                    return base;
+                }
+                if sum > 0 {
+                    return format!("({base} + {})", fmt_int(sum));
+                }
+                return format!("({base} - {})", fmt_int(-sum));
+            }
+        }
+        _ => {}
+    }
+
+    format!("({lt} {op} {rt})")
+}
+
 fn split_operands(s: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut cur = String::new();
@@ -770,9 +897,12 @@ impl<'a> FuncEmitter<'a> {
                         "eor" => "^",
                         _ => "?",
                     };
-                    self.state
-                        .reg_values
-                        .insert(dst, format!("({} {} {})", lhs, op, rhs));
+                    let expr = if mnemonic == "add" || mnemonic == "sub" {
+                        simplify_bin_expr(lhs, op, rhs)
+                    } else {
+                        format!("({} {} {})", lhs, op, rhs)
+                    };
+                    self.state.reg_values.insert(dst, expr);
                 }
             }
             "lsl" | "lsr" | "asr" if ops.len() >= 3 => {
@@ -2229,6 +2359,106 @@ mod tests {
             out.matches("return null;").count(),
             2,
             "each omitted callsite should become return null:\n{out}"
+        );
+    }
+
+    #[test]
+    fn simplifies_null_base_add_immediate() {
+        let ir = FunctionIr {
+            function_id: 17,
+            name: "nullAdd".to_string(),
+            entry_va: 0xf200,
+            blocks: vec![BasicBlock {
+                id: 0,
+                start_va: 0xf200,
+                instrs: vec![
+                    LlirInstr {
+                        va: 0xf200,
+                        op: IROp::Other,
+                        src: "add x1, x22, #0x20".to_string(),
+                        target: String::new(),
+                    },
+                    LlirInstr {
+                        va: 0xf204,
+                        op: IROp::Other,
+                        src: "stur x1, [x29, #-8]".to_string(),
+                        target: String::new(),
+                    },
+                    LlirInstr {
+                        va: 0xf208,
+                        op: IROp::Return,
+                        src: "ret".to_string(),
+                        target: String::new(),
+                    },
+                ],
+                succs: Vec::new(),
+                preds: Vec::new(),
+            }],
+        };
+
+        let artifact = emit_pseudocode(&ir, &HashMap::new());
+        assert!(
+            artifact.source.contains("= 0x20;"),
+            "null-based add should collapse to literal:\n{}",
+            artifact.source
+        );
+        assert!(
+            !artifact.source.contains("(null + 0x20)"),
+            "legacy null arithmetic should be removed:\n{}",
+            artifact.source
+        );
+    }
+
+    #[test]
+    fn folds_nested_stack_offset_arithmetic() {
+        let ir = FunctionIr {
+            function_id: 18,
+            name: "stackOffsetFold".to_string(),
+            entry_va: 0xf300,
+            blocks: vec![BasicBlock {
+                id: 0,
+                start_va: 0xf300,
+                instrs: vec![
+                    LlirInstr {
+                        va: 0xf300,
+                        op: IROp::Other,
+                        src: "sub x1, x15, #0x20".to_string(),
+                        target: String::new(),
+                    },
+                    LlirInstr {
+                        va: 0xf304,
+                        op: IROp::Other,
+                        src: "add x2, x1, #0x10".to_string(),
+                        target: String::new(),
+                    },
+                    LlirInstr {
+                        va: 0xf308,
+                        op: IROp::Other,
+                        src: "stur x2, [x29, #-8]".to_string(),
+                        target: String::new(),
+                    },
+                    LlirInstr {
+                        va: 0xf30c,
+                        op: IROp::Return,
+                        src: "ret".to_string(),
+                        target: String::new(),
+                    },
+                ],
+                succs: Vec::new(),
+                preds: Vec::new(),
+            }],
+        };
+
+        let artifact = emit_pseudocode(&ir, &HashMap::new());
+        assert!(
+            artifact.source.contains("(sp - 0x10)"),
+            "stack-offset expression should fold:\n{}",
+            artifact.source
+        );
+        assert!(
+            !artifact.source.contains("((sp - 0x20) + 0x10)"),
+            "unfolded nested arithmetic should not remain:\n{}",
+            artifact.source
         );
     }
 }
