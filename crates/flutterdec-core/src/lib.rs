@@ -149,7 +149,7 @@ fn quality_from_artifacts(
         raw_register_calls += p.raw_register_calls;
         block_helper_refs += p.source.matches("_block_").count();
         placeholder_cond_markers += p.source.matches("/* cond */").count();
-        omitted_path_markers += p.source.matches("omitted complex path: block ").count();
+        omitted_path_markers += p.source.matches("omitted complex path").count();
         for n in 0..=7 {
             raw_arg_name_refs += count_ident_token(&p.source, &format!("arg{n}"));
         }
