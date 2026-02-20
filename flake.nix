@@ -53,10 +53,28 @@
               exec "${self}/scripts/real-golden.sh" "$@"
             '';
           };
+          realGoldenMatrix = pkgs.writeShellApplication {
+            name = "real-golden-matrix";
+            runtimeInputs = with pkgs; [
+              bash
+              coreutils
+              diffutils
+              gnused
+              findutils
+              nix
+            ];
+            text = ''
+              exec "${self}/scripts/real-golden-matrix.sh" "$@"
+            '';
+          };
         in {
           real-golden = {
             type = "app";
             program = "${realGolden}/bin/real-golden";
+          };
+          real-golden-matrix = {
+            type = "app";
+            program = "${realGoldenMatrix}/bin/real-golden-matrix";
           };
           default = {
             type = "app";
