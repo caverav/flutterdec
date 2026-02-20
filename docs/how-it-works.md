@@ -642,6 +642,7 @@ Current project testing style:
 - focused unit tests in each crate
 - many behavior tests in `flutterdec-decompiler`
 - golden snapshot tests in `crates/flutterdec-decompiler/testdata/golden/` for readability-sensitive output
+- optional real-binary golden checks via `scripts/real-golden.sh` with baselines in `testdata/real-golden/`
 - regular real-binary smoke validation for output quality
 
 Recommended loop when changing internals:
@@ -656,6 +657,12 @@ When readability output changes intentionally, refresh golden snapshots:
 
 ```bash
 FLUTTERDEC_UPDATE_GOLDEN=1 cargo test -p flutterdec-decompiler golden_
+```
+
+For end-to-end real-binary checks against a recorded baseline:
+
+```bash
+scripts/real-golden.sh check --input /path/to/sample.apk --baseline testdata/real-golden/profiles/sample --max-functions 120 --min-disassembly-ratio 0.0
 ```
 
 ## Known limits

@@ -99,6 +99,22 @@ flutterdec adapter install --dart-hash 4b8f1f
 flutterdec adapter list
 ```
 
+## Real Golden Checks (Optional)
+
+For end-to-end readability regression checks on a real binary, use:
+
+```bash
+scripts/real-golden.sh record --input /path/to/sample.apk --baseline testdata/real-golden/profiles/sample --max-functions 120 --min-disassembly-ratio 0.0
+scripts/real-golden.sh check  --input /path/to/sample.apk --baseline testdata/real-golden/profiles/sample --max-functions 120 --min-disassembly-ratio 0.0
+```
+
+If this is the first baseline record, provide tracked files via `FLUTTERDEC_REAL_GOLDEN_FILES`:
+
+```bash
+FLUTTERDEC_REAL_GOLDEN_FILES='pseudocode/00080_sub_65f850.dartpseudo,pseudocode/00081_sub_65f9ac.dartpseudo' \
+  scripts/real-golden.sh record --input /path/to/sample.apk --baseline testdata/real-golden/profiles/sample --max-functions 120 --min-disassembly-ratio 0.0
+```
+
 ## Ethics
 
 Use only on binaries you are legally allowed to analyze. This project is for security research and interoperability study.

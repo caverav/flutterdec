@@ -134,6 +134,7 @@ Python remains useful at the adapter boundary for faster version specific parser
 - use `nix develop` for a reproducible toolchain
 - run `cargo test` before and after changes
 - refresh decompiler golden snapshots with `FLUTTERDEC_UPDATE_GOLDEN=1 cargo test -p flutterdec-decompiler golden_` when output changes intentionally
+- for end-to-end real binary regression checks, use `scripts/real-golden.sh record|check` with baselines under `testdata/real-golden/`
 - test against real Flutter binaries, not only synthetic fixtures
 - prioritize output readability improvements that are backed by concrete sample evidence
 
