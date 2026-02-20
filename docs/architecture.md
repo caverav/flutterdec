@@ -2,24 +2,19 @@
 
 ## Pipeline
 
-1. Loader: input APK/ELF normalization into `BinaryImage`
-2. Snapshot locator: symbol-based lookup + stripped fallback scan
-3. Dart VM adapter: version/hash detection and adapter JSON ingestion
-4. Heuristic fallback (experimental mode only): recover functions/object-pool strings from executable/data segments when adapter is unavailable
-5. Disassembly: ARM64 function decoding and ABI-aware annotation
-6. IR: LLIR + CFG build
-7. Decompiler: structuring + expression folding + pseudo-Dart emission
-8. Naming: deterministic heuristic pass + optional user map override
-9. Export: report JSON, IDA Python, Ghidra JSON
+1. Loader: normalize APK/ELF and locate snapshot blobs/symbol VAs
+2. Adapter: run hash-specific Python adapter and load model JSON
+3. Disassembly: ARM64 lightweight decode and Dart ABI annotations
+4. IR/CFG: LLIR generation and basic-block graph recovery
+5. Decompiler: structured pseudo-Dart emission
+6. Quality/reporting: strict metrics and artifact generation
 
 ## Module boundaries
 
-- `src/core/loader`: input parsing and memory region resolution
-- `src/core/dartvm`: adapter lifecycle and normalized schema ingestion
-- `src/cli/commands/cmd_decompile.cpp`: strict correctness gate and quality report generation
-- `src/core/model`: stable program/object model
-- `src/core/disasm`: ARM64 decoding and Dart ABI semantics
-- `src/core/ir`: LLIR and CFG representation/building
-- `src/core/decompiler`: structured control flow + pseudo emitter
-- `src/core/naming`: obfuscation-aware display name inference
-- `src/core/export`: downstream artifacts and reverse-engineering exports
+- `crates/flutterdec-loader`: file input and snapshot extraction
+- `crates/flutterdec-adapter`: adapter install/run + model contract
+- `crates/flutterdec-disasm-arm64`: function-level ARM64 decode
+- `crates/flutterdec-ir`: LLIR + CFG build
+- `crates/flutterdec-decompiler`: pseudocode and quality counters
+- `crates/flutterdec-core`: orchestration and artifact emission
+- `crates/flutterdec-cli`: command interface
