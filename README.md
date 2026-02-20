@@ -108,6 +108,13 @@ scripts/real-golden.sh record --input /path/to/sample.apk --baseline testdata/re
 scripts/real-golden.sh check  --input /path/to/sample.apk --baseline testdata/real-golden/profiles/sample --max-functions 120 --min-disassembly-ratio 0.0
 ```
 
+Nix app shortcut:
+
+```bash
+nix run .#real-golden -- record --input /path/to/sample.apk --baseline testdata/real-golden/profiles/sample --max-functions 120 --min-disassembly-ratio 0.0
+nix run .#real-golden -- check  --input /path/to/sample.apk --baseline testdata/real-golden/profiles/sample --max-functions 120 --min-disassembly-ratio 0.0
+```
+
 If this is the first baseline record, provide tracked files via `FLUTTERDEC_REAL_GOLDEN_FILES`:
 
 ```bash
