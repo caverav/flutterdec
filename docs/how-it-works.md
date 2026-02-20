@@ -676,3 +676,9 @@ Recommended newcomer route:
 2. run one `info` command and one `decompile` command
 3. inspect one function across asm, ir, and pseudocode outputs
 4. then open the code files in the reading order above
+
+Decompiler source layout:
+
+- `crates/flutterdec-decompiler/src/lib.rs`: core emitter flow and passes
+- `crates/flutterdec-decompiler/src/helpers.rs`: shared parse/normalize/format helpers
+- `crates/flutterdec-decompiler/src/tests.rs`: decompiler regression tests
