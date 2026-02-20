@@ -1183,4 +1183,38 @@ mod tests {
             artifact.source
         );
     }
+
+    #[test]
+    fn inlines_linear_helper_body_at_call_site() {
+        let ir = FunctionIr {
+            function_id: 3,
+            name: "manualInline".to_string(),
+            entry_va: 0x3000,
+            blocks: Vec::new(),
+        };
+        let symbols = HashMap::new();
+        let mut emitter = FuncEmitter::new(&ir, &symbols);
+        emitter.lines = vec![
+            "dynamic manualInline(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {".to_string(),
+            "  return _block_1();".to_string(),
+            "}".to_string(),
+            String::new(),
+            "dynamic _block_1() {".to_string(),
+            "  final t1 = fn_0x1(arg0, arg1, arg2, arg3);".to_string(),
+            "  return t1;".to_string(),
+            "}".to_string(),
+        ];
+
+        emitter.inline_trivial_helpers();
+        let out = emitter.lines.join("\n");
+        assert!(!out.contains("return _block_1();"), "call should be inlined:\n{out}");
+        assert!(
+            !out.contains("dynamic _block_1()"),
+            "unused helper should be removed:\n{out}"
+        );
+        assert!(
+            out.contains("final t1 = fn_0x1(arg0, arg1, arg2, arg3);"),
+            "linear helper body should be inserted:\n{out}"
+        );
+    }
 }
