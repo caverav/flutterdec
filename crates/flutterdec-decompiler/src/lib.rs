@@ -622,7 +622,6 @@ impl<'a> FuncEmitter<'a> {
 
                             out.push(format!("{}bool {} = true;", " ".repeat(indent), retry_var));
                             out.push(format!("{}while ({}) {{", " ".repeat(indent), retry_var));
-                            out.push(format!("{}{} = true;", " ".repeat(indent + 2), retry_var));
 
                             for idx in i + 1..j {
                                 if Some(idx) == last_non_empty && self.lines[idx].trim() == "break;"
@@ -3594,8 +3593,8 @@ mod tests {
             "multi-continue loop should get retry condition:\n{out}"
         );
         assert!(
-            out.contains("retryLoop1 = false;") && out.contains("retryLoop1 = true;"),
-            "retry flag updates should be emitted:\n{out}"
+            out.contains("retryLoop1 = false;"),
+            "retry fall-through update should be emitted:\n{out}"
         );
         assert!(
             !out.contains("while (true) {"),
