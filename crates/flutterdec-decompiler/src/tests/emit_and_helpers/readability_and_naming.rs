@@ -1,0 +1,256 @@
+#[test]
+fn compacts_empty_else_and_duplicate_null_returns() {
+    let ir = FunctionIr {
+        function_id: 6,
+        name: "manualCompact".to_string(),
+        entry_va: 0x6000,
+        blocks: Vec::new(),
+    };
+    let symbols = HashMap::new();
+    let mut emitter = FuncEmitter::new(&ir, &symbols);
+    emitter.lines = vec![
+            "dynamic manualCompact(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {".to_string(),
+            "  if (arg0 == null) {".to_string(),
+            "    return null;".to_string(),
+            "  }".to_string(),
+            "  else {".to_string(),
+            "  }".to_string(),
+            "  return null;".to_string(),
+            "  return null;".to_string(),
+            "}".to_string(),
+        ];
+
+    emitter.compact_lines();
+    let out = emitter.lines.join("\n");
+    assert!(
+        !out.contains("else {\n  }"),
+        "empty else should be removed:\n{out}"
+    );
+    assert!(
+        !out.contains("return null;\n  return null;"),
+        "duplicate null returns should collapse:\n{out}"
+    );
+}
+
+#[test]
+fn emits_flag_predicate_when_cmp_is_missing() {
+    let ir = FunctionIr {
+        function_id: 7,
+        name: "flagFallback".to_string(),
+        entry_va: 0x7000,
+        blocks: vec![
+            BasicBlock {
+                id: 0,
+                start_va: 0x7000,
+                instrs: vec![LlirInstr {
+                    va: 0x7000,
+                    op: IROp::Branch,
+                    src: "b.eq #0x7008".to_string(),
+                    target: "#0x7008".to_string(),
+                }],
+                succs: vec![1, 2],
+                preds: Vec::new(),
+            },
+            BasicBlock {
+                id: 1,
+                start_va: 0x7008,
+                instrs: vec![LlirInstr {
+                    va: 0x7008,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                }],
+                succs: Vec::new(),
+                preds: vec![0],
+            },
+            BasicBlock {
+                id: 2,
+                start_va: 0x7004,
+                instrs: vec![LlirInstr {
+                    va: 0x7004,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                }],
+                succs: Vec::new(),
+                preds: vec![0],
+            },
+        ],
+    };
+    let symbols = HashMap::new();
+    let artifact = emit_pseudocode(&ir, &symbols);
+    assert!(
+        artifact.source.contains("if (flags.b_eq) {"),
+        "missing flag predicate fallback:\n{}",
+        artifact.source
+    );
+    assert!(
+        !artifact.source.contains("/* cond */"),
+        "placeholder cond should not be emitted:\n{}",
+        artifact.source
+    );
+}
+
+#[test]
+fn infers_local_names_and_int_types() {
+    let ir = FunctionIr {
+        function_id: 8,
+        name: "manualHints".to_string(),
+        entry_va: 0x8000,
+        blocks: Vec::new(),
+    };
+    let symbols = HashMap::new();
+    let mut emitter = FuncEmitter::new(&ir, &symbols);
+    emitter.locals.insert(-8, "local_m8".to_string());
+    emitter.locals.insert(-16, "local_m16".to_string());
+    emitter.lines = vec![
+            "dynamic manualHints(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {".to_string(),
+            "  var local_m8;".to_string(),
+            "  var local_m16;".to_string(),
+            "".to_string(),
+            "  local_m8 = (arg2 + 1);".to_string(),
+            "  local_m8 = (local_m8 + 2);".to_string(),
+            "  local_m8 = (local_m8 << 1);".to_string(),
+            "  local_m16 = pool[42];".to_string(),
+            "  if (local_m16.f7 == null) {".to_string(),
+            "    return local_m8;".to_string(),
+            "  }".to_string(),
+            "}".to_string(),
+        ];
+
+    emitter.apply_name_and_type_hints("manualHints");
+    let out = emitter.lines.join("\n");
+    assert!(
+        !out.contains("local_m8"),
+        "stack local should be renamed:\n{out}"
+    );
+    assert!(
+        !out.contains("local_m16"),
+        "stack local should be renamed:\n{out}"
+    );
+    assert!(
+        out.contains("int intTmp"),
+        "arithmetic local should get int type:\n{out}"
+    );
+    assert!(
+        out.contains("dynamic poolVal"),
+        "pool-assigned local should get poolVal naming:\n{out}"
+    );
+}
+
+#[test]
+fn renames_receiver_argument_from_field_usage() {
+    let ir = FunctionIr {
+        function_id: 9,
+        name: "receiverHints".to_string(),
+        entry_va: 0x9000,
+        blocks: Vec::new(),
+    };
+    let symbols = HashMap::new();
+    let mut emitter = FuncEmitter::new(&ir, &symbols);
+    emitter.lines = vec![
+            "dynamic receiverHints(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {".to_string(),
+            "  if (arg0.f7 == null) {".to_string(),
+            "    return arg0;".to_string(),
+            "  }".to_string(),
+            "  return arg0.f11;".to_string(),
+            "}".to_string(),
+        ];
+
+    emitter.apply_name_and_type_hints("receiverHints");
+    let out = emitter.lines.join("\n");
+    assert!(
+        out.contains("dynamic receiver"),
+        "arg0 should be renamed to receiver:\n{out}"
+    );
+    assert!(
+        !out.contains("arg0.f"),
+        "field access should use receiver:\n{out}"
+    );
+}
+
+#[test]
+fn renames_receiver_argument_without_field_usage() {
+    let ir = FunctionIr {
+        function_id: 10,
+        name: "receiverDefault".to_string(),
+        entry_va: 0xa000,
+        blocks: Vec::new(),
+    };
+    let symbols = HashMap::new();
+    let mut emitter = FuncEmitter::new(&ir, &symbols);
+    emitter.lines = vec![
+            "dynamic receiverDefault(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {".to_string(),
+            "  final t1 = fn_0x10(arg0, arg1, arg2, arg3);".to_string(),
+            "  return t1;".to_string(),
+            "}".to_string(),
+        ];
+
+    emitter.apply_name_and_type_hints("receiverDefault");
+    let out = emitter.lines.join("\n");
+    assert!(
+        out.contains("dynamic receiver"),
+        "arg0 should default to receiver:\n{out}"
+    );
+    assert!(!out.contains("arg0"), "arg0 should be replaced:\n{out}");
+    assert!(
+        out.contains("dynamic param1"),
+        "non-inferred args should use param naming:\n{out}"
+    );
+}
+
+#[test]
+fn aliases_raw_register_names_after_hinting() {
+    let ir = FunctionIr {
+        function_id: 11,
+        name: "regAlias".to_string(),
+        entry_va: 0xb000,
+        blocks: Vec::new(),
+    };
+    let symbols = HashMap::new();
+    let mut emitter = FuncEmitter::new(&ir, &symbols);
+    emitter.lines = vec![
+            "dynamic regAlias(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {".to_string(),
+            "  final t1 = invoke(x2, [arg0, arg1, arg2, arg3]);".to_string(),
+            "  final t2 = invoke(x30, [arg0, arg1, arg2, arg3]);".to_string(),
+            "  return t2;".to_string(),
+            "}".to_string(),
+        ];
+
+    emitter.apply_name_and_type_hints("regAlias");
+    let out = emitter.lines.join("\n");
+    assert!(!out.contains("x2"), "x2 should be aliased:\n{out}");
+    assert!(!out.contains("x30"), "x30 should be aliased:\n{out}");
+    assert!(out.contains("reg2"), "reg2 alias missing:\n{out}");
+    assert!(
+        out.contains("returnAddress"),
+        "x30 should map to returnAddress:\n{out}"
+    );
+}
+
+#[test]
+fn aliases_frame_and_return_registers_with_semantic_names() {
+    let ir = FunctionIr {
+        function_id: 21,
+        name: "frameRegs".to_string(),
+        entry_va: 0xf600,
+        blocks: Vec::new(),
+    };
+    let symbols = HashMap::new();
+    let mut emitter = FuncEmitter::new(&ir, &symbols);
+    emitter.lines = vec![
+            "dynamic frameRegs(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {".to_string(),
+            "  final t1 = x29;".to_string(),
+            "  final t2 = x30;".to_string(),
+            "  return t2;".to_string(),
+            "}".to_string(),
+        ];
+
+    emitter.apply_name_and_type_hints("frameRegs");
+    let out = emitter.lines.join("\n");
+    assert!(
+        out.contains("framePointer") && out.contains("returnAddress"),
+        "x29/x30 should use semantic aliases:\n{out}"
+    );
+}
+
