@@ -267,7 +267,7 @@ impl<'a> FuncEmitter<'a> {
         let fn_name = sanitize_name(&self.ir.name);
 
         self.lines.push(format!(
-            "dynamic {}(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3) {{",
+            "dynamic {}(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {{",
             fn_name
         ));
         for name in self.locals.values() {
@@ -301,12 +301,7 @@ impl<'a> FuncEmitter<'a> {
         self.lines.push("}".to_string());
         if !self.omitted_blocks.is_empty() {
             self.lines.push(String::new());
-            for id in &self.omitted_blocks {
-                self.lines.push(format!(
-                    "dynamic _block_{}() {{ /* path omitted */ return null; }}",
-                    id
-                ));
-            }
+            self.append_helper_functions();
         }
         for line in &mut self.lines {
             *line = Self::clean_expr(line.clone());
@@ -562,10 +557,66 @@ impl<'a> FuncEmitter<'a> {
         if self.active_stack.contains(&to) {
             return false;
         }
-        if self.inline_visits.get(&to).copied().unwrap_or(0) >= 6 {
+        if self.inline_visits.get(&to).copied().unwrap_or(0) >= self.visit_limit(to) {
             return false;
         }
         self.block_by_id.contains_key(&to)
+    }
+
+    fn visit_limit(&self, id: usize) -> usize {
+        if let Some(block) = self.block_by_id.get(&id) {
+            let tail = block.instrs.last().map(|i| &i.op);
+            if block.instrs.len() <= 3 && matches!(tail, Some(IROp::Jump | IROp::Return)) {
+                return 24;
+            }
+            if block.preds.len() > 1 {
+                return 12;
+            }
+        }
+        8
+    }
+
+    fn append_helper_functions(&mut self) {
+        let mut generated = BTreeSet::new();
+        let mut queue: Vec<usize> = self.omitted_blocks.iter().copied().collect();
+        let mut queued: HashSet<usize> = queue.iter().copied().collect();
+
+        while let Some(id) = queue.pop() {
+            queued.remove(&id);
+            if !generated.insert(id) {
+                continue;
+            }
+            if generated.len() > 64 {
+                break;
+            }
+
+            let mut helper = FuncEmitter::new(self.ir, self.symbol_names);
+            helper.emit_block(id, 1, 0);
+            let has_terminator = helper.lines.iter().any(|line| {
+                let t = line.trim_start();
+                t.starts_with("return ") || t == "continue;"
+            });
+            let fallback_return = helper
+                .state
+                .reg_values
+                .get("x0")
+                .cloned()
+                .unwrap_or_else(|| "null".to_string());
+
+            self.lines.push(format!("dynamic _block_{}() {{", id));
+            self.lines.extend(helper.lines);
+            if !has_terminator {
+                self.push_line(1, &format!("return {};", fallback_return));
+            }
+            self.lines.push("}".to_string());
+
+            for next in helper.omitted_blocks {
+                if !generated.contains(&next) && !queued.contains(&next) {
+                    queue.push(next);
+                    queued.insert(next);
+                }
+            }
+        }
     }
 
     fn emit_call(&mut self, ins_target: &str, indent: usize) {
@@ -623,7 +674,7 @@ impl<'a> FuncEmitter<'a> {
             self.push_line(indent, &format!("// loop back to block_{}", id));
             return;
         }
-        if self.inline_visits.get(&id).copied().unwrap_or(0) >= 6 {
+        if self.inline_visits.get(&id).copied().unwrap_or(0) >= self.visit_limit(id) {
             self.emit_omitted_path(indent, Some(id));
             return;
         }
