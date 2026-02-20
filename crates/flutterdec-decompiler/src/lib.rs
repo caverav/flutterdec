@@ -51,6 +51,12 @@ struct HelperMeta {
     return_expr: Option<String>,
 }
 
+#[derive(Debug, Clone)]
+struct InlineHelperPlan {
+    lines: Vec<String>,
+    append_null_return: bool,
+}
+
 fn sanitize_name(name: &str) -> String {
     let mut out = String::new();
     for c in name.chars() {
@@ -658,32 +664,97 @@ impl<'a> FuncEmitter<'a> {
         line.chars().take_while(|c| c.is_whitespace()).count()
     }
 
-    fn helper_inline_lines(meta: &HelperMeta) -> Option<Vec<String>> {
+    fn helper_inline_lines(meta: &HelperMeta) -> Option<InlineHelperPlan> {
         let non_empty: Vec<&String> = meta
             .body_lines
             .iter()
             .filter(|l| !l.trim().is_empty())
             .collect();
-        if non_empty.is_empty() || non_empty.len() > 5 {
-            return None;
-        }
-
-        let last = non_empty.last()?.trim();
-        if !last.starts_with("return ") || !last.ends_with(';') {
+        if non_empty.is_empty() || non_empty.len() > 14 {
             return None;
         }
 
         for line in &non_empty {
             let t = line.trim();
-            if t.contains("/* cond */") || t.contains('{') || t.contains('}') {
+            if t.contains("/* cond */") || t.contains("_block_") {
                 return None;
             }
         }
 
-        Some(meta.body_lines.clone())
+        let last = non_empty.last()?.trim();
+        let linear_last_return = last.starts_with("return ") && last.ends_with(';');
+        let linear_no_braces = non_empty.iter().all(|l| {
+            let t = l.trim();
+            !t.contains('{') && !t.contains('}')
+        });
+        if linear_last_return && linear_no_braces {
+            return Some(InlineHelperPlan {
+                lines: meta.body_lines.clone(),
+                append_null_return: false,
+            });
+        }
+
+        // Single top-level if/else helper:
+        // if (...) { ... } else { ... }
+        let trimmed: Vec<&str> = non_empty.iter().map(|l| l.trim()).collect();
+        if !trimmed
+            .first()
+            .is_some_and(|l| l.starts_with("if (") && l.ends_with('{'))
+        {
+            return None;
+        }
+
+        let mut depth = 0i32;
+        let mut if_end = None;
+        for (idx, line) in trimmed.iter().enumerate() {
+            depth += line.chars().filter(|&c| c == '{').count() as i32;
+            depth -= line.chars().filter(|&c| c == '}').count() as i32;
+            if depth == 0 {
+                if_end = Some(idx);
+                break;
+            }
+        }
+        let if_end = if_end?;
+        if if_end + 1 >= trimmed.len() {
+            return None;
+        }
+        if !trimmed[if_end + 1].starts_with("else {") {
+            return None;
+        }
+
+        depth = 0;
+        let mut else_end = None;
+        for (idx, line) in trimmed.iter().enumerate().skip(if_end + 1) {
+            depth += line.chars().filter(|&c| c == '{').count() as i32;
+            depth -= line.chars().filter(|&c| c == '}').count() as i32;
+            if depth == 0 {
+                else_end = Some(idx);
+                break;
+            }
+        }
+        let else_end = else_end?;
+        if else_end != trimmed.len() - 1 {
+            return None;
+        }
+
+        let has_return_if = trimmed
+            .iter()
+            .take(if_end)
+            .skip(1)
+            .any(|l| l.starts_with("return ") && l.ends_with(';'));
+        let has_return_else = trimmed
+            .iter()
+            .take(else_end)
+            .skip(if_end + 2)
+            .any(|l| l.starts_with("return ") && l.ends_with(';'));
+
+        Some(InlineHelperPlan {
+            lines: meta.body_lines.clone(),
+            append_null_return: !(has_return_if && has_return_else),
+        })
     }
 
-    fn inline_helper_calls(&mut self, helper_id: usize, helper_body: &[String]) {
+    fn inline_helper_calls(&mut self, helper_id: usize, plan: &InlineHelperPlan) {
         let call = format!("return _block_{}();", helper_id);
 
         let mut i = 0usize;
@@ -694,7 +765,8 @@ impl<'a> FuncEmitter<'a> {
             }
 
             let call_indent = Self::leading_spaces(&self.lines[i]);
-            let base_indent = helper_body
+            let base_indent = plan
+                .lines
                 .iter()
                 .filter(|l| !l.trim().is_empty())
                 .map(|l| Self::leading_spaces(l))
@@ -702,7 +774,7 @@ impl<'a> FuncEmitter<'a> {
                 .unwrap_or(0);
 
             let mut replacement = Vec::new();
-            for line in helper_body {
+            for line in &plan.lines {
                 if line.trim().is_empty() {
                     continue;
                 }
@@ -714,6 +786,9 @@ impl<'a> FuncEmitter<'a> {
                 ));
             }
             if replacement.is_empty() {
+                replacement.push(format!("{}return null;", " ".repeat(call_indent)));
+            }
+            if plan.append_null_return {
                 replacement.push(format!("{}return null;", " ".repeat(call_indent)));
             }
 
@@ -743,10 +818,10 @@ impl<'a> FuncEmitter<'a> {
 
         let second_pass = Self::scan_helpers(&self.lines);
         for h in &second_pass {
-            let Some(body) = Self::helper_inline_lines(h) else {
+            let Some(plan) = Self::helper_inline_lines(h) else {
                 continue;
             };
-            self.inline_helper_calls(h.id, &body);
+            self.inline_helper_calls(h.id, &plan);
         }
 
         let final_helpers = Self::scan_helpers(&self.lines);
@@ -1207,7 +1282,10 @@ mod tests {
 
         emitter.inline_trivial_helpers();
         let out = emitter.lines.join("\n");
-        assert!(!out.contains("return _block_1();"), "call should be inlined:\n{out}");
+        assert!(
+            !out.contains("return _block_1();"),
+            "call should be inlined:\n{out}"
+        );
         assert!(
             !out.contains("dynamic _block_1()"),
             "unused helper should be removed:\n{out}"
