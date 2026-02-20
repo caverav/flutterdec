@@ -327,6 +327,21 @@ fn normalize_target(target: &str) -> String {
     target.trim_start_matches('#').to_string()
 }
 
+fn named_indirect_target(token: &str) -> String {
+    if let Some(reg) = canonical_reg(token) {
+        if let Some(id) = reg.strip_prefix('x') {
+            if let Ok(n) = id.parse::<usize>() {
+                return match n {
+                    30 => "dispatchTarget".to_string(),
+                    2 => "cachedTarget".to_string(),
+                    _ => format!("indirectTarget{n}"),
+                };
+            }
+        }
+    }
+    token.to_string()
+}
+
 fn local_name(off: i64) -> String {
     if off < 0 {
         format!("local_m{}", -off)
@@ -1450,9 +1465,10 @@ impl<'a> FuncEmitter<'a> {
         if target.starts_with('x') {
             self.indirect_calls += 1;
             self.raw_register_calls += 1;
+            let named_target = named_indirect_target(&target);
             self.push_line(
                 indent,
-                &format!("final {} = dynamicCall({}, [{}]);", tname, target, args),
+                &format!("final {} = dynamicCall({}, [{}]);", tname, named_target, args),
             );
         } else {
             let call_name = if let Some(hex) = target.strip_prefix("0x") {
@@ -2175,8 +2191,8 @@ mod tests {
         let symbols = HashMap::new();
         let artifact = emit_pseudocode(&ir, &symbols);
         assert!(
-            artifact.source.contains("dynamicCall(reg9"),
-            "indirect calls should use dynamicCall:\n{}",
+            artifact.source.contains("dynamicCall(indirectTarget9"),
+            "indirect calls should use named targets:\n{}",
             artifact.source
         );
         assert!(
