@@ -72,6 +72,7 @@ Readability wins over low level fidelity when there is a tradeoff. For example:
 - hoist `else` bodies when the `if` branch terminates, to reduce nested indentation noise
 - remove redundant repeated null-guard checks when the first guard already terminates and the checked variable was not reassigned
 - fold simple nested guard `if` blocks into combined conditions when the outer block contains only the inner guard
+- merge consecutive same-scope `if (...) { continue; }` guards into combined `||` guard conditions
 - rewrite multi-continue `while (true)` loops into explicit retry-flag loops, then collapse one-shot retry wrappers back to straight-line flow
 - surface unknowns explicitly instead of inventing fake certainty
 
