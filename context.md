@@ -75,6 +75,7 @@ The CLI writes `quality.json` and fails the run when strict thresholds are viola
 - indirect call ratio
 - readability regressions such as helper block leakage and raw token leakage
 - omitted path marker count for complex regions that are currently summarized
+- loop back-edge summary marker count for functions that still need loop structuring
 
 This makes progress measurable and keeps regressions visible in automation.
 
