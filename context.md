@@ -41,7 +41,10 @@ Current module layout:
 - `crates/flutterdec-decompiler`: pseudo Dart emission and readability transforms
   - internal split:
     - top-level orchestration in `src/lib.rs`
-    - CFG walk and instruction lifting in `src/control_flow.rs`
+    - CFG flow entry in `src/control_flow.rs`
+    - instruction lifting in `src/control_flow/expression_lift.rs`
+    - CFG edge logic in `src/control_flow/graph.rs`
+    - block and branch emission in `src/control_flow/emit.rs`
     - readability pass pipeline entry in `src/passes.rs`
     - pass internals in `src/passes/compaction.rs`, `src/passes/structural_helpers.rs`, `src/passes/naming.rs`, and `src/passes/expr_cleanup.rs`
     - helper inlining/collapse pipeline in `src/helper_flow.rs`
