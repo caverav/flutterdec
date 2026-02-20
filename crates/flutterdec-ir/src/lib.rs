@@ -38,20 +38,22 @@ pub struct FunctionIr {
 }
 
 fn parse_target_hex(s: &str) -> Option<u64> {
+    let mut last = None;
     for token in s.split(|c: char| c.is_whitespace() || c == ',') {
         let t = token.trim().trim_start_matches('#');
         if let Some(hex) = t.strip_prefix("0x") {
             if let Ok(v) = u64::from_str_radix(hex, 16) {
-                return Some(v);
+                last = Some(v);
+                continue;
             }
         }
         if t.chars().all(|c| c.is_ascii_hexdigit()) && t.len() > 6 {
             if let Ok(v) = u64::from_str_radix(t, 16) {
-                return Some(v);
+                last = Some(v);
             }
         }
     }
-    None
+    last
 }
 
 fn llir_from_disasm(d: &FunctionDisassembly) -> Vec<LlirInstr> {
@@ -265,6 +267,44 @@ mod tests {
                 },
                 AsmInstruction {
                     va: 0x1008,
+                    word: 0,
+                    mnemonic: "ret".to_string(),
+                    op_str: String::new(),
+                    annotation: "return".to_string(),
+                },
+            ],
+        };
+
+        let ir = build_function_ir(&d);
+        assert_eq!(ir.blocks.len(), 3);
+        assert_eq!(ir.blocks[0].succs, vec![1, 2]);
+    }
+
+    #[test]
+    fn parses_tbnz_target_from_last_operand_token() {
+        let d = FunctionDisassembly {
+            function_id: 2,
+            function_name: "g".to_string(),
+            owner_class: "Global".to_string(),
+            entry_va: 0x2000,
+            size: 16,
+            instructions: vec![
+                AsmInstruction {
+                    va: 0x2000,
+                    word: 0,
+                    mnemonic: "tbnz".to_string(),
+                    op_str: "x0, #0x3f, #0x2008".to_string(),
+                    annotation: "branch".to_string(),
+                },
+                AsmInstruction {
+                    va: 0x2004,
+                    word: 0,
+                    mnemonic: "ret".to_string(),
+                    op_str: String::new(),
+                    annotation: "return".to_string(),
+                },
+                AsmInstruction {
+                    va: 0x2008,
                     word: 0,
                     mnemonic: "ret".to_string(),
                     op_str: String::new(),
