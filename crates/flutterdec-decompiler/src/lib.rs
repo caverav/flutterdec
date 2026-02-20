@@ -443,18 +443,13 @@ impl<'a> FuncEmitter<'a> {
         }
 
         let body_lines = self.lines.len().saturating_sub(body_start);
-        if self.emitted.len() < 3 && body_lines <= 8 {
-            let mut extra = 0usize;
+        if body_lines == 0 {
             for b in &self.ir.blocks {
                 if self.emitted.contains(&b.id) {
                     continue;
                 }
-                if extra >= 1 {
-                    break;
-                }
-                self.push_line(1, "// alternative path");
                 self.emit_block(b.id, 1, 0);
-                extra += 1;
+                break;
             }
         }
 
@@ -2458,6 +2453,48 @@ mod tests {
         assert!(
             !artifact.source.contains("((sp - 0x20) + 0x10)"),
             "unfolded nested arithmetic should not remain:\n{}",
+            artifact.source
+        );
+    }
+
+    #[test]
+    fn does_not_inject_alternative_path_comment() {
+        let ir = FunctionIr {
+            function_id: 19,
+            name: "noAlternativePath".to_string(),
+            entry_va: 0xf400,
+            blocks: vec![
+                BasicBlock {
+                    id: 0,
+                    start_va: 0xf400,
+                    instrs: vec![LlirInstr {
+                        va: 0xf400,
+                        op: IROp::Return,
+                        src: "ret".to_string(),
+                        target: String::new(),
+                    }],
+                    succs: Vec::new(),
+                    preds: Vec::new(),
+                },
+                BasicBlock {
+                    id: 1,
+                    start_va: 0xf404,
+                    instrs: vec![LlirInstr {
+                        va: 0xf404,
+                        op: IROp::Return,
+                        src: "ret".to_string(),
+                        target: String::new(),
+                    }],
+                    succs: Vec::new(),
+                    preds: Vec::new(),
+                },
+            ],
+        };
+
+        let artifact = emit_pseudocode(&ir, &HashMap::new());
+        assert!(
+            !artifact.source.contains("alternative path"),
+            "synthetic alternative-path comment should not be emitted:\n{}",
             artifact.source
         );
     }
