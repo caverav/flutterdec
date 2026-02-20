@@ -1867,5 +1867,9 @@ mod tests {
             "arg0 should default to receiver:\n{out}"
         );
         assert!(!out.contains("arg0"), "arg0 should be replaced:\n{out}");
+        assert!(
+            out.contains("dynamic param1"),
+            "non-inferred args should use param naming:\n{out}"
+        );
     }
 }
