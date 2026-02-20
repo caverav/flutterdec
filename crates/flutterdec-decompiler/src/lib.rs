@@ -42,6 +42,14 @@ struct FuncEmitter<'a> {
     indirect_calls: usize,
 }
 
+#[derive(Debug, Clone)]
+struct HelperMeta {
+    id: usize,
+    start: usize,
+    end: usize,
+    return_expr: Option<String>,
+}
+
 fn sanitize_name(name: &str) -> String {
     let mut out = String::new();
     for c in name.chars() {
@@ -302,6 +310,7 @@ impl<'a> FuncEmitter<'a> {
         if !self.omitted_blocks.is_empty() {
             self.lines.push(String::new());
             self.append_helper_functions();
+            self.inline_trivial_helpers();
         }
         for line in &mut self.lines {
             *line = Self::clean_expr(line.clone());
@@ -551,7 +560,7 @@ impl<'a> FuncEmitter<'a> {
     }
 
     fn can_inline(&self, to: usize, depth: usize) -> bool {
-        if depth >= 10 {
+        if depth >= 12 {
             return false;
         }
         if self.active_stack.contains(&to) {
@@ -563,17 +572,129 @@ impl<'a> FuncEmitter<'a> {
         self.block_by_id.contains_key(&to)
     }
 
+    fn parse_helper_header(line: &str) -> Option<usize> {
+        let t = line.trim();
+        if !t.starts_with("dynamic _block_") || !t.ends_with("() {") {
+            return None;
+        }
+        let rest = t.strip_prefix("dynamic _block_")?;
+        let id_s = rest.strip_suffix("() {")?;
+        id_s.parse::<usize>().ok()
+    }
+
+    fn scan_helpers(lines: &[String]) -> Vec<HelperMeta> {
+        let mut out = Vec::new();
+        let mut i = 0usize;
+
+        while i < lines.len() {
+            let Some(id) = Self::parse_helper_header(&lines[i]) else {
+                i += 1;
+                continue;
+            };
+
+            let mut depth = 0i32;
+            let mut j = i;
+            while j < lines.len() {
+                let line = &lines[j];
+                depth += line.chars().filter(|&c| c == '{').count() as i32;
+                depth -= line.chars().filter(|&c| c == '}').count() as i32;
+                if depth == 0 {
+                    break;
+                }
+                j += 1;
+            }
+            if j >= lines.len() {
+                break;
+            }
+
+            let mut statements = Vec::new();
+            for line in &lines[i + 1..j] {
+                let t = line.trim();
+                if t.is_empty() {
+                    continue;
+                }
+                statements.push(t.to_string());
+            }
+            let return_expr = if statements.len() == 1 {
+                let stmt = &statements[0];
+                if stmt.starts_with("return ") && stmt.ends_with(';') {
+                    Some(
+                        stmt.trim_start_matches("return ")
+                            .trim_end_matches(';')
+                            .trim()
+                            .to_string(),
+                    )
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
+            out.push(HelperMeta {
+                id,
+                start: i,
+                end: j,
+                return_expr,
+            });
+            i = j + 1;
+        }
+
+        out
+    }
+
+    fn token_count(lines: &[String], token: &str) -> usize {
+        lines.iter().map(|l| l.matches(token).count()).sum()
+    }
+
+    fn inline_trivial_helpers(&mut self) {
+        let helpers = Self::scan_helpers(&self.lines);
+        if helpers.is_empty() {
+            return;
+        }
+
+        for h in &helpers {
+            let Some(expr) = &h.return_expr else {
+                continue;
+            };
+            let call = format!("return _block_{}();", h.id);
+            let repl = format!("return {};", expr);
+            for line in &mut self.lines {
+                if line.trim() == call {
+                    let indent = line.chars().take_while(|c| c.is_whitespace()).count();
+                    *line = format!("{}{}", " ".repeat(indent), repl);
+                }
+            }
+        }
+
+        let mut remove_ranges = Vec::new();
+        for h in &helpers {
+            if h.return_expr.is_none() {
+                continue;
+            }
+            let token = format!("_block_{}(", h.id);
+            if Self::token_count(&self.lines, &token) <= 1 {
+                remove_ranges.push((h.start, h.end));
+            }
+        }
+
+        remove_ranges.sort_unstable_by(|a, b| b.0.cmp(&a.0));
+        for (start, end) in remove_ranges {
+            self.lines.drain(start..=end);
+        }
+    }
+
     fn visit_limit(&self, id: usize) -> usize {
         if let Some(block) = self.block_by_id.get(&id) {
             let tail = block.instrs.last().map(|i| &i.op);
             if block.instrs.len() <= 3 && matches!(tail, Some(IROp::Jump | IROp::Return)) {
-                return 24;
+                return 48;
             }
             if block.preds.len() > 1 {
-                return 12;
+                return 24;
             }
         }
-        8
+        14
     }
 
     fn append_helper_functions(&mut self) {
@@ -925,4 +1046,5 @@ mod tests {
             assert!(artifact.source.contains("dynamic _block_15() {"));
         }
     }
+
 }
