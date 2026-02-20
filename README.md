@@ -26,6 +26,79 @@ flutterdec adapter install --dart-hash <hash>
 flutterdec adapter list
 ```
 
+## Usage
+
+You can run the CLI either from source:
+
+```bash
+nix develop -c cargo run -p flutterdec-cli -- <command> ...
+```
+
+or as an installed binary:
+
+```bash
+flutterdec <command> ...
+```
+
+### `info`
+
+Arguments:
+
+- `<INPUT>`: path to an APK file or `libapp.so`
+- `--json`: print machine-readable JSON output
+
+Examples:
+
+```bash
+flutterdec info ./sample.apk
+flutterdec info ./libapp.so --json
+```
+
+### `decompile`
+
+Arguments:
+
+- `<INPUT>`: path to an APK file or `libapp.so`
+- `-o, --out <OUT_DIR>`: output directory (required)
+- `--emit-asm`: also write disassembly files
+- `--emit-ir`: also write IR JSON files
+- `--focus <FOCUS>`: decompile functions matching a filter
+- `--max-functions <N>`: limit number of functions to process
+- `--max-placeholder-ifs <N>`: quality gate threshold (default `0`)
+- `--max-unresolved-cf <N>`: quality gate threshold (default `0`)
+- `--max-indirect-call-ratio <R>`: quality gate threshold (default `0.3`)
+- `--min-disassembly-ratio <R>`: quality gate threshold (default `0.8`)
+
+Examples:
+
+```bash
+flutterdec decompile ./sample.apk -o ./out
+flutterdec decompile ./sample.apk -o ./out --emit-asm --emit-ir
+flutterdec decompile ./sample.apk -o ./out --max-functions 120 --min-disassembly-ratio 0.0
+```
+
+Output files:
+
+- `out/pseudocode/*.dartpseudo`
+- `out/asm/*.s` (when `--emit-asm`)
+- `out/ir/*.json` (when `--emit-ir`)
+- `out/quality.json`
+- `out/report.json`
+
+### `adapter`
+
+Arguments:
+
+- `install --dart-hash <DART_HASH>`: install adapter metadata for a Dart hash
+- `list`: list installed adapters
+
+Examples:
+
+```bash
+flutterdec adapter install --dart-hash 4b8f1f
+flutterdec adapter list
+```
+
 ## Ethics
 
 Use only on binaries you are legally allowed to analyze. This project is for security research and interoperability study.
