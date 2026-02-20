@@ -62,7 +62,7 @@ Readability wins over low level fidelity when there is a tradeoff. For example:
 - preserve branch semantics but hide register noise when possible
 - normalize raw tokens into stable placeholders
 - inline helper fragments where practical and collapse remaining helper scaffolding
-- represent very complex unresolved paths as explicit omission comments with safe fallbacks
+- represent very complex unresolved paths as a single summary comment per function plus safe fallbacks
 - surface unknowns explicitly instead of inventing fake certainty
 
 ## Quality gates and metrics
