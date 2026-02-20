@@ -1,7 +1,9 @@
 use anyhow::{Context, Result};
 use clap::{Args, Parser, Subcommand};
 use flutterdec_adapter::install_adapter;
-use flutterdec_core::{available_adapters, run_decompile, run_info, DecompileOptions};
+use flutterdec_core::{
+    available_adapters, run_decompile, run_info, run_symbol_map, DecompileOptions, SymbolMapOptions,
+};
 use std::path::{Path, PathBuf};
 
 #[derive(Parser, Debug)]
@@ -16,6 +18,7 @@ struct Cli {
 enum Command {
     Info(InfoCmd),
     Decompile(DecompileCmd),
+    MapSymbols(MapSymbolsCmd),
     Adapter(AdapterCmd),
 }
 
@@ -47,6 +50,24 @@ struct DecompileCmd {
     max_indirect_call_ratio: f64,
     #[arg(long, default_value_t = 0.80)]
     min_disassembly_ratio: f64,
+}
+
+#[derive(Args, Debug)]
+struct MapSymbolsCmd {
+    #[arg(long = "stripped")]
+    stripped_path: PathBuf,
+    #[arg(long = "unstripped")]
+    unstripped_path: PathBuf,
+    #[arg(short = 'o', long = "out")]
+    out_dir: PathBuf,
+    #[arg(long)]
+    include_branches: bool,
+    #[arg(long, default_value_t = 8192)]
+    nearest_max_distance: u64,
+    #[arg(long)]
+    require_exec_match: bool,
+    #[arg(long)]
+    json: bool,
 }
 
 #[derive(Subcommand, Debug)]
@@ -116,6 +137,43 @@ fn main() -> Result<()> {
             };
             let quality = run_decompile(&repo_root, &cmd.input, &opt)?;
             println!("{}", serde_json::to_string_pretty(&quality)?);
+        }
+        Command::MapSymbols(cmd) => {
+            let opt = SymbolMapOptions {
+                out_dir: cmd.out_dir,
+                include_branches: cmd.include_branches,
+                nearest_max_distance: cmd.nearest_max_distance,
+                require_exec_match: cmd.require_exec_match,
+            };
+            let report = run_symbol_map(&cmd.stripped_path, &cmd.unstripped_path, &opt)?;
+            if cmd.json {
+                println!("{}", serde_json::to_string_pretty(&report)?);
+            } else {
+                println!("stripped: {}", report.stripped_path);
+                println!("unstripped: {}", report.unstripped_path);
+                println!("arch: {}", report.arch);
+                println!(
+                    "exec match: layout={} bytes={}",
+                    report.exec_layout_match, report.exec_bytes_match
+                );
+                println!(
+                    "calls: total={} exact={} nearest={} unresolved={}",
+                    report.total_direct_calls,
+                    report.exact_symbol_hits,
+                    report.nearest_symbol_hits,
+                    report.unresolved_calls
+                );
+                println!("unique targets: {}", report.unique_call_targets);
+                println!("report: {}", report.report_path);
+                println!("targets: {}", report.targets_path);
+                println!("callsites: {}", report.callsites_path);
+                if !report.notes.is_empty() {
+                    println!("notes:");
+                    for n in &report.notes {
+                        println!("  - {}", n);
+                    }
+                }
+            }
         }
         Command::Adapter(adapter_cmd) => match adapter_cmd.subcommand {
             AdapterSubcommand::Install(cmd) => {
