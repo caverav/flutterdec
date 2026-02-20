@@ -69,6 +69,7 @@ Readability wins over low level fidelity when there is a tradeoff. For example:
 - render stack accesses as indexed slots instead of synthetic field names
 - alias key registers to semantic names (for example return address and frame pointer)
 - collapse empty `if { } else { ... }` forms into negated `if` blocks
+- hoist `else` bodies when the `if` branch terminates, to reduce nested indentation noise
 - surface unknowns explicitly instead of inventing fake certainty
 
 ## Quality gates and metrics

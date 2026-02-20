@@ -397,6 +397,7 @@ The decompiler has two layers:
 - helper inlining and helper collapse
 - loop header wrapping into preliminary `while (true)` scaffolds
 - unwrapping synthetic single-iteration `while (true)` wrappers with no `continue`
+- hoisting `else` blocks after terminating `if` branches
 - arithmetic simplification
 - naming and type hinting
 - compacting empty or redundant control flow patterns
@@ -433,6 +434,8 @@ Recent readability features include:
   - `if (cond) { } else { body }` to `if (!(cond)) { body }`
 - identical branch return folding:
   - `if (cond) { return x; } else { return x; }` to `return x;`
+- terminating-branch else hoisting:
+  - `if (cond) { return x; } else { body }` to `if (cond) { return x; } body`
 - early loop structuring:
   - detect loop headers from backward CFG edges
   - emit `while (true)` with `continue` for back-edge paths
