@@ -793,6 +793,10 @@ impl<'a> FuncEmitter<'a> {
             format!("({base})")
         };
 
+        if b == "sp" || b == "stack" {
+            return format!("{b}[{}]", fmt_int(off));
+        }
+
         if off == -1 {
             format!("{b}._tag")
         } else if off >= 0 {
@@ -2511,6 +2515,58 @@ mod tests {
         assert!(
             !artifact.source.contains("alternative path"),
             "synthetic alternative-path comment should not be emitted:\n{}",
+            artifact.source
+        );
+    }
+
+    #[test]
+    fn renders_stack_access_as_indexed_slot() {
+        let ir = FunctionIr {
+            function_id: 20,
+            name: "stackSlots".to_string(),
+            entry_va: 0xf500,
+            blocks: vec![BasicBlock {
+                id: 0,
+                start_va: 0xf500,
+                instrs: vec![
+                    LlirInstr {
+                        va: 0xf500,
+                        op: IROp::Other,
+                        src: "ldr x1, [x15, #8]".to_string(),
+                        target: String::new(),
+                    },
+                    LlirInstr {
+                        va: 0xf504,
+                        op: IROp::Other,
+                        src: "str x1, [x15, #-8]".to_string(),
+                        target: String::new(),
+                    },
+                    LlirInstr {
+                        va: 0xf508,
+                        op: IROp::Return,
+                        src: "ret".to_string(),
+                        target: String::new(),
+                    },
+                ],
+                succs: Vec::new(),
+                preds: Vec::new(),
+            }],
+        };
+
+        let artifact = emit_pseudocode(&ir, &HashMap::new());
+        assert!(
+            artifact.source.contains("sp[8]"),
+            "positive stack slots should use index notation:\n{}",
+            artifact.source
+        );
+        assert!(
+            artifact.source.contains("sp[-8]"),
+            "negative stack slots should use index notation:\n{}",
+            artifact.source
+        );
+        assert!(
+            !artifact.source.contains("sp.f8") && !artifact.source.contains("sp.m8"),
+            "legacy stack field notation should not remain:\n{}",
             artifact.source
         );
     }
