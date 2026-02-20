@@ -516,38 +516,89 @@ impl<'a> FuncEmitter<'a> {
     }
 
     fn compact_lines(&mut self) {
-        let mut out = Vec::new();
-        let mut i = 0usize;
+        for _pass in 0..8 {
+            let mut changed = false;
+            let mut out = Vec::new();
+            let mut i = 0usize;
 
-        while i < self.lines.len() {
-            let cur = &self.lines[i];
-            let cur_trim = cur.trim();
+            while i < self.lines.len() {
+                let cur = &self.lines[i];
+                let cur_trim = cur.trim();
 
-            if cur_trim == "else {" {
-                let mut j = i + 1;
-                while j < self.lines.len() && self.lines[j].trim().is_empty() {
-                    j += 1;
+                if cur_trim.starts_with("if (") && cur_trim.ends_with(") {") {
+                    let mut j = i + 1;
+                    while j < self.lines.len() && self.lines[j].trim().is_empty() {
+                        j += 1;
+                    }
+                    if j < self.lines.len() && self.lines[j].trim() == "}" {
+                        let mut k = j + 1;
+                        while k < self.lines.len() && self.lines[k].trim().is_empty() {
+                            k += 1;
+                        }
+                        if k < self.lines.len() && self.lines[k].trim() == "else {" {
+                            let mut depth = 0i32;
+                            let mut m = None;
+                            for idx in k..self.lines.len() {
+                                let line = &self.lines[idx];
+                                depth += line.chars().filter(|&c| c == '{').count() as i32;
+                                depth -= line.chars().filter(|&c| c == '}').count() as i32;
+                                if depth == 0 {
+                                    m = Some(idx);
+                                    break;
+                                }
+                            }
+                            if let Some(m) = m {
+                                if let Some(cond) = cur_trim
+                                    .strip_prefix("if (")
+                                    .and_then(|s| s.strip_suffix(") {"))
+                                {
+                                    let indent =
+                                        cur.chars().take_while(|c| c.is_whitespace()).count();
+                                    out.push(format!("{}if (!({})) {{", " ".repeat(indent), cond));
+                                    for line in &self.lines[k + 1..m] {
+                                        out.push(line.clone());
+                                    }
+                                    out.push(self.lines[m].clone());
+                                    i = m + 1;
+                                    changed = true;
+                                    continue;
+                                }
+                            }
+                        }
+                    }
                 }
-                if j < self.lines.len() && self.lines[j].trim() == "}" {
-                    i = j + 1;
+
+                if cur_trim == "else {" {
+                    let mut j = i + 1;
+                    while j < self.lines.len() && self.lines[j].trim().is_empty() {
+                        j += 1;
+                    }
+                    if j < self.lines.len() && self.lines[j].trim() == "}" {
+                        i = j + 1;
+                        changed = true;
+                        continue;
+                    }
+                }
+
+                if cur_trim == "return null;"
+                    && out
+                        .last()
+                        .is_some_and(|p: &String| p.trim() == "return null;")
+                {
+                    i += 1;
+                    changed = true;
                     continue;
                 }
-            }
 
-            if cur_trim == "return null;"
-                && out
-                    .last()
-                    .is_some_and(|p: &String| p.trim() == "return null;")
-            {
+                out.push(cur.clone());
                 i += 1;
-                continue;
             }
 
-            out.push(cur.clone());
-            i += 1;
+            self.lines = out;
+            if !changed {
+                break;
+            }
         }
-
-        self.lines = out;
     }
 
     fn is_ident_char(c: char) -> bool {
@@ -2605,6 +2656,38 @@ mod tests {
             !artifact.source.contains("sp.f8") && !artifact.source.contains("sp.m8"),
             "legacy stack field notation should not remain:\n{}",
             artifact.source
+        );
+    }
+
+    #[test]
+    fn rewrites_empty_then_else_to_negated_if() {
+        let ir = FunctionIr {
+            function_id: 22,
+            name: "emptyThen".to_string(),
+            entry_va: 0xf700,
+            blocks: Vec::new(),
+        };
+        let symbols = HashMap::new();
+        let mut emitter = FuncEmitter::new(&ir, &symbols);
+        emitter.lines = vec![
+            "dynamic emptyThen(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {".to_string(),
+            "  if (arg0 == null) {".to_string(),
+            "  }".to_string(),
+            "  else {".to_string(),
+            "    return arg1;".to_string(),
+            "  }".to_string(),
+            "}".to_string(),
+        ];
+
+        emitter.compact_lines();
+        let out = emitter.lines.join("\n");
+        assert!(
+            out.contains("if (!(arg0 == null)) {"),
+            "empty then/else should be rewritten:\n{out}"
+        );
+        assert!(
+            !out.contains("else {"),
+            "else branch should be absorbed:\n{out}"
         );
     }
 }
