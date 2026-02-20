@@ -57,6 +57,15 @@ struct InlineHelperPlan {
     append_null_return: bool,
 }
 
+#[derive(Debug, Default, Clone)]
+struct IdentStats {
+    field_access: usize,
+    arith_ops: usize,
+    pool_assign: usize,
+    null_cmp: usize,
+    call_assign: usize,
+}
+
 fn sanitize_name(name: &str) -> String {
     let mut out = String::new();
     for c in name.chars() {
@@ -323,6 +332,7 @@ impl<'a> FuncEmitter<'a> {
         for line in &mut self.lines {
             *line = Self::clean_expr(line.clone());
         }
+        self.apply_name_and_type_hints(&fn_name);
 
         PseudocodeArtifact {
             function_id: self.ir.function_id,
@@ -382,6 +392,237 @@ impl<'a> FuncEmitter<'a> {
         }
 
         self.lines = out;
+    }
+
+    fn is_ident_char(c: char) -> bool {
+        c.is_ascii_alphanumeric() || c == '_'
+    }
+
+    fn replace_identifier_token(line: &str, from: &str, to: &str) -> String {
+        if from.is_empty() || from == to {
+            return line.to_string();
+        }
+
+        let mut out = String::with_capacity(line.len());
+        let bytes = line.as_bytes();
+        let mut i = 0usize;
+        while i < line.len() {
+            if line[i..].starts_with(from) {
+                let prev_ok = if i == 0 {
+                    true
+                } else {
+                    !Self::is_ident_char(bytes[i - 1] as char)
+                };
+                let next_i = i + from.len();
+                let next_ok = if next_i >= line.len() {
+                    true
+                } else {
+                    !Self::is_ident_char(bytes[next_i] as char)
+                };
+                if prev_ok && next_ok {
+                    out.push_str(to);
+                    i += from.len();
+                    continue;
+                }
+            }
+            out.push(bytes[i] as char);
+            i += 1;
+        }
+        out
+    }
+
+    fn collect_ident_stats(lines: &[String], id: &str) -> IdentStats {
+        let mut s = IdentStats::default();
+        let field_pat = format!("{id}.");
+        let null_eq_1 = format!("{id} == null");
+        let null_eq_2 = format!("null == {id}");
+        let null_ne_1 = format!("{id} != null");
+        let null_ne_2 = format!("null != {id}");
+        let call_assign = format!("{id} = t");
+
+        for line in lines {
+            let t = line.trim();
+            s.field_access += t.matches(&field_pat).count();
+            s.arith_ops += t.matches(&format!("{id} +")).count();
+            s.arith_ops += t.matches(&format!("{id} -")).count();
+            s.arith_ops += t.matches(&format!("{id} <<")).count();
+            s.arith_ops += t.matches(&format!("{id} >>")).count();
+            s.arith_ops += t.matches(&format!("{id} &")).count();
+            s.arith_ops += t.matches(&format!("{id} |")).count();
+            s.arith_ops += t.matches(&format!("{id} ^")).count();
+            s.null_cmp += t.matches(&null_eq_1).count();
+            s.null_cmp += t.matches(&null_eq_2).count();
+            s.null_cmp += t.matches(&null_ne_1).count();
+            s.null_cmp += t.matches(&null_ne_2).count();
+
+            if t.starts_with(&format!("{id} = pool["))
+                || t.contains(&format!("{id} = (pool["))
+                || t.contains(&format!("{id} = ((pool["))
+            {
+                s.pool_assign += 1;
+            }
+            if t.starts_with(&call_assign) {
+                s.call_assign += 1;
+            }
+        }
+        s
+    }
+
+    fn unique_name(base: &str, used: &mut HashSet<String>) -> String {
+        if !used.contains(base) {
+            used.insert(base.to_string());
+            return base.to_string();
+        }
+        let mut i = 2usize;
+        loop {
+            let candidate = format!("{base}{i}");
+            if !used.contains(&candidate) {
+                used.insert(candidate.clone());
+                return candidate;
+            }
+            i += 1;
+        }
+    }
+
+    fn apply_name_and_type_hints(&mut self, fn_name: &str) {
+        if self.lines.is_empty() {
+            return;
+        }
+
+        let arg_ids: Vec<String> = (0..8).map(|i| format!("arg{i}")).collect();
+        let local_ids: Vec<String> = self.locals.values().cloned().collect();
+        let mut used = HashSet::new();
+        used.insert("thread".to_string());
+        used.insert("pool".to_string());
+        used.insert("sp".to_string());
+        used.insert("null".to_string());
+        used.insert("flags".to_string());
+        used.insert("dynamic".to_string());
+
+        let mut renames: HashMap<String, String> = HashMap::new();
+        let mut arg_types: HashMap<String, String> = HashMap::new();
+        let mut local_types: HashMap<String, String> = HashMap::new();
+
+        for arg in &arg_ids {
+            let stats = Self::collect_ident_stats(&self.lines, arg);
+            let idx = arg.trim_start_matches("arg").parse::<usize>().unwrap_or(0);
+            let base = if idx == 0 && stats.field_access >= 1 {
+                "receiver".to_string()
+            } else if stats.field_access >= 4 {
+                format!("obj{idx}")
+            } else if stats.arith_ops >= 4 && stats.field_access == 0 {
+                format!("value{idx}")
+            } else {
+                arg.clone()
+            };
+            let name = Self::unique_name(&base, &mut used);
+            if name != *arg {
+                renames.insert(arg.clone(), name);
+            }
+            let ty = if stats.arith_ops >= 4 && stats.field_access == 0 {
+                "int"
+            } else {
+                "dynamic"
+            };
+            arg_types.insert(arg.clone(), ty.to_string());
+        }
+
+        let mut pool_i = 1usize;
+        let mut obj_i = 1usize;
+        let mut int_i = 1usize;
+        let mut tmp_i = 1usize;
+        for local in &local_ids {
+            let stats = Self::collect_ident_stats(&self.lines, local);
+            let base = if stats.pool_assign > 0 {
+                let n = pool_i;
+                pool_i += 1;
+                format!("poolVal{n}")
+            } else if stats.field_access >= 2 {
+                let n = obj_i;
+                obj_i += 1;
+                format!("objTmp{n}")
+            } else if stats.arith_ops >= 2 && stats.field_access == 0 {
+                let n = int_i;
+                int_i += 1;
+                format!("intTmp{n}")
+            } else if stats.call_assign > 0 {
+                let n = tmp_i;
+                tmp_i += 1;
+                format!("resultTmp{n}")
+            } else {
+                let n = tmp_i;
+                tmp_i += 1;
+                format!("tmp{n}")
+            };
+            let name = Self::unique_name(&base, &mut used);
+            if name != *local {
+                renames.insert(local.clone(), name);
+            }
+            let ty = if stats.arith_ops >= 2 && stats.field_access == 0 {
+                "int"
+            } else {
+                "dynamic"
+            };
+            local_types.insert(local.clone(), ty.to_string());
+        }
+
+        let mut rename_pairs: Vec<(String, String)> = renames.into_iter().collect();
+        rename_pairs.sort_by(|a, b| b.0.len().cmp(&a.0.len()));
+        for line in &mut self.lines {
+            let mut cur = line.clone();
+            for (from, to) in &rename_pairs {
+                cur = Self::replace_identifier_token(&cur, from, to);
+            }
+            *line = cur;
+        }
+
+        let args_sig = arg_ids
+            .iter()
+            .map(|arg| {
+                let name = rename_pairs
+                    .iter()
+                    .find_map(|(from, to)| if from == arg { Some(to.clone()) } else { None })
+                    .unwrap_or_else(|| arg.clone());
+                let ty = arg_types
+                    .get(arg)
+                    .cloned()
+                    .unwrap_or_else(|| "dynamic".to_string());
+                format!("{ty} {name}")
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        self.lines[0] = format!("dynamic {}({}) {{", fn_name, args_sig);
+
+        let mut local_type_by_name: HashMap<String, String> = HashMap::new();
+        for local in &local_ids {
+            let name = rename_pairs
+                .iter()
+                .find_map(|(from, to)| {
+                    if from == local {
+                        Some(to.clone())
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or_else(|| local.clone());
+            let ty = local_types
+                .get(local)
+                .cloned()
+                .unwrap_or_else(|| "dynamic".to_string());
+            local_type_by_name.insert(name, ty);
+        }
+
+        for line in &mut self.lines {
+            let t = line.trim();
+            if let Some(rest) = t.strip_prefix("var ") {
+                if let Some(name) = rest.strip_suffix(';') {
+                    if let Some(ty) = local_type_by_name.get(name.trim()) {
+                        let indent = line.chars().take_while(|c| c.is_whitespace()).count();
+                        *line = format!("{}{} {};", " ".repeat(indent), ty, name.trim());
+                    }
+                }
+            }
+        }
     }
 
     fn field_expr(base: &str, off: i64) -> String {
@@ -1455,7 +1696,10 @@ mod tests {
 
         emitter.compact_lines();
         let out = emitter.lines.join("\n");
-        assert!(!out.contains("else {\n  }"), "empty else should be removed:\n{out}");
+        assert!(
+            !out.contains("else {\n  }"),
+            "empty else should be removed:\n{out}"
+        );
         assert!(
             !out.contains("return null;\n  return null;"),
             "duplicate null returns should collapse:\n{out}"
@@ -1520,4 +1764,5 @@ mod tests {
             artifact.source
         );
     }
+
 }
