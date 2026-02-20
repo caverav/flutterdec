@@ -589,6 +589,54 @@ impl<'a> FuncEmitter<'a> {
                 }
 
                 if cur_trim.starts_with("if (") && cur_trim.ends_with(") {") {
+                    let cond = cur_trim
+                        .strip_prefix("if (")
+                        .and_then(|s| s.strip_suffix(") {"))
+                        .unwrap_or("");
+                    if !cond.contains("flags.") && !cond.contains("/* cond */") {
+                        let mut j = i + 1;
+                        while j < self.lines.len() && self.lines[j].trim().is_empty() {
+                            j += 1;
+                        }
+                        if j < self.lines.len() && self.lines[j].trim().starts_with("return ") {
+                            let then_ret = self.lines[j].trim().to_string();
+                            let mut k = j + 1;
+                            while k < self.lines.len() && self.lines[k].trim().is_empty() {
+                                k += 1;
+                            }
+                            if k < self.lines.len() && self.lines[k].trim() == "}" {
+                                let mut l = k + 1;
+                                while l < self.lines.len() && self.lines[l].trim().is_empty() {
+                                    l += 1;
+                                }
+                                if l < self.lines.len() && self.lines[l].trim() == "else {" {
+                                    let mut m = l + 1;
+                                    while m < self.lines.len() && self.lines[m].trim().is_empty() {
+                                        m += 1;
+                                    }
+                                    if m < self.lines.len() && self.lines[m].trim() == then_ret {
+                                        let mut n = m + 1;
+                                        while n < self.lines.len()
+                                            && self.lines[n].trim().is_empty()
+                                        {
+                                            n += 1;
+                                        }
+                                        if n < self.lines.len() && self.lines[n].trim() == "}" {
+                                            let indent = cur
+                                                .chars()
+                                                .take_while(|c| c.is_whitespace())
+                                                .count();
+                                            out.push(format!("{}{}", " ".repeat(indent), then_ret));
+                                            i = n + 1;
+                                            changed = true;
+                                            continue;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     let mut j = i + 1;
                     while j < self.lines.len() && self.lines[j].trim().is_empty() {
                         j += 1;
@@ -2894,6 +2942,40 @@ mod tests {
         assert!(
             !out.contains("else {"),
             "else branch should be absorbed:\n{out}"
+        );
+    }
+
+    #[test]
+    fn collapses_if_else_with_identical_returns() {
+        let ir = FunctionIr {
+            function_id: 25,
+            name: "sameReturn".to_string(),
+            entry_va: 0xfa00,
+            blocks: Vec::new(),
+        };
+        let symbols = HashMap::new();
+        let mut emitter = FuncEmitter::new(&ir, &symbols);
+        emitter.lines = vec![
+            "dynamic sameReturn(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {".to_string(),
+            "  if (arg0 == null) {".to_string(),
+            "    return arg1;".to_string(),
+            "  }".to_string(),
+            "  else {".to_string(),
+            "    return arg1;".to_string(),
+            "  }".to_string(),
+            "}".to_string(),
+        ];
+
+        emitter.compact_lines();
+        let out = emitter.lines.join("\n");
+        assert!(
+            !out.contains("if (arg0 == null) {"),
+            "identical return branches should collapse:\n{out}"
+        );
+        assert_eq!(
+            out.matches("return arg1;").count(),
+            1,
+            "collapsed output should keep one return:\n{out}"
         );
     }
 
