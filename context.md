@@ -96,7 +96,8 @@ Current scope:
 Known limits:
 
 - no full Dart syntax reconstruction yet
-- some loops are emitted as generic `while (true)` scaffolds and still need condition-aware structuring
+- some structured loops still use generic `while (true)` scaffolds instead of condition-aware `while` or `for` forms
+- synthetic one-shot `while (true)` wrappers are now collapsed after emission when they only contain a trailing `break`
 - difficult loops can still appear as per-function back-edge summary comments
 - very complex control-flow regions can be summarized as omitted-path comments
 - many symbols remain synthetic when metadata is obfuscated
