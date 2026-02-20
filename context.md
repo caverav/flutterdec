@@ -47,6 +47,7 @@ Current module layout:
     - block and branch emission in `src/control_flow/emit.rs`
     - readability pass pipeline entry in `src/passes.rs`
     - pass internals in `src/passes/compaction.rs`, `src/passes/structural_helpers.rs`, `src/passes/naming.rs`, and `src/passes/expr_cleanup.rs`
+    - structural helper details in `src/passes/structural_helpers/block_and_conditions.rs`, `src/passes/structural_helpers/guard_and_flow.rs`, and `src/passes/structural_helpers/naming_support.rs`
     - helper-flow entry in `src/helper_flow.rs`
     - helper parsing in `src/helper_flow/parse.rs`
     - helper inlining and collapse in `src/helper_flow/inlining.rs`

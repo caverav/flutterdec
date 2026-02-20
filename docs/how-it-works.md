@@ -711,7 +711,10 @@ Decompiler source layout:
 - `crates/flutterdec-decompiler/src/control_flow/emit.rs`: call emission and recursive block emission
 - `crates/flutterdec-decompiler/src/passes.rs`: readability pass entrypoint
 - `crates/flutterdec-decompiler/src/passes/compaction.rs`: loop/guard compaction and structural simplification
-- `crates/flutterdec-decompiler/src/passes/structural_helpers.rs`: block parsing and if/return rewrite helpers
+- `crates/flutterdec-decompiler/src/passes/structural_helpers.rs`: structural helper entrypoint
+- `crates/flutterdec-decompiler/src/passes/structural_helpers/block_and_conditions.rs`: block parsing and branch condition helpers
+- `crates/flutterdec-decompiler/src/passes/structural_helpers/guard_and_flow.rs`: guarded-return, null-check, and top-level flow helpers
+- `crates/flutterdec-decompiler/src/passes/structural_helpers/naming_support.rs`: identifier replacement/stats and alias-support helpers
 - `crates/flutterdec-decompiler/src/passes/naming.rs`: variable naming, alias extraction, and type hints
 - `crates/flutterdec-decompiler/src/passes/expr_cleanup.rs`: expression cleanup and comparison rewrites
 - `crates/flutterdec-decompiler/src/helper_flow.rs`: helper-flow entrypoint
