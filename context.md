@@ -47,7 +47,10 @@ Current module layout:
     - block and branch emission in `src/control_flow/emit.rs`
     - readability pass pipeline entry in `src/passes.rs`
     - pass internals in `src/passes/compaction.rs`, `src/passes/structural_helpers.rs`, `src/passes/naming.rs`, and `src/passes/expr_cleanup.rs`
-    - helper inlining/collapse pipeline in `src/helper_flow.rs`
+    - helper-flow entry in `src/helper_flow.rs`
+    - helper parsing in `src/helper_flow/parse.rs`
+    - helper inlining and collapse in `src/helper_flow/inlining.rs`
+    - helper summary and visit-limit logic in `src/helper_flow/summary.rs`
     - shared parse/normalize utilities in `src/helpers.rs`
     - regression test entry in `src/tests.rs`
     - test groups in `src/tests/shared.rs`, `src/tests/emit_and_helpers.rs`, `src/tests/cfg_and_stack.rs`, `src/tests/compaction_and_aliasing.rs`, and `src/tests/golden_and_parser.rs`
