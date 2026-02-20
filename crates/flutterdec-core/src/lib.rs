@@ -191,8 +191,13 @@ pub fn run_decompile(
     );
     let ir: Vec<FunctionIr> = build_program_ir(&disasm);
     let mut symbol_names: HashMap<u64, String> = HashMap::new();
+    for f in &model.functions {
+        symbol_names.insert(f.entry_va, f.name.clone());
+    }
     for f in &disasm {
-        symbol_names.insert(f.entry_va, f.function_name.clone());
+        symbol_names
+            .entry(f.entry_va)
+            .or_insert_with(|| f.function_name.clone());
     }
     let pseudo = emit_program(&ir, &symbol_names);
 
