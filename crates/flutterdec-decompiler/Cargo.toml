@@ -1,0 +1,9 @@
+[package]
+name = "flutterdec-decompiler"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+flutterdec-ir = { path = "../flutterdec-ir" }
+serde.workspace = true
