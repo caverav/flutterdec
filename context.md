@@ -64,6 +64,7 @@ Readability wins over low level fidelity when there is a tradeoff. For example:
 - simplify noisy arithmetic forms into cleaner constants and offsets when safe
 - inline helper fragments where practical and collapse remaining helper scaffolding
 - represent very complex unresolved paths as a single summary comment per function plus safe fallbacks
+- avoid synthetic "alternative path" branches that duplicate control flow noise
 - surface unknowns explicitly instead of inventing fake certainty
 
 ## Quality gates and metrics
