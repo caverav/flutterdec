@@ -1,0 +1,11 @@
+[package]
+name = "flutterdec-loader"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+goblin.workspace = true
+regex.workspace = true
+zip.workspace = true
