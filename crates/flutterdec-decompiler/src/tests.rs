@@ -1,5 +1,42 @@
 use super::*;
 use flutterdec_ir::{BasicBlock, FunctionIr, IROp, LlirInstr};
+use std::fs;
+use std::path::PathBuf;
+
+fn golden_path(name: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("testdata")
+        .join("golden")
+        .join(name)
+}
+
+fn assert_golden(name: &str, actual: &str) {
+    let path = golden_path(name);
+    if std::env::var("FLUTTERDEC_UPDATE_GOLDEN")
+        .ok()
+        .as_deref()
+        == Some("1")
+    {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).expect("failed to create golden directory");
+        }
+        fs::write(&path, format!("{}\n", actual.trim_end()))
+            .expect("failed to update golden snapshot");
+    }
+
+    let expected = fs::read_to_string(&path).unwrap_or_else(|e| {
+        panic!(
+            "missing golden snapshot at {} ({e})",
+            path.display()
+        )
+    });
+    assert_eq!(
+        actual.trim_end(),
+        expected.trim_end(),
+        "golden mismatch for {} (set FLUTTERDEC_UPDATE_GOLDEN=1 to refresh)",
+        path.display()
+    );
+}
 
 fn branch_block(id: usize, va: u64, true_va: u64, false_id: usize, true_id: usize) -> BasicBlock {
     BasicBlock {
@@ -1551,6 +1588,150 @@ fn simplifies_redundant_wrapped_if_conditions() {
     let line = "  if (((arg0 == 1))) {".to_string();
     let got = FuncEmitter::clean_expr(line);
     assert_eq!(got, "  if (arg0 == 1) {");
+}
+
+#[test]
+fn golden_retry_loop_compaction_snapshot() {
+    let ir = FunctionIr {
+        function_id: 901,
+        name: "goldenRetryLoop".to_string(),
+        entry_va: 0x20100,
+        blocks: Vec::new(),
+    };
+    let symbols = HashMap::new();
+    let mut emitter = FuncEmitter::new(&ir, &symbols);
+    emitter.lines = vec![
+        "dynamic goldenRetryLoop(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {".to_string(),
+        "  while (true) {".to_string(),
+        "    if (arg0 == null) {".to_string(),
+        "      continue;".to_string(),
+        "    }".to_string(),
+        "    if (arg1 == null) {".to_string(),
+        "      continue;".to_string(),
+        "    }".to_string(),
+        "    if (arg2 > 0xd) {".to_string(),
+        "      return arg3;".to_string(),
+        "    }".to_string(),
+        "    if (arg2 >= 9) {".to_string(),
+        "      continue;".to_string(),
+        "    }".to_string(),
+        "    return arg4;".to_string(),
+        "    break;".to_string(),
+        "  }".to_string(),
+        "}".to_string(),
+    ];
+
+    emitter.compact_lines();
+    let out = emitter.lines.join("\n");
+    assert_golden("retry_loop_compaction.dartpseudo", &out);
+}
+
+#[test]
+fn golden_null_guard_compaction_snapshot() {
+    let ir = FunctionIr {
+        function_id: 902,
+        name: "goldenNullGuard".to_string(),
+        entry_va: 0x20200,
+        blocks: Vec::new(),
+    };
+    let symbols = HashMap::new();
+    let mut emitter = FuncEmitter::new(&ir, &symbols);
+    emitter.lines = vec![
+        "dynamic goldenNullGuard(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {".to_string(),
+        "  if (arg0 > 0x20) {".to_string(),
+        "    if (arg0 < 0x85) {".to_string(),
+        "      return arg1;".to_string(),
+        "    }".to_string(),
+        "    if ((arg0 == 0x85) || (arg0 == 0xa0)) {".to_string(),
+        "      continue;".to_string(),
+        "    }".to_string(),
+        "    if (arg0 > 0x200a) {".to_string(),
+        "      if (arg0 == 0x2028) {".to_string(),
+        "        return null;".to_string(),
+        "      }".to_string(),
+        "      return null;".to_string(),
+        "    }".to_string(),
+        "    if (arg0 == 0x1680) {".to_string(),
+        "      return null;".to_string(),
+        "    }".to_string(),
+        "    return null;".to_string(),
+        "  }".to_string(),
+        "}".to_string(),
+    ];
+
+    emitter.compact_lines();
+    let out = emitter.lines.join("\n");
+    assert_golden("null_guard_compaction.dartpseudo", &out);
+}
+
+#[test]
+fn golden_structured_loop_emit_snapshot() {
+    let ir = FunctionIr {
+        function_id: 903,
+        name: "goldenSimpleLoop".to_string(),
+        entry_va: 0xd000,
+        blocks: vec![
+            BasicBlock {
+                id: 0,
+                start_va: 0xd000,
+                instrs: vec![LlirInstr {
+                    va: 0xd000,
+                    op: IROp::Jump,
+                    src: "b #0xd004".to_string(),
+                    target: "#0xd004".to_string(),
+                }],
+                succs: vec![1],
+                preds: Vec::new(),
+            },
+            BasicBlock {
+                id: 1,
+                start_va: 0xd004,
+                instrs: vec![
+                    LlirInstr {
+                        va: 0xd004,
+                        op: IROp::Other,
+                        src: "add x0, x0, #1".to_string(),
+                        target: String::new(),
+                    },
+                    LlirInstr {
+                        va: 0xd008,
+                        op: IROp::Branch,
+                        src: "cbnz x0, #0xd010".to_string(),
+                        target: "#0xd010".to_string(),
+                    },
+                ],
+                succs: vec![2, 3],
+                preds: vec![0, 2],
+            },
+            BasicBlock {
+                id: 2,
+                start_va: 0xd00c,
+                instrs: vec![LlirInstr {
+                    va: 0xd00c,
+                    op: IROp::Jump,
+                    src: "b #0xd004".to_string(),
+                    target: "#0xd004".to_string(),
+                }],
+                succs: vec![1],
+                preds: vec![1],
+            },
+            BasicBlock {
+                id: 3,
+                start_va: 0xd010,
+                instrs: vec![LlirInstr {
+                    va: 0xd010,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                }],
+                succs: Vec::new(),
+                preds: vec![1],
+            },
+        ],
+    };
+
+    let out = emit_pseudocode(&ir, &HashMap::new()).source;
+    assert_golden("structured_loop_emit.dartpseudo", &out);
 }
 
 #[test]

@@ -1,0 +1,13 @@
+dynamic goldenRetryLoop(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {
+  bool retryLoop1 = true;
+  while (retryLoop1) {
+    if (((arg0 == null) || (arg1 == null)) || ((arg2 >= 9) && (arg2 <= 0xd))) {
+      continue;
+    }
+    if (arg2 > 0xd) {
+      return arg3;
+    }
+    return arg4;
+    retryLoop1 = false;
+  }
+}

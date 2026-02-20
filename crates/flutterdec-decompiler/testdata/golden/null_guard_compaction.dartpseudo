@@ -1,0 +1,11 @@
+dynamic goldenNullGuard(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {
+  if (arg0 > 0x20) {
+    if (arg0 < 0x85) {
+      return arg1;
+    }
+    if ((arg0 == 0x85) || (arg0 == 0xa0)) {
+      continue;
+    }
+    return null;
+  }
+}
