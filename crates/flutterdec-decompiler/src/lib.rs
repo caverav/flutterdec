@@ -2015,12 +2015,52 @@ impl<'a> FuncEmitter<'a> {
         out
     }
 
+    fn strip_outer_parens_once(expr: &str) -> Option<&str> {
+        let t = expr.trim();
+        if t.len() < 2 || !t.starts_with('(') || !t.ends_with(')') {
+            return None;
+        }
+        let mut depth = 0i32;
+        for (idx, c) in t.char_indices() {
+            if c == '(' {
+                depth += 1;
+            } else if c == ')' {
+                depth -= 1;
+                if depth == 0 && idx + c.len_utf8() != t.len() {
+                    return None;
+                }
+            }
+            if depth < 0 {
+                return None;
+            }
+        }
+        if depth != 0 {
+            return None;
+        }
+        Some(&t[1..t.len() - 1])
+    }
+
+    fn simplify_wrapped_if_condition(line: &str) -> String {
+        let indent = line.chars().take_while(|c| c.is_whitespace()).count();
+        let t = line.trim();
+        let Some(cond) = t.strip_prefix("if (").and_then(|s| s.strip_suffix(") {")) else {
+            return line.to_string();
+        };
+
+        let mut cur = cond.trim().to_string();
+        while let Some(inner) = Self::strip_outer_parens_once(&cur) {
+            cur = inner.trim().to_string();
+        }
+        format!("{}if ({}) {{", " ".repeat(indent), cur)
+    }
+
     fn clean_expr(expr: String) -> String {
         let mut s = expr;
         s = s.replace(" + x28 /* lsl #32 */", "");
         s = s.replace(" + x28", "");
         s = Self::rewrite_negated_comparisons(&s);
         s = Self::rewrite_bitfield_classid(&s);
+        s = Self::simplify_wrapped_if_condition(&s);
         s
     }
 
@@ -4457,7 +4497,14 @@ mod tests {
     fn rewrites_negated_not_equal_comparisons() {
         let line = "if (!((classId(arg1) << 1) != 0xbc)) {".to_string();
         let got = FuncEmitter::clean_expr(line);
-        assert_eq!(got, "if (((classId(arg1) << 1) == 0xbc)) {");
+        assert_eq!(got, "if ((classId(arg1) << 1) == 0xbc) {");
+    }
+
+    #[test]
+    fn simplifies_redundant_wrapped_if_conditions() {
+        let line = "  if (((arg0 == 1))) {".to_string();
+        let got = FuncEmitter::clean_expr(line);
+        assert_eq!(got, "  if (arg0 == 1) {");
     }
 
     #[test]
