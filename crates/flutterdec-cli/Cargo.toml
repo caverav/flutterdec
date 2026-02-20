@@ -1,0 +1,16 @@
+[package]
+name = "flutterdec-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "flutterdec"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+serde_json.workspace = true
+flutterdec-core = { path = "../flutterdec-core" }
+flutterdec-adapter = { path = "../flutterdec-adapter" }
