@@ -2,3 +2,6 @@
 *
 !.gitignore
 !README.md
+!profiles/
+!profiles/sample/
+!profiles/sample/profile.env
