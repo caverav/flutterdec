@@ -122,6 +122,21 @@ FLUTTERDEC_REAL_GOLDEN_FILES='pseudocode/00080_sub_65f850.dartpseudo,pseudocode/
   scripts/real-golden.sh record --input /path/to/sample.apk --baseline testdata/real-golden/profiles/sample --max-functions 120 --min-disassembly-ratio 0.0
 ```
 
+Multi-profile runner (uses `testdata/real-golden/profiles/*/profile.env`):
+
+```bash
+scripts/real-golden-matrix.sh check
+scripts/real-golden-matrix.sh check --profile sample
+scripts/real-golden-matrix.sh check --strict
+```
+
+Nix app shortcut:
+
+```bash
+nix run .#real-golden-matrix -- check
+nix run .#real-golden-matrix -- check --strict
+```
+
 ## Ethics
 
 Use only on binaries you are legally allowed to analyze. This project is for security research and interoperability study.

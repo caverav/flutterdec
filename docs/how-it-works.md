@@ -646,7 +646,7 @@ Current project testing style:
 - focused unit tests in each crate
 - many behavior tests in `flutterdec-decompiler`
 - golden snapshot tests in `crates/flutterdec-decompiler/testdata/golden/` for readability-sensitive output
-- optional real-binary golden checks via `scripts/real-golden.sh` with baselines in `testdata/real-golden/`
+- optional real-binary golden checks via `scripts/real-golden.sh` (single profile) or `scripts/real-golden-matrix.sh` (multi profile) with baselines in `testdata/real-golden/`
 - regular real-binary smoke validation for output quality
 
 Recommended loop when changing internals:
@@ -667,6 +667,13 @@ For end-to-end real-binary checks against a recorded baseline:
 
 ```bash
 scripts/real-golden.sh check --input /path/to/sample.apk --baseline testdata/real-golden/profiles/sample --max-functions 120 --min-disassembly-ratio 0.0
+```
+
+For multi-profile checks driven by `profile.env` files:
+
+```bash
+scripts/real-golden-matrix.sh check
+scripts/real-golden-matrix.sh check --strict
 ```
 
 ## Known limits

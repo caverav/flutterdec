@@ -33,3 +33,17 @@ scripts/real-golden.sh check \
   --max-functions 120 \
   --min-disassembly-ratio 0.0
 ```
+
+Matrix runner for multiple profiles:
+
+```bash
+scripts/real-golden-matrix.sh check
+scripts/real-golden-matrix.sh check --profile sample
+scripts/real-golden-matrix.sh check --strict
+```
+
+Profile configuration:
+
+- put `profile.env` inside each `profiles/<name>/` directory
+- use `INPUT` for a direct path, or `INPUT_ENV` for machine-local env var paths
+- by default baseline files are read from the same profile directory
