@@ -79,6 +79,7 @@ Readability wins over low level fidelity when there is a tradeoff. For example:
 - collapse nested or trailing guard stacks that always return the same value (for example repeated `return null` guards before a final `return null`)
 - extract repeated `(<value> - 1)` expressions into a named alias (`codePoint`) when stable across the function
 - normalize negated comparison forms like `!((a) != b)` into direct equality checks
+- remove redundant condition wrapping parentheses in emitted `if` statements when the outer wrappers carry no meaning
 - surface unknowns explicitly instead of inventing fake certainty
 
 ## Quality gates and metrics

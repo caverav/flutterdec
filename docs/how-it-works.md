@@ -408,6 +408,7 @@ The decompiler has two layers:
 - unwrapping retry loops that no longer have retry paths
 - arithmetic simplification
 - normalizing negated comparisons (`!((a) != b)` -> `((a) == b)`)
+- removing redundant outer parentheses in `if` conditions after expression rewrites
 - naming and type hinting
 - extracting stable repeated `(<value> - 1)` expressions into aliases (for example `codePoint`)
 - compacting empty or redundant control flow patterns
@@ -464,6 +465,8 @@ Recent readability features include:
   - retry wrappers with no remaining retry paths are unwrapped back to straight-line code
 - negated comparison normalization:
   - `!((a) != b)` to `((a) == b)` and `!((a) == b)` to `((a) != b)`
+- condition wrapper cleanup:
+  - `if (((x == y))) {` to `if (x == y) {`
 - repeated minus-one alias extraction:
   - repeated `(value3 - 1)` style expressions become a named alias such as `final int codePoint = (value3 - 1);`
 - early loop structuring:
