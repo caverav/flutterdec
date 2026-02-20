@@ -33,3 +33,7 @@ Use only on binaries you are legally allowed to analyze. This project is for sec
 ## Context
 
 Project research context and architecture notes are in `context.md`.
+
+## Internals
+
+Deep internal architecture and pipeline explanation is in `docs/how-it-works.md`.
