@@ -33,6 +33,7 @@ struct FuncEmitter<'a> {
     inline_visits: HashMap<usize, usize>,
     omitted_blocks: BTreeSet<usize>,
     loop_back_edges: BTreeSet<usize>,
+    loop_context: Vec<usize>,
     lines: Vec<String>,
 
     state: LiftState,
@@ -436,6 +437,7 @@ impl<'a> FuncEmitter<'a> {
             inline_visits: HashMap::new(),
             omitted_blocks: BTreeSet::new(),
             loop_back_edges: BTreeSet::new(),
+            loop_context: Vec::new(),
             lines: Vec::new(),
             state: init_state(),
             placeholder_ifs: 0,
@@ -1086,6 +1088,72 @@ impl<'a> FuncEmitter<'a> {
         self.block_by_id.contains_key(&to)
     }
 
+    fn has_backedge_pred(&self, id: usize) -> bool {
+        let Some(block) = self.block_by_id.get(&id) else {
+            return false;
+        };
+        for pred in &block.preds {
+            if let Some(pb) = self.block_by_id.get(pred) {
+                if pb.succs.contains(&id) && pb.start_va >= block.start_va {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    fn has_forward_pred(&self, id: usize) -> bool {
+        let Some(block) = self.block_by_id.get(&id) else {
+            return false;
+        };
+        for pred in &block.preds {
+            if let Some(pb) = self.block_by_id.get(pred) {
+                if pb.succs.contains(&id) && pb.start_va < block.start_va {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    fn should_wrap_loop_header(&self, id: usize, depth: usize) -> bool {
+        if depth >= 10 {
+            return false;
+        }
+        if !self.loop_context.is_empty() {
+            return false;
+        }
+        if self.loop_context.contains(&id) {
+            return false;
+        }
+        if self.active_stack.contains(&id) {
+            return false;
+        }
+        if self.inline_visits.get(&id).copied().unwrap_or(0) >= self.visit_limit(id) {
+            return false;
+        }
+        let Some(block) = self.block_by_id.get(&id) else {
+            return false;
+        };
+        let tail = block.instrs.last().map(|i| &i.op);
+        if !matches!(tail, Some(IROp::Branch)) {
+            return false;
+        }
+        if block.succs.len() < 2 {
+            return false;
+        }
+        self.has_backedge_pred(id) && self.has_forward_pred(id)
+    }
+
+    fn emit_wrapped_loop(&mut self, id: usize, indent: usize, depth: usize) {
+        self.loop_context.push(id);
+        self.push_line(indent, "while (true) {");
+        self.emit_block(id, indent + 1, depth + 1);
+        self.push_line(indent + 1, "break;");
+        self.push_line(indent, "}");
+        self.loop_context.pop();
+    }
+
     fn parse_helper_header(line: &str) -> Option<usize> {
         let t = line.trim();
         if !t.starts_with("dynamic _block_") || !t.ends_with("() {") {
@@ -1556,12 +1624,20 @@ impl<'a> FuncEmitter<'a> {
     }
 
     fn emit_block(&mut self, id: usize, indent: usize, depth: usize) {
+        if self.should_wrap_loop_header(id, depth) {
+            self.emit_wrapped_loop(id, indent, depth);
+            return;
+        }
         if depth >= 12 {
             self.push_line(indent, "// depth-limited block");
             return;
         }
         if self.active_stack.contains(&id) {
-            self.loop_back_edges.insert(id);
+            if self.loop_context.contains(&id) {
+                self.push_line(indent, "continue;");
+            } else {
+                self.loop_back_edges.insert(id);
+            }
             return;
         }
         if self.inline_visits.get(&id).copied().unwrap_or(0) >= self.visit_limit(id) {
@@ -1660,7 +1736,11 @@ impl<'a> FuncEmitter<'a> {
                         if self.can_inline(tid, depth + 1) {
                             self.emit_block(tid, indent, depth + 1);
                         } else if self.active_stack.contains(&tid) {
-                            self.loop_back_edges.insert(tid);
+                            if self.loop_context.contains(&tid) {
+                                self.push_line(indent, "continue;");
+                            } else {
+                                self.loop_back_edges.insert(tid);
+                            }
                         } else if !self.emitted.contains(&tid) {
                             self.emit_omitted_path(indent, Some(tid));
                         }
@@ -2295,10 +2375,10 @@ mod tests {
     }
 
     #[test]
-    fn summarizes_loop_back_edges_instead_of_inline_comments() {
+    fn structures_simple_backedge_as_while_loop() {
         let ir = FunctionIr {
             function_id: 13,
-            name: "loopBackEdge".to_string(),
+            name: "simpleLoop".to_string(),
             entry_va: 0xd000,
             blocks: vec![BasicBlock {
                 id: 0,
@@ -2306,28 +2386,72 @@ mod tests {
                 instrs: vec![LlirInstr {
                     va: 0xd000,
                     op: IROp::Jump,
-                    src: "b #0xd000".to_string(),
-                    target: "#0xd000".to_string(),
+                    src: "b #0xd004".to_string(),
+                    target: "#0xd004".to_string(),
                 }],
-                succs: vec![0],
-                preds: vec![0],
+                succs: vec![1],
+                preds: Vec::new(),
+            },
+            BasicBlock {
+                id: 1,
+                start_va: 0xd004,
+                instrs: vec![
+                    LlirInstr {
+                        va: 0xd004,
+                        op: IROp::Other,
+                        src: "add x0, x0, #1".to_string(),
+                        target: String::new(),
+                    },
+                    LlirInstr {
+                        va: 0xd008,
+                        op: IROp::Branch,
+                        src: "cbnz x0, #0xd010".to_string(),
+                        target: "#0xd010".to_string(),
+                    },
+                ],
+                succs: vec![2, 3],
+                preds: vec![0, 2],
+            },
+            BasicBlock {
+                id: 2,
+                start_va: 0xd00c,
+                instrs: vec![LlirInstr {
+                    va: 0xd00c,
+                    op: IROp::Jump,
+                    src: "b #0xd004".to_string(),
+                    target: "#0xd004".to_string(),
+                }],
+                succs: vec![1],
+                preds: vec![1],
+            },
+            BasicBlock {
+                id: 3,
+                start_va: 0xd010,
+                instrs: vec![LlirInstr {
+                    va: 0xd010,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                }],
+                succs: Vec::new(),
+                preds: vec![1],
             }],
         };
 
         let artifact = emit_pseudocode(&ir, &HashMap::new());
         assert!(
-            !artifact.source.contains("continue;"),
-            "invalid continue should not be emitted:\n{}",
+            artifact.source.contains("while (true) {"),
+            "simple backedge should become loop:\n{}",
             artifact.source
         );
         assert!(
-            artifact.source.contains("loop back-edges: block 0"),
-            "expected loop summary comment:\n{}",
+            artifact.source.contains("continue;"),
+            "loop backedge inside loop should use continue:\n{}",
             artifact.source
         );
         assert!(
-            !artifact.source.contains("loop back-edge to block_0"),
-            "inline loop back-edge comments should be collapsed:\n{}",
+            !artifact.source.contains("loop back-edges:"),
+            "loop summary should not be needed for simple structured loop:\n{}",
             artifact.source
         );
     }
