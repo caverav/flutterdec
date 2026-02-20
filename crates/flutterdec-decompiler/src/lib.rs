@@ -1295,4 +1295,46 @@ mod tests {
             "linear helper body should be inserted:\n{out}"
         );
     }
+
+    #[test]
+    fn inlines_branch_helper_body_with_null_fallback() {
+        let ir = FunctionIr {
+            function_id: 4,
+            name: "manualBranchInline".to_string(),
+            entry_va: 0x4000,
+            blocks: Vec::new(),
+        };
+        let symbols = HashMap::new();
+        let mut emitter = FuncEmitter::new(&ir, &symbols);
+        emitter.lines = vec![
+            "dynamic manualBranchInline(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {".to_string(),
+            "  return _block_9();".to_string(),
+            "}".to_string(),
+            String::new(),
+            "dynamic _block_9() {".to_string(),
+            "  if (arg0 == null) {".to_string(),
+            "    final t1 = fn_0x2(arg0, arg1, arg2, arg3);".to_string(),
+            "  }".to_string(),
+            "  else {".to_string(),
+            "    return arg0;".to_string(),
+            "  }".to_string(),
+            "}".to_string(),
+        ];
+
+        emitter.inline_trivial_helpers();
+        let out = emitter.lines.join("\n");
+        assert!(!out.contains("return _block_9();"), "call should be inlined:\n{out}");
+        assert!(
+            !out.contains("dynamic _block_9()"),
+            "unused helper should be removed:\n{out}"
+        );
+        assert!(
+            out.contains("if (arg0 == null) {"),
+            "branch helper body should be inserted:\n{out}"
+        );
+        assert!(
+            out.contains("return null;"),
+            "non-total branch helper should append null fallback:\n{out}"
+        );
+    }
 }
