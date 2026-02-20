@@ -398,6 +398,7 @@ The decompiler has two layers:
 - loop header wrapping into preliminary `while (true)` scaffolds
 - unwrapping synthetic single-iteration `while (true)` wrappers with no `continue`
 - hoisting `else` blocks after terminating `if` branches
+- collapsing redundant guarded returns with identical fallthrough returns
 - removing redundant repeated null guards after terminating null checks
 - merging nested single-guard `if` blocks
 - merging consecutive `continue` guards into combined conditions
@@ -439,6 +440,8 @@ Recent readability features include:
   - `if (cond) { } else { body }` to `if (!(cond)) { body }`
 - identical branch return folding:
   - `if (cond) { return x; } else { return x; }` to `return x;`
+- redundant guarded return folding:
+  - `if (cond) { return x; } return x;` to `return x;`
 - terminating-branch else hoisting:
   - `if (cond) { return x; } else { body }` to `if (cond) { return x; } body`
 - redundant null-check elimination:
