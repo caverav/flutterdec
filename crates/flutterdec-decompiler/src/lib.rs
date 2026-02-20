@@ -1353,4 +1353,42 @@ mod tests {
             "non-total branch helper should append null fallback:\n{out}"
         );
     }
+
+    #[test]
+    fn inlines_placeholder_cond_helper_body() {
+        let ir = FunctionIr {
+            function_id: 5,
+            name: "manualCondInline".to_string(),
+            entry_va: 0x5000,
+            blocks: Vec::new(),
+        };
+        let symbols = HashMap::new();
+        let mut emitter = FuncEmitter::new(&ir, &symbols);
+        emitter.lines = vec![
+            "dynamic manualCondInline(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {".to_string(),
+            "  return _block_3();".to_string(),
+            "}".to_string(),
+            String::new(),
+            "dynamic _block_3() {".to_string(),
+            "  if (/* cond */) {".to_string(),
+            "    return null;".to_string(),
+            "  }".to_string(),
+            "  else {".to_string(),
+            "    final t1 = fn_0x3(arg0, arg1, arg2, arg3);".to_string(),
+            "  }".to_string(),
+            "}".to_string(),
+        ];
+
+        emitter.inline_trivial_helpers();
+        let out = emitter.lines.join("\n");
+        assert!(!out.contains("return _block_3();"), "call should be inlined:\n{out}");
+        assert!(
+            !out.contains("dynamic _block_3()"),
+            "unused helper should be removed:\n{out}"
+        );
+        assert!(
+            out.contains("if (/* cond */) {"),
+            "placeholder condition helper should be inlined:\n{out}"
+        );
+    }
 }
