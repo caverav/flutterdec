@@ -1216,7 +1216,7 @@ impl<'a> FuncEmitter<'a> {
             self.raw_register_calls += 1;
             self.push_line(
                 indent,
-                &format!("final {} = invoke({}, [{}]);", tname, target, args),
+                &format!("final {} = dynamicCall({}, [{}]);", tname, target, args),
             );
         } else {
             let call_name = if let Some(hex) = target.strip_prefix("0x") {
