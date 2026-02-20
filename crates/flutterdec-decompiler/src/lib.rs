@@ -710,7 +710,7 @@ impl<'a> FuncEmitter<'a> {
                                                                 ) {
                                                                     if l <= k {
                                                                         out.push(format!(
-                                                                            "{}if ((({}) >= {}) && (({}) <= {})) {{",
+                                                                            "{}if (({} >= {}) && ({} <= {})) {{",
                                                                             " ".repeat(indent),
                                                                             lhs2,
                                                                             rhs2,
@@ -3950,7 +3950,7 @@ mod tests {
         emitter.compact_lines();
         let out = emitter.lines.join("\n");
         assert!(
-            out.contains("if (((arg0) >= 9) && ((arg0) <= 0xd)) {"),
+            out.contains("if ((arg0 >= 9) && (arg0 <= 0xd)) {"),
             "range continue guard should be emitted:\n{out}"
         );
         assert!(
