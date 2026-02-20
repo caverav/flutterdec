@@ -643,6 +643,114 @@ impl<'a> FuncEmitter<'a> {
                 if cur_trim.starts_with("if (") && cur_trim.ends_with(") {") {
                     let cond = Self::if_condition(cur_trim).unwrap_or("");
                     if !cond.contains("flags.") && !cond.contains("/* cond */") {
+                        if let Some(first_end) = Self::find_block_end(&self.lines, i) {
+                            let mut first_else = first_end + 1;
+                            while first_else < self.lines.len()
+                                && self.lines[first_else].trim().is_empty()
+                            {
+                                first_else += 1;
+                            }
+                            let first_has_else = first_else < self.lines.len()
+                                && self.lines[first_else].trim() == "else {";
+                            if !first_has_else {
+                                if let Some(then_ret) =
+                                    Self::single_top_level_return(&self.lines, i + 1, first_end)
+                                {
+                                    let indent =
+                                        cur.chars().take_while(|c| c.is_whitespace()).count();
+                                    let mut next = first_end + 1;
+                                    while next < self.lines.len()
+                                        && self.lines[next].trim().is_empty()
+                                    {
+                                        next += 1;
+                                    }
+                                    if next < self.lines.len() {
+                                        let next_line = &self.lines[next];
+                                        let next_trim = next_line.trim();
+                                        if Self::leading_indent(next_line) == indent
+                                            && next_trim.starts_with("if (")
+                                            && next_trim.ends_with(") {")
+                                        {
+                                            if let Some(next_end) =
+                                                Self::find_block_end(&self.lines, next)
+                                            {
+                                                let mut next_else = next_end + 1;
+                                                while next_else < self.lines.len()
+                                                    && self.lines[next_else].trim().is_empty()
+                                                {
+                                                    next_else += 1;
+                                                }
+                                                let next_has_else = next_else < self.lines.len()
+                                                    && self.lines[next_else].trim() == "else {";
+                                                if !next_has_else
+                                                    && Self::single_top_level_stmt(
+                                                        &self.lines,
+                                                        next + 1,
+                                                        next_end,
+                                                    )
+                                                    .as_deref()
+                                                        == Some("continue;")
+                                                {
+                                                    if let Some((lhs1, op1, rhs1)) =
+                                                        Self::parse_simple_cmp(cond)
+                                                    {
+                                                        if let Some((lhs2, op2, rhs2)) =
+                                                            Self::parse_simple_cmp(
+                                                                Self::if_condition(next_trim)
+                                                                    .unwrap_or(""),
+                                                            )
+                                                        {
+                                                            if lhs1 == lhs2
+                                                                && op1 == ">"
+                                                                && op2 == ">="
+                                                            {
+                                                                if let (Some(k), Some(l)) = (
+                                                                    Self::parse_int_literal(&rhs1),
+                                                                    Self::parse_int_literal(&rhs2),
+                                                                ) {
+                                                                    if l <= k {
+                                                                        out.push(format!(
+                                                                            "{}if ((({}) >= {}) && (({}) <= {})) {{",
+                                                                            " ".repeat(indent),
+                                                                            lhs2,
+                                                                            rhs2,
+                                                                            lhs2,
+                                                                            rhs1
+                                                                        ));
+                                                                        out.push(format!(
+                                                                            "{}continue;",
+                                                                            " ".repeat(indent + 2)
+                                                                        ));
+                                                                        out.push(format!(
+                                                                            "{}}}",
+                                                                            " ".repeat(indent)
+                                                                        ));
+                                                                        out.push(cur.clone());
+                                                                        out.push(format!(
+                                                                            "{}{}",
+                                                                            " ".repeat(indent + 2),
+                                                                            then_ret
+                                                                        ));
+                                                                        out.push(
+                                                                            self.lines[first_end]
+                                                                                .clone(),
+                                                                        );
+                                                                        i = next_end + 1;
+                                                                        changed = true;
+                                                                        continue;
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
                         if let Some(then_end) = Self::find_block_end(&self.lines, i) {
                             let mut then_else = then_end + 1;
                             while then_else < self.lines.len()
@@ -1115,6 +1223,31 @@ impl<'a> FuncEmitter<'a> {
                 .and_then(|s| s.strip_suffix(") {"))?
                 .trim(),
         )
+    }
+
+    fn parse_simple_cmp(cond: &str) -> Option<(String, String, String)> {
+        let c = cond.trim();
+        if c.contains("||") || c.contains("&&") {
+            return None;
+        }
+        for op in [">=", "<=", "==", "!=", ">", "<"] {
+            if let Some((lhs, rhs)) = c.split_once(op) {
+                return Some((
+                    lhs.trim().to_string(),
+                    op.to_string(),
+                    rhs.trim().to_string(),
+                ));
+            }
+        }
+        None
+    }
+
+    fn parse_int_literal(s: &str) -> Option<i64> {
+        let t = s.trim().trim_start_matches('#');
+        if let Some(hex) = t.strip_prefix("0x") {
+            return i64::from_str_radix(hex, 16).ok();
+        }
+        t.parse::<i64>().ok()
     }
 
     fn retry_decl_var(line_trim: &str) -> Option<String> {
@@ -3790,6 +3923,39 @@ mod tests {
             out.matches("continue;").count(),
             1,
             "merged guard should keep one continue:\n{out}"
+        );
+    }
+
+    #[test]
+    fn rewrites_return_then_continue_range_pattern() {
+        let ir = FunctionIr {
+            function_id: 35,
+            name: "rangeContinue".to_string(),
+            entry_va: 0x14000,
+            blocks: Vec::new(),
+        };
+        let symbols = HashMap::new();
+        let mut emitter = FuncEmitter::new(&ir, &symbols);
+        emitter.lines = vec![
+            "dynamic rangeContinue(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {".to_string(),
+            "  if (arg0 > 0xd) {".to_string(),
+            "    return arg1;".to_string(),
+            "  }".to_string(),
+            "  if (arg0 >= 9) {".to_string(),
+            "    continue;".to_string(),
+            "  }".to_string(),
+            "}".to_string(),
+        ];
+
+        emitter.compact_lines();
+        let out = emitter.lines.join("\n");
+        assert!(
+            out.contains("if (((arg0) >= 9) && ((arg0) <= 0xd)) {"),
+            "range continue guard should be emitted:\n{out}"
+        );
+        assert!(
+            out.contains("if (arg0 > 0xd) {\n    return arg1;\n  }"),
+            "upper tail return branch should remain:\n{out}"
         );
     }
 
