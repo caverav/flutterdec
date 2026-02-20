@@ -1461,4 +1461,63 @@ mod tests {
             "duplicate null returns should collapse:\n{out}"
         );
     }
+
+    #[test]
+    fn emits_flag_predicate_when_cmp_is_missing() {
+        let ir = FunctionIr {
+            function_id: 7,
+            name: "flagFallback".to_string(),
+            entry_va: 0x7000,
+            blocks: vec![
+                BasicBlock {
+                    id: 0,
+                    start_va: 0x7000,
+                    instrs: vec![LlirInstr {
+                        va: 0x7000,
+                        op: IROp::Branch,
+                        src: "b.eq #0x7008".to_string(),
+                        target: "#0x7008".to_string(),
+                    }],
+                    succs: vec![1, 2],
+                    preds: Vec::new(),
+                },
+                BasicBlock {
+                    id: 1,
+                    start_va: 0x7008,
+                    instrs: vec![LlirInstr {
+                        va: 0x7008,
+                        op: IROp::Return,
+                        src: "ret".to_string(),
+                        target: String::new(),
+                    }],
+                    succs: Vec::new(),
+                    preds: vec![0],
+                },
+                BasicBlock {
+                    id: 2,
+                    start_va: 0x7004,
+                    instrs: vec![LlirInstr {
+                        va: 0x7004,
+                        op: IROp::Return,
+                        src: "ret".to_string(),
+                        target: String::new(),
+                    }],
+                    succs: Vec::new(),
+                    preds: vec![0],
+                },
+            ],
+        };
+        let symbols = HashMap::new();
+        let artifact = emit_pseudocode(&ir, &symbols);
+        assert!(
+            artifact.source.contains("if (flags.b_eq) {"),
+            "missing flag predicate fallback:\n{}",
+            artifact.source
+        );
+        assert!(
+            !artifact.source.contains("/* cond */"),
+            "placeholder cond should not be emitted:\n{}",
+            artifact.source
+        );
+    }
 }
