@@ -1882,4 +1882,30 @@ mod tests {
             "non-inferred args should use param naming:\n{out}"
         );
     }
+
+    #[test]
+    fn aliases_raw_register_names_after_hinting() {
+        let ir = FunctionIr {
+            function_id: 11,
+            name: "regAlias".to_string(),
+            entry_va: 0xb000,
+            blocks: Vec::new(),
+        };
+        let symbols = HashMap::new();
+        let mut emitter = FuncEmitter::new(&ir, &symbols);
+        emitter.lines = vec![
+            "dynamic regAlias(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {".to_string(),
+            "  final t1 = invoke(x2, [arg0, arg1, arg2, arg3]);".to_string(),
+            "  final t2 = invoke(x30, [arg0, arg1, arg2, arg3]);".to_string(),
+            "  return t2;".to_string(),
+            "}".to_string(),
+        ];
+
+        emitter.apply_name_and_type_hints("regAlias");
+        let out = emitter.lines.join("\n");
+        assert!(!out.contains("x2"), "x2 should be aliased:\n{out}");
+        assert!(!out.contains("x30"), "x30 should be aliased:\n{out}");
+        assert!(out.contains("reg2"), "reg2 alias missing:\n{out}");
+        assert!(out.contains("reg30"), "reg30 alias missing:\n{out}");
+    }
 }
