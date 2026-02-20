@@ -81,7 +81,7 @@ The CLI writes `quality.json` and fails the run when strict thresholds are viola
 - indirect call ratio
 - readability regressions such as helper block leakage and raw token leakage
 - omitted path marker count for complex regions that are currently summarized
-- loop back-edge summary marker count for functions that still need loop structuring
+- residual loop back-edge summary marker count for loops that are not yet structured
 
 This makes progress measurable and keeps regressions visible in automation.
 
@@ -96,6 +96,7 @@ Current scope:
 Known limits:
 
 - no full Dart syntax reconstruction yet
+- some loops are emitted as generic `while (true)` scaffolds and still need condition-aware structuring
 - difficult loops can still appear as per-function back-edge summary comments
 - very complex control-flow regions can be summarized as omitted-path comments
 - many symbols remain synthetic when metadata is obfuscated
@@ -120,7 +121,8 @@ Python remains useful at the adapter boundary for faster version specific parser
 
 ## Near term roadmap
 
-- improve loop structuring so back-edge summaries become real `while` or `for` constructs
+- improve loop structuring so generic `while (true)` scaffolds become condition-aware `while` or `for` constructs
+- eliminate residual loop back-edge summaries
 - replace omitted-path comments with richer structured reconstructions
 - lift more Dart VM idioms into higher level expressions
 - improve naming and type inference from object pool and call patterns
