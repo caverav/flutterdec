@@ -64,6 +64,11 @@ Current module layout:
     - CFG/stack test details in `src/tests/cfg_and_stack/call_and_loops.rs` and `src/tests/cfg_and_stack/omitted_path_and_stack.rs`
     - compaction test details in `src/tests/compaction_and_aliasing/control_flow_compaction.rs` and `src/tests/compaction_and_aliasing/alias_and_expr_cleanup.rs`
 - `crates/flutterdec-core`: orchestration, artifact writing, and quality report logic
+  - top-level entry in `src/lib.rs`
+  - pipeline utilities in `src/pipeline/helpers.rs`
+  - adapter-model loading in `src/pipeline/model.rs`
+  - quality gate computation in `src/pipeline/quality.rs`
+  - command runners in `src/pipeline/runners.rs`
 - `crates/flutterdec-cli`: user facing commands
 
 ## Data contracts

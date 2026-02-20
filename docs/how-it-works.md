@@ -99,7 +99,7 @@ This table shows what each stage consumes and produces.
 | Disassembler | `ProgramModel.functions` + isolate instructions | `FunctionDisassembly[]` | `crates/flutterdec-disasm-arm64/src/lib.rs` |
 | IR builder | `FunctionDisassembly[]` | `FunctionIr[]` | `crates/flutterdec-ir/src/lib.rs` |
 | Decompiler | `FunctionIr[]` + symbol map | `PseudocodeArtifact[]` | `crates/flutterdec-decompiler/src/lib.rs` |
-| Quality/reporting | model + disasm + pseudo + options | `QualityReport` + report files | `crates/flutterdec-core/src/lib.rs` |
+| Quality/reporting | model + disasm + pseudo + options | `QualityReport` + report files | `crates/flutterdec-core/src/lib.rs` and `crates/flutterdec-core/src/pipeline/*.rs` |
 
 ## Decompile lifecycle in pseudo code
 
@@ -688,7 +688,7 @@ scripts/real-golden-matrix.sh check --strict
 
 If you still want to inspect code after this guide:
 
-1. `crates/flutterdec-core/src/lib.rs`
+1. `crates/flutterdec-core/src/lib.rs` and `crates/flutterdec-core/src/pipeline/*.rs`
 2. `crates/flutterdec-loader/src/lib.rs`
 3. `crates/flutterdec-adapter/src/lib.rs`
 4. `crates/flutterdec-disasm-arm64/src/lib.rs`
