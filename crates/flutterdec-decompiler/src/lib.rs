@@ -589,6 +589,99 @@ impl<'a> FuncEmitter<'a> {
                 }
 
                 if cur_trim.starts_with("if (") && cur_trim.ends_with(") {") {
+                    let cur_indent = Self::leading_indent(cur);
+                    if let Some(id) = Self::null_checked_ident(cur_trim) {
+                        if let Some(first_end) = Self::find_block_end(&self.lines, i) {
+                            let mut first_else = first_end + 1;
+                            while first_else < self.lines.len()
+                                && self.lines[first_else].trim().is_empty()
+                            {
+                                first_else += 1;
+                            }
+                            let first_has_else = first_else < self.lines.len()
+                                && self.lines[first_else].trim() == "else {";
+                            if !first_has_else
+                                && Self::block_terminates_at_top_level(
+                                    &self.lines,
+                                    i + 1,
+                                    first_end,
+                                )
+                            {
+                                let mut rewritten = false;
+                                let mut scan = first_end + 1;
+                                while scan < self.lines.len() {
+                                    let line = &self.lines[scan];
+                                    let t = line.trim();
+                                    if t.is_empty() {
+                                        scan += 1;
+                                        continue;
+                                    }
+
+                                    let indent = Self::leading_indent(line);
+                                    if indent < cur_indent {
+                                        break;
+                                    }
+
+                                    if Self::assigns_ident(line, &id) {
+                                        break;
+                                    }
+
+                                    if indent == cur_indent
+                                        && t.starts_with("if (")
+                                        && t.ends_with(") {")
+                                    {
+                                        if Self::null_checked_ident(t).as_deref() == Some(&id) {
+                                            if let Some(second_end) =
+                                                Self::find_block_end(&self.lines, scan)
+                                            {
+                                                for idx in i..scan {
+                                                    out.push(self.lines[idx].clone());
+                                                }
+
+                                                let mut second_else = second_end + 1;
+                                                while second_else < self.lines.len()
+                                                    && self.lines[second_else].trim().is_empty()
+                                                {
+                                                    second_else += 1;
+                                                }
+                                                if second_else < self.lines.len()
+                                                    && self.lines[second_else].trim() == "else {"
+                                                {
+                                                    if let Some(second_else_end) =
+                                                        Self::find_block_end(
+                                                            &self.lines,
+                                                            second_else,
+                                                        )
+                                                    {
+                                                        for idx in second_else + 1..second_else_end
+                                                        {
+                                                            out.push(Self::dedent_once(
+                                                                &self.lines[idx],
+                                                            ));
+                                                        }
+                                                        i = second_else_end + 1;
+                                                    } else {
+                                                        i = second_end + 1;
+                                                    }
+                                                } else {
+                                                    i = second_end + 1;
+                                                }
+                                                changed = true;
+                                                rewritten = true;
+                                                break;
+                                            }
+                                        }
+                                    }
+
+                                    scan += 1;
+                                }
+                                if rewritten {
+                                    continue;
+                                }
+                            }
+                        }
+                    }
+
                     let cond = cur_trim
                         .strip_prefix("if (")
                         .and_then(|s| s.strip_suffix(") {"))
@@ -770,6 +863,10 @@ impl<'a> FuncEmitter<'a> {
         line.strip_prefix("  ").unwrap_or(line).to_string()
     }
 
+    fn leading_indent(line: &str) -> usize {
+        line.chars().take_while(|c| c.is_whitespace()).count()
+    }
+
     fn find_block_end(lines: &[String], start: usize) -> Option<usize> {
         let mut depth = 0i32;
         for (idx, line) in lines.iter().enumerate().skip(start) {
@@ -780,6 +877,59 @@ impl<'a> FuncEmitter<'a> {
             }
         }
         None
+    }
+
+    fn null_checked_ident(line_trim: &str) -> Option<String> {
+        let cond = line_trim
+            .strip_prefix("if (")
+            .and_then(|s| s.strip_suffix(") {"))?
+            .trim();
+        let (lhs, rhs) = cond.split_once("==")?;
+        let lhs = lhs.trim();
+        let rhs = rhs.trim();
+        let ident = if rhs == "null" {
+            lhs
+        } else if lhs == "null" {
+            rhs
+        } else {
+            return None;
+        };
+        if ident.is_empty() || !ident.chars().all(Self::is_ident_char) {
+            return None;
+        }
+        Some(ident.to_string())
+    }
+
+    fn assigns_ident(line: &str, ident: &str) -> bool {
+        let t = line.trim();
+        if t.starts_with("if (") {
+            return false;
+        }
+        let mut i = 0usize;
+        let bytes = t.as_bytes();
+        while i + ident.len() <= t.len() {
+            if t[i..].starts_with(ident) {
+                let prev_ok = if i == 0 {
+                    true
+                } else {
+                    !Self::is_ident_char(bytes[i - 1] as char)
+                };
+                let next_i = i + ident.len();
+                let next_ok = if next_i >= t.len() {
+                    true
+                } else {
+                    !Self::is_ident_char(bytes[next_i] as char)
+                };
+                if prev_ok && next_ok {
+                    let rest = t[next_i..].trim_start();
+                    if rest.starts_with('=') && !rest.starts_with("==") {
+                        return true;
+                    }
+                }
+            }
+            i += 1;
+        }
+        false
     }
 
     fn block_terminates_at_top_level(lines: &[String], start: usize, end: usize) -> bool {
@@ -3107,6 +3257,74 @@ mod tests {
             "else body should be hoisted after terminating then-branch:\n{out}"
         );
         assert!(!out.contains("else {"), "else should be removed:\n{out}");
+    }
+
+    #[test]
+    fn removes_redundant_null_check_after_terminating_guard() {
+        let ir = FunctionIr {
+            function_id: 27,
+            name: "redundantNull".to_string(),
+            entry_va: 0xfc00,
+            blocks: Vec::new(),
+        };
+        let symbols = HashMap::new();
+        let mut emitter = FuncEmitter::new(&ir, &symbols);
+        emitter.lines = vec![
+            "dynamic redundantNull(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {".to_string(),
+            "  while (true) {".to_string(),
+            "    if (arg0 == null) {".to_string(),
+            "      return arg1;".to_string(),
+            "    }".to_string(),
+            "    final t1 = fn_0x1(arg0, arg1, arg2, arg3);".to_string(),
+            "    if (arg0 == null) {".to_string(),
+            "      continue;".to_string(),
+            "    }".to_string(),
+            "    return t1;".to_string(),
+            "    break;".to_string(),
+            "  }".to_string(),
+            "}".to_string(),
+        ];
+
+        emitter.compact_lines();
+        let out = emitter.lines.join("\n");
+        assert!(
+            !out.contains("if (arg0 == null) {\n      continue;"),
+            "redundant second null-check should be removed:\n{out}"
+        );
+        assert!(
+            !out.contains("while (true) {"),
+            "removing synthetic continue should allow wrapper unwrap:\n{out}"
+        );
+    }
+
+    #[test]
+    fn keeps_null_check_when_identifier_is_reassigned() {
+        let ir = FunctionIr {
+            function_id: 28,
+            name: "reassignedNull".to_string(),
+            entry_va: 0xfd00,
+            blocks: Vec::new(),
+        };
+        let symbols = HashMap::new();
+        let mut emitter = FuncEmitter::new(&ir, &symbols);
+        emitter.lines = vec![
+            "dynamic reassignedNull(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {".to_string(),
+            "  if (arg0 == null) {".to_string(),
+            "    return arg1;".to_string(),
+            "  }".to_string(),
+            "  arg0 = arg1;".to_string(),
+            "  if (arg0 == null) {".to_string(),
+            "    return arg2;".to_string(),
+            "  }".to_string(),
+            "}".to_string(),
+        ];
+
+        emitter.compact_lines();
+        let out = emitter.lines.join("\n");
+        assert!(
+            out.matches("if (arg0 == null) {").count() >= 2,
+            "second null-check must stay when variable is reassigned:\n{out}"
+        );
     }
 
     #[test]
