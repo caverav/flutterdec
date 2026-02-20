@@ -623,6 +623,16 @@ impl<'a> FuncEmitter<'a> {
                 }
             }
         }
+
+        for line in &mut self.lines {
+            let mut cur = line.clone();
+            for n in 0..=30 {
+                let from = format!("x{n}");
+                let to = format!("reg{n}");
+                cur = Self::replace_identifier_token(&cur, &from, &to);
+            }
+            *line = cur;
+        }
     }
 
     fn field_expr(base: &str, off: i64) -> String {
