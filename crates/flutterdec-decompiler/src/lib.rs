@@ -319,6 +319,7 @@ impl<'a> FuncEmitter<'a> {
             self.append_helper_functions();
             self.inline_trivial_helpers();
         }
+        self.compact_lines();
         for line in &mut self.lines {
             *line = Self::clean_expr(line.clone());
         }
@@ -346,6 +347,41 @@ impl<'a> FuncEmitter<'a> {
         } else {
             self.push_line(indent, "/* path omitted */");
         }
+    }
+
+    fn compact_lines(&mut self) {
+        let mut out = Vec::new();
+        let mut i = 0usize;
+
+        while i < self.lines.len() {
+            let cur = &self.lines[i];
+            let cur_trim = cur.trim();
+
+            if cur_trim == "else {" {
+                let mut j = i + 1;
+                while j < self.lines.len() && self.lines[j].trim().is_empty() {
+                    j += 1;
+                }
+                if j < self.lines.len() && self.lines[j].trim() == "}" {
+                    i = j + 1;
+                    continue;
+                }
+            }
+
+            if cur_trim == "return null;"
+                && out
+                    .last()
+                    .is_some_and(|p: &String| p.trim() == "return null;")
+            {
+                i += 1;
+                continue;
+            }
+
+            out.push(cur.clone());
+            i += 1;
+        }
+
+        self.lines = out;
     }
 
     fn field_expr(base: &str, off: i64) -> String {
@@ -1381,7 +1417,10 @@ mod tests {
 
         emitter.inline_trivial_helpers();
         let out = emitter.lines.join("\n");
-        assert!(!out.contains("return _block_3();"), "call should be inlined:\n{out}");
+        assert!(
+            !out.contains("return _block_3();"),
+            "call should be inlined:\n{out}"
+        );
         assert!(
             !out.contains("dynamic _block_3()"),
             "unused helper should be removed:\n{out}"
