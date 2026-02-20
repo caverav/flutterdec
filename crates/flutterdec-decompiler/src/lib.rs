@@ -1430,4 +1430,35 @@ mod tests {
             "placeholder condition helper should be inlined:\n{out}"
         );
     }
+
+    #[test]
+    fn compacts_empty_else_and_duplicate_null_returns() {
+        let ir = FunctionIr {
+            function_id: 6,
+            name: "manualCompact".to_string(),
+            entry_va: 0x6000,
+            blocks: Vec::new(),
+        };
+        let symbols = HashMap::new();
+        let mut emitter = FuncEmitter::new(&ir, &symbols);
+        emitter.lines = vec![
+            "dynamic manualCompact(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {".to_string(),
+            "  if (arg0 == null) {".to_string(),
+            "    return null;".to_string(),
+            "  }".to_string(),
+            "  else {".to_string(),
+            "  }".to_string(),
+            "  return null;".to_string(),
+            "  return null;".to_string(),
+            "}".to_string(),
+        ];
+
+        emitter.compact_lines();
+        let out = emitter.lines.join("\n");
+        assert!(!out.contains("else {\n  }"), "empty else should be removed:\n{out}");
+        assert!(
+            !out.contains("return null;\n  return null;"),
+            "duplicate null returns should collapse:\n{out}"
+        );
+    }
 }
