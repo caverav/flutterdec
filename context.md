@@ -76,6 +76,9 @@ Readability wins over low level fidelity when there is a tradeoff. For example:
 - merge consecutive same-scope `if (...) { continue; }` guards into combined `||` guard conditions
 - rewrite adjacent `if (x > K) return ...; if (x >= L) continue;` pairs into explicit bounded continue ranges
 - rewrite multi-continue `while (true)` loops into explicit retry-flag loops, then collapse one-shot retry wrappers back to straight-line flow
+- collapse nested or trailing guard stacks that always return the same value (for example repeated `return null` guards before a final `return null`)
+- extract repeated `(<value> - 1)` expressions into a named alias (`codePoint`) when stable across the function
+- normalize negated comparison forms like `!((a) != b)` into direct equality checks
 - surface unknowns explicitly instead of inventing fake certainty
 
 ## Quality gates and metrics
@@ -103,9 +106,7 @@ Current scope:
 Known limits:
 
 - no full Dart syntax reconstruction yet
-- some structured loops still use generic `while (true)` scaffolds instead of condition-aware `while` or `for` forms
-- synthetic one-shot `while (true)` wrappers are now collapsed after emission when they only contain a trailing `break`
-- difficult loops can still appear as per-function back-edge summary comments
+- some difficult control flow still remains as retry-flag loops instead of fully intent-aware Dart loop forms
 - very complex control-flow regions can be summarized as omitted-path comments
 - many symbols remain synthetic when metadata is obfuscated
 - direct source level naming is still heuristic
@@ -129,8 +130,7 @@ Python remains useful at the adapter boundary for faster version specific parser
 
 ## Near term roadmap
 
-- improve loop structuring so generic `while (true)` scaffolds become condition-aware `while` or `for` constructs
-- eliminate residual loop back-edge summaries
+- improve retry-loop structuring so remaining retry patterns become clearer intent-level flow
 - replace omitted-path comments with richer structured reconstructions
 - lift more Dart VM idioms into higher level expressions
 - improve naming and type inference from object pool and call patterns

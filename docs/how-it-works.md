@@ -399,6 +399,7 @@ The decompiler has two layers:
 - unwrapping synthetic single-iteration `while (true)` wrappers with no `continue`
 - hoisting `else` blocks after terminating `if` branches
 - collapsing redundant guarded returns with identical fallthrough returns
+- collapsing nested/trailing guarded-return stacks that always end in the same return value
 - removing redundant repeated null guards after terminating null checks
 - merging nested single-guard `if` blocks
 - merging consecutive `continue` guards into combined conditions
@@ -406,7 +407,9 @@ The decompiler has two layers:
 - rewriting multi-continue infinite loops into retry-flag loops
 - unwrapping retry loops that no longer have retry paths
 - arithmetic simplification
+- normalizing negated comparisons (`!((a) != b)` -> `((a) == b)`)
 - naming and type hinting
+- extracting stable repeated `(<value> - 1)` expressions into aliases (for example `codePoint`)
 - compacting empty or redundant control flow patterns
 
 Important pass ordering:
@@ -416,9 +419,10 @@ Important pass ordering:
 3. inline trivial helpers
 4. collapse remaining helper scaffolding
 5. insert loop back-edge summaries
-6. compact empty or redundant patterns
+6. compact empty or redundant patterns (iterative, up to 16 passes)
 7. clean expressions
 8. apply naming and type hints
+9. extract repeated stable arithmetic aliases
 
 Why this ordering matters:
 
@@ -443,6 +447,8 @@ Recent readability features include:
   - `if (cond) { return x; } else { return x; }` to `return x;`
 - redundant guarded return folding:
   - `if (cond) { return x; } return x;` to `return x;`
+- nested/trailing same-return guard folding:
+  - `if (g1) { return null; } if (g2) { return null; } return null;` to `return null;`
 - terminating-branch else hoisting:
   - `if (cond) { return x; } else { body }` to `if (cond) { return x; } body`
 - redundant null-check elimination:
@@ -456,6 +462,10 @@ Recent readability features include:
 - retry-loop rewrite:
   - `while (true)` loops with many `continue` edges become `while (retryLoopN)` using a retry flag initialized to true and cleared on fall-through
   - retry wrappers with no remaining retry paths are unwrapped back to straight-line code
+- negated comparison normalization:
+  - `!((a) != b)` to `((a) == b)` and `!((a) == b)` to `((a) != b)`
+- repeated minus-one alias extraction:
+  - repeated `(value3 - 1)` style expressions become a named alias such as `final int codePoint = (value3 - 1);`
 - early loop structuring:
   - detect loop headers from backward CFG edges
   - emit `while (true)` with `continue` for back-edge paths
