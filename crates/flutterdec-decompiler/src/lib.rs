@@ -530,15 +530,41 @@ impl<'a> FuncEmitter<'a> {
             let mut changed = false;
             let mut out = Vec::new();
             let mut i = 0usize;
+            let mut retry_loop_id = 1usize;
 
             while i < self.lines.len() {
                 let cur = &self.lines[i];
                 let cur_trim = cur.trim();
 
+                if let Some(var) = Self::retry_decl_var(cur_trim) {
+                    if i + 1 < self.lines.len() {
+                        let next_trim = self.lines[i + 1].trim();
+                        if Self::while_var(next_trim).as_deref() == Some(var.as_str()) {
+                            if let Some(loop_end) = Self::find_block_end(&self.lines, i + 1) {
+                                let has_retry_true = (i + 2..loop_end)
+                                    .any(|idx| self.lines[idx].trim() == format!("{var} = true;"));
+                                if !has_retry_true {
+                                    for idx in i + 2..loop_end {
+                                        let t = self.lines[idx].trim();
+                                        if t == format!("{var} = false;") {
+                                            continue;
+                                        }
+                                        out.push(Self::dedent_once(&self.lines[idx]));
+                                    }
+                                    i = loop_end + 1;
+                                    changed = true;
+                                    continue;
+                                }
+                            }
+                        }
+                    }
+                }
+
                 if cur_trim == "while (true) {" {
                     if let Some(j) = Self::find_block_end(&self.lines, i) {
                         let mut rel_depth = 1i32;
                         let mut has_continue = false;
+                        let mut continue_count = 0usize;
                         let mut last_non_empty = None;
                         let mut break_at_top_level = false;
 
@@ -548,6 +574,7 @@ impl<'a> FuncEmitter<'a> {
                                 last_non_empty = Some(idx);
                                 if t == "continue;" {
                                     has_continue = true;
+                                    continue_count += 1;
                                 }
                             }
                             rel_depth +=
@@ -585,10 +612,103 @@ impl<'a> FuncEmitter<'a> {
                             changed = true;
                             continue;
                         }
+
+                        if break_at_top_level && continue_count >= 2 {
+                            let indent = Self::leading_indent(cur);
+                            let retry_var = format!("retryLoop{retry_loop_id}");
+                            retry_loop_id += 1;
+
+                            out.push(format!("{}bool {} = true;", " ".repeat(indent), retry_var));
+                            out.push(format!("{}while ({}) {{", " ".repeat(indent), retry_var));
+                            out.push(format!("{}{} = false;", " ".repeat(indent + 2), retry_var));
+
+                            for idx in i + 1..j {
+                                if Some(idx) == last_non_empty && self.lines[idx].trim() == "break;"
+                                {
+                                    continue;
+                                }
+                                if self.lines[idx].trim() == "continue;" {
+                                    let c_indent = Self::leading_indent(&self.lines[idx]);
+                                    out.push(format!(
+                                        "{}{} = true;",
+                                        " ".repeat(c_indent),
+                                        retry_var
+                                    ));
+                                    out.push(self.lines[idx].clone());
+                                    continue;
+                                }
+                                out.push(self.lines[idx].clone());
+                            }
+
+                            out.push(self.lines[j].clone());
+                            i = j + 1;
+                            changed = true;
+                            continue;
+                        }
                     }
                 }
 
                 if cur_trim.starts_with("if (") && cur_trim.ends_with(") {") {
+                    if let Some(outer_cond) = Self::if_condition(cur_trim) {
+                        if let Some(outer_end) = Self::find_block_end(&self.lines, i) {
+                            let mut inner_start = None;
+                            for idx in i + 1..outer_end {
+                                if !self.lines[idx].trim().is_empty() {
+                                    inner_start = Some(idx);
+                                    break;
+                                }
+                            }
+
+                            if let Some(inner_start) = inner_start {
+                                let inner_trim = self.lines[inner_start].trim();
+                                if Self::leading_indent(&self.lines[inner_start])
+                                    == Self::leading_indent(cur) + 2
+                                    && inner_trim.starts_with("if (")
+                                    && inner_trim.ends_with(") {")
+                                {
+                                    if let Some(inner_end) =
+                                        Self::find_block_end(&self.lines, inner_start)
+                                    {
+                                        if inner_end < outer_end {
+                                            let mut only_inner = true;
+                                            for idx in i + 1..outer_end {
+                                                if idx >= inner_start && idx <= inner_end {
+                                                    continue;
+                                                }
+                                                if !self.lines[idx].trim().is_empty() {
+                                                    only_inner = false;
+                                                    break;
+                                                }
+                                            }
+                                            if only_inner {
+                                                if let Some(inner_cond) =
+                                                    Self::if_condition(inner_trim)
+                                                {
+                                                    let indent = Self::leading_indent(cur);
+                                                    out.push(format!(
+                                                        "{}if (({}) && ({})) {{",
+                                                        " ".repeat(indent),
+                                                        outer_cond,
+                                                        inner_cond
+                                                    ));
+                                                    for idx in inner_start + 1..inner_end {
+                                                        out.push(Self::dedent_once(
+                                                            &self.lines[idx],
+                                                        ));
+                                                    }
+                                                    out.push(self.lines[outer_end].clone());
+                                                    i = outer_end + 1;
+                                                    changed = true;
+                                                    continue;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     let cur_indent = Self::leading_indent(cur);
                     if let Some(id) = Self::null_checked_ident(cur_trim) {
                         if let Some(first_end) = Self::find_block_end(&self.lines, i) {
@@ -879,11 +999,37 @@ impl<'a> FuncEmitter<'a> {
         None
     }
 
-    fn null_checked_ident(line_trim: &str) -> Option<String> {
-        let cond = line_trim
-            .strip_prefix("if (")
+    fn if_condition(line_trim: &str) -> Option<&str> {
+        Some(
+            line_trim
+                .strip_prefix("if (")
+                .and_then(|s| s.strip_suffix(") {"))?
+                .trim(),
+        )
+    }
+
+    fn retry_decl_var(line_trim: &str) -> Option<String> {
+        let rest = line_trim.strip_prefix("bool ")?;
+        let var = rest.strip_suffix(" = true;")?.trim();
+        if var.is_empty() || !var.chars().all(Self::is_ident_char) {
+            return None;
+        }
+        Some(var.to_string())
+    }
+
+    fn while_var(line_trim: &str) -> Option<String> {
+        let var = line_trim
+            .strip_prefix("while (")
             .and_then(|s| s.strip_suffix(") {"))?
             .trim();
+        if var.is_empty() || !var.chars().all(Self::is_ident_char) {
+            return None;
+        }
+        Some(var.to_string())
+    }
+
+    fn null_checked_ident(line_trim: &str) -> Option<String> {
+        let cond = Self::if_condition(line_trim)?;
         let (lhs, rhs) = cond.split_once("==")?;
         let lhs = lhs.trim();
         let rhs = rhs.trim();
@@ -3260,6 +3406,39 @@ mod tests {
     }
 
     #[test]
+    fn merges_nested_single_if_guards() {
+        let ir = FunctionIr {
+            function_id: 29,
+            name: "mergeNestedIf".to_string(),
+            entry_va: 0xfe00,
+            blocks: Vec::new(),
+        };
+        let symbols = HashMap::new();
+        let mut emitter = FuncEmitter::new(&ir, &symbols);
+        emitter.lines = vec![
+            "dynamic mergeNestedIf(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {".to_string(),
+            "  if (arg0 != null) {".to_string(),
+            "    if (arg1 != null) {".to_string(),
+            "      return arg2;".to_string(),
+            "    }".to_string(),
+            "  }".to_string(),
+            "  return null;".to_string(),
+            "}".to_string(),
+        ];
+
+        emitter.compact_lines();
+        let out = emitter.lines.join("\n");
+        assert!(
+            out.contains("if ((arg0 != null) && (arg1 != null)) {"),
+            "nested if guards should merge:\n{out}"
+        );
+        assert!(
+            !out.contains("if (arg0 != null) {\n    if (arg1 != null) {"),
+            "legacy nested guard shape should be removed:\n{out}"
+        );
+    }
+
+    #[test]
     fn removes_redundant_null_check_after_terminating_guard() {
         let ir = FunctionIr {
             function_id: 27,
@@ -3388,6 +3567,82 @@ mod tests {
             "real loop control flow should keep wrapper:\n{out}"
         );
         assert!(out.contains("continue;"), "continue should remain:\n{out}");
+    }
+
+    #[test]
+    fn rewrites_multi_continue_loop_as_retry_condition() {
+        let ir = FunctionIr {
+            function_id: 30,
+            name: "retryLoop".to_string(),
+            entry_va: 0xff00,
+            blocks: Vec::new(),
+        };
+        let symbols = HashMap::new();
+        let mut emitter = FuncEmitter::new(&ir, &symbols);
+        emitter.lines = vec![
+            "dynamic retryLoop(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {".to_string(),
+            "  while (true) {".to_string(),
+            "    if (arg0 == null) {".to_string(),
+            "      continue;".to_string(),
+            "    }".to_string(),
+            "    if (arg1 == null) {".to_string(),
+            "      continue;".to_string(),
+            "    }".to_string(),
+            "    return arg2;".to_string(),
+            "    break;".to_string(),
+            "  }".to_string(),
+            "}".to_string(),
+        ];
+
+        emitter.compact_lines();
+        let out = emitter.lines.join("\n");
+        assert!(
+            out.contains("bool retryLoop1 = true;") && out.contains("while (retryLoop1) {"),
+            "multi-continue loop should get retry condition:\n{out}"
+        );
+        assert!(
+            out.contains("retryLoop1 = false;") && out.contains("retryLoop1 = true;"),
+            "retry flag updates should be emitted:\n{out}"
+        );
+        assert!(
+            !out.contains("while (true) {"),
+            "generic while(true) should be removed for multi-continue loops:\n{out}"
+        );
+    }
+
+    #[test]
+    fn unwraps_retry_loop_when_no_retry_paths_remain() {
+        let ir = FunctionIr {
+            function_id: 31,
+            name: "retryCleanup".to_string(),
+            entry_va: 0x10000,
+            blocks: Vec::new(),
+        };
+        let symbols = HashMap::new();
+        let mut emitter = FuncEmitter::new(&ir, &symbols);
+        emitter.lines = vec![
+            "dynamic retryCleanup(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {".to_string(),
+            "  bool retryLoop1 = true;".to_string(),
+            "  while (retryLoop1) {".to_string(),
+            "    retryLoop1 = false;".to_string(),
+            "    if (arg0 == null) {".to_string(),
+            "      return arg1;".to_string(),
+            "    }".to_string(),
+            "    return arg2;".to_string(),
+            "  }".to_string(),
+            "}".to_string(),
+        ];
+
+        emitter.compact_lines();
+        let out = emitter.lines.join("\n");
+        assert!(
+            !out.contains("retryLoop1"),
+            "one-shot retry wrappers should collapse:\n{out}"
+        );
+        assert!(
+            out.contains("if (arg0 == null) {"),
+            "loop body should remain:\n{out}"
+        );
     }
 
     #[test]
