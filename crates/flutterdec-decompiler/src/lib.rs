@@ -342,6 +342,14 @@ fn named_indirect_target(token: &str) -> String {
     token.to_string()
 }
 
+fn named_register_alias(n: usize) -> String {
+    match n {
+        30 => "returnAddress".to_string(),
+        29 => "framePointer".to_string(),
+        _ => format!("reg{n}"),
+    }
+}
+
 fn local_name(off: i64) -> String {
     if off < 0 {
         format!("local_m{}", -off)
@@ -776,7 +784,7 @@ impl<'a> FuncEmitter<'a> {
             let mut cur = line.clone();
             for n in 0..=30 {
                 let from = format!("x{n}");
-                let to = format!("reg{n}");
+                let to = named_register_alias(n);
                 cur = Self::replace_identifier_token(&cur, &from, &to);
             }
             *line = cur;
@@ -2162,7 +2170,36 @@ mod tests {
         assert!(!out.contains("x2"), "x2 should be aliased:\n{out}");
         assert!(!out.contains("x30"), "x30 should be aliased:\n{out}");
         assert!(out.contains("reg2"), "reg2 alias missing:\n{out}");
-        assert!(out.contains("reg30"), "reg30 alias missing:\n{out}");
+        assert!(
+            out.contains("returnAddress"),
+            "x30 should map to returnAddress:\n{out}"
+        );
+    }
+
+    #[test]
+    fn aliases_frame_and_return_registers_with_semantic_names() {
+        let ir = FunctionIr {
+            function_id: 21,
+            name: "frameRegs".to_string(),
+            entry_va: 0xf600,
+            blocks: Vec::new(),
+        };
+        let symbols = HashMap::new();
+        let mut emitter = FuncEmitter::new(&ir, &symbols);
+        emitter.lines = vec![
+            "dynamic frameRegs(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {".to_string(),
+            "  final t1 = x29;".to_string(),
+            "  final t2 = x30;".to_string(),
+            "  return t2;".to_string(),
+            "}".to_string(),
+        ];
+
+        emitter.apply_name_and_type_hints("frameRegs");
+        let out = emitter.lines.join("\n");
+        assert!(
+            out.contains("framePointer") && out.contains("returnAddress"),
+            "x29/x30 should use semantic aliases:\n{out}"
+        );
     }
 
     #[test]
