@@ -1908,4 +1908,45 @@ mod tests {
         assert!(out.contains("reg2"), "reg2 alias missing:\n{out}");
         assert!(out.contains("reg30"), "reg30 alias missing:\n{out}");
     }
+
+    #[test]
+    fn emits_dynamic_call_for_indirect_targets() {
+        let ir = FunctionIr {
+            function_id: 12,
+            name: "indirectCall".to_string(),
+            entry_va: 0xc000,
+            blocks: vec![BasicBlock {
+                id: 0,
+                start_va: 0xc000,
+                instrs: vec![
+                    LlirInstr {
+                        va: 0xc000,
+                        op: IROp::Call,
+                        src: "blr x9".to_string(),
+                        target: "x9".to_string(),
+                    },
+                    LlirInstr {
+                        va: 0xc004,
+                        op: IROp::Return,
+                        src: "ret".to_string(),
+                        target: String::new(),
+                    },
+                ],
+                succs: Vec::new(),
+                preds: Vec::new(),
+            }],
+        };
+        let symbols = HashMap::new();
+        let artifact = emit_pseudocode(&ir, &symbols);
+        assert!(
+            artifact.source.contains("dynamicCall(reg9"),
+            "indirect calls should use dynamicCall:\n{}",
+            artifact.source
+        );
+        assert!(
+            !artifact.source.contains("invoke(reg9"),
+            "legacy invoke label should be absent:\n{}",
+            artifact.source
+        );
+    }
 }
