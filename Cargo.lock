@@ -276,11 +276,13 @@ name = "flutterdec-core"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "capstone",
  "flutterdec-adapter",
  "flutterdec-decompiler",
  "flutterdec-disasm-arm64",
  "flutterdec-ir",
  "flutterdec-loader",
+ "goblin",
  "serde",
  "serde_json",
 ]

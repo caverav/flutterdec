@@ -63,3 +63,4 @@ include!("pipeline/helpers.rs");
 include!("pipeline/model.rs");
 include!("pipeline/quality.rs");
 include!("pipeline/runners.rs");
+include!("pipeline/symbol_map.rs");
