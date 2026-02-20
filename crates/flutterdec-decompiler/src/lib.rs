@@ -499,6 +499,7 @@ impl<'a> FuncEmitter<'a> {
             *line = Self::clean_expr(line.clone());
         }
         self.apply_name_and_type_hints(&fn_name);
+        self.extract_minus_one_aliases();
 
         PseudocodeArtifact {
             function_id: self.ir.function_id,
@@ -526,7 +527,7 @@ impl<'a> FuncEmitter<'a> {
     }
 
     fn compact_lines(&mut self) {
-        for _pass in 0..8 {
+        for _pass in 0..16 {
             let mut changed = false;
             let mut out = Vec::new();
             let mut i = 0usize;
@@ -637,6 +638,28 @@ impl<'a> FuncEmitter<'a> {
                             changed = true;
                             continue;
                         }
+                    }
+                }
+
+                if cur_trim.starts_with("if (") && cur_trim.ends_with(") {") {
+                    let indent = Self::leading_indent(cur);
+                    if let Some((ret_stmt, final_ret_idx)) =
+                        Self::redundant_guarded_return_chain(&self.lines, i, indent)
+                    {
+                        out.push(format!("{}{}", " ".repeat(indent), ret_stmt));
+                        i = final_ret_idx + 1;
+                        changed = true;
+                        continue;
+                    }
+                    if let Some((ret_stmt, then_end)) =
+                        Self::collapse_guarded_returns_inside_if(&self.lines, i)
+                    {
+                        out.push(cur.clone());
+                        out.push(format!("{}{}", " ".repeat(indent + 2), ret_stmt));
+                        out.push(self.lines[then_end].clone());
+                        i = then_end + 1;
+                        changed = true;
+                        continue;
                     }
                 }
 
@@ -1270,6 +1293,153 @@ impl<'a> FuncEmitter<'a> {
         Some(var.to_string())
     }
 
+    fn redundant_guarded_return_chain(
+        lines: &[String],
+        start: usize,
+        indent: usize,
+    ) -> Option<(String, usize)> {
+        if start >= lines.len() {
+            return None;
+        }
+        let mut idx = start;
+        let mut expected_ret: Option<String> = None;
+
+        loop {
+            if idx >= lines.len() {
+                return None;
+            }
+            let line = &lines[idx];
+            let t = line.trim();
+            if Self::leading_indent(line) != indent || !t.starts_with("if (") || !t.ends_with(") {")
+            {
+                return None;
+            }
+            let cond = Self::if_condition(t)?;
+            if cond.contains("flags.") || cond.contains("/* cond */") {
+                return None;
+            }
+
+            let then_end = Self::find_block_end(lines, idx)?;
+            let mut else_start = then_end + 1;
+            while else_start < lines.len() && lines[else_start].trim().is_empty() {
+                else_start += 1;
+            }
+            if else_start < lines.len() && lines[else_start].trim() == "else {" {
+                return None;
+            }
+
+            let then_ret = Self::single_top_level_return(lines, idx + 1, then_end)?;
+            if let Some(existing) = &expected_ret {
+                if existing != &then_ret {
+                    return None;
+                }
+            } else {
+                expected_ret = Some(then_ret);
+            }
+
+            idx = then_end + 1;
+            while idx < lines.len() && lines[idx].trim().is_empty() {
+                idx += 1;
+            }
+            if idx >= lines.len() {
+                return None;
+            }
+            if Self::leading_indent(&lines[idx]) != indent {
+                return None;
+            }
+
+            let t = lines[idx].trim();
+            if Some(t) == expected_ret.as_deref() {
+                return Some((expected_ret.unwrap_or_default(), idx));
+            }
+            if t.starts_with("if (") && t.ends_with(") {") {
+                continue;
+            }
+            return None;
+        }
+    }
+
+    fn collapse_guarded_returns_inside_if(
+        lines: &[String],
+        start: usize,
+    ) -> Option<(String, usize)> {
+        if start >= lines.len() {
+            return None;
+        }
+        let start_trim = lines[start].trim();
+        if !start_trim.starts_with("if (") || !start_trim.ends_with(") {") {
+            return None;
+        }
+        let then_end = Self::find_block_end(lines, start)?;
+
+        let mut else_start = then_end + 1;
+        while else_start < lines.len() && lines[else_start].trim().is_empty() {
+            else_start += 1;
+        }
+        if else_start < lines.len() && lines[else_start].trim() == "else {" {
+            return None;
+        }
+
+        #[derive(Debug)]
+        enum TopStmt {
+            IfRet(String),
+            Ret(String),
+        }
+
+        let mut stmts = Vec::new();
+        let mut idx = start + 1;
+        while idx < then_end {
+            let t = lines[idx].trim();
+            if t.is_empty() {
+                idx += 1;
+                continue;
+            }
+
+            if t.starts_with("if (") && t.ends_with(") {") {
+                let nested_end = Self::find_block_end(lines, idx)?;
+                if nested_end >= then_end {
+                    return None;
+                }
+                let mut nested_else = nested_end + 1;
+                while nested_else < then_end && lines[nested_else].trim().is_empty() {
+                    nested_else += 1;
+                }
+                if nested_else < then_end && lines[nested_else].trim() == "else {" {
+                    return None;
+                }
+                let ret = Self::single_top_level_return(lines, idx + 1, nested_end)?;
+                stmts.push(TopStmt::IfRet(ret));
+                idx = nested_end + 1;
+                continue;
+            }
+
+            if t.starts_with("return ") {
+                stmts.push(TopStmt::Ret(t.to_string()));
+                idx += 1;
+                continue;
+            }
+            return None;
+        }
+
+        if stmts.len() < 2 {
+            return None;
+        }
+        let final_ret = match stmts.last()? {
+            TopStmt::Ret(r) => r.clone(),
+            TopStmt::IfRet(_) => return None,
+        };
+        for stmt in &stmts[..stmts.len() - 1] {
+            let TopStmt::IfRet(r) = stmt else {
+                return None;
+            };
+            if *r != final_ret {
+                return None;
+            }
+        }
+
+        Some((final_ret, then_end))
+    }
+
     fn null_checked_ident(line_trim: &str) -> Option<String> {
         let cond = Self::if_condition(line_trim)?;
         let (lhs, rhs) = cond.split_once("==")?;
@@ -1456,6 +1626,122 @@ impl<'a> FuncEmitter<'a> {
                 return candidate;
             }
             i += 1;
+        }
+    }
+
+    fn is_local_decl_line(t: &str) -> bool {
+        if !(t.starts_with("int ") || t.starts_with("dynamic ")) {
+            return false;
+        }
+        if !t.ends_with(';') || t.contains('=') {
+            return false;
+        }
+        !t.contains('(')
+    }
+
+    fn prelude_insert_index(lines: &[String]) -> usize {
+        let mut idx = 1usize;
+        while idx < lines.len() {
+            let t = lines[idx].trim();
+            if t.is_empty() || t.starts_with("//") || Self::is_local_decl_line(t) {
+                idx += 1;
+                continue;
+            }
+            break;
+        }
+        idx
+    }
+
+    fn minus_one_idents(line: &str) -> Vec<String> {
+        let mut out = Vec::new();
+        let mut start = 0usize;
+        while let Some(rel) = line[start..].find(" - 1)") {
+            let idx = start + rel;
+            let prefix = &line[..idx];
+            if let Some(lp) = prefix.rfind('(') {
+                let ident = prefix[lp + 1..].trim();
+                if !ident.is_empty()
+                    && ident.chars().all(Self::is_ident_char)
+                    && ident
+                        .chars()
+                        .next()
+                        .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+                {
+                    out.push(ident.to_string());
+                }
+            }
+            start = idx + " - 1)".len();
+        }
+        out
+    }
+
+    fn name_taken(lines: &[String], name: &str) -> bool {
+        lines.iter().any(|l| l.contains(name))
+    }
+
+    fn identifier_assigned(lines: &[String], ident: &str) -> bool {
+        lines.iter().any(|l| Self::assigns_ident(l, ident))
+    }
+
+    fn extract_minus_one_aliases(&mut self) {
+        if self.lines.len() < 3 {
+            return;
+        }
+
+        let mut counts: HashMap<String, usize> = HashMap::new();
+        for line in &self.lines {
+            for ident in Self::minus_one_idents(line) {
+                *counts.entry(ident).or_insert(0) += 1;
+            }
+        }
+
+        let mut candidates: Vec<(String, usize)> = counts
+            .into_iter()
+            .filter(|(_, count)| *count >= 4)
+            .collect();
+        candidates.sort_unstable_by(|a, b| b.1.cmp(&a.1));
+        if candidates.is_empty() {
+            return;
+        }
+
+        let insert_idx = Self::prelude_insert_index(&self.lines);
+        let mut inserts = Vec::new();
+        for (ident, _) in candidates {
+            if Self::identifier_assigned(&self.lines, &ident) {
+                continue;
+            }
+            let pattern = format!("({ident} - 1)");
+            if !self.lines.iter().any(|l| l.contains(&pattern)) {
+                continue;
+            }
+
+            let base = if ident.starts_with("value") {
+                "codePoint".to_string()
+            } else {
+                format!("{ident}Minus1")
+            };
+            let mut alias = base.clone();
+            let mut n = 2usize;
+            while Self::name_taken(&self.lines, &alias) || inserts.iter().any(|l: &String| l.contains(&alias))
+            {
+                alias = format!("{base}{n}");
+                n += 1;
+            }
+
+            let mut replaced = false;
+            for line in &mut self.lines {
+                if line.contains(&pattern) {
+                    *line = line.replace(&pattern, &alias);
+                    replaced = true;
+                }
+            }
+            if replaced {
+                inserts.push(format!("  final int {alias} = ({ident} - 1);"));
+            }
+        }
+
+        if !inserts.is_empty() {
+            self.lines.splice(insert_idx..insert_idx, inserts);
         }
     }
 
@@ -1671,10 +1957,69 @@ impl<'a> FuncEmitter<'a> {
         out
     }
 
+    fn rewrite_negated_comparisons(input: &str) -> String {
+        let mut out = String::new();
+        let bytes = input.as_bytes();
+        let mut i = 0usize;
+
+        while i < bytes.len() {
+            if input[i..].starts_with("!((") {
+                let mut depth = 0i32;
+                let mut end = None;
+                let mut j = i + 1;
+                while j < bytes.len() {
+                    let c = bytes[j] as char;
+                    if c == '(' {
+                        depth += 1;
+                    } else if c == ')' {
+                        depth -= 1;
+                        if depth == 0 {
+                            end = Some(j);
+                            break;
+                        }
+                    }
+                    j += 1;
+                }
+
+                if let Some(end_idx) = end {
+                    let wrapped = &input[i + 1..=end_idx];
+                    if let Some(inner) = wrapped
+                        .strip_prefix('(')
+                        .and_then(|s| s.strip_suffix(')'))
+                    {
+                        if let Some((lhs, rhs)) = inner.split_once(" != ") {
+                            out.push('(');
+                            out.push_str(lhs.trim());
+                            out.push_str(" == ");
+                            out.push_str(rhs.trim());
+                            out.push(')');
+                            i = end_idx + 1;
+                            continue;
+                        }
+                        if let Some((lhs, rhs)) = inner.split_once(" == ") {
+                            out.push('(');
+                            out.push_str(lhs.trim());
+                            out.push_str(" != ");
+                            out.push_str(rhs.trim());
+                            out.push(')');
+                            i = end_idx + 1;
+                            continue;
+                        }
+                    }
+                }
+            }
+            out.push(bytes[i] as char);
+            i += 1;
+        }
+
+        out
+    }
+
     fn clean_expr(expr: String) -> String {
         let mut s = expr;
         s = s.replace(" + x28 /* lsl #32 */", "");
         s = s.replace(" + x28", "");
+        s = Self::rewrite_negated_comparisons(&s);
         s = Self::rewrite_bitfield_classid(&s);
         s
     }
@@ -3992,6 +4337,127 @@ mod tests {
             out.contains("if (arg0 == null) {"),
             "loop body should remain:\n{out}"
         );
+    }
+
+    #[test]
+    fn collapses_nested_guarded_returns_inside_if_body() {
+        let ir = FunctionIr {
+            function_id: 36,
+            name: "nestedReturnGuards".to_string(),
+            entry_va: 0x15000,
+            blocks: Vec::new(),
+        };
+        let symbols = HashMap::new();
+        let mut emitter = FuncEmitter::new(&ir, &symbols);
+        emitter.lines = vec![
+            "dynamic nestedReturnGuards(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {".to_string(),
+            "  if (arg0 > 0x20) {".to_string(),
+            "    if (arg0 == 0x2028) {".to_string(),
+            "      return null;".to_string(),
+            "    }".to_string(),
+            "    return null;".to_string(),
+            "  }".to_string(),
+            "  return arg1;".to_string(),
+            "}".to_string(),
+        ];
+
+        emitter.compact_lines();
+        let out = emitter.lines.join("\n");
+        assert!(
+            out.contains("if (arg0 > 0x20) {\n    return null;\n  }"),
+            "nested redundant guarded return should collapse:\n{out}"
+        );
+        assert!(
+            !out.contains("if (arg0 == 0x2028) {"),
+            "inner guard should be removed:\n{out}"
+        );
+    }
+
+    #[test]
+    fn extracts_repeated_minus_one_expression_alias() {
+        let ir = FunctionIr {
+            function_id: 37,
+            name: "minusOneAlias".to_string(),
+            entry_va: 0x16000,
+            blocks: Vec::new(),
+        };
+        let symbols = HashMap::new();
+        let mut emitter = FuncEmitter::new(&ir, &symbols);
+        emitter.lines = vec![
+            "dynamic minusOneAlias(dynamic receiver, dynamic param1, dynamic param2, int value3, dynamic param4, dynamic param5, dynamic param6, dynamic param7) {".to_string(),
+            "  if ((value3 - 1) > 0x20) {".to_string(),
+            "    return (value3 - 1);".to_string(),
+            "  }".to_string(),
+            "  if ((value3 - 1) == 0x20) {".to_string(),
+            "    return (value3 - 1);".to_string(),
+            "  }".to_string(),
+            "  return (value3 - 1);".to_string(),
+            "}".to_string(),
+        ];
+
+        emitter.extract_minus_one_aliases();
+        let out = emitter.lines.join("\n");
+        assert!(
+            out.contains("final int codePoint = (value3 - 1);"),
+            "repeated minus-one expression should be aliased:\n{out}"
+        );
+        assert_eq!(
+            out.matches("(value3 - 1)").count(),
+            1,
+            "all repeated occurrences should use alias after declaration:\n{out}"
+        );
+    }
+
+    #[test]
+    fn collapses_trailing_null_return_guards_after_continue_branches() {
+        let ir = FunctionIr {
+            function_id: 38,
+            name: "nullGuardsAfterContinue".to_string(),
+            entry_va: 0x17000,
+            blocks: Vec::new(),
+        };
+        let symbols = HashMap::new();
+        let mut emitter = FuncEmitter::new(&ir, &symbols);
+        emitter.lines = vec![
+            "dynamic nullGuardsAfterContinue(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {".to_string(),
+            "  if (arg0 > 0x20) {".to_string(),
+            "    if (arg0 < 0x85) {".to_string(),
+            "      return arg1;".to_string(),
+            "    }".to_string(),
+            "    if ((arg0 == 0x85) || (arg0 == 0xa0)) {".to_string(),
+            "      continue;".to_string(),
+            "    }".to_string(),
+            "    if (arg0 > 0x200a) {".to_string(),
+            "      if (arg0 == 0x2028) {".to_string(),
+            "        return null;".to_string(),
+            "      }".to_string(),
+            "      return null;".to_string(),
+            "    }".to_string(),
+            "    if (arg0 == 0x1680) {".to_string(),
+            "      return null;".to_string(),
+            "    }".to_string(),
+            "    return null;".to_string(),
+            "  }".to_string(),
+            "}".to_string(),
+        ];
+
+        emitter.compact_lines();
+        let out = emitter.lines.join("\n");
+        assert!(
+            !out.contains("if (arg0 == 0x2028) {"),
+            "nested redundant null guard should be removed:\n{out}"
+        );
+        assert!(
+            !out.contains("if (arg0 == 0x1680) {"),
+            "trailing redundant null guard should be removed:\n{out}"
+        );
+    }
+
+    #[test]
+    fn rewrites_negated_not_equal_comparisons() {
+        let line = "if (!((classId(arg1) << 1) != 0xbc)) {".to_string();
+        let got = FuncEmitter::clean_expr(line);
+        assert_eq!(got, "if (((classId(arg1) << 1) == 0xbc)) {");
     }
 
     #[test]
