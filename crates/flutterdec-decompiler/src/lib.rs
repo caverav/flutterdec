@@ -506,11 +506,11 @@ impl<'a> FuncEmitter<'a> {
         for arg in &arg_ids {
             let stats = Self::collect_ident_stats(&self.lines, arg);
             let idx = arg.trim_start_matches("arg").parse::<usize>().unwrap_or(0);
-            let base = if idx == 0 && stats.field_access >= 1 {
+            let base = if idx == 0 {
                 "receiver".to_string()
-            } else if stats.field_access >= 4 {
+            } else if stats.field_access >= 1 {
                 format!("obj{idx}")
-            } else if stats.arith_ops >= 4 && stats.field_access == 0 {
+            } else if stats.arith_ops >= 2 && stats.field_access == 0 {
                 format!("value{idx}")
             } else {
                 arg.clone()
@@ -519,7 +519,7 @@ impl<'a> FuncEmitter<'a> {
             if name != *arg {
                 renames.insert(arg.clone(), name);
             }
-            let ty = if stats.arith_ops >= 4 && stats.field_access == 0 {
+            let ty = if stats.arith_ops >= 2 && stats.field_access == 0 {
                 "int"
             } else {
                 "dynamic"
