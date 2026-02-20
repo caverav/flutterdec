@@ -641,6 +641,42 @@ impl<'a> FuncEmitter<'a> {
                 }
 
                 if cur_trim.starts_with("if (") && cur_trim.ends_with(") {") {
+                    let cond = Self::if_condition(cur_trim).unwrap_or("");
+                    if !cond.contains("flags.") && !cond.contains("/* cond */") {
+                        if let Some(then_end) = Self::find_block_end(&self.lines, i) {
+                            let mut then_else = then_end + 1;
+                            while then_else < self.lines.len()
+                                && self.lines[then_else].trim().is_empty()
+                            {
+                                then_else += 1;
+                            }
+                            let has_else = then_else < self.lines.len()
+                                && self.lines[then_else].trim() == "else {";
+                            if !has_else {
+                                if let Some(then_ret) =
+                                    Self::single_top_level_return(&self.lines, i + 1, then_end)
+                                {
+                                    let mut next = then_end + 1;
+                                    while next < self.lines.len()
+                                        && self.lines[next].trim().is_empty()
+                                    {
+                                        next += 1;
+                                    }
+                                    if next < self.lines.len()
+                                        && self.lines[next].trim() == then_ret
+                                    {
+                                        let indent =
+                                            cur.chars().take_while(|c| c.is_whitespace()).count();
+                                        out.push(format!("{}{}", " ".repeat(indent), then_ret));
+                                        i = next + 1;
+                                        changed = true;
+                                        continue;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     if let Some(first_cond) = Self::if_condition(cur_trim) {
                         if let Some(first_end) = Self::find_block_end(&self.lines, i) {
                             let mut first_else = first_end + 1;
@@ -3443,6 +3479,38 @@ mod tests {
         assert!(
             !out.contains("if (arg0 == null) {"),
             "identical return branches should collapse:\n{out}"
+        );
+        assert_eq!(
+            out.matches("return arg1;").count(),
+            1,
+            "collapsed output should keep one return:\n{out}"
+        );
+    }
+
+    #[test]
+    fn collapses_if_then_return_followed_by_same_return() {
+        let ir = FunctionIr {
+            function_id: 34,
+            name: "sameReturnNoElse".to_string(),
+            entry_va: 0x13000,
+            blocks: Vec::new(),
+        };
+        let symbols = HashMap::new();
+        let mut emitter = FuncEmitter::new(&ir, &symbols);
+        emitter.lines = vec![
+            "dynamic sameReturnNoElse(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {".to_string(),
+            "  if (arg0 == null) {".to_string(),
+            "    return arg1;".to_string(),
+            "  }".to_string(),
+            "  return arg1;".to_string(),
+            "}".to_string(),
+        ];
+
+        emitter.compact_lines();
+        let out = emitter.lines.join("\n");
+        assert!(
+            !out.contains("if (arg0 == null) {"),
+            "redundant guarded return should collapse:\n{out}"
         );
         assert_eq!(
             out.matches("return arg1;").count(),
