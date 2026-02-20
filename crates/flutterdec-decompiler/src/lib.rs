@@ -641,6 +641,87 @@ impl<'a> FuncEmitter<'a> {
                 }
 
                 if cur_trim.starts_with("if (") && cur_trim.ends_with(") {") {
+                    if let Some(first_cond) = Self::if_condition(cur_trim) {
+                        if let Some(first_end) = Self::find_block_end(&self.lines, i) {
+                            let mut first_else = first_end + 1;
+                            while first_else < self.lines.len()
+                                && self.lines[first_else].trim().is_empty()
+                            {
+                                first_else += 1;
+                            }
+                            let first_has_else = first_else < self.lines.len()
+                                && self.lines[first_else].trim() == "else {";
+                            let mut conds = Vec::new();
+                            if !first_has_else
+                                && Self::single_top_level_stmt(&self.lines, i + 1, first_end)
+                                    .as_deref()
+                                    == Some("continue;")
+                            {
+                                conds.push(first_cond.to_string());
+                                let indent = Self::leading_indent(cur);
+                                let mut end = first_end;
+                                loop {
+                                    let mut next = end + 1;
+                                    while next < self.lines.len()
+                                        && self.lines[next].trim().is_empty()
+                                    {
+                                        next += 1;
+                                    }
+                                    if next >= self.lines.len() {
+                                        break;
+                                    }
+                                    if Self::leading_indent(&self.lines[next]) != indent {
+                                        break;
+                                    }
+                                    let next_trim = self.lines[next].trim();
+                                    let Some(next_cond) = Self::if_condition(next_trim) else {
+                                        break;
+                                    };
+                                    let Some(next_end) = Self::find_block_end(&self.lines, next)
+                                    else {
+                                        break;
+                                    };
+                                    let mut next_else = next_end + 1;
+                                    while next_else < self.lines.len()
+                                        && self.lines[next_else].trim().is_empty()
+                                    {
+                                        next_else += 1;
+                                    }
+                                    let next_has_else = next_else < self.lines.len()
+                                        && self.lines[next_else].trim() == "else {";
+                                    if next_has_else {
+                                        break;
+                                    }
+                                    if Self::single_top_level_stmt(&self.lines, next + 1, next_end)
+                                        .as_deref()
+                                        != Some("continue;")
+                                    {
+                                        break;
+                                    }
+                                    conds.push(next_cond.to_string());
+                                    end = next_end;
+                                }
+
+                                if conds.len() >= 2 {
+                                    out.push(format!(
+                                        "{}if ({}) {{",
+                                        " ".repeat(indent),
+                                        conds
+                                            .iter()
+                                            .map(|c| format!("({})", c))
+                                            .collect::<Vec<_>>()
+                                            .join(" || ")
+                                    ));
+                                    out.push(format!("{}continue;", " ".repeat(indent + 2)));
+                                    out.push(format!("{}}}", " ".repeat(indent)));
+                                    i = end + 1;
+                                    changed = true;
+                                    continue;
+                                }
+                            }
+                        }
+                    }
+
                     if let Some(outer_cond) = Self::if_condition(cur_trim) {
                         if let Some(outer_end) = Self::find_block_end(&self.lines, i) {
                             let mut inner_start = None;
@@ -1093,6 +1174,15 @@ impl<'a> FuncEmitter<'a> {
     }
 
     fn single_top_level_return(lines: &[String], start: usize, end: usize) -> Option<String> {
+        let only = Self::single_top_level_stmt(lines, start, end)?;
+        if only.starts_with("return ") {
+            Some(only)
+        } else {
+            None
+        }
+    }
+
+    fn single_top_level_stmt(lines: &[String], start: usize, end: usize) -> Option<String> {
         if start >= end || end > lines.len() {
             return None;
         }
@@ -1111,12 +1201,7 @@ impl<'a> FuncEmitter<'a> {
         if top_level.len() != 1 {
             return None;
         }
-        let only = top_level.remove(0);
-        if only.starts_with("return ") {
-            Some(only)
-        } else {
-            None
-        }
+        Some(top_level.remove(0))
     }
 
     fn replace_identifier_token(line: &str, from: &str, to: &str) -> String {
@@ -3599,6 +3684,44 @@ mod tests {
         assert!(
             !out.contains("while (true) {"),
             "generic while(true) should be removed for multi-continue loops:\n{out}"
+        );
+    }
+
+    #[test]
+    fn merges_consecutive_continue_guards() {
+        let ir = FunctionIr {
+            function_id: 33,
+            name: "continueGuards".to_string(),
+            entry_va: 0x12000,
+            blocks: Vec::new(),
+        };
+        let symbols = HashMap::new();
+        let mut emitter = FuncEmitter::new(&ir, &symbols);
+        emitter.lines = vec![
+            "dynamic continueGuards(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {".to_string(),
+            "  while (true) {".to_string(),
+            "    if (arg0 == 0x85) {".to_string(),
+            "      continue;".to_string(),
+            "    }".to_string(),
+            "    if (arg0 == 0xa0) {".to_string(),
+            "      continue;".to_string(),
+            "    }".to_string(),
+            "    return arg1;".to_string(),
+            "    break;".to_string(),
+            "  }".to_string(),
+            "}".to_string(),
+        ];
+
+        emitter.compact_lines();
+        let out = emitter.lines.join("\n");
+        assert!(
+            out.contains("if ((arg0 == 0x85) || (arg0 == 0xa0)) {"),
+            "continue guards should merge:\n{out}"
+        );
+        assert_eq!(
+            out.matches("continue;").count(),
+            1,
+            "merged guard should keep one continue:\n{out}"
         );
     }
 
