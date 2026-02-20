@@ -1,8 +1,8 @@
-# flutterdec (reboot)
+# flutterdec
 
 `flutterdec` is a Rust-first research CLI for static decompilation of Flutter AOT Android ARM64 binaries.
 
-## Scope (v1)
+## Scope
 
 - Android ARM64 only
 - Static analysis only
@@ -29,3 +29,7 @@ flutterdec adapter list
 ## Ethics
 
 Use only on binaries you are legally allowed to analyze. This project is for security research and interoperability study.
+
+## Context
+
+Project research context and architecture notes are in `context.md`.
