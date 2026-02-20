@@ -56,6 +56,7 @@ pub struct QualityReport {
     pub raw_register_name_refs: usize,
     pub placeholder_cond_markers: usize,
     pub omitted_path_markers: usize,
+    pub loop_backedge_markers: usize,
 }
 
 fn normalize_file_name(name: &str) -> String {
@@ -140,6 +141,7 @@ fn quality_from_artifacts(
     let mut raw_register_name_refs = 0usize;
     let mut placeholder_cond_markers = 0usize;
     let mut omitted_path_markers = 0usize;
+    let mut loop_backedge_markers = 0usize;
 
     for p in pseudo {
         total_calls += p.total_calls;
@@ -150,6 +152,7 @@ fn quality_from_artifacts(
         block_helper_refs += p.source.matches("_block_").count();
         placeholder_cond_markers += p.source.matches("/* cond */").count();
         omitted_path_markers += p.source.matches("omitted complex path").count();
+        loop_backedge_markers += p.source.matches("loop back-edges: ").count();
         for n in 0..=7 {
             raw_arg_name_refs += count_ident_token(&p.source, &format!("arg{n}"));
         }
@@ -201,6 +204,7 @@ fn quality_from_artifacts(
         raw_register_name_refs,
         placeholder_cond_markers,
         omitted_path_markers,
+        loop_backedge_markers,
     }
 }
 
