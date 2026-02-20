@@ -641,6 +641,7 @@ Current project testing style:
 
 - focused unit tests in each crate
 - many behavior tests in `flutterdec-decompiler`
+- golden snapshot tests in `crates/flutterdec-decompiler/testdata/golden/` for readability-sensitive output
 - regular real-binary smoke validation for output quality
 
 Recommended loop when changing internals:
@@ -650,6 +651,12 @@ Recommended loop when changing internals:
 3. run workspace tests
 4. run real APK sample with relaxed thresholds
 5. compare `quality.json` and representative pseudocode files
+
+When readability output changes intentionally, refresh golden snapshots:
+
+```bash
+FLUTTERDEC_UPDATE_GOLDEN=1 cargo test -p flutterdec-decompiler golden_
+```
 
 ## Known limits
 
