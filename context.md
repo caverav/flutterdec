@@ -66,6 +66,7 @@ Readability wins over low level fidelity when there is a tradeoff. For example:
 - represent very complex unresolved paths as a single summary comment per function plus safe fallbacks
 - avoid synthetic "alternative path" branches that duplicate control flow noise
 - label indirect call targets with semantic placeholders instead of raw register names
+- render stack accesses as indexed slots instead of synthetic field names
 - surface unknowns explicitly instead of inventing fake certainty
 
 ## Quality gates and metrics
