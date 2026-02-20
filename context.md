@@ -68,6 +68,7 @@ Readability wins over low level fidelity when there is a tradeoff. For example:
 - label indirect call targets with semantic placeholders instead of raw register names
 - render stack accesses as indexed slots instead of synthetic field names
 - alias key registers to semantic names (for example return address and frame pointer)
+- collapse empty `if { } else { ... }` forms into negated `if` blocks
 - surface unknowns explicitly instead of inventing fake certainty
 
 ## Quality gates and metrics
