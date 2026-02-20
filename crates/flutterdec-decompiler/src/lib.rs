@@ -1047,4 +1047,61 @@ mod tests {
         }
     }
 
+    #[test]
+    fn inlines_trivial_return_helpers() {
+        let mut blocks = Vec::new();
+        for id in 0..12usize {
+            blocks.push(jump_block(
+                id,
+                0x2000 + (id as u64) * 4,
+                id + 1,
+                0x2000 + ((id + 1) as u64) * 4,
+            ));
+        }
+        blocks.push(BasicBlock {
+            id: 12,
+            start_va: 0x2000 + 12 * 4,
+            instrs: vec![LlirInstr {
+                va: 0x2000 + 12 * 4,
+                op: IROp::Return,
+                src: "ret".to_string(),
+                target: String::new(),
+            }],
+            succs: Vec::new(),
+            preds: vec![11],
+        });
+
+        for b in &mut blocks {
+            b.preds.clear();
+        }
+        for idx in 0..blocks.len() {
+            let pred = blocks[idx].id;
+            let succs = blocks[idx].succs.clone();
+            for succ in succs {
+                if let Some(target) = blocks.iter_mut().find(|b| b.id == succ) {
+                    target.preds.push(pred);
+                }
+            }
+        }
+
+        let ir = FunctionIr {
+            function_id: 2,
+            name: "deepChain".to_string(),
+            entry_va: 0x2000,
+            blocks,
+        };
+        let symbols = HashMap::new();
+        let artifact = emit_pseudocode(&ir, &symbols);
+
+        assert!(
+            !artifact.source.contains("return _block_12();"),
+            "trivial helper call should be inlined:\n{}",
+            artifact.source
+        );
+        assert!(
+            !artifact.source.contains("dynamic _block_12()"),
+            "trivial helper should be removed:\n{}",
+            artifact.source
+        );
+    }
 }
