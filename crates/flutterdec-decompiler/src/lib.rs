@@ -99,6 +99,13 @@ fn canonical_reg(token: &str) -> Option<String> {
     None
 }
 
+fn is_zero_reg(token: &str) -> bool {
+    matches!(
+        token.trim().trim_end_matches('!').to_ascii_lowercase().as_str(),
+        "xzr" | "wzr"
+    )
+}
+
 fn parse_int(token: &str) -> Option<i64> {
     let t = token.trim().trim_start_matches('#');
     if let Some(hex) = t.strip_prefix("-0x") {
@@ -701,6 +708,9 @@ impl<'a> FuncEmitter<'a> {
     }
 
     fn lookup_reg(&self, token: &str) -> String {
+        if is_zero_reg(token) {
+            return "0".to_string();
+        }
         if let Some(reg) = canonical_reg(token) {
             return Self::clean_expr(self.state.reg_values.get(&reg).cloned().unwrap_or(reg));
         }
@@ -708,6 +718,9 @@ impl<'a> FuncEmitter<'a> {
     }
 
     fn operand_expr(&self, token: &str) -> String {
+        if is_zero_reg(token) {
+            return "0".to_string();
+        }
         if let Some(reg) = canonical_reg(token) {
             return Self::clean_expr(self.state.reg_values.get(&reg).cloned().unwrap_or(reg));
         }
@@ -1345,7 +1358,7 @@ impl<'a> FuncEmitter<'a> {
                         if self.can_inline(tid, depth + 1) {
                             self.emit_block(tid, indent, depth + 1);
                         } else if self.active_stack.contains(&tid) {
-                            self.push_line(indent, "continue;");
+                            self.push_line(indent, &format!("// loop back-edge to block_{}", tid));
                         } else if !self.emitted.contains(&tid) {
                             self.emit_omitted_path(indent, Some(tid));
                         }
@@ -1946,6 +1959,98 @@ mod tests {
         assert!(
             !artifact.source.contains("invoke(reg9"),
             "legacy invoke label should be absent:\n{}",
+            artifact.source
+        );
+    }
+
+    #[test]
+    fn emits_loop_back_comment_instead_of_continue() {
+        let ir = FunctionIr {
+            function_id: 13,
+            name: "loopBackEdge".to_string(),
+            entry_va: 0xd000,
+            blocks: vec![BasicBlock {
+                id: 0,
+                start_va: 0xd000,
+                instrs: vec![LlirInstr {
+                    va: 0xd000,
+                    op: IROp::Jump,
+                    src: "b #0xd000".to_string(),
+                    target: "#0xd000".to_string(),
+                }],
+                succs: vec![0],
+                preds: vec![0],
+            }],
+        };
+
+        let artifact = emit_pseudocode(&ir, &HashMap::new());
+        assert!(
+            !artifact.source.contains("continue;"),
+            "invalid continue should not be emitted:\n{}",
+            artifact.source
+        );
+        assert!(
+            artifact.source.contains("loop back-edge to block_0"),
+            "expected loop back-edge comment:\n{}",
+            artifact.source
+        );
+    }
+
+    #[test]
+    fn normalizes_zero_register_operands() {
+        let ir = FunctionIr {
+            function_id: 14,
+            name: "zeroRegs".to_string(),
+            entry_va: 0xe000,
+            blocks: vec![BasicBlock {
+                id: 0,
+                start_va: 0xe000,
+                instrs: vec![
+                    LlirInstr {
+                        va: 0xe000,
+                        op: IROp::Other,
+                        src: "mov w1, wzr".to_string(),
+                        target: String::new(),
+                    },
+                    LlirInstr {
+                        va: 0xe004,
+                        op: IROp::Other,
+                        src: "stur w1, [x29, #-8]".to_string(),
+                        target: String::new(),
+                    },
+                    LlirInstr {
+                        va: 0xe008,
+                        op: IROp::Other,
+                        src: "mov x2, xzr".to_string(),
+                        target: String::new(),
+                    },
+                    LlirInstr {
+                        va: 0xe00c,
+                        op: IROp::Other,
+                        src: "stur x2, [x29, #-16]".to_string(),
+                        target: String::new(),
+                    },
+                    LlirInstr {
+                        va: 0xe010,
+                        op: IROp::Return,
+                        src: "ret".to_string(),
+                        target: String::new(),
+                    },
+                ],
+                succs: Vec::new(),
+                preds: Vec::new(),
+            }],
+        };
+
+        let artifact = emit_pseudocode(&ir, &HashMap::new());
+        assert!(
+            artifact.source.contains("= 0;"),
+            "zero register should normalize to 0:\n{}",
+            artifact.source
+        );
+        assert!(
+            !artifact.source.contains("xzr") && !artifact.source.contains("wzr"),
+            "raw zero registers should not leak:\n{}",
             artifact.source
         );
     }
