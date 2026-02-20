@@ -1163,6 +1163,8 @@ impl<'a> FuncEmitter<'a> {
     }
 
     fn collapse_remaining_helpers(&mut self) {
+        let mut omitted_ids = Vec::new();
+        let mut seen_ids = HashSet::new();
         let mut i = 0usize;
         while i < self.lines.len() {
             let Some(id) = Self::parse_helper_call(&self.lines[i]) else {
@@ -1170,17 +1172,37 @@ impl<'a> FuncEmitter<'a> {
                 continue;
             };
 
+            if seen_ids.insert(id) {
+                omitted_ids.push(id);
+            }
             let indent = Self::leading_spaces(&self.lines[i]);
-            let replacement = vec![
-                format!(
-                    "{}// omitted complex path: block {}",
-                    " ".repeat(indent),
-                    id
-                ),
-                format!("{}return null;", " ".repeat(indent)),
-            ];
+            let replacement = vec![format!("{}return null;", " ".repeat(indent))];
             self.lines.splice(i..=i, replacement.clone());
             i += replacement.len();
+        }
+
+        if !omitted_ids.is_empty() {
+            omitted_ids.sort_unstable();
+            omitted_ids.dedup();
+            let details = omitted_ids
+                .iter()
+                .map(|id| format!("block {}", id))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let summary = format!("  // omitted complex paths: {}", details);
+            let mut insert_idx = 1usize;
+            while insert_idx < self.lines.len() {
+                let t = self.lines[insert_idx].trim_start();
+                if t.starts_with("var ") || t.starts_with("int ") || t.starts_with("dynamic ") {
+                    insert_idx += 1;
+                    continue;
+                }
+                if self.lines[insert_idx].trim().is_empty() {
+                    insert_idx += 1;
+                }
+                break;
+            }
+            self.lines.insert(insert_idx, summary);
         }
 
         let helpers = Self::scan_helpers(&self.lines);
@@ -2128,12 +2150,49 @@ mod tests {
             "helper scaffolding should be removed:\n{out}"
         );
         assert!(
-            out.contains("omitted complex path: block 3"),
-            "call should become a readable comment:\n{out}"
+            out.contains("omitted complex paths: block 3"),
+            "function should include omitted-path summary:\n{out}"
         );
         assert!(
             out.contains("return null;"),
             "call should get a safe fallback return:\n{out}"
+        );
+    }
+
+    #[test]
+    fn summarizes_duplicate_omitted_blocks_once() {
+        let ir = FunctionIr {
+            function_id: 16,
+            name: "helperCollapseDedup".to_string(),
+            entry_va: 0xf100,
+            blocks: Vec::new(),
+        };
+        let symbols = HashMap::new();
+        let mut emitter = FuncEmitter::new(&ir, &symbols);
+        emitter.lines = vec![
+            "dynamic helperCollapseDedup(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {".to_string(),
+            "  if (arg0 == null) {".to_string(),
+            "    return _block_9();".to_string(),
+            "  }".to_string(),
+            "  return _block_9();".to_string(),
+            "}".to_string(),
+            String::new(),
+            "dynamic _block_9() {".to_string(),
+            "  return arg0;".to_string(),
+            "}".to_string(),
+        ];
+
+        emitter.collapse_remaining_helpers();
+        let out = emitter.lines.join("\n");
+        assert_eq!(
+            out.matches("omitted complex paths: block 9").count(),
+            1,
+            "duplicate omitted blocks should be summarized once:\n{out}"
+        );
+        assert_eq!(
+            out.matches("return null;").count(),
+            2,
+            "each omitted callsite should become return null:\n{out}"
         );
     }
 }
