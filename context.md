@@ -12,12 +12,14 @@ The project is focused on static analysis first. It is designed for reverse engi
 
 ## What the research says
 
-The main research notes are in `../research.md`. The important conclusions that drive this implementation are:
+This repository keeps the research conclusions directly in this document. The important conclusions that drive this implementation are:
 
 - parsing Dart snapshots is hard and changes across versions
 - existing tooling already solves parts of parsing well
 - the novel part is the decompiler pipeline from machine code to readable pseudo Dart
 - adapter based parsing is the safest way to survive Dart and Flutter version churn
+- runtime and dynamic instrumentation are useful as optional fallback, not as the default path
+- strict quality gates are necessary to stop unreadable pseudocode from looking "done"
 
 That is why this codebase separates snapshot extraction from decompilation logic. We can swap parsing adapters without rewriting the decompiler core.
 
@@ -116,4 +118,3 @@ Python remains useful at the adapter boundary for faster version specific parser
 - lift more Dart VM idioms into higher level expressions
 - improve naming and type inference from object pool and call patterns
 - expand validation corpus across more Flutter and Dart versions
-
