@@ -32,6 +32,7 @@ struct FuncEmitter<'a> {
     active_stack: Vec<usize>,
     inline_visits: HashMap<usize, usize>,
     omitted_blocks: BTreeSet<usize>,
+    loop_back_edges: BTreeSet<usize>,
     lines: Vec<String>,
 
     state: LiftState,
@@ -284,6 +285,7 @@ impl<'a> FuncEmitter<'a> {
             active_stack: Vec::new(),
             inline_visits: HashMap::new(),
             omitted_blocks: BTreeSet::new(),
+            loop_back_edges: BTreeSet::new(),
             lines: Vec::new(),
             state: init_state(),
             placeholder_ifs: 0,
@@ -336,6 +338,7 @@ impl<'a> FuncEmitter<'a> {
             self.inline_trivial_helpers();
             self.collapse_remaining_helpers();
         }
+        self.insert_loop_summary_comment();
         self.compact_lines();
         for line in &mut self.lines {
             *line = Self::clean_expr(line.clone());
@@ -1218,6 +1221,34 @@ impl<'a> FuncEmitter<'a> {
         }
     }
 
+    fn insert_loop_summary_comment(&mut self) {
+        if self.loop_back_edges.is_empty() || self.lines.is_empty() {
+            return;
+        }
+
+        let details = self
+            .loop_back_edges
+            .iter()
+            .map(|id| format!("block {}", id))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let summary = format!("  // loop back-edges: {}", details);
+
+        let mut insert_idx = 1usize;
+        while insert_idx < self.lines.len() {
+            let t = self.lines[insert_idx].trim_start();
+            if t.starts_with("var ") || t.starts_with("int ") || t.starts_with("dynamic ") {
+                insert_idx += 1;
+                continue;
+            }
+            if self.lines[insert_idx].trim().is_empty() {
+                insert_idx += 1;
+            }
+            break;
+        }
+        self.lines.insert(insert_idx, summary);
+    }
+
     fn visit_limit(&self, id: usize) -> usize {
         if let Some(block) = self.block_by_id.get(&id) {
             let tail = block.instrs.last().map(|i| &i.op);
@@ -1326,7 +1357,7 @@ impl<'a> FuncEmitter<'a> {
             return;
         }
         if self.active_stack.contains(&id) {
-            self.push_line(indent, &format!("// loop back to block_{}", id));
+            self.loop_back_edges.insert(id);
             return;
         }
         if self.inline_visits.get(&id).copied().unwrap_or(0) >= self.visit_limit(id) {
@@ -1425,7 +1456,7 @@ impl<'a> FuncEmitter<'a> {
                         if self.can_inline(tid, depth + 1) {
                             self.emit_block(tid, indent, depth + 1);
                         } else if self.active_stack.contains(&tid) {
-                            self.push_line(indent, &format!("// loop back-edge to block_{}", tid));
+                            self.loop_back_edges.insert(tid);
                         } else if !self.emitted.contains(&tid) {
                             self.emit_omitted_path(indent, Some(tid));
                         }
@@ -2031,7 +2062,7 @@ mod tests {
     }
 
     #[test]
-    fn emits_loop_back_comment_instead_of_continue() {
+    fn summarizes_loop_back_edges_instead_of_inline_comments() {
         let ir = FunctionIr {
             function_id: 13,
             name: "loopBackEdge".to_string(),
@@ -2057,8 +2088,13 @@ mod tests {
             artifact.source
         );
         assert!(
-            artifact.source.contains("loop back-edge to block_0"),
-            "expected loop back-edge comment:\n{}",
+            artifact.source.contains("loop back-edges: block 0"),
+            "expected loop summary comment:\n{}",
+            artifact.source
+        );
+        assert!(
+            !artifact.source.contains("loop back-edge to block_0"),
+            "inline loop back-edge comments should be collapsed:\n{}",
             artifact.source
         );
     }
