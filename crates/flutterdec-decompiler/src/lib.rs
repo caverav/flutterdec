@@ -47,6 +47,7 @@ struct HelperMeta {
     id: usize,
     start: usize,
     end: usize,
+    body_lines: Vec<String>,
     return_expr: Option<String>,
 }
 
@@ -607,6 +608,11 @@ impl<'a> FuncEmitter<'a> {
                 break;
             }
 
+            let mut body_lines = Vec::new();
+            for line in &lines[i + 1..j] {
+                body_lines.push(line.clone());
+            }
+
             let mut statements = Vec::new();
             for line in &lines[i + 1..j] {
                 let t = line.trim();
@@ -635,6 +641,7 @@ impl<'a> FuncEmitter<'a> {
                 id,
                 start: i,
                 end: j,
+                body_lines,
                 return_expr,
             });
             i = j + 1;
@@ -647,37 +654,109 @@ impl<'a> FuncEmitter<'a> {
         lines.iter().map(|l| l.matches(token).count()).sum()
     }
 
+    fn leading_spaces(line: &str) -> usize {
+        line.chars().take_while(|c| c.is_whitespace()).count()
+    }
+
+    fn helper_inline_lines(meta: &HelperMeta) -> Option<Vec<String>> {
+        let non_empty: Vec<&String> = meta
+            .body_lines
+            .iter()
+            .filter(|l| !l.trim().is_empty())
+            .collect();
+        if non_empty.is_empty() || non_empty.len() > 5 {
+            return None;
+        }
+
+        let last = non_empty.last()?.trim();
+        if !last.starts_with("return ") || !last.ends_with(';') {
+            return None;
+        }
+
+        for line in &non_empty {
+            let t = line.trim();
+            if t.contains("/* cond */") || t.contains('{') || t.contains('}') {
+                return None;
+            }
+        }
+
+        Some(meta.body_lines.clone())
+    }
+
+    fn inline_helper_calls(&mut self, helper_id: usize, helper_body: &[String]) {
+        let call = format!("return _block_{}();", helper_id);
+
+        let mut i = 0usize;
+        while i < self.lines.len() {
+            if self.lines[i].trim() != call {
+                i += 1;
+                continue;
+            }
+
+            let call_indent = Self::leading_spaces(&self.lines[i]);
+            let base_indent = helper_body
+                .iter()
+                .filter(|l| !l.trim().is_empty())
+                .map(|l| Self::leading_spaces(l))
+                .min()
+                .unwrap_or(0);
+
+            let mut replacement = Vec::new();
+            for line in helper_body {
+                if line.trim().is_empty() {
+                    continue;
+                }
+                let rel = Self::leading_spaces(line).saturating_sub(base_indent);
+                replacement.push(format!(
+                    "{}{}",
+                    " ".repeat(call_indent + rel),
+                    line.trim_start()
+                ));
+            }
+            if replacement.is_empty() {
+                replacement.push(format!("{}return null;", " ".repeat(call_indent)));
+            }
+
+            self.lines.splice(i..=i, replacement.clone());
+            i += replacement.len();
+        }
+    }
+
     fn inline_trivial_helpers(&mut self) {
-        let helpers = Self::scan_helpers(&self.lines);
-        if helpers.is_empty() {
+        let first_pass = Self::scan_helpers(&self.lines);
+        if first_pass.is_empty() {
             return;
         }
 
-        for h in &helpers {
-            let Some(expr) = &h.return_expr else {
-                continue;
-            };
-            let call = format!("return _block_{}();", h.id);
-            let repl = format!("return {};", expr);
-            for line in &mut self.lines {
-                if line.trim() == call {
-                    let indent = line.chars().take_while(|c| c.is_whitespace()).count();
-                    *line = format!("{}{}", " ".repeat(indent), repl);
+        for h in &first_pass {
+            if let Some(expr) = &h.return_expr {
+                let call = format!("return _block_{}();", h.id);
+                let repl = format!("return {};", expr);
+                for line in &mut self.lines {
+                    if line.trim() == call {
+                        let indent = line.chars().take_while(|c| c.is_whitespace()).count();
+                        *line = format!("{}{}", " ".repeat(indent), repl);
+                    }
                 }
             }
         }
 
-        let mut remove_ranges = Vec::new();
-        for h in &helpers {
-            if h.return_expr.is_none() {
+        let second_pass = Self::scan_helpers(&self.lines);
+        for h in &second_pass {
+            let Some(body) = Self::helper_inline_lines(h) else {
                 continue;
-            }
+            };
+            self.inline_helper_calls(h.id, &body);
+        }
+
+        let final_helpers = Self::scan_helpers(&self.lines);
+        let mut remove_ranges = Vec::new();
+        for h in &final_helpers {
             let token = format!("_block_{}(", h.id);
             if Self::token_count(&self.lines, &token) <= 1 {
                 remove_ranges.push((h.start, h.end));
             }
         }
-
         remove_ranges.sort_unstable_by(|a, b| b.0.cmp(&a.0));
         for (start, end) in remove_ranges {
             self.lines.drain(start..=end);
