@@ -40,7 +40,8 @@ Current module layout:
 - `crates/flutterdec-ir`: LLIR plus basic block and CFG construction
 - `crates/flutterdec-decompiler`: pseudo Dart emission and readability transforms
   - internal split:
-    - core emitter and block walk in `src/lib.rs`
+    - top-level orchestration in `src/lib.rs`
+    - CFG walk and instruction lifting in `src/control_flow.rs`
     - readability pass pipeline in `src/passes.rs`
     - helper inlining/collapse pipeline in `src/helper_flow.rs`
     - shared parse/normalize utilities in `src/helpers.rs`

@@ -679,7 +679,8 @@ Recommended newcomer route:
 
 Decompiler source layout:
 
-- `crates/flutterdec-decompiler/src/lib.rs`: core emitter flow and CFG block walk
+- `crates/flutterdec-decompiler/src/lib.rs`: top-level orchestration and artifact assembly
+- `crates/flutterdec-decompiler/src/control_flow.rs`: CFG walk, branch reconstruction, and block emission
 - `crates/flutterdec-decompiler/src/passes.rs`: readability compaction and expression/name cleanup passes
 - `crates/flutterdec-decompiler/src/helper_flow.rs`: helper inlining/collapse and omitted-path summarization flow
 - `crates/flutterdec-decompiler/src/helpers.rs`: shared parse/normalize/format helpers
