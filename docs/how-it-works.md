@@ -400,6 +400,7 @@ The decompiler has two layers:
 - hoisting `else` blocks after terminating `if` branches
 - removing redundant repeated null guards after terminating null checks
 - merging nested single-guard `if` blocks
+- merging consecutive `continue` guards into combined conditions
 - rewriting multi-continue infinite loops into retry-flag loops
 - unwrapping retry loops that no longer have retry paths
 - arithmetic simplification
@@ -444,6 +445,8 @@ Recent readability features include:
   - `if (v == null) { return x; } ... if (v == null) { continue; }` removes the second check when `v` was not reassigned
 - nested guard merge:
   - `if (a) { if (b) { body } }` to `if ((a) && (b)) { body }`
+- continue-guard merge:
+  - `if (c1) { continue; } if (c2) { continue; }` to `if ((c1) || (c2)) { continue; }`
 - retry-loop rewrite:
   - `while (true)` loops with many `continue` edges become `while (retryLoopN)` using a retry flag initialized to true and cleared on fall-through
   - retry wrappers with no remaining retry paths are unwrapped back to straight-line code
