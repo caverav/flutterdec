@@ -39,7 +39,12 @@ Current module layout:
 - `crates/flutterdec-disasm-arm64`: ARM64 disassembly and call or branch tagging
 - `crates/flutterdec-ir`: LLIR plus basic block and CFG construction
 - `crates/flutterdec-decompiler`: pseudo Dart emission and readability transforms
-  - internal split: core emitter in `src/lib.rs`, shared utility helpers in `src/helpers.rs`, tests in `src/tests.rs`
+  - internal split:
+    - core emitter and block walk in `src/lib.rs`
+    - readability pass pipeline in `src/passes.rs`
+    - helper inlining/collapse pipeline in `src/helper_flow.rs`
+    - shared parse/normalize utilities in `src/helpers.rs`
+    - regression tests in `src/tests.rs`
 - `crates/flutterdec-core`: orchestration, artifact writing, and quality report logic
 - `crates/flutterdec-cli`: user facing commands
 
