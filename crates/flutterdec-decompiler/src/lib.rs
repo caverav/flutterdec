@@ -334,6 +334,7 @@ impl<'a> FuncEmitter<'a> {
             self.lines.push(String::new());
             self.append_helper_functions();
             self.inline_trivial_helpers();
+            self.collapse_remaining_helpers();
         }
         self.compact_lines();
         for line in &mut self.lines {
@@ -889,6 +890,16 @@ impl<'a> FuncEmitter<'a> {
         id_s.parse::<usize>().ok()
     }
 
+    fn parse_helper_call(line: &str) -> Option<usize> {
+        let t = line.trim();
+        if !t.starts_with("return _block_") || !t.ends_with("();") {
+            return None;
+        }
+        let rest = t.strip_prefix("return _block_")?;
+        let id_s = rest.strip_suffix("();")?;
+        id_s.parse::<usize>().ok()
+    }
+
     fn scan_helpers(lines: &[String]) -> Vec<HelperMeta> {
         let mut out = Vec::new();
         let mut i = 0usize;
@@ -1145,6 +1156,40 @@ impl<'a> FuncEmitter<'a> {
                 remove_ranges.push((h.start, h.end));
             }
         }
+        remove_ranges.sort_unstable_by(|a, b| b.0.cmp(&a.0));
+        for (start, end) in remove_ranges {
+            self.lines.drain(start..=end);
+        }
+    }
+
+    fn collapse_remaining_helpers(&mut self) {
+        let mut i = 0usize;
+        while i < self.lines.len() {
+            let Some(id) = Self::parse_helper_call(&self.lines[i]) else {
+                i += 1;
+                continue;
+            };
+
+            let indent = Self::leading_spaces(&self.lines[i]);
+            let replacement = vec![
+                format!(
+                    "{}// omitted complex path: block {}",
+                    " ".repeat(indent),
+                    id
+                ),
+                format!("{}return null;", " ".repeat(indent)),
+            ];
+            self.lines.splice(i..=i, replacement.clone());
+            i += replacement.len();
+        }
+
+        let helpers = Self::scan_helpers(&self.lines);
+        if helpers.is_empty() {
+            return;
+        }
+
+        let mut remove_ranges: Vec<(usize, usize)> =
+            helpers.into_iter().map(|h| (h.start, h.end)).collect();
         remove_ranges.sort_unstable_by(|a, b| b.0.cmp(&a.0));
         for (start, end) in remove_ranges {
             self.lines.drain(start..=end);
@@ -2052,6 +2097,43 @@ mod tests {
             !artifact.source.contains("xzr") && !artifact.source.contains("wzr"),
             "raw zero registers should not leak:\n{}",
             artifact.source
+        );
+    }
+
+    #[test]
+    fn collapses_helper_calls_into_omitted_path_comments() {
+        let ir = FunctionIr {
+            function_id: 15,
+            name: "helperCollapse".to_string(),
+            entry_va: 0xf000,
+            blocks: Vec::new(),
+        };
+        let symbols = HashMap::new();
+        let mut emitter = FuncEmitter::new(&ir, &symbols);
+        emitter.lines = vec![
+            "dynamic helperCollapse(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {".to_string(),
+            "  return _block_3();".to_string(),
+            "}".to_string(),
+            String::new(),
+            "dynamic _block_3() {".to_string(),
+            "  final t1 = fn_0x3(arg0, arg1, arg2, arg3);".to_string(),
+            "  return t1;".to_string(),
+            "}".to_string(),
+        ];
+
+        emitter.collapse_remaining_helpers();
+        let out = emitter.lines.join("\n");
+        assert!(
+            !out.contains("_block_"),
+            "helper scaffolding should be removed:\n{out}"
+        );
+        assert!(
+            out.contains("omitted complex path: block 3"),
+            "call should become a readable comment:\n{out}"
+        );
+        assert!(
+            out.contains("return null;"),
+            "call should get a safe fallback return:\n{out}"
         );
     }
 }
