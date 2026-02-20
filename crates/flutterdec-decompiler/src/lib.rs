@@ -819,3 +819,110 @@ pub fn emit_program(
         .map(|f| emit_pseudocode(f, symbol_names))
         .collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use flutterdec_ir::{BasicBlock, FunctionIr, IROp, LlirInstr};
+
+    fn branch_block(
+        id: usize,
+        va: u64,
+        true_va: u64,
+        false_id: usize,
+        true_id: usize,
+    ) -> BasicBlock {
+        BasicBlock {
+            id,
+            start_va: va,
+            instrs: vec![LlirInstr {
+                va,
+                op: IROp::Branch,
+                src: format!("cbz x0, #0x{true_va:x}"),
+                target: format!("#0x{true_va:x}"),
+            }],
+            succs: vec![true_id, false_id],
+            preds: Vec::new(),
+        }
+    }
+
+    fn jump_block(id: usize, va: u64, to_id: usize, to_va: u64) -> BasicBlock {
+        BasicBlock {
+            id,
+            start_va: va,
+            instrs: vec![LlirInstr {
+                va,
+                op: IROp::Jump,
+                src: format!("b #0x{to_va:x}"),
+                target: format!("#0x{to_va:x}"),
+            }],
+            succs: vec![to_id],
+            preds: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn emits_helper_bodies_for_omitted_paths() {
+        let va = |id: usize| 0x1000 + (id as u64) * 4;
+        let mut blocks = vec![
+            branch_block(0, va(0), va(1), 2, 1),
+            branch_block(1, va(1), va(3), 4, 3),
+            branch_block(2, va(2), va(5), 6, 5),
+            branch_block(3, va(3), va(7), 8, 7),
+            branch_block(4, va(4), va(9), 10, 9),
+            branch_block(5, va(5), va(11), 12, 11),
+            branch_block(6, va(6), va(13), 14, 13),
+            jump_block(7, va(7), 15, va(15)),
+            jump_block(8, va(8), 15, va(15)),
+            jump_block(9, va(9), 15, va(15)),
+            jump_block(10, va(10), 15, va(15)),
+            jump_block(11, va(11), 15, va(15)),
+            jump_block(12, va(12), 15, va(15)),
+            jump_block(13, va(13), 15, va(15)),
+            jump_block(14, va(14), 15, va(15)),
+            BasicBlock {
+                id: 15,
+                start_va: va(15),
+                instrs: vec![LlirInstr {
+                    va: va(15),
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                }],
+                succs: Vec::new(),
+                preds: vec![7, 8, 9, 10, 11, 12, 13, 14],
+            },
+        ];
+
+        for b in &mut blocks {
+            b.preds.clear();
+        }
+        for idx in 0..blocks.len() {
+            let pred = blocks[idx].id;
+            let succs = blocks[idx].succs.clone();
+            for succ in succs {
+                if let Some(target) = blocks.iter_mut().find(|b| b.id == succ) {
+                    target.preds.push(pred);
+                }
+            }
+        }
+
+        let ir = FunctionIr {
+            function_id: 1,
+            name: "testFunc".to_string(),
+            entry_va: va(0),
+            blocks,
+        };
+        let symbols = HashMap::new();
+        let artifact = emit_pseudocode(&ir, &symbols);
+
+        assert!(
+            !artifact.source.contains("path omitted"),
+            "unexpected placeholder stub:\n{}",
+            artifact.source
+        );
+        if artifact.source.contains("return _block_15();") {
+            assert!(artifact.source.contains("dynamic _block_15() {"));
+        }
+    }
+}
