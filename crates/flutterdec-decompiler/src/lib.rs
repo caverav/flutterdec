@@ -593,6 +593,56 @@ impl<'a> FuncEmitter<'a> {
                         .strip_prefix("if (")
                         .and_then(|s| s.strip_suffix(") {"))
                         .unwrap_or("");
+
+                    if !cond.contains("flags.") && !cond.contains("/* cond */") {
+                        if let Some(then_end) = Self::find_block_end(&self.lines, i) {
+                            if let Some(then_ret) =
+                                Self::single_top_level_return(&self.lines, i + 1, then_end)
+                            {
+                                let mut next = then_end + 1;
+                                while next < self.lines.len() && self.lines[next].trim().is_empty()
+                                {
+                                    next += 1;
+                                }
+                                if next < self.lines.len() && self.lines[next].trim() == then_ret {
+                                    let indent =
+                                        cur.chars().take_while(|c| c.is_whitespace()).count();
+                                    out.push(format!("{}{}", " ".repeat(indent), then_ret));
+                                    i = next + 1;
+                                    changed = true;
+                                    continue;
+                                }
+                            }
+                        }
+                    }
+
+                    if let Some(then_end) = Self::find_block_end(&self.lines, i) {
+                        let mut else_start = then_end + 1;
+                        while else_start < self.lines.len()
+                            && self.lines[else_start].trim().is_empty()
+                        {
+                            else_start += 1;
+                        }
+                        if else_start < self.lines.len()
+                            && self.lines[else_start].trim() == "else {"
+                        {
+                            if let Some(else_end) = Self::find_block_end(&self.lines, else_start) {
+                                if Self::block_terminates_at_top_level(&self.lines, i + 1, then_end)
+                                {
+                                    for idx in i..=then_end {
+                                        out.push(self.lines[idx].clone());
+                                    }
+                                    for idx in else_start + 1..else_end {
+                                        out.push(Self::dedent_once(&self.lines[idx]));
+                                    }
+                                    i = else_end + 1;
+                                    changed = true;
+                                    continue;
+                                }
+                            }
+                        }
+                    }
+
                     if !cond.contains("flags.") && !cond.contains("/* cond */") {
                         let mut j = i + 1;
                         while j < self.lines.len() && self.lines[j].trim().is_empty() {
@@ -730,6 +780,55 @@ impl<'a> FuncEmitter<'a> {
             }
         }
         None
+    }
+
+    fn block_terminates_at_top_level(lines: &[String], start: usize, end: usize) -> bool {
+        if start >= end || end > lines.len() {
+            return false;
+        }
+
+        let mut rel_depth = 1i32;
+        let mut last_top_level_stmt = None;
+        for line in lines.iter().take(end).skip(start) {
+            let t = line.trim();
+            if rel_depth == 1 && !t.is_empty() {
+                last_top_level_stmt = Some(t.to_string());
+            }
+            rel_depth += line.chars().filter(|&c| c == '{').count() as i32;
+            rel_depth -= line.chars().filter(|&c| c == '}').count() as i32;
+        }
+
+        let Some(stmt) = last_top_level_stmt else {
+            return false;
+        };
+        stmt.starts_with("return ") || stmt == "continue;" || stmt == "break;"
+    }
+
+    fn single_top_level_return(lines: &[String], start: usize, end: usize) -> Option<String> {
+        if start >= end || end > lines.len() {
+            return None;
+        }
+
+        let mut rel_depth = 1i32;
+        let mut top_level: Vec<String> = Vec::new();
+        for line in lines.iter().take(end).skip(start) {
+            let t = line.trim();
+            if rel_depth == 1 && !t.is_empty() {
+                top_level.push(t.to_string());
+            }
+            rel_depth += line.chars().filter(|&c| c == '{').count() as i32;
+            rel_depth -= line.chars().filter(|&c| c == '}').count() as i32;
+        }
+
+        if top_level.len() != 1 {
+            return None;
+        }
+        let only = top_level.remove(0);
+        if only.starts_with("return ") {
+            Some(only)
+        } else {
+            None
+        }
     }
 
     fn replace_identifier_token(line: &str, from: &str, to: &str) -> String {
@@ -2977,6 +3076,37 @@ mod tests {
             1,
             "collapsed output should keep one return:\n{out}"
         );
+    }
+
+    #[test]
+    fn hoists_else_when_then_terminates() {
+        let ir = FunctionIr {
+            function_id: 26,
+            name: "hoistElse".to_string(),
+            entry_va: 0xfb00,
+            blocks: Vec::new(),
+        };
+        let symbols = HashMap::new();
+        let mut emitter = FuncEmitter::new(&ir, &symbols);
+        emitter.lines = vec![
+            "dynamic hoistElse(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {".to_string(),
+            "  if (arg0 == null) {".to_string(),
+            "    return arg1;".to_string(),
+            "  }".to_string(),
+            "  else {".to_string(),
+            "    final t1 = fn_0x1(arg0, arg1, arg2, arg3);".to_string(),
+            "    return t1;".to_string(),
+            "  }".to_string(),
+            "}".to_string(),
+        ];
+
+        emitter.compact_lines();
+        let out = emitter.lines.join("\n");
+        assert!(
+            out.contains("if (arg0 == null) {\n    return arg1;\n  }\n  final t1 = fn_0x1"),
+            "else body should be hoisted after terminating then-branch:\n{out}"
+        );
+        assert!(!out.contains("else {"), "else should be removed:\n{out}");
     }
 
     #[test]
