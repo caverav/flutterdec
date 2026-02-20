@@ -9,6 +9,10 @@
 5. Decompiler: structured pseudo-Dart emission
 6. Quality/reporting: strict metrics and artifact generation
 
+Auxiliary path:
+
+7. Symbol mapping: stripped vs unstripped ARM64 ELF direct-call target mapping
+
 ## Module boundaries
 
 - `crates/flutterdec-loader`: file input and snapshot extraction

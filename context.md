@@ -69,6 +69,7 @@ Current module layout:
   - adapter-model loading in `src/pipeline/model.rs`
   - quality gate computation in `src/pipeline/quality.rs`
   - command runners in `src/pipeline/runners.rs`
+  - stripped/unstripped ELF call-target mapping in `src/pipeline/symbol_map.rs`
 - `crates/flutterdec-cli`: user facing commands
 
 ## Data contracts
@@ -133,6 +134,7 @@ Current scope:
 - adapter backed model ingestion
 - IR and pseudo Dart generation with iterative readability passes
 - readability passes now prune dead statements after terminal control flow and unwrap non-retry `while (true)` wrappers when the body already terminates
+- optional stripped vs unstripped ELF symbol mapping to recover readable direct-call targets
 
 Known limits:
 

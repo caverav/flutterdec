@@ -22,6 +22,7 @@ cargo run -p flutterdec-cli -- info path/to/libapp.so --json
 ```bash
 flutterdec info <apk|so> [--json]
 flutterdec decompile <apk|so> -o out/ [--emit-asm] [--emit-ir]
+flutterdec map-symbols --stripped <libflutter-stripped.so> --unstripped <libflutter-unstripped.so> -o out/symbol-map/
 flutterdec adapter install --dart-hash <hash>
 flutterdec adapter list
 ```
@@ -98,6 +99,42 @@ Examples:
 flutterdec adapter install --dart-hash 4b8f1f
 flutterdec adapter list
 ```
+
+### `map-symbols`
+
+Map direct call targets from a stripped ARM64 ELF to symbols from an unstripped build.
+
+Arguments:
+
+- `--stripped <PATH>`: stripped `libflutter.so` (or other ARM64 ELF)
+- `--unstripped <PATH>`: matching unstripped ELF from the same build
+- `-o, --out <OUT_DIR>`: output directory (required)
+- `--include-branches`: also map direct `b` targets (default maps `bl` calls only)
+- `--nearest-max-distance <N>`: max byte distance for nearest-symbol fallback (default `8192`)
+- `--require-exec-match`: fail when executable section bytes differ
+- `--json`: print summary report as JSON
+
+Examples:
+
+```bash
+flutterdec map-symbols \
+  --stripped ./libflutter.stripped.so \
+  --unstripped ./libflutter.unstripped.so \
+  -o ./out/symbol-map
+
+flutterdec map-symbols \
+  --stripped ./libflutter.stripped.so \
+  --unstripped ./libflutter.unstripped.so \
+  -o ./out/symbol-map \
+  --require-exec-match \
+  --json
+```
+
+Output files:
+
+- `out/symbol-map/symbol_map_report.json`
+- `out/symbol-map/symbol_target_summary.json`
+- `out/symbol-map/symbol_call_sites.tsv`
 
 ## Real Golden Checks (Optional)
 
