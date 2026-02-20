@@ -1,5 +1,3 @@
-# flutterdec context
-
 ## Why this project exists
 
 This repository is a reboot of a Flutter decompiler research effort. The core goal is simple:
@@ -63,7 +61,8 @@ Readability wins over low level fidelity when there is a tradeoff. For example:
 
 - preserve branch semantics but hide register noise when possible
 - normalize raw tokens into stable placeholders
-- inline helper fragments to avoid fragmented control flow
+- inline helper fragments where practical and collapse remaining helper scaffolding
+- represent very complex unresolved paths as explicit omission comments with safe fallbacks
 - surface unknowns explicitly instead of inventing fake certainty
 
 ## Quality gates and metrics
@@ -89,7 +88,8 @@ Current scope:
 Known limits:
 
 - no full Dart syntax reconstruction yet
-- difficult loops can still appear as back edge comments or helper paths
+- difficult loops can still appear as back edge comments
+- very complex control-flow regions can be summarized as omitted-path comments
 - many symbols remain synthetic when metadata is obfuscated
 - direct source level naming is still heuristic
 
@@ -108,13 +108,12 @@ Python remains useful at the adapter boundary for faster version specific parser
 - use `nix develop` for a reproducible toolchain
 - run `cargo test` before and after changes
 - test against real Flutter binaries, not only synthetic fixtures
-- keep commits atomic with `type(scope): desc` format
 - prioritize output readability improvements that are backed by concrete sample evidence
 
 ## Near term roadmap
 
 - improve loop structuring so back edge comments become real `while` or `for` constructs
-- reduce `_block_*` helper leakage in large CFGs
+- replace omitted-path comments with richer structured reconstructions
 - lift more Dart VM idioms into higher level expressions
 - improve naming and type inference from object pool and call patterns
 - expand validation corpus across more Flutter and Dart versions
