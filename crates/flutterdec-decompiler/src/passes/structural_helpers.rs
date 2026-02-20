@@ -1,4 +1,10 @@
 impl<'a> FuncEmitter<'a> {
+    pub(super) fn is_terminal_statement(line_trim: &str) -> bool {
+        line_trim == "continue;"
+            || line_trim == "break;"
+            || (line_trim.starts_with("return ") && line_trim.ends_with(';'))
+    }
+
     pub(super) fn is_ident_char(c: char) -> bool {
         c.is_ascii_alphanumeric() || c == '_'
     }

@@ -8,6 +8,5 @@ dynamic goldenRetryLoop(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, 
       return arg3;
     }
     return arg4;
-    retryLoop1 = false;
   }
 }

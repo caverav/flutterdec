@@ -78,6 +78,17 @@ impl<'a> FuncEmitter<'a> {
                             }
                         }
 
+                        if !has_continue
+                            && Self::block_terminates_at_top_level(&self.lines, i + 1, j)
+                        {
+                            for idx in i + 1..j {
+                                out.push(Self::dedent_once(&self.lines[idx]));
+                            }
+                            i = j + 1;
+                            changed = true;
+                            continue;
+                        }
+
                         if break_at_top_level && !has_continue {
                             for idx in i + 1..j {
                                 if Some(idx) == last_non_empty && self.lines[idx].trim() == "break;"
@@ -677,6 +688,33 @@ impl<'a> FuncEmitter<'a> {
                     i += 1;
                     changed = true;
                     continue;
+                }
+
+                if Self::is_terminal_statement(cur_trim) {
+                    let cur_indent = Self::leading_indent(cur);
+                    let mut j = i + 1;
+                    let mut skipped_any = false;
+                    while j < self.lines.len() {
+                        let next = &self.lines[j];
+                        let next_trim = next.trim();
+                        if next_trim.is_empty() {
+                            j += 1;
+                            skipped_any = true;
+                            continue;
+                        }
+                        let next_indent = Self::leading_indent(next);
+                        if next_trim.starts_with('}') && next_indent <= cur_indent {
+                            break;
+                        }
+                        j += 1;
+                        skipped_any = true;
+                    }
+                    if skipped_any {
+                        out.push(cur.clone());
+                        i = j;
+                        changed = true;
+                        continue;
+                    }
                 }
 
                 out.push(cur.clone());

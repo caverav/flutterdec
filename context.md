@@ -112,6 +112,7 @@ Current scope:
 - Android ARM64 static pipeline
 - adapter backed model ingestion
 - IR and pseudo Dart generation with iterative readability passes
+- readability passes now prune dead statements after terminal control flow and unwrap non-retry `while (true)` wrappers when the body already terminates
 
 Known limits:
 

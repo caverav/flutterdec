@@ -461,8 +461,11 @@ Recent readability features include:
 - comparator range compaction:
   - `if (x > K) { return r; } if (x >= L) { continue; }` to bounded continue range plus upper-tail return
 - retry-loop rewrite:
-  - `while (true)` loops with many `continue` edges become `while (retryLoopN)` using a retry flag initialized to true and cleared on fall-through
+  - `while (true)` loops with many `continue` edges become `while (retryLoopN)` using a retry flag initialized to true
+  - dead fall-through updates that appear after a guaranteed `return` are pruned as unreachable
   - retry wrappers with no remaining retry paths are unwrapped back to straight-line code
+- terminal tail pruning:
+  - statements after `return`, `continue`, or `break` in the same block are removed until block close
 - negated comparison normalization:
   - `!((a) != b)` to `((a) == b)` and `!((a) == b)` to `((a) != b)`
 - condition wrapper cleanup:
@@ -474,6 +477,7 @@ Recent readability features include:
   - emit `while (true)` with `continue` for back-edge paths
 - loop wrapper cleanup:
   - remove `while (true)` wrappers that have no `continue` and end with a plain `break`
+  - remove `while (true)` wrappers with no `continue` when the body already terminates at top level
 
 Fallback policy for complex unresolved regions:
 

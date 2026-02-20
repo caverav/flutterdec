@@ -4,6 +4,5 @@ dynamic goldenSimpleLoop(int receiver, dynamic param1, dynamic param2, dynamic p
       return (receiver + 1);
     }
     continue;
-    break;
   }
 }

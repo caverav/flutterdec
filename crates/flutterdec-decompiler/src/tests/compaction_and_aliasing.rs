@@ -323,8 +323,8 @@ fn rewrites_multi_continue_loop_as_retry_condition() {
         "multi-continue loop should get retry condition:\n{out}"
     );
     assert!(
-        out.contains("retryLoop1 = false;"),
-        "retry fall-through update should be emitted:\n{out}"
+        !out.contains("retryLoop1 = false;"),
+        "dead retry fall-through update should be removed:\n{out}"
     );
     assert!(
         !out.contains("while (true) {"),
@@ -565,4 +565,3 @@ fn simplifies_redundant_wrapped_if_conditions() {
     let got = FuncEmitter::clean_expr(line);
     assert_eq!(got, "  if (arg0 == 1) {");
 }
-
