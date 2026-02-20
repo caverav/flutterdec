@@ -445,7 +445,7 @@ Recent readability features include:
 - nested guard merge:
   - `if (a) { if (b) { body } }` to `if ((a) && (b)) { body }`
 - retry-loop rewrite:
-  - `while (true)` loops with many `continue` edges become `while (retryLoopN)` using a retry flag that is set true at loop-top and false on fall-through
+  - `while (true)` loops with many `continue` edges become `while (retryLoopN)` using a retry flag initialized to true and cleared on fall-through
   - retry wrappers with no remaining retry paths are unwrapped back to straight-line code
 - early loop structuring:
   - detect loop headers from backward CFG edges
