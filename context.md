@@ -74,6 +74,7 @@ Readability wins over low level fidelity when there is a tradeoff. For example:
 - remove redundant repeated null-guard checks when the first guard already terminates and the checked variable was not reassigned
 - fold simple nested guard `if` blocks into combined conditions when the outer block contains only the inner guard
 - merge consecutive same-scope `if (...) { continue; }` guards into combined `||` guard conditions
+- rewrite adjacent `if (x > K) return ...; if (x >= L) continue;` pairs into explicit bounded continue ranges
 - rewrite multi-continue `while (true)` loops into explicit retry-flag loops, then collapse one-shot retry wrappers back to straight-line flow
 - surface unknowns explicitly instead of inventing fake certainty
 
