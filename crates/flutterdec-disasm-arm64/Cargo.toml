@@ -1,0 +1,11 @@
+[package]
+name = "flutterdec-disasm-arm64"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+flutterdec-adapter = { path = "../flutterdec-adapter" }
+serde.workspace = true
+capstone.workspace = true
+regex.workspace = true
