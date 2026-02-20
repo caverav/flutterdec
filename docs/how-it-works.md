@@ -711,6 +711,11 @@ Decompiler source layout:
 - `crates/flutterdec-decompiler/src/helper_flow/parse.rs`: helper parsing and helper-shape detection
 - `crates/flutterdec-decompiler/src/helper_flow/inlining.rs`: helper inlining/collapse flow
 - `crates/flutterdec-decompiler/src/helper_flow/summary.rs`: loop-summary insertion, visit-limit policy, and helper function materialization
-- `crates/flutterdec-decompiler/src/helpers.rs`: shared parse/normalize/format helpers
+- `crates/flutterdec-decompiler/src/helpers.rs`: helper utility entrypoint
+- `crates/flutterdec-decompiler/src/helpers/registers.rs`: register canonicalization and zero-register helpers
+- `crates/flutterdec-decompiler/src/helpers/expr.rs`: integer parsing and expression simplification helpers
+- `crates/flutterdec-decompiler/src/helpers/instruction_parse.rs`: instruction and operand parsing helpers
+- `crates/flutterdec-decompiler/src/helpers/naming.rs`: local and target naming helpers
+- `crates/flutterdec-decompiler/src/helpers/state_and_flow.rs`: lift-state initialization, stack-offset collection, and cmp-to-branch condition helpers
 - `crates/flutterdec-decompiler/src/tests.rs`: decompiler regression test entrypoint
 - `crates/flutterdec-decompiler/src/tests/*.rs`: grouped decompiler regression suites and shared fixtures

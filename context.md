@@ -51,7 +51,12 @@ Current module layout:
     - helper parsing in `src/helper_flow/parse.rs`
     - helper inlining and collapse in `src/helper_flow/inlining.rs`
     - helper summary and visit-limit logic in `src/helper_flow/summary.rs`
-    - shared parse/normalize utilities in `src/helpers.rs`
+    - helper utility entry in `src/helpers.rs`
+    - register parsing in `src/helpers/registers.rs`
+    - expression simplification in `src/helpers/expr.rs`
+    - instruction parsing in `src/helpers/instruction_parse.rs`
+    - naming helpers in `src/helpers/naming.rs`
+    - lift-state and branch-condition helpers in `src/helpers/state_and_flow.rs`
     - regression test entry in `src/tests.rs`
     - test groups in `src/tests/shared.rs`, `src/tests/emit_and_helpers.rs`, `src/tests/cfg_and_stack.rs`, `src/tests/compaction_and_aliasing.rs`, and `src/tests/golden_and_parser.rs`
 - `crates/flutterdec-core`: orchestration, artifact writing, and quality report logic
