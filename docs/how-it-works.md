@@ -24,7 +24,7 @@ Main goal:
 ## End to end pipeline
 
 ```mermaid
-flowchart LR
+flowchart TB
   A[Input APK or libapp.so] --> B[Loader]
   B --> C[SnapshotBundle]
   C --> D[Adapter Runner]
