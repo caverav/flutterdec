@@ -89,7 +89,7 @@ Current scope:
 Known limits:
 
 - no full Dart syntax reconstruction yet
-- difficult loops can still appear as back edge comments
+- difficult loops can still appear as per-function back-edge summary comments
 - very complex control-flow regions can be summarized as omitted-path comments
 - many symbols remain synthetic when metadata is obfuscated
 - direct source level naming is still heuristic
@@ -113,7 +113,7 @@ Python remains useful at the adapter boundary for faster version specific parser
 
 ## Near term roadmap
 
-- improve loop structuring so back edge comments become real `while` or `for` constructs
+- improve loop structuring so back-edge summaries become real `while` or `for` constructs
 - replace omitted-path comments with richer structured reconstructions
 - lift more Dart VM idioms into higher level expressions
 - improve naming and type inference from object pool and call patterns
