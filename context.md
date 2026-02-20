@@ -70,6 +70,7 @@ Readability wins over low level fidelity when there is a tradeoff. For example:
 - alias key registers to semantic names (for example return address and frame pointer)
 - collapse empty `if { } else { ... }` forms into negated `if` blocks
 - hoist `else` bodies when the `if` branch terminates, to reduce nested indentation noise
+- collapse redundant guarded returns (`if (cond) return x; return x;`) into a single `return x;`
 - remove redundant repeated null-guard checks when the first guard already terminates and the checked variable was not reassigned
 - fold simple nested guard `if` blocks into combined conditions when the outer block contains only the inner guard
 - merge consecutive same-scope `if (...) { continue; }` guards into combined `||` guard conditions
