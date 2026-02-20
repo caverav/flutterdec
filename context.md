@@ -61,6 +61,7 @@ Current module layout:
     - regression test entry in `src/tests.rs`
     - test groups in `src/tests/shared.rs`, `src/tests/emit_and_helpers.rs`, `src/tests/cfg_and_stack.rs`, `src/tests/compaction_and_aliasing.rs`, and `src/tests/golden_and_parser.rs`
     - emit/helper test details in `src/tests/emit_and_helpers/helper_inlining.rs` and `src/tests/emit_and_helpers/readability_and_naming.rs`
+    - CFG/stack test details in `src/tests/cfg_and_stack/call_and_loops.rs` and `src/tests/cfg_and_stack/omitted_path_and_stack.rs`
     - compaction test details in `src/tests/compaction_and_aliasing/control_flow_compaction.rs` and `src/tests/compaction_and_aliasing/alias_and_expr_cleanup.rs`
 - `crates/flutterdec-core`: orchestration, artifact writing, and quality report logic
 - `crates/flutterdec-cli`: user facing commands
