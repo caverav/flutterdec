@@ -702,4 +702,5 @@ Decompiler source layout:
 - `crates/flutterdec-decompiler/src/passes/expr_cleanup.rs`: expression cleanup and comparison rewrites
 - `crates/flutterdec-decompiler/src/helper_flow.rs`: helper inlining/collapse and omitted-path summarization flow
 - `crates/flutterdec-decompiler/src/helpers.rs`: shared parse/normalize/format helpers
-- `crates/flutterdec-decompiler/src/tests.rs`: decompiler regression tests
+- `crates/flutterdec-decompiler/src/tests.rs`: decompiler regression test entrypoint
+- `crates/flutterdec-decompiler/src/tests/*.rs`: grouped decompiler regression suites and shared fixtures

@@ -46,7 +46,8 @@ Current module layout:
     - pass internals in `src/passes/compaction.rs`, `src/passes/structural_helpers.rs`, `src/passes/naming.rs`, and `src/passes/expr_cleanup.rs`
     - helper inlining/collapse pipeline in `src/helper_flow.rs`
     - shared parse/normalize utilities in `src/helpers.rs`
-    - regression tests in `src/tests.rs`
+    - regression test entry in `src/tests.rs`
+    - test groups in `src/tests/shared.rs`, `src/tests/emit_and_helpers.rs`, `src/tests/cfg_and_stack.rs`, `src/tests/compaction_and_aliasing.rs`, and `src/tests/golden_and_parser.rs`
 - `crates/flutterdec-core`: orchestration, artifact writing, and quality report logic
 - `crates/flutterdec-cli`: user facing commands
 
