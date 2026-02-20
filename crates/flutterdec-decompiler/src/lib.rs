@@ -1765,4 +1765,81 @@ mod tests {
         );
     }
 
+    #[test]
+    fn infers_local_names_and_int_types() {
+        let ir = FunctionIr {
+            function_id: 8,
+            name: "manualHints".to_string(),
+            entry_va: 0x8000,
+            blocks: Vec::new(),
+        };
+        let symbols = HashMap::new();
+        let mut emitter = FuncEmitter::new(&ir, &symbols);
+        emitter.locals.insert(-8, "local_m8".to_string());
+        emitter.locals.insert(-16, "local_m16".to_string());
+        emitter.lines = vec![
+            "dynamic manualHints(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {".to_string(),
+            "  var local_m8;".to_string(),
+            "  var local_m16;".to_string(),
+            "".to_string(),
+            "  local_m8 = (arg2 + 1);".to_string(),
+            "  local_m8 = (local_m8 + 2);".to_string(),
+            "  local_m8 = (local_m8 << 1);".to_string(),
+            "  local_m16 = pool[42];".to_string(),
+            "  if (local_m16.f7 == null) {".to_string(),
+            "    return local_m8;".to_string(),
+            "  }".to_string(),
+            "}".to_string(),
+        ];
+
+        emitter.apply_name_and_type_hints("manualHints");
+        let out = emitter.lines.join("\n");
+        assert!(
+            !out.contains("local_m8"),
+            "stack local should be renamed:\n{out}"
+        );
+        assert!(
+            !out.contains("local_m16"),
+            "stack local should be renamed:\n{out}"
+        );
+        assert!(
+            out.contains("int intTmp"),
+            "arithmetic local should get int type:\n{out}"
+        );
+        assert!(
+            out.contains("dynamic poolVal"),
+            "pool-assigned local should get poolVal naming:\n{out}"
+        );
+    }
+
+    #[test]
+    fn renames_receiver_argument_from_field_usage() {
+        let ir = FunctionIr {
+            function_id: 9,
+            name: "receiverHints".to_string(),
+            entry_va: 0x9000,
+            blocks: Vec::new(),
+        };
+        let symbols = HashMap::new();
+        let mut emitter = FuncEmitter::new(&ir, &symbols);
+        emitter.lines = vec![
+            "dynamic receiverHints(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {".to_string(),
+            "  if (arg0.f7 == null) {".to_string(),
+            "    return arg0;".to_string(),
+            "  }".to_string(),
+            "  return arg0.f11;".to_string(),
+            "}".to_string(),
+        ];
+
+        emitter.apply_name_and_type_hints("receiverHints");
+        let out = emitter.lines.join("\n");
+        assert!(
+            out.contains("dynamic receiver"),
+            "arg0 should be renamed to receiver:\n{out}"
+        );
+        assert!(
+            !out.contains("arg0.f"),
+            "field access should use receiver:\n{out}"
+        );
+    }
 }
