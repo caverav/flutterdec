@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "flutterdec adapter output schema",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "adapter_kind",
+    "dart_version",
+    "snapshot_hash",
+    "arch",
+    "libraries",
+    "classes",
+    "functions",
+    "object_pool"
+  ],
+  "properties": {
+    "schema_version": { "type": "integer", "const": 2 },
+    "adapter_kind": { "type": "string" },
+    "dart_version": { "type": "string" },
+    "snapshot_hash": { "type": "string" },
+    "arch": { "type": "string" },
+    "libraries": { "type": "array" },
+    "classes": { "type": "array" },
+    "functions": { "type": "array" },
+    "object_pool": { "type": "array" }
+  }
+}
