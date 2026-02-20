@@ -42,7 +42,8 @@ Current module layout:
   - internal split:
     - top-level orchestration in `src/lib.rs`
     - CFG walk and instruction lifting in `src/control_flow.rs`
-    - readability pass pipeline in `src/passes.rs`
+    - readability pass pipeline entry in `src/passes.rs`
+    - pass internals in `src/passes/compaction.rs`, `src/passes/structural_helpers.rs`, `src/passes/naming.rs`, and `src/passes/expr_cleanup.rs`
     - helper inlining/collapse pipeline in `src/helper_flow.rs`
     - shared parse/normalize utilities in `src/helpers.rs`
     - regression tests in `src/tests.rs`
