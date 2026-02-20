@@ -1,0 +1,4 @@
+# Keep docs, ignore local baseline profiles by default.
+*
+!.gitignore
+!README.md
