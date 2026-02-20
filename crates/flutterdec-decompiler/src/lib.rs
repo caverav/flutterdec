@@ -103,7 +103,11 @@ fn canonical_reg(token: &str) -> Option<String> {
 
 fn is_zero_reg(token: &str) -> bool {
     matches!(
-        token.trim().trim_end_matches('!').to_ascii_lowercase().as_str(),
+        token
+            .trim()
+            .trim_end_matches('!')
+            .to_ascii_lowercase()
+            .as_str(),
         "xzr" | "wzr"
     )
 }
@@ -311,13 +315,17 @@ fn parse_mem_operand(op: &str) -> Option<(String, i64)> {
 }
 
 fn normalize_target(target: &str) -> String {
+    let mut last_hex = None;
     for token in target.split(|c: char| c.is_whitespace() || c == ',') {
         let t = token.trim().trim_start_matches('#');
         if let Some(hex) = t.strip_prefix("0x") {
             if let Ok(v) = u64::from_str_radix(hex, 16) {
-                return format!("0x{v:x}");
+                last_hex = Some(v);
             }
         }
+    }
+    if let Some(v) = last_hex {
+        return format!("0x{v:x}");
     }
     for token in target.split(|c: char| c.is_whitespace() || c == ',') {
         let t = token.trim().trim_start_matches('#');
@@ -527,6 +535,59 @@ impl<'a> FuncEmitter<'a> {
                 let cur = &self.lines[i];
                 let cur_trim = cur.trim();
 
+                if cur_trim == "while (true) {" {
+                    if let Some(j) = Self::find_block_end(&self.lines, i) {
+                        let mut rel_depth = 1i32;
+                        let mut has_continue = false;
+                        let mut last_non_empty = None;
+                        let mut break_at_top_level = false;
+
+                        for idx in i + 1..j {
+                            let t = self.lines[idx].trim();
+                            if !t.is_empty() {
+                                last_non_empty = Some(idx);
+                                if t == "continue;" {
+                                    has_continue = true;
+                                }
+                            }
+                            rel_depth +=
+                                self.lines[idx].chars().filter(|&c| c == '{').count() as i32;
+                            rel_depth -=
+                                self.lines[idx].chars().filter(|&c| c == '}').count() as i32;
+                        }
+
+                        if let Some(last_idx) = last_non_empty {
+                            break_at_top_level =
+                                self.lines[last_idx].trim() == "break;" && rel_depth == 1;
+                            if self.lines[last_idx].trim() == "break;" {
+                                let mut depth_at_break = 1i32;
+                                for idx in i + 1..last_idx {
+                                    depth_at_break +=
+                                        self.lines[idx].chars().filter(|&c| c == '{').count()
+                                            as i32;
+                                    depth_at_break -=
+                                        self.lines[idx].chars().filter(|&c| c == '}').count()
+                                            as i32;
+                                }
+                                break_at_top_level = depth_at_break == 1;
+                            }
+                        }
+
+                        if break_at_top_level && !has_continue {
+                            for idx in i + 1..j {
+                                if Some(idx) == last_non_empty && self.lines[idx].trim() == "break;"
+                                {
+                                    continue;
+                                }
+                                out.push(Self::dedent_once(&self.lines[idx]));
+                            }
+                            i = j + 1;
+                            changed = true;
+                            continue;
+                        }
+                    }
+                }
+
                 if cur_trim.starts_with("if (") && cur_trim.ends_with(") {") {
                     let mut j = i + 1;
                     while j < self.lines.len() && self.lines[j].trim().is_empty() {
@@ -605,6 +666,22 @@ impl<'a> FuncEmitter<'a> {
 
     fn is_ident_char(c: char) -> bool {
         c.is_ascii_alphanumeric() || c == '_'
+    }
+
+    fn dedent_once(line: &str) -> String {
+        line.strip_prefix("  ").unwrap_or(line).to_string()
+    }
+
+    fn find_block_end(lines: &[String], start: usize) -> Option<usize> {
+        let mut depth = 0i32;
+        for (idx, line) in lines.iter().enumerate().skip(start) {
+            depth += line.chars().filter(|&c| c == '{').count() as i32;
+            depth -= line.chars().filter(|&c| c == '}').count() as i32;
+            if depth == 0 {
+                return Some(idx);
+            }
+        }
+        None
     }
 
     fn replace_identifier_token(line: &str, from: &str, to: &str) -> String {
@@ -1599,7 +1676,10 @@ impl<'a> FuncEmitter<'a> {
             let named_target = named_indirect_target(&target);
             self.push_line(
                 indent,
-                &format!("final {} = dynamicCall({}, [{}]);", tname, named_target, args),
+                &format!(
+                    "final {} = dynamicCall({}, [{}]);",
+                    tname, named_target, args
+                ),
             );
         } else {
             let call_name = if let Some(hex) = target.strip_prefix("0x") {
@@ -2380,62 +2460,64 @@ mod tests {
             function_id: 13,
             name: "simpleLoop".to_string(),
             entry_va: 0xd000,
-            blocks: vec![BasicBlock {
-                id: 0,
-                start_va: 0xd000,
-                instrs: vec![LlirInstr {
-                    va: 0xd000,
-                    op: IROp::Jump,
-                    src: "b #0xd004".to_string(),
-                    target: "#0xd004".to_string(),
-                }],
-                succs: vec![1],
-                preds: Vec::new(),
-            },
-            BasicBlock {
-                id: 1,
-                start_va: 0xd004,
-                instrs: vec![
-                    LlirInstr {
-                        va: 0xd004,
-                        op: IROp::Other,
-                        src: "add x0, x0, #1".to_string(),
+            blocks: vec![
+                BasicBlock {
+                    id: 0,
+                    start_va: 0xd000,
+                    instrs: vec![LlirInstr {
+                        va: 0xd000,
+                        op: IROp::Jump,
+                        src: "b #0xd004".to_string(),
+                        target: "#0xd004".to_string(),
+                    }],
+                    succs: vec![1],
+                    preds: Vec::new(),
+                },
+                BasicBlock {
+                    id: 1,
+                    start_va: 0xd004,
+                    instrs: vec![
+                        LlirInstr {
+                            va: 0xd004,
+                            op: IROp::Other,
+                            src: "add x0, x0, #1".to_string(),
+                            target: String::new(),
+                        },
+                        LlirInstr {
+                            va: 0xd008,
+                            op: IROp::Branch,
+                            src: "cbnz x0, #0xd010".to_string(),
+                            target: "#0xd010".to_string(),
+                        },
+                    ],
+                    succs: vec![2, 3],
+                    preds: vec![0, 2],
+                },
+                BasicBlock {
+                    id: 2,
+                    start_va: 0xd00c,
+                    instrs: vec![LlirInstr {
+                        va: 0xd00c,
+                        op: IROp::Jump,
+                        src: "b #0xd004".to_string(),
+                        target: "#0xd004".to_string(),
+                    }],
+                    succs: vec![1],
+                    preds: vec![1],
+                },
+                BasicBlock {
+                    id: 3,
+                    start_va: 0xd010,
+                    instrs: vec![LlirInstr {
+                        va: 0xd010,
+                        op: IROp::Return,
+                        src: "ret".to_string(),
                         target: String::new(),
-                    },
-                    LlirInstr {
-                        va: 0xd008,
-                        op: IROp::Branch,
-                        src: "cbnz x0, #0xd010".to_string(),
-                        target: "#0xd010".to_string(),
-                    },
-                ],
-                succs: vec![2, 3],
-                preds: vec![0, 2],
-            },
-            BasicBlock {
-                id: 2,
-                start_va: 0xd00c,
-                instrs: vec![LlirInstr {
-                    va: 0xd00c,
-                    op: IROp::Jump,
-                    src: "b #0xd004".to_string(),
-                    target: "#0xd004".to_string(),
-                }],
-                succs: vec![1],
-                preds: vec![1],
-            },
-            BasicBlock {
-                id: 3,
-                start_va: 0xd010,
-                instrs: vec![LlirInstr {
-                    va: 0xd010,
-                    op: IROp::Return,
-                    src: "ret".to_string(),
-                    target: String::new(),
-                }],
-                succs: Vec::new(),
-                preds: vec![1],
-            }],
+                    }],
+                    succs: Vec::new(),
+                    preds: vec![1],
+                },
+            ],
         };
 
         let artifact = emit_pseudocode(&ir, &HashMap::new());
@@ -2813,5 +2895,74 @@ mod tests {
             !out.contains("else {"),
             "else branch should be absorbed:\n{out}"
         );
+    }
+
+    #[test]
+    fn unwraps_single_iteration_while_without_continue() {
+        let ir = FunctionIr {
+            function_id: 23,
+            name: "loopWrapper".to_string(),
+            entry_va: 0xf800,
+            blocks: Vec::new(),
+        };
+        let symbols = HashMap::new();
+        let mut emitter = FuncEmitter::new(&ir, &symbols);
+        emitter.lines = vec![
+            "dynamic loopWrapper(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {".to_string(),
+            "  while (true) {".to_string(),
+            "    if (arg0 == null) {".to_string(),
+            "      return arg1;".to_string(),
+            "    }".to_string(),
+            "    break;".to_string(),
+            "  }".to_string(),
+            "}".to_string(),
+        ];
+
+        emitter.compact_lines();
+        let out = emitter.lines.join("\n");
+        assert!(
+            !out.contains("while (true) {"),
+            "single-iteration wrappers should be removed:\n{out}"
+        );
+        assert!(
+            out.contains("if (arg0 == null) {"),
+            "body should remain after unwrap:\n{out}"
+        );
+    }
+
+    #[test]
+    fn keeps_while_wrapper_when_continue_exists() {
+        let ir = FunctionIr {
+            function_id: 24,
+            name: "loopContinue".to_string(),
+            entry_va: 0xf900,
+            blocks: Vec::new(),
+        };
+        let symbols = HashMap::new();
+        let mut emitter = FuncEmitter::new(&ir, &symbols);
+        emitter.lines = vec![
+            "dynamic loopContinue(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {".to_string(),
+            "  while (true) {".to_string(),
+            "    if (arg0 == null) {".to_string(),
+            "      continue;".to_string(),
+            "    }".to_string(),
+            "    break;".to_string(),
+            "  }".to_string(),
+            "}".to_string(),
+        ];
+
+        emitter.compact_lines();
+        let out = emitter.lines.join("\n");
+        assert!(
+            out.contains("while (true) {"),
+            "real loop control flow should keep wrapper:\n{out}"
+        );
+        assert!(out.contains("continue;"), "continue should remain:\n{out}");
+    }
+
+    #[test]
+    fn normalize_target_prefers_last_hex_operand() {
+        let got = normalize_target("x0, #0x3f, #0x2008");
+        assert_eq!(got, "0x2008");
     }
 }
