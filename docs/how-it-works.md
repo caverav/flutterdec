@@ -96,6 +96,7 @@ sequenceDiagram
 - if selector evidence exists but no known standard mapping applies, indirect callsites use `dispatch.<selector>(...)` as a readable fallback
 - selector evidence for indirect calls is inferred from both call arguments and indirect target expressions
 - selector resolution also uses adapter pool metadata (`selector`, `owner_class`, `library_uri`) to build deterministic owner-qualified semantic paths
+- missing selector/owner/library pool metadata can be backfilled from function ownership metadata (`target_va` -> function/class/library) before semantic resolution
 - if pool metadata carries `target_va` and symbol resolution for that VA is non-generic, indirect callsites can rewrite through that symbol path with `target_va` traceability comments
 - selector extraction ignores file/URI/path-like strings to reduce false-positive standard-call rewrites
 - unresolved `dispatchTarget` callsites use `dispatch.invoke(...)` fallback to reduce raw `dynamicCall(...)` noise
