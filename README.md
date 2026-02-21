@@ -1,207 +1,50 @@
 # flutterdec
 
-`flutterdec` is a Rust-first research CLI for static decompilation of Flutter AOT Android ARM64 binaries.
+`flutterdec` is a static Flutter AOT decompiler research tool for Android ARM64 binaries.
 
-## Scope
+It takes an APK (or `libapp.so`) and emits readable pseudo-Dart plus optional IR/ASM artifacts.
 
-- Android ARM64 only
-- Static analysis only
-- Adapter-backed snapshot model ingest
-- Disassembly -> IR/CFG -> pseudo-Dart output
+## Who This Is For
 
-## Dev environment
+- reverse engineers and security researchers
+- Flutter internals researchers
+- developers comparing stripped/unstripped engine builds
 
-```bash
-nix develop
-cargo test
-cargo run -p flutterdec-cli -- info path/to/libapp.so --json
-```
+## Quick Start
 
-## CLI
+Prerequisites:
 
-```bash
-flutterdec info <apk|so> [--json]
-flutterdec engine-fingerprint <libflutter.so> [--json] [-o out/fingerprint/]
-flutterdec decompile <apk|so> -o out/ [--emit-asm] [--emit-ir]
-flutterdec map-symbols --stripped <libflutter-stripped.so> --unstripped <libflutter-unstripped.so> -o out/symbol-map/
-flutterdec adapter install --dart-hash <hash>
-flutterdec adapter list
-```
+- Nix (`nix develop`)
 
-## Usage
-
-You can run the CLI either from source:
+Run from source:
 
 ```bash
-nix develop -c cargo run -p flutterdec-cli -- <command> ...
+nix develop -c cargo run -p flutterdec-cli -- info ./sample.apk --json
 ```
 
-or as an installed binary:
+Or build/install and run as `flutterdec`.
+
+## Typical Workflow
+
+1. Inspect target:
 
 ```bash
-flutterdec <command> ...
+flutterdec info ./sample.apk --json
 ```
 
-### `info`
-
-Arguments:
-
-- `<INPUT>`: path to an APK file or `libapp.so`
-- `--json`: print machine-readable JSON output
-
-Examples:
+2. Install adapter for the detected Dart hash:
 
 ```bash
-flutterdec info ./sample.apk
-flutterdec info ./libapp.so --json
+flutterdec adapter install --dart-hash <HASH>
 ```
 
-### `decompile`
-
-Arguments:
-
-- `<INPUT>`: path to an APK file or `libapp.so`
-- `-o, --out <OUT_DIR>`: output directory (required)
-- `--emit-asm`: also write disassembly files
-- `--emit-ir`: also write IR JSON files
-- `--extra-symbol-elf <PATH>`: load extra ELF function symbols for call naming (repeatable)
-- `--extra-symbol-map-targets <PATH>`: load `symbol_target_summary.json` style mappings from `map-symbols` (repeatable)
-- `--include-nearest-symbol-map`: also ingest `nearest` symbol matches from symbol-map targets (default is `exact` only)
-- `--focus <FOCUS>`: decompile functions matching a filter
-- `--max-functions <N>`: limit number of functions to process
-- `--max-placeholder-ifs <N>`: quality gate threshold (default `0`)
-- `--max-unresolved-cf <N>`: quality gate threshold (default `0`)
-- `--max-indirect-call-ratio <R>`: quality gate threshold (default `0.3`)
-- `--min-disassembly-ratio <R>`: quality gate threshold (default `0.8`)
-
-Examples:
+3. Decompile:
 
 ```bash
 flutterdec decompile ./sample.apk -o ./out
-flutterdec decompile ./sample.apk -o ./out --emit-asm --emit-ir
-flutterdec decompile ./sample.apk -o ./out --max-functions 120 --min-disassembly-ratio 0.0
-flutterdec decompile ./sample.apk -o ./out --extra-symbol-elf ./libflutter.unstripped.so
-flutterdec decompile ./sample.apk -o ./out --extra-symbol-map-targets ./out/symbol-map/symbol_target_summary.json
 ```
 
-Output files:
-
-- `out/pseudocode/*.dartpseudo`
-- `out/asm/*.s` (when `--emit-asm`)
-- `out/ir/*.json` (when `--emit-ir`)
-- `out/quality.json`
-- `out/report.json`
-
-`quality.json` now also tracks call rewrite counters:
-- `semantic_direct_calls`
-- `semantic_indirect_calls`
-- `dispatch_selector_calls`
-- `target_va_symbol_calls`
-
-`report.json` includes a `semantic_rewrite` summary with:
-- `total`, `ratio`
-- `direct`, `indirect`, `dispatch_fallback`, `target_va_symbol`
-- `indirect_ratio`
-
-`report.json` also includes a `semantic_intent` summary with:
-- `framework`, `stdlib`, `runtime`, `native`
-- `selector_tagged`
-- `constructor_calls`
-
-Naming and semantic behavior:
-
-- external symbols are normalized into readable call names (for example runtime/native prefixes)
-- descriptive external names can replace generic placeholders (`sub_*`, `fn_0x*`)
-- selector-based deterministic inference can tag standard calls from object-pool arguments even when call targets stay generic
-- selector inference now also consumes adapter pool metadata (`selector`, `owner_class`, `library_uri`) for deterministic owner-qualified semantic rewrites (Flutter, Dart stdlib, and package URIs when ownership is present)
-- internal selector forms are also recognized when deterministic (for example `_current` -> `dart.core.Iterator.current`, `_equivalentYear` -> `dart.core.DateTime.equivalentYear`, `_listEquals` -> `flutter.foundation.listEquals`, `_prependTypeArguments` -> `dart_vm.prependTypeArguments`, `_StreamController` -> `dart.async.StreamController.new`, `_RawDatagramSocket` -> `dart.io.RawDatagramSocket.new`, `_nativeSetFloat32x4` -> `dart.typed_data.ByteData.setFloat32x4`, `_UnmodifiableUint8ArrayView` -> `dart.typed_data._UnmodifiableUint8ArrayView.new`, `_Int32ArrayView` -> `dart.typed_data._Int32ArrayView.new`)
-- when metadata includes `owner_class` but not `library_uri`, indirect selector calls can still be deterministically rewritten to owner-qualified forms (for example `OwnerClass.method(...)`) with `owner:` intent traceability
-- when pool metadata omits selector/owner/library fields, decompile now backfills them from function ownership metadata using `target_va` when possible
-- when pool metadata includes a resolvable `target_va`, indirect callsites can also rewrite through that symbol (instead of fallback invoke/dispatch forms)
-- high-confidence callsites are rewritten to semantic paths while keeping traceability with `was: <original_name>`
-- indirect callsites can also be rewritten when selector evidence is deterministic, with `indirect via: <target_alias>` traceability
-- unresolved indirect callsites can fall back to readable selector forms when no standard mapping is known: `dispatch.<selector>(...)` for general selectors, and `<Selector>.new(...)` for constructor-like selectors (annotated with `heuristic: constructor-like selector`)
-- unresolved `dispatchTarget` indirect calls now prefer semantic library invoke names when URI evidence exists (for example `flutter.widgets.invoke(...)` or `spotube.models.connect.load.invoke(...)`), then fall back to callable target form `<resolvedTarget>(...)` when the target expression is known, and only then to plain `dispatch.invoke(...)`
-- dispatch table slot targets like `reg21.f0` are now aliased to `dispatchTargetFn` before unresolved callable callsites, so unresolved chains read as `dispatchTargetFn(...)`
-- unresolved generic indirect aliases now render as callable fallback `<target>(...)` (for example `indirectTarget9(...)`) instead of `dynamicCall(...)`
-- repeated read-only stack slot references can now be hoisted into local aliases (for example `final stackSlotNeg0x10 = sp[-0x10];`) so repeated call arguments are easier to follow
-- selector evidence can be inferred from indirect target expressions too (for example `target: (pool[...]).f7`), not only call arguments
-- selector extraction skips file/URI/path-like strings (for example `*.dart` paths) to avoid false-positive rewrites
-- exact `pool[<idx>]` call arguments are rendered as `"value" /* pool[<idx>] */` when a string hint is available
-- `report.json` includes `pool_semantic_hints` and `pool_target_symbols` alongside `pool_value_hints` to show metadata coverage used by decompile
-- argument and local declaration types are inferred from deterministic semantic call ownership, constructor semantics, and literal assignments (for example `flutter.widgets.State receiver`, `dart.async.StreamIterator tmp`, `String tmp`, `bool tmp`)
-- constructor-like selectors are also mapped when deterministic (for example `flutter.widgets.KeyedSubtree.new`, `dart.async.StreamIterator.new`, `dart.typed_data.Float32x4List.new`)
-- recognized calls add intent comments in pseudocode, for example:
-  - `// stdlib:dart.core.print`
-  - `// stdlib:dart.core.map [selector]`
-  - `// stdlib:dart.core.Match.end [selector]`
-  - `// stdlib:dart.core.Iterator.current [selector]`
-  - `// stdlib:dart.core.DateTime.equivalentYear [selector]`
-  - `// stdlib:dart.core.List.removeAt [selector]`
-  - `// stdlib:dart.async.StreamController.new [selector]`
-  - `// stdlib:dart.io.RawDatagramSocket.new [selector]`
-  - `// stdlib:dart.typed_data.ByteData.setFloat32x4 [selector]`
-  - `// stdlib:dart.typed_data._UnmodifiableUint8ArrayView.new [selector]`
-  - `// stdlib:dart.typed_data._Int32ArrayView.new [selector]`
-  - `// stdlib:dart.async.Stream.listen [selector]`
-  - `// framework:flutter.widgets.State.setState`
-  - `// framework:flutter.foundation.listEquals [selector]`
-  - `// framework:flutter.widgets.Navigator.pushNamed [selector]`
-  - `// framework:flutter.widgets.Widget.build [selector]`
-  - `// framework:flutter.scheduler.SchedulerBinding.addPostFrameCallback [selector]`
-  - `// runtime:dart_vm.invoke`
-  - `// runtime:dart_vm.prependTypeArguments [selector]`
-  - `// native:libc.memcpy`
-  - `final t2 = flutter.widgets.Widget.build(...); // framework:flutter.widgets.Widget.build [selector], was: sub_bbb20c`
-  - `final t3 = dart.core.map(...); // stdlib:dart.core.map [selector], indirect via: dispatchTarget, target: (pool[40 /* "_offsetInBytes" */]).f7`
-
-### `adapter`
-
-Arguments:
-
-- `install --dart-hash <DART_HASH>`: install adapter metadata for a Dart hash
-- `list`: list installed adapters
-
-Examples:
-
-```bash
-flutterdec adapter install --dart-hash 4b8f1f
-flutterdec adapter list
-```
-
-### `engine-fingerprint`
-
-Extract engine-identifying metadata from an ELF (`libflutter.so` or similar) and produce a confidence-based fingerprint.
-
-Arguments:
-
-- `<INPUT>`: path to ELF file
-- `-o, --out <OUT_DIR>`: optional output directory for `engine_fingerprint.json`
-- `--max-markers <N>`: max marker strings per category (default `24`)
-- `--json`: print full JSON report
-
-Examples:
-
-```bash
-flutterdec engine-fingerprint ./libflutter.so --json
-flutterdec engine-fingerprint ./libflutter.so -o ./out/fingerprint
-```
-
-### `map-symbols`
-
-Map direct call targets from a stripped ARM64 ELF to symbols from an unstripped build.
-
-Arguments:
-
-- `--stripped <PATH>`: stripped `libflutter.so` (or other ARM64 ELF)
-- `--unstripped <PATH>`: matching unstripped ELF from the same build
-- `-o, --out <OUT_DIR>`: output directory (required)
-- `--include-branches`: also map direct `b` targets (default maps `bl` calls only)
-- `--nearest-max-distance <N>`: max byte distance for nearest-symbol fallback (default `8192`)
-- `--require-exec-match`: fail when executable section bytes differ
-- `--json`: print summary report as JSON
-
-Examples:
+4. Optional: improve call names with stripped/unstripped engine pair:
 
 ```bash
 flutterdec map-symbols \
@@ -209,76 +52,53 @@ flutterdec map-symbols \
   --unstripped ./libflutter.unstripped.so \
   -o ./out/symbol-map
 
-flutterdec map-symbols \
-  --stripped ./libflutter.stripped.so \
-  --unstripped ./libflutter.unstripped.so \
-  -o ./out/symbol-map \
-  --require-exec-match \
-  --json
-```
-
-Output files:
-
-- `out/symbol-map/symbol_map_report.json`
-- `out/symbol-map/symbol_target_summary.json`
-- `out/symbol-map/symbol_call_sites.tsv`
-
-Combined naming workflow:
-
-```bash
-flutterdec engine-fingerprint ./libflutter.unstripped.so --json
-flutterdec map-symbols --stripped ./libflutter.stripped.so --unstripped ./libflutter.unstripped.so -o ./out/symbol-map --require-exec-match
 flutterdec decompile ./sample.apk -o ./out \
   --extra-symbol-map-targets ./out/symbol-map/symbol_target_summary.json \
   --extra-symbol-elf ./libflutter.unstripped.so
 ```
 
-## Real Golden Checks (Optional)
+## Analysis Profiles
 
-For end-to-end readability regression checks on a real binary, use:
+`decompile` exposes analysis-engine profiles so you can trade detail for speed.
 
-```bash
-scripts/real-golden.sh record --input /path/to/sample.apk --baseline testdata/real-golden/profiles/sample --max-functions 120 --min-disassembly-ratio 0.0
-scripts/real-golden.sh check  --input /path/to/sample.apk --baseline testdata/real-golden/profiles/sample --max-functions 120 --min-disassembly-ratio 0.0
-```
+Default profile:
 
-Nix app shortcut:
+- `balanced` (recommended)
 
-```bash
-nix run .#real-golden -- record --input /path/to/sample.apk --baseline testdata/real-golden/profiles/sample --max-functions 120 --min-disassembly-ratio 0.0
-nix run .#real-golden -- check  --input /path/to/sample.apk --baseline testdata/real-golden/profiles/sample --max-functions 120 --min-disassembly-ratio 0.0
-```
+Available profiles:
 
-If this is the first baseline record, provide tracked files via `FLUTTERDEC_REAL_GOLDEN_FILES`:
+- `balanced`: full semantic naming/hints/reporting
+- `light`: lower-overhead analysis for faster large-scale runs
+
+Example:
 
 ```bash
-FLUTTERDEC_REAL_GOLDEN_FILES='pseudocode/00080_sub_65f850.dartpseudo,pseudocode/00081_sub_65f9ac.dartpseudo' \
-  scripts/real-golden.sh record --input /path/to/sample.apk --baseline testdata/real-golden/profiles/sample --max-functions 120 --min-disassembly-ratio 0.0
+flutterdec decompile ./sample.apk -o ./out --analysis-profile light
 ```
 
-Multi-profile runner (uses `testdata/real-golden/profiles/*/profile.env`):
+You can explicitly enable/disable individual engine toggles:
 
-```bash
-scripts/real-golden-matrix.sh check
-scripts/real-golden-matrix.sh check --profile sample
-scripts/real-golden-matrix.sh check --strict
-```
+- `--with-canonical-model-symbols` / `--no-canonical-model-symbols`
+- `--with-pool-value-hints` / `--no-pool-value-hints`
+- `--with-pool-semantic-hints` / `--no-pool-semantic-hints`
+- `--with-semantic-reporting` / `--no-semantic-reporting`
 
-Nix app shortcut:
+## Output
 
-```bash
-nix run .#real-golden-matrix -- check
-nix run .#real-golden-matrix -- check --strict
-```
+Main outputs under `-o <OUT_DIR>`:
 
-## Ethics
+- `pseudocode/*.dartpseudo`
+- `quality.json`
+- `report.json`
+- `asm/*.s` (if `--emit-asm`)
+- `ir/*.json` (if `--emit-ir`)
 
-Use only on binaries you are legally allowed to analyze. This project is for security research and interoperability study.
+## Documentation
 
-## Context
-
-Project research context and architecture notes are in [context.md](context.md).
-
-## Internals
-
-Deep internal architecture and pipeline explanation is in [docs/how-it-works.md](docs/how-it-works.md).
+- User guide: [docs/user-guide.md](docs/user-guide.md)
+- CLI reference: [docs/cli-reference.md](docs/cli-reference.md)
+- Development guide: [docs/development.md](docs/development.md)
+- Architecture: [docs/architecture.md](docs/architecture.md)
+- Internals walkthrough: [docs/how-it-works.md](docs/how-it-works.md)
+- Research decisions: [docs/research-decisions.md](docs/research-decisions.md)
+- Context and project history: [context.md](context.md)
