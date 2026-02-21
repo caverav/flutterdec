@@ -45,6 +45,10 @@ pub fn run_decompile(
     );
     let ir: Vec<FunctionIr> = build_program_ir(&disasm);
     let mut symbol_names: HashMap<u64, String> = HashMap::new();
+    let mut symbol_merge_inserted = 0usize;
+    let mut symbol_merge_replaced_generic = 0usize;
+    let mut symbol_merge_skipped = 0usize;
+
     for f in &model.functions {
         symbol_names.insert(f.entry_va, f.name.clone());
     }
@@ -57,7 +61,33 @@ pub fn run_decompile(
         let ext = load_elf_function_symbols(elf_path)
             .with_context(|| format!("load external symbols from {}", elf_path.display()))?;
         for (va, name) in ext {
-            symbol_names.entry(va).or_insert(name);
+            merge_symbol_name(
+                &mut symbol_names,
+                va,
+                name,
+                &mut symbol_merge_inserted,
+                &mut symbol_merge_replaced_generic,
+                &mut symbol_merge_skipped,
+            );
+        }
+    }
+    for map_path in &opt.extra_symbol_map_targets {
+        let ext = load_symbol_target_symbols(map_path, opt.include_nearest_symbol_map)
+            .with_context(|| {
+                format!(
+                    "load symbol target map from {}",
+                    map_path.display()
+                )
+            })?;
+        for (va, name) in ext {
+            merge_symbol_name(
+                &mut symbol_names,
+                va,
+                name,
+                &mut symbol_merge_inserted,
+                &mut symbol_merge_replaced_generic,
+                &mut symbol_merge_skipped,
+            );
         }
     }
     let pseudo = emit_program(&ir, &symbol_names);
@@ -139,6 +169,17 @@ pub fn run_decompile(
             .iter()
             .map(|p| p.display().to_string())
             .collect::<Vec<_>>(),
+        "extra_symbol_map_targets": opt
+            .extra_symbol_map_targets
+            .iter()
+            .map(|p| p.display().to_string())
+            .collect::<Vec<_>>(),
+        "include_nearest_symbol_map": opt.include_nearest_symbol_map,
+        "symbol_merge": {
+            "inserted": symbol_merge_inserted,
+            "replaced_generic": symbol_merge_replaced_generic,
+            "skipped": symbol_merge_skipped
+        }
     });
 
     fs::write(
@@ -159,4 +200,100 @@ pub fn available_adapters(repo_root: &Path) -> Result<Vec<(String, String, Strin
         .into_iter()
         .map(|(e, installed)| (e.snapshot_hash, e.version, e.adapter, installed))
         .collect())
+}
+
+fn merge_symbol_name(
+    symbol_names: &mut HashMap<u64, String>,
+    va: u64,
+    candidate: String,
+    inserted: &mut usize,
+    replaced_generic: &mut usize,
+    skipped: &mut usize,
+) {
+    let candidate = candidate.trim().to_string();
+    if candidate.is_empty() {
+        return;
+    }
+
+    match symbol_names.get(&va) {
+        None => {
+            symbol_names.insert(va, candidate);
+            *inserted += 1;
+        }
+        Some(existing) => {
+            if is_generic_symbol_name(existing) && !is_generic_symbol_name(&candidate) {
+                symbol_names.insert(va, candidate);
+                *replaced_generic += 1;
+            } else {
+                *skipped += 1;
+            }
+        }
+    }
+}
+
+fn is_generic_symbol_name(name: &str) -> bool {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return true;
+    }
+    if trimmed.starts_with("sub_") || trimmed.starts_with("fn_0x") || trimmed == "unknown" {
+        return true;
+    }
+    false
+}
+
+#[cfg(test)]
+mod runners_tests {
+    use super::*;
+
+    #[test]
+    fn merge_symbol_name_replaces_generic_only() {
+        let mut map = HashMap::new();
+        map.insert(0x1000, "sub_1000".to_string());
+        map.insert(0x2000, "StrongName".to_string());
+
+        let mut inserted = 0usize;
+        let mut replaced = 0usize;
+        let mut skipped = 0usize;
+
+        merge_symbol_name(
+            &mut map,
+            0x1000,
+            "RealSymbol".to_string(),
+            &mut inserted,
+            &mut replaced,
+            &mut skipped,
+        );
+        merge_symbol_name(
+            &mut map,
+            0x2000,
+            "OtherSymbol".to_string(),
+            &mut inserted,
+            &mut replaced,
+            &mut skipped,
+        );
+        merge_symbol_name(
+            &mut map,
+            0x3000,
+            "InsertedSymbol".to_string(),
+            &mut inserted,
+            &mut replaced,
+            &mut skipped,
+        );
+
+        assert_eq!(map.get(&0x1000).map(String::as_str), Some("RealSymbol"));
+        assert_eq!(map.get(&0x2000).map(String::as_str), Some("StrongName"));
+        assert_eq!(map.get(&0x3000).map(String::as_str), Some("InsertedSymbol"));
+        assert_eq!(inserted, 1);
+        assert_eq!(replaced, 1);
+        assert_eq!(skipped, 1);
+    }
+
+    #[test]
+    fn generic_name_detection_is_strict() {
+        assert!(is_generic_symbol_name("sub_1234"));
+        assert!(is_generic_symbol_name("fn_0x55"));
+        assert!(is_generic_symbol_name("unknown"));
+        assert!(!is_generic_symbol_name("Dart_Invoke"));
+    }
 }

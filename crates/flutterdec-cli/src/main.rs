@@ -42,6 +42,10 @@ struct DecompileCmd {
     emit_ir: bool,
     #[arg(long = "extra-symbol-elf")]
     extra_symbol_elfs: Vec<PathBuf>,
+    #[arg(long = "extra-symbol-map-targets")]
+    extra_symbol_map_targets: Vec<PathBuf>,
+    #[arg(long = "include-nearest-symbol-map")]
+    include_nearest_symbol_map: bool,
     #[arg(long)]
     focus: Option<String>,
     #[arg(long)]
@@ -144,6 +148,8 @@ fn main() -> Result<()> {
                 emit_asm: cmd.emit_asm,
                 emit_ir: cmd.emit_ir,
                 extra_symbol_elfs: cmd.extra_symbol_elfs,
+                extra_symbol_map_targets: cmd.extra_symbol_map_targets,
+                include_nearest_symbol_map: cmd.include_nearest_symbol_map,
                 focus: cmd.focus,
                 max_functions: cmd.max_functions,
                 max_placeholder_ifs: cmd.max_placeholder_ifs,

@@ -4,6 +4,7 @@ use goblin::elf::header::EM_AARCH64;
 use goblin::elf::section_header::SHF_EXECINSTR;
 use goblin::elf::sym::{STT_FUNC, STT_NOTYPE};
 use goblin::elf::Elf;
+use serde::Deserialize;
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone)]
@@ -14,7 +15,7 @@ pub struct SymbolMapOptions {
     pub require_exec_match: bool,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SymbolTargetSummary {
     pub target_va: u64,
     pub call_count: usize,
@@ -220,6 +221,27 @@ pub fn load_elf_function_symbols(path: &Path) -> Result<BTreeMap<u64, String>> {
     let bytes = fs::read(path).with_context(|| format!("read ELF {}", path.display()))?;
     let elf = Elf::parse(&bytes).with_context(|| format!("parse ELF {}", path.display()))?;
     Ok(collect_symbols(&elf))
+}
+
+pub fn load_symbol_target_symbols(
+    path: &Path,
+    include_nearest: bool,
+) -> Result<BTreeMap<u64, String>> {
+    let bytes = fs::read(path).with_context(|| format!("read symbol target map {}", path.display()))?;
+    let entries: Vec<SymbolTargetSummary> = serde_json::from_slice(&bytes)
+        .with_context(|| format!("parse symbol target map JSON {}", path.display()))?;
+
+    let mut out = BTreeMap::new();
+    for e in entries {
+        if e.symbol_name.is_none() {
+            continue;
+        }
+        let kind = e.match_kind.to_ascii_lowercase();
+        if kind == "exact" || (include_nearest && kind == "nearest") {
+            out.insert(e.target_va, e.symbol_name.unwrap_or_default());
+        }
+    }
+    Ok(out)
 }
 
 fn collect_exec_sections(elf: &Elf, bytes: &[u8]) -> Vec<ExecSection> {
@@ -537,5 +559,54 @@ mod tests {
 
         let far = resolve_target(&syms, Some(0x2000), 0x10);
         assert!(matches!(far.kind, MatchKind::Unresolved));
+    }
+
+    #[test]
+    fn loads_symbol_target_symbols_and_filters_match_kind() {
+        let tmp = std::env::temp_dir().join(format!(
+            "flutterdec_symbol_map_test_{}_{}.json",
+            std::process::id(),
+            std::thread::current().name().unwrap_or("t")
+        ));
+
+        let data = serde_json::json!([
+            {
+                "target_va": 4096,
+                "call_count": 1,
+                "match_kind": "exact",
+                "symbol_name": "ExactFn",
+                "symbol_va": 4096,
+                "symbol_offset": 0
+            },
+            {
+                "target_va": 8192,
+                "call_count": 1,
+                "match_kind": "nearest",
+                "symbol_name": "NearFn",
+                "symbol_va": 8160,
+                "symbol_offset": 32
+            },
+            {
+                "target_va": 12288,
+                "call_count": 1,
+                "match_kind": "unresolved",
+                "symbol_name": null,
+                "symbol_va": null,
+                "symbol_offset": null
+            }
+        ]);
+        fs::write(&tmp, serde_json::to_vec(&data).expect("json"))
+            .expect("write symbol map fixture");
+
+        let exact_only = load_symbol_target_symbols(&tmp, false).expect("load exact symbols");
+        assert_eq!(exact_only.get(&0x1000).map(String::as_str), Some("ExactFn"));
+        assert!(!exact_only.contains_key(&0x2000));
+
+        let with_near = load_symbol_target_symbols(&tmp, true).expect("load near symbols");
+        assert_eq!(with_near.get(&0x1000).map(String::as_str), Some("ExactFn"));
+        assert_eq!(with_near.get(&0x2000).map(String::as_str), Some("NearFn"));
+        assert!(!with_near.contains_key(&0x3000));
+
+        let _ = fs::remove_file(tmp);
     }
 }

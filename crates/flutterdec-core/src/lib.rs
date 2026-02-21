@@ -18,6 +18,8 @@ pub struct DecompileOptions {
     pub emit_asm: bool,
     pub emit_ir: bool,
     pub extra_symbol_elfs: Vec<PathBuf>,
+    pub extra_symbol_map_targets: Vec<PathBuf>,
+    pub include_nearest_symbol_map: bool,
     pub focus: Option<String>,
     pub max_functions: Option<usize>,
     pub max_placeholder_ifs: usize,
