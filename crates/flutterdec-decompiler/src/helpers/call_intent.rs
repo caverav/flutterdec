@@ -313,6 +313,18 @@ fn classify_standard_selector(raw: &str) -> Option<String> {
             "framework:flutter.rendering.RenderObjectWidget.updateRenderObject",
         ),
         (
+            "keyedsubtree",
+            "framework:flutter.widgets.KeyedSubtree.new",
+        ),
+        (
+            "parentdatawidget",
+            "framework:flutter.widgets.ParentDataWidget.new",
+        ),
+        (
+            "slivergridparentdata",
+            "framework:flutter.rendering.SliverGridParentData.new",
+        ),
+        (
             "didchangeapplifecyclestate",
             "framework:flutter.widgets.WidgetsBindingObserver.didChangeAppLifecycleState",
         ),
@@ -378,6 +390,7 @@ fn classify_standard_selector(raw: &str) -> Option<String> {
         ("catcherror", "stdlib:dart.async.Future.catchError"),
         ("whencomplete", "stdlib:dart.async.Future.whenComplete"),
         ("listen", "stdlib:dart.async.Stream.listen"),
+        ("streamiterator", "stdlib:dart.async.StreamIterator.new"),
         ("wait", "stdlib:dart.async.Future.wait"),
         ("delayed", "stdlib:dart.async.Future.delayed"),
         ("timeout", "stdlib:dart.async.Future.timeout"),
@@ -421,6 +434,10 @@ fn classify_standard_selector(raw: &str) -> Option<String> {
         ("trim", "stdlib:dart.core.String.trim"),
         ("codeunitat", "stdlib:dart.core.String.codeUnitAt"),
     ];
+    let dart_typed_data = [
+        ("float32x4list", "stdlib:dart.typed_data.Float32x4List.new"),
+        ("int64list", "stdlib:dart.typed_data.Int64List.new"),
+    ];
 
     for candidate in selector_candidates(raw) {
         for (needle, tag) in flutter {
@@ -434,6 +451,11 @@ fn classify_standard_selector(raw: &str) -> Option<String> {
             }
         }
         for (needle, tag) in dart_core {
+            if candidate == needle || candidate.contains(needle) {
+                return Some(format!("{} [selector]", tag));
+            }
+        }
+        for (needle, tag) in dart_typed_data {
             if candidate == needle || candidate.contains(needle) {
                 return Some(format!("{} [selector]", tag));
             }
