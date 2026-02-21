@@ -99,6 +99,7 @@ sequenceDiagram
 - internal selector names can also be matched directly when they are deterministic, such as `_current` -> `dart.core.Iterator.current` and `_equivalentYear` -> `dart.core.DateTime.equivalentYear`
 - internal selector names can also map framework/runtime helpers when deterministic, such as `_listEquals` -> `flutter.foundation.listEquals` and `_prependTypeArguments` -> `dart_vm.prependTypeArguments`
 - internal selector names can also map stdlib constructors when deterministic, such as `_StreamController` -> `dart.async.StreamController.new` and `_RawDatagramSocket` -> `dart.io.RawDatagramSocket.new`
+- internal typed-data selector names can also map deterministic stdlib paths, such as `_nativeSetFloat32x4` -> `dart.typed_data.ByteData.setFloat32x4`, `_UnmodifiableUint8ArrayView` -> `dart.typed_data._UnmodifiableUint8ArrayView.new`, and `_Int32ArrayView` -> `dart.typed_data._Int32ArrayView.new`
 - runtime helper selectors such as `yieldStarIterable` are now rewritten to runtime semantic paths (`runtime:dart_vm.*`)
 - VM-internal constructor selectors such as `_Closure` and `_TypeParameter` are rewritten to runtime constructor paths (`dart_vm.*.new`)
 - if selector evidence exists but no known standard mapping applies, indirect callsites use readable selector fallback forms: `dispatch.<selector>(...)` for general selectors and `<Selector>.new(...)` for constructor-like selectors (annotated with `heuristic: constructor-like selector`)
