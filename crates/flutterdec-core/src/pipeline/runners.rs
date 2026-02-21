@@ -414,24 +414,40 @@ fn collect_call_fallback_summary(pseudo: &[PseudocodeArtifact]) -> CallFallbackS
     let mut out = CallFallbackSummary::default();
     for artifact in pseudo {
         for line in artifact.source.lines() {
+            let callee = extract_assignment_callee(line).unwrap_or("");
             if line.contains("dynamicCall(") {
                 out.dynamic_call += 1;
             }
             if line.contains("dispatch.invoke(") {
                 out.dispatch_invoke += 1;
             }
-            if line.contains(".invoke(")
-                && line.contains("indirect via: dispatchTarget")
-                && !line.contains("dispatch.invoke(")
+            if line.contains("indirect via: dispatchTarget")
+                && callee != "dispatch.invoke"
+                && (callee.ends_with(".invoke")
+                    || (!line.contains("[selector]")
+                        && !line.contains("target_va:")
+                        && !line.contains("framework:")
+                        && !line.contains("stdlib:")
+                        && !line.contains("runtime:")
+                        && !line.contains("native:")
+                        && !line.contains("package:")))
             {
                 out.dispatch_target_invoke += 1;
             }
-            if line.contains(".invoke(") && line.contains("indirectTarget") {
+            if line.contains("indirect via: indirectTarget") && callee.starts_with("indirectTarget")
+            {
                 out.generic_invoke += 1;
             }
         }
     }
     out
+}
+
+fn extract_assignment_callee(line: &str) -> Option<&str> {
+    let eq_idx = line.find("= ")?;
+    let rhs = line.get(eq_idx + 2..)?.trim();
+    let open_idx = rhs.find('(')?;
+    rhs.get(..open_idx).map(str::trim)
 }
 
 pub fn available_adapters(repo_root: &Path) -> Result<Vec<(String, String, String, bool)>> {
@@ -1208,8 +1224,8 @@ mod runners_tests {
             function_name: "f1".to_string(),
             source: r#"dynamic f1(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {
   final t1 = dispatch.invoke(arg0, arg1, arg2, arg3); // indirect via: dispatchTarget
-  final t11 = reg21.f0.invoke(arg0, arg1, arg2, arg3); // indirect via: dispatchTarget
-  final t2 = indirectTarget9.invoke(arg0, arg1, arg2, arg3); // indirect via: indirectTarget9
+  final t11 = dispatchTargetFn(arg0, arg1, arg2, arg3); // indirect via: dispatchTarget
+  final t2 = indirectTarget9(arg0, arg1, arg2, arg3); // indirect via: indirectTarget9
   final t3 = dynamicCall(opaqueTarget, [arg0, arg1, arg2, arg3]); // target: opaqueTarget
   return t3;
 }"#
