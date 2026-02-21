@@ -401,3 +401,63 @@ fn annotates_flutter_framework_call_intents() {
         artifact.source
     );
 }
+
+#[test]
+fn annotates_framework_from_pool_selector_when_call_name_is_generic() {
+    let ir = FunctionIr {
+        function_id: 25,
+        name: "selectorCall".to_string(),
+        entry_va: 0xfa00,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0xfa00,
+            instrs: vec![
+                LlirInstr {
+                    va: 0xfa00,
+                    op: IROp::Other,
+                    src: "mov x0, #1".to_string(),
+                    target: String::new(),
+                },
+                LlirInstr {
+                    va: 0xfa04,
+                    op: IROp::Other,
+                    src: "mov x1, #2".to_string(),
+                    target: String::new(),
+                },
+                LlirInstr {
+                    va: 0xfa08,
+                    op: IROp::LoadPool,
+                    src: "x2".to_string(),
+                    target: "pool[42]".to_string(),
+                },
+                LlirInstr {
+                    va: 0xfa0c,
+                    op: IROp::Call,
+                    src: "bl #0x6100".to_string(),
+                    target: "#0x6100".to_string(),
+                },
+                LlirInstr {
+                    va: 0xfa10,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+
+    let mut symbols = HashMap::new();
+    symbols.insert(0x6100, "sub_6100".to_string());
+    let mut pool = HashMap::new();
+    pool.insert(42u64, "setState".to_string());
+    let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
+    assert!(
+        artifact
+            .source
+            .contains("sub_6100(1, 2, pool[42], param3); // framework:flutter.widgets.State.setState [selector]"),
+        "missing selector-based framework annotation:\n{}",
+        artifact.source
+    );
+}
