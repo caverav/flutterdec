@@ -103,7 +103,7 @@ sequenceDiagram
 - missing selector/owner/library pool metadata can be backfilled from function ownership metadata (`target_va` -> function/class/library) before semantic resolution
 - if pool metadata carries `target_va` and symbol resolution for that VA is non-generic, indirect callsites can rewrite through that symbol path with `target_va` traceability comments
 - selector extraction ignores file/URI/path-like strings to reduce false-positive standard-call rewrites
-- unresolved `dispatchTarget` callsites use `dispatch.invoke(...)` fallback to reduce raw `dynamicCall(...)` noise
+- unresolved `dispatchTarget` callsites prefer semantic library invoke names when URI evidence exists (for example `flutter.widgets.invoke(...)` or `spotube.models.connect.load.invoke(...)`), and otherwise use `dispatch.invoke(...)` fallback to reduce raw `dynamicCall(...)` noise
 - unresolved generic indirect aliases (for example `indirectTarget9`) now render as `<target>.invoke(...)` fallback before resorting to raw `dynamicCall(...)`
 - stack-pointer offset arguments are normalized to slot notation (`sp[-0x10]`) so call arguments stay readable
 - wrapped member-access chains are normalized to cleaner dotted form when safe (for example `((((obj.f7)).f23)).f7` -> `obj.f7.f23.f7`)
@@ -561,7 +561,7 @@ The run fails when thresholds are violated.
 `report.json` also includes a `semantic_rewrite` aggregate section with direct/indirect/fallback/target-va-symbol counts and ratios.
 `report.json` also includes a `semantic_intent` aggregate section with framework/stdlib/runtime/native counts, selector-tagged count, and constructor-call count.
 `report.json` also includes `selector_fallback` diagnostics with total/unique unresolved selector fallback counts, top selector names, and sample call lines.
-`report.json` also includes `call_fallback` diagnostics for `dynamicCall(...)`, `dispatch.invoke(...)`, and generic `<target>.invoke(...)` forms.
+`report.json` also includes `call_fallback` diagnostics for `dynamicCall(...)`, `dispatch.invoke(...)`, and generic `<target>.invoke(...)` forms (including semantic library-derived invoke names).
 
 Metric formulas:
 
