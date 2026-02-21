@@ -708,3 +708,111 @@ fn annotates_dart_async_selector_from_pool_string() {
         artifact.source
     );
 }
+
+#[test]
+fn annotates_dart_typed_data_selector_from_pool_string() {
+    let ir = FunctionIr {
+        function_id: 28,
+        name: "typedDataSelector".to_string(),
+        entry_va: 0xfd00,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0xfd00,
+            instrs: vec![
+                LlirInstr {
+                    va: 0xfd00,
+                    op: IROp::Other,
+                    src: "mov x0, #1".to_string(),
+                    target: String::new(),
+                },
+                LlirInstr {
+                    va: 0xfd04,
+                    op: IROp::LoadPool,
+                    src: "x1".to_string(),
+                    target: "pool[13]".to_string(),
+                },
+                LlirInstr {
+                    va: 0xfd08,
+                    op: IROp::Call,
+                    src: "bl #0x7200".to_string(),
+                    target: "#0x7200".to_string(),
+                },
+                LlirInstr {
+                    va: 0xfd0c,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+
+    let mut symbols = HashMap::new();
+    symbols.insert(0x7200, "sub_7200".to_string());
+    let mut pool = HashMap::new();
+    pool.insert(13u64, "offsetInBytes".to_string());
+    let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
+    assert!(
+        artifact.source.contains(
+            "dart.typed_data.TypedData.offsetInBytes(1, \"offsetInBytes\" /* pool[13] */, param2, param3); // stdlib:dart.typed_data.TypedData.offsetInBytes [selector], was: sub_7200"
+        ),
+        "missing typed_data selector annotation:\n{}",
+        artifact.source
+    );
+}
+
+#[test]
+fn annotates_dart_io_selector_from_pool_string() {
+    let ir = FunctionIr {
+        function_id: 29,
+        name: "ioSelector".to_string(),
+        entry_va: 0xfe00,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0xfe00,
+            instrs: vec![
+                LlirInstr {
+                    va: 0xfe00,
+                    op: IROp::Other,
+                    src: "mov x0, #1".to_string(),
+                    target: String::new(),
+                },
+                LlirInstr {
+                    va: 0xfe04,
+                    op: IROp::LoadPool,
+                    src: "x1".to_string(),
+                    target: "pool[14]".to_string(),
+                },
+                LlirInstr {
+                    va: 0xfe08,
+                    op: IROp::Call,
+                    src: "bl #0x7300".to_string(),
+                    target: "#0x7300".to_string(),
+                },
+                LlirInstr {
+                    va: 0xfe0c,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+
+    let mut symbols = HashMap::new();
+    symbols.insert(0x7300, "sub_7300".to_string());
+    let mut pool = HashMap::new();
+    pool.insert(14u64, "supportsAnsiEscapes".to_string());
+    let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
+    assert!(
+        artifact.source.contains(
+            "dart.io.Stdout.supportsAnsiEscapes(1, \"supportsAnsiEscapes\" /* pool[14] */, param2, param3); // stdlib:dart.io.Stdout.supportsAnsiEscapes [selector], was: sub_7300"
+        ),
+        "missing dart:io selector annotation:\n{}",
+        artifact.source
+    );
+}
