@@ -40,6 +40,64 @@ fn emits_dynamic_call_for_indirect_targets() {
 }
 
 #[test]
+fn rewrites_indirect_call_to_semantic_name_when_selector_is_known() {
+    let ir = FunctionIr {
+        function_id: 46,
+        name: "indirectSemanticCall".to_string(),
+        entry_va: 0xc200,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0xc200,
+            instrs: vec![
+                LlirInstr {
+                    va: 0xc200,
+                    op: IROp::Other,
+                    src: "mov x0, #1".to_string(),
+                    target: String::new(),
+                },
+                LlirInstr {
+                    va: 0xc204,
+                    op: IROp::LoadPool,
+                    src: "x1".to_string(),
+                    target: "pool[42]".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc208,
+                    op: IROp::Call,
+                    src: "blr x9".to_string(),
+                    target: "x9".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc20c,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+
+    let symbols = HashMap::new();
+    let mut pool = HashMap::new();
+    pool.insert(42u64, "setState".to_string());
+    let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
+    assert!(
+        artifact.source.contains(
+            "flutter.widgets.State.setState(1, \"setState\" /* pool[42] */, param2, param3); // framework:flutter.widgets.State.setState [selector], indirect via: indirectTarget9"
+        ),
+        "indirect selector call should be rewritten to semantic direct form:\n{}",
+        artifact.source
+    );
+    assert!(
+        !artifact.source.contains("dynamicCall(indirectTarget9"),
+        "rewritten semantic indirect call should not keep dynamicCall form:\n{}",
+        artifact.source
+    );
+}
+
+#[test]
 fn names_direct_call_target_when_symbol_is_known() {
     let ir = FunctionIr {
         function_id: 44,

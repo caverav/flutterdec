@@ -456,7 +456,7 @@ fn annotates_framework_from_pool_selector_when_call_name_is_generic() {
     assert!(
         artifact
             .source
-            .contains("flutter.widgets.State.setState(1, 2, pool[42], param3); // framework:flutter.widgets.State.setState [selector], was: sub_6100"),
+            .contains("flutter.widgets.State.setState(1, 2, \"setState\" /* pool[42] */, param3); // framework:flutter.widgets.State.setState [selector], was: sub_6100"),
         "missing selector-based framework annotation:\n{}",
         artifact.source
     );
