@@ -530,6 +530,9 @@ Current metrics include:
 - `placeholder_ifs`
 - `unresolved_cf`
 - `indirect_call_ratio`
+- `semantic_direct_calls`
+- `semantic_indirect_calls`
+- `dispatch_selector_calls`
 - `block_helper_refs`
 - `raw_arg_name_refs`
 - `raw_register_name_refs`

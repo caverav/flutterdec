@@ -92,6 +92,11 @@ Output files:
 - `out/quality.json`
 - `out/report.json`
 
+`quality.json` now also tracks call rewrite counters:
+- `semantic_direct_calls`
+- `semantic_indirect_calls`
+- `dispatch_selector_calls`
+
 Naming and semantic behavior:
 
 - external symbols are normalized into readable call names (for example runtime/native prefixes)

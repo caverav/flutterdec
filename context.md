@@ -121,6 +121,9 @@ The CLI writes `quality.json` and fails the run when strict thresholds are viola
 - unresolved control flow count
 - placeholder condition count
 - indirect call ratio
+- semantic direct-call rewrite count
+- semantic indirect-call rewrite count
+- dispatch-selector fallback count
 - readability regressions such as helper block leakage and raw token leakage
 - omitted path marker count for complex regions that are currently summarized
 - residual loop back-edge summary marker count for loops that are not yet structured
