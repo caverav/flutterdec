@@ -149,10 +149,12 @@ Current scope:
 - selector coverage now includes more Flutter and Dart standard methods (for example `Stream.listen`, `Future.catchError`, `SchedulerBinding.addPostFrameCallback`, and ChangeNotifier listener APIs)
 - when selector evidence exists but no standard mapping matches, indirect callsites now use a readable fallback form `dispatch.<selector>(...)`
 - indirect target expressions are now scanned for selector hints too (not only call args), enabling more deterministic rewrites away from `dynamicCall(...)`
-- unresolved `dispatchTarget` calls now use `dispatch.invoke(...)` fallback so only genuinely unknown non-dispatch targets remain as `dynamicCall(...)`
+- unresolved `dispatchTarget` calls now use `dispatch.invoke(...)` fallback, and unresolved generic aliases now render as `<target>.invoke(...)`, so raw `dynamicCall(...)` only remains for truly unknown target forms
 - selector extraction now ignores likely file/URI/path-like strings (`*.dart`, paths, URLs) to reduce false-positive standard-call labeling
+- declaration typing now uses deterministic context: semantic call ownership (`flutter.*`/`dart.*`) and literal assignments can upgrade `dynamic` declarations into concrete types (for example `flutter.widgets.State`, `dart.async.Future`, `String`, `bool`)
 - adapter object-pool entries now include optional metadata fields (`decoded_kind`, `selector`, `target_va`, `owner_class`, `library_uri`) for future deterministic resolution passes
 - model-backed canonical naming now deterministically tags Dart stdlib (`dart:*`) and Flutter framework (`package:flutter/*`) functions when adapter metadata includes class/library ownership
+- selector coverage now includes additional standard families such as `Navigator.pushNamed` and `List.removeAt`, improving deterministic semantic rewrites on real samples
 - stack-pointer-derived base expressions now collapse into indexed stack slots (for example `sp[-0x30]`) instead of synthetic field forms
 - optional ELF engine fingerprinting to estimate build identity from build-id and marker strings
 

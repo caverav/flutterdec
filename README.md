@@ -111,14 +111,18 @@ Naming and semantic behavior:
 - indirect callsites can also be rewritten when selector evidence is deterministic, with `indirect via: <target_alias>` traceability
 - unresolved indirect callsites can fall back to `dispatch.<selector>(...)` when selector evidence exists but no standard mapping is known
 - unresolved `dispatchTarget` indirect calls now render as `dispatch.invoke(...)` instead of raw `dynamicCall(dispatchTarget, ...)`
+- unresolved generic indirect aliases now render as `<target>.invoke(...)` (for example `indirectTarget9.invoke(...)`) instead of `dynamicCall(...)`
 - selector evidence can be inferred from indirect target expressions too (for example `target: (pool[...]).f7`), not only call arguments
 - selector extraction skips file/URI/path-like strings (for example `*.dart` paths) to avoid false-positive rewrites
 - exact `pool[<idx>]` call arguments are rendered as `"value" /* pool[<idx>] */` when a string hint is available
+- argument and local declaration types are inferred from deterministic semantic call ownership and literal assignments (for example `flutter.widgets.State receiver`, `String tmp`, `bool tmp`)
 - recognized calls add intent comments in pseudocode, for example:
   - `// stdlib:dart.core.print`
   - `// stdlib:dart.core.map [selector]`
+  - `// stdlib:dart.core.List.removeAt [selector]`
   - `// stdlib:dart.async.Stream.listen [selector]`
   - `// framework:flutter.widgets.State.setState`
+  - `// framework:flutter.widgets.Navigator.pushNamed [selector]`
   - `// framework:flutter.widgets.Widget.build [selector]`
   - `// framework:flutter.scheduler.SchedulerBinding.addPostFrameCallback [selector]`
   - `// runtime:dart_vm.invoke`

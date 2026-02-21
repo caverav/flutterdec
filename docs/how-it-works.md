@@ -91,11 +91,14 @@ sequenceDiagram
 - when a call argument is exactly `pool[<idx>]` and a string hint is known, it is rendered as `"value" /* pool[<idx>] */`
 - non-exact pool expressions preserve structure and gain inline pool mapping comments (`pool[<idx> /* "value" */]`)
 - selector intent coverage includes additional Flutter/Dart standards (for example `Stream.listen`, `Future.catchError`, `SchedulerBinding.addPostFrameCallback`, and `ChangeNotifier.addListener`)
+- selector catalog now also covers more standard APIs such as `Navigator.pushNamed` and `List.removeAt`
 - if selector evidence exists but no known standard mapping applies, indirect callsites use `dispatch.<selector>(...)` as a readable fallback
 - selector evidence for indirect calls is inferred from both call arguments and indirect target expressions
 - selector extraction ignores file/URI/path-like strings to reduce false-positive standard-call rewrites
 - unresolved `dispatchTarget` callsites use `dispatch.invoke(...)` fallback to reduce raw `dynamicCall(...)` noise
+- unresolved generic indirect aliases (for example `indirectTarget9`) now render as `<target>.invoke(...)` fallback before resorting to raw `dynamicCall(...)`
 - canonical names derived from adapter class/library ownership can deterministically label Flutter framework calls (`framework:flutter.*`) and Dart stdlib calls (`stdlib:dart.*`)
+- argument/local declaration typing uses deterministic context from semantic call ownership and literal assignments, allowing concrete types like `flutter.widgets.State`, `dart.async.Future`, `String`, and `bool` instead of defaulting to `dynamic`
 
 3. `adapter`
 - management path for adapter installation and listing
