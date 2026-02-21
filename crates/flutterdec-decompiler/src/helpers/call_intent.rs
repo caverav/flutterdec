@@ -519,6 +519,15 @@ fn classify_internal_standard_selector(raw: &str) -> Option<String> {
     if t.eq_ignore_ascii_case("_RawDatagramSocket") {
         return Some("stdlib:dart.io.RawDatagramSocket.new [selector]".to_string());
     }
+    if t.eq_ignore_ascii_case("_nativeSetFloat32x4") {
+        return Some("stdlib:dart.typed_data.ByteData.setFloat32x4 [selector]".to_string());
+    }
+    if t.eq_ignore_ascii_case("_UnmodifiableUint8ArrayView") {
+        return Some("stdlib:dart.typed_data._UnmodifiableUint8ArrayView.new [selector]".to_string());
+    }
+    if t.eq_ignore_ascii_case("_Int32ArrayView") {
+        return Some("stdlib:dart.typed_data._Int32ArrayView.new [selector]".to_string());
+    }
     None
 }
 

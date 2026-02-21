@@ -979,6 +979,168 @@ fn annotates_dart_typed_data_selector_from_pool_string() {
 }
 
 #[test]
+fn annotates_dart_typed_data_native_set_float32x4_internal_selector_from_pool_string() {
+    let ir = FunctionIr {
+        function_id: 45,
+        name: "typedDataSetFloat32x4Selector".to_string(),
+        entry_va: 0xfd40,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0xfd40,
+            instrs: vec![
+                LlirInstr {
+                    va: 0xfd40,
+                    op: IROp::Other,
+                    src: "mov x0, #1".to_string(),
+                    target: String::new(),
+                },
+                LlirInstr {
+                    va: 0xfd44,
+                    op: IROp::LoadPool,
+                    src: "x1".to_string(),
+                    target: "pool[28]".to_string(),
+                },
+                LlirInstr {
+                    va: 0xfd48,
+                    op: IROp::Call,
+                    src: "bl #0x7240".to_string(),
+                    target: "#0x7240".to_string(),
+                },
+                LlirInstr {
+                    va: 0xfd4c,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+
+    let mut symbols = HashMap::new();
+    symbols.insert(0x7240, "sub_7240".to_string());
+    let mut pool = HashMap::new();
+    pool.insert(28u64, "_nativeSetFloat32x4".to_string());
+    let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
+    assert!(
+        artifact.source.contains(
+            "dart.typed_data.ByteData.setFloat32x4(1, \"_nativeSetFloat32x4\" /* pool[28] */, param2, param3); // stdlib:dart.typed_data.ByteData.setFloat32x4 [selector], was: sub_7240"
+        ),
+        "missing typed_data native setFloat32x4 selector annotation:\n{}",
+        artifact.source
+    );
+}
+
+#[test]
+fn annotates_dart_typed_data_unmodifiable_uint8_array_view_internal_selector_from_pool_string() {
+    let ir = FunctionIr {
+        function_id: 46,
+        name: "unmodifiableUint8ArrayViewSelector".to_string(),
+        entry_va: 0xfd50,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0xfd50,
+            instrs: vec![
+                LlirInstr {
+                    va: 0xfd50,
+                    op: IROp::Other,
+                    src: "mov x0, #1".to_string(),
+                    target: String::new(),
+                },
+                LlirInstr {
+                    va: 0xfd54,
+                    op: IROp::LoadPool,
+                    src: "x1".to_string(),
+                    target: "pool[29]".to_string(),
+                },
+                LlirInstr {
+                    va: 0xfd58,
+                    op: IROp::Call,
+                    src: "bl #0x7250".to_string(),
+                    target: "#0x7250".to_string(),
+                },
+                LlirInstr {
+                    va: 0xfd5c,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+
+    let mut symbols = HashMap::new();
+    symbols.insert(0x7250, "sub_7250".to_string());
+    let mut pool = HashMap::new();
+    pool.insert(29u64, "_UnmodifiableUint8ArrayView".to_string());
+    let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
+    assert!(
+        artifact.source.contains(
+            "dart.typed_data._UnmodifiableUint8ArrayView.new(1, \"_UnmodifiableUint8ArrayView\" /* pool[29] */, param2, param3); // stdlib:dart.typed_data._UnmodifiableUint8ArrayView.new [selector], was: sub_7250"
+        ),
+        "missing typed_data unmodifiable uint8 array view selector annotation:\n{}",
+        artifact.source
+    );
+}
+
+#[test]
+fn annotates_dart_typed_data_int32_array_view_internal_selector_from_pool_string() {
+    let ir = FunctionIr {
+        function_id: 47,
+        name: "int32ArrayViewSelector".to_string(),
+        entry_va: 0xfd60,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0xfd60,
+            instrs: vec![
+                LlirInstr {
+                    va: 0xfd60,
+                    op: IROp::Other,
+                    src: "mov x0, #1".to_string(),
+                    target: String::new(),
+                },
+                LlirInstr {
+                    va: 0xfd64,
+                    op: IROp::LoadPool,
+                    src: "x1".to_string(),
+                    target: "pool[30]".to_string(),
+                },
+                LlirInstr {
+                    va: 0xfd68,
+                    op: IROp::Call,
+                    src: "bl #0x7260".to_string(),
+                    target: "#0x7260".to_string(),
+                },
+                LlirInstr {
+                    va: 0xfd6c,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+
+    let mut symbols = HashMap::new();
+    symbols.insert(0x7260, "sub_7260".to_string());
+    let mut pool = HashMap::new();
+    pool.insert(30u64, "_Int32ArrayView".to_string());
+    let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
+    assert!(
+        artifact.source.contains(
+            "dart.typed_data._Int32ArrayView.new(1, \"_Int32ArrayView\" /* pool[30] */, param2, param3); // stdlib:dart.typed_data._Int32ArrayView.new [selector], was: sub_7260"
+        ),
+        "missing typed_data int32 array view selector annotation:\n{}",
+        artifact.source
+    );
+}
+
+#[test]
 fn annotates_dart_core_match_end_selector_from_pool_string() {
     let ir = FunctionIr {
         function_id: 33,
