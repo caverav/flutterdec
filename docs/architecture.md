@@ -15,6 +15,7 @@ Auxiliary path:
 8. Engine fingerprinting: ELF metadata and marker extraction for build/version hints
 9. Symbol ingestion: feed `map-symbols` target summaries into `decompile` for pseudocode call naming
 10. Call intent tagging: emit stdlib/runtime/native intent comments for recognized call targets
+11. Standard-name canonicalization: deterministically name Dart and Flutter framework calls from adapter class/library metadata
 
 ## Module boundaries
 

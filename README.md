@@ -98,6 +98,7 @@ Naming and semantic behavior:
 - descriptive external names can replace generic placeholders (`sub_*`, `fn_0x*`)
 - recognized calls add intent comments in pseudocode, for example:
   - `// stdlib:dart.core.print`
+  - `// framework:flutter.widgets.State.setState`
   - `// runtime:dart_vm.invoke`
   - `// native:libc.memcpy`
 

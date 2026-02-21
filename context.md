@@ -139,6 +139,7 @@ Current scope:
 - decompile can now ingest `map-symbols` target JSON directly to inject mapped call names into pseudocode
 - external symbol names are normalized (including C++ demangle and runtime/native prefixes) before pseudocode emission
 - pseudocode call sites now include semantic intent comments for recognized stdlib/runtime/native targets
+- model-backed canonical naming now deterministically tags Dart stdlib (`dart:*`) and Flutter framework (`package:flutter/*`) functions when adapter metadata includes class/library ownership
 - optional ELF engine fingerprinting to estimate build identity from build-id and marker strings
 
 Known limits:
