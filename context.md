@@ -179,6 +179,7 @@ Current scope:
 - repeated read-only stack slots now hoist into named locals (for example `stackSlotNeg0x10`) to reduce repeated low-level stack syntax
 - noisy wrapped field-access chains are now simplified (`((((obj.f7)).f23)).f7` -> `obj.f7.f23.f7`)
 - optional ELF engine fingerprinting to estimate build identity from build-id and marker strings
+- decompile now exposes engine-level analysis profiles (`balanced` and `light`) plus per-feature `--with-*`/`--no-*` toggles for canonical model symbols, pool hints, and semantic reporting to trade throughput vs readability
 
 Known limits:
 
@@ -202,6 +203,8 @@ Python remains useful at the adapter boundary for faster version specific parser
 
 - use `nix develop` for a reproducible toolchain
 - run `cargo test` before and after changes
+- use `README.md` for user-facing quick usage and command flow, and `docs/development.md` for contributor/development workflows
+- CI now runs formatting, clippy, and full workspace tests on PRs and on `main` pushes (`.github/workflows/ci.yml`)
 - refresh decompiler golden snapshots with `FLUTTERDEC_UPDATE_GOLDEN=1 cargo test -p flutterdec-decompiler golden_` when output changes intentionally
 - for end-to-end real binary regression checks, use `scripts/real-golden.sh record|check` for single profiles, or `scripts/real-golden-matrix.sh check` for multi-profile runs
 - keep profile configs in `testdata/real-golden/profiles/*/profile.env`
