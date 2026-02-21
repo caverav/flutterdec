@@ -394,6 +394,41 @@ fn aliases_frame_and_return_registers_with_semantic_names() {
 }
 
 #[test]
+fn aliases_dispatch_target_slot_invoke_calls() {
+    let ir = FunctionIr {
+        function_id: 211,
+        name: "dispatchSlotAlias".to_string(),
+        entry_va: 0xf610,
+        blocks: Vec::new(),
+    };
+    let symbols = HashMap::new();
+    let mut emitter = FuncEmitter::new(&ir, &symbols);
+    emitter.lines = vec![
+        "dynamic dispatchSlotAlias(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {".to_string(),
+        "  final t1 = reg21.f0.invoke(arg0, arg1, arg2, arg3); // indirect via: dispatchTarget".to_string(),
+        "  return t1;".to_string(),
+        "}".to_string(),
+    ];
+
+    emitter.apply_name_and_type_hints("dispatchSlotAlias");
+    let out = emitter.lines.join("\n");
+    assert!(
+        out.contains("final dispatchTargetFn = reg21.f0;"),
+        "dispatch target slot alias declaration should be inserted:\n{out}"
+    );
+    assert!(
+        out.contains(
+            "dispatchTargetFn.invoke(receiver, param1, param2, param3); // indirect via: dispatchTarget"
+        ),
+        "dispatch target invoke should use alias:\n{out}"
+    );
+    assert!(
+        !out.contains("reg21.f0.invoke("),
+        "raw dispatch slot invoke should be replaced:\n{out}"
+    );
+}
+
+#[test]
 fn annotates_stdlib_call_intent_when_symbol_is_named() {
     let ir = FunctionIr {
         function_id: 22,

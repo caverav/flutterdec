@@ -1,4 +1,32 @@
 impl<'a> FuncEmitter<'a> {
+    fn alias_dispatch_target_slot_calls(&mut self) {
+        if self.lines.is_empty() {
+            return;
+        }
+
+        let mut replaced = false;
+        for line in &mut self.lines {
+            if !line.contains("indirect via: dispatchTarget") {
+                continue;
+            }
+            if line.contains("reg21.f0.invoke(") {
+                *line = line.replace("reg21.f0.invoke(", "dispatchTargetFn.invoke(");
+                replaced = true;
+            }
+        }
+
+        if !replaced {
+            return;
+        }
+
+        let alias_decl = "  final dispatchTargetFn = reg21.f0;".to_string();
+        if self.lines.iter().any(|l| l.trim() == alias_decl.trim()) {
+            return;
+        }
+        let idx = Self::prelude_insert_index(&self.lines);
+        self.lines.insert(idx, alias_decl);
+    }
+
     pub(super) fn extract_minus_one_aliases(&mut self) {
         if self.lines.len() < 3 {
             return;
@@ -224,5 +252,7 @@ impl<'a> FuncEmitter<'a> {
             }
             *line = cur;
         }
+
+        self.alias_dispatch_target_slot_calls();
     }
 }
