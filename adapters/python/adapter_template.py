@@ -120,6 +120,11 @@ def _selector_from_string(s: str) -> str | None:
     t = s.strip()
     if not t:
         return None
+    lower = t.lower()
+    if ".dart" in lower or "/" in t or "\\" in t or "://" in t:
+        return None
+    if " " in t:
+        return None
     if "@" in t:
         t = t.split("@", 1)[0]
     if ":" in t:

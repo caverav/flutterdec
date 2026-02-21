@@ -172,12 +172,18 @@ fn infer_selector_intent_from_pool(
             let Some(v) = pool_value_hints.get(&idx) else {
                 continue;
             };
-            if let Some(tag) = classify_standard_selector(v) {
+            let Some(sel) = extract_selector_name(v) else {
+                continue;
+            };
+            if let Some(tag) = classify_standard_selector(&sel) {
                 return Some(tag);
             }
         }
         for lit in extract_string_literals(arg) {
-            if let Some(tag) = classify_standard_selector(&lit) {
+            let Some(sel) = extract_selector_name(&lit) else {
+                continue;
+            };
+            if let Some(tag) = classify_standard_selector(&sel) {
                 return Some(tag);
             }
         }
@@ -405,10 +411,22 @@ fn push_unique(out: &mut Vec<String>, s: String) {
 }
 
 fn extract_selector_name(raw: &str) -> Option<String> {
-    let mut t = raw.trim();
-    if t.is_empty() {
+    let raw_trim = raw.trim();
+    if raw_trim.is_empty() {
         return None;
     }
+    let raw_lower = raw_trim.to_ascii_lowercase();
+    if raw_lower.contains(".dart") || raw_lower.contains('/') || raw_lower.contains('\\') {
+        return None;
+    }
+    if raw_trim.contains("://") {
+        return None;
+    }
+    if raw_trim.contains(' ') {
+        return None;
+    }
+
+    let mut t = raw_trim;
     if let Some(inner) = t.strip_prefix('"').and_then(|s| s.strip_suffix('"')) {
         t = inner.trim();
     }
@@ -448,7 +466,7 @@ fn extract_selector_name(raw: &str) -> Option<String> {
         return None;
     }
     let first = out.chars().next().unwrap_or('_');
-    if !first.is_ascii_alphabetic() && first != '_' {
+    if (!first.is_ascii_alphabetic() && first != '_') || out.starts_with("dart_") {
         return None;
     }
     Some(out)
