@@ -478,6 +478,11 @@ fn rewrites_indirect_call_from_target_va_metadata_using_symbol_name() {
         "target_va metadata should rewrite indirect call using resolved symbol name:\n{}",
         artifact.source
     );
+    assert_eq!(
+        artifact.target_va_symbol_calls, 1,
+        "target_va rewrite counter should increment for resolved symbol rewrites:\n{}",
+        artifact.source
+    );
 }
 
 #[test]
@@ -539,6 +544,11 @@ fn does_not_rewrite_indirect_call_from_target_va_when_symbol_is_generic() {
     assert!(
         !artifact.source.contains("dart.core.print("),
         "generic target symbols should not invent semantic target names:\n{}",
+        artifact.source
+    );
+    assert_eq!(
+        artifact.target_va_symbol_calls, 0,
+        "target_va rewrite counter should remain zero for generic symbols:\n{}",
         artifact.source
     );
 }
