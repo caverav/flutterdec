@@ -214,6 +214,35 @@ fn infers_receiver_type_from_classid_receiver_pattern() {
 }
 
 #[test]
+fn does_not_infer_receiver_type_from_constructor_semantic_path() {
+    let ir = FunctionIr {
+        function_id: 805,
+        name: "ctorNoReceiverType".to_string(),
+        entry_va: 0x805000,
+        blocks: Vec::new(),
+    };
+    let symbols = HashMap::new();
+    let mut emitter = FuncEmitter::new(&ir, &symbols);
+    emitter.lines = vec![
+        "dynamic ctorNoReceiverType(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {".to_string(),
+        "  final t1 = dart.typed_data.Int64List.new(arg0, arg1, arg2, arg3); // stdlib:dart.typed_data.Int64List.new [selector], was: sub_9000".to_string(),
+        "  return t1;".to_string(),
+        "}".to_string(),
+    ];
+
+    emitter.apply_name_and_type_hints("ctorNoReceiverType");
+    let out = emitter.lines.join("\n");
+    assert!(
+        out.contains("dynamic receiver"),
+        "constructor semantic paths should not force receiver typing:\n{out}"
+    );
+    assert!(
+        !out.contains("dart.typed_data.Int64List receiver"),
+        "constructor semantic paths should not be treated as instance receiver calls:\n{out}"
+    );
+}
+
+#[test]
 fn infers_string_and_bool_types_for_literal_assigned_locals() {
     let ir = FunctionIr {
         function_id: 803,
