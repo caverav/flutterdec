@@ -113,6 +113,7 @@ Naming and semantic behavior:
 - descriptive external names can replace generic placeholders (`sub_*`, `fn_0x*`)
 - selector-based deterministic inference can tag standard calls from object-pool arguments even when call targets stay generic
 - selector inference now also consumes adapter pool metadata (`selector`, `owner_class`, `library_uri`) for deterministic owner-qualified semantic rewrites
+- when pool metadata includes a resolvable `target_va`, indirect callsites can also rewrite through that symbol (instead of fallback invoke/dispatch forms)
 - high-confidence callsites are rewritten to semantic paths while keeping traceability with `was: <original_name>`
 - indirect callsites can also be rewritten when selector evidence is deterministic, with `indirect via: <target_alias>` traceability
 - unresolved indirect callsites can fall back to `dispatch.<selector>(...)` when selector evidence exists but no standard mapping is known
