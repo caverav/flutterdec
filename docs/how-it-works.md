@@ -595,7 +595,7 @@ File naming convention:
 - input metadata
 - counts for libraries, classes, functions, pool entries
 - embedded `quality` object
-- `pool_value_hints` and `pool_semantic_hints` counts
+- `pool_value_hints`, `pool_semantic_hints`, and `pool_target_symbols` counts
 - `semantic_rewrite` aggregate
 - `semantic_intent` aggregate
 

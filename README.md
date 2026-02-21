@@ -123,7 +123,7 @@ Naming and semantic behavior:
 - selector evidence can be inferred from indirect target expressions too (for example `target: (pool[...]).f7`), not only call arguments
 - selector extraction skips file/URI/path-like strings (for example `*.dart` paths) to avoid false-positive rewrites
 - exact `pool[<idx>]` call arguments are rendered as `"value" /* pool[<idx>] */` when a string hint is available
-- `report.json` includes `pool_semantic_hints` alongside `pool_value_hints` to show metadata coverage used by decompile
+- `report.json` includes `pool_semantic_hints` and `pool_target_symbols` alongside `pool_value_hints` to show metadata coverage used by decompile
 - argument and local declaration types are inferred from deterministic semantic call ownership and literal assignments (for example `flutter.widgets.State receiver`, `String tmp`, `bool tmp`)
 - constructor-like selectors are also mapped when deterministic (for example `flutter.widgets.KeyedSubtree.new`, `dart.async.StreamIterator.new`, `dart.typed_data.Float32x4List.new`)
 - recognized calls add intent comments in pseudocode, for example:
