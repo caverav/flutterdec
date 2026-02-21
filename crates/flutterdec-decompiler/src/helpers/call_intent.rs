@@ -595,29 +595,55 @@ fn classify_standard_selector(raw: &str) -> Option<String> {
         ("trim", "stdlib:dart.core.String.trim"),
         ("codeunitat", "stdlib:dart.core.String.codeUnitAt"),
     ];
+    let dart_io = [
+        ("supportsansiescapes", "stdlib:dart.io.Stdout.supportsAnsiEscapes"),
+        ("websocketimpl", "stdlib:dart.io.WebSocketImpl.new"),
+    ];
     let dart_typed_data = [
         ("float32x4list", "stdlib:dart.typed_data.Float32x4List.new"),
         ("int64list", "stdlib:dart.typed_data.Int64List.new"),
+        ("offsetinbytes", "stdlib:dart.typed_data.TypedData.offsetInBytes"),
+        (
+            "lengthinbytes",
+            "stdlib:dart.typed_data.TypedData.lengthInBytes",
+        ),
+        (
+            "elementsizeinbytes",
+            "stdlib:dart.typed_data.TypedData.elementSizeInBytes",
+        ),
+        ("setfloat32", "stdlib:dart.typed_data.ByteData.setFloat32"),
+        ("setfloat64", "stdlib:dart.typed_data.ByteData.setFloat64"),
+        ("setint32", "stdlib:dart.typed_data.ByteData.setInt32"),
+        ("setuint32", "stdlib:dart.typed_data.ByteData.setUint32"),
+        ("getfloat32", "stdlib:dart.typed_data.ByteData.getFloat32"),
+        ("getfloat64", "stdlib:dart.typed_data.ByteData.getFloat64"),
+        ("getint32", "stdlib:dart.typed_data.ByteData.getInt32"),
+        ("getuint32", "stdlib:dart.typed_data.ByteData.getUint32"),
     ];
 
     for candidate in selector_candidates(raw) {
         for (needle, tag) in flutter {
-            if candidate == needle || candidate.contains(needle) {
+            if candidate == needle {
                 return Some(format!("{} [selector]", tag));
             }
         }
         for (needle, tag) in dart_async {
-            if candidate == needle || candidate.contains(needle) {
+            if candidate == needle {
                 return Some(format!("{} [selector]", tag));
             }
         }
         for (needle, tag) in dart_core {
-            if candidate == needle || candidate.contains(needle) {
+            if candidate == needle {
+                return Some(format!("{} [selector]", tag));
+            }
+        }
+        for (needle, tag) in dart_io {
+            if candidate == needle {
                 return Some(format!("{} [selector]", tag));
             }
         }
         for (needle, tag) in dart_typed_data {
-            if candidate == needle || candidate.contains(needle) {
+            if candidate == needle {
                 return Some(format!("{} [selector]", tag));
             }
         }
