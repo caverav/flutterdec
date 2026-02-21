@@ -96,9 +96,12 @@ Naming and semantic behavior:
 
 - external symbols are normalized into readable call names (for example runtime/native prefixes)
 - descriptive external names can replace generic placeholders (`sub_*`, `fn_0x*`)
+- selector-based deterministic inference can tag standard calls from object-pool arguments even when call targets stay generic
 - recognized calls add intent comments in pseudocode, for example:
   - `// stdlib:dart.core.print`
+  - `// stdlib:dart.core.map [selector]`
   - `// framework:flutter.widgets.State.setState`
+  - `// framework:flutter.widgets.Widget.build [selector]`
   - `// runtime:dart_vm.invoke`
   - `// native:libc.memcpy`
 
