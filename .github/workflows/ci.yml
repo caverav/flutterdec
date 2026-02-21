@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    name: Rust Checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v30
+
+      - name: Format
+        run: nix develop -c cargo fmt --all --check
+
+      - name: Clippy
+        run: nix develop -c cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Test
+        run: nix develop -c cargo test --workspace
