@@ -599,6 +599,7 @@ fn classify_standard_selector(raw: &str) -> Option<String> {
         ("supportsansiescapes", "stdlib:dart.io.Stdout.supportsAnsiEscapes"),
         ("websocketimpl", "stdlib:dart.io.WebSocketImpl.new"),
     ];
+    let dart_vm_runtime = [("yieldstariterable", "runtime:dart_vm.yieldStarIterable")];
     let dart_typed_data = [
         ("float32x4list", "stdlib:dart.typed_data.Float32x4List.new"),
         ("int64list", "stdlib:dart.typed_data.Int64List.new"),
@@ -638,6 +639,11 @@ fn classify_standard_selector(raw: &str) -> Option<String> {
             }
         }
         for (needle, tag) in dart_io {
+            if candidate == needle {
+                return Some(format!("{} [selector]", tag));
+            }
+        }
+        for (needle, tag) in dart_vm_runtime {
             if candidate == needle {
                 return Some(format!("{} [selector]", tag));
             }
@@ -684,6 +690,9 @@ fn selector_candidates(raw: &str) -> Vec<String> {
         }
         if let Some(rest) = t.strip_prefix("set") {
             push_unique(&mut out, format!("set{}", rest));
+            push_unique(&mut out, rest.to_string());
+        }
+        if let Some(rest) = t.strip_prefix("native") {
             push_unique(&mut out, rest.to_string());
         }
         if let Some(rest) = t.strip_prefix('_') {
