@@ -468,6 +468,9 @@ fn infer_selector_intent_from_pool(
             let Some(v) = pool_value_hints.get(&idx) else {
                 continue;
             };
+            if let Some(tag) = classify_internal_standard_selector(v) {
+                return Some(tag);
+            }
             let Some(sel) = extract_selector_name(v) else {
                 continue;
             };
@@ -476,6 +479,9 @@ fn infer_selector_intent_from_pool(
             }
         }
         for lit in extract_string_literals(arg) {
+            if let Some(tag) = classify_internal_standard_selector(&lit) {
+                return Some(tag);
+            }
             let Some(sel) = extract_selector_name(&lit) else {
                 continue;
             };
@@ -483,6 +489,20 @@ fn infer_selector_intent_from_pool(
                 return Some(tag);
             }
         }
+    }
+    None
+}
+
+fn classify_internal_standard_selector(raw: &str) -> Option<String> {
+    let mut t = raw.trim();
+    if let Some(inner) = t.strip_prefix('"').and_then(|s| s.strip_suffix('"')) {
+        t = inner.trim();
+    }
+    if let Some((prefix, _)) = t.split_once("/* pool[") {
+        t = prefix.trim();
+    }
+    if t.eq_ignore_ascii_case("_current") {
+        return Some("stdlib:dart.core.Iterator.current [selector]".to_string());
     }
     None
 }

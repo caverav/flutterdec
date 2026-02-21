@@ -474,6 +474,120 @@ fn rewrites_indirect_call_to_stdlib_match_end_when_selector_is_known() {
 }
 
 #[test]
+fn rewrites_indirect_call_to_stdlib_iterator_current_when_internal_selector_is_known() {
+    let ir = FunctionIr {
+        function_id: 473,
+        name: "indirectStdlibIteratorCurrent".to_string(),
+        entry_va: 0xc2d0,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0xc2d0,
+            instrs: vec![
+                LlirInstr {
+                    va: 0xc2d0,
+                    op: IROp::Other,
+                    src: "mov x0, #1".to_string(),
+                    target: String::new(),
+                },
+                LlirInstr {
+                    va: 0xc2d4,
+                    op: IROp::LoadPool,
+                    src: "x1".to_string(),
+                    target: "pool[94]".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc2d8,
+                    op: IROp::Call,
+                    src: "blr x9".to_string(),
+                    target: "x9".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc2dc,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+
+    let symbols = HashMap::new();
+    let mut pool = HashMap::new();
+    pool.insert(94u64, "_current".to_string());
+    let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
+    assert!(
+        artifact.source.contains(
+            "dart.core.Iterator.current(1, \"_current\" /* pool[94] */, param2, param3); // stdlib:dart.core.Iterator.current [selector], indirect via: indirectTarget9"
+        ),
+        "known internal _current selector should rewrite to stdlib Iterator.current call:\n{}",
+        artifact.source
+    );
+    assert!(
+        !artifact.source.contains("dispatch.current("),
+        "known internal _current selector should avoid dispatch fallback call:\n{}",
+        artifact.source
+    );
+}
+
+#[test]
+fn keeps_dispatch_fallback_for_plain_current_selector_name() {
+    let ir = FunctionIr {
+        function_id: 474,
+        name: "indirectPlainCurrentSelector".to_string(),
+        entry_va: 0xc2e0,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0xc2e0,
+            instrs: vec![
+                LlirInstr {
+                    va: 0xc2e0,
+                    op: IROp::Other,
+                    src: "mov x0, #1".to_string(),
+                    target: String::new(),
+                },
+                LlirInstr {
+                    va: 0xc2e4,
+                    op: IROp::LoadPool,
+                    src: "x1".to_string(),
+                    target: "pool[95]".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc2e8,
+                    op: IROp::Call,
+                    src: "blr x9".to_string(),
+                    target: "x9".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc2ec,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+
+    let symbols = HashMap::new();
+    let mut pool = HashMap::new();
+    pool.insert(95u64, "current".to_string());
+    let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
+    assert!(
+        artifact.source.contains("dispatch.current(1, \"current\" /* pool[95] */, param2, param3); // selector: current, indirect via: indirectTarget9"),
+        "plain current selector should stay dispatch fallback to avoid false positives:\n{}",
+        artifact.source
+    );
+    assert!(
+        !artifact.source.contains("dart.core.Iterator.current("),
+        "plain current selector should not force stdlib Iterator.current mapping:\n{}",
+        artifact.source
+    );
+}
+
+#[test]
 fn rewrites_indirect_call_to_framework_navigator_pushnamed_when_selector_is_known() {
     let ir = FunctionIr {
         function_id: 461,
