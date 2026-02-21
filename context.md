@@ -153,7 +153,7 @@ Current scope:
 - unresolved `dispatchTarget` calls now use `dispatch.invoke(...)` fallback, and unresolved generic aliases now render as `<target>.invoke(...)`, so raw `dynamicCall(...)` only remains for truly unknown target forms
 - selector extraction now ignores likely file/URI/path-like strings (`*.dart`, paths, URLs) to reduce false-positive standard-call labeling
 - declaration typing now uses deterministic context: semantic call ownership (`flutter.*`/`dart.*`) and literal assignments can upgrade `dynamic` declarations into concrete types (for example `flutter.widgets.State`, `dart.async.Future`, `String`, `bool`)
-- adapter object-pool entries now include optional metadata fields (`decoded_kind`, `selector`, `target_va`, `owner_class`, `library_uri`) for future deterministic resolution passes
+- adapter object-pool metadata fields (`decoded_kind`, `selector`, `target_va`, `owner_class`, `library_uri`) are now consumed by decompile for deterministic owner-qualified selector rewrites
 - model-backed canonical naming now deterministically tags Dart stdlib (`dart:*`) and Flutter framework (`package:flutter/*`) functions when adapter metadata includes class/library ownership
 - selector coverage now includes additional standard families such as `Navigator.pushNamed` and `List.removeAt`, improving deterministic semantic rewrites on real samples
 - constructor-like standard selectors are now recognized too (for example `KeyedSubtree`, `StreamIterator`, `Float32x4List`, `Int64List`) and rewritten to semantic `.new` paths

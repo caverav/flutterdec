@@ -112,6 +112,7 @@ Naming and semantic behavior:
 - external symbols are normalized into readable call names (for example runtime/native prefixes)
 - descriptive external names can replace generic placeholders (`sub_*`, `fn_0x*`)
 - selector-based deterministic inference can tag standard calls from object-pool arguments even when call targets stay generic
+- selector inference now also consumes adapter pool metadata (`selector`, `owner_class`, `library_uri`) for deterministic owner-qualified semantic rewrites
 - high-confidence callsites are rewritten to semantic paths while keeping traceability with `was: <original_name>`
 - indirect callsites can also be rewritten when selector evidence is deterministic, with `indirect via: <target_alias>` traceability
 - unresolved indirect callsites can fall back to `dispatch.<selector>(...)` when selector evidence exists but no standard mapping is known
@@ -120,6 +121,7 @@ Naming and semantic behavior:
 - selector evidence can be inferred from indirect target expressions too (for example `target: (pool[...]).f7`), not only call arguments
 - selector extraction skips file/URI/path-like strings (for example `*.dart` paths) to avoid false-positive rewrites
 - exact `pool[<idx>]` call arguments are rendered as `"value" /* pool[<idx>] */` when a string hint is available
+- `report.json` includes `pool_semantic_hints` alongside `pool_value_hints` to show metadata coverage used by decompile
 - argument and local declaration types are inferred from deterministic semantic call ownership and literal assignments (for example `flutter.widgets.State receiver`, `String tmp`, `bool tmp`)
 - constructor-like selectors are also mapped when deterministic (for example `flutter.widgets.KeyedSubtree.new`, `dart.async.StreamIterator.new`, `dart.typed_data.Float32x4List.new`)
 - recognized calls add intent comments in pseudocode, for example:

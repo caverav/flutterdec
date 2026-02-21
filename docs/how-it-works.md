@@ -95,6 +95,7 @@ sequenceDiagram
 - constructor-style standard selectors are recognized too (for example `flutter.widgets.KeyedSubtree.new`, `dart.async.StreamIterator.new`, `dart.typed_data.Float32x4List.new`)
 - if selector evidence exists but no known standard mapping applies, indirect callsites use `dispatch.<selector>(...)` as a readable fallback
 - selector evidence for indirect calls is inferred from both call arguments and indirect target expressions
+- selector resolution also uses adapter pool metadata (`selector`, `owner_class`, `library_uri`) to build deterministic owner-qualified semantic paths
 - selector extraction ignores file/URI/path-like strings to reduce false-positive standard-call rewrites
 - unresolved `dispatchTarget` callsites use `dispatch.invoke(...)` fallback to reduce raw `dynamicCall(...)` noise
 - unresolved generic indirect aliases (for example `indirectTarget9`) now render as `<target>.invoke(...)` fallback before resorting to raw `dynamicCall(...)`
@@ -592,6 +593,7 @@ File naming convention:
 - input metadata
 - counts for libraries, classes, functions, pool entries
 - embedded `quality` object
+- `pool_value_hints` and `pool_semantic_hints` counts
 - `semantic_rewrite` aggregate
 - `semantic_intent` aggregate
 
