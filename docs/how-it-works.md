@@ -86,6 +86,7 @@ sequenceDiagram
 - can ingest extra ELF symbol tables and `map-symbols` target JSON to improve direct call naming
 - external descriptive names replace generic placeholders like `sub_*` and `fn_0x*` when addresses match
 - recognized call names emit semantic intent comments (stdlib/runtime/native) next to call lines
+- when intent is deterministic, callsites are rewritten to semantic paths and include `was: <original_name>` for traceability
 - canonical names derived from adapter class/library ownership can deterministically label Flutter framework calls (`framework:flutter.*`) and Dart stdlib calls (`stdlib:dart.*`)
 
 3. `adapter`
@@ -458,6 +459,7 @@ Recent readability features include:
   - `returnAddress`, `framePointer`
 - stack slot notation:
   - `sp[-8]`, `sp[8]`
+  - stack-derived base expressions collapse to indexed slots (`((sp - 0x30)).f0` to `sp[-0x30]`)
 - arithmetic simplification:
   - `(null + 0x20)` to `0x20`
   - `((sp - 0x20) + 0x10)` to `(sp - 0x10)`

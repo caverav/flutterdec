@@ -139,7 +139,9 @@ Current scope:
 - decompile can now ingest `map-symbols` target JSON directly to inject mapped call names into pseudocode
 - external symbol names are normalized (including C++ demangle and runtime/native prefixes) before pseudocode emission
 - pseudocode call sites now include semantic intent comments for recognized stdlib/runtime/native targets
+- when intent is deterministic, callsites are rewritten to semantic paths and keep traceability via `was: <original_name>`
 - model-backed canonical naming now deterministically tags Dart stdlib (`dart:*`) and Flutter framework (`package:flutter/*`) functions when adapter metadata includes class/library ownership
+- stack-pointer-derived base expressions now collapse into indexed stack slots (for example `sp[-0x30]`) instead of synthetic field forms
 - optional ELF engine fingerprinting to estimate build identity from build-id and marker strings
 
 Known limits:
