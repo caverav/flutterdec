@@ -312,12 +312,80 @@ fn classify_standard_selector(raw: &str) -> Option<String> {
             "updaterenderobject",
             "framework:flutter.rendering.RenderObjectWidget.updateRenderObject",
         ),
+        (
+            "didchangeapplifecyclestate",
+            "framework:flutter.widgets.WidgetsBindingObserver.didChangeAppLifecycleState",
+        ),
+        (
+            "didchangemetrics",
+            "framework:flutter.widgets.WidgetsBindingObserver.didChangeMetrics",
+        ),
+        (
+            "didchangelocales",
+            "framework:flutter.widgets.WidgetsBindingObserver.didChangeLocales",
+        ),
+        (
+            "didchangeplatformbrightness",
+            "framework:flutter.widgets.WidgetsBindingObserver.didChangePlatformBrightness",
+        ),
+        (
+            "didchangetextscalefactor",
+            "framework:flutter.widgets.WidgetsBindingObserver.didChangeTextScaleFactor",
+        ),
+        (
+            "didchangeaccessibilityfeatures",
+            "framework:flutter.widgets.WidgetsBindingObserver.didChangeAccessibilityFeatures",
+        ),
+        (
+            "didhavememorypressure",
+            "framework:flutter.widgets.WidgetsBindingObserver.didHaveMemoryPressure",
+        ),
+        (
+            "addobserver",
+            "framework:flutter.widgets.WidgetsBinding.addObserver",
+        ),
+        (
+            "removeobserver",
+            "framework:flutter.widgets.WidgetsBinding.removeObserver",
+        ),
+        (
+            "pushnamedandremoveuntil",
+            "framework:flutter.widgets.Navigator.pushNamedAndRemoveUntil",
+        ),
+        (
+            "pushreplacementnamed",
+            "framework:flutter.widgets.Navigator.pushReplacementNamed",
+        ),
+        ("pushnamed", "framework:flutter.widgets.Navigator.pushNamed"),
+        ("popuntil", "framework:flutter.widgets.Navigator.popUntil"),
+        ("push", "framework:flutter.widgets.Navigator.push"),
+        ("pop", "framework:flutter.widgets.Navigator.pop"),
+        (
+            "showsnackbar",
+            "framework:flutter.material.ScaffoldMessengerState.showSnackBar",
+        ),
+        (
+            "hidecurrentsnackbar",
+            "framework:flutter.material.ScaffoldMessengerState.hideCurrentSnackBar",
+        ),
+        (
+            "removecurrentsnackbar",
+            "framework:flutter.material.ScaffoldMessengerState.removeCurrentSnackBar",
+        ),
     ];
     let dart_async = [
         ("then", "stdlib:dart.async.Future.then"),
         ("catcherror", "stdlib:dart.async.Future.catchError"),
         ("whencomplete", "stdlib:dart.async.Future.whenComplete"),
         ("listen", "stdlib:dart.async.Stream.listen"),
+        ("wait", "stdlib:dart.async.Future.wait"),
+        ("delayed", "stdlib:dart.async.Future.delayed"),
+        ("timeout", "stdlib:dart.async.Future.timeout"),
+        ("asstream", "stdlib:dart.async.Future.asStream"),
+        ("transform", "stdlib:dart.async.Stream.transform"),
+        ("distinct", "stdlib:dart.async.Stream.distinct"),
+        ("takewhile", "stdlib:dart.async.Stream.takeWhile"),
+        ("skipwhile", "stdlib:dart.async.Stream.skipWhile"),
     ];
     let dart_core = [
         ("print", "stdlib:dart.core.print"),
@@ -339,6 +407,19 @@ fn classify_standard_selector(raw: &str) -> Option<String> {
         ("replaceall", "stdlib:dart.core.String.replaceAll"),
         ("tolowercase", "stdlib:dart.core.String.toLowerCase"),
         ("touppercase", "stdlib:dart.core.String.toUpperCase"),
+        ("removeat", "stdlib:dart.core.List.removeAt"),
+        ("removewhere", "stdlib:dart.core.List.removeWhere"),
+        ("addall", "stdlib:dart.core.List.addAll"),
+        ("putall", "stdlib:dart.core.Map.addAll"),
+        ("tolist", "stdlib:dart.core.Iterable.toList"),
+        ("toset", "stdlib:dart.core.Iterable.toSet"),
+        ("foreach", "stdlib:dart.core.Iterable.forEach"),
+        ("indexof", "stdlib:dart.core.String.indexOf"),
+        ("lastindexof", "stdlib:dart.core.String.lastIndexOf"),
+        ("trimleft", "stdlib:dart.core.String.trimLeft"),
+        ("trimright", "stdlib:dart.core.String.trimRight"),
+        ("trim", "stdlib:dart.core.String.trim"),
+        ("codeunitat", "stdlib:dart.core.String.codeUnitAt"),
     ];
 
     for candidate in selector_candidates(raw) {
