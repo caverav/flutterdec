@@ -1,5 +1,9 @@
 impl<'a> FuncEmitter<'a> {
     pub(super) fn field_expr(base: &str, off: i64) -> String {
+        if let Some((stack_base, stack_off)) = parse_stack_base_offset(base) {
+            return format!("{stack_base}[{}]", fmt_int(stack_off + off));
+        }
+
         let b = if base
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.')
@@ -8,10 +12,6 @@ impl<'a> FuncEmitter<'a> {
         } else {
             format!("({base})")
         };
-
-        if b == "sp" || b == "stack" {
-            return format!("{b}[{}]", fmt_int(off));
-        }
 
         if off == -1 {
             format!("{b}._tag")

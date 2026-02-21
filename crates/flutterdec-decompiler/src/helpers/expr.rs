@@ -78,6 +78,27 @@ pub(super) fn parse_base_offset_expr(expr: &str) -> Option<(String, i64)> {
     Some((lhs.to_string(), signed_off))
 }
 
+pub(super) fn parse_stack_base_offset(expr: &str) -> Option<(String, i64)> {
+    let t = expr.trim();
+    if t.is_empty() {
+        return None;
+    }
+    if t == "sp" || t == "stack" {
+        return Some((t.to_string(), 0));
+    }
+    if let Some(inner) = t.strip_prefix('(').and_then(|s| s.strip_suffix(')')) {
+        if let Some((base, off)) = parse_stack_base_offset(inner) {
+            return Some((base, off));
+        }
+    }
+    if let Some((base, off)) = parse_base_offset_expr(t) {
+        if let Some((stack_base, stack_off)) = parse_stack_base_offset(&base) {
+            return Some((stack_base, stack_off + off));
+        }
+    }
+    None
+}
+
 pub(super) fn simplify_bin_expr(lhs: String, op: &str, rhs: String) -> String {
     let lt = lhs.trim();
     let rt = rhs.trim();
