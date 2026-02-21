@@ -61,6 +61,7 @@ pub fn run_decompile(
     let mut standard_model_symbol_count = 0usize;
     let class_to_library = build_class_library_lookup(&model);
     let pool_value_hints = build_pool_value_hints(&model);
+    let pool_semantic_hints = build_pool_semantic_hints(&model);
 
     for f in &model.functions {
         let resolved = canonical_standard_model_name(f, &class_to_library)
@@ -108,7 +109,12 @@ pub fn run_decompile(
             );
         }
     }
-    let pseudo = emit_program_with_pool_hints(&ir, &symbol_names, &pool_value_hints);
+    let pseudo = emit_program_with_pool_context(
+        &ir,
+        &symbol_names,
+        &pool_value_hints,
+        &pool_semantic_hints,
+    );
 
     let asm_dir = opt.out_dir.join("asm");
     let ir_dir = opt.out_dir.join("ir");
@@ -215,6 +221,7 @@ pub fn run_decompile(
         "standard_model_symbols": standard_model_symbol_count
         ,
         "pool_value_hints": pool_value_hints.len(),
+        "pool_semantic_hints": pool_semantic_hints.len(),
         "semantic_rewrite": {
             "total": semantic_total,
             "ratio": semantic_ratio,
@@ -360,6 +367,46 @@ fn build_pool_value_hints(model: &ProgramModel) -> HashMap<u64, String> {
             continue;
         }
         out.insert(e.index, trimmed.to_string());
+    }
+    out
+}
+
+fn build_pool_semantic_hints(model: &ProgramModel) -> HashMap<u64, PoolSemanticHint> {
+    let mut out = HashMap::new();
+    for e in &model.object_pool {
+        let selector = e
+            .selector
+            .as_deref()
+            .map(str::trim)
+            .filter(|v| !v.is_empty() && v.len() <= 128)
+            .map(str::to_string);
+        let owner_class = e
+            .owner_class
+            .as_deref()
+            .map(str::trim)
+            .filter(|v| !v.is_empty() && v.len() <= 128)
+            .map(str::to_string);
+        let library_uri = e
+            .library_uri
+            .as_deref()
+            .map(str::trim)
+            .filter(|v| !v.is_empty() && v.len() <= 256)
+            .map(str::to_string);
+        let target_va = e.target_va;
+
+        if selector.is_none() && owner_class.is_none() && library_uri.is_none() && target_va.is_none() {
+            continue;
+        }
+
+        out.insert(
+            e.index,
+            PoolSemanticHint {
+                selector,
+                owner_class,
+                library_uri,
+                target_va,
+            },
+        );
     }
     out
 }
@@ -780,5 +827,52 @@ mod runners_tests {
         assert_eq!(summary.native, 1);
         assert_eq!(summary.selector_tagged, 2);
         assert_eq!(summary.constructor_calls, 1);
+    }
+
+    #[test]
+    fn builds_pool_semantic_hints_from_adapter_metadata() {
+        let model = ProgramModel {
+            schema_version: 2,
+            adapter_kind: "python".to_string(),
+            dart_version: "3.0.0".to_string(),
+            snapshot_hash: "deadbeef".to_string(),
+            arch: "arm64".to_string(),
+            libraries: Vec::new(),
+            classes: Vec::new(),
+            functions: Vec::new(),
+            object_pool: vec![
+                flutterdec_adapter::ObjectPoolEntry {
+                    index: 7,
+                    kind: "String".to_string(),
+                    value: "didChangeMetrics".to_string(),
+                    decoded_kind: Some("selector".to_string()),
+                    selector: Some("didChangeMetrics".to_string()),
+                    target_va: Some(0x1234),
+                    owner_class: Some("WidgetsBindingObserver".to_string()),
+                    library_uri: Some("package:flutter/src/widgets/binding.dart".to_string()),
+                },
+                flutterdec_adapter::ObjectPoolEntry {
+                    index: 8,
+                    kind: "Smi".to_string(),
+                    value: "42".to_string(),
+                    decoded_kind: None,
+                    selector: None,
+                    target_va: None,
+                    owner_class: None,
+                    library_uri: None,
+                },
+            ],
+        };
+
+        let hints = build_pool_semantic_hints(&model);
+        assert_eq!(hints.len(), 1);
+        let h = hints.get(&7).expect("missing semantic hint entry");
+        assert_eq!(h.selector.as_deref(), Some("didChangeMetrics"));
+        assert_eq!(h.owner_class.as_deref(), Some("WidgetsBindingObserver"));
+        assert_eq!(
+            h.library_uri.as_deref(),
+            Some("package:flutter/src/widgets/binding.dart")
+        );
+        assert_eq!(h.target_va, Some(0x1234));
     }
 }

@@ -2,7 +2,7 @@ use anyhow::{bail, Context, Result};
 use flutterdec_adapter::{
     list_adapters, resolve_adapter_exec, run_adapter, AdapterInput, ProgramModel,
 };
-use flutterdec_decompiler::{emit_program_with_pool_hints, PseudocodeArtifact};
+use flutterdec_decompiler::{emit_program_with_pool_context, PoolSemanticHint, PseudocodeArtifact};
 use flutterdec_disasm_arm64::{disassemble_program, FunctionDisassembly};
 use flutterdec_ir::{build_program_ir, FunctionIr};
 use flutterdec_loader::{load_snapshot_bundle, SnapshotBundle};
