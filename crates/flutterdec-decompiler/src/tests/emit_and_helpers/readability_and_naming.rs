@@ -254,3 +254,96 @@ fn aliases_frame_and_return_registers_with_semantic_names() {
     );
 }
 
+#[test]
+fn annotates_stdlib_call_intent_when_symbol_is_named() {
+    let ir = FunctionIr {
+        function_id: 22,
+        name: "stdlibCall".to_string(),
+        entry_va: 0xf700,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0xf700,
+            instrs: vec![
+                LlirInstr {
+                    va: 0xf700,
+                    op: IROp::Call,
+                    src: "bl #0x5000".to_string(),
+                    target: "#0x5000".to_string(),
+                },
+                LlirInstr {
+                    va: 0xf704,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+
+    let mut symbols = HashMap::new();
+    symbols.insert(0x5000, "dart_core_print".to_string());
+    let artifact = emit_pseudocode(&ir, &symbols);
+    assert!(
+        artifact
+            .source
+            .contains("final t1 = dart_core_print(receiver, param1, param2, param3); // stdlib:dart.core.print"),
+        "missing stdlib call intent annotation:\n{}",
+        artifact.source
+    );
+}
+
+#[test]
+fn annotates_runtime_and_native_call_intents() {
+    let ir = FunctionIr {
+        function_id: 23,
+        name: "runtimeNativeCalls".to_string(),
+        entry_va: 0xf800,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0xf800,
+            instrs: vec![
+                LlirInstr {
+                    va: 0xf800,
+                    op: IROp::Call,
+                    src: "bl #0x6000".to_string(),
+                    target: "#0x6000".to_string(),
+                },
+                LlirInstr {
+                    va: 0xf804,
+                    op: IROp::Call,
+                    src: "bl #0x7000".to_string(),
+                    target: "#0x7000".to_string(),
+                },
+                LlirInstr {
+                    va: 0xf808,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+
+    let mut symbols = HashMap::new();
+    symbols.insert(0x6000, "vm_runtime_Invoke".to_string());
+    symbols.insert(0x7000, "native_libc_memcpy".to_string());
+    let artifact = emit_pseudocode(&ir, &symbols);
+    assert!(
+        artifact
+            .source
+            .contains("vm_runtime_Invoke(receiver, param1, param2, param3); // runtime:dart_vm.invoke"),
+        "missing runtime call intent annotation:\n{}",
+        artifact.source
+    );
+    assert!(
+        artifact
+            .source
+            .contains("native_libc_memcpy(t1, param1, param2, param3); // native:libc.memcpy"),
+        "missing native call intent annotation:\n{}",
+        artifact.source
+    );
+}

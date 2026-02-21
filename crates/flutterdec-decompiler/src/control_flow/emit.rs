@@ -43,7 +43,15 @@ impl<'a> FuncEmitter<'a> {
             };
             self.push_line(
                 indent,
-                &format!("final {} = {}({});", tname, call_name, args),
+                &format!(
+                    "final {} = {}({});{}",
+                    tname,
+                    call_name,
+                    args,
+                    infer_call_intent(&call_name)
+                        .map(|v| format!(" // {}", v))
+                        .unwrap_or_default()
+                ),
             );
         }
         self.state.reg_values.insert("x0".to_string(), tname);

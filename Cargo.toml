@@ -27,3 +27,4 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 tempfile = "3"
 walkdir = "2"
 capstone = "0.14"
+cpp_demangle = "0.4"

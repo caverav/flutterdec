@@ -210,7 +210,7 @@ fn merge_symbol_name(
     replaced_generic: &mut usize,
     skipped: &mut usize,
 ) {
-    let candidate = candidate.trim().to_string();
+    let candidate = normalize_external_symbol_name(&candidate);
     if candidate.is_empty() {
         return;
     }
@@ -240,6 +240,180 @@ fn is_generic_symbol_name(name: &str) -> bool {
         return true;
     }
     false
+}
+
+fn normalize_external_symbol_name(raw: &str) -> String {
+    let mut s = raw.trim().to_string();
+    if s.is_empty() {
+        return s;
+    }
+    if is_generic_symbol_name(&s) {
+        return s;
+    }
+
+    if let Some((base, _)) = s.split_once('@') {
+        s = base.to_string();
+    }
+    if let Some(demangled) = try_demangle_cpp(&s) {
+        s = demangled;
+    }
+
+    if let Some(name) = canonicalize_known_symbol(&s) {
+        return name;
+    }
+
+    sanitize_symbol_token_stream(&s)
+}
+
+fn try_demangle_cpp(name: &str) -> Option<String> {
+    if !name.starts_with("_Z") {
+        return None;
+    }
+    let symbol = cpp_demangle::Symbol::new(name).ok()?;
+    symbol
+        .demangle(&cpp_demangle::DemangleOptions::default())
+        .ok()
+}
+
+fn canonicalize_known_symbol(symbol: &str) -> Option<String> {
+    let lower = symbol.to_ascii_lowercase();
+
+    if let Some(lib) = extract_dart_library(symbol) {
+        let ids = extract_symbol_identifiers(symbol);
+        let mut out = vec!["dart".to_string(), lib.clone()];
+        if let Some(class) = ids
+            .iter()
+            .rev()
+            .nth(1)
+            .and_then(|v| normalize_symbol_piece(v))
+            .filter(|v| !v.is_empty() && *v != lib && *v != "dart")
+        {
+            out.push(class);
+        }
+        if let Some(method) = ids
+            .last()
+            .and_then(|v| normalize_symbol_piece(v))
+            .filter(|v| !v.is_empty())
+        {
+            out.push(method);
+        }
+        return Some(out.join("_"));
+    }
+
+    if let Some(rest) = symbol.strip_prefix("Dart_") {
+        return Some(format!("vm_runtime_{}", sanitize_symbol_token_stream(rest)));
+    }
+
+    if let Some(rest) = symbol.strip_prefix("__android_log_") {
+        return Some(format!(
+            "native_android_log_{}",
+            sanitize_symbol_token_stream(rest)
+        ));
+    }
+
+    let libc_funcs = [
+        "printf",
+        "puts",
+        "putchar",
+        "write",
+        "fwrite",
+        "memcpy",
+        "memmove",
+        "memcmp",
+        "memchr",
+        "strlen",
+        "strcpy",
+        "strcmp",
+        "strstr",
+        "snprintf",
+        "open",
+        "close",
+        "read",
+        "abort",
+        "malloc",
+        "calloc",
+        "realloc",
+        "free",
+    ];
+    if libc_funcs.iter().any(|f| *f == lower) {
+        return Some(format!("native_libc_{}", lower));
+    }
+
+    None
+}
+
+fn extract_dart_library(symbol: &str) -> Option<String> {
+    let lower = symbol.to_ascii_lowercase();
+    if let Some(pos) = lower.find("dart:") {
+        let mut lib = String::new();
+        for c in lower[pos + 5..].chars() {
+            if c.is_ascii_alphanumeric() || c == '_' {
+                lib.push(c);
+            } else {
+                break;
+            }
+        }
+        if !lib.is_empty() {
+            return Some(lib);
+        }
+    }
+
+    if let Some(pos) = lower.find("dart::") {
+        let mut lib = String::new();
+        for c in lower[pos + 6..].chars() {
+            if c.is_ascii_alphanumeric() || c == '_' {
+                lib.push(c);
+            } else {
+                break;
+            }
+        }
+        if !lib.is_empty() {
+            return Some(lib);
+        }
+    }
+
+    None
+}
+
+fn extract_symbol_identifiers(input: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut cur = String::new();
+    for c in input.chars() {
+        if c.is_ascii_alphanumeric() || c == '_' {
+            cur.push(c);
+        } else if !cur.is_empty() {
+            out.push(cur.clone());
+            cur.clear();
+        }
+    }
+    if !cur.is_empty() {
+        out.push(cur);
+    }
+    out
+}
+
+fn normalize_symbol_piece(piece: &str) -> Option<String> {
+    let cleaned = sanitize_symbol_token_stream(piece);
+    if cleaned.is_empty() {
+        None
+    } else {
+        Some(cleaned)
+    }
+}
+
+fn sanitize_symbol_token_stream(input: &str) -> String {
+    let mut out = String::new();
+    let mut prev_us = false;
+    for c in input.chars() {
+        if c.is_ascii_alphanumeric() {
+            out.push(c);
+            prev_us = false;
+        } else if !prev_us {
+            out.push('_');
+            prev_us = true;
+        }
+    }
+    out.trim_matches('_').to_string()
 }
 
 #[cfg(test)]
@@ -295,5 +469,25 @@ mod runners_tests {
         assert!(is_generic_symbol_name("fn_0x55"));
         assert!(is_generic_symbol_name("unknown"));
         assert!(!is_generic_symbol_name("Dart_Invoke"));
+    }
+
+    #[test]
+    fn normalizes_known_external_symbols() {
+        assert_eq!(
+            normalize_external_symbol_name("Dart_Invoke"),
+            "vm_runtime_Invoke"
+        );
+        assert_eq!(
+            normalize_external_symbol_name("memcpy@LIBC"),
+            "native_libc_memcpy"
+        );
+        assert_eq!(
+            normalize_external_symbol_name("__android_log_print"),
+            "native_android_log_print"
+        );
+        assert_eq!(
+            normalize_external_symbol_name("dart:core::print"),
+            "dart_core_print"
+        );
     }
 }
