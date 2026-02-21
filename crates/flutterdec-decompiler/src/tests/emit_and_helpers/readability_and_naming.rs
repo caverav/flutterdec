@@ -429,6 +429,105 @@ fn aliases_dispatch_target_slot_callable_calls() {
 }
 
 #[test]
+fn aliases_repeated_stack_slot_reads() {
+    let ir = FunctionIr {
+        function_id: 212,
+        name: "stackSlotAlias".to_string(),
+        entry_va: 0xf620,
+        blocks: Vec::new(),
+    };
+    let symbols = HashMap::new();
+    let mut emitter = FuncEmitter::new(&ir, &symbols);
+    emitter.lines = vec![
+        "dynamic stackSlotAlias(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {".to_string(),
+        "  final t1 = fn_0x10(sp[-0x10], arg1, arg2, arg3);".to_string(),
+        "  final t2 = fn_0x10(sp[-0x10], arg1, arg2, arg3);".to_string(),
+        "  final t3 = fn_0x10(sp[-0x10], arg1, arg2, arg3);".to_string(),
+        "  final t4 = fn_0x10(sp[-8], arg1, arg2, arg3);".to_string(),
+        "  return t3;".to_string(),
+        "}".to_string(),
+    ];
+
+    emitter.apply_name_and_type_hints("stackSlotAlias");
+    let out = emitter.lines.join("\n");
+    assert!(
+        out.contains("final stackSlotNeg0x10 = sp[-0x10];"),
+        "repeated stack slot should be aliased into a prelude local:\n{out}"
+    );
+    assert!(
+        out.contains("fn_0x10(stackSlotNeg0x10, param1, param2, param3);"),
+        "stack slot call arguments should use alias:\n{out}"
+    );
+    assert_eq!(
+        out.matches("sp[-0x10]").count(),
+        1,
+        "original stack slot token should remain only in alias declaration:\n{out}"
+    );
+}
+
+#[test]
+fn does_not_alias_non_repeated_stack_slot_reads() {
+    let ir = FunctionIr {
+        function_id: 213,
+        name: "stackSlotNoAlias".to_string(),
+        entry_va: 0xf628,
+        blocks: Vec::new(),
+    };
+    let symbols = HashMap::new();
+    let mut emitter = FuncEmitter::new(&ir, &symbols);
+    emitter.lines = vec![
+        "dynamic stackSlotNoAlias(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {".to_string(),
+        "  final t1 = fn_0x10(sp[-0x10], arg1, arg2, arg3);".to_string(),
+        "  final t2 = fn_0x10(sp[-0x10], arg1, arg2, arg3);".to_string(),
+        "  return t2;".to_string(),
+        "}".to_string(),
+    ];
+
+    emitter.apply_name_and_type_hints("stackSlotNoAlias");
+    let out = emitter.lines.join("\n");
+    assert!(
+        !out.contains("final stackSlotNeg0x10 = sp[-0x10];"),
+        "stack slot alias should not be emitted below repetition threshold:\n{out}"
+    );
+    assert!(
+        out.matches("sp[-0x10]").count() >= 2,
+        "non-aliased stack slot reads should remain inline:\n{out}"
+    );
+}
+
+#[test]
+fn does_not_alias_repeated_stack_slot_when_written() {
+    let ir = FunctionIr {
+        function_id: 214,
+        name: "stackSlotWrittenNoAlias".to_string(),
+        entry_va: 0xf630,
+        blocks: Vec::new(),
+    };
+    let symbols = HashMap::new();
+    let mut emitter = FuncEmitter::new(&ir, &symbols);
+    emitter.lines = vec![
+        "dynamic stackSlotWrittenNoAlias(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {".to_string(),
+        "  final t1 = fn_0x10(sp[-0x60], arg1, arg2, arg3);".to_string(),
+        "  sp[-0x60] = t1;".to_string(),
+        "  final t2 = fn_0x10(sp[-0x60], arg1, arg2, arg3);".to_string(),
+        "  final t3 = fn_0x10(sp[-0x60], arg1, arg2, arg3);".to_string(),
+        "  return t3;".to_string(),
+        "}".to_string(),
+    ];
+
+    emitter.apply_name_and_type_hints("stackSlotWrittenNoAlias");
+    let out = emitter.lines.join("\n");
+    assert!(
+        !out.contains("stackSlotNeg0x60"),
+        "written stack slots should not be aliased into immutable locals:\n{out}"
+    );
+    assert!(
+        out.contains("sp[-0x60] = t1;"),
+        "stack write site should remain explicit:\n{out}"
+    );
+}
+
+#[test]
 fn annotates_stdlib_call_intent_when_symbol_is_named() {
     let ir = FunctionIr {
         function_id: 22,

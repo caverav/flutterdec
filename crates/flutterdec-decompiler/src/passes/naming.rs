@@ -31,6 +31,127 @@ impl<'a> FuncEmitter<'a> {
         self.lines.insert(idx, alias_decl);
     }
 
+    fn alias_repeated_stack_slots(&mut self) {
+        if self.lines.len() < 3 {
+            return;
+        }
+
+        let mut counts: HashMap<String, usize> = HashMap::new();
+        for line in &self.lines {
+            for slot in Self::stack_slot_refs(line) {
+                *counts.entry(slot).or_insert(0) += 1;
+            }
+        }
+
+        let mut candidates: Vec<String> = counts
+            .into_iter()
+            .filter_map(|(slot, count)| if count >= 3 { Some(slot) } else { None })
+            .collect();
+        candidates.sort();
+        if candidates.is_empty() {
+            return;
+        }
+
+        let insert_idx = Self::prelude_insert_index(&self.lines);
+        let mut inserts = Vec::new();
+        for slot in candidates {
+            if Self::stack_slot_is_written(&self.lines, &slot) {
+                continue;
+            }
+            let needle = format!("sp[{slot}]");
+            if !self.lines.iter().any(|l| l.contains(&needle)) {
+                continue;
+            }
+
+            let base = Self::stack_slot_alias_base(&slot);
+            let mut alias = base.clone();
+            let mut n = 2usize;
+            while Self::name_taken(&self.lines, &alias)
+                || inserts
+                    .iter()
+                    .any(|l: &String| l.contains(&format!(" {alias} = ")))
+            {
+                alias = format!("{base}{n}");
+                n += 1;
+            }
+
+            let mut replaced = false;
+            for line in &mut self.lines {
+                if line.contains(&needle) {
+                    *line = line.replace(&needle, &alias);
+                    replaced = true;
+                }
+            }
+            if replaced {
+                inserts.push(format!("  final {alias} = sp[{slot}];"));
+            }
+        }
+
+        if !inserts.is_empty() {
+            self.lines.splice(insert_idx..insert_idx, inserts);
+        }
+    }
+
+    fn stack_slot_refs(line: &str) -> Vec<String> {
+        let mut out = Vec::new();
+        let mut i = 0usize;
+        while i < line.len() {
+            let Some(rel) = line[i..].find("sp[") else {
+                break;
+            };
+            let start = i + rel + 3;
+            let Some(end_rel) = line[start..].find(']') else {
+                break;
+            };
+            let end = start + end_rel;
+            let token = line[start..end].trim();
+            if Self::is_simple_stack_slot_token(token) {
+                out.push(token.to_string());
+            }
+            i = end + 1;
+        }
+        out
+    }
+
+    fn stack_slot_is_written(lines: &[String], slot: &str) -> bool {
+        let spaced = format!("sp[{slot}] =");
+        let compact = format!("sp[{slot}]=");
+        let plus = format!("sp[{slot}] +=");
+        let minus = format!("sp[{slot}] -=");
+        let mul = format!("sp[{slot}] *=");
+        let div = format!("sp[{slot}] /=");
+        lines.iter().any(|line| {
+            line.contains(&spaced)
+                || line.contains(&compact)
+                || line.contains(&plus)
+                || line.contains(&minus)
+                || line.contains(&mul)
+                || line.contains(&div)
+        })
+    }
+
+    fn is_simple_stack_slot_token(token: &str) -> bool {
+        let trimmed = token.trim();
+        if trimmed.is_empty() {
+            return false;
+        }
+        let rest = trimmed.strip_prefix('-').unwrap_or(trimmed);
+        if let Some(hex) = rest.strip_prefix("0x").or_else(|| rest.strip_prefix("0X")) {
+            !hex.is_empty() && hex.chars().all(|c| c.is_ascii_hexdigit())
+        } else {
+            rest.chars().all(|c| c.is_ascii_digit())
+        }
+    }
+
+    fn stack_slot_alias_base(slot: &str) -> String {
+        let token = slot.trim();
+        if let Some(rest) = token.strip_prefix('-') {
+            format!("stackSlotNeg{}", rest.to_ascii_lowercase())
+        } else {
+            format!("stackSlot{}", token.to_ascii_lowercase())
+        }
+    }
+
     pub(super) fn extract_minus_one_aliases(&mut self) {
         if self.lines.len() < 3 {
             return;
@@ -258,5 +379,6 @@ impl<'a> FuncEmitter<'a> {
         }
 
         self.alias_dispatch_target_slot_calls();
+        self.alias_repeated_stack_slots();
     }
 }
