@@ -2,7 +2,8 @@ use anyhow::{Context, Result};
 use clap::{Args, Parser, Subcommand};
 use flutterdec_adapter::install_adapter;
 use flutterdec_core::{
-    available_adapters, run_decompile, run_info, run_symbol_map, DecompileOptions, SymbolMapOptions,
+    available_adapters, run_decompile, run_engine_fingerprint, run_info, run_symbol_map,
+    DecompileOptions, EngineFingerprintOptions, SymbolMapOptions,
 };
 use std::path::{Path, PathBuf};
 
@@ -18,6 +19,7 @@ struct Cli {
 enum Command {
     Info(InfoCmd),
     Decompile(DecompileCmd),
+    EngineFingerprint(EngineFingerprintCmd),
     MapSymbols(MapSymbolsCmd),
     Adapter(AdapterCmd),
 }
@@ -38,6 +40,8 @@ struct DecompileCmd {
     emit_asm: bool,
     #[arg(long)]
     emit_ir: bool,
+    #[arg(long = "extra-symbol-elf")]
+    extra_symbol_elfs: Vec<PathBuf>,
     #[arg(long)]
     focus: Option<String>,
     #[arg(long)]
@@ -50,6 +54,17 @@ struct DecompileCmd {
     max_indirect_call_ratio: f64,
     #[arg(long, default_value_t = 0.80)]
     min_disassembly_ratio: f64,
+}
+
+#[derive(Args, Debug)]
+struct EngineFingerprintCmd {
+    input: PathBuf,
+    #[arg(short = 'o', long = "out")]
+    out_dir: Option<PathBuf>,
+    #[arg(long, default_value_t = 24)]
+    max_markers: usize,
+    #[arg(long)]
+    json: bool,
 }
 
 #[derive(Args, Debug)]
@@ -128,6 +143,7 @@ fn main() -> Result<()> {
                 out_dir: cmd.out_dir,
                 emit_asm: cmd.emit_asm,
                 emit_ir: cmd.emit_ir,
+                extra_symbol_elfs: cmd.extra_symbol_elfs,
                 focus: cmd.focus,
                 max_functions: cmd.max_functions,
                 max_placeholder_ifs: cmd.max_placeholder_ifs,
@@ -137,6 +153,37 @@ fn main() -> Result<()> {
             };
             let quality = run_decompile(&repo_root, &cmd.input, &opt)?;
             println!("{}", serde_json::to_string_pretty(&quality)?);
+        }
+        Command::EngineFingerprint(cmd) => {
+            let opt = EngineFingerprintOptions {
+                out_dir: cmd.out_dir,
+                max_markers: cmd.max_markers,
+            };
+            let report = run_engine_fingerprint(&cmd.input, &opt)?;
+            if cmd.json {
+                println!("{}", serde_json::to_string_pretty(&report)?);
+            } else {
+                println!("input: {}", report.input_path);
+                println!("machine: {} ({})", report.machine, report.machine_id);
+                println!("build id: {}", report.build_id.as_deref().unwrap_or("-"));
+                println!(
+                    "candidates: flutter={} dart={}",
+                    report.candidate_flutter_version.as_deref().unwrap_or("-"),
+                    report.candidate_dart_version.as_deref().unwrap_or("-")
+                );
+                println!("confidence: {}", report.confidence);
+                println!(
+                    "symbols: symtab={} dynsym={}",
+                    report.symbol_count, report.dyn_symbol_count
+                );
+                println!(
+                    "exec sections: count={} total_size=0x{:x}",
+                    report.exec_section_count, report.exec_section_total_size
+                );
+                if let Some(path) = report.report_path.as_deref() {
+                    println!("report: {}", path);
+                }
+            }
         }
         Command::MapSymbols(cmd) => {
             let opt = SymbolMapOptions {
