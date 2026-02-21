@@ -152,6 +152,19 @@ pub fn run_decompile(
     }
 
     let report = quality_from_artifacts(&model, &disasm, &pseudo, opt);
+    let semantic_total =
+        report.semantic_direct_calls + report.semantic_indirect_calls + report.dispatch_selector_calls;
+    let semantic_ratio = if report.total_calls == 0 {
+        0.0
+    } else {
+        semantic_total as f64 / report.total_calls as f64
+    };
+    let indirect_semantic_ratio = if report.indirect_calls == 0 {
+        0.0
+    } else {
+        (report.semantic_indirect_calls + report.dispatch_selector_calls) as f64
+            / report.indirect_calls as f64
+    };
     fs::create_dir_all(&opt.out_dir)?;
 
     let quality_path = opt.out_dir.join("quality.json");
@@ -190,7 +203,15 @@ pub fn run_decompile(
         },
         "standard_model_symbols": standard_model_symbol_count
         ,
-        "pool_value_hints": pool_value_hints.len()
+        "pool_value_hints": pool_value_hints.len(),
+        "semantic_rewrite": {
+            "total": semantic_total,
+            "ratio": semantic_ratio,
+            "direct": report.semantic_direct_calls,
+            "indirect": report.semantic_indirect_calls,
+            "dispatch_fallback": report.dispatch_selector_calls,
+            "indirect_ratio": indirect_semantic_ratio
+        }
     });
 
     fs::write(
