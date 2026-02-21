@@ -1,5 +1,5 @@
 #[test]
-fn emits_dynamic_call_for_indirect_targets() {
+fn emits_invoke_style_for_generic_indirect_targets() {
     let ir = FunctionIr {
         function_id: 12,
         name: "indirectCall".to_string(),
@@ -28,13 +28,15 @@ fn emits_dynamic_call_for_indirect_targets() {
     let symbols = HashMap::new();
     let artifact = emit_pseudocode(&ir, &symbols);
     assert!(
-        artifact.source.contains("dynamicCall(indirectTarget9"),
-        "indirect calls should use named targets:\n{}",
+        artifact
+            .source
+            .contains("indirectTarget9.invoke(receiver, param1, param2, param3); // indirect via: indirectTarget9"),
+        "generic indirect calls should render invoke style:\n{}",
         artifact.source
     );
     assert!(
-        !artifact.source.contains("invoke(reg9"),
-        "legacy invoke label should be absent:\n{}",
+        !artifact.source.contains("dynamicCall(indirectTarget9"),
+        "generic indirect calls should avoid dynamicCall text:\n{}",
         artifact.source
     );
 }
@@ -290,7 +292,7 @@ fn keeps_dynamic_call_when_target_selector_is_file_path_like() {
     pool.insert(77u64, "dart_mappablesrcmapper_utils.dart".to_string());
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
-        artifact.source.contains("dynamicCall(indirectTarget9"),
+        artifact.source.contains("indirectTarget9.invoke"),
         "file-like selector hints should not force semantic rewrite:\n{}",
         artifact.source
     );

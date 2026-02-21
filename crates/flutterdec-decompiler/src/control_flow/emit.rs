@@ -164,6 +164,22 @@ impl<'a> FuncEmitter<'a> {
                         indent,
                         &format!("final {} = dispatch.invoke({});{}", tname, args, suffix),
                     );
+                } else if named_target == "cachedTarget"
+                    || named_target.starts_with("indirectTarget")
+                {
+                    comments.push(format!("indirect via: {}", named_target));
+                    let suffix = if comments.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" // {}", comments.join(", "))
+                    };
+                    self.push_line(
+                        indent,
+                        &format!(
+                            "final {} = {}.invoke({});{}",
+                            tname, named_target, args, suffix
+                        ),
+                    );
                 } else {
                     let target_suffix = if comments.is_empty() {
                         String::new()
