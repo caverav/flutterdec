@@ -261,7 +261,12 @@ pub fn emit_program_with_pool_context(
 ) -> Vec<PseudocodeArtifact> {
     ir.iter()
         .map(|f| {
-            emit_pseudocode_with_pool_context(f, symbol_names, pool_value_hints, pool_semantic_hints)
+            emit_pseudocode_with_pool_context(
+                f,
+                symbol_names,
+                pool_value_hints,
+                pool_semantic_hints,
+            )
         })
         .collect()
 }
