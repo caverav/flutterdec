@@ -200,6 +200,7 @@ impl<'a> FuncEmitter<'a> {
                 self.resolve_indirect_target_symbol_call_name(&target_value)
             {
                 self.semantic_indirect_calls += 1;
+                self.target_va_symbol_calls += 1;
                 let target_intent = infer_call_intent_with_context(
                     &target_call_name,
                     &raw_arg_values,

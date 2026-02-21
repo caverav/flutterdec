@@ -57,6 +57,7 @@ pub struct QualityReport {
     pub semantic_direct_calls: usize,
     pub semantic_indirect_calls: usize,
     pub dispatch_selector_calls: usize,
+    pub target_va_symbol_calls: usize,
     pub block_helper_refs: usize,
     pub raw_arg_name_refs: usize,
     pub raw_register_name_refs: usize,

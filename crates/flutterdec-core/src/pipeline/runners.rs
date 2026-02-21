@@ -228,6 +228,7 @@ pub fn run_decompile(
             "direct": report.semantic_direct_calls,
             "indirect": report.semantic_indirect_calls,
             "dispatch_fallback": report.dispatch_selector_calls,
+            "target_va_symbol": report.target_va_symbol_calls,
             "indirect_ratio": indirect_semantic_ratio
         },
         "semantic_intent": {
@@ -800,6 +801,7 @@ mod runners_tests {
                 semantic_direct_calls: 0,
                 semantic_indirect_calls: 0,
                 dispatch_selector_calls: 0,
+                target_va_symbol_calls: 0,
             },
             PseudocodeArtifact {
                 function_id: 2,
@@ -817,6 +819,7 @@ mod runners_tests {
                 semantic_direct_calls: 0,
                 semantic_indirect_calls: 0,
                 dispatch_selector_calls: 0,
+                target_va_symbol_calls: 0,
             },
         ];
 
