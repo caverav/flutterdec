@@ -507,6 +507,12 @@ fn classify_internal_standard_selector(raw: &str) -> Option<String> {
     if t.eq_ignore_ascii_case("_equivalentYear") {
         return Some("stdlib:dart.core.DateTime.equivalentYear [selector]".to_string());
     }
+    if t.eq_ignore_ascii_case("_listEquals") {
+        return Some("framework:flutter.foundation.listEquals [selector]".to_string());
+    }
+    if t.eq_ignore_ascii_case("_prependTypeArguments") {
+        return Some("runtime:dart_vm.prependTypeArguments [selector]".to_string());
+    }
     None
 }
 

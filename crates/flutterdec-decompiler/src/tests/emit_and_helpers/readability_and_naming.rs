@@ -1195,6 +1195,114 @@ fn annotates_runtime_selector_from_pool_string() {
 }
 
 #[test]
+fn annotates_flutter_internal_list_equals_selector_from_pool_string() {
+    let ir = FunctionIr {
+        function_id: 41,
+        name: "listEqualsSelector".to_string(),
+        entry_va: 0x10080,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0x10080,
+            instrs: vec![
+                LlirInstr {
+                    va: 0x10080,
+                    op: IROp::Other,
+                    src: "mov x0, #1".to_string(),
+                    target: String::new(),
+                },
+                LlirInstr {
+                    va: 0x10084,
+                    op: IROp::LoadPool,
+                    src: "x1".to_string(),
+                    target: "pool[24]".to_string(),
+                },
+                LlirInstr {
+                    va: 0x10088,
+                    op: IROp::Call,
+                    src: "bl #0x7900".to_string(),
+                    target: "#0x7900".to_string(),
+                },
+                LlirInstr {
+                    va: 0x1008c,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+
+    let mut symbols = HashMap::new();
+    symbols.insert(0x7900, "sub_7900".to_string());
+    let mut pool = HashMap::new();
+    pool.insert(24u64, "_listEquals".to_string());
+    let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
+    assert!(
+        artifact.source.contains(
+            "flutter.foundation.listEquals(1, \"_listEquals\" /* pool[24] */, param2, param3); // framework:flutter.foundation.listEquals [selector], was: sub_7900"
+        ),
+        "missing flutter internal listEquals selector annotation:\n{}",
+        artifact.source
+    );
+}
+
+#[test]
+fn annotates_runtime_internal_prepend_type_arguments_selector_from_pool_string() {
+    let ir = FunctionIr {
+        function_id: 42,
+        name: "prependTypeArgsSelector".to_string(),
+        entry_va: 0x10090,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0x10090,
+            instrs: vec![
+                LlirInstr {
+                    va: 0x10090,
+                    op: IROp::Other,
+                    src: "mov x0, #1".to_string(),
+                    target: String::new(),
+                },
+                LlirInstr {
+                    va: 0x10094,
+                    op: IROp::LoadPool,
+                    src: "x1".to_string(),
+                    target: "pool[25]".to_string(),
+                },
+                LlirInstr {
+                    va: 0x10098,
+                    op: IROp::Call,
+                    src: "bl #0x7910".to_string(),
+                    target: "#0x7910".to_string(),
+                },
+                LlirInstr {
+                    va: 0x1009c,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+
+    let mut symbols = HashMap::new();
+    symbols.insert(0x7910, "sub_7910".to_string());
+    let mut pool = HashMap::new();
+    pool.insert(25u64, "_prependTypeArguments".to_string());
+    let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
+    assert!(
+        artifact.source.contains(
+            "dart_vm.prependTypeArguments(1, \"_prependTypeArguments\" /* pool[25] */, param2, param3); // runtime:dart_vm.prependTypeArguments [selector], was: sub_7910"
+        ),
+        "missing runtime internal prependTypeArguments selector annotation:\n{}",
+        artifact.source
+    );
+}
+
+#[test]
 fn annotates_dart_core_compile_time_error_selector_from_pool_string() {
     let ir = FunctionIr {
         function_id: 32,
