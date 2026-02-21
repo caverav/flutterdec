@@ -423,6 +423,127 @@ fn rewrites_indirect_call_to_dispatch_selector_from_metadata_without_pool_string
 }
 
 #[test]
+fn rewrites_indirect_call_from_target_va_metadata_using_symbol_name() {
+    let ir = FunctionIr {
+        function_id: 465,
+        name: "indirectMetadataTargetVa".to_string(),
+        entry_va: 0xc260,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0xc260,
+            instrs: vec![
+                LlirInstr {
+                    va: 0xc260,
+                    op: IROp::LoadPool,
+                    src: "x9".to_string(),
+                    target: "pool[90]".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc264,
+                    op: IROp::Call,
+                    src: "blr x9".to_string(),
+                    target: "x9".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc268,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+
+    let mut symbols = HashMap::new();
+    symbols.insert(0x5000u64, "dart_core_print".to_string());
+    let pool = HashMap::new();
+    let mut metadata = HashMap::new();
+    metadata.insert(
+        90u64,
+        PoolSemanticHint {
+            selector: None,
+            owner_class: None,
+            library_uri: None,
+            target_va: Some(0x5000),
+        },
+    );
+
+    let artifact = emit_pseudocode_with_pool_context(&ir, &symbols, &pool, &metadata);
+    assert!(
+        artifact.source.contains(
+            "dart.core.print(receiver, param1, param2, param3); // stdlib:dart.core.print, indirect via: indirectTarget9, target: pool[90], target_va: 0x5000, was: dart_core_print"
+        ),
+        "target_va metadata should rewrite indirect call using resolved symbol name:\n{}",
+        artifact.source
+    );
+}
+
+#[test]
+fn does_not_rewrite_indirect_call_from_target_va_when_symbol_is_generic() {
+    let ir = FunctionIr {
+        function_id: 466,
+        name: "indirectMetadataTargetVaGeneric".to_string(),
+        entry_va: 0xc270,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0xc270,
+            instrs: vec![
+                LlirInstr {
+                    va: 0xc270,
+                    op: IROp::LoadPool,
+                    src: "x9".to_string(),
+                    target: "pool[91]".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc274,
+                    op: IROp::Call,
+                    src: "blr x9".to_string(),
+                    target: "x9".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc278,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+
+    let mut symbols = HashMap::new();
+    symbols.insert(0x5001u64, "sub_5001".to_string());
+    let pool = HashMap::new();
+    let mut metadata = HashMap::new();
+    metadata.insert(
+        91u64,
+        PoolSemanticHint {
+            selector: None,
+            owner_class: None,
+            library_uri: None,
+            target_va: Some(0x5001),
+        },
+    );
+
+    let artifact = emit_pseudocode_with_pool_context(&ir, &symbols, &pool, &metadata);
+    assert!(
+        artifact
+            .source
+            .contains("indirectTarget9.invoke(receiver, param1, param2, param3)"),
+        "generic target symbols should not force semantic rewrite:\n{}",
+        artifact.source
+    );
+    assert!(
+        !artifact.source.contains("dart.core.print("),
+        "generic target symbols should not invent semantic target names:\n{}",
+        artifact.source
+    );
+}
+
+#[test]
 fn annotates_pool_mapping_in_indirect_target_comment() {
     let ir = FunctionIr {
         function_id: 47,
