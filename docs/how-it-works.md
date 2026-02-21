@@ -92,6 +92,7 @@ sequenceDiagram
 - non-exact pool expressions preserve structure and gain inline pool mapping comments (`pool[<idx> /* "value" */]`)
 - selector intent coverage includes additional Flutter/Dart standards (for example `Stream.listen`, `Future.catchError`, `SchedulerBinding.addPostFrameCallback`, and `ChangeNotifier.addListener`)
 - if selector evidence exists but no known standard mapping applies, indirect callsites use `dispatch.<selector>(...)` as a readable fallback
+- selector evidence for indirect calls is inferred from both call arguments and indirect target expressions
 - canonical names derived from adapter class/library ownership can deterministically label Flutter framework calls (`framework:flutter.*`) and Dart stdlib calls (`stdlib:dart.*`)
 
 3. `adapter`

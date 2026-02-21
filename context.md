@@ -145,6 +145,7 @@ Current scope:
 - non-exact pool expressions now keep structure and add inline pool mapping comments (for example `pool[40 /* "_offsetInBytes" */]`)
 - selector coverage now includes more Flutter and Dart standard methods (for example `Stream.listen`, `Future.catchError`, `SchedulerBinding.addPostFrameCallback`, and ChangeNotifier listener APIs)
 - when selector evidence exists but no standard mapping matches, indirect callsites now use a readable fallback form `dispatch.<selector>(...)`
+- indirect target expressions are now scanned for selector hints too (not only call args), enabling more deterministic rewrites away from `dynamicCall(...)`
 - adapter object-pool entries now include optional metadata fields (`decoded_kind`, `selector`, `target_va`, `owner_class`, `library_uri`) for future deterministic resolution passes
 - model-backed canonical naming now deterministically tags Dart stdlib (`dart:*`) and Flutter framework (`package:flutter/*`) functions when adapter metadata includes class/library ownership
 - stack-pointer-derived base expressions now collapse into indexed stack slots (for example `sp[-0x30]`) instead of synthetic field forms
