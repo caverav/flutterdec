@@ -164,6 +164,7 @@ Current scope:
 - constructor-like standard selectors are now recognized too (for example `KeyedSubtree`, `StreamIterator`, `Float32x4List`, `Int64List`) and rewritten to semantic `.new` paths
 - stack-pointer-derived base expressions now collapse into indexed stack slots (for example `sp[-0x30]`) instead of synthetic field forms
 - selector resolution now also handles `dart:io` and typed-data style selectors such as `supportsAnsiEscapes`, `offsetInBytes`, and `nativeSetFloat32`
+- selector mapping now also recognizes internal stdlib constructors such as `_NativeSocket` and `_CompileTimeError`
 - runtime helper selectors such as `yieldStarIterable` are now tagged and rewritten to readable runtime semantic paths
 - standalone stack-pointer offset arguments now normalize to slot notation (`sp[-0x10]`) instead of raw arithmetic (`(sp - 0x10)`)
 - optional ELF engine fingerprinting to estimate build identity from build-id and marker strings

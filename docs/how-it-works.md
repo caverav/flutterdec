@@ -94,6 +94,7 @@ sequenceDiagram
 - selector catalog now also covers more standard APIs such as `Navigator.pushNamed` and `List.removeAt`
 - constructor-style standard selectors are recognized too (for example `flutter.widgets.KeyedSubtree.new`, `dart.async.StreamIterator.new`, `dart.typed_data.Float32x4List.new`)
 - selector catalog now includes more `dart:io` and typed-data APIs (for example `Stdout.supportsAnsiEscapes`, `TypedData.offsetInBytes`, and `ByteData.setFloat32`)
+- selector catalog now also includes internal stdlib constructor names such as `dart.io._NativeSocket.new` and `dart.core._CompileTimeError.new`
 - runtime helper selectors such as `yieldStarIterable` are now rewritten to runtime semantic paths (`runtime:dart_vm.*`)
 - if selector evidence exists but no known standard mapping applies, indirect callsites use `dispatch.<selector>(...)` as a readable fallback
 - selector evidence for indirect calls is inferred from both call arguments and indirect target expressions
