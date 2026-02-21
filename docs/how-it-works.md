@@ -110,7 +110,7 @@ sequenceDiagram
 - repeated read-only stack slots can be hoisted into named locals (for example `stackSlotNeg0x10`) to reduce repeated stack-offset noise
 - wrapped member-access chains are normalized to cleaner dotted form when safe (for example `((((obj.f7)).f23)).f7` -> `obj.f7.f23.f7`)
 - canonical names derived from adapter class/library ownership can deterministically label Flutter framework calls (`framework:flutter.*`), Dart stdlib calls (`stdlib:dart.*`), and package-owned calls (`package:*`)
-- argument/local declaration typing uses deterministic context from semantic call ownership and literal assignments, allowing concrete types like `flutter.widgets.State`, `dart.async.Future`, `String`, and `bool` instead of defaulting to `dynamic`
+- argument/local declaration typing uses deterministic context from semantic call ownership, constructor semantics (`*.new`), and literal assignments, allowing concrete types like `flutter.widgets.State`, `dart.async.Future`, `dart.async.StreamIterator`, `String`, and `bool` instead of defaulting to `dynamic`
 
 3. `adapter`
 - management path for adapter installation and listing
