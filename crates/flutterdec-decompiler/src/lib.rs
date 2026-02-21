@@ -17,6 +17,14 @@ pub struct PseudocodeArtifact {
     pub dispatch_selector_calls: usize,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct PoolSemanticHint {
+    pub selector: Option<String>,
+    pub owner_class: Option<String>,
+    pub library_uri: Option<String>,
+    pub target_va: Option<u64>,
+}
+
 #[derive(Debug, Default, Clone)]
 struct LiftState {
     reg_values: HashMap<String, String>,
@@ -28,6 +36,7 @@ struct FuncEmitter<'a> {
     ir: &'a FunctionIr,
     symbol_names: &'a HashMap<u64, String>,
     pool_value_hints: HashMap<u64, String>,
+    pool_semantic_hints: HashMap<u64, PoolSemanticHint>,
     locals: BTreeMap<i64, String>,
     block_by_id: HashMap<usize, &'a BasicBlock>,
     va_to_id: HashMap<u64, usize>,
@@ -101,6 +110,7 @@ impl<'a> FuncEmitter<'a> {
             ir,
             symbol_names,
             pool_value_hints: HashMap::new(),
+            pool_semantic_hints: HashMap::new(),
             locals,
             block_by_id,
             va_to_id,
@@ -206,8 +216,19 @@ pub fn emit_pseudocode_with_pool_hints(
     symbol_names: &HashMap<u64, String>,
     pool_value_hints: &HashMap<u64, String>,
 ) -> PseudocodeArtifact {
+    let empty = HashMap::new();
+    emit_pseudocode_with_pool_context(ir, symbol_names, pool_value_hints, &empty)
+}
+
+pub fn emit_pseudocode_with_pool_context(
+    ir: &FunctionIr,
+    symbol_names: &HashMap<u64, String>,
+    pool_value_hints: &HashMap<u64, String>,
+    pool_semantic_hints: &HashMap<u64, PoolSemanticHint>,
+) -> PseudocodeArtifact {
     let mut emitter = FuncEmitter::new(ir, symbol_names);
     emitter.pool_value_hints = pool_value_hints.clone();
+    emitter.pool_semantic_hints = pool_semantic_hints.clone();
     emitter.emit()
 }
 
@@ -224,8 +245,20 @@ pub fn emit_program_with_pool_hints(
     symbol_names: &HashMap<u64, String>,
     pool_value_hints: &HashMap<u64, String>,
 ) -> Vec<PseudocodeArtifact> {
+    let empty = HashMap::new();
+    emit_program_with_pool_context(ir, symbol_names, pool_value_hints, &empty)
+}
+
+pub fn emit_program_with_pool_context(
+    ir: &[FunctionIr],
+    symbol_names: &HashMap<u64, String>,
+    pool_value_hints: &HashMap<u64, String>,
+    pool_semantic_hints: &HashMap<u64, PoolSemanticHint>,
+) -> Vec<PseudocodeArtifact> {
     ir.iter()
-        .map(|f| emit_pseudocode_with_pool_hints(f, symbol_names, pool_value_hints))
+        .map(|f| {
+            emit_pseudocode_with_pool_context(f, symbol_names, pool_value_hints, pool_semantic_hints)
+        })
         .collect()
 }
 

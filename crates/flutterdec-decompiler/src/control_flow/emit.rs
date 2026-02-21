@@ -83,8 +83,16 @@ impl<'a> FuncEmitter<'a> {
             })
             .collect::<Vec<_>>();
         let selector_intent =
-            infer_selector_intent_from_context(&raw_arg_values, &self.pool_value_hints);
-        let selector_name = infer_selector_name_from_context(&raw_arg_values, &self.pool_value_hints);
+            infer_selector_intent_from_context(
+                &raw_arg_values,
+                &self.pool_value_hints,
+                &self.pool_semantic_hints,
+            );
+        let selector_name = infer_selector_name_from_context(
+            &raw_arg_values,
+            &self.pool_value_hints,
+            &self.pool_semantic_hints,
+        );
         let arg_values = raw_arg_values
             .iter()
             .map(|a| self.annotate_pool_refs(a))
@@ -105,14 +113,21 @@ impl<'a> FuncEmitter<'a> {
             let target_selector_intent = infer_selector_intent_from_context(
                 std::slice::from_ref(&target_value),
                 &self.pool_value_hints,
+                &self.pool_semantic_hints,
             );
             let target_selector_name = infer_selector_name_from_context(
                 std::slice::from_ref(&target_value),
                 &self.pool_value_hints,
+                &self.pool_semantic_hints,
             );
-            let intent = infer_call_intent_with_context(&named_target, &raw_arg_values, &self.pool_value_hints)
-                .or(selector_intent.clone())
-                .or(target_selector_intent);
+            let intent = infer_call_intent_with_context(
+                &named_target,
+                &raw_arg_values,
+                &self.pool_value_hints,
+                &self.pool_semantic_hints,
+            )
+            .or(selector_intent.clone())
+            .or(target_selector_intent);
             let selector_name = selector_name.or(target_selector_name);
             if let Some(rewritten_name) = readable_call_name_from_intent(&named_target, intent.as_deref()) {
                 self.semantic_indirect_calls += 1;
@@ -209,8 +224,13 @@ impl<'a> FuncEmitter<'a> {
             } else {
                 format!("fn_{}", target)
             };
-            let intent = infer_call_intent_with_context(&call_name, &raw_arg_values, &self.pool_value_hints)
-                .or(selector_intent);
+            let intent = infer_call_intent_with_context(
+                &call_name,
+                &raw_arg_values,
+                &self.pool_value_hints,
+                &self.pool_semantic_hints,
+            )
+            .or(selector_intent);
             let emitted_call_name = readable_call_name_from_intent(&call_name, intent.as_deref())
                 .unwrap_or_else(|| call_name.clone());
             if emitted_call_name != call_name {
