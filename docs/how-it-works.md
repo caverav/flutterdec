@@ -104,6 +104,7 @@ sequenceDiagram
 - if pool metadata carries `target_va` and symbol resolution for that VA is non-generic, indirect callsites can rewrite through that symbol path with `target_va` traceability comments
 - selector extraction ignores file/URI/path-like strings to reduce false-positive standard-call rewrites
 - unresolved `dispatchTarget` callsites prefer semantic library invoke names when URI evidence exists (for example `flutter.widgets.invoke(...)` or `spotube.models.connect.load.invoke(...)`), otherwise use `<resolvedTarget>.invoke(...)` when the target expression is known, and only then use `dispatch.invoke(...)` fallback to reduce raw `dynamicCall(...)` noise
+- noisy dispatch slot target expressions like `reg21.f0` are normalized behind a readable alias (`dispatchTargetFn`) before unresolved invoke calls
 - unresolved generic indirect aliases (for example `indirectTarget9`) now render as `<target>.invoke(...)` fallback before resorting to raw `dynamicCall(...)`
 - stack-pointer offset arguments are normalized to slot notation (`sp[-0x10]`) so call arguments stay readable
 - wrapped member-access chains are normalized to cleaner dotted form when safe (for example `((((obj.f7)).f23)).f7` -> `obj.f7.f23.f7`)

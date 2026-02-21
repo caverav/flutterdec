@@ -120,6 +120,7 @@ Naming and semantic behavior:
 - indirect callsites can also be rewritten when selector evidence is deterministic, with `indirect via: <target_alias>` traceability
 - unresolved indirect callsites can fall back to readable selector forms when no standard mapping is known: `dispatch.<selector>(...)` for general selectors, and `<Selector>.new(...)` for constructor-like selectors (annotated with `heuristic: constructor-like selector`)
 - unresolved `dispatchTarget` indirect calls now prefer semantic library invoke names when URI evidence exists (for example `flutter.widgets.invoke(...)` or `spotube.models.connect.load.invoke(...)`), then fall back to `<resolvedTarget>.invoke(...)` when the target expression is known, and only then to plain `dispatch.invoke(...)`
+- dispatch table slot targets like `reg21.f0` are now aliased to `dispatchTargetFn` before invoke callsites, so unresolved invoke chains read as `dispatchTargetFn.invoke(...)`
 - unresolved generic indirect aliases now render as `<target>.invoke(...)` (for example `indirectTarget9.invoke(...)`) instead of `dynamicCall(...)`
 - selector evidence can be inferred from indirect target expressions too (for example `target: (pool[...]).f7`), not only call arguments
 - selector extraction skips file/URI/path-like strings (for example `*.dart` paths) to avoid false-positive rewrites
