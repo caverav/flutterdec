@@ -85,6 +85,57 @@ fn rewrites_dispatch_target_fallback_to_dispatch_invoke() {
 }
 
 #[test]
+fn rewrites_dispatch_target_fallback_to_resolved_target_invoke() {
+    let ir = FunctionIr {
+        function_id: 453,
+        name: "dispatchResolvedTargetInvokeFallback".to_string(),
+        entry_va: 0xc108,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0xc108,
+            instrs: vec![
+                LlirInstr {
+                    va: 0xc108,
+                    op: IROp::Other,
+                    src: "mov x30, x1".to_string(),
+                    target: String::new(),
+                },
+                LlirInstr {
+                    va: 0xc10c,
+                    op: IROp::Call,
+                    src: "blr x30".to_string(),
+                    target: "x30".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc110,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+    let symbols = HashMap::new();
+    let artifact = emit_pseudocode(&ir, &symbols);
+    assert!(
+        artifact
+            .source
+            .contains("obj1.invoke(receiver, obj1, param2, param3); // indirect via: dispatchTarget"),
+        "resolved dispatch target should render as target.invoke fallback:\n{}",
+        artifact.source
+    );
+    assert!(
+        !artifact
+            .source
+            .contains("dispatch.invoke(receiver, param1, param2, param3)"),
+        "resolved dispatch target should avoid plain dispatch.invoke fallback:\n{}",
+        artifact.source
+    );
+}
+
+#[test]
 fn rewrites_dispatch_target_fallback_to_library_invoke_when_uri_is_known() {
     let ir = FunctionIr {
         function_id: 451,

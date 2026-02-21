@@ -267,7 +267,7 @@ impl<'a> FuncEmitter<'a> {
                 );
             } else {
                 let mut comments = Vec::new();
-                if target_value != named_target {
+                if named_target != "dispatchTarget" && target_value != named_target {
                     comments.push(format!("target: {}", self.annotate_pool_refs(&target_value)));
                 }
                 if named_target == "dispatchTarget" {
@@ -277,10 +277,23 @@ impl<'a> FuncEmitter<'a> {
                     } else {
                         format!(" // {}", comments.join(", "))
                     };
-                    self.push_line(
-                        indent,
-                        &format!("final {} = dispatch.invoke({});{}", tname, args, suffix),
-                    );
+                    if target_value != named_target {
+                        self.push_line(
+                            indent,
+                            &format!(
+                                "final {} = {}.invoke({});{}",
+                                tname,
+                                self.annotate_pool_refs(&target_value),
+                                args,
+                                suffix
+                            ),
+                        );
+                    } else {
+                        self.push_line(
+                            indent,
+                            &format!("final {} = dispatch.invoke({});{}", tname, args, suffix),
+                        );
+                    }
                 } else if named_target == "cachedTarget"
                     || named_target.starts_with("indirectTarget")
                 {
