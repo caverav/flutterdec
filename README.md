@@ -98,6 +98,8 @@ Naming and semantic behavior:
 - descriptive external names can replace generic placeholders (`sub_*`, `fn_0x*`)
 - selector-based deterministic inference can tag standard calls from object-pool arguments even when call targets stay generic
 - high-confidence callsites are rewritten to semantic paths while keeping traceability with `was: <original_name>`
+- indirect callsites can also be rewritten when selector evidence is deterministic, with `indirect via: <target_alias>` traceability
+- exact `pool[<idx>]` call arguments are rendered as `"value" /* pool[<idx>] */` when a string hint is available
 - recognized calls add intent comments in pseudocode, for example:
   - `// stdlib:dart.core.print`
   - `// stdlib:dart.core.map [selector]`

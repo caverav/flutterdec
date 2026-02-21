@@ -87,6 +87,8 @@ sequenceDiagram
 - external descriptive names replace generic placeholders like `sub_*` and `fn_0x*` when addresses match
 - recognized call names emit semantic intent comments (stdlib/runtime/native) next to call lines
 - when intent is deterministic, callsites are rewritten to semantic paths and include `was: <original_name>` for traceability
+- selector-backed intent can also rewrite indirect callsites and annotate `indirect via: <target_alias>`
+- when a call argument is exactly `pool[<idx>]` and a string hint is known, it is rendered as `"value" /* pool[<idx>] */`
 - canonical names derived from adapter class/library ownership can deterministically label Flutter framework calls (`framework:flutter.*`) and Dart stdlib calls (`stdlib:dart.*`)
 
 3. `adapter`
