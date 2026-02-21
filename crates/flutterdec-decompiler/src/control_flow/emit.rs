@@ -83,7 +83,8 @@ impl<'a> FuncEmitter<'a> {
             })
             .collect::<Vec<_>>();
         let selector_intent =
-            infer_call_intent_with_context("sub_selector_probe", &raw_arg_values, &self.pool_value_hints);
+            infer_selector_intent_from_context(&raw_arg_values, &self.pool_value_hints);
+        let selector_name = infer_selector_name_from_context(&raw_arg_values, &self.pool_value_hints);
         let arg_values = raw_arg_values
             .iter()
             .map(|a| self.annotate_pool_refs(a))
@@ -116,6 +117,24 @@ impl<'a> FuncEmitter<'a> {
                 self.push_line(
                     indent,
                     &format!("final {} = {}({});{}", tname, rewritten_name, args, suffix),
+                );
+            } else if let Some(selector) = selector_name.clone() {
+                let dispatch_name = format!("dispatch.{}", sanitize_name(&selector));
+                let mut comments = Vec::new();
+                comments.push(format!("selector: {}", selector));
+                comments.push(format!("indirect via: {}", named_target));
+                if target_value != named_target {
+                    comments.push(format!("target: {}", self.annotate_pool_refs(&target_value)));
+                }
+                self.push_line(
+                    indent,
+                    &format!(
+                        "final {} = {}({}); // {}",
+                        tname,
+                        dispatch_name,
+                        args,
+                        comments.join(", ")
+                    ),
                 );
             } else {
                 let target_suffix = if target_value != named_target {

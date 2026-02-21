@@ -131,7 +131,36 @@ pub(super) fn infer_call_intent_with_context(
     if let Some(v) = infer_call_intent(call_name) {
         return Some(v);
     }
+    infer_selector_intent_from_context(args, pool_value_hints)
+}
+
+pub(super) fn infer_selector_intent_from_context(
+    args: &[String],
+    pool_value_hints: &HashMap<u64, String>,
+) -> Option<String> {
     infer_selector_intent_from_pool(args, pool_value_hints)
+}
+
+pub(super) fn infer_selector_name_from_context(
+    args: &[String],
+    pool_value_hints: &HashMap<u64, String>,
+) -> Option<String> {
+    for arg in args {
+        for idx in extract_pool_indices(arg) {
+            let Some(v) = pool_value_hints.get(&idx) else {
+                continue;
+            };
+            if let Some(sel) = extract_selector_name(v) {
+                return Some(sel);
+            }
+        }
+        for lit in extract_string_literals(arg) {
+            if let Some(sel) = extract_selector_name(&lit) {
+                return Some(sel);
+            }
+        }
+    }
+    None
 }
 
 fn infer_selector_intent_from_pool(
@@ -151,9 +180,6 @@ fn infer_selector_intent_from_pool(
             if let Some(tag) = classify_standard_selector(&lit) {
                 return Some(tag);
             }
-        }
-        if let Some(tag) = classify_standard_selector(arg) {
-            return Some(tag);
         }
     }
     None
@@ -376,4 +402,54 @@ fn push_unique(out: &mut Vec<String>, s: String) {
     if !s.is_empty() && !out.contains(&s) {
         out.push(s);
     }
+}
+
+fn extract_selector_name(raw: &str) -> Option<String> {
+    let mut t = raw.trim();
+    if t.is_empty() {
+        return None;
+    }
+    if let Some(inner) = t.strip_prefix('"').and_then(|s| s.strip_suffix('"')) {
+        t = inner.trim();
+    }
+    if let Some((prefix, _)) = t.split_once("/* pool[") {
+        t = prefix.trim();
+    }
+    if let Some((before, _)) = t.split_once('@') {
+        t = before.trim();
+    }
+    if let Some((_, after)) = t.split_once(':') {
+        t = after.trim();
+    }
+    while let Some(rest) = t.strip_prefix('_') {
+        t = rest;
+    }
+    if let Some(rest) = t.strip_prefix("init") {
+        t = rest.trim();
+    }
+    if t.is_empty() || t.len() > 96 {
+        return None;
+    }
+
+    let mut out = String::new();
+    for c in t.chars() {
+        if c.is_ascii_alphanumeric() || c == '_' || c == '$' {
+            out.push(c);
+        } else if c == '.' || c == '-' || c == '/' || c == ' ' {
+            if !out.ends_with('_') {
+                out.push('_');
+            }
+        }
+    }
+    while out.ends_with('_') {
+        out.pop();
+    }
+    if out.is_empty() {
+        return None;
+    }
+    let first = out.chars().next().unwrap_or('_');
+    if !first.is_ascii_alphabetic() && first != '_' {
+        return None;
+    }
+    Some(out)
 }
