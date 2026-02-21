@@ -219,6 +219,11 @@ mod tests {
                 index: 0,
                 kind: "String".to_string(),
                 value: "x".to_string(),
+                decoded_kind: None,
+                selector: None,
+                target_va: None,
+                owner_class: None,
+                library_uri: None,
             }],
         };
         let bytes = vec![0xc0, 0x03, 0x5f, 0xd6, 0xc0, 0x03, 0x5f, 0xd6];

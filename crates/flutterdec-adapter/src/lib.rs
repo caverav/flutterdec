@@ -39,6 +39,16 @@ pub struct ObjectPoolEntry {
     pub index: u64,
     pub kind: String,
     pub value: String,
+    #[serde(default)]
+    pub decoded_kind: Option<String>,
+    #[serde(default)]
+    pub selector: Option<String>,
+    #[serde(default)]
+    pub target_va: Option<u64>,
+    #[serde(default)]
+    pub owner_class: Option<String>,
+    #[serde(default)]
+    pub library_uri: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

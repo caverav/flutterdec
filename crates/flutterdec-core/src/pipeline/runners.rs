@@ -265,9 +265,26 @@ fn build_pool_value_hints(model: &ProgramModel) -> HashMap<u64, String> {
     let mut out = HashMap::new();
     for e in &model.object_pool {
         let kind = e.kind.to_ascii_lowercase();
-        if !kind.contains("string") && !kind.contains("onebyte") && !kind.contains("twobyte") {
+        let decoded_kind = e
+            .decoded_kind
+            .as_deref()
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        let string_like = kind.contains("string")
+            || kind.contains("onebyte")
+            || kind.contains("twobyte")
+            || decoded_kind.contains("string")
+            || decoded_kind.contains("selector");
+        if !string_like {
             continue;
         }
+
+        let selector = e.selector.as_deref().unwrap_or("").trim();
+        if !selector.is_empty() && selector.len() <= 128 {
+            out.insert(e.index, selector.to_string());
+            continue;
+        }
+
         let trimmed = e.value.trim();
         if trimmed.is_empty() || trimmed.len() > 256 {
             continue;

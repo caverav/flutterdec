@@ -116,10 +116,52 @@ def _collect_libraries(strings: List[str]) -> List[str]:
     return out[:512]
 
 
+def _selector_from_string(s: str) -> str | None:
+    t = s.strip()
+    if not t:
+        return None
+    if "@" in t:
+        t = t.split("@", 1)[0]
+    if ":" in t:
+        t = t.split(":", 1)[1]
+    t = t.strip()
+    if not t:
+        return None
+    # Keep plausible selector chars, drop noisy payload.
+    cleaned = "".join(ch for ch in t if ch.isalnum() or ch in "._$")
+    if not cleaned:
+        return None
+    if len(cleaned) > 96:
+        return None
+    if not (cleaned[0].isalpha() or cleaned[0] in "_$"):
+        return None
+    return cleaned
+
+
 def _pool_entries(strings: List[str]) -> List[dict]:
     entries = []
     for i, s in enumerate(strings):
-        entries.append({"index": i, "kind": "String", "value": s})
+        decoded_kind = "String"
+        selector = _selector_from_string(s)
+        library_uri = None
+        if s.startswith("package:") and ".dart" in s:
+            decoded_kind = "LibraryUri"
+            library_uri = s
+        elif selector is not None:
+            decoded_kind = "SelectorString"
+
+        entries.append(
+            {
+                "index": i,
+                "kind": "String",
+                "value": s,
+                "decoded_kind": decoded_kind,
+                "selector": selector,
+                "target_va": None,
+                "owner_class": None,
+                "library_uri": library_uri,
+            }
+        )
     return entries
 
 
