@@ -266,3 +266,55 @@ fn renders_stack_access_as_indexed_slot() {
     );
 }
 
+#[test]
+fn collapses_stack_pointer_offset_base_into_indexed_slot() {
+    let ir = FunctionIr {
+        function_id: 21,
+        name: "stackBaseCollapse".to_string(),
+        entry_va: 0xf600,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0xf600,
+            instrs: vec![
+                LlirInstr {
+                    va: 0xf600,
+                    op: IROp::Other,
+                    src: "sub x1, x15, #0x30".to_string(),
+                    target: String::new(),
+                },
+                LlirInstr {
+                    va: 0xf604,
+                    op: IROp::Other,
+                    src: "ldr x2, [x1]".to_string(),
+                    target: String::new(),
+                },
+                LlirInstr {
+                    va: 0xf608,
+                    op: IROp::Other,
+                    src: "str x2, [x15, #8]".to_string(),
+                    target: String::new(),
+                },
+                LlirInstr {
+                    va: 0xf60c,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+
+    let artifact = emit_pseudocode(&ir, &HashMap::new());
+    assert!(
+        artifact.source.contains("sp[-0x30]"),
+        "derived stack base should collapse to indexed slot:\n{}",
+        artifact.source
+    );
+    assert!(
+        !artifact.source.contains("((sp - 0x30)).f0"),
+        "legacy synthetic field form should not remain:\n{}",
+        artifact.source
+    );
+}

@@ -288,7 +288,7 @@ fn annotates_stdlib_call_intent_when_symbol_is_named() {
     assert!(
         artifact
             .source
-            .contains("final t1 = dart_core_print(receiver, param1, param2, param3); // stdlib:dart.core.print"),
+            .contains("final t1 = dart.core.print(receiver, param1, param2, param3); // stdlib:dart.core.print, was: dart_core_print"),
         "missing stdlib call intent annotation:\n{}",
         artifact.source
     );
@@ -335,14 +335,14 @@ fn annotates_runtime_and_native_call_intents() {
     assert!(
         artifact
             .source
-            .contains("vm_runtime_Invoke(receiver, param1, param2, param3); // runtime:dart_vm.invoke"),
+            .contains("dart_vm.invoke(receiver, param1, param2, param3); // runtime:dart_vm.invoke, was: vm_runtime_Invoke"),
         "missing runtime call intent annotation:\n{}",
         artifact.source
     );
     assert!(
         artifact
             .source
-            .contains("native_libc_memcpy(t1, param1, param2, param3); // native:libc.memcpy"),
+            .contains("libc.memcpy(t1, param1, param2, param3); // native:libc.memcpy, was: native_libc_memcpy"),
         "missing native call intent annotation:\n{}",
         artifact.source
     );
@@ -389,14 +389,14 @@ fn annotates_flutter_framework_call_intents() {
     assert!(
         artifact
             .source
-            .contains("flutter_widgets_State_setState(receiver, param1, param2, param3); // framework:flutter.widgets.State.setState"),
+            .contains("flutter.widgets.State.setState(receiver, param1, param2, param3); // framework:flutter.widgets.State.setState, was: flutter_widgets_State_setState"),
         "missing flutter setState intent annotation:\n{}",
         artifact.source
     );
     assert!(
         artifact
             .source
-            .contains("flutter_widgets_StatefulWidget_createState(t1, param1, param2, param3); // framework:flutter.widgets.StatefulWidget.createState"),
+            .contains("flutter.widgets.StatefulWidget.createState(t1, param1, param2, param3); // framework:flutter.widgets.StatefulWidget.createState, was: flutter_widgets_StatefulWidget_createState"),
         "missing flutter createState intent annotation:\n{}",
         artifact.source
     );
@@ -456,7 +456,7 @@ fn annotates_framework_from_pool_selector_when_call_name_is_generic() {
     assert!(
         artifact
             .source
-            .contains("sub_6100(1, 2, pool[42], param3); // framework:flutter.widgets.State.setState [selector]"),
+            .contains("flutter.widgets.State.setState(1, 2, pool[42], param3); // framework:flutter.widgets.State.setState [selector], was: sub_6100"),
         "missing selector-based framework annotation:\n{}",
         artifact.source
     );
