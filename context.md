@@ -128,7 +128,7 @@ The CLI writes `quality.json` and fails the run when strict thresholds are viola
 - report-level semantic intent counts (`framework`, `stdlib`, `runtime`, `native`, selector-tagged, constructor calls)
 - metadata coverage counters in `report.json` (`pool_value_hints`, `pool_semantic_hints`, `pool_target_symbols`)
 - selector fallback diagnostics in `report.json` (`total`, `unique`, top unresolved `selector:` names, and sample call lines)
-- call fallback diagnostics in `report.json` (`dynamicCall`, `dispatch.invoke`, `dispatchTarget` resolved-target `.invoke`, and generic `.invoke` counts)
+- call fallback diagnostics in `report.json` (`dynamicCall`, `dispatch.invoke`, `dispatchTarget` non-dispatch fallback calls, and generic `indirectTargetN(...)` fallback counts)
 - readability regressions such as helper block leakage and raw token leakage
 - omitted path marker count for complex regions that are currently summarized
 - residual loop back-edge summary marker count for loops that are not yet structured
@@ -154,8 +154,8 @@ Current scope:
 - selector coverage now includes more Flutter and Dart standard methods (for example `Stream.listen`, `Future.catchError`, `SchedulerBinding.addPostFrameCallback`, and ChangeNotifier listener APIs)
 - when selector evidence exists but no standard mapping matches, indirect callsites now use readable selector fallback forms: `dispatch.<selector>(...)` for general selectors and `<Selector>.new(...)` for constructor-like selectors (annotated with `heuristic: constructor-like selector`)
 - indirect target expressions are now scanned for selector hints too (not only call args), enabling more deterministic rewrites away from `dynamicCall(...)`
-- unresolved `dispatchTarget` calls now prefer semantic library invoke names when URI evidence exists (for example `flutter.widgets.invoke(...)` or `spotube.models.connect.load.invoke(...)`); otherwise they fall back to `<resolvedTarget>.invoke(...)` when target expressions are known, and only then to `dispatch.invoke(...)`; unresolved generic aliases render as `<target>.invoke(...)`, so raw `dynamicCall(...)` only remains for truly unknown target forms
-- low-level dispatch slot expressions such as `reg21.f0` are now surfaced through a readable alias (`dispatchTargetFn`) before unresolved invoke callsites
+- unresolved `dispatchTarget` calls now prefer semantic library invoke names when URI evidence exists (for example `flutter.widgets.invoke(...)` or `spotube.models.connect.load.invoke(...)`); otherwise they fall back to callable target form `<resolvedTarget>(...)` when target expressions are known, and only then to `dispatch.invoke(...)`; unresolved generic aliases render as callable `<target>(...)`, so raw `dynamicCall(...)` only remains for truly unknown target forms
+- low-level dispatch slot expressions such as `reg21.f0` are now surfaced through a readable alias (`dispatchTargetFn`) before unresolved callable callsites
 - selector extraction now ignores likely file/URI/path-like strings (`*.dart`, paths, URLs) to reduce false-positive standard-call labeling
 - declaration typing now uses deterministic context: semantic call ownership (`flutter.*`/`dart.*`) and literal assignments can upgrade `dynamic` declarations into concrete types (for example `flutter.widgets.State`, `dart.async.Future`, `String`, `bool`)
 - adapter object-pool metadata fields (`decoded_kind`, `selector`, `target_va`, `owner_class`, `library_uri`) are now consumed by decompile for deterministic owner-qualified selector rewrites
