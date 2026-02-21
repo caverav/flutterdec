@@ -549,6 +549,7 @@ Current metrics include:
 The run fails when thresholds are violated.
 
 `report.json` also includes a `semantic_rewrite` aggregate section with direct/indirect/fallback counts and ratios.
+`report.json` also includes a `semantic_intent` aggregate section with framework/stdlib/runtime/native counts, selector-tagged count, and constructor-call count.
 
 Metric formulas:
 
@@ -591,6 +592,8 @@ File naming convention:
 - input metadata
 - counts for libraries, classes, functions, pool entries
 - embedded `quality` object
+- `semantic_rewrite` aggregate
+- `semantic_intent` aggregate
 
 ## How `info` differs from `decompile`
 

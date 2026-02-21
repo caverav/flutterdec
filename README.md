@@ -102,6 +102,11 @@ Output files:
 - `direct`, `indirect`, `dispatch_fallback`
 - `indirect_ratio`
 
+`report.json` also includes a `semantic_intent` summary with:
+- `framework`, `stdlib`, `runtime`, `native`
+- `selector_tagged`
+- `constructor_calls`
+
 Naming and semantic behavior:
 
 - external symbols are normalized into readable call names (for example runtime/native prefixes)
