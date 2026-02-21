@@ -29,6 +29,10 @@ pub(super) fn infer_call_intent(call_name: &str) -> Option<String> {
         }
     }
 
+    if let Some(tag) = infer_flutter_framework_intent(call_name) {
+        return Some(tag);
+    }
+
     if lower.starts_with("vm_runtime_") {
         let name = lower.trim_start_matches("vm_runtime_");
         if !name.is_empty() {
@@ -54,4 +58,27 @@ pub(super) fn infer_call_intent(call_name: &str) -> Option<String> {
     }
 
     None
+}
+
+fn infer_flutter_framework_intent(call_name: &str) -> Option<String> {
+    if !call_name.to_ascii_lowercase().starts_with("flutter_") {
+        return None;
+    }
+    let mut parts = call_name.split('_');
+    let head = parts.next().unwrap_or_default();
+    if !head.eq_ignore_ascii_case("flutter") {
+        return None;
+    }
+    let lib = parts.next()?;
+    let class = parts.next()?;
+    let method = parts.collect::<Vec<_>>().join("_");
+    if lib.is_empty() || class.is_empty() || method.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "framework:flutter.{}.{}.{}",
+        lib.to_ascii_lowercase(),
+        class,
+        method
+    ))
 }

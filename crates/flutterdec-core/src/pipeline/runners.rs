@@ -48,9 +48,16 @@ pub fn run_decompile(
     let mut symbol_merge_inserted = 0usize;
     let mut symbol_merge_replaced_generic = 0usize;
     let mut symbol_merge_skipped = 0usize;
+    let mut standard_model_symbol_count = 0usize;
+    let class_to_library = build_class_library_lookup(&model);
 
     for f in &model.functions {
-        symbol_names.insert(f.entry_va, f.name.clone());
+        let resolved = canonical_standard_model_name(f, &class_to_library)
+            .unwrap_or_else(|| f.name.clone());
+        if resolved != f.name {
+            standard_model_symbol_count += 1;
+        }
+        symbol_names.insert(f.entry_va, resolved);
     }
     for f in &disasm {
         symbol_names
@@ -179,7 +186,8 @@ pub fn run_decompile(
             "inserted": symbol_merge_inserted,
             "replaced_generic": symbol_merge_replaced_generic,
             "skipped": symbol_merge_skipped
-        }
+        },
+        "standard_model_symbols": standard_model_symbol_count
     });
 
     fs::write(
@@ -240,6 +248,69 @@ fn is_generic_symbol_name(name: &str) -> bool {
         return true;
     }
     false
+}
+
+fn build_class_library_lookup(model: &ProgramModel) -> HashMap<String, String> {
+    let mut out = HashMap::new();
+    for c in &model.classes {
+        out.entry(c.name.clone()).or_insert_with(|| c.library_uri.clone());
+    }
+    out
+}
+
+fn canonical_standard_model_name(
+    f: &flutterdec_adapter::FunctionInfo,
+    class_to_library: &HashMap<String, String>,
+) -> Option<String> {
+    if is_generic_symbol_name(&f.name) {
+        return None;
+    }
+    let method = sanitize_symbol_token_stream(&f.name);
+    if method.is_empty() || is_generic_symbol_name(&method) {
+        return None;
+    }
+
+    let lib_uri = class_to_library.get(&f.owner_class)?;
+    if let Some(dart_lib) = dart_library_segment(lib_uri) {
+        return Some(format!("dart_{}_{}", dart_lib, method));
+    }
+    if let Some(flutter_seg) = flutter_library_segment(lib_uri) {
+        let class_name = sanitize_symbol_token_stream(&f.owner_class);
+        if class_name.is_empty() {
+            return None;
+        }
+        return Some(format!("flutter_{}_{}_{}", flutter_seg, class_name, method));
+    }
+    None
+}
+
+fn dart_library_segment(uri: &str) -> Option<String> {
+    let rest = uri.strip_prefix("dart:")?;
+    let seg = rest
+        .split('/')
+        .next()
+        .unwrap_or("")
+        .split('.')
+        .next()
+        .unwrap_or("");
+    let seg = sanitize_symbol_token_stream(seg);
+    if seg.is_empty() {
+        None
+    } else {
+        Some(seg)
+    }
+}
+
+fn flutter_library_segment(uri: &str) -> Option<String> {
+    let rest = uri.strip_prefix("package:flutter/")?;
+    let rest = rest.strip_prefix("src/").unwrap_or(rest);
+    let seg = rest.split('/').next().unwrap_or("").trim_end_matches(".dart");
+    let seg = sanitize_symbol_token_stream(seg);
+    if seg.is_empty() {
+        None
+    } else {
+        Some(seg)
+    }
 }
 
 fn normalize_external_symbol_name(raw: &str) -> String {
@@ -489,5 +560,68 @@ mod runners_tests {
             normalize_external_symbol_name("dart:core::print"),
             "dart_core_print"
         );
+    }
+
+    #[test]
+    fn canonicalizes_standard_model_function_names() {
+        let mut class_lib = HashMap::new();
+        class_lib.insert("_StringBase".to_string(), "dart:core".to_string());
+        class_lib.insert(
+            "State".to_string(),
+            "package:flutter/src/widgets/framework.dart".to_string(),
+        );
+        class_lib.insert(
+            "RenderObject".to_string(),
+            "package:flutter/src/rendering/object.dart".to_string(),
+        );
+
+        let dart_fn = flutterdec_adapter::FunctionInfo {
+            id: 1,
+            name: "toString".to_string(),
+            owner_class: "_StringBase".to_string(),
+            entry_va: 0x1000,
+            size: 4,
+            code_section_va: 0x1000,
+        };
+        assert_eq!(
+            canonical_standard_model_name(&dart_fn, &class_lib).as_deref(),
+            Some("dart_core_toString")
+        );
+
+        let flutter_fn = flutterdec_adapter::FunctionInfo {
+            id: 2,
+            name: "setState".to_string(),
+            owner_class: "State".to_string(),
+            entry_va: 0x2000,
+            size: 4,
+            code_section_va: 0x2000,
+        };
+        assert_eq!(
+            canonical_standard_model_name(&flutter_fn, &class_lib).as_deref(),
+            Some("flutter_widgets_State_setState")
+        );
+
+        let render_fn = flutterdec_adapter::FunctionInfo {
+            id: 3,
+            name: "layout".to_string(),
+            owner_class: "RenderObject".to_string(),
+            entry_va: 0x3000,
+            size: 4,
+            code_section_va: 0x3000,
+        };
+        assert_eq!(
+            canonical_standard_model_name(&render_fn, &class_lib).as_deref(),
+            Some("flutter_rendering_RenderObject_layout")
+        );
+
+        let generic_fn = flutterdec_adapter::FunctionInfo {
+            id: 4,
+            name: "sub_1234".to_string(),
+            owner_class: "State".to_string(),
+            entry_va: 0x4000,
+            size: 4,
+            code_section_va: 0x4000,
+        };
+        assert!(canonical_standard_model_name(&generic_fn, &class_lib).is_none());
     }
 }

@@ -347,3 +347,57 @@ fn annotates_runtime_and_native_call_intents() {
         artifact.source
     );
 }
+
+#[test]
+fn annotates_flutter_framework_call_intents() {
+    let ir = FunctionIr {
+        function_id: 24,
+        name: "frameworkCalls".to_string(),
+        entry_va: 0xf900,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0xf900,
+            instrs: vec![
+                LlirInstr {
+                    va: 0xf900,
+                    op: IROp::Call,
+                    src: "bl #0x6100".to_string(),
+                    target: "#0x6100".to_string(),
+                },
+                LlirInstr {
+                    va: 0xf904,
+                    op: IROp::Call,
+                    src: "bl #0x6200".to_string(),
+                    target: "#0x6200".to_string(),
+                },
+                LlirInstr {
+                    va: 0xf908,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+
+    let mut symbols = HashMap::new();
+    symbols.insert(0x6100, "flutter_widgets_State_setState".to_string());
+    symbols.insert(0x6200, "flutter_widgets_StatefulWidget_createState".to_string());
+    let artifact = emit_pseudocode(&ir, &symbols);
+    assert!(
+        artifact
+            .source
+            .contains("flutter_widgets_State_setState(receiver, param1, param2, param3); // framework:flutter.widgets.State.setState"),
+        "missing flutter setState intent annotation:\n{}",
+        artifact.source
+    );
+    assert!(
+        artifact
+            .source
+            .contains("flutter_widgets_StatefulWidget_createState(t1, param1, param2, param3); // framework:flutter.widgets.StatefulWidget.createState"),
+        "missing flutter createState intent annotation:\n{}",
+        artifact.source
+    );
+}
