@@ -125,3 +125,17 @@ fn simplifies_redundant_wrapped_if_conditions() {
     let got = FuncEmitter::clean_expr(line);
     assert_eq!(got, "  if (arg0 == 1) {");
 }
+
+#[test]
+fn simplifies_wrapped_field_access_chains() {
+    let line = "((((obj1.f15)).f7)).f23".to_string();
+    let got = FuncEmitter::clean_expr(line);
+    assert_eq!(got, "obj1.f15.f7.f23");
+}
+
+#[test]
+fn keeps_parentheses_for_non_member_field_base() {
+    let line = "((arg0 + 1)).f7".to_string();
+    let got = FuncEmitter::clean_expr(line);
+    assert_eq!(got, "((arg0 + 1)).f7");
+}
