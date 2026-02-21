@@ -139,6 +139,116 @@ fn infers_local_names_and_int_types() {
 }
 
 #[test]
+fn infers_receiver_type_from_semantic_call_path() {
+    let ir = FunctionIr {
+        function_id: 801,
+        name: "typedReceiver".to_string(),
+        entry_va: 0x801000,
+        blocks: Vec::new(),
+    };
+    let symbols = HashMap::new();
+    let mut emitter = FuncEmitter::new(&ir, &symbols);
+    emitter.lines = vec![
+        "dynamic typedReceiver(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {".to_string(),
+        "  final t1 = flutter.widgets.State.setState(arg0, arg1, arg2, arg3); // framework:flutter.widgets.State.setState".to_string(),
+        "  return t1;".to_string(),
+        "}".to_string(),
+    ];
+
+    emitter.apply_name_and_type_hints("typedReceiver");
+    let out = emitter.lines.join("\n");
+    assert!(
+        out.contains("flutter.widgets.State receiver"),
+        "semantic call path should type receiver as flutter State:\n{out}"
+    );
+}
+
+#[test]
+fn infers_receiver_type_from_semantic_comment_path() {
+    let ir = FunctionIr {
+        function_id: 802,
+        name: "typedFuture".to_string(),
+        entry_va: 0x802000,
+        blocks: Vec::new(),
+    };
+    let symbols = HashMap::new();
+    let mut emitter = FuncEmitter::new(&ir, &symbols);
+    emitter.lines = vec![
+        "dynamic typedFuture(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {".to_string(),
+        "  final t1 = customFutureCall(arg1, arg2, arg3, arg4); // stdlib:dart.async.Future.then [selector], was: sub_7000".to_string(),
+        "  return t1;".to_string(),
+        "}".to_string(),
+    ];
+
+    emitter.apply_name_and_type_hints("typedFuture");
+    let out = emitter.lines.join("\n");
+    assert!(
+        out.contains("dart.async.Future param1"),
+        "semantic intent comment should type Future receiver:\n{out}"
+    );
+}
+
+#[test]
+fn infers_receiver_type_from_classid_receiver_pattern() {
+    let ir = FunctionIr {
+        function_id: 804,
+        name: "typedClassIdReceiver".to_string(),
+        entry_va: 0x804000,
+        blocks: Vec::new(),
+    };
+    let symbols = HashMap::new();
+    let mut emitter = FuncEmitter::new(&ir, &symbols);
+    emitter.lines = vec![
+        "dynamic typedClassIdReceiver(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {".to_string(),
+        "  final t1 = flutter.widgets.State.dispose(classId(arg0), arg0, \"_dispose\" /* pool[42] */, arg3); // framework:flutter.widgets.State.dispose [selector], indirect via: dispatchTarget".to_string(),
+        "  return t1;".to_string(),
+        "}".to_string(),
+    ];
+
+    emitter.apply_name_and_type_hints("typedClassIdReceiver");
+    let out = emitter.lines.join("\n");
+    assert!(
+        out.contains("flutter.widgets.State receiver"),
+        "classId(receiver), receiver pattern should infer typed receiver:\n{out}"
+    );
+}
+
+#[test]
+fn infers_string_and_bool_types_for_literal_assigned_locals() {
+    let ir = FunctionIr {
+        function_id: 803,
+        name: "typedLiterals".to_string(),
+        entry_va: 0x803000,
+        blocks: Vec::new(),
+    };
+    let symbols = HashMap::new();
+    let mut emitter = FuncEmitter::new(&ir, &symbols);
+    emitter.locals.insert(-8, "local_m8".to_string());
+    emitter.locals.insert(-16, "local_m16".to_string());
+    emitter.lines = vec![
+        "dynamic typedLiterals(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {".to_string(),
+        "  var local_m8;".to_string(),
+        "  var local_m16;".to_string(),
+        "".to_string(),
+        "  local_m8 = \"setState\";".to_string(),
+        "  local_m16 = true;".to_string(),
+        "  return local_m8;".to_string(),
+        "}".to_string(),
+    ];
+
+    emitter.apply_name_and_type_hints("typedLiterals");
+    let out = emitter.lines.join("\n");
+    assert!(
+        out.contains("String tmp"),
+        "string literal assignment should infer String local type:\n{out}"
+    );
+    assert!(
+        out.contains("bool "),
+        "bool literal assignment should infer bool local type:\n{out}"
+    );
+}
+
+#[test]
 fn renames_receiver_argument_from_field_usage() {
     let ir = FunctionIr {
         function_id: 9,
