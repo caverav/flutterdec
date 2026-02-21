@@ -85,6 +85,41 @@ fn infer_flutter_framework_intent(call_name: &str) -> Option<String> {
     ))
 }
 
+pub(super) fn readable_call_name_from_intent(
+    call_name: &str,
+    intent: Option<&str>,
+) -> Option<String> {
+    let intent = intent?;
+    let display = intent_display_path(intent)?;
+    if display == call_name {
+        return None;
+    }
+
+    let lower = call_name.to_ascii_lowercase();
+    let generic = lower.starts_with("fn_0x") || lower.starts_with("sub_");
+    let known_machine_name = lower.starts_with("dart_")
+        || lower.starts_with("flutter_")
+        || lower.starts_with("vm_runtime_")
+        || lower.starts_with("native_libc_")
+        || lower.starts_with("native_android_log_");
+    if generic || known_machine_name {
+        return Some(display);
+    }
+    None
+}
+
+fn intent_display_path(intent: &str) -> Option<String> {
+    let trimmed = intent.trim().trim_end_matches(" [selector]");
+    for prefix in ["framework:", "stdlib:", "runtime:", "native:"] {
+        if let Some(path) = trimmed.strip_prefix(prefix) {
+            if !path.is_empty() {
+                return Some(path.to_string());
+            }
+        }
+    }
+    None
+}
+
 pub(super) fn infer_call_intent_with_context(
     call_name: &str,
     args: &[String],

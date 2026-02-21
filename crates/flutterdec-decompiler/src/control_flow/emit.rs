@@ -41,20 +41,30 @@ impl<'a> FuncEmitter<'a> {
             } else {
                 format!("fn_{}", target)
             };
+            let intent =
+                infer_call_intent_with_context(&call_name, &arg_values, &self.pool_value_hints);
+            let emitted_call_name = readable_call_name_from_intent(&call_name, intent.as_deref())
+                .unwrap_or_else(|| call_name.clone());
+            let mut comments = Vec::new();
+            if let Some(v) = intent {
+                comments.push(v);
+            }
+            if emitted_call_name != call_name {
+                comments.push(format!("was: {}", call_name));
+            }
+            let suffix = if comments.is_empty() {
+                String::new()
+            } else {
+                format!(" // {}", comments.join(", "))
+            };
             self.push_line(
                 indent,
                 &format!(
                     "final {} = {}({});{}",
                     tname,
-                    call_name,
+                    emitted_call_name,
                     args,
-                    infer_call_intent_with_context(
-                        &call_name,
-                        &arg_values,
-                        &self.pool_value_hints,
-                    )
-                        .map(|v| format!(" // {}", v))
-                        .unwrap_or_default()
+                    suffix
                 ),
             );
         }
