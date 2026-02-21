@@ -40,6 +40,49 @@ fn emits_dynamic_call_for_indirect_targets() {
 }
 
 #[test]
+fn names_direct_call_target_when_symbol_is_known() {
+    let ir = FunctionIr {
+        function_id: 44,
+        name: "namedCall".to_string(),
+        entry_va: 0x4010,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0x4010,
+            instrs: vec![
+                LlirInstr {
+                    va: 0x4010,
+                    op: IROp::Call,
+                    src: "bl #0x5000".to_string(),
+                    target: "#0x5000".to_string(),
+                },
+                LlirInstr {
+                    va: 0x4014,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+
+    let mut symbols = HashMap::new();
+    symbols.insert(0x5000, "Flutter_Stdlib_Helper".to_string());
+    let artifact = emit_pseudocode(&ir, &symbols);
+    assert!(
+        artifact.source.contains("Flutter_Stdlib_Helper("),
+        "direct call should use resolved symbol name:\n{}",
+        artifact.source
+    );
+    assert!(
+        !artifact.source.contains("fn_0x5000("),
+        "fallback raw address name should not appear when symbol is known:\n{}",
+        artifact.source
+    );
+}
+
+#[test]
 fn structures_simple_backedge_as_while_loop() {
     let ir = FunctionIr {
         function_id: 13,
@@ -181,4 +224,3 @@ fn normalizes_zero_register_operands() {
         artifact.source
     );
 }
-
