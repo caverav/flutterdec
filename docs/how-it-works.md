@@ -97,7 +97,7 @@ sequenceDiagram
 - selector catalog now also includes internal stdlib constructor names such as `dart.io._NativeSocket.new` and `dart.core._CompileTimeError.new`
 - runtime helper selectors such as `yieldStarIterable` are now rewritten to runtime semantic paths (`runtime:dart_vm.*`)
 - VM-internal constructor selectors such as `_Closure` and `_TypeParameter` are rewritten to runtime constructor paths (`dart_vm.*.new`)
-- if selector evidence exists but no known standard mapping applies, indirect callsites use `dispatch.<selector>(...)` as a readable fallback
+- if selector evidence exists but no known standard mapping applies, indirect callsites use readable selector fallback forms: `dispatch.<selector>(...)` for general selectors and `<Selector>.new(...)` for constructor-like selectors (annotated with `heuristic: constructor-like selector`)
 - selector evidence for indirect calls is inferred from both call arguments and indirect target expressions
 - selector resolution also uses adapter pool metadata (`selector`, `owner_class`, `library_uri`) to build deterministic owner-qualified semantic paths
 - missing selector/owner/library pool metadata can be backfilled from function ownership metadata (`target_va` -> function/class/library) before semantic resolution

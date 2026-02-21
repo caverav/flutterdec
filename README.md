@@ -118,7 +118,7 @@ Naming and semantic behavior:
 - when pool metadata includes a resolvable `target_va`, indirect callsites can also rewrite through that symbol (instead of fallback invoke/dispatch forms)
 - high-confidence callsites are rewritten to semantic paths while keeping traceability with `was: <original_name>`
 - indirect callsites can also be rewritten when selector evidence is deterministic, with `indirect via: <target_alias>` traceability
-- unresolved indirect callsites can fall back to `dispatch.<selector>(...)` when selector evidence exists but no standard mapping is known
+- unresolved indirect callsites can fall back to readable selector forms when no standard mapping is known: `dispatch.<selector>(...)` for general selectors, and `<Selector>.new(...)` for constructor-like selectors (annotated with `heuristic: constructor-like selector`)
 - unresolved `dispatchTarget` indirect calls now prefer semantic library invoke names when URI evidence exists (for example `flutter.widgets.invoke(...)` or `spotube.models.connect.load.invoke(...)`), and otherwise fall back to `dispatch.invoke(...)`
 - unresolved generic indirect aliases now render as `<target>.invoke(...)` (for example `indirectTarget9.invoke(...)`) instead of `dynamicCall(...)`
 - selector evidence can be inferred from indirect target expressions too (for example `target: (pool[...]).f7`), not only call arguments

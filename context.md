@@ -152,7 +152,7 @@ Current scope:
 - when a call argument is exactly `pool[<idx>]` and a string hint exists, it is rendered as `"value" /* pool[<idx>] */`
 - non-exact pool expressions now keep structure and add inline pool mapping comments (for example `pool[40 /* "_offsetInBytes" */]`)
 - selector coverage now includes more Flutter and Dart standard methods (for example `Stream.listen`, `Future.catchError`, `SchedulerBinding.addPostFrameCallback`, and ChangeNotifier listener APIs)
-- when selector evidence exists but no standard mapping matches, indirect callsites now use a readable fallback form `dispatch.<selector>(...)`
+- when selector evidence exists but no standard mapping matches, indirect callsites now use readable selector fallback forms: `dispatch.<selector>(...)` for general selectors and `<Selector>.new(...)` for constructor-like selectors (annotated with `heuristic: constructor-like selector`)
 - indirect target expressions are now scanned for selector hints too (not only call args), enabling more deterministic rewrites away from `dynamicCall(...)`
 - unresolved `dispatchTarget` calls now prefer semantic library invoke names when URI evidence exists (for example `flutter.widgets.invoke(...)` or `spotube.models.connect.load.invoke(...)`); otherwise they fall back to `dispatch.invoke(...)`, and unresolved generic aliases render as `<target>.invoke(...)`, so raw `dynamicCall(...)` only remains for truly unknown target forms
 - selector extraction now ignores likely file/URI/path-like strings (`*.dart`, paths, URLs) to reduce false-positive standard-call labeling
