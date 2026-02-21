@@ -302,6 +302,127 @@ fn rewrites_indirect_call_to_framework_constructor_when_selector_is_class_name()
 }
 
 #[test]
+fn rewrites_indirect_call_from_pool_metadata_semantic_owner() {
+    let ir = FunctionIr {
+        function_id: 463,
+        name: "indirectMetadataSemantic".to_string(),
+        entry_va: 0xc240,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0xc240,
+            instrs: vec![
+                LlirInstr {
+                    va: 0xc240,
+                    op: IROp::Other,
+                    src: "mov x0, #1".to_string(),
+                    target: String::new(),
+                },
+                LlirInstr {
+                    va: 0xc244,
+                    op: IROp::LoadPool,
+                    src: "x1".to_string(),
+                    target: "pool[88]".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc248,
+                    op: IROp::Call,
+                    src: "blr x9".to_string(),
+                    target: "x9".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc24c,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+
+    let symbols = HashMap::new();
+    let mut pool = HashMap::new();
+    pool.insert(88u64, "opaqueSelector".to_string());
+    let mut metadata = HashMap::new();
+    metadata.insert(
+        88u64,
+        PoolSemanticHint {
+            selector: Some("didChangeMetrics".to_string()),
+            owner_class: Some("WidgetsBindingObserver".to_string()),
+            library_uri: Some("package:flutter/src/widgets/binding.dart".to_string()),
+            target_va: None,
+        },
+    );
+
+    let artifact = emit_pseudocode_with_pool_context(&ir, &symbols, &pool, &metadata);
+    assert!(
+        artifact.source.contains(
+            "flutter.widgets.WidgetsBindingObserver.didChangeMetrics(1, \"opaqueSelector\" /* pool[88] */, param2, param3); // framework:flutter.widgets.WidgetsBindingObserver.didChangeMetrics [selector], indirect via: indirectTarget9"
+        ),
+        "pool metadata should drive deterministic semantic owner path rewrite:\n{}",
+        artifact.source
+    );
+}
+
+#[test]
+fn rewrites_indirect_call_to_dispatch_selector_from_metadata_without_pool_string() {
+    let ir = FunctionIr {
+        function_id: 464,
+        name: "indirectMetadataDispatch".to_string(),
+        entry_va: 0xc250,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0xc250,
+            instrs: vec![
+                LlirInstr {
+                    va: 0xc250,
+                    op: IROp::LoadPool,
+                    src: "x1".to_string(),
+                    target: "pool[89]".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc254,
+                    op: IROp::Call,
+                    src: "blr x9".to_string(),
+                    target: "x9".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc258,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+
+    let symbols = HashMap::new();
+    let pool = HashMap::new();
+    let mut metadata = HashMap::new();
+    metadata.insert(
+        89u64,
+        PoolSemanticHint {
+            selector: Some("customDispatch42".to_string()),
+            owner_class: None,
+            library_uri: None,
+            target_va: None,
+        },
+    );
+
+    let artifact = emit_pseudocode_with_pool_context(&ir, &symbols, &pool, &metadata);
+    assert!(
+        artifact.source.contains(
+            "dispatch.customDispatch42(receiver, pool[89], param2, param3); // selector: customDispatch42, indirect via: indirectTarget9"
+        ),
+        "selector metadata should provide dispatch fallback names without string pool hint:\n{}",
+        artifact.source
+    );
+}
+
+#[test]
 fn annotates_pool_mapping_in_indirect_target_comment() {
     let ir = FunctionIr {
         function_id: 47,
