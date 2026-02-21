@@ -1,4 +1,13 @@
 impl<'a> FuncEmitter<'a> {
+    fn normalize_stack_slot_expr(expr: &str) -> Option<String> {
+        let trimmed = expr.trim();
+        let (base, off) = parse_stack_base_offset(trimmed)?;
+        if off == 0 && trimmed == base {
+            return None;
+        }
+        Some(format!("{base}[{}]", fmt_int(off)))
+    }
+
     pub(super) fn field_expr(base: &str, off: i64) -> String {
         if let Some((stack_base, stack_off)) = parse_stack_base_offset(base) {
             return format!("{stack_base}[{}]", fmt_int(stack_off + off));
@@ -162,6 +171,9 @@ impl<'a> FuncEmitter<'a> {
         s = Self::rewrite_negated_comparisons(&s);
         s = Self::rewrite_bitfield_classid(&s);
         s = Self::simplify_wrapped_if_condition(&s);
+        if let Some(stack_slot) = Self::normalize_stack_slot_expr(&s) {
+            s = stack_slot;
+        }
         s
     }
 }

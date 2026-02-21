@@ -161,8 +161,8 @@ fn folds_nested_stack_offset_arithmetic() {
 
     let artifact = emit_pseudocode(&ir, &HashMap::new());
     assert!(
-        artifact.source.contains("(sp - 0x10)"),
-        "stack-offset expression should fold:\n{}",
+        artifact.source.contains("sp[-0x10]"),
+        "stack-offset expression should fold into slot notation:\n{}",
         artifact.source
     );
     assert!(

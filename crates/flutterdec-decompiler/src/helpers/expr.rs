@@ -86,6 +86,16 @@ pub(super) fn parse_stack_base_offset(expr: &str) -> Option<(String, i64)> {
     if t == "sp" || t == "stack" {
         return Some((t.to_string(), 0));
     }
+    if let Some(inner) = t.strip_suffix(']') {
+        if let Some((base, index)) = inner.split_once('[') {
+            let base = base.trim();
+            if (base == "sp" || base == "stack") && !index.trim().is_empty() {
+                if let Some(off) = parse_expr_int(index) {
+                    return Some((base.to_string(), off));
+                }
+            }
+        }
+    }
     if let Some(inner) = t.strip_prefix('(').and_then(|s| s.strip_suffix(')')) {
         if let Some((base, off)) = parse_stack_base_offset(inner) {
             return Some((base, off));
@@ -122,6 +132,11 @@ pub(super) fn simplify_bin_expr(lhs: String, op: &str, rhs: String) -> String {
             if let (Some(a), Some(b)) = (l_int, r_int) {
                 return fmt_int(a + b);
             }
+            if let (Some((stack_base, stack_off)), Some(delta)) =
+                (parse_stack_base_offset(lt), r_int)
+            {
+                return format!("{stack_base}[{}]", fmt_int(stack_off + delta));
+            }
             if let (Some((base, off)), Some(delta)) = (parse_base_offset_expr(lt), r_int) {
                 let sum = off + delta;
                 if sum == 0 {
@@ -139,6 +154,11 @@ pub(super) fn simplify_bin_expr(lhs: String, op: &str, rhs: String) -> String {
             }
             if let (Some(a), Some(b)) = (l_int, r_int) {
                 return fmt_int(a - b);
+            }
+            if let (Some((stack_base, stack_off)), Some(delta)) =
+                (parse_stack_base_offset(lt), r_int)
+            {
+                return format!("{stack_base}[{}]", fmt_int(stack_off - delta));
             }
             if let (Some((base, off)), Some(delta)) = (parse_base_offset_expr(lt), r_int) {
                 let sum = off - delta;
