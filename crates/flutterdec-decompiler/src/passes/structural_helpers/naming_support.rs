@@ -161,6 +161,19 @@ impl<'a> FuncEmitter<'a> {
 
         for line in lines {
             if let Some((callee, args)) = Self::extract_call_site(line) {
+                if let Some(assign_id) = Self::extract_assignment_ident(line) {
+                    if ids.contains(&assign_id) {
+                        if let Some(local_ty) = Self::constructed_type_from_semantic_path(&callee) {
+                            Self::upsert_inferred_type(&mut out, &assign_id, &local_ty);
+                        } else if let Some(path) = Self::extract_semantic_path_from_comment(line) {
+                            if let Some(local_ty) = Self::constructed_type_from_semantic_path(&path)
+                            {
+                                Self::upsert_inferred_type(&mut out, &assign_id, &local_ty);
+                            }
+                        }
+                    }
+                }
+
                 if let Some(receiver_ty) = Self::receiver_type_from_semantic_path(&callee) {
                     if let Some(receiver_id) = Self::receiver_ident_from_args(&args) {
                         if ids.contains(&receiver_id) {
@@ -229,7 +242,7 @@ impl<'a> FuncEmitter<'a> {
     fn extract_semantic_path_from_comment(line: &str) -> Option<String> {
         let (_, comment) = line.split_once("//")?;
         let comment = comment.trim();
-        for prefix in ["framework:", "stdlib:"] {
+        for prefix in ["framework:", "stdlib:", "runtime:", "package:"] {
             if let Some(rest) = comment.strip_prefix(prefix) {
                 let token = rest
                     .split(|c: char| c.is_whitespace() || c == ',')
@@ -244,10 +257,29 @@ impl<'a> FuncEmitter<'a> {
         None
     }
 
-    fn receiver_type_from_semantic_path(path: &str) -> Option<String> {
-        if !(path.starts_with("flutter.") || path.starts_with("dart.")) {
+    fn extract_assignment_ident(line: &str) -> Option<String> {
+        let t = line.trim();
+        let eq_idx = t.find('=')?;
+        let lhs = t[..eq_idx].trim();
+        let lhs = lhs
+            .strip_prefix("final ")
+            .or_else(|| lhs.strip_prefix("var "))
+            .unwrap_or(lhs)
+            .trim();
+        let ident = lhs.split_whitespace().last()?.trim();
+        if ident.is_empty()
+            || !ident.chars().all(Self::is_ident_char)
+            || !ident
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+        {
             return None;
         }
+        Some(ident.to_string())
+    }
+
+    fn receiver_type_from_semantic_path(path: &str) -> Option<String> {
         let parts: Vec<&str> = path.split('.').filter(|p| !p.is_empty()).collect();
         if parts.len() < 4 {
             return None;
@@ -255,6 +287,45 @@ impl<'a> FuncEmitter<'a> {
         if parts.last().is_some_and(|m| m.eq_ignore_ascii_case("new")) {
             return None;
         }
+
+        if !(path.starts_with("flutter.") || path.starts_with("dart.")) {
+            let first = parts.first().copied().unwrap_or_default();
+            let first_is_package_like = !first.is_empty()
+                && first
+                    .chars()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_');
+            if !first_is_package_like {
+                return None;
+            }
+            let owner = parts.get(parts.len().saturating_sub(2)).copied().unwrap_or("");
+            if owner.is_empty() || !owner.chars().next().is_some_and(|c| c.is_ascii_uppercase()) {
+                return None;
+            }
+        }
+
+        Some(parts[..parts.len() - 1].join("."))
+    }
+
+    fn constructed_type_from_semantic_path(path: &str) -> Option<String> {
+        let parts: Vec<&str> = path.split('.').filter(|p| !p.is_empty()).collect();
+        if parts.len() < 2 {
+            return None;
+        }
+        if !parts.last().is_some_and(|m| m.eq_ignore_ascii_case("new")) {
+            return None;
+        }
+
+        let first = parts.first().copied().unwrap_or_default();
+        let first_is_supported_root = first == "flutter"
+            || first == "dart"
+            || first == "dart_vm"
+            || first
+                .chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_');
+        if !first_is_supported_root {
+            return None;
+        }
+
         Some(parts[..parts.len() - 1].join("."))
     }
 

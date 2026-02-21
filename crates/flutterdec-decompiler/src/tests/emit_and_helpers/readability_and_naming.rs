@@ -189,6 +189,31 @@ fn infers_receiver_type_from_semantic_comment_path() {
 }
 
 #[test]
+fn infers_receiver_type_from_package_owner_semantic_comment_path() {
+    let ir = FunctionIr {
+        function_id: 808,
+        name: "typedPackageReceiver".to_string(),
+        entry_va: 0x808000,
+        blocks: Vec::new(),
+    };
+    let symbols = HashMap::new();
+    let mut emitter = FuncEmitter::new(&ir, &symbols);
+    emitter.lines = vec![
+        "dynamic typedPackageReceiver(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {".to_string(),
+        "  final t1 = sub_9300(arg1, arg2, arg3, arg4); // package:spotube.models.connect.load.ConnectService.executeCommandAsync [selector], was: sub_9300".to_string(),
+        "  return t1;".to_string(),
+        "}".to_string(),
+    ];
+
+    emitter.apply_name_and_type_hints("typedPackageReceiver");
+    let out = emitter.lines.join("\n");
+    assert!(
+        out.contains("spotube.models.connect.load.ConnectService param1"),
+        "package owner semantic comment should type receiver with package owner path:\n{out}"
+    );
+}
+
+#[test]
 fn infers_receiver_type_from_classid_receiver_pattern() {
     let ir = FunctionIr {
         function_id: 804,
@@ -239,6 +264,62 @@ fn does_not_infer_receiver_type_from_constructor_semantic_path() {
     assert!(
         !out.contains("dart.typed_data.Int64List receiver"),
         "constructor semantic paths should not be treated as instance receiver calls:\n{out}"
+    );
+}
+
+#[test]
+fn infers_local_type_from_constructor_call_path() {
+    let ir = FunctionIr {
+        function_id: 806,
+        name: "typedCtorLocal".to_string(),
+        entry_va: 0x806000,
+        blocks: Vec::new(),
+    };
+    let symbols = HashMap::new();
+    let mut emitter = FuncEmitter::new(&ir, &symbols);
+    emitter.locals.insert(-8, "local_m8".to_string());
+    emitter.lines = vec![
+        "dynamic typedCtorLocal(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {".to_string(),
+        "  var local_m8;".to_string(),
+        "".to_string(),
+        "  local_m8 = dart.async.StreamIterator.new(arg0, arg1, arg2, arg3); // stdlib:dart.async.StreamIterator.new [selector], was: sub_9100".to_string(),
+        "  return local_m8;".to_string(),
+        "}".to_string(),
+    ];
+
+    emitter.apply_name_and_type_hints("typedCtorLocal");
+    let out = emitter.lines.join("\n");
+    assert!(
+        out.contains("dart.async.StreamIterator tmp"),
+        "constructor semantic call should infer local constructor type:\n{out}"
+    );
+}
+
+#[test]
+fn infers_local_type_from_constructor_semantic_comment() {
+    let ir = FunctionIr {
+        function_id: 807,
+        name: "typedCtorCommentLocal".to_string(),
+        entry_va: 0x807000,
+        blocks: Vec::new(),
+    };
+    let symbols = HashMap::new();
+    let mut emitter = FuncEmitter::new(&ir, &symbols);
+    emitter.locals.insert(-8, "local_m8".to_string());
+    emitter.lines = vec![
+        "dynamic typedCtorCommentLocal(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {".to_string(),
+        "  var local_m8;".to_string(),
+        "".to_string(),
+        "  local_m8 = sub_9200(arg0, arg1, arg2, arg3); // stdlib:dart.async.StreamIterator.new [selector], was: sub_9200".to_string(),
+        "  return local_m8;".to_string(),
+        "}".to_string(),
+    ];
+
+    emitter.apply_name_and_type_hints("typedCtorCommentLocal");
+    let out = emitter.lines.join("\n");
+    assert!(
+        out.contains("dart.async.StreamIterator tmp"),
+        "constructor semantic comment should infer local constructor type:\n{out}"
     );
 }
 
