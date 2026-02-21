@@ -1,4 +1,110 @@
 impl<'a> FuncEmitter<'a> {
+    fn is_simple_member_expr(expr: &str) -> bool {
+        let t = expr.trim();
+        !t.is_empty()
+            && t.chars().all(|c| {
+                c.is_ascii_alphanumeric()
+                    || c == '_'
+                    || c == '$'
+                    || c == '.'
+                    || c == '['
+                    || c == ']'
+                    || c == '('
+                    || c == ')'
+            })
+    }
+
+    fn simplify_wrapped_member_access_once(input: &str) -> String {
+        let bytes = input.as_bytes();
+        let mut out = String::new();
+        let mut i = 0usize;
+        while i < bytes.len() {
+            if i + 3 < bytes.len() && bytes[i] == b'(' && bytes[i + 1] == b'(' {
+                let mut depth = 0i32;
+                let mut j = i;
+                while j < bytes.len() {
+                    let c = bytes[j] as char;
+                    if c == '(' {
+                        depth += 1;
+                    } else if c == ')' {
+                        depth -= 1;
+                        if depth == 0 {
+                            break;
+                        }
+                    }
+                    j += 1;
+                }
+                if j < bytes.len()
+                    && j + 1 < bytes.len()
+                    && bytes[j + 1] == b'.'
+                    && j >= i + 3
+                    && bytes[j - 1] == b')'
+                {
+                    let inner = input[i + 2..j - 1].trim();
+                    if Self::is_simple_member_expr(inner) {
+                        out.push('(');
+                        out.push_str(inner);
+                        out.push(')');
+                        i = j + 1;
+                        continue;
+                    }
+                }
+            }
+            out.push(bytes[i] as char);
+            i += 1;
+        }
+        out
+    }
+
+    fn simplify_parenthesized_member_access_once(input: &str) -> String {
+        let bytes = input.as_bytes();
+        let mut out = String::new();
+        let mut i = 0usize;
+        while i < bytes.len() {
+            if bytes[i] == b'(' {
+                let mut depth = 0i32;
+                let mut j = i;
+                while j < bytes.len() {
+                    let c = bytes[j] as char;
+                    if c == '(' {
+                        depth += 1;
+                    } else if c == ')' {
+                        depth -= 1;
+                        if depth == 0 {
+                            break;
+                        }
+                    }
+                    j += 1;
+                }
+                if j < bytes.len() && j + 1 < bytes.len() && bytes[j + 1] == b'.' {
+                    let inner = input[i + 1..j].trim();
+                    if Self::is_simple_member_expr(inner) {
+                        out.push_str(inner);
+                        i = j + 1;
+                        continue;
+                    }
+                }
+            }
+            out.push(bytes[i] as char);
+            i += 1;
+        }
+        out
+    }
+
+    fn simplify_wrapped_member_accesses(input: &str) -> String {
+        let mut cur = input.to_string();
+        for _ in 0..8 {
+            let next = Self::simplify_parenthesized_member_access_once(
+                &Self::simplify_wrapped_member_access_once(&cur),
+            );
+            if next == cur {
+                break;
+            }
+            cur = next;
+        }
+        cur
+    }
+
     fn normalize_stack_slot_expr(expr: &str) -> Option<String> {
         let trimmed = expr.trim();
         let (base, off) = parse_stack_base_offset(trimmed)?;
@@ -170,6 +276,7 @@ impl<'a> FuncEmitter<'a> {
         s = s.replace(" + x28", "");
         s = Self::rewrite_negated_comparisons(&s);
         s = Self::rewrite_bitfield_classid(&s);
+        s = Self::simplify_wrapped_member_accesses(&s);
         s = Self::simplify_wrapped_if_condition(&s);
         if let Some(stack_slot) = Self::normalize_stack_slot_expr(&s) {
             s = stack_slot;
