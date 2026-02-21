@@ -144,8 +144,8 @@ fn annotates_pool_mapping_in_indirect_target_comment() {
     assert!(
         artifact
             .source
-            .contains("dynamicCall(indirectTarget9, [receiver, param1, param2, param3]); // target: (pool[40 /* \"_offsetInBytes\" */]).f7"),
-        "pool mapping should be shown in indirect target comment:\n{}",
+            .contains("dispatch.offsetInBytes(receiver, param1, param2, param3); // selector: offsetInBytes, indirect via: indirectTarget9, target: (pool[40 /* \"_offsetInBytes\" */]).f7"),
+        "pool mapping should drive dispatch selector rewrite:\n{}",
         artifact.source
     );
 }

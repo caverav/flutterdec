@@ -102,8 +102,18 @@ impl<'a> FuncEmitter<'a> {
                 .get(&target)
                 .cloned()
                 .unwrap_or_else(|| named_target.clone());
+            let target_selector_intent = infer_selector_intent_from_context(
+                std::slice::from_ref(&target_value),
+                &self.pool_value_hints,
+            );
+            let target_selector_name = infer_selector_name_from_context(
+                std::slice::from_ref(&target_value),
+                &self.pool_value_hints,
+            );
             let intent = infer_call_intent_with_context(&named_target, &raw_arg_values, &self.pool_value_hints)
-                .or(selector_intent.clone());
+                .or(selector_intent.clone())
+                .or(target_selector_intent);
+            let selector_name = selector_name.or(target_selector_name);
             if let Some(rewritten_name) = readable_call_name_from_intent(&named_target, intent.as_deref()) {
                 let mut comments = Vec::new();
                 if let Some(v) = intent {
