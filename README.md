@@ -110,6 +110,7 @@ Naming and semantic behavior:
 - high-confidence callsites are rewritten to semantic paths while keeping traceability with `was: <original_name>`
 - indirect callsites can also be rewritten when selector evidence is deterministic, with `indirect via: <target_alias>` traceability
 - unresolved indirect callsites can fall back to `dispatch.<selector>(...)` when selector evidence exists but no standard mapping is known
+- unresolved `dispatchTarget` indirect calls now render as `dispatch.invoke(...)` instead of raw `dynamicCall(dispatchTarget, ...)`
 - selector evidence can be inferred from indirect target expressions too (for example `target: (pool[...]).f7`), not only call arguments
 - selector extraction skips file/URI/path-like strings (for example `*.dart` paths) to avoid false-positive rewrites
 - exact `pool[<idx>]` call arguments are rendered as `"value" /* pool[<idx>] */` when a string hint is available
