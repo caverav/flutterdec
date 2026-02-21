@@ -588,6 +588,120 @@ fn keeps_dispatch_fallback_for_plain_current_selector_name() {
 }
 
 #[test]
+fn rewrites_indirect_call_to_stdlib_datetime_equivalent_year_when_internal_selector_is_known() {
+    let ir = FunctionIr {
+        function_id: 475,
+        name: "indirectStdlibDateTimeEquivalentYear".to_string(),
+        entry_va: 0xc2f0,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0xc2f0,
+            instrs: vec![
+                LlirInstr {
+                    va: 0xc2f0,
+                    op: IROp::Other,
+                    src: "mov x0, #1".to_string(),
+                    target: String::new(),
+                },
+                LlirInstr {
+                    va: 0xc2f4,
+                    op: IROp::LoadPool,
+                    src: "x1".to_string(),
+                    target: "pool[96]".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc2f8,
+                    op: IROp::Call,
+                    src: "blr x9".to_string(),
+                    target: "x9".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc2fc,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+
+    let symbols = HashMap::new();
+    let mut pool = HashMap::new();
+    pool.insert(96u64, "_equivalentYear".to_string());
+    let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
+    assert!(
+        artifact.source.contains(
+            "dart.core.DateTime.equivalentYear(1, \"_equivalentYear\" /* pool[96] */, param2, param3); // stdlib:dart.core.DateTime.equivalentYear [selector], indirect via: indirectTarget9"
+        ),
+        "known internal _equivalentYear selector should rewrite to stdlib DateTime.equivalentYear call:\n{}",
+        artifact.source
+    );
+    assert!(
+        !artifact.source.contains("dispatch.equivalentYear("),
+        "known internal _equivalentYear selector should avoid dispatch fallback call:\n{}",
+        artifact.source
+    );
+}
+
+#[test]
+fn keeps_dispatch_fallback_for_plain_equivalent_year_selector_name() {
+    let ir = FunctionIr {
+        function_id: 476,
+        name: "indirectPlainEquivalentYearSelector".to_string(),
+        entry_va: 0xc300,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0xc300,
+            instrs: vec![
+                LlirInstr {
+                    va: 0xc300,
+                    op: IROp::Other,
+                    src: "mov x0, #1".to_string(),
+                    target: String::new(),
+                },
+                LlirInstr {
+                    va: 0xc304,
+                    op: IROp::LoadPool,
+                    src: "x1".to_string(),
+                    target: "pool[97]".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc308,
+                    op: IROp::Call,
+                    src: "blr x9".to_string(),
+                    target: "x9".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc30c,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+
+    let symbols = HashMap::new();
+    let mut pool = HashMap::new();
+    pool.insert(97u64, "equivalentYear".to_string());
+    let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
+    assert!(
+        artifact.source.contains("dispatch.equivalentYear(1, \"equivalentYear\" /* pool[97] */, param2, param3); // selector: equivalentYear, indirect via: indirectTarget9"),
+        "plain equivalentYear selector should stay dispatch fallback to avoid false positives:\n{}",
+        artifact.source
+    );
+    assert!(
+        !artifact.source.contains("dart.core.DateTime.equivalentYear("),
+        "plain equivalentYear selector should not force stdlib DateTime.equivalentYear mapping:\n{}",
+        artifact.source
+    );
+}
+
+#[test]
 fn rewrites_indirect_call_to_framework_navigator_pushnamed_when_selector_is_known() {
     let ir = FunctionIr {
         function_id: 461,

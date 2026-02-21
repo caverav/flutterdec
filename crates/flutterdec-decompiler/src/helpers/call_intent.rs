@@ -504,6 +504,9 @@ fn classify_internal_standard_selector(raw: &str) -> Option<String> {
     if t.eq_ignore_ascii_case("_current") {
         return Some("stdlib:dart.core.Iterator.current [selector]".to_string());
     }
+    if t.eq_ignore_ascii_case("_equivalentYear") {
+        return Some("stdlib:dart.core.DateTime.equivalentYear [selector]".to_string());
+    }
     None
 }
 
