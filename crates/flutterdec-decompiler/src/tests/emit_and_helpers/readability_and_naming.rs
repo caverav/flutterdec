@@ -816,3 +816,111 @@ fn annotates_dart_io_selector_from_pool_string() {
         artifact.source
     );
 }
+
+#[test]
+fn annotates_native_prefixed_typed_data_selector_from_pool_string() {
+    let ir = FunctionIr {
+        function_id: 30,
+        name: "nativeTypedDataSelector".to_string(),
+        entry_va: 0xff00,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0xff00,
+            instrs: vec![
+                LlirInstr {
+                    va: 0xff00,
+                    op: IROp::Other,
+                    src: "mov x0, #1".to_string(),
+                    target: String::new(),
+                },
+                LlirInstr {
+                    va: 0xff04,
+                    op: IROp::LoadPool,
+                    src: "x1".to_string(),
+                    target: "pool[15]".to_string(),
+                },
+                LlirInstr {
+                    va: 0xff08,
+                    op: IROp::Call,
+                    src: "bl #0x7400".to_string(),
+                    target: "#0x7400".to_string(),
+                },
+                LlirInstr {
+                    va: 0xff0c,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+
+    let mut symbols = HashMap::new();
+    symbols.insert(0x7400, "sub_7400".to_string());
+    let mut pool = HashMap::new();
+    pool.insert(15u64, "nativeSetFloat32".to_string());
+    let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
+    assert!(
+        artifact.source.contains(
+            "dart.typed_data.ByteData.setFloat32(1, \"nativeSetFloat32\" /* pool[15] */, param2, param3); // stdlib:dart.typed_data.ByteData.setFloat32 [selector], was: sub_7400"
+        ),
+        "missing native-prefixed typed_data selector annotation:\n{}",
+        artifact.source
+    );
+}
+
+#[test]
+fn annotates_runtime_selector_from_pool_string() {
+    let ir = FunctionIr {
+        function_id: 31,
+        name: "runtimeSelector".to_string(),
+        entry_va: 0x10000,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0x10000,
+            instrs: vec![
+                LlirInstr {
+                    va: 0x10000,
+                    op: IROp::Other,
+                    src: "mov x0, #1".to_string(),
+                    target: String::new(),
+                },
+                LlirInstr {
+                    va: 0x10004,
+                    op: IROp::LoadPool,
+                    src: "x1".to_string(),
+                    target: "pool[16]".to_string(),
+                },
+                LlirInstr {
+                    va: 0x10008,
+                    op: IROp::Call,
+                    src: "bl #0x7500".to_string(),
+                    target: "#0x7500".to_string(),
+                },
+                LlirInstr {
+                    va: 0x1000c,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+
+    let mut symbols = HashMap::new();
+    symbols.insert(0x7500, "sub_7500".to_string());
+    let mut pool = HashMap::new();
+    pool.insert(16u64, "yieldStarIterable".to_string());
+    let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
+    assert!(
+        artifact.source.contains(
+            "dart_vm.yieldStarIterable(1, \"yieldStarIterable\" /* pool[16] */, param2, param3); // runtime:dart_vm.yieldStarIterable [selector], was: sub_7500"
+        ),
+        "missing runtime selector annotation:\n{}",
+        artifact.source
+    );
+}
