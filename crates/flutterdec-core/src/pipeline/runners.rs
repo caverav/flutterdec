@@ -24,6 +24,16 @@ pub fn run_info(repo_root: &Path, input_path: &Path) -> Result<InfoOutput> {
     Ok(out)
 }
 
+#[derive(Debug, Default, Clone, Copy)]
+struct SemanticIntentSummary {
+    framework: usize,
+    stdlib: usize,
+    runtime: usize,
+    native: usize,
+    selector_tagged: usize,
+    constructor_calls: usize,
+}
+
 pub fn run_decompile(
     repo_root: &Path,
     input_path: &Path,
@@ -152,6 +162,7 @@ pub fn run_decompile(
     }
 
     let report = quality_from_artifacts(&model, &disasm, &pseudo, opt);
+    let semantic_intent = collect_semantic_intent_summary(&pseudo);
     let semantic_total =
         report.semantic_direct_calls + report.semantic_indirect_calls + report.dispatch_selector_calls;
     let semantic_ratio = if report.total_calls == 0 {
@@ -211,6 +222,14 @@ pub fn run_decompile(
             "indirect": report.semantic_indirect_calls,
             "dispatch_fallback": report.dispatch_selector_calls,
             "indirect_ratio": indirect_semantic_ratio
+        },
+        "semantic_intent": {
+            "framework": semantic_intent.framework,
+            "stdlib": semantic_intent.stdlib,
+            "runtime": semantic_intent.runtime,
+            "native": semantic_intent.native,
+            "selector_tagged": semantic_intent.selector_tagged,
+            "constructor_calls": semantic_intent.constructor_calls
         }
     });
 
@@ -224,6 +243,36 @@ pub fn run_decompile(
     }
 
     Ok(report)
+}
+
+fn collect_semantic_intent_summary(pseudo: &[PseudocodeArtifact]) -> SemanticIntentSummary {
+    let mut out = SemanticIntentSummary::default();
+    for artifact in pseudo {
+        for line in artifact.source.lines() {
+            if line.contains("// framework:") {
+                out.framework += 1;
+            }
+            if line.contains("// stdlib:") {
+                out.stdlib += 1;
+            }
+            if line.contains("// runtime:") {
+                out.runtime += 1;
+            }
+            if line.contains("// native:") {
+                out.native += 1;
+            }
+            if line.contains("[selector]") {
+                out.selector_tagged += 1;
+            }
+            if line.contains("final ")
+                && line.contains(".new(")
+                && (line.contains("flutter.") || line.contains("dart."))
+            {
+                out.constructor_calls += 1;
+            }
+        }
+    }
+    out
 }
 
 pub fn available_adapters(repo_root: &Path) -> Result<Vec<(String, String, String, bool)>> {
@@ -680,5 +729,56 @@ mod runners_tests {
             code_section_va: 0x4000,
         };
         assert!(canonical_standard_model_name(&generic_fn, &class_lib).is_none());
+    }
+
+    #[test]
+    fn aggregates_semantic_intent_counts_from_pseudocode() {
+        let pseudo = vec![
+            PseudocodeArtifact {
+                function_id: 1,
+                function_name: "f1".to_string(),
+                source: r#"dynamic f1(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {
+  final t1 = flutter.widgets.KeyedSubtree.new(arg0, arg1, arg2, arg3); // framework:flutter.widgets.KeyedSubtree.new [selector]
+  final t2 = dart.core.List.removeAt(arg0, arg1, arg2, arg3); // stdlib:dart.core.List.removeAt [selector]
+  final t3 = vm_runtime_Invoke(arg0, arg1, arg2, arg3); // runtime:dart_vm.invoke
+  final t4 = native_libc_memcpy(arg0, arg1, arg2, arg3); // native:libc.memcpy
+  return t4;
+}"#
+                .to_string(),
+                placeholder_ifs: 0,
+                unresolved_cf: 0,
+                raw_register_calls: 0,
+                total_calls: 4,
+                indirect_calls: 0,
+                semantic_direct_calls: 0,
+                semantic_indirect_calls: 0,
+                dispatch_selector_calls: 0,
+            },
+            PseudocodeArtifact {
+                function_id: 2,
+                function_name: "f2".to_string(),
+                source: r#"dynamic f2(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {
+  final t1 = dispatch.invoke(arg0, arg1, arg2, arg3); // indirect via: dispatchTarget
+  return t1;
+}"#
+                .to_string(),
+                placeholder_ifs: 0,
+                unresolved_cf: 0,
+                raw_register_calls: 0,
+                total_calls: 1,
+                indirect_calls: 1,
+                semantic_direct_calls: 0,
+                semantic_indirect_calls: 0,
+                dispatch_selector_calls: 0,
+            },
+        ];
+
+        let summary = collect_semantic_intent_summary(&pseudo);
+        assert_eq!(summary.framework, 1);
+        assert_eq!(summary.stdlib, 1);
+        assert_eq!(summary.runtime, 1);
+        assert_eq!(summary.native, 1);
+        assert_eq!(summary.selector_tagged, 2);
+        assert_eq!(summary.constructor_calls, 1);
     }
 }
