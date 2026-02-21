@@ -57,6 +57,7 @@ CI runs on:
 
 - pull requests
 - pushes to `main`
+- Linux and macOS runners
 
 Workflow checks:
 
@@ -65,6 +66,8 @@ Workflow checks:
 - `cargo test --workspace`
 
 See: `.github/workflows/ci.yml`
+
+Issue and PR templates live under `.github/` and should be used for all external contributions.
 
 ## Contribution Conventions
 

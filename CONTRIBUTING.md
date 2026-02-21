@@ -38,3 +38,5 @@ Examples:
 - include tests for behavior changes
 - keep user docs and development docs updated
 - avoid mixing unrelated refactors with feature changes
+- use the repository PR template checklist
+- use issue templates for bug reports and feature requests
