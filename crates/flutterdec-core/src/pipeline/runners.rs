@@ -61,6 +61,7 @@ struct SelectorFallbackEntry {
 struct CallFallbackSummary {
     dynamic_call: usize,
     dispatch_invoke: usize,
+    dispatch_target_invoke: usize,
     generic_invoke: usize,
 }
 
@@ -310,6 +311,7 @@ pub fn run_decompile(
         "call_fallback": {
             "dynamic_call": call_fallback.dynamic_call,
             "dispatch_invoke": call_fallback.dispatch_invoke,
+            "dispatch_target_invoke": call_fallback.dispatch_target_invoke,
             "generic_invoke": call_fallback.generic_invoke
         }
     });
@@ -417,6 +419,12 @@ fn collect_call_fallback_summary(pseudo: &[PseudocodeArtifact]) -> CallFallbackS
             }
             if line.contains("dispatch.invoke(") {
                 out.dispatch_invoke += 1;
+            }
+            if line.contains(".invoke(")
+                && line.contains("indirect via: dispatchTarget")
+                && !line.contains("dispatch.invoke(")
+            {
+                out.dispatch_target_invoke += 1;
             }
             if line.contains(".invoke(") && line.contains("indirectTarget") {
                 out.generic_invoke += 1;
@@ -1200,6 +1208,7 @@ mod runners_tests {
             function_name: "f1".to_string(),
             source: r#"dynamic f1(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {
   final t1 = dispatch.invoke(arg0, arg1, arg2, arg3); // indirect via: dispatchTarget
+  final t11 = reg21.f0.invoke(arg0, arg1, arg2, arg3); // indirect via: dispatchTarget
   final t2 = indirectTarget9.invoke(arg0, arg1, arg2, arg3); // indirect via: indirectTarget9
   final t3 = dynamicCall(opaqueTarget, [arg0, arg1, arg2, arg3]); // target: opaqueTarget
   return t3;
@@ -1208,8 +1217,8 @@ mod runners_tests {
             placeholder_ifs: 0,
             unresolved_cf: 0,
             raw_register_calls: 0,
-            total_calls: 3,
-            indirect_calls: 3,
+            total_calls: 4,
+            indirect_calls: 4,
             semantic_direct_calls: 0,
             semantic_indirect_calls: 0,
             dispatch_selector_calls: 0,
@@ -1219,6 +1228,7 @@ mod runners_tests {
         let summary = collect_call_fallback_summary(&pseudo);
         assert_eq!(summary.dynamic_call, 1);
         assert_eq!(summary.dispatch_invoke, 1);
+        assert_eq!(summary.dispatch_target_invoke, 1);
         assert_eq!(summary.generic_invoke, 1);
     }
 
