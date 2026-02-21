@@ -249,6 +249,59 @@ fn rewrites_indirect_call_to_framework_navigator_pushnamed_when_selector_is_know
 }
 
 #[test]
+fn rewrites_indirect_call_to_framework_constructor_when_selector_is_class_name() {
+    let ir = FunctionIr {
+        function_id: 462,
+        name: "indirectKeyedSubtreeCtor".to_string(),
+        entry_va: 0xc230,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0xc230,
+            instrs: vec![
+                LlirInstr {
+                    va: 0xc230,
+                    op: IROp::Other,
+                    src: "mov x0, #1".to_string(),
+                    target: String::new(),
+                },
+                LlirInstr {
+                    va: 0xc234,
+                    op: IROp::LoadPool,
+                    src: "x1".to_string(),
+                    target: "pool[60]".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc238,
+                    op: IROp::Call,
+                    src: "blr x9".to_string(),
+                    target: "x9".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc23c,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+
+    let symbols = HashMap::new();
+    let mut pool = HashMap::new();
+    pool.insert(60u64, "KeyedSubtree".to_string());
+    let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
+    assert!(
+        artifact.source.contains(
+            "flutter.widgets.KeyedSubtree.new(1, \"KeyedSubtree\" /* pool[60] */, param2, param3); // framework:flutter.widgets.KeyedSubtree.new [selector], indirect via: indirectTarget9"
+        ),
+        "class selector should rewrite to framework constructor-style semantic path:\n{}",
+        artifact.source
+    );
+}
+
+#[test]
 fn annotates_pool_mapping_in_indirect_target_comment() {
     let ir = FunctionIr {
         function_id: 47,
