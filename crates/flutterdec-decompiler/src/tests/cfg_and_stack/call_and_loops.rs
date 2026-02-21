@@ -643,6 +643,74 @@ fn rewrites_indirect_call_to_dispatch_selector_from_metadata_without_pool_string
 }
 
 #[test]
+fn rewrites_indirect_call_to_package_owner_selector_from_metadata() {
+    let ir = FunctionIr {
+        function_id: 469,
+        name: "indirectMetadataPackageOwner".to_string(),
+        entry_va: 0xc2a0,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0xc2a0,
+            instrs: vec![
+                LlirInstr {
+                    va: 0xc2a0,
+                    op: IROp::LoadPool,
+                    src: "x1".to_string(),
+                    target: "pool[98]".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc2a4,
+                    op: IROp::Call,
+                    src: "blr x9".to_string(),
+                    target: "x9".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc2a8,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+
+    let symbols = HashMap::new();
+    let mut pool = HashMap::new();
+    pool.insert(98u64, "opaqueSelector".to_string());
+    let mut metadata = HashMap::new();
+    metadata.insert(
+        98u64,
+        PoolSemanticHint {
+            selector: Some("executeCommandAsync".to_string()),
+            owner_class: Some("ConnectService".to_string()),
+            library_uri: Some("package:spotube/models/connect/load.dart".to_string()),
+            target_va: None,
+        },
+    );
+
+    let artifact = emit_pseudocode_with_pool_context(&ir, &symbols, &pool, &metadata);
+    assert!(
+        artifact.source.contains("spotube.models.connect.load.ConnectService.executeCommandAsync("),
+        "package metadata owner selector should rewrite to package-qualified path:\n{}",
+        artifact.source
+    );
+    assert!(
+        artifact
+            .source
+            .contains("package:spotube.models.connect.load.ConnectService.executeCommandAsync [selector]"),
+        "package metadata owner selector should include package semantic intent:\n{}",
+        artifact.source
+    );
+    assert!(
+        !artifact.source.contains("dispatch.executeCommandAsync("),
+        "package metadata owner selector rewrite should avoid dispatch fallback call:\n{}",
+        artifact.source
+    );
+}
+
+#[test]
 fn rewrites_indirect_call_from_target_va_metadata_using_symbol_name() {
     let ir = FunctionIr {
         function_id: 465,

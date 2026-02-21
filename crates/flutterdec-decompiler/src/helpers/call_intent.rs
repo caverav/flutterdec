@@ -343,6 +343,9 @@ fn semantic_intent_from_pool_hint(hint: &crate::PoolSemanticHint, selector: &str
     if let Some(seg) = flutter_library_segment(lib_uri) {
         return Some(format!("framework:flutter.{}.{}.{}", seg, owner, method));
     }
+    if let Some(seg) = package_library_segment(lib_uri) {
+        return Some(format!("package:{}.{}.{}", seg, owner, method));
+    }
     None
 }
 
