@@ -374,6 +374,13 @@ fn looks_constructor_like_selector(selector: &str) -> bool {
     if token.is_empty() {
         return false;
     }
+    let lower = token.to_ascii_lowercase();
+    if matches!(
+        lower.as_str(),
+        "function" | "object" | "type" | "dynamic" | "null" | "never"
+    ) {
+        return false;
+    }
     let mut chars = token.chars();
     let Some(first) = chars.next() else {
         return false;

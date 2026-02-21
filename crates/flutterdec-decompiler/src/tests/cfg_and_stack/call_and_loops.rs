@@ -864,6 +864,58 @@ fn keeps_dispatch_fallback_for_acronym_like_selector_names() {
 }
 
 #[test]
+fn keeps_dispatch_fallback_for_builtin_type_selector_names() {
+    let ir = FunctionIr {
+        function_id: 483,
+        name: "indirectBuiltinTypeSelector".to_string(),
+        entry_va: 0xc430,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0xc430,
+            instrs: vec![
+                LlirInstr {
+                    va: 0xc430,
+                    op: IROp::LoadPool,
+                    src: "x1".to_string(),
+                    target: "pool[15]".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc434,
+                    op: IROp::Call,
+                    src: "blr x9".to_string(),
+                    target: "x9".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc438,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+
+    let symbols = HashMap::new();
+    let mut pool = HashMap::new();
+    pool.insert(15u64, "Function".to_string());
+    let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
+    assert!(
+        artifact.source.contains(
+            "dispatch.Function(receiver, \"Function\" /* pool[15] */, param2, param3); // selector: Function, indirect via: indirectTarget9"
+        ),
+        "builtin type selectors should keep dispatch fallback form:\n{}",
+        artifact.source
+    );
+    assert!(
+        !artifact.source.contains("Function.new("),
+        "builtin type selectors should not be rewritten as constructors:\n{}",
+        artifact.source
+    );
+}
+
+#[test]
 fn keeps_dynamic_call_when_target_selector_is_file_path_like() {
     let ir = FunctionIr {
         function_id: 49,
