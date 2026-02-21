@@ -1,8 +1,9 @@
-use anyhow::{Context, Result};
-use clap::{Args, Parser, Subcommand};
+use anyhow::{bail, Context, Result};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 use flutterdec_adapter::install_adapter;
 use flutterdec_core::{
     available_adapters, run_decompile, run_engine_fingerprint, run_info, run_symbol_map,
+    DecompileAnalysisProfile, DecompileEngineOptionOverrides, DecompileEngineOptions,
     DecompileOptions, EngineFingerprintOptions, SymbolMapOptions,
 };
 use std::path::{Path, PathBuf};
@@ -58,6 +59,39 @@ struct DecompileCmd {
     max_indirect_call_ratio: f64,
     #[arg(long, default_value_t = 0.80)]
     min_disassembly_ratio: f64,
+    #[arg(long, value_enum, default_value_t = AnalysisProfileArg::Balanced)]
+    analysis_profile: AnalysisProfileArg,
+    #[arg(long)]
+    with_canonical_model_symbols: bool,
+    #[arg(long)]
+    no_canonical_model_symbols: bool,
+    #[arg(long)]
+    with_pool_value_hints: bool,
+    #[arg(long)]
+    no_pool_value_hints: bool,
+    #[arg(long)]
+    with_pool_semantic_hints: bool,
+    #[arg(long)]
+    no_pool_semantic_hints: bool,
+    #[arg(long)]
+    with_semantic_reporting: bool,
+    #[arg(long)]
+    no_semantic_reporting: bool,
+}
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum AnalysisProfileArg {
+    Light,
+    Balanced,
+}
+
+impl AnalysisProfileArg {
+    fn to_core(self) -> DecompileAnalysisProfile {
+        match self {
+            Self::Light => DecompileAnalysisProfile::Light,
+            Self::Balanced => DecompileAnalysisProfile::Balanced,
+        }
+    }
 }
 
 #[derive(Args, Debug)]
@@ -143,6 +177,35 @@ fn main() -> Result<()> {
             }
         }
         Command::Decompile(cmd) => {
+            let profile = cmd.analysis_profile.to_core();
+            let canonical_model_symbols = resolve_toggle(
+                cmd.with_canonical_model_symbols,
+                cmd.no_canonical_model_symbols,
+                "--with-canonical-model-symbols/--no-canonical-model-symbols",
+            )?;
+            let pool_value_hints = resolve_toggle(
+                cmd.with_pool_value_hints,
+                cmd.no_pool_value_hints,
+                "--with-pool-value-hints/--no-pool-value-hints",
+            )?;
+            let pool_semantic_hints = resolve_toggle(
+                cmd.with_pool_semantic_hints,
+                cmd.no_pool_semantic_hints,
+                "--with-pool-semantic-hints/--no-pool-semantic-hints",
+            )?;
+            let semantic_reporting = resolve_toggle(
+                cmd.with_semantic_reporting,
+                cmd.no_semantic_reporting,
+                "--with-semantic-reporting/--no-semantic-reporting",
+            )?;
+            let overrides = DecompileEngineOptionOverrides {
+                canonical_model_symbols,
+                pool_value_hints,
+                pool_semantic_hints,
+                semantic_reporting,
+            };
+            let engine_options =
+                DecompileEngineOptions::for_profile(profile).with_overrides(&overrides);
             let opt = DecompileOptions {
                 out_dir: cmd.out_dir,
                 emit_asm: cmd.emit_asm,
@@ -156,6 +219,8 @@ fn main() -> Result<()> {
                 max_unresolved_cf: cmd.max_unresolved_cf,
                 max_indirect_call_ratio: cmd.max_indirect_call_ratio,
                 min_disassembly_ratio: cmd.min_disassembly_ratio,
+                analysis_profile: profile,
+                engine_options,
             };
             let quality = run_decompile(&repo_root, &cmd.input, &opt)?;
             println!("{}", serde_json::to_string_pretty(&quality)?);
@@ -250,4 +315,17 @@ fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+fn resolve_toggle(with: bool, without: bool, name: &str) -> Result<Option<bool>> {
+    if with && without {
+        bail!("conflicting options for {name}");
+    }
+    if with {
+        return Ok(Some(true));
+    }
+    if without {
+        return Ok(Some(false));
+    }
+    Ok(None)
 }

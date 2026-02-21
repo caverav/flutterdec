@@ -90,18 +90,45 @@ pub fn run_decompile(
     let mut symbol_merge_replaced_generic = 0usize;
     let mut symbol_merge_skipped = 0usize;
     let mut standard_model_symbol_count = 0usize;
-    let class_to_library = build_class_library_lookup(&model);
-    let pool_value_hints = build_pool_value_hints(&model);
+    let class_to_library = if opt.engine_options.canonical_model_symbols
+        || opt.engine_options.pool_semantic_hints
+    {
+        build_class_library_lookup(&model)
+    } else {
+        HashMap::new()
+    };
+    let pool_value_hints = if opt.engine_options.pool_value_hints
+        || opt.engine_options.pool_semantic_hints
+    {
+        build_pool_value_hints(&model)
+    } else {
+        HashMap::new()
+    };
     let pool_metadata = collect_pool_metadata_stats(&model);
-    let pool_semantic_hints = build_pool_semantic_hints(&model, &class_to_library);
-    let pool_target_symbols = build_pool_target_symbols(&pool_semantic_hints, &pool_value_hints);
+    let pool_semantic_hints = if opt.engine_options.pool_semantic_hints {
+        build_pool_semantic_hints(&model, &class_to_library)
+    } else {
+        HashMap::new()
+    };
+    let pool_target_symbols = if opt.engine_options.pool_semantic_hints
+        && opt.engine_options.canonical_model_symbols
+    {
+        build_pool_target_symbols(&pool_semantic_hints, &pool_value_hints)
+    } else {
+        HashMap::new()
+    };
 
     for f in &model.functions {
-        let resolved = canonical_standard_model_name(f, &class_to_library)
-            .unwrap_or_else(|| f.name.clone());
-        if resolved != f.name {
-            standard_model_symbol_count += 1;
-        }
+        let resolved = if opt.engine_options.canonical_model_symbols {
+            let resolved = canonical_standard_model_name(f, &class_to_library)
+                .unwrap_or_else(|| f.name.clone());
+            if resolved != f.name {
+                standard_model_symbol_count += 1;
+            }
+            resolved
+        } else {
+            f.name.clone()
+        };
         symbol_names.insert(f.entry_va, resolved);
     }
     for f in &disasm {
@@ -211,20 +238,36 @@ pub fn run_decompile(
     }
 
     let report = quality_from_artifacts(&model, &disasm, &pseudo, opt);
-    let semantic_intent = collect_semantic_intent_summary(&pseudo);
-    let call_fallback = collect_call_fallback_summary(&pseudo);
-    let selector_fallback = collect_selector_fallback_summary(&pseudo);
-    let selector_fallback_top = selector_fallback
-        .top
-        .iter()
-        .map(|entry| {
-            json!({
-                "selector": entry.selector,
-                "count": entry.count,
-                "sample": entry.sample
-            })
-        })
-        .collect::<Vec<_>>();
+    let (semantic_intent, call_fallback, selector_fallback, selector_fallback_top) =
+        if opt.engine_options.semantic_reporting {
+            let semantic_intent = collect_semantic_intent_summary(&pseudo);
+            let call_fallback = collect_call_fallback_summary(&pseudo);
+            let selector_fallback = collect_selector_fallback_summary(&pseudo);
+            let selector_fallback_top = selector_fallback
+                .top
+                .iter()
+                .map(|entry| {
+                    json!({
+                        "selector": entry.selector,
+                        "count": entry.count,
+                        "sample": entry.sample
+                    })
+                })
+                .collect::<Vec<_>>();
+            (
+                semantic_intent,
+                call_fallback,
+                selector_fallback,
+                selector_fallback_top,
+            )
+        } else {
+            (
+                SemanticIntentSummary::default(),
+                CallFallbackSummary::default(),
+                SelectorFallbackSummary::default(),
+                Vec::new(),
+            )
+        };
     let semantic_total =
         report.semantic_direct_calls + report.semantic_indirect_calls + report.dispatch_selector_calls;
     let semantic_ratio = if report.total_calls == 0 {
@@ -248,6 +291,10 @@ pub fn run_decompile(
         "libapp": bundle.libapp_path,
         "arch": bundle.arch,
         "snapshot_hash": bundle.snapshot_hash,
+        "analysis": {
+            "profile": opt.analysis_profile.as_str(),
+            "engine": &opt.engine_options
+        },
         "adapter_kind": model.adapter_kind,
         "dart_version": model.dart_version,
         "counts": {
@@ -540,8 +587,10 @@ fn build_pool_value_hints(model: &ProgramModel) -> HashMap<u64, String> {
 }
 
 fn collect_pool_metadata_stats(model: &ProgramModel) -> PoolMetadataStats {
-    let mut out = PoolMetadataStats::default();
-    out.total_entries = model.object_pool.len();
+    let mut out = PoolMetadataStats {
+        total_entries: model.object_pool.len(),
+        ..PoolMetadataStats::default()
+    };
     for e in &model.object_pool {
         if e.target_va.is_some() {
             out.with_target_va += 1;
@@ -1246,6 +1295,31 @@ mod runners_tests {
         assert_eq!(summary.dispatch_invoke, 1);
         assert_eq!(summary.dispatch_target_invoke, 1);
         assert_eq!(summary.generic_invoke, 1);
+    }
+
+    #[test]
+    fn decompile_engine_profile_light_is_minimal() {
+        let cfg = DecompileEngineOptions::for_profile(DecompileAnalysisProfile::Light);
+        assert!(!cfg.canonical_model_symbols);
+        assert!(!cfg.pool_value_hints);
+        assert!(!cfg.pool_semantic_hints);
+        assert!(!cfg.semantic_reporting);
+    }
+
+    #[test]
+    fn decompile_engine_overrides_can_disable_balanced_defaults() {
+        let base = DecompileEngineOptions::for_profile(DecompileAnalysisProfile::Balanced);
+        let overrides = DecompileEngineOptionOverrides {
+            canonical_model_symbols: Some(false),
+            pool_value_hints: None,
+            pool_semantic_hints: Some(false),
+            semantic_reporting: Some(false),
+        };
+        let cfg = base.with_overrides(&overrides);
+        assert!(!cfg.canonical_model_symbols);
+        assert!(cfg.pool_value_hints);
+        assert!(!cfg.pool_semantic_hints);
+        assert!(!cfg.semantic_reporting);
     }
 
     #[test]

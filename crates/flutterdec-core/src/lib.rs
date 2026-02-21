@@ -26,6 +26,74 @@ pub struct DecompileOptions {
     pub max_unresolved_cf: usize,
     pub max_indirect_call_ratio: f64,
     pub min_disassembly_ratio: f64,
+    pub analysis_profile: DecompileAnalysisProfile,
+    pub engine_options: DecompileEngineOptions,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+pub enum DecompileAnalysisProfile {
+    Light,
+    Balanced,
+}
+
+impl DecompileAnalysisProfile {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Light => "light",
+            Self::Balanced => "balanced",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct DecompileEngineOptionOverrides {
+    pub canonical_model_symbols: Option<bool>,
+    pub pool_value_hints: Option<bool>,
+    pub pool_semantic_hints: Option<bool>,
+    pub semantic_reporting: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DecompileEngineOptions {
+    pub canonical_model_symbols: bool,
+    pub pool_value_hints: bool,
+    pub pool_semantic_hints: bool,
+    pub semantic_reporting: bool,
+}
+
+impl DecompileEngineOptions {
+    pub fn for_profile(profile: DecompileAnalysisProfile) -> Self {
+        match profile {
+            DecompileAnalysisProfile::Light => Self {
+                canonical_model_symbols: false,
+                pool_value_hints: false,
+                pool_semantic_hints: false,
+                semantic_reporting: false,
+            },
+            DecompileAnalysisProfile::Balanced => Self {
+                canonical_model_symbols: true,
+                pool_value_hints: true,
+                pool_semantic_hints: true,
+                semantic_reporting: true,
+            },
+        }
+    }
+
+    pub fn with_overrides(mut self, overrides: &DecompileEngineOptionOverrides) -> Self {
+        if let Some(v) = overrides.canonical_model_symbols {
+            self.canonical_model_symbols = v;
+        }
+        if let Some(v) = overrides.pool_value_hints {
+            self.pool_value_hints = v;
+        }
+        if let Some(v) = overrides.pool_semantic_hints {
+            self.pool_semantic_hints = v;
+        }
+        if let Some(v) = overrides.semantic_reporting {
+            self.semantic_reporting = v;
+        }
+        self
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
