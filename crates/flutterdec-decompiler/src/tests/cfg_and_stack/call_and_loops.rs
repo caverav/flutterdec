@@ -85,6 +85,112 @@ fn rewrites_dispatch_target_fallback_to_dispatch_invoke() {
 }
 
 #[test]
+fn rewrites_dispatch_target_fallback_to_library_invoke_when_uri_is_known() {
+    let ir = FunctionIr {
+        function_id: 451,
+        name: "dispatchLibraryInvokeFallback".to_string(),
+        entry_va: 0xc110,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0xc110,
+            instrs: vec![
+                LlirInstr {
+                    va: 0xc110,
+                    op: IROp::LoadPool,
+                    src: "x2".to_string(),
+                    target: "pool[44]".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc114,
+                    op: IROp::Call,
+                    src: "blr x30".to_string(),
+                    target: "x30".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc118,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+    let symbols = HashMap::new();
+    let mut pool = HashMap::new();
+    pool.insert(44u64, "package:flutter/src/widgets/heroes.dart".to_string());
+    let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
+    assert!(
+        artifact.source.contains(
+            "flutter.widgets.invoke(receiver, param1, \"package:flutter/src/widgets/heroes.dart\" /* pool[44] */, param3); // framework:flutter.widgets.invoke [library], indirect via: dispatchTarget"
+        ),
+        "known library URI should rewrite dispatch fallback to semantic library invoke:\n{}",
+        artifact.source
+    );
+    assert!(
+        !artifact
+            .source
+            .contains("dispatch.invoke(receiver, param1, \"package:flutter/src/widgets/heroes.dart\""),
+        "library-aware fallback should avoid plain dispatch.invoke:\n{}",
+        artifact.source
+    );
+}
+
+#[test]
+fn rewrites_dispatch_target_fallback_to_package_invoke_when_uri_is_known() {
+    let ir = FunctionIr {
+        function_id: 452,
+        name: "dispatchPackageInvokeFallback".to_string(),
+        entry_va: 0xc120,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0xc120,
+            instrs: vec![
+                LlirInstr {
+                    va: 0xc120,
+                    op: IROp::LoadPool,
+                    src: "x2".to_string(),
+                    target: "pool[45]".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc124,
+                    op: IROp::Call,
+                    src: "blr x30".to_string(),
+                    target: "x30".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc128,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+    let symbols = HashMap::new();
+    let mut pool = HashMap::new();
+    pool.insert(45u64, "package:spotube/models/connect/load.dart".to_string());
+    let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
+    assert!(
+        artifact.source.contains(
+            "spotube.models.connect.load.invoke(receiver, param1, \"package:spotube/models/connect/load.dart\" /* pool[45] */, param3); // package:spotube.models.connect.load.invoke [library], indirect via: dispatchTarget"
+        ),
+        "package URI should rewrite dispatch fallback to semantic package invoke:\n{}",
+        artifact.source
+    );
+    assert!(
+        !artifact
+            .source
+            .contains("dispatch.invoke(receiver, param1, \"package:spotube/models/connect/load.dart\""),
+        "package-aware fallback should avoid plain dispatch.invoke:\n{}",
+        artifact.source
+    );
+}
+
+#[test]
 fn rewrites_indirect_call_to_semantic_name_when_selector_is_known() {
     let ir = FunctionIr {
         function_id: 46,

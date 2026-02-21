@@ -145,6 +145,11 @@ impl<'a> FuncEmitter<'a> {
             &self.pool_value_hints,
             &self.pool_semantic_hints,
         );
+        let library_intent = infer_library_intent_from_context(
+            &raw_arg_values,
+            &self.pool_value_hints,
+            &self.pool_semantic_hints,
+        );
         let arg_values = raw_arg_values
             .iter()
             .map(|a| self.annotate_pool_refs(a))
@@ -172,6 +177,11 @@ impl<'a> FuncEmitter<'a> {
                 &self.pool_value_hints,
                 &self.pool_semantic_hints,
             );
+            let target_library_intent = infer_library_intent_from_context(
+                std::slice::from_ref(&target_value),
+                &self.pool_value_hints,
+                &self.pool_semantic_hints,
+            );
             let intent = infer_call_intent_with_context(
                 &named_target,
                 &raw_arg_values,
@@ -179,7 +189,9 @@ impl<'a> FuncEmitter<'a> {
                 &self.pool_semantic_hints,
             )
             .or(selector_intent.clone())
-            .or(target_selector_intent.clone());
+            .or(target_selector_intent.clone())
+            .or(library_intent.clone())
+            .or(target_library_intent.clone());
             let selector_name = selector_name.or(target_selector_name);
             if let Some(rewritten_name) = readable_call_name_from_intent(&named_target, intent.as_deref()) {
                 self.semantic_indirect_calls += 1;
@@ -208,7 +220,9 @@ impl<'a> FuncEmitter<'a> {
                     &self.pool_semantic_hints,
                 )
                 .or(selector_intent.clone())
-                .or(target_selector_intent.clone());
+                .or(target_selector_intent.clone())
+                .or(library_intent.clone())
+                .or(target_library_intent.clone());
                 let emitted_name =
                     readable_call_name_from_intent(&target_call_name, target_intent.as_deref())
                         .unwrap_or_else(|| target_call_name.clone());
