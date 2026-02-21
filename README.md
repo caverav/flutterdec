@@ -122,6 +122,7 @@ Naming and semantic behavior:
 - unresolved `dispatchTarget` indirect calls now prefer semantic library invoke names when URI evidence exists (for example `flutter.widgets.invoke(...)` or `spotube.models.connect.load.invoke(...)`), then fall back to callable target form `<resolvedTarget>(...)` when the target expression is known, and only then to plain `dispatch.invoke(...)`
 - dispatch table slot targets like `reg21.f0` are now aliased to `dispatchTargetFn` before unresolved callable callsites, so unresolved chains read as `dispatchTargetFn(...)`
 - unresolved generic indirect aliases now render as callable fallback `<target>(...)` (for example `indirectTarget9(...)`) instead of `dynamicCall(...)`
+- repeated read-only stack slot references can now be hoisted into local aliases (for example `final stackSlotNeg0x10 = sp[-0x10];`) so repeated call arguments are easier to follow
 - selector evidence can be inferred from indirect target expressions too (for example `target: (pool[...]).f7`), not only call arguments
 - selector extraction skips file/URI/path-like strings (for example `*.dart` paths) to avoid false-positive rewrites
 - exact `pool[<idx>]` call arguments are rendered as `"value" /* pool[<idx>] */` when a string hint is available

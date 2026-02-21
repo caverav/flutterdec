@@ -170,6 +170,7 @@ Current scope:
 - runtime helper selectors such as `yieldStarIterable` are now tagged and rewritten to readable runtime semantic paths
 - VM-internal selector constructors such as `_Closure` and `_TypeParameter` now rewrite to runtime semantic constructor paths
 - standalone stack-pointer offset arguments now normalize to slot notation (`sp[-0x10]`) instead of raw arithmetic (`(sp - 0x10)`)
+- repeated read-only stack slots now hoist into named locals (for example `stackSlotNeg0x10`) to reduce repeated low-level stack syntax
 - noisy wrapped field-access chains are now simplified (`((((obj.f7)).f23)).f7` -> `obj.f7.f23.f7`)
 - optional ELF engine fingerprinting to estimate build identity from build-id and marker strings
 
