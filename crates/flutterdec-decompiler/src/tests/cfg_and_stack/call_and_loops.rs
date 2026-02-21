@@ -40,6 +40,49 @@ fn emits_dynamic_call_for_indirect_targets() {
 }
 
 #[test]
+fn rewrites_dispatch_target_fallback_to_dispatch_invoke() {
+    let ir = FunctionIr {
+        function_id: 45,
+        name: "dispatchInvokeFallback".to_string(),
+        entry_va: 0xc100,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0xc100,
+            instrs: vec![
+                LlirInstr {
+                    va: 0xc100,
+                    op: IROp::Call,
+                    src: "blr x30".to_string(),
+                    target: "x30".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc104,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+    let symbols = HashMap::new();
+    let artifact = emit_pseudocode(&ir, &symbols);
+    assert!(
+        artifact
+            .source
+            .contains("dispatch.invoke(receiver, param1, param2, param3); // indirect via: dispatchTarget"),
+        "dispatchTarget fallback should use dispatch.invoke form:\n{}",
+        artifact.source
+    );
+    assert!(
+        !artifact.source.contains("dynamicCall(dispatchTarget"),
+        "dispatchTarget fallback should avoid dynamicCall form:\n{}",
+        artifact.source
+    );
+}
+
+#[test]
 fn rewrites_indirect_call_to_semantic_name_when_selector_is_known() {
     let ir = FunctionIr {
         function_id: 46,
