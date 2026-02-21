@@ -1,15 +1,5 @@
 impl<'a> FuncEmitter<'a> {
-    fn render_pool_value_hint(&self, expr: &str) -> String {
-        let t = expr.trim();
-        let Some(inner) = t.strip_prefix("pool[").and_then(|s| s.strip_suffix(']')) else {
-            return expr.to_string();
-        };
-        let Ok(idx) = inner.trim().parse::<u64>() else {
-            return expr.to_string();
-        };
-        let Some(value) = self.pool_value_hints.get(&idx) else {
-            return expr.to_string();
-        };
+    fn escape_hint_text(value: &str) -> String {
         let mut escaped = String::new();
         for c in value.chars() {
             match c {
@@ -21,7 +11,61 @@ impl<'a> FuncEmitter<'a> {
                 _ => escaped.push(c),
             }
         }
+        escaped
+    }
+
+    fn render_pool_value_hint(&self, expr: &str) -> String {
+        let t = expr.trim();
+        let Some(inner) = t.strip_prefix("pool[").and_then(|s| s.strip_suffix(']')) else {
+            return expr.to_string();
+        };
+        let Ok(idx) = inner.trim().parse::<u64>() else {
+            return expr.to_string();
+        };
+        let Some(value) = self.pool_value_hints.get(&idx) else {
+            return expr.to_string();
+        };
+        let escaped = Self::escape_hint_text(value);
         format!("\"{}\" /* pool[{}] */", escaped, idx)
+    }
+
+    fn annotate_pool_refs(&self, expr: &str) -> String {
+        let exact = self.render_pool_value_hint(expr);
+        if exact != expr {
+            return exact;
+        }
+
+        let mut out = String::new();
+        let bytes = expr.as_bytes();
+        let mut i = 0usize;
+        while i < bytes.len() {
+            if i + 5 <= bytes.len() && &bytes[i..i + 5] == b"pool[" {
+                let mut j = i + 5;
+                let mut idx = 0u64;
+                let mut has_digit = false;
+                while j < bytes.len() && bytes[j].is_ascii_digit() {
+                    has_digit = true;
+                    idx = idx
+                        .saturating_mul(10)
+                        .saturating_add((bytes[j] - b'0') as u64);
+                    j += 1;
+                }
+                if has_digit && j < bytes.len() && bytes[j] == b']' {
+                    if let Some(value) = self.pool_value_hints.get(&idx) {
+                        out.push_str("pool[");
+                        out.push_str(&idx.to_string());
+                        out.push_str(" /* \"");
+                        out.push_str(&Self::escape_hint_text(value));
+                        out.push_str("\" */]");
+                        i = j + 1;
+                        continue;
+                    }
+                }
+            }
+            out.push(bytes[i] as char);
+            i += 1;
+        }
+        out
     }
 
     pub(super) fn emit_call(&mut self, ins_target: &str, indent: usize) {
@@ -38,9 +82,11 @@ impl<'a> FuncEmitter<'a> {
                     .unwrap_or_else(|| format!("arg{r}"))
             })
             .collect::<Vec<_>>();
+        let selector_intent =
+            infer_call_intent_with_context("sub_selector_probe", &raw_arg_values, &self.pool_value_hints);
         let arg_values = raw_arg_values
             .iter()
-            .map(|a| self.render_pool_value_hint(a))
+            .map(|a| self.annotate_pool_refs(a))
             .collect::<Vec<_>>();
         let args = arg_values.join(", ");
 
@@ -55,18 +101,16 @@ impl<'a> FuncEmitter<'a> {
                 .get(&target)
                 .cloned()
                 .unwrap_or_else(|| named_target.clone());
-            let intent =
-                infer_call_intent_with_context(&named_target, &arg_values, &self.pool_value_hints);
-            if let Some(rewritten_name) =
-                readable_call_name_from_intent(&named_target, intent.as_deref())
-            {
+            let intent = infer_call_intent_with_context(&named_target, &raw_arg_values, &self.pool_value_hints)
+                .or(selector_intent.clone());
+            if let Some(rewritten_name) = readable_call_name_from_intent(&named_target, intent.as_deref()) {
                 let mut comments = Vec::new();
                 if let Some(v) = intent {
                     comments.push(v);
                 }
                 comments.push(format!("indirect via: {}", named_target));
                 if target_value != named_target {
-                    comments.push(format!("target: {}", target_value));
+                    comments.push(format!("target: {}", self.annotate_pool_refs(&target_value)));
                 }
                 let suffix = format!(" // {}", comments.join(", "));
                 self.push_line(
@@ -75,7 +119,7 @@ impl<'a> FuncEmitter<'a> {
                 );
             } else {
                 let target_suffix = if target_value != named_target {
-                    format!(" // target: {}", target_value)
+                    format!(" // target: {}", self.annotate_pool_refs(&target_value))
                 } else {
                     String::new()
                 };
@@ -101,8 +145,8 @@ impl<'a> FuncEmitter<'a> {
             } else {
                 format!("fn_{}", target)
             };
-            let intent =
-                infer_call_intent_with_context(&call_name, &arg_values, &self.pool_value_hints);
+            let intent = infer_call_intent_with_context(&call_name, &raw_arg_values, &self.pool_value_hints)
+                .or(selector_intent);
             let emitted_call_name = readable_call_name_from_intent(&call_name, intent.as_deref())
                 .unwrap_or_else(|| call_name.clone());
             let mut comments = Vec::new();

@@ -152,6 +152,9 @@ fn infer_selector_intent_from_pool(
                 return Some(tag);
             }
         }
+        if let Some(tag) = classify_standard_selector(arg) {
+            return Some(tag);
+        }
     }
     None
 }
@@ -225,15 +228,6 @@ fn extract_string_literals(s: &str) -> Vec<String> {
 }
 
 fn classify_standard_selector(raw: &str) -> Option<String> {
-    let normalized = raw
-        .chars()
-        .filter(|c| c.is_ascii_alphanumeric())
-        .collect::<String>()
-        .to_ascii_lowercase();
-    if normalized.is_empty() {
-        return None;
-    }
-
     let flutter = [
         ("setstate", "framework:flutter.widgets.State.setState"),
         (
@@ -243,6 +237,9 @@ fn classify_standard_selector(raw: &str) -> Option<String> {
         ("build", "framework:flutter.widgets.Widget.build"),
         ("initstate", "framework:flutter.widgets.State.initState"),
         ("dispose", "framework:flutter.widgets.State.dispose"),
+        ("activate", "framework:flutter.widgets.State.activate"),
+        ("deactivate", "framework:flutter.widgets.State.deactivate"),
+        ("reassemble", "framework:flutter.widgets.State.reassemble"),
         (
             "didupdatewidget",
             "framework:flutter.widgets.State.didUpdateWidget",
@@ -251,27 +248,132 @@ fn classify_standard_selector(raw: &str) -> Option<String> {
             "didchangedependencies",
             "framework:flutter.widgets.State.didChangeDependencies",
         ),
+        (
+            "addlistener",
+            "framework:flutter.foundation.ChangeNotifier.addListener",
+        ),
+        (
+            "removelistener",
+            "framework:flutter.foundation.ChangeNotifier.removeListener",
+        ),
+        (
+            "notifylisteners",
+            "framework:flutter.foundation.ChangeNotifier.notifyListeners",
+        ),
+        (
+            "addpostframecallback",
+            "framework:flutter.scheduler.SchedulerBinding.addPostFrameCallback",
+        ),
+        (
+            "markneedsbuild",
+            "framework:flutter.widgets.Element.markNeedsBuild",
+        ),
+        (
+            "findrenderobject",
+            "framework:flutter.widgets.BuildContext.findRenderObject",
+        ),
+        (
+            "createrenderobject",
+            "framework:flutter.rendering.RenderObjectWidget.createRenderObject",
+        ),
+        (
+            "updaterenderobject",
+            "framework:flutter.rendering.RenderObjectWidget.updateRenderObject",
+        ),
     ];
-    for (needle, tag) in flutter {
-        if normalized == needle || normalized.contains(needle) {
-            return Some(format!("{} [selector]", tag));
-        }
-    }
-
+    let dart_async = [
+        ("then", "stdlib:dart.async.Future.then"),
+        ("catcherror", "stdlib:dart.async.Future.catchError"),
+        ("whencomplete", "stdlib:dart.async.Future.whenComplete"),
+        ("listen", "stdlib:dart.async.Stream.listen"),
+    ];
     let dart_core = [
         ("print", "stdlib:dart.core.print"),
         ("tostring", "stdlib:dart.core.toString"),
         ("hashcode", "stdlib:dart.core.hashCode"),
         ("compareto", "stdlib:dart.core.compareTo"),
         ("contains", "stdlib:dart.core.contains"),
+        ("containskey", "stdlib:dart.core.Map.containsKey"),
+        ("putifabsent", "stdlib:dart.core.Map.putIfAbsent"),
+        ("firstwhere", "stdlib:dart.core.Iterable.firstWhere"),
+        ("singlewhere", "stdlib:dart.core.Iterable.singleWhere"),
         ("map", "stdlib:dart.core.map"),
         ("where", "stdlib:dart.core.where"),
+        ("join", "stdlib:dart.core.String.join"),
+        ("split", "stdlib:dart.core.String.split"),
+        ("substring", "stdlib:dart.core.String.substring"),
+        ("startswith", "stdlib:dart.core.String.startsWith"),
+        ("endswith", "stdlib:dart.core.String.endsWith"),
+        ("replaceall", "stdlib:dart.core.String.replaceAll"),
+        ("tolowercase", "stdlib:dart.core.String.toLowerCase"),
+        ("touppercase", "stdlib:dart.core.String.toUpperCase"),
     ];
-    for (needle, tag) in dart_core {
-        if normalized == needle || normalized.contains(needle) {
-            return Some(format!("{} [selector]", tag));
+
+    for candidate in selector_candidates(raw) {
+        for (needle, tag) in flutter {
+            if candidate == needle || candidate.contains(needle) {
+                return Some(format!("{} [selector]", tag));
+            }
+        }
+        for (needle, tag) in dart_async {
+            if candidate == needle || candidate.contains(needle) {
+                return Some(format!("{} [selector]", tag));
+            }
+        }
+        for (needle, tag) in dart_core {
+            if candidate == needle || candidate.contains(needle) {
+                return Some(format!("{} [selector]", tag));
+            }
         }
     }
 
     None
+}
+
+fn selector_candidates(raw: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let normalized = raw
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .collect::<String>()
+        .to_ascii_lowercase();
+    push_unique(&mut out, normalized);
+
+    let mut token = String::new();
+    for c in raw.chars() {
+        if c.is_ascii_alphanumeric() {
+            token.push(c.to_ascii_lowercase());
+        } else if !token.is_empty() {
+            push_unique(&mut out, token.clone());
+            token.clear();
+        }
+    }
+    if !token.is_empty() {
+        push_unique(&mut out, token);
+    }
+
+    let derived = out.clone();
+    for t in derived {
+        if let Some(rest) = t.strip_prefix("init") {
+            push_unique(&mut out, rest.to_string());
+        }
+        if let Some(rest) = t.strip_prefix("get") {
+            push_unique(&mut out, rest.to_string());
+        }
+        if let Some(rest) = t.strip_prefix("set") {
+            push_unique(&mut out, format!("set{}", rest));
+            push_unique(&mut out, rest.to_string());
+        }
+        if let Some(rest) = t.strip_prefix('_') {
+            push_unique(&mut out, rest.to_string());
+        }
+    }
+
+    out
+}
+
+fn push_unique(out: &mut Vec<String>, s: String) {
+    if !s.is_empty() && !out.contains(&s) {
+        out.push(s);
+    }
 }
