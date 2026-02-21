@@ -62,6 +62,7 @@ pub fn run_decompile(
     let class_to_library = build_class_library_lookup(&model);
     let pool_value_hints = build_pool_value_hints(&model);
     let pool_semantic_hints = build_pool_semantic_hints(&model);
+    let pool_target_symbols = build_pool_target_symbols(&model);
 
     for f in &model.functions {
         let resolved = canonical_standard_model_name(f, &class_to_library)
@@ -75,6 +76,16 @@ pub fn run_decompile(
         symbol_names
             .entry(f.entry_va)
             .or_insert_with(|| f.function_name.clone());
+    }
+    for (va, name) in &pool_target_symbols {
+        merge_symbol_name(
+            &mut symbol_names,
+            *va,
+            name.clone(),
+            &mut symbol_merge_inserted,
+            &mut symbol_merge_replaced_generic,
+            &mut symbol_merge_skipped,
+        );
     }
     for elf_path in &opt.extra_symbol_elfs {
         let ext = load_elf_function_symbols(elf_path)
@@ -222,6 +233,7 @@ pub fn run_decompile(
         ,
         "pool_value_hints": pool_value_hints.len(),
         "pool_semantic_hints": pool_semantic_hints.len(),
+        "pool_target_symbols": pool_target_symbols.len(),
         "semantic_rewrite": {
             "total": semantic_total,
             "ratio": semantic_ratio,
@@ -410,6 +422,74 @@ fn build_pool_semantic_hints(model: &ProgramModel) -> HashMap<u64, PoolSemanticH
         );
     }
     out
+}
+
+fn build_pool_target_symbols(model: &ProgramModel) -> HashMap<u64, String> {
+    let mut out = HashMap::new();
+    for e in &model.object_pool {
+        let Some(target_va) = e.target_va else {
+            continue;
+        };
+        let Some(owner_raw) = e
+            .owner_class
+            .as_deref()
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+        else {
+            continue;
+        };
+        let Some(lib_uri) = e
+            .library_uri
+            .as_deref()
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+        else {
+            continue;
+        };
+        let selector_raw = e
+            .selector
+            .as_deref()
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+            .unwrap_or_else(|| e.value.trim());
+        if selector_raw.is_empty() {
+            continue;
+        }
+
+        let owner = sanitize_symbol_token_stream(owner_raw);
+        if owner.is_empty() {
+            continue;
+        }
+        let selector = sanitize_symbol_token_stream(selector_raw);
+        if selector.is_empty() {
+            continue;
+        }
+        let method = if semantic_token_eq(&selector, &owner) {
+            "new".to_string()
+        } else {
+            selector
+        };
+
+        let canonical = if let Some(seg) = dart_library_segment(lib_uri) {
+            format!("dart_{}_{}_{}", seg, owner, method)
+        } else if let Some(seg) = flutter_library_segment(lib_uri) {
+            format!("flutter_{}_{}_{}", seg, owner, method)
+        } else {
+            continue;
+        };
+        out.entry(target_va).or_insert(canonical);
+    }
+    out
+}
+
+fn semantic_token_eq(lhs: &str, rhs: &str) -> bool {
+    let normalize = |s: &str| {
+        s.chars()
+            .filter(|c| c.is_ascii_alphanumeric())
+            .collect::<String>()
+            .to_ascii_lowercase()
+    };
+    normalize(lhs) == normalize(rhs)
 }
 
 fn canonical_standard_model_name(
@@ -877,5 +957,51 @@ mod runners_tests {
             Some("package:flutter/src/widgets/binding.dart")
         );
         assert_eq!(h.target_va, Some(0x1234));
+    }
+
+    #[test]
+    fn builds_pool_target_symbols_from_metadata() {
+        let model = ProgramModel {
+            schema_version: 2,
+            adapter_kind: "python".to_string(),
+            dart_version: "3.0.0".to_string(),
+            snapshot_hash: "deadbeef".to_string(),
+            arch: "arm64".to_string(),
+            libraries: Vec::new(),
+            classes: Vec::new(),
+            functions: Vec::new(),
+            object_pool: vec![
+                flutterdec_adapter::ObjectPoolEntry {
+                    index: 7,
+                    kind: "String".to_string(),
+                    value: "didChangeMetrics".to_string(),
+                    decoded_kind: Some("selector".to_string()),
+                    selector: Some("didChangeMetrics".to_string()),
+                    target_va: Some(0x1234),
+                    owner_class: Some("WidgetsBindingObserver".to_string()),
+                    library_uri: Some("package:flutter/src/widgets/binding.dart".to_string()),
+                },
+                flutterdec_adapter::ObjectPoolEntry {
+                    index: 8,
+                    kind: "String".to_string(),
+                    value: "Int64List".to_string(),
+                    decoded_kind: Some("selector".to_string()),
+                    selector: Some("Int64List".to_string()),
+                    target_va: Some(0x2234),
+                    owner_class: Some("Int64List".to_string()),
+                    library_uri: Some("dart:typed_data".to_string()),
+                },
+            ],
+        };
+
+        let map = build_pool_target_symbols(&model);
+        assert_eq!(
+            map.get(&0x1234).map(String::as_str),
+            Some("flutter_widgets_WidgetsBindingObserver_didChangeMetrics")
+        );
+        assert_eq!(
+            map.get(&0x2234).map(String::as_str),
+            Some("dart_typed_data_Int64List_new")
+        );
     }
 }
