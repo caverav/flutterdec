@@ -1,4 +1,12 @@
 impl<'a> FuncEmitter<'a> {
+    fn display_indirect_target_value(&self, target_value: &str) -> String {
+        let rendered = self.annotate_pool_refs(target_value);
+        if rendered == "x21.f0" || rendered == "reg21.f0" {
+            return "dispatchTargetFn".to_string();
+        }
+        rendered
+    }
+
     fn escape_hint_text(value: &str) -> String {
         let mut escaped = String::new();
         for c in value.chars() {
@@ -201,7 +209,10 @@ impl<'a> FuncEmitter<'a> {
                 }
                 comments.push(format!("indirect via: {}", named_target));
                 if target_value != named_target {
-                    comments.push(format!("target: {}", self.annotate_pool_refs(&target_value)));
+                    comments.push(format!(
+                        "target: {}",
+                        self.display_indirect_target_value(&target_value)
+                    ));
                 }
                 let suffix = format!(" // {}", comments.join(", "));
                 self.push_line(
@@ -232,7 +243,10 @@ impl<'a> FuncEmitter<'a> {
                 }
                 comments.push(format!("indirect via: {}", named_target));
                 if target_value != named_target {
-                    comments.push(format!("target: {}", self.annotate_pool_refs(&target_value)));
+                    comments.push(format!(
+                        "target: {}",
+                        self.display_indirect_target_value(&target_value)
+                    ));
                 }
                 comments.push(format!("target_va: 0x{target_va:x}"));
                 if emitted_name != target_call_name {
@@ -253,7 +267,10 @@ impl<'a> FuncEmitter<'a> {
                 }
                 comments.push(format!("indirect via: {}", named_target));
                 if target_value != named_target {
-                    comments.push(format!("target: {}", self.annotate_pool_refs(&target_value)));
+                    comments.push(format!(
+                        "target: {}",
+                        self.display_indirect_target_value(&target_value)
+                    ));
                 }
                 self.push_line(
                     indent,
@@ -268,7 +285,10 @@ impl<'a> FuncEmitter<'a> {
             } else {
                 let mut comments = Vec::new();
                 if named_target != "dispatchTarget" && target_value != named_target {
-                    comments.push(format!("target: {}", self.annotate_pool_refs(&target_value)));
+                    comments.push(format!(
+                        "target: {}",
+                        self.display_indirect_target_value(&target_value)
+                    ));
                 }
                 if named_target == "dispatchTarget" {
                     comments.push("indirect via: dispatchTarget".to_string());

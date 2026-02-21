@@ -189,6 +189,69 @@ fn rewrites_dispatch_target_fallback_to_library_invoke_when_uri_is_known() {
 }
 
 #[test]
+fn rewrites_dispatch_target_library_comment_target_to_dispatch_alias() {
+    let ir = FunctionIr {
+        function_id: 454,
+        name: "dispatchLibraryTargetCommentAlias".to_string(),
+        entry_va: 0xc112,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0xc112,
+            instrs: vec![
+                LlirInstr {
+                    va: 0xc112,
+                    op: IROp::Other,
+                    src: "mov x30, x21".to_string(),
+                    target: String::new(),
+                },
+                LlirInstr {
+                    va: 0xc116,
+                    op: IROp::Other,
+                    src: "ldr x30, [x30, #0]".to_string(),
+                    target: String::new(),
+                },
+                LlirInstr {
+                    va: 0xc11a,
+                    op: IROp::LoadPool,
+                    src: "x2".to_string(),
+                    target: "pool[44]".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc11e,
+                    op: IROp::Call,
+                    src: "blr x30".to_string(),
+                    target: "x30".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc122,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+    let symbols = HashMap::new();
+    let mut pool = HashMap::new();
+    pool.insert(44u64, "package:flutter/src/widgets/heroes.dart".to_string());
+    let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
+    assert!(
+        artifact.source.contains(
+            "framework:flutter.widgets.invoke [library], indirect via: dispatchTarget, target: dispatchTargetFn"
+        ),
+        "dispatch target comment should use alias instead of raw slot expression:\n{}",
+        artifact.source
+    );
+    assert!(
+        !artifact.source.contains("target: reg21.f0"),
+        "raw dispatch slot target comment should be hidden behind alias:\n{}",
+        artifact.source
+    );
+}
+
+#[test]
 fn rewrites_dispatch_target_fallback_to_package_invoke_when_uri_is_known() {
     let ir = FunctionIr {
         function_id: 452,
