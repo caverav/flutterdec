@@ -416,6 +416,64 @@ fn rewrites_indirect_call_to_stdlib_list_removeat_when_selector_is_known() {
 }
 
 #[test]
+fn rewrites_indirect_call_to_stdlib_match_end_when_selector_is_known() {
+    let ir = FunctionIr {
+        function_id: 472,
+        name: "indirectStdlibMatchEnd".to_string(),
+        entry_va: 0xc2c0,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0xc2c0,
+            instrs: vec![
+                LlirInstr {
+                    va: 0xc2c0,
+                    op: IROp::Other,
+                    src: "mov x0, #1".to_string(),
+                    target: String::new(),
+                },
+                LlirInstr {
+                    va: 0xc2c4,
+                    op: IROp::LoadPool,
+                    src: "x1".to_string(),
+                    target: "pool[93]".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc2c8,
+                    op: IROp::Call,
+                    src: "blr x9".to_string(),
+                    target: "x9".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc2cc,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+
+    let symbols = HashMap::new();
+    let mut pool = HashMap::new();
+    pool.insert(93u64, "match_end_index".to_string());
+    let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
+    assert!(
+        artifact.source.contains(
+            "dart.core.Match.end(1, \"match_end_index\" /* pool[93] */, param2, param3); // stdlib:dart.core.Match.end [selector], indirect via: indirectTarget9"
+        ),
+        "known match_end_index selector should rewrite to stdlib Match.end call:\n{}",
+        artifact.source
+    );
+    assert!(
+        !artifact.source.contains("dispatch.match_end_index("),
+        "known match_end_index selector should avoid dispatch fallback call:\n{}",
+        artifact.source
+    );
+}
+
+#[test]
 fn rewrites_indirect_call_to_framework_navigator_pushnamed_when_selector_is_known() {
     let ir = FunctionIr {
         function_id: 461,

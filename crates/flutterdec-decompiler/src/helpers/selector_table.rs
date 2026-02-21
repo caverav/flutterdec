@@ -173,6 +173,7 @@ fn classify_standard_selector(raw: &str) -> Option<String> {
         ("trimright", "stdlib:dart.core.String.trimRight"),
         ("trim", "stdlib:dart.core.String.trim"),
         ("codeunitat", "stdlib:dart.core.String.codeUnitAt"),
+        ("matchendindex", "stdlib:dart.core.Match.end"),
     ];
     let dart_io = [
         ("supportsansiescapes", "stdlib:dart.io.Stdout.supportsAnsiEscapes"),

@@ -979,6 +979,60 @@ fn annotates_dart_typed_data_selector_from_pool_string() {
 }
 
 #[test]
+fn annotates_dart_core_match_end_selector_from_pool_string() {
+    let ir = FunctionIr {
+        function_id: 33,
+        name: "matchEndSelector".to_string(),
+        entry_va: 0xfd80,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0xfd80,
+            instrs: vec![
+                LlirInstr {
+                    va: 0xfd80,
+                    op: IROp::Other,
+                    src: "mov x0, #1".to_string(),
+                    target: String::new(),
+                },
+                LlirInstr {
+                    va: 0xfd84,
+                    op: IROp::LoadPool,
+                    src: "x1".to_string(),
+                    target: "pool[21]".to_string(),
+                },
+                LlirInstr {
+                    va: 0xfd88,
+                    op: IROp::Call,
+                    src: "bl #0x7280".to_string(),
+                    target: "#0x7280".to_string(),
+                },
+                LlirInstr {
+                    va: 0xfd8c,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+
+    let mut symbols = HashMap::new();
+    symbols.insert(0x7280, "sub_7280".to_string());
+    let mut pool = HashMap::new();
+    pool.insert(21u64, "match_end_index".to_string());
+    let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
+    assert!(
+        artifact.source.contains(
+            "dart.core.Match.end(1, \"match_end_index\" /* pool[21] */, param2, param3); // stdlib:dart.core.Match.end [selector], was: sub_7280"
+        ),
+        "missing dart core match end selector annotation:\n{}",
+        artifact.source
+    );
+}
+
+#[test]
 fn annotates_dart_io_selector_from_pool_string() {
     let ir = FunctionIr {
         function_id: 29,
