@@ -182,27 +182,25 @@ fn extract_engine_markers(
             continue;
         }
         let lower = t.to_ascii_lowercase();
-        if lower.contains("flutter") || lower.contains("engine") {
-            if uniq.insert(format!("f:{t}")) {
-                if flutter_markers.len() < max_markers {
-                    flutter_markers.push(t.to_string());
-                }
-                if flutter_version.is_none() {
-                    flutter_version = extract_semver_token(t);
-                }
+        if (lower.contains("flutter") || lower.contains("engine")) && uniq.insert(format!("f:{t}"))
+        {
+            if flutter_markers.len() < max_markers {
+                flutter_markers.push(t.to_string());
+            }
+            if flutter_version.is_none() {
+                flutter_version = extract_semver_token(t);
             }
         }
-        if lower.contains("dart")
+        if (lower.contains("dart")
             || lower.contains("isolate snapshot")
-            || lower.contains("vm snapshot")
+            || lower.contains("vm snapshot"))
+            && uniq.insert(format!("d:{t}"))
         {
-            if uniq.insert(format!("d:{t}")) {
-                if dart_markers.len() < max_markers {
-                    dart_markers.push(t.to_string());
-                }
-                if dart_version.is_none() {
-                    dart_version = extract_semver_token(t);
-                }
+            if dart_markers.len() < max_markers {
+                dart_markers.push(t.to_string());
+            }
+            if dart_version.is_none() {
+                dart_version = extract_semver_token(t);
             }
         }
         if flutter_markers.len() >= max_markers && dart_markers.len() >= max_markers {
