@@ -149,18 +149,35 @@ impl<'a> FuncEmitter<'a> {
                     ),
                 );
             } else {
-                let target_suffix = if target_value != named_target {
-                    format!(" // target: {}", self.annotate_pool_refs(&target_value))
+                let mut comments = Vec::new();
+                if target_value != named_target {
+                    comments.push(format!("target: {}", self.annotate_pool_refs(&target_value)));
+                }
+                if named_target == "dispatchTarget" {
+                    comments.push("indirect via: dispatchTarget".to_string());
+                    let suffix = if comments.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" // {}", comments.join(", "))
+                    };
+                    self.push_line(
+                        indent,
+                        &format!("final {} = dispatch.invoke({});{}", tname, args, suffix),
+                    );
                 } else {
-                    String::new()
-                };
-                self.push_line(
-                    indent,
-                    &format!(
-                        "final {} = dynamicCall({}, [{}]);{}",
-                        tname, named_target, args, target_suffix
-                    ),
-                );
+                    let target_suffix = if comments.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" // {}", comments.join(", "))
+                    };
+                    self.push_line(
+                        indent,
+                        &format!(
+                            "final {} = dynamicCall({}, [{}]);{}",
+                            tname, named_target, args, target_suffix
+                        ),
+                    );
+                }
             }
         } else {
             let call_name = if let Some(hex) = target.strip_prefix("0x") {
