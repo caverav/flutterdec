@@ -501,32 +501,42 @@ fn classify_internal_standard_selector(raw: &str) -> Option<String> {
     if let Some((prefix, _)) = t.split_once("/* pool[") {
         t = prefix.trim();
     }
-    if t.eq_ignore_ascii_case("_current") {
-        return Some("stdlib:dart.core.Iterator.current [selector]".to_string());
-    }
-    if t.eq_ignore_ascii_case("_equivalentYear") {
-        return Some("stdlib:dart.core.DateTime.equivalentYear [selector]".to_string());
-    }
-    if t.eq_ignore_ascii_case("_listEquals") {
-        return Some("framework:flutter.foundation.listEquals [selector]".to_string());
-    }
-    if t.eq_ignore_ascii_case("_prependTypeArguments") {
-        return Some("runtime:dart_vm.prependTypeArguments [selector]".to_string());
-    }
-    if t.eq_ignore_ascii_case("_StreamController") {
-        return Some("stdlib:dart.async.StreamController.new [selector]".to_string());
-    }
-    if t.eq_ignore_ascii_case("_RawDatagramSocket") {
-        return Some("stdlib:dart.io.RawDatagramSocket.new [selector]".to_string());
-    }
-    if t.eq_ignore_ascii_case("_nativeSetFloat32x4") {
-        return Some("stdlib:dart.typed_data.ByteData.setFloat32x4 [selector]".to_string());
-    }
-    if t.eq_ignore_ascii_case("_UnmodifiableUint8ArrayView") {
-        return Some("stdlib:dart.typed_data._UnmodifiableUint8ArrayView.new [selector]".to_string());
-    }
-    if t.eq_ignore_ascii_case("_Int32ArrayView") {
-        return Some("stdlib:dart.typed_data._Int32ArrayView.new [selector]".to_string());
+    const INTERNAL_SELECTOR_MAP: &[(&str, &str)] = &[
+        ("_current", "stdlib:dart.core.Iterator.current [selector]"),
+        (
+            "_equivalentYear",
+            "stdlib:dart.core.DateTime.equivalentYear [selector]",
+        ),
+        ("_listEquals", "framework:flutter.foundation.listEquals [selector]"),
+        (
+            "_prependTypeArguments",
+            "runtime:dart_vm.prependTypeArguments [selector]",
+        ),
+        (
+            "_StreamController",
+            "stdlib:dart.async.StreamController.new [selector]",
+        ),
+        (
+            "_RawDatagramSocket",
+            "stdlib:dart.io.RawDatagramSocket.new [selector]",
+        ),
+        (
+            "_nativeSetFloat32x4",
+            "stdlib:dart.typed_data.ByteData.setFloat32x4 [selector]",
+        ),
+        (
+            "_UnmodifiableUint8ArrayView",
+            "stdlib:dart.typed_data._UnmodifiableUint8ArrayView.new [selector]",
+        ),
+        (
+            "_Int32ArrayView",
+            "stdlib:dart.typed_data._Int32ArrayView.new [selector]",
+        ),
+    ];
+    for (selector, tag) in INTERNAL_SELECTOR_MAP {
+        if t.eq_ignore_ascii_case(selector) {
+            return Some((*tag).to_string());
+        }
     }
     None
 }
@@ -642,10 +652,8 @@ fn extract_selector_name(raw: &str) -> Option<String> {
     for c in t.chars() {
         if c.is_ascii_alphanumeric() || c == '_' || c == '$' {
             out.push(c);
-        } else if c == '.' || c == '-' || c == '/' || c == ' ' {
-            if !out.ends_with('_') {
-                out.push('_');
-            }
+        } else if (c == '.' || c == '-' || c == '/' || c == ' ') && !out.ends_with('_') {
+            out.push('_');
         }
     }
     while out.ends_with('_') {

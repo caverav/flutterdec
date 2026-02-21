@@ -117,11 +117,15 @@ pub(super) fn simplify_bin_expr(lhs: String, op: &str, rhs: String) -> String {
 
     match op {
         "+" => {
-            if lt == "null" && r_int.is_some() {
-                return fmt_int(r_int.unwrap());
+            if lt == "null" {
+                if let Some(v) = r_int {
+                    return fmt_int(v);
+                }
             }
-            if rt == "null" && l_int.is_some() {
-                return fmt_int(l_int.unwrap());
+            if rt == "null" {
+                if let Some(v) = l_int {
+                    return fmt_int(v);
+                }
             }
             if l_int == Some(0) {
                 return rt.to_string();

@@ -475,47 +475,42 @@ impl<'a> FuncEmitter<'a> {
                                     if indent == cur_indent
                                         && t.starts_with("if (")
                                         && t.ends_with(") {")
+                                        && Self::null_checked_ident(t).as_deref() == Some(&id)
                                     {
-                                        if Self::null_checked_ident(t).as_deref() == Some(&id) {
-                                            if let Some(second_end) =
-                                                Self::find_block_end(&self.lines, scan)
-                                            {
-                                                for idx in i..scan {
-                                                    out.push(self.lines[idx].clone());
-                                                }
+                                        if let Some(second_end) =
+                                            Self::find_block_end(&self.lines, scan)
+                                        {
+                                            for idx in i..scan {
+                                                out.push(self.lines[idx].clone());
+                                            }
 
-                                                let mut second_else = second_end + 1;
-                                                while second_else < self.lines.len()
-                                                    && self.lines[second_else].trim().is_empty()
+                                            let mut second_else = second_end + 1;
+                                            while second_else < self.lines.len()
+                                                && self.lines[second_else].trim().is_empty()
+                                            {
+                                                second_else += 1;
+                                            }
+                                            if second_else < self.lines.len()
+                                                && self.lines[second_else].trim() == "else {"
+                                            {
+                                                if let Some(second_else_end) =
+                                                    Self::find_block_end(&self.lines, second_else)
                                                 {
-                                                    second_else += 1;
-                                                }
-                                                if second_else < self.lines.len()
-                                                    && self.lines[second_else].trim() == "else {"
-                                                {
-                                                    if let Some(second_else_end) =
-                                                        Self::find_block_end(
-                                                            &self.lines,
-                                                            second_else,
-                                                        )
-                                                    {
-                                                        for idx in second_else + 1..second_else_end
-                                                        {
-                                                            out.push(Self::dedent_once(
-                                                                &self.lines[idx],
-                                                            ));
-                                                        }
-                                                        i = second_else_end + 1;
-                                                    } else {
-                                                        i = second_end + 1;
+                                                    for idx in second_else + 1..second_else_end {
+                                                        out.push(Self::dedent_once(
+                                                            &self.lines[idx],
+                                                        ));
                                                     }
+                                                    i = second_else_end + 1;
                                                 } else {
                                                     i = second_end + 1;
                                                 }
-                                                changed = true;
-                                                rewritten = true;
-                                                break;
+                                            } else {
+                                                i = second_end + 1;
                                             }
+                                            changed = true;
+                                            rewritten = true;
+                                            break;
                                         }
                                     }
 
