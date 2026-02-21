@@ -543,6 +543,8 @@ Current metrics include:
 
 The run fails when thresholds are violated.
 
+`report.json` also includes a `semantic_rewrite` aggregate section with direct/indirect/fallback counts and ratios.
+
 Metric formulas:
 
 - `disassembly_ratio = disassembled_function_count / function_count`

@@ -97,6 +97,11 @@ Output files:
 - `semantic_indirect_calls`
 - `dispatch_selector_calls`
 
+`report.json` includes a `semantic_rewrite` summary with:
+- `total`, `ratio`
+- `direct`, `indirect`, `dispatch_fallback`
+- `indirect_ratio`
+
 Naming and semantic behavior:
 
 - external symbols are normalized into readable call names (for example runtime/native prefixes)
