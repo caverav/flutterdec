@@ -68,6 +68,58 @@ impl<'a> FuncEmitter<'a> {
         out
     }
 
+    fn extract_pool_indices(expr: &str) -> Vec<u64> {
+        let mut out = Vec::new();
+        let bytes = expr.as_bytes();
+        let mut i = 0usize;
+        while i + 5 <= bytes.len() {
+            if &bytes[i..i + 5] == b"pool[" {
+                let mut j = i + 5;
+                let mut val = 0u64;
+                let mut has_digit = false;
+                while j < bytes.len() && bytes[j].is_ascii_digit() {
+                    has_digit = true;
+                    val = val
+                        .saturating_mul(10)
+                        .saturating_add((bytes[j] - b'0') as u64);
+                    j += 1;
+                }
+                if has_digit && j < bytes.len() && bytes[j] == b']' {
+                    out.push(val);
+                    i = j + 1;
+                    continue;
+                }
+            }
+            i += 1;
+        }
+        out
+    }
+
+    fn is_generic_call_name(name: &str) -> bool {
+        let t = name.trim();
+        t.is_empty() || t == "unknown" || t.starts_with("sub_") || t.starts_with("fn_0x")
+    }
+
+    fn resolve_indirect_target_symbol_call_name(&self, target_expr: &str) -> Option<(String, u64)> {
+        for idx in Self::extract_pool_indices(target_expr) {
+            let Some(hint) = self.pool_semantic_hints.get(&idx) else {
+                continue;
+            };
+            let Some(va) = hint.target_va else {
+                continue;
+            };
+            let Some(symbol) = self.symbol_names.get(&va) else {
+                continue;
+            };
+            let call_name = sanitize_name(symbol);
+            if Self::is_generic_call_name(&call_name) {
+                continue;
+            }
+            return Some((call_name, va));
+        }
+        None
+    }
+
     pub(super) fn emit_call(&mut self, ins_target: &str, indent: usize) {
         self.total_calls += 1;
         self.state.call_index += 1;
@@ -127,7 +179,7 @@ impl<'a> FuncEmitter<'a> {
                 &self.pool_semantic_hints,
             )
             .or(selector_intent.clone())
-            .or(target_selector_intent);
+            .or(target_selector_intent.clone());
             let selector_name = selector_name.or(target_selector_name);
             if let Some(rewritten_name) = readable_call_name_from_intent(&named_target, intent.as_deref()) {
                 self.semantic_indirect_calls += 1;
@@ -143,6 +195,38 @@ impl<'a> FuncEmitter<'a> {
                 self.push_line(
                     indent,
                     &format!("final {} = {}({});{}", tname, rewritten_name, args, suffix),
+                );
+            } else if let Some((target_call_name, target_va)) =
+                self.resolve_indirect_target_symbol_call_name(&target_value)
+            {
+                self.semantic_indirect_calls += 1;
+                let target_intent = infer_call_intent_with_context(
+                    &target_call_name,
+                    &raw_arg_values,
+                    &self.pool_value_hints,
+                    &self.pool_semantic_hints,
+                )
+                .or(selector_intent.clone())
+                .or(target_selector_intent.clone());
+                let emitted_name =
+                    readable_call_name_from_intent(&target_call_name, target_intent.as_deref())
+                        .unwrap_or_else(|| target_call_name.clone());
+                let mut comments = Vec::new();
+                if let Some(v) = target_intent {
+                    comments.push(v);
+                }
+                comments.push(format!("indirect via: {}", named_target));
+                if target_value != named_target {
+                    comments.push(format!("target: {}", self.annotate_pool_refs(&target_value)));
+                }
+                comments.push(format!("target_va: 0x{target_va:x}"));
+                if emitted_name != target_call_name {
+                    comments.push(format!("was: {}", target_call_name));
+                }
+                let suffix = format!(" // {}", comments.join(", "));
+                self.push_line(
+                    indent,
+                    &format!("final {} = {}({});{}", tname, emitted_name, args, suffix),
                 );
             } else if let Some(selector) = selector_name.clone() {
                 self.dispatch_selector_calls += 1;
