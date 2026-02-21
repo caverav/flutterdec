@@ -161,7 +161,7 @@ Current scope:
 - adapter object-pool metadata fields (`decoded_kind`, `selector`, `target_va`, `owner_class`, `library_uri`) are now consumed by decompile for deterministic owner-qualified selector rewrites
 - if pool entries miss selector/owner/library metadata, core now backfills semantic hints from function ownership metadata keyed by `target_va`
 - when metadata includes `target_va` and that address resolves to a non-generic symbol, indirect calls can be rewritten to the resolved symbol path (with `target_va` traceability in comments)
-- model-backed canonical naming now deterministically tags Dart stdlib (`dart:*`) and Flutter framework (`package:flutter/*`) functions when adapter metadata includes class/library ownership
+- model-backed canonical naming now deterministically tags Dart stdlib (`dart:*`), Flutter framework (`package:flutter/*`), and package-owned calls (`package:*`) when adapter metadata includes class/library ownership
 - selector coverage now includes additional standard families such as `Navigator.pushNamed` and `List.removeAt`, improving deterministic semantic rewrites on real samples
 - constructor-like standard selectors are now recognized too (for example `KeyedSubtree`, `StreamIterator`, `Float32x4List`, `Int64List`) and rewritten to semantic `.new` paths
 - stack-pointer-derived base expressions now collapse into indexed stack slots (for example `sp[-0x30]`) instead of synthetic field forms

@@ -113,7 +113,7 @@ Naming and semantic behavior:
 - external symbols are normalized into readable call names (for example runtime/native prefixes)
 - descriptive external names can replace generic placeholders (`sub_*`, `fn_0x*`)
 - selector-based deterministic inference can tag standard calls from object-pool arguments even when call targets stay generic
-- selector inference now also consumes adapter pool metadata (`selector`, `owner_class`, `library_uri`) for deterministic owner-qualified semantic rewrites
+- selector inference now also consumes adapter pool metadata (`selector`, `owner_class`, `library_uri`) for deterministic owner-qualified semantic rewrites (Flutter, Dart stdlib, and package URIs when ownership is present)
 - when pool metadata omits selector/owner/library fields, decompile now backfills them from function ownership metadata using `target_va` when possible
 - when pool metadata includes a resolvable `target_va`, indirect callsites can also rewrite through that symbol (instead of fallback invoke/dispatch forms)
 - high-confidence callsites are rewritten to semantic paths while keeping traceability with `was: <original_name>`

@@ -108,7 +108,7 @@ sequenceDiagram
 - unresolved generic indirect aliases (for example `indirectTarget9`) now render as callable fallback `<target>(...)` before resorting to raw `dynamicCall(...)`
 - stack-pointer offset arguments are normalized to slot notation (`sp[-0x10]`) so call arguments stay readable
 - wrapped member-access chains are normalized to cleaner dotted form when safe (for example `((((obj.f7)).f23)).f7` -> `obj.f7.f23.f7`)
-- canonical names derived from adapter class/library ownership can deterministically label Flutter framework calls (`framework:flutter.*`) and Dart stdlib calls (`stdlib:dart.*`)
+- canonical names derived from adapter class/library ownership can deterministically label Flutter framework calls (`framework:flutter.*`), Dart stdlib calls (`stdlib:dart.*`), and package-owned calls (`package:*`)
 - argument/local declaration typing uses deterministic context from semantic call ownership and literal assignments, allowing concrete types like `flutter.widgets.State`, `dart.async.Future`, `String`, and `bool` instead of defaulting to `dynamic`
 
 3. `adapter`
