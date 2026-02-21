@@ -643,6 +643,69 @@ fn rewrites_indirect_call_to_dispatch_selector_from_metadata_without_pool_string
 }
 
 #[test]
+fn rewrites_indirect_call_to_owner_selector_when_library_uri_missing() {
+    let ir = FunctionIr {
+        function_id: 470,
+        name: "indirectMetadataOwnerNoLibrary".to_string(),
+        entry_va: 0xc2b0,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0xc2b0,
+            instrs: vec![
+                LlirInstr {
+                    va: 0xc2b0,
+                    op: IROp::LoadPool,
+                    src: "x1".to_string(),
+                    target: "pool[99]".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc2b4,
+                    op: IROp::Call,
+                    src: "blr x9".to_string(),
+                    target: "x9".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc2b8,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+
+    let symbols = HashMap::new();
+    let mut pool = HashMap::new();
+    pool.insert(99u64, "opaqueSelector".to_string());
+    let mut metadata = HashMap::new();
+    metadata.insert(
+        99u64,
+        PoolSemanticHint {
+            selector: Some("didChangeMetrics".to_string()),
+            owner_class: Some("WidgetsBindingObserver".to_string()),
+            library_uri: None,
+            target_va: None,
+        },
+    );
+
+    let artifact = emit_pseudocode_with_pool_context(&ir, &symbols, &pool, &metadata);
+    assert!(
+        artifact.source.contains(
+            "WidgetsBindingObserver.didChangeMetrics(receiver, \"opaqueSelector\" /* pool[99] */, param2, param3); // owner:WidgetsBindingObserver.didChangeMetrics [selector], indirect via: indirectTarget9"
+        ),
+        "owner metadata should rewrite selector fallback even when library URI is missing:\n{}",
+        artifact.source
+    );
+    assert!(
+        !artifact.source.contains("dispatch.didChangeMetrics("),
+        "owner selector rewrite should avoid dispatch fallback call:\n{}",
+        artifact.source
+    );
+}
+
+#[test]
 fn rewrites_indirect_call_to_package_owner_selector_from_metadata() {
     let ir = FunctionIr {
         function_id: 469,

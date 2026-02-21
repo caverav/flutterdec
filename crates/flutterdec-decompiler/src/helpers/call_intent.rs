@@ -124,7 +124,14 @@ fn intent_display_path(intent: &str) -> Option<String> {
         .trim()
         .trim_end_matches(" [selector]")
         .trim_end_matches(" [library]");
-    for prefix in ["framework:", "stdlib:", "runtime:", "native:", "package:"] {
+    for prefix in [
+        "framework:",
+        "stdlib:",
+        "runtime:",
+        "native:",
+        "package:",
+        "owner:",
+    ] {
         if let Some(path) = trimmed.strip_prefix(prefix) {
             if !path.is_empty() {
                 return Some(path.to_string());
@@ -331,22 +338,24 @@ fn semantic_intent_from_pool_hint(hint: &crate::PoolSemanticHint, selector: &str
     if owner.is_empty() {
         return None;
     }
-    let lib_uri = hint.library_uri.as_deref()?.trim();
     let method = semantic_method_from_selector(selector, &owner);
     if method.is_empty() {
         return None;
     }
 
-    if let Some(seg) = dart_library_segment(lib_uri) {
-        return Some(format!("stdlib:dart.{}.{}.{}", seg, owner, method));
+    if let Some(lib_uri) = hint.library_uri.as_deref().map(str::trim) {
+        if let Some(seg) = dart_library_segment(lib_uri) {
+            return Some(format!("stdlib:dart.{}.{}.{}", seg, owner, method));
+        }
+        if let Some(seg) = flutter_library_segment(lib_uri) {
+            return Some(format!("framework:flutter.{}.{}.{}", seg, owner, method));
+        }
+        if let Some(seg) = package_library_segment(lib_uri) {
+            return Some(format!("package:{}.{}.{}", seg, owner, method));
+        }
     }
-    if let Some(seg) = flutter_library_segment(lib_uri) {
-        return Some(format!("framework:flutter.{}.{}.{}", seg, owner, method));
-    }
-    if let Some(seg) = package_library_segment(lib_uri) {
-        return Some(format!("package:{}.{}.{}", seg, owner, method));
-    }
-    None
+
+    Some(format!("owner:{}.{}", owner, method))
 }
 
 fn semantic_method_from_selector(selector: &str, owner_class: &str) -> String {
