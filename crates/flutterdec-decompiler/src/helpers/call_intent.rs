@@ -601,7 +601,11 @@ fn classify_standard_selector(raw: &str) -> Option<String> {
         ("websocketimpl", "stdlib:dart.io.WebSocketImpl.new"),
         ("nativesocket", "stdlib:dart.io._NativeSocket.new"),
     ];
-    let dart_vm_runtime = [("yieldstariterable", "runtime:dart_vm.yieldStarIterable")];
+    let dart_vm_runtime = [
+        ("yieldstariterable", "runtime:dart_vm.yieldStarIterable"),
+        ("closure", "runtime:dart_vm.Closure.new"),
+        ("typeparameter", "runtime:dart_vm.TypeParameter.new"),
+    ];
     let dart_typed_data = [
         ("float32x4list", "stdlib:dart.typed_data.Float32x4List.new"),
         ("int64list", "stdlib:dart.typed_data.Int64List.new"),
