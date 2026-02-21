@@ -114,7 +114,7 @@ Naming and semantic behavior:
 - descriptive external names can replace generic placeholders (`sub_*`, `fn_0x*`)
 - selector-based deterministic inference can tag standard calls from object-pool arguments even when call targets stay generic
 - selector inference now also consumes adapter pool metadata (`selector`, `owner_class`, `library_uri`) for deterministic owner-qualified semantic rewrites (Flutter, Dart stdlib, and package URIs when ownership is present)
-- internal selector forms are also recognized when deterministic (for example `_current` -> `dart.core.Iterator.current`, `_equivalentYear` -> `dart.core.DateTime.equivalentYear`, `_listEquals` -> `flutter.foundation.listEquals`, `_prependTypeArguments` -> `dart_vm.prependTypeArguments`)
+- internal selector forms are also recognized when deterministic (for example `_current` -> `dart.core.Iterator.current`, `_equivalentYear` -> `dart.core.DateTime.equivalentYear`, `_listEquals` -> `flutter.foundation.listEquals`, `_prependTypeArguments` -> `dart_vm.prependTypeArguments`, `_StreamController` -> `dart.async.StreamController.new`, `_RawDatagramSocket` -> `dart.io.RawDatagramSocket.new`)
 - when metadata includes `owner_class` but not `library_uri`, indirect selector calls can still be deterministically rewritten to owner-qualified forms (for example `OwnerClass.method(...)`) with `owner:` intent traceability
 - when pool metadata omits selector/owner/library fields, decompile now backfills them from function ownership metadata using `target_va` when possible
 - when pool metadata includes a resolvable `target_va`, indirect callsites can also rewrite through that symbol (instead of fallback invoke/dispatch forms)
@@ -138,6 +138,8 @@ Naming and semantic behavior:
   - `// stdlib:dart.core.Iterator.current [selector]`
   - `// stdlib:dart.core.DateTime.equivalentYear [selector]`
   - `// stdlib:dart.core.List.removeAt [selector]`
+  - `// stdlib:dart.async.StreamController.new [selector]`
+  - `// stdlib:dart.io.RawDatagramSocket.new [selector]`
   - `// stdlib:dart.async.Stream.listen [selector]`
   - `// framework:flutter.widgets.State.setState`
   - `// framework:flutter.foundation.listEquals [selector]`
