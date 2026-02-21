@@ -34,6 +34,15 @@ struct SemanticIntentSummary {
     constructor_calls: usize,
 }
 
+#[derive(Debug, Default, Clone, Copy)]
+struct PoolMetadataStats {
+    total_entries: usize,
+    with_target_va: usize,
+    with_selector: usize,
+    with_owner_class: usize,
+    with_library_uri: usize,
+}
+
 pub fn run_decompile(
     repo_root: &Path,
     input_path: &Path,
@@ -61,6 +70,7 @@ pub fn run_decompile(
     let mut standard_model_symbol_count = 0usize;
     let class_to_library = build_class_library_lookup(&model);
     let pool_value_hints = build_pool_value_hints(&model);
+    let pool_metadata = collect_pool_metadata_stats(&model);
     let pool_semantic_hints = build_pool_semantic_hints(&model, &class_to_library);
     let pool_target_symbols = build_pool_target_symbols(&pool_semantic_hints, &pool_value_hints);
 
@@ -234,6 +244,13 @@ pub fn run_decompile(
         "pool_value_hints": pool_value_hints.len(),
         "pool_semantic_hints": pool_semantic_hints.len(),
         "pool_target_symbols": pool_target_symbols.len(),
+        "pool_metadata": {
+            "total_entries": pool_metadata.total_entries,
+            "with_target_va": pool_metadata.with_target_va,
+            "with_selector": pool_metadata.with_selector,
+            "with_owner_class": pool_metadata.with_owner_class,
+            "with_library_uri": pool_metadata.with_library_uri
+        },
         "semantic_rewrite": {
             "total": semantic_total,
             "ratio": semantic_ratio,
@@ -380,6 +397,41 @@ fn build_pool_value_hints(model: &ProgramModel) -> HashMap<u64, String> {
             continue;
         }
         out.insert(e.index, trimmed.to_string());
+    }
+    out
+}
+
+fn collect_pool_metadata_stats(model: &ProgramModel) -> PoolMetadataStats {
+    let mut out = PoolMetadataStats::default();
+    out.total_entries = model.object_pool.len();
+    for e in &model.object_pool {
+        if e.target_va.is_some() {
+            out.with_target_va += 1;
+        }
+        if e
+            .selector
+            .as_deref()
+            .map(str::trim)
+            .is_some_and(|v| !v.is_empty())
+        {
+            out.with_selector += 1;
+        }
+        if e
+            .owner_class
+            .as_deref()
+            .map(str::trim)
+            .is_some_and(|v| !v.is_empty())
+        {
+            out.with_owner_class += 1;
+        }
+        if e
+            .library_uri
+            .as_deref()
+            .map(str::trim)
+            .is_some_and(|v| !v.is_empty())
+        {
+            out.with_library_uri += 1;
+        }
     }
     out
 }
@@ -1012,6 +1064,49 @@ mod runners_tests {
             Some("package:flutter/src/widgets/binding.dart")
         );
         assert_eq!(h.target_va, Some(0x1234));
+    }
+
+    #[test]
+    fn collects_pool_metadata_coverage_stats() {
+        let model = ProgramModel {
+            schema_version: 2,
+            adapter_kind: "python".to_string(),
+            dart_version: "3.0.0".to_string(),
+            snapshot_hash: "deadbeef".to_string(),
+            arch: "arm64".to_string(),
+            libraries: Vec::new(),
+            classes: Vec::new(),
+            functions: Vec::new(),
+            object_pool: vec![
+                flutterdec_adapter::ObjectPoolEntry {
+                    index: 1,
+                    kind: "String".to_string(),
+                    value: "a".to_string(),
+                    decoded_kind: None,
+                    selector: Some("setState".to_string()),
+                    target_va: Some(0x1000),
+                    owner_class: Some("State".to_string()),
+                    library_uri: Some("package:flutter/src/widgets/framework.dart".to_string()),
+                },
+                flutterdec_adapter::ObjectPoolEntry {
+                    index: 2,
+                    kind: "Smi".to_string(),
+                    value: "42".to_string(),
+                    decoded_kind: None,
+                    selector: None,
+                    target_va: None,
+                    owner_class: None,
+                    library_uri: None,
+                },
+            ],
+        };
+
+        let stats = collect_pool_metadata_stats(&model);
+        assert_eq!(stats.total_entries, 2);
+        assert_eq!(stats.with_target_va, 1);
+        assert_eq!(stats.with_selector, 1);
+        assert_eq!(stats.with_owner_class, 1);
+        assert_eq!(stats.with_library_uri, 1);
     }
 
     #[test]
