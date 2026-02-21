@@ -561,6 +561,7 @@ The run fails when thresholds are violated.
 `report.json` also includes a `semantic_rewrite` aggregate section with direct/indirect/fallback/target-va-symbol counts and ratios.
 `report.json` also includes a `semantic_intent` aggregate section with framework/stdlib/runtime/native counts, selector-tagged count, and constructor-call count.
 `report.json` also includes `selector_fallback` diagnostics with total/unique unresolved selector fallback counts, top selector names, and sample call lines.
+`report.json` also includes `call_fallback` diagnostics for `dynamicCall(...)`, `dispatch.invoke(...)`, and generic `<target>.invoke(...)` forms.
 
 Metric formulas:
 
@@ -607,6 +608,7 @@ File naming convention:
 - `semantic_rewrite` aggregate
 - `semantic_intent` aggregate
 - `selector_fallback` aggregate
+- `call_fallback` aggregate
 
 ## How `info` differs from `decompile`
 
