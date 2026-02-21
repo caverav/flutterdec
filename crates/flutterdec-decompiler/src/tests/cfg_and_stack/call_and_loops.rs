@@ -151,6 +151,58 @@ fn annotates_pool_mapping_in_indirect_target_comment() {
 }
 
 #[test]
+fn rewrites_indirect_call_to_dispatch_selector_when_nonstandard() {
+    let ir = FunctionIr {
+        function_id: 48,
+        name: "indirectDispatchSelector".to_string(),
+        entry_va: 0xc400,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0xc400,
+            instrs: vec![
+                LlirInstr {
+                    va: 0xc400,
+                    op: IROp::LoadPool,
+                    src: "x1".to_string(),
+                    target: "pool[12]".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc404,
+                    op: IROp::Call,
+                    src: "blr x9".to_string(),
+                    target: "x9".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc408,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+
+    let symbols = HashMap::new();
+    let mut pool = HashMap::new();
+    pool.insert(12u64, "customAction@12345".to_string());
+    let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
+    assert!(
+        artifact.source.contains(
+            "dispatch.customAction(receiver, \"customAction@12345\" /* pool[12] */, param2, param3); // selector: customAction, indirect via: indirectTarget9"
+        ),
+        "nonstandard selector should still rewrite indirect call into dispatch.<selector> form:\n{}",
+        artifact.source
+    );
+    assert!(
+        !artifact.source.contains("dynamicCall(indirectTarget9"),
+        "dispatch selector rewrite should avoid dynamicCall fallback:\n{}",
+        artifact.source
+    );
+}
+
+#[test]
 fn names_direct_call_target_when_symbol_is_known() {
     let ir = FunctionIr {
         function_id: 44,
