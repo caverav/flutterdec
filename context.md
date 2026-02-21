@@ -159,6 +159,7 @@ Current scope:
 - selector extraction now ignores likely file/URI/path-like strings (`*.dart`, paths, URLs) to reduce false-positive standard-call labeling
 - declaration typing now uses deterministic context: semantic call ownership (`flutter.*`/`dart.*`/owner-qualified package paths), constructor semantics (`*.new`), and literal assignments can upgrade `dynamic` declarations into concrete types (for example `flutter.widgets.State`, `dart.async.Future`, `dart.async.StreamIterator`, `String`, `bool`)
 - adapter object-pool metadata fields (`decoded_kind`, `selector`, `target_va`, `owner_class`, `library_uri`) are now consumed by decompile for deterministic owner-qualified selector rewrites
+- owner-only metadata (selector + owner_class without library URI) can still rewrite indirect selector calls to deterministic owner-qualified call paths
 - if pool entries miss selector/owner/library metadata, core now backfills semantic hints from function ownership metadata keyed by `target_va`
 - when metadata includes `target_va` and that address resolves to a non-generic symbol, indirect calls can be rewritten to the resolved symbol path (with `target_va` traceability in comments)
 - model-backed canonical naming now deterministically tags Dart stdlib (`dart:*`), Flutter framework (`package:flutter/*`), and package-owned calls (`package:*`) when adapter metadata includes class/library ownership
