@@ -203,6 +203,62 @@ fn rewrites_indirect_call_to_dispatch_selector_when_nonstandard() {
 }
 
 #[test]
+fn keeps_dynamic_call_when_target_selector_is_file_path_like() {
+    let ir = FunctionIr {
+        function_id: 49,
+        name: "indirectFileLikeSelector".to_string(),
+        entry_va: 0xc500,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0xc500,
+            instrs: vec![
+                LlirInstr {
+                    va: 0xc500,
+                    op: IROp::LoadPool,
+                    src: "x9".to_string(),
+                    target: "pool[77]".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc504,
+                    op: IROp::Other,
+                    src: "ldr x9, [x9, #7]".to_string(),
+                    target: String::new(),
+                },
+                LlirInstr {
+                    va: 0xc508,
+                    op: IROp::Call,
+                    src: "blr x9".to_string(),
+                    target: "x9".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc50c,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+
+    let symbols = HashMap::new();
+    let mut pool = HashMap::new();
+    pool.insert(77u64, "dart_mappablesrcmapper_utils.dart".to_string());
+    let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
+    assert!(
+        artifact.source.contains("dynamicCall(indirectTarget9"),
+        "file-like selector hints should not force semantic rewrite:\n{}",
+        artifact.source
+    );
+    assert!(
+        !artifact.source.contains("dart.core.map(") && !artifact.source.contains("dispatch."),
+        "file-like selector hints should avoid false positive standard/dispatch names:\n{}",
+        artifact.source
+    );
+}
+
+#[test]
 fn names_direct_call_target_when_symbol_is_known() {
     let ir = FunctionIr {
         function_id: 44,
