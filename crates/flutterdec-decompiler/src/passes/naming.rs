@@ -80,6 +80,9 @@ impl<'a> FuncEmitter<'a> {
         let mut renames: HashMap<String, String> = HashMap::new();
         let mut arg_types: HashMap<String, String> = HashMap::new();
         let mut local_types: HashMap<String, String> = HashMap::new();
+        let mut typed_ids = arg_ids.clone();
+        typed_ids.extend(local_ids.clone());
+        let inferred_types = Self::infer_declared_types_from_context(&self.lines, &typed_ids);
 
         for arg in &arg_ids {
             let stats = Self::collect_ident_stats(&self.lines, arg);
@@ -97,11 +100,16 @@ impl<'a> FuncEmitter<'a> {
             if name != *arg {
                 renames.insert(arg.clone(), name);
             }
-            let ty = if stats.arith_ops >= 2 && stats.field_access == 0 {
-                "int"
-            } else {
-                "dynamic"
-            };
+            let ty = inferred_types
+                .get(arg)
+                .cloned()
+                .unwrap_or_else(|| {
+                    if stats.arith_ops >= 2 && stats.field_access == 0 {
+                        "int".to_string()
+                    } else {
+                        "dynamic".to_string()
+                    }
+                });
             arg_types.insert(arg.clone(), ty.to_string());
         }
 
@@ -136,11 +144,16 @@ impl<'a> FuncEmitter<'a> {
             if name != *local {
                 renames.insert(local.clone(), name);
             }
-            let ty = if stats.arith_ops >= 2 && stats.field_access == 0 {
-                "int"
-            } else {
-                "dynamic"
-            };
+            let ty = inferred_types
+                .get(local)
+                .cloned()
+                .unwrap_or_else(|| {
+                    if stats.arith_ops >= 2 && stats.field_access == 0 {
+                        "int".to_string()
+                    } else {
+                        "dynamic".to_string()
+                    }
+                });
             local_types.insert(local.clone(), ty.to_string());
         }
 

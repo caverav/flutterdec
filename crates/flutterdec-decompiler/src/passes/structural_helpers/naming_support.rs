@@ -86,13 +86,27 @@ impl<'a> FuncEmitter<'a> {
     }
 
     pub(super) fn is_local_decl_line(t: &str) -> bool {
-        if !(t.starts_with("int ") || t.starts_with("dynamic ")) {
-            return false;
-        }
         if !t.ends_with(';') || t.contains('=') {
             return false;
         }
-        !t.contains('(')
+        if t.contains('(') || t.contains(')') {
+            return false;
+        }
+        let decl = t.trim_end_matches(';').trim();
+        let mut parts = decl.split_whitespace();
+        let Some(ty) = parts.next() else {
+            return false;
+        };
+        let Some(name) = parts.next() else {
+            return false;
+        };
+        if parts.next().is_some() {
+            return false;
+        }
+        if ty == "return" || ty == "if" || ty == "else" || ty == "while" || ty == "for" {
+            return false;
+        }
+        name.chars().all(Self::is_ident_char)
     }
 
     pub(super) fn prelude_insert_index(lines: &[String]) -> usize {
@@ -137,6 +151,298 @@ impl<'a> FuncEmitter<'a> {
 
     pub(super) fn identifier_assigned(lines: &[String], ident: &str) -> bool {
         lines.iter().any(|l| Self::assigns_ident(l, ident))
+    }
+
+    pub(super) fn infer_declared_types_from_context(
+        lines: &[String],
+        ids: &[String],
+    ) -> HashMap<String, String> {
+        let mut out: HashMap<String, String> = HashMap::new();
+
+        for line in lines {
+            if let Some((callee, args)) = Self::extract_call_site(line) {
+                if let Some(receiver_ty) = Self::receiver_type_from_semantic_path(&callee) {
+                    if let Some(receiver_id) = Self::receiver_ident_from_args(&args) {
+                        if ids.contains(&receiver_id) {
+                            Self::upsert_inferred_type(&mut out, &receiver_id, &receiver_ty);
+                        }
+                    }
+                }
+            }
+
+            if let Some(path) = Self::extract_semantic_path_from_comment(line) {
+                if let Some(receiver_ty) = Self::receiver_type_from_semantic_path(&path) {
+                    if let Some((_, args)) = Self::extract_call_site(line) {
+                        if let Some(receiver_id) = Self::receiver_ident_from_args(&args) {
+                            if ids.contains(&receiver_id) {
+                                Self::upsert_inferred_type(&mut out, &receiver_id, &receiver_ty);
+                            }
+                        }
+                    }
+                }
+            }
+
+            for id in ids {
+                let Some(rhs) = Self::extract_assignment_rhs(line, id) else {
+                    continue;
+                };
+                let rhs_trim = rhs.trim();
+                if rhs_trim.starts_with('"') && rhs_trim.ends_with('"') && rhs_trim.len() >= 2 {
+                    Self::upsert_inferred_type(&mut out, id, "String");
+                } else if rhs_trim == "true" || rhs_trim == "false" {
+                    Self::upsert_inferred_type(&mut out, id, "bool");
+                } else if Self::is_integer_literal(rhs_trim) {
+                    Self::upsert_inferred_type(&mut out, id, "int");
+                }
+            }
+        }
+
+        out
+    }
+
+    fn upsert_inferred_type(out: &mut HashMap<String, String>, id: &str, ty: &str) {
+        let next = ty.to_string();
+        match out.get(id) {
+            Some(cur) if cur == &next => {}
+            Some(cur) if cur == "dynamic" => {
+                out.insert(id.to_string(), next);
+            }
+            None => {
+                out.insert(id.to_string(), next);
+            }
+            _ => {}
+        }
+    }
+
+    fn extract_assignment_rhs(line: &str, ident: &str) -> Option<String> {
+        let t = line.trim();
+        if !Self::assigns_ident(t, ident) {
+            return None;
+        }
+        let needle = format!("{ident} =");
+        let pos = t.find(&needle)?;
+        let rhs = t[pos + needle.len()..].trim();
+        let rhs = rhs.strip_suffix(';').unwrap_or(rhs).trim();
+        Some(rhs.to_string())
+    }
+
+    fn extract_semantic_path_from_comment(line: &str) -> Option<String> {
+        let (_, comment) = line.split_once("//")?;
+        let comment = comment.trim();
+        for prefix in ["framework:", "stdlib:"] {
+            if let Some(rest) = comment.strip_prefix(prefix) {
+                let token = rest
+                    .split(|c: char| c.is_whitespace() || c == ',')
+                    .next()
+                    .unwrap_or("")
+                    .trim();
+                if !token.is_empty() {
+                    return Some(token.to_string());
+                }
+            }
+        }
+        None
+    }
+
+    fn receiver_type_from_semantic_path(path: &str) -> Option<String> {
+        if !(path.starts_with("flutter.") || path.starts_with("dart.")) {
+            return None;
+        }
+        let parts: Vec<&str> = path.split('.').filter(|p| !p.is_empty()).collect();
+        if parts.len() < 4 {
+            return None;
+        }
+        Some(parts[..parts.len() - 1].join("."))
+    }
+
+    fn extract_call_site(line: &str) -> Option<(String, Vec<String>)> {
+        let t = line.trim();
+        let rhs = if let Some((_, r)) = t.split_once('=') {
+            r.trim()
+        } else if let Some(rest) = t.strip_prefix("return ") {
+            rest.trim()
+        } else {
+            return None;
+        };
+
+        let open = rhs.find('(')?;
+        let callee = rhs[..open].trim().to_string();
+        if callee.is_empty() || callee.contains(char::is_whitespace) {
+            return None;
+        }
+
+        let close = Self::match_paren(rhs, open)?;
+        let args_src = &rhs[open + 1..close];
+        let args = Self::split_call_args(args_src);
+        Some((callee, args))
+    }
+
+    fn match_paren(s: &str, open: usize) -> Option<usize> {
+        let bytes = s.as_bytes();
+        let mut depth = 0i32;
+        let mut i = open;
+        let mut in_string = false;
+        while i < bytes.len() {
+            let b = bytes[i];
+            if in_string {
+                if b == b'\\' {
+                    i = i.saturating_add(2);
+                    continue;
+                }
+                if b == b'"' {
+                    in_string = false;
+                }
+                i += 1;
+                continue;
+            }
+            match b {
+                b'"' => in_string = true,
+                b'(' => depth += 1,
+                b')' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return Some(i);
+                    }
+                }
+                _ => {}
+            }
+            i += 1;
+        }
+        None
+    }
+
+    fn split_call_args(s: &str) -> Vec<String> {
+        let mut out = Vec::new();
+        let mut cur = String::new();
+        let mut depth_paren = 0i32;
+        let mut depth_bracket = 0i32;
+        let mut depth_brace = 0i32;
+        let mut in_string = false;
+
+        let bytes = s.as_bytes();
+        let mut i = 0usize;
+        while i < bytes.len() {
+            let b = bytes[i];
+            if in_string {
+                cur.push(b as char);
+                if b == b'\\' && i + 1 < bytes.len() {
+                    cur.push(bytes[i + 1] as char);
+                    i += 2;
+                    continue;
+                }
+                if b == b'"' {
+                    in_string = false;
+                }
+                i += 1;
+                continue;
+            }
+
+            match b {
+                b'"' => {
+                    in_string = true;
+                    cur.push('"');
+                }
+                b'(' => {
+                    depth_paren += 1;
+                    cur.push('(');
+                }
+                b')' => {
+                    depth_paren -= 1;
+                    cur.push(')');
+                }
+                b'[' => {
+                    depth_bracket += 1;
+                    cur.push('[');
+                }
+                b']' => {
+                    depth_bracket -= 1;
+                    cur.push(']');
+                }
+                b'{' => {
+                    depth_brace += 1;
+                    cur.push('{');
+                }
+                b'}' => {
+                    depth_brace -= 1;
+                    cur.push('}');
+                }
+                b','
+                    if depth_paren == 0
+                        && depth_bracket == 0
+                        && depth_brace == 0
+                        && !in_string =>
+                {
+                    let piece = cur.trim();
+                    if !piece.is_empty() {
+                        out.push(piece.to_string());
+                    }
+                    cur.clear();
+                }
+                _ => cur.push(b as char),
+            }
+            i += 1;
+        }
+
+        let piece = cur.trim();
+        if !piece.is_empty() {
+            out.push(piece.to_string());
+        }
+        out
+    }
+
+    fn extract_ident_expr(expr: &str) -> Option<String> {
+        let mut t = expr.trim();
+        while let Some(inner) = t.strip_prefix('(').and_then(|v| v.strip_suffix(')')) {
+            t = inner.trim();
+        }
+        if t.is_empty() {
+            return None;
+        }
+        if t.chars().all(Self::is_ident_char)
+            && t.chars()
+                .next()
+                .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+        {
+            return Some(t.to_string());
+        }
+        None
+    }
+
+    fn receiver_ident_from_args(args: &[String]) -> Option<String> {
+        if let Some(first) = args.first().and_then(|a| Self::extract_ident_expr(a)) {
+            return Some(first);
+        }
+
+        if args.len() >= 2 {
+            if let Some(class_id_ident) = Self::extract_class_id_ident(&args[0]) {
+                if let Some(second) = Self::extract_ident_expr(&args[1]) {
+                    if second == class_id_ident {
+                        return Some(second);
+                    }
+                }
+                return Some(class_id_ident);
+            }
+        }
+
+        None
+    }
+
+    fn extract_class_id_ident(expr: &str) -> Option<String> {
+        let t = expr.trim();
+        let inner = t.strip_prefix("classId(")?.strip_suffix(')')?.trim();
+        Self::extract_ident_expr(inner)
+    }
+
+    fn is_integer_literal(s: &str) -> bool {
+        let t = s.trim();
+        if t.is_empty() {
+            return false;
+        }
+        if let Some(hex) = t.strip_prefix("0x") {
+            return !hex.is_empty() && hex.chars().all(|c| c.is_ascii_hexdigit());
+        }
+        let digits = t.strip_prefix('-').unwrap_or(t);
+        !digits.is_empty() && digits.chars().all(|c| c.is_ascii_digit())
     }
 
 }
