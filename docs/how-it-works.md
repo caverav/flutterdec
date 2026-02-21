@@ -541,6 +541,7 @@ Current metrics include:
 - `semantic_direct_calls`
 - `semantic_indirect_calls`
 - `dispatch_selector_calls`
+- `target_va_symbol_calls`
 - `block_helper_refs`
 - `raw_arg_name_refs`
 - `raw_register_name_refs`
@@ -550,7 +551,7 @@ Current metrics include:
 
 The run fails when thresholds are violated.
 
-`report.json` also includes a `semantic_rewrite` aggregate section with direct/indirect/fallback counts and ratios.
+`report.json` also includes a `semantic_rewrite` aggregate section with direct/indirect/fallback/target-va-symbol counts and ratios.
 `report.json` also includes a `semantic_intent` aggregate section with framework/stdlib/runtime/native counts, selector-tagged count, and constructor-call count.
 
 Metric formulas:

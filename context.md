@@ -124,6 +124,7 @@ The CLI writes `quality.json` and fails the run when strict thresholds are viola
 - semantic direct-call rewrite count
 - semantic indirect-call rewrite count
 - dispatch-selector fallback count
+- target-va symbol rewrite count
 - report-level semantic intent counts (`framework`, `stdlib`, `runtime`, `native`, selector-tagged, constructor calls)
 - readability regressions such as helper block leakage and raw token leakage
 - omitted path marker count for complex regions that are currently summarized

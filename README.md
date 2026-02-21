@@ -96,10 +96,11 @@ Output files:
 - `semantic_direct_calls`
 - `semantic_indirect_calls`
 - `dispatch_selector_calls`
+- `target_va_symbol_calls`
 
 `report.json` includes a `semantic_rewrite` summary with:
 - `total`, `ratio`
-- `direct`, `indirect`, `dispatch_fallback`
+- `direct`, `indirect`, `dispatch_fallback`, `target_va_symbol`
 - `indirect_ratio`
 
 `report.json` also includes a `semantic_intent` summary with:
