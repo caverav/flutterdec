@@ -70,6 +70,7 @@ Current module layout:
   - quality gate computation in `src/pipeline/quality.rs`
   - command runners in `src/pipeline/runners.rs`
   - stripped/unstripped ELF call-target mapping in `src/pipeline/symbol_map.rs`
+  - ELF fingerprint extraction in `src/pipeline/engine_fingerprint.rs`
 - `crates/flutterdec-cli`: user facing commands
 
 ## Data contracts
@@ -135,6 +136,7 @@ Current scope:
 - IR and pseudo Dart generation with iterative readability passes
 - readability passes now prune dead statements after terminal control flow and unwrap non-retry `while (true)` wrappers when the body already terminates
 - optional stripped vs unstripped ELF symbol mapping to recover readable direct-call targets
+- optional ELF engine fingerprinting to estimate build identity from build-id and marker strings
 
 Known limits:
 
@@ -161,6 +163,7 @@ Python remains useful at the adapter boundary for faster version specific parser
 - refresh decompiler golden snapshots with `FLUTTERDEC_UPDATE_GOLDEN=1 cargo test -p flutterdec-decompiler golden_` when output changes intentionally
 - for end-to-end real binary regression checks, use `scripts/real-golden.sh record|check` for single profiles, or `scripts/real-golden-matrix.sh check` for multi-profile runs
 - keep profile configs in `testdata/real-golden/profiles/*/profile.env`
+- for naming improvements on direct call targets, use `decompile --extra-symbol-elf /path/to/libflutter.unstripped.so` when addresses align
 - test against real Flutter binaries, not only synthetic fixtures
 - prioritize output readability improvements that are backed by concrete sample evidence
 

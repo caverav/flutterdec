@@ -12,6 +12,7 @@
 Auxiliary path:
 
 7. Symbol mapping: stripped vs unstripped ARM64 ELF direct-call target mapping
+8. Engine fingerprinting: ELF metadata and marker extraction for build/version hints
 
 ## Module boundaries
 

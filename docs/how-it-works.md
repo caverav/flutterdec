@@ -71,7 +71,7 @@ sequenceDiagram
 
 ## Runtime modes
 
-`flutterdec` currently exposes four command families, each with a different internal path:
+`flutterdec` currently exposes five command families, each with a different internal path:
 
 1. `info`
 - fast metadata path
@@ -83,6 +83,7 @@ sequenceDiagram
 - full path from loader to pseudocode and quality gates
 - writes artifacts under output directory
 - may fail after writing artifacts if quality gates fail
+- can ingest extra ELF symbol tables to improve direct call naming in pseudocode
 
 3. `adapter`
 - management path for adapter installation and listing
@@ -93,6 +94,11 @@ sequenceDiagram
 - extracts function symbols from the unstripped binary
 - scans direct call targets in the stripped binary and resolves them to exact/nearest symbols
 - writes mapping artifacts under output directory
+
+5. `engine-fingerprint`
+- inspects ELF metadata, note sections, and marker strings
+- emits build-id and version hints with a confidence score
+- optional JSON artifact for reproducible comparisons
 
 ## Pipeline walkthrough with concrete contracts
 
@@ -143,7 +149,7 @@ Important detail:
 ## Repository map
 
 - `crates/flutterdec-cli`: command parsing and command dispatch
-- `crates/flutterdec-core`: orchestration, file output, quality gates, and stripped/unstripped call-target mapping
+- `crates/flutterdec-core`: orchestration, file output, quality gates, stripped/unstripped call-target mapping, and ELF engine fingerprinting
 - `crates/flutterdec-loader`: APK and ELF loading, snapshot symbol extraction
 - `crates/flutterdec-adapter`: adapter process management and model contract
 - `crates/flutterdec-disasm-arm64`: instruction decode and annotations

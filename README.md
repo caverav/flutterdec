@@ -21,6 +21,7 @@ cargo run -p flutterdec-cli -- info path/to/libapp.so --json
 
 ```bash
 flutterdec info <apk|so> [--json]
+flutterdec engine-fingerprint <libflutter.so> [--json] [-o out/fingerprint/]
 flutterdec decompile <apk|so> -o out/ [--emit-asm] [--emit-ir]
 flutterdec map-symbols --stripped <libflutter-stripped.so> --unstripped <libflutter-unstripped.so> -o out/symbol-map/
 flutterdec adapter install --dart-hash <hash>
@@ -63,6 +64,7 @@ Arguments:
 - `-o, --out <OUT_DIR>`: output directory (required)
 - `--emit-asm`: also write disassembly files
 - `--emit-ir`: also write IR JSON files
+- `--extra-symbol-elf <PATH>`: load extra ELF function symbols for call naming (repeatable)
 - `--focus <FOCUS>`: decompile functions matching a filter
 - `--max-functions <N>`: limit number of functions to process
 - `--max-placeholder-ifs <N>`: quality gate threshold (default `0`)
@@ -76,6 +78,7 @@ Examples:
 flutterdec decompile ./sample.apk -o ./out
 flutterdec decompile ./sample.apk -o ./out --emit-asm --emit-ir
 flutterdec decompile ./sample.apk -o ./out --max-functions 120 --min-disassembly-ratio 0.0
+flutterdec decompile ./sample.apk -o ./out --extra-symbol-elf ./libflutter.unstripped.so
 ```
 
 Output files:
@@ -98,6 +101,24 @@ Examples:
 ```bash
 flutterdec adapter install --dart-hash 4b8f1f
 flutterdec adapter list
+```
+
+### `engine-fingerprint`
+
+Extract engine-identifying metadata from an ELF (`libflutter.so` or similar) and produce a confidence-based fingerprint.
+
+Arguments:
+
+- `<INPUT>`: path to ELF file
+- `-o, --out <OUT_DIR>`: optional output directory for `engine_fingerprint.json`
+- `--max-markers <N>`: max marker strings per category (default `24`)
+- `--json`: print full JSON report
+
+Examples:
+
+```bash
+flutterdec engine-fingerprint ./libflutter.so --json
+flutterdec engine-fingerprint ./libflutter.so -o ./out/fingerprint
 ```
 
 ### `map-symbols`
@@ -135,6 +156,14 @@ Output files:
 - `out/symbol-map/symbol_map_report.json`
 - `out/symbol-map/symbol_target_summary.json`
 - `out/symbol-map/symbol_call_sites.tsv`
+
+Combined naming workflow:
+
+```bash
+flutterdec engine-fingerprint ./libflutter.unstripped.so --json
+flutterdec map-symbols --stripped ./libflutter.stripped.so --unstripped ./libflutter.unstripped.so -o ./out/symbol-map --require-exec-match
+flutterdec decompile ./sample.apk -o ./out --extra-symbol-elf ./libflutter.unstripped.so
+```
 
 ## Real Golden Checks (Optional)
 
