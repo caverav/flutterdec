@@ -924,3 +924,111 @@ fn annotates_runtime_selector_from_pool_string() {
         artifact.source
     );
 }
+
+#[test]
+fn annotates_dart_core_compile_time_error_selector_from_pool_string() {
+    let ir = FunctionIr {
+        function_id: 32,
+        name: "compileTimeErrorSelector".to_string(),
+        entry_va: 0x10100,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0x10100,
+            instrs: vec![
+                LlirInstr {
+                    va: 0x10100,
+                    op: IROp::Other,
+                    src: "mov x0, #1".to_string(),
+                    target: String::new(),
+                },
+                LlirInstr {
+                    va: 0x10104,
+                    op: IROp::LoadPool,
+                    src: "x1".to_string(),
+                    target: "pool[17]".to_string(),
+                },
+                LlirInstr {
+                    va: 0x10108,
+                    op: IROp::Call,
+                    src: "bl #0x7600".to_string(),
+                    target: "#0x7600".to_string(),
+                },
+                LlirInstr {
+                    va: 0x1010c,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+
+    let mut symbols = HashMap::new();
+    symbols.insert(0x7600, "sub_7600".to_string());
+    let mut pool = HashMap::new();
+    pool.insert(17u64, "_CompileTimeError".to_string());
+    let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
+    assert!(
+        artifact.source.contains(
+            "dart.core._CompileTimeError.new(1, \"_CompileTimeError\" /* pool[17] */, param2, param3); // stdlib:dart.core._CompileTimeError.new [selector], was: sub_7600"
+        ),
+        "missing compile-time-error selector annotation:\n{}",
+        artifact.source
+    );
+}
+
+#[test]
+fn annotates_dart_io_native_socket_selector_from_pool_string() {
+    let ir = FunctionIr {
+        function_id: 33,
+        name: "nativeSocketSelector".to_string(),
+        entry_va: 0x10200,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0x10200,
+            instrs: vec![
+                LlirInstr {
+                    va: 0x10200,
+                    op: IROp::Other,
+                    src: "mov x0, #1".to_string(),
+                    target: String::new(),
+                },
+                LlirInstr {
+                    va: 0x10204,
+                    op: IROp::LoadPool,
+                    src: "x1".to_string(),
+                    target: "pool[18]".to_string(),
+                },
+                LlirInstr {
+                    va: 0x10208,
+                    op: IROp::Call,
+                    src: "bl #0x7700".to_string(),
+                    target: "#0x7700".to_string(),
+                },
+                LlirInstr {
+                    va: 0x1020c,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+
+    let mut symbols = HashMap::new();
+    symbols.insert(0x7700, "sub_7700".to_string());
+    let mut pool = HashMap::new();
+    pool.insert(18u64, "_NativeSocket".to_string());
+    let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
+    assert!(
+        artifact.source.contains(
+            "dart.io._NativeSocket.new(1, \"_NativeSocket\" /* pool[18] */, param2, param3); // stdlib:dart.io._NativeSocket.new [selector], was: sub_7700"
+        ),
+        "missing native-socket selector annotation:\n{}",
+        artifact.source
+    );
+}
