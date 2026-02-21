@@ -17,6 +17,7 @@ pub struct DecompileOptions {
     pub out_dir: PathBuf,
     pub emit_asm: bool,
     pub emit_ir: bool,
+    pub extra_symbol_elfs: Vec<PathBuf>,
     pub focus: Option<String>,
     pub max_functions: Option<usize>,
     pub max_placeholder_ifs: usize,
@@ -64,3 +65,4 @@ include!("pipeline/model.rs");
 include!("pipeline/quality.rs");
 include!("pipeline/runners.rs");
 include!("pipeline/symbol_map.rs");
+include!("pipeline/engine_fingerprint.rs");

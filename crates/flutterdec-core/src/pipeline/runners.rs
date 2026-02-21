@@ -53,6 +53,13 @@ pub fn run_decompile(
             .entry(f.entry_va)
             .or_insert_with(|| f.function_name.clone());
     }
+    for elf_path in &opt.extra_symbol_elfs {
+        let ext = load_elf_function_symbols(elf_path)
+            .with_context(|| format!("load external symbols from {}", elf_path.display()))?;
+        for (va, name) in ext {
+            symbol_names.entry(va).or_insert(name);
+        }
+    }
     let pseudo = emit_program(&ir, &symbol_names);
 
     let asm_dir = opt.out_dir.join("asm");
@@ -127,6 +134,11 @@ pub fn run_decompile(
             "disassembled_functions": disasm.len()
         },
         "quality": report,
+        "extra_symbol_elfs": opt
+            .extra_symbol_elfs
+            .iter()
+            .map(|p| p.display().to_string())
+            .collect::<Vec<_>>(),
     });
 
     fs::write(

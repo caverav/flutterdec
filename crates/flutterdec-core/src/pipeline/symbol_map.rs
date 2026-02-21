@@ -216,6 +216,12 @@ pub fn run_symbol_map(
     Ok(report)
 }
 
+pub fn load_elf_function_symbols(path: &Path) -> Result<BTreeMap<u64, String>> {
+    let bytes = fs::read(path).with_context(|| format!("read ELF {}", path.display()))?;
+    let elf = Elf::parse(&bytes).with_context(|| format!("parse ELF {}", path.display()))?;
+    Ok(collect_symbols(&elf))
+}
+
 fn collect_exec_sections(elf: &Elf, bytes: &[u8]) -> Vec<ExecSection> {
     let mut out = Vec::new();
 
