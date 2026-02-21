@@ -98,6 +98,59 @@ fn rewrites_indirect_call_to_semantic_name_when_selector_is_known() {
 }
 
 #[test]
+fn annotates_pool_mapping_in_indirect_target_comment() {
+    let ir = FunctionIr {
+        function_id: 47,
+        name: "indirectTargetPoolHint".to_string(),
+        entry_va: 0xc300,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0xc300,
+            instrs: vec![
+                LlirInstr {
+                    va: 0xc300,
+                    op: IROp::LoadPool,
+                    src: "x9".to_string(),
+                    target: "pool[40]".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc304,
+                    op: IROp::Other,
+                    src: "ldr x9, [x9, #7]".to_string(),
+                    target: String::new(),
+                },
+                LlirInstr {
+                    va: 0xc308,
+                    op: IROp::Call,
+                    src: "blr x9".to_string(),
+                    target: "x9".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc30c,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+
+    let symbols = HashMap::new();
+    let mut pool = HashMap::new();
+    pool.insert(40u64, "_offsetInBytes".to_string());
+    let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
+    assert!(
+        artifact
+            .source
+            .contains("dynamicCall(indirectTarget9, [receiver, param1, param2, param3]); // target: (pool[40 /* \"_offsetInBytes\" */]).f7"),
+        "pool mapping should be shown in indirect target comment:\n{}",
+        artifact.source
+    );
+}
+
+#[test]
 fn names_direct_call_target_when_symbol_is_known() {
     let ir = FunctionIr {
         function_id: 44,

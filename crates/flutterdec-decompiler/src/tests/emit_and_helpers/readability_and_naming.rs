@@ -461,3 +461,111 @@ fn annotates_framework_from_pool_selector_when_call_name_is_generic() {
         artifact.source
     );
 }
+
+#[test]
+fn annotates_flutter_scheduler_selector_from_pool_string() {
+    let ir = FunctionIr {
+        function_id: 26,
+        name: "schedulerSelector".to_string(),
+        entry_va: 0xfb00,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0xfb00,
+            instrs: vec![
+                LlirInstr {
+                    va: 0xfb00,
+                    op: IROp::Other,
+                    src: "mov x0, #1".to_string(),
+                    target: String::new(),
+                },
+                LlirInstr {
+                    va: 0xfb04,
+                    op: IROp::LoadPool,
+                    src: "x1".to_string(),
+                    target: "pool[7]".to_string(),
+                },
+                LlirInstr {
+                    va: 0xfb08,
+                    op: IROp::Call,
+                    src: "bl #0x7000".to_string(),
+                    target: "#0x7000".to_string(),
+                },
+                LlirInstr {
+                    va: 0xfb0c,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+
+    let mut symbols = HashMap::new();
+    symbols.insert(0x7000, "sub_7000".to_string());
+    let mut pool = HashMap::new();
+    pool.insert(7u64, "addPostFrameCallback".to_string());
+    let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
+    assert!(
+        artifact.source.contains(
+            "flutter.scheduler.SchedulerBinding.addPostFrameCallback(1, \"addPostFrameCallback\" /* pool[7] */, param2, param3); // framework:flutter.scheduler.SchedulerBinding.addPostFrameCallback [selector], was: sub_7000"
+        ),
+        "missing scheduler selector annotation:\n{}",
+        artifact.source
+    );
+}
+
+#[test]
+fn annotates_dart_async_selector_from_pool_string() {
+    let ir = FunctionIr {
+        function_id: 27,
+        name: "asyncSelector".to_string(),
+        entry_va: 0xfc00,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0xfc00,
+            instrs: vec![
+                LlirInstr {
+                    va: 0xfc00,
+                    op: IROp::Other,
+                    src: "mov x0, #1".to_string(),
+                    target: String::new(),
+                },
+                LlirInstr {
+                    va: 0xfc04,
+                    op: IROp::LoadPool,
+                    src: "x1".to_string(),
+                    target: "pool[9]".to_string(),
+                },
+                LlirInstr {
+                    va: 0xfc08,
+                    op: IROp::Call,
+                    src: "bl #0x7100".to_string(),
+                    target: "#0x7100".to_string(),
+                },
+                LlirInstr {
+                    va: 0xfc0c,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+
+    let mut symbols = HashMap::new();
+    symbols.insert(0x7100, "sub_7100".to_string());
+    let mut pool = HashMap::new();
+    pool.insert(9u64, "catchError".to_string());
+    let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
+    assert!(
+        artifact.source.contains(
+            "dart.async.Future.catchError(1, \"catchError\" /* pool[9] */, param2, param3); // stdlib:dart.async.Future.catchError [selector], was: sub_7100"
+        ),
+        "missing dart async selector annotation:\n{}",
+        artifact.source
+    );
+}
