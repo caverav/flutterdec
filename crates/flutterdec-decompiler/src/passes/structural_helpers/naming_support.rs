@@ -252,6 +252,9 @@ impl<'a> FuncEmitter<'a> {
         if parts.len() < 4 {
             return None;
         }
+        if parts.last().is_some_and(|m| m.eq_ignore_ascii_case("new")) {
+            return None;
+        }
         Some(parts[..parts.len() - 1].join("."))
     }
 
