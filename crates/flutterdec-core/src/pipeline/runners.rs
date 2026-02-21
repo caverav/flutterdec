@@ -57,6 +57,13 @@ struct SelectorFallbackEntry {
     sample: String,
 }
 
+#[derive(Debug, Default, Clone, Copy)]
+struct CallFallbackSummary {
+    dynamic_call: usize,
+    dispatch_invoke: usize,
+    generic_invoke: usize,
+}
+
 pub fn run_decompile(
     repo_root: &Path,
     input_path: &Path,
@@ -204,6 +211,7 @@ pub fn run_decompile(
 
     let report = quality_from_artifacts(&model, &disasm, &pseudo, opt);
     let semantic_intent = collect_semantic_intent_summary(&pseudo);
+    let call_fallback = collect_call_fallback_summary(&pseudo);
     let selector_fallback = collect_selector_fallback_summary(&pseudo);
     let selector_fallback_top = selector_fallback
         .top
@@ -298,6 +306,11 @@ pub fn run_decompile(
             "total": selector_fallback.total,
             "unique": selector_fallback.unique,
             "top": selector_fallback_top
+        },
+        "call_fallback": {
+            "dynamic_call": call_fallback.dynamic_call,
+            "dispatch_invoke": call_fallback.dispatch_invoke,
+            "generic_invoke": call_fallback.generic_invoke
         }
     });
 
@@ -392,6 +405,24 @@ fn collect_selector_fallback_summary(pseudo: &[PseudocodeArtifact]) -> SelectorF
     });
     out.unique = ranked.len();
     out.top = ranked.into_iter().take(10).collect();
+    out
+}
+
+fn collect_call_fallback_summary(pseudo: &[PseudocodeArtifact]) -> CallFallbackSummary {
+    let mut out = CallFallbackSummary::default();
+    for artifact in pseudo {
+        for line in artifact.source.lines() {
+            if line.contains("dynamicCall(") {
+                out.dynamic_call += 1;
+            }
+            if line.contains("dispatch.invoke(") {
+                out.dispatch_invoke += 1;
+            }
+            if line.contains(".invoke(") && line.contains("indirectTarget") {
+                out.generic_invoke += 1;
+            }
+        }
+    }
     out
 }
 
@@ -1160,6 +1191,35 @@ mod runners_tests {
             Some("customAction")
         );
         assert_eq!(summary.top.get(1).map(|v| v.count), Some(1));
+    }
+
+    #[test]
+    fn summarizes_call_fallback_counts_from_pseudocode() {
+        let pseudo = vec![PseudocodeArtifact {
+            function_id: 1,
+            function_name: "f1".to_string(),
+            source: r#"dynamic f1(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {
+  final t1 = dispatch.invoke(arg0, arg1, arg2, arg3); // indirect via: dispatchTarget
+  final t2 = indirectTarget9.invoke(arg0, arg1, arg2, arg3); // indirect via: indirectTarget9
+  final t3 = dynamicCall(opaqueTarget, [arg0, arg1, arg2, arg3]); // target: opaqueTarget
+  return t3;
+}"#
+            .to_string(),
+            placeholder_ifs: 0,
+            unresolved_cf: 0,
+            raw_register_calls: 0,
+            total_calls: 3,
+            indirect_calls: 3,
+            semantic_direct_calls: 0,
+            semantic_indirect_calls: 0,
+            dispatch_selector_calls: 0,
+            target_va_symbol_calls: 0,
+        }];
+
+        let summary = collect_call_fallback_summary(&pseudo);
+        assert_eq!(summary.dynamic_call, 1);
+        assert_eq!(summary.dispatch_invoke, 1);
+        assert_eq!(summary.generic_invoke, 1);
     }
 
     #[test]
