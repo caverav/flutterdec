@@ -1032,3 +1032,111 @@ fn annotates_dart_io_native_socket_selector_from_pool_string() {
         artifact.source
     );
 }
+
+#[test]
+fn annotates_runtime_closure_selector_from_pool_string() {
+    let ir = FunctionIr {
+        function_id: 34,
+        name: "closureSelector".to_string(),
+        entry_va: 0x10300,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0x10300,
+            instrs: vec![
+                LlirInstr {
+                    va: 0x10300,
+                    op: IROp::Other,
+                    src: "mov x0, #1".to_string(),
+                    target: String::new(),
+                },
+                LlirInstr {
+                    va: 0x10304,
+                    op: IROp::LoadPool,
+                    src: "x1".to_string(),
+                    target: "pool[19]".to_string(),
+                },
+                LlirInstr {
+                    va: 0x10308,
+                    op: IROp::Call,
+                    src: "bl #0x7800".to_string(),
+                    target: "#0x7800".to_string(),
+                },
+                LlirInstr {
+                    va: 0x1030c,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+
+    let mut symbols = HashMap::new();
+    symbols.insert(0x7800, "sub_7800".to_string());
+    let mut pool = HashMap::new();
+    pool.insert(19u64, "_Closure".to_string());
+    let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
+    assert!(
+        artifact.source.contains(
+            "dart_vm.Closure.new(1, \"_Closure\" /* pool[19] */, param2, param3); // runtime:dart_vm.Closure.new [selector], was: sub_7800"
+        ),
+        "missing closure runtime selector annotation:\n{}",
+        artifact.source
+    );
+}
+
+#[test]
+fn annotates_runtime_type_parameter_selector_from_pool_string() {
+    let ir = FunctionIr {
+        function_id: 35,
+        name: "typeParameterSelector".to_string(),
+        entry_va: 0x10400,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0x10400,
+            instrs: vec![
+                LlirInstr {
+                    va: 0x10400,
+                    op: IROp::Other,
+                    src: "mov x0, #1".to_string(),
+                    target: String::new(),
+                },
+                LlirInstr {
+                    va: 0x10404,
+                    op: IROp::LoadPool,
+                    src: "x1".to_string(),
+                    target: "pool[20]".to_string(),
+                },
+                LlirInstr {
+                    va: 0x10408,
+                    op: IROp::Call,
+                    src: "bl #0x7900".to_string(),
+                    target: "#0x7900".to_string(),
+                },
+                LlirInstr {
+                    va: 0x1040c,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+
+    let mut symbols = HashMap::new();
+    symbols.insert(0x7900, "sub_7900".to_string());
+    let mut pool = HashMap::new();
+    pool.insert(20u64, "_TypeParameter".to_string());
+    let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
+    assert!(
+        artifact.source.contains(
+            "dart_vm.TypeParameter.new(1, \"_TypeParameter\" /* pool[20] */, param2, param3); // runtime:dart_vm.TypeParameter.new [selector], was: sub_7900"
+        ),
+        "missing type-parameter runtime selector annotation:\n{}",
+        artifact.source
+    );
+}
