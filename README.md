@@ -92,6 +92,15 @@ Output files:
 - `out/quality.json`
 - `out/report.json`
 
+Naming and semantic behavior:
+
+- external symbols are normalized into readable call names (for example runtime/native prefixes)
+- descriptive external names can replace generic placeholders (`sub_*`, `fn_0x*`)
+- recognized calls add intent comments in pseudocode, for example:
+  - `// stdlib:dart.core.print`
+  - `// runtime:dart_vm.invoke`
+  - `// native:libc.memcpy`
+
 ### `adapter`
 
 Arguments:

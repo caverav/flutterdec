@@ -85,6 +85,7 @@ sequenceDiagram
 - may fail after writing artifacts if quality gates fail
 - can ingest extra ELF symbol tables and `map-symbols` target JSON to improve direct call naming
 - external descriptive names replace generic placeholders like `sub_*` and `fn_0x*` when addresses match
+- recognized call names emit semantic intent comments (stdlib/runtime/native) next to call lines
 
 3. `adapter`
 - management path for adapter installation and listing
@@ -130,6 +131,7 @@ ir = build_program_ir(disasm)
 symbols = merge(model.functions names, disasm names)
 symbols = merge(extra ELF symbols, with generic-name replacement policy)
 symbols = merge(extra symbol-map targets, exact-only unless nearest explicitly enabled)
+symbols = normalize external names (demangle + canonical runtime/native/stdlib aliases)
 pseudo = emit_program(ir, symbols)
 
 write pseudocode files

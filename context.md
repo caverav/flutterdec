@@ -137,6 +137,8 @@ Current scope:
 - readability passes now prune dead statements after terminal control flow and unwrap non-retry `while (true)` wrappers when the body already terminates
 - optional stripped vs unstripped ELF symbol mapping to recover readable direct-call targets
 - decompile can now ingest `map-symbols` target JSON directly to inject mapped call names into pseudocode
+- external symbol names are normalized (including C++ demangle and runtime/native prefixes) before pseudocode emission
+- pseudocode call sites now include semantic intent comments for recognized stdlib/runtime/native targets
 - optional ELF engine fingerprinting to estimate build identity from build-id and marker strings
 
 Known limits:
