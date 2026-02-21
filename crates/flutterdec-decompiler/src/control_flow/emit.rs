@@ -4,7 +4,7 @@ impl<'a> FuncEmitter<'a> {
         self.state.call_index += 1;
 
         let tname = format!("t{}", self.state.call_index);
-        let args = (0..4)
+        let arg_values = (0..4)
             .map(|r| {
                 self.state
                     .reg_values
@@ -12,8 +12,8 @@ impl<'a> FuncEmitter<'a> {
                     .cloned()
                     .unwrap_or_else(|| format!("arg{r}"))
             })
-            .collect::<Vec<_>>()
-            .join(", ");
+            .collect::<Vec<_>>();
+        let args = arg_values.join(", ");
 
         let target = normalize_target(ins_target);
         if target.starts_with('x') {
@@ -48,7 +48,11 @@ impl<'a> FuncEmitter<'a> {
                     tname,
                     call_name,
                     args,
-                    infer_call_intent(&call_name)
+                    infer_call_intent_with_context(
+                        &call_name,
+                        &arg_values,
+                        &self.pool_value_hints,
+                    )
                         .map(|v| format!(" // {}", v))
                         .unwrap_or_default()
                 ),

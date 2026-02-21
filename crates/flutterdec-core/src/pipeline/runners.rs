@@ -50,6 +50,7 @@ pub fn run_decompile(
     let mut symbol_merge_skipped = 0usize;
     let mut standard_model_symbol_count = 0usize;
     let class_to_library = build_class_library_lookup(&model);
+    let pool_value_hints = build_pool_value_hints(&model);
 
     for f in &model.functions {
         let resolved = canonical_standard_model_name(f, &class_to_library)
@@ -97,7 +98,7 @@ pub fn run_decompile(
             );
         }
     }
-    let pseudo = emit_program(&ir, &symbol_names);
+    let pseudo = emit_program_with_pool_hints(&ir, &symbol_names, &pool_value_hints);
 
     let asm_dir = opt.out_dir.join("asm");
     let ir_dir = opt.out_dir.join("ir");
@@ -188,6 +189,8 @@ pub fn run_decompile(
             "skipped": symbol_merge_skipped
         },
         "standard_model_symbols": standard_model_symbol_count
+        ,
+        "pool_value_hints": pool_value_hints.len()
     });
 
     fs::write(
@@ -254,6 +257,22 @@ fn build_class_library_lookup(model: &ProgramModel) -> HashMap<String, String> {
     let mut out = HashMap::new();
     for c in &model.classes {
         out.entry(c.name.clone()).or_insert_with(|| c.library_uri.clone());
+    }
+    out
+}
+
+fn build_pool_value_hints(model: &ProgramModel) -> HashMap<u64, String> {
+    let mut out = HashMap::new();
+    for e in &model.object_pool {
+        let kind = e.kind.to_ascii_lowercase();
+        if !kind.contains("string") && !kind.contains("onebyte") && !kind.contains("twobyte") {
+            continue;
+        }
+        let trimmed = e.value.trim();
+        if trimmed.is_empty() || trimmed.len() > 256 {
+            continue;
+        }
+        out.insert(e.index, trimmed.to_string());
     }
     out
 }
