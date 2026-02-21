@@ -563,6 +563,7 @@ fn classify_standard_selector(raw: &str) -> Option<String> {
     ];
     let dart_core = [
         ("print", "stdlib:dart.core.print"),
+        ("compiletimeerror", "stdlib:dart.core._CompileTimeError.new"),
         ("tostring", "stdlib:dart.core.toString"),
         ("hashcode", "stdlib:dart.core.hashCode"),
         ("compareto", "stdlib:dart.core.compareTo"),
@@ -598,6 +599,7 @@ fn classify_standard_selector(raw: &str) -> Option<String> {
     let dart_io = [
         ("supportsansiescapes", "stdlib:dart.io.Stdout.supportsAnsiEscapes"),
         ("websocketimpl", "stdlib:dart.io.WebSocketImpl.new"),
+        ("nativesocket", "stdlib:dart.io._NativeSocket.new"),
     ];
     let dart_vm_runtime = [("yieldstariterable", "runtime:dart_vm.yieldStarIterable")];
     let dart_typed_data = [
