@@ -143,6 +143,112 @@ fn rewrites_indirect_call_to_semantic_name_when_selector_is_known() {
 }
 
 #[test]
+fn rewrites_indirect_call_to_stdlib_list_removeat_when_selector_is_known() {
+    let ir = FunctionIr {
+        function_id: 460,
+        name: "indirectStdlibRemoveAt".to_string(),
+        entry_va: 0xc210,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0xc210,
+            instrs: vec![
+                LlirInstr {
+                    va: 0xc210,
+                    op: IROp::Other,
+                    src: "mov x0, #1".to_string(),
+                    target: String::new(),
+                },
+                LlirInstr {
+                    va: 0xc214,
+                    op: IROp::LoadPool,
+                    src: "x1".to_string(),
+                    target: "pool[52]".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc218,
+                    op: IROp::Call,
+                    src: "blr x9".to_string(),
+                    target: "x9".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc21c,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+
+    let symbols = HashMap::new();
+    let mut pool = HashMap::new();
+    pool.insert(52u64, "removeAt".to_string());
+    let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
+    assert!(
+        artifact.source.contains(
+            "dart.core.List.removeAt(1, \"removeAt\" /* pool[52] */, param2, param3); // stdlib:dart.core.List.removeAt [selector], indirect via: indirectTarget9"
+        ),
+        "known removeAt selector should rewrite to stdlib List.removeAt call:\n{}",
+        artifact.source
+    );
+}
+
+#[test]
+fn rewrites_indirect_call_to_framework_navigator_pushnamed_when_selector_is_known() {
+    let ir = FunctionIr {
+        function_id: 461,
+        name: "indirectNavigatorPushNamed".to_string(),
+        entry_va: 0xc220,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0xc220,
+            instrs: vec![
+                LlirInstr {
+                    va: 0xc220,
+                    op: IROp::Other,
+                    src: "mov x0, #1".to_string(),
+                    target: String::new(),
+                },
+                LlirInstr {
+                    va: 0xc224,
+                    op: IROp::LoadPool,
+                    src: "x1".to_string(),
+                    target: "pool[53]".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc228,
+                    op: IROp::Call,
+                    src: "blr x9".to_string(),
+                    target: "x9".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc22c,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+
+    let symbols = HashMap::new();
+    let mut pool = HashMap::new();
+    pool.insert(53u64, "pushNamed".to_string());
+    let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
+    assert!(
+        artifact.source.contains(
+            "flutter.widgets.Navigator.pushNamed(1, \"pushNamed\" /* pool[53] */, param2, param3); // framework:flutter.widgets.Navigator.pushNamed [selector], indirect via: indirectTarget9"
+        ),
+        "known pushNamed selector should rewrite to framework Navigator.pushNamed call:\n{}",
+        artifact.source
+    );
+}
+
+#[test]
 fn annotates_pool_mapping_in_indirect_target_comment() {
     let ir = FunctionIr {
         function_id: 47,
