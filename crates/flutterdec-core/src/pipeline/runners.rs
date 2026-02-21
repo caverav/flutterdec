@@ -61,8 +61,8 @@ pub fn run_decompile(
     let mut standard_model_symbol_count = 0usize;
     let class_to_library = build_class_library_lookup(&model);
     let pool_value_hints = build_pool_value_hints(&model);
-    let pool_semantic_hints = build_pool_semantic_hints(&model);
-    let pool_target_symbols = build_pool_target_symbols(&model);
+    let pool_semantic_hints = build_pool_semantic_hints(&model, &class_to_library);
+    let pool_target_symbols = build_pool_target_symbols(&pool_semantic_hints, &pool_value_hints);
 
     for f in &model.functions {
         let resolved = canonical_standard_model_name(f, &class_to_library)
@@ -384,27 +384,57 @@ fn build_pool_value_hints(model: &ProgramModel) -> HashMap<u64, String> {
     out
 }
 
-fn build_pool_semantic_hints(model: &ProgramModel) -> HashMap<u64, PoolSemanticHint> {
+fn build_pool_semantic_hints(
+    model: &ProgramModel,
+    class_to_library: &HashMap<String, String>,
+) -> HashMap<u64, PoolSemanticHint> {
     let mut out = HashMap::new();
+    let function_meta = build_function_metadata_lookup(model, class_to_library);
     for e in &model.object_pool {
+        let fallback = e
+            .target_va
+            .and_then(|va| function_meta.get(&va))
+            .cloned();
+
         let selector = e
             .selector
             .as_deref()
             .map(str::trim)
             .filter(|v| !v.is_empty() && v.len() <= 128)
-            .map(str::to_string);
+            .map(str::to_string)
+            .or_else(|| {
+                fallback
+                    .as_ref()
+                    .map(|(name, _, _)| name.as_str())
+                    .filter(|name| !is_generic_symbol_name(name))
+                    .map(str::to_string)
+            });
         let owner_class = e
             .owner_class
             .as_deref()
             .map(str::trim)
             .filter(|v| !v.is_empty() && v.len() <= 128)
-            .map(str::to_string);
+            .map(str::to_string)
+            .or_else(|| {
+                fallback
+                    .as_ref()
+                    .map(|(_, owner, _)| owner.as_str())
+                    .filter(|v| !v.is_empty())
+                    .map(str::to_string)
+            });
         let library_uri = e
             .library_uri
             .as_deref()
             .map(str::trim)
             .filter(|v| !v.is_empty() && v.len() <= 256)
-            .map(str::to_string);
+            .map(str::to_string)
+            .or_else(|| {
+                fallback
+                    .as_ref()
+                    .map(|(_, _, lib)| lib.as_str())
+                    .filter(|v| !v.is_empty())
+                    .map(str::to_string)
+            });
         let target_va = e.target_va;
 
         if selector.is_none() && owner_class.is_none() && library_uri.is_none() && target_va.is_none() {
@@ -424,13 +454,16 @@ fn build_pool_semantic_hints(model: &ProgramModel) -> HashMap<u64, PoolSemanticH
     out
 }
 
-fn build_pool_target_symbols(model: &ProgramModel) -> HashMap<u64, String> {
+fn build_pool_target_symbols(
+    pool_semantic_hints: &HashMap<u64, PoolSemanticHint>,
+    pool_value_hints: &HashMap<u64, String>,
+) -> HashMap<u64, String> {
     let mut out = HashMap::new();
-    for e in &model.object_pool {
-        let Some(target_va) = e.target_va else {
+    for (idx, hint) in pool_semantic_hints {
+        let Some(target_va) = hint.target_va else {
             continue;
         };
-        let Some(owner_raw) = e
+        let Some(owner_raw) = hint
             .owner_class
             .as_deref()
             .map(str::trim)
@@ -438,7 +471,7 @@ fn build_pool_target_symbols(model: &ProgramModel) -> HashMap<u64, String> {
         else {
             continue;
         };
-        let Some(lib_uri) = e
+        let Some(lib_uri) = hint
             .library_uri
             .as_deref()
             .map(str::trim)
@@ -446,12 +479,13 @@ fn build_pool_target_symbols(model: &ProgramModel) -> HashMap<u64, String> {
         else {
             continue;
         };
-        let selector_raw = e
+        let selector_raw = hint
             .selector
             .as_deref()
             .map(str::trim)
             .filter(|v| !v.is_empty())
-            .unwrap_or_else(|| e.value.trim());
+            .or_else(|| pool_value_hints.get(idx).map(String::as_str))
+            .unwrap_or("");
         if selector_raw.is_empty() {
             continue;
         }
@@ -478,6 +512,26 @@ fn build_pool_target_symbols(model: &ProgramModel) -> HashMap<u64, String> {
             continue;
         };
         out.entry(target_va).or_insert(canonical);
+    }
+    out
+}
+
+fn build_function_metadata_lookup(
+    model: &ProgramModel,
+    class_to_library: &HashMap<String, String>,
+) -> HashMap<u64, (String, String, String)> {
+    let mut out = HashMap::new();
+    for f in &model.functions {
+        let owner = f.owner_class.trim();
+        if owner.is_empty() {
+            continue;
+        }
+        let lib = class_to_library
+            .get(&f.owner_class)
+            .cloned()
+            .unwrap_or_default();
+        out.entry(f.entry_va)
+            .or_insert_with(|| (f.name.clone(), f.owner_class.clone(), lib));
     }
     out
 }
@@ -947,7 +1001,8 @@ mod runners_tests {
             ],
         };
 
-        let hints = build_pool_semantic_hints(&model);
+        let class_to_library = build_class_library_lookup(&model);
+        let hints = build_pool_semantic_hints(&model, &class_to_library);
         assert_eq!(hints.len(), 1);
         let h = hints.get(&7).expect("missing semantic hint entry");
         assert_eq!(h.selector.as_deref(), Some("didChangeMetrics"));
@@ -994,7 +1049,10 @@ mod runners_tests {
             ],
         };
 
-        let map = build_pool_target_symbols(&model);
+        let class_to_library = build_class_library_lookup(&model);
+        let hints = build_pool_semantic_hints(&model, &class_to_library);
+        let values = build_pool_value_hints(&model);
+        let map = build_pool_target_symbols(&hints, &values);
         assert_eq!(
             map.get(&0x1234).map(String::as_str),
             Some("flutter_widgets_WidgetsBindingObserver_didChangeMetrics")
@@ -1003,5 +1061,52 @@ mod runners_tests {
             map.get(&0x2234).map(String::as_str),
             Some("dart_typed_data_Int64List_new")
         );
+    }
+
+    #[test]
+    fn enriches_pool_semantic_hints_from_function_metadata() {
+        let model = ProgramModel {
+            schema_version: 2,
+            adapter_kind: "python".to_string(),
+            dart_version: "3.0.0".to_string(),
+            snapshot_hash: "deadbeef".to_string(),
+            arch: "arm64".to_string(),
+            libraries: Vec::new(),
+            classes: vec![flutterdec_adapter::ClassInfo {
+                id: 1,
+                name: "State".to_string(),
+                super_name: "Object".to_string(),
+                library_uri: "package:flutter/src/widgets/framework.dart".to_string(),
+            }],
+            functions: vec![flutterdec_adapter::FunctionInfo {
+                id: 11,
+                name: "setState".to_string(),
+                owner_class: "State".to_string(),
+                entry_va: 0x4000,
+                size: 4,
+                code_section_va: 0x4000,
+            }],
+            object_pool: vec![flutterdec_adapter::ObjectPoolEntry {
+                index: 21,
+                kind: "Closure".to_string(),
+                value: "opaque".to_string(),
+                decoded_kind: None,
+                selector: None,
+                target_va: Some(0x4000),
+                owner_class: None,
+                library_uri: None,
+            }],
+        };
+
+        let class_to_library = build_class_library_lookup(&model);
+        let hints = build_pool_semantic_hints(&model, &class_to_library);
+        let h = hints.get(&21).expect("missing enriched semantic hint");
+        assert_eq!(h.selector.as_deref(), Some("setState"));
+        assert_eq!(h.owner_class.as_deref(), Some("State"));
+        assert_eq!(
+            h.library_uri.as_deref(),
+            Some("package:flutter/src/widgets/framework.dart")
+        );
+        assert_eq!(h.target_va, Some(0x4000));
     }
 }
