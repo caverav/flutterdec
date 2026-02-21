@@ -1,5 +1,5 @@
 #[test]
-fn emits_invoke_style_for_generic_indirect_targets() {
+fn emits_callable_style_for_generic_indirect_targets() {
     let ir = FunctionIr {
         function_id: 12,
         name: "indirectCall".to_string(),
@@ -30,8 +30,8 @@ fn emits_invoke_style_for_generic_indirect_targets() {
     assert!(
         artifact
             .source
-            .contains("indirectTarget9.invoke(receiver, param1, param2, param3); // indirect via: indirectTarget9"),
-        "generic indirect calls should render invoke style:\n{}",
+            .contains("indirectTarget9(receiver, param1, param2, param3); // indirect via: indirectTarget9"),
+        "generic indirect calls should render callable style:\n{}",
         artifact.source
     );
     assert!(
@@ -122,8 +122,8 @@ fn rewrites_dispatch_target_fallback_to_resolved_target_invoke() {
     assert!(
         artifact
             .source
-            .contains("obj1.invoke(receiver, obj1, param2, param3); // indirect via: dispatchTarget"),
-        "resolved dispatch target should render as target.invoke fallback:\n{}",
+            .contains("param1(receiver, param1, param2, param3); // indirect via: dispatchTarget"),
+        "resolved dispatch target should render as target(...) fallback:\n{}",
         artifact.source
     );
     assert!(
@@ -757,7 +757,7 @@ fn does_not_rewrite_indirect_call_from_target_va_when_symbol_is_generic() {
     assert!(
         artifact
             .source
-            .contains("indirectTarget9.invoke(receiver, param1, param2, param3)"),
+            .contains("indirectTarget9(receiver, param1, param2, param3)"),
         "generic target symbols should not force semantic rewrite:\n{}",
         artifact.source
     );
@@ -1074,7 +1074,7 @@ fn keeps_dynamic_call_when_target_selector_is_file_path_like() {
     pool.insert(77u64, "dart_mappablesrcmapper_utils.dart".to_string());
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
-        artifact.source.contains("indirectTarget9.invoke"),
+        artifact.source.contains("indirectTarget9("),
         "file-like selector hints should not force semantic rewrite:\n{}",
         artifact.source
     );

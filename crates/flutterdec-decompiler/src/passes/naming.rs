@@ -13,6 +13,10 @@ impl<'a> FuncEmitter<'a> {
                 *line = line.replace("reg21.f0.invoke(", "dispatchTargetFn.invoke(");
                 replaced = true;
             }
+            if line.contains("reg21.f0(") {
+                *line = line.replace("reg21.f0(", "dispatchTargetFn(");
+                replaced = true;
+            }
         }
 
         if !replaced {

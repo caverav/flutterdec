@@ -301,7 +301,7 @@ impl<'a> FuncEmitter<'a> {
                         self.push_line(
                             indent,
                             &format!(
-                                "final {} = {}.invoke({});{}",
+                                "final {} = {}({});{}",
                                 tname,
                                 self.annotate_pool_refs(&target_value),
                                 args,
@@ -326,7 +326,7 @@ impl<'a> FuncEmitter<'a> {
                     self.push_line(
                         indent,
                         &format!(
-                            "final {} = {}.invoke({});{}",
+                            "final {} = {}({});{}",
                             tname, named_target, args, suffix
                         ),
                     );

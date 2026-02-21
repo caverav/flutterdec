@@ -394,7 +394,7 @@ fn aliases_frame_and_return_registers_with_semantic_names() {
 }
 
 #[test]
-fn aliases_dispatch_target_slot_invoke_calls() {
+fn aliases_dispatch_target_slot_callable_calls() {
     let ir = FunctionIr {
         function_id: 211,
         name: "dispatchSlotAlias".to_string(),
@@ -405,7 +405,7 @@ fn aliases_dispatch_target_slot_invoke_calls() {
     let mut emitter = FuncEmitter::new(&ir, &symbols);
     emitter.lines = vec![
         "dynamic dispatchSlotAlias(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {".to_string(),
-        "  final t1 = reg21.f0.invoke(arg0, arg1, arg2, arg3); // indirect via: dispatchTarget".to_string(),
+        "  final t1 = reg21.f0(arg0, arg1, arg2, arg3); // indirect via: dispatchTarget".to_string(),
         "  return t1;".to_string(),
         "}".to_string(),
     ];
@@ -418,13 +418,13 @@ fn aliases_dispatch_target_slot_invoke_calls() {
     );
     assert!(
         out.contains(
-            "dispatchTargetFn.invoke(receiver, param1, param2, param3); // indirect via: dispatchTarget"
+            "dispatchTargetFn(receiver, param1, param2, param3); // indirect via: dispatchTarget"
         ),
-        "dispatch target invoke should use alias:\n{out}"
+        "dispatch target callable should use alias:\n{out}"
     );
     assert!(
-        !out.contains("reg21.f0.invoke("),
-        "raw dispatch slot invoke should be replaced:\n{out}"
+        !out.contains("reg21.f0("),
+        "raw dispatch slot callable should be replaced:\n{out}"
     );
 }
 
