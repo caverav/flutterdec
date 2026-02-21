@@ -1,3 +1,53 @@
+# Security Policy
+
+## Overview
+
+`flutterdec` is a security research and reverse-engineering tool.
+
+This project does not provide formal maintenance guarantees, SLAs, or long-term security patch commitments. However, I **do take security vulnerabilities seriously** and welcome responsible disclosure of issues affecting this repository.
+
+If you believe you have identified a security vulnerability, please follow the process below to ensure a coordinated and responsible disclosure.
+
+
+## Supported Versions
+
+There are no formally supported versions.
+
+Security reports are welcome for:
+- The latest commit on the default branch, and/or
+- The latest tagged release (if applicable)
+
+If reporting against an older revision, please indicate:
+- The exact commit or version tested
+- Whether the issue reproduces on the latest code
+
+## Reporting a Vulnerability
+
+**Please do not open a public GitHub Issue or disclose the vulnerability publicly.**
+
+Instead, report security issues privately via private reporting or email:
+
+**flutterdec-security@caverav.cl**
+
+Please include:
+
+- A clear description of the vulnerability
+- Its potential security impact
+- Affected components/files/commands
+- Steps to reproduce (PoC if available)
+- Relevant logs or traces
+- Environment details
+- Your severity assessment (if any)
+
+## AI-Generated Security Reports
+
+AI-assisted security research is welcome.
+
+However:
+
+If your report is **fully AI-generated and has not been verified by a human**, and you are submitting it as-is, please explicitly state this in the email subject by including:
+
+`[Flutterdec AI-generated Security Report]`
 
 This helps prioritize validation effort and reduces false positives.
 
