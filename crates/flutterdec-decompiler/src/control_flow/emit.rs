@@ -1,10 +1,35 @@
 impl<'a> FuncEmitter<'a> {
+    fn render_pool_value_hint(&self, expr: &str) -> String {
+        let t = expr.trim();
+        let Some(inner) = t.strip_prefix("pool[").and_then(|s| s.strip_suffix(']')) else {
+            return expr.to_string();
+        };
+        let Ok(idx) = inner.trim().parse::<u64>() else {
+            return expr.to_string();
+        };
+        let Some(value) = self.pool_value_hints.get(&idx) else {
+            return expr.to_string();
+        };
+        let mut escaped = String::new();
+        for c in value.chars() {
+            match c {
+                '\\' => escaped.push_str("\\\\"),
+                '"' => escaped.push_str("\\\""),
+                '\n' => escaped.push_str("\\n"),
+                '\r' => escaped.push_str("\\r"),
+                '\t' => escaped.push_str("\\t"),
+                _ => escaped.push(c),
+            }
+        }
+        format!("\"{}\" /* pool[{}] */", escaped, idx)
+    }
+
     pub(super) fn emit_call(&mut self, ins_target: &str, indent: usize) {
         self.total_calls += 1;
         self.state.call_index += 1;
 
         let tname = format!("t{}", self.state.call_index);
-        let arg_values = (0..4)
+        let raw_arg_values = (0..4)
             .map(|r| {
                 self.state
                     .reg_values
@@ -13,6 +38,10 @@ impl<'a> FuncEmitter<'a> {
                     .unwrap_or_else(|| format!("arg{r}"))
             })
             .collect::<Vec<_>>();
+        let arg_values = raw_arg_values
+            .iter()
+            .map(|a| self.render_pool_value_hint(a))
+            .collect::<Vec<_>>();
         let args = arg_values.join(", ");
 
         let target = normalize_target(ins_target);
@@ -20,13 +49,44 @@ impl<'a> FuncEmitter<'a> {
             self.indirect_calls += 1;
             self.raw_register_calls += 1;
             let named_target = named_indirect_target(&target);
-            self.push_line(
-                indent,
-                &format!(
-                    "final {} = dynamicCall({}, [{}]);",
-                    tname, named_target, args
-                ),
-            );
+            let target_value = self
+                .state
+                .reg_values
+                .get(&target)
+                .cloned()
+                .unwrap_or_else(|| named_target.clone());
+            let intent =
+                infer_call_intent_with_context(&named_target, &arg_values, &self.pool_value_hints);
+            if let Some(rewritten_name) =
+                readable_call_name_from_intent(&named_target, intent.as_deref())
+            {
+                let mut comments = Vec::new();
+                if let Some(v) = intent {
+                    comments.push(v);
+                }
+                comments.push(format!("indirect via: {}", named_target));
+                if target_value != named_target {
+                    comments.push(format!("target: {}", target_value));
+                }
+                let suffix = format!(" // {}", comments.join(", "));
+                self.push_line(
+                    indent,
+                    &format!("final {} = {}({});{}", tname, rewritten_name, args, suffix),
+                );
+            } else {
+                let target_suffix = if target_value != named_target {
+                    format!(" // target: {}", target_value)
+                } else {
+                    String::new()
+                };
+                self.push_line(
+                    indent,
+                    &format!(
+                        "final {} = dynamicCall({}, [{}]);{}",
+                        tname, named_target, args, target_suffix
+                    ),
+                );
+            }
         } else {
             let call_name = if let Some(hex) = target.strip_prefix("0x") {
                 if let Ok(va) = u64::from_str_radix(hex, 16) {

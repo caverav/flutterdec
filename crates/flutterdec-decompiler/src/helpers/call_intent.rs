@@ -97,12 +97,15 @@ pub(super) fn readable_call_name_from_intent(
 
     let lower = call_name.to_ascii_lowercase();
     let generic = lower.starts_with("fn_0x") || lower.starts_with("sub_");
+    let indirect_alias = lower == "dispatchtarget"
+        || lower == "cachedtarget"
+        || lower.starts_with("indirecttarget");
     let known_machine_name = lower.starts_with("dart_")
         || lower.starts_with("flutter_")
         || lower.starts_with("vm_runtime_")
         || lower.starts_with("native_libc_")
         || lower.starts_with("native_android_log_");
-    if generic || known_machine_name {
+    if generic || known_machine_name || indirect_alias {
         return Some(display);
     }
     None
@@ -144,6 +147,11 @@ fn infer_selector_intent_from_pool(
                 return Some(tag);
             }
         }
+        for lit in extract_string_literals(arg) {
+            if let Some(tag) = classify_standard_selector(&lit) {
+                return Some(tag);
+            }
+        }
     }
     None
 }
@@ -171,6 +179,47 @@ fn extract_pool_indices(s: &str) -> Vec<u64> {
             }
         }
         i += 1;
+    }
+    out
+}
+
+fn extract_string_literals(s: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let bytes = s.as_bytes();
+    let mut i = 0usize;
+    while i < bytes.len() {
+        if bytes[i] != b'"' {
+            i += 1;
+            continue;
+        }
+        let mut j = i + 1;
+        let mut cur = String::new();
+        while j < bytes.len() {
+            let b = bytes[j];
+            if b == b'\\' && j + 1 < bytes.len() {
+                let next = bytes[j + 1] as char;
+                cur.push(match next {
+                    'n' => '\n',
+                    'r' => '\r',
+                    't' => '\t',
+                    '"' => '"',
+                    '\\' => '\\',
+                    _ => next,
+                });
+                j += 2;
+                continue;
+            }
+            if b == b'"' {
+                out.push(cur);
+                i = j + 1;
+                break;
+            }
+            cur.push(b as char);
+            j += 1;
+        }
+        if j >= bytes.len() {
+            break;
+        }
     }
     out
 }
