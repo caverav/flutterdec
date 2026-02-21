@@ -43,6 +43,13 @@ struct PoolMetadataStats {
     with_library_uri: usize,
 }
 
+#[derive(Debug, Default, Clone)]
+struct SelectorFallbackSummary {
+    total: usize,
+    unique: usize,
+    top: Vec<(String, usize)>,
+}
+
 pub fn run_decompile(
     repo_root: &Path,
     input_path: &Path,
@@ -190,6 +197,12 @@ pub fn run_decompile(
 
     let report = quality_from_artifacts(&model, &disasm, &pseudo, opt);
     let semantic_intent = collect_semantic_intent_summary(&pseudo);
+    let selector_fallback = collect_selector_fallback_summary(&pseudo);
+    let selector_fallback_top = selector_fallback
+        .top
+        .iter()
+        .map(|(selector, count)| json!({"selector": selector, "count": count}))
+        .collect::<Vec<_>>();
     let semantic_total =
         report.semantic_direct_calls + report.semantic_indirect_calls + report.dispatch_selector_calls;
     let semantic_ratio = if report.total_calls == 0 {
@@ -267,6 +280,11 @@ pub fn run_decompile(
             "native": semantic_intent.native,
             "selector_tagged": semantic_intent.selector_tagged,
             "constructor_calls": semantic_intent.constructor_calls
+        },
+        "selector_fallback": {
+            "total": selector_fallback.total,
+            "unique": selector_fallback.unique,
+            "top": selector_fallback_top
         }
     });
 
@@ -309,6 +327,31 @@ fn collect_semantic_intent_summary(pseudo: &[PseudocodeArtifact]) -> SemanticInt
             }
         }
     }
+    out
+}
+
+fn collect_selector_fallback_summary(pseudo: &[PseudocodeArtifact]) -> SelectorFallbackSummary {
+    let mut out = SelectorFallbackSummary::default();
+    let mut counts: HashMap<String, usize> = HashMap::new();
+    for artifact in pseudo {
+        for line in artifact.source.lines() {
+            let Some(start) = line.find("// selector:") else {
+                continue;
+            };
+            let rest = &line[start + "// selector:".len()..];
+            let selector = rest.split(',').next().unwrap_or("").trim();
+            if selector.is_empty() {
+                continue;
+            }
+            out.total += 1;
+            *counts.entry(selector.to_string()).or_insert(0) += 1;
+        }
+    }
+
+    let mut ranked = counts.into_iter().collect::<Vec<_>>();
+    ranked.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    out.unique = ranked.len();
+    out.top = ranked.into_iter().take(10).collect();
     out
 }
 
@@ -1016,6 +1059,57 @@ mod runners_tests {
         assert_eq!(summary.native, 1);
         assert_eq!(summary.selector_tagged, 2);
         assert_eq!(summary.constructor_calls, 1);
+    }
+
+    #[test]
+    fn summarizes_selector_fallback_counts_from_pseudocode() {
+        let pseudo = vec![
+            PseudocodeArtifact {
+                function_id: 1,
+                function_name: "f1".to_string(),
+                source: r#"dynamic f1(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {
+  final t1 = dispatch.current(arg0, arg1, arg2, arg3); // selector: current, indirect via: dispatchTarget
+  final t2 = dispatch.current(arg0, arg1, arg2, arg3); // selector: current, indirect via: dispatchTarget
+  return t2;
+}"#
+                .to_string(),
+                placeholder_ifs: 0,
+                unresolved_cf: 0,
+                raw_register_calls: 0,
+                total_calls: 2,
+                indirect_calls: 2,
+                semantic_direct_calls: 0,
+                semantic_indirect_calls: 0,
+                dispatch_selector_calls: 2,
+                target_va_symbol_calls: 0,
+            },
+            PseudocodeArtifact {
+                function_id: 2,
+                function_name: "f2".to_string(),
+                source: r#"dynamic f2(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {
+  final t1 = dispatch.customAction(arg0, arg1, arg2, arg3); // selector: customAction, indirect via: indirectTarget9
+  return t1;
+}"#
+                .to_string(),
+                placeholder_ifs: 0,
+                unresolved_cf: 0,
+                raw_register_calls: 0,
+                total_calls: 1,
+                indirect_calls: 1,
+                semantic_direct_calls: 0,
+                semantic_indirect_calls: 0,
+                dispatch_selector_calls: 1,
+                target_va_symbol_calls: 0,
+            },
+        ];
+
+        let summary = collect_selector_fallback_summary(&pseudo);
+        assert_eq!(summary.total, 3);
+        assert_eq!(summary.unique, 2);
+        assert_eq!(summary.top.first().map(|v| v.0.as_str()), Some("current"));
+        assert_eq!(summary.top.first().map(|v| v.1), Some(2));
+        assert_eq!(summary.top.get(1).map(|v| v.0.as_str()), Some("customAction"));
+        assert_eq!(summary.top.get(1).map(|v| v.1), Some(1));
     }
 
     #[test]
