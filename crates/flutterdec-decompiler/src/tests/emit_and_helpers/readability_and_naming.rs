@@ -1303,6 +1303,114 @@ fn annotates_runtime_internal_prepend_type_arguments_selector_from_pool_string()
 }
 
 #[test]
+fn annotates_dart_async_stream_controller_internal_selector_from_pool_string() {
+    let ir = FunctionIr {
+        function_id: 43,
+        name: "streamControllerSelector".to_string(),
+        entry_va: 0x100a0,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0x100a0,
+            instrs: vec![
+                LlirInstr {
+                    va: 0x100a0,
+                    op: IROp::Other,
+                    src: "mov x0, #1".to_string(),
+                    target: String::new(),
+                },
+                LlirInstr {
+                    va: 0x100a4,
+                    op: IROp::LoadPool,
+                    src: "x1".to_string(),
+                    target: "pool[26]".to_string(),
+                },
+                LlirInstr {
+                    va: 0x100a8,
+                    op: IROp::Call,
+                    src: "bl #0x7920".to_string(),
+                    target: "#0x7920".to_string(),
+                },
+                LlirInstr {
+                    va: 0x100ac,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+
+    let mut symbols = HashMap::new();
+    symbols.insert(0x7920, "sub_7920".to_string());
+    let mut pool = HashMap::new();
+    pool.insert(26u64, "_StreamController".to_string());
+    let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
+    assert!(
+        artifact.source.contains(
+            "dart.async.StreamController.new(1, \"_StreamController\" /* pool[26] */, param2, param3); // stdlib:dart.async.StreamController.new [selector], was: sub_7920"
+        ),
+        "missing internal StreamController selector annotation:\n{}",
+        artifact.source
+    );
+}
+
+#[test]
+fn annotates_dart_io_raw_datagram_socket_internal_selector_from_pool_string() {
+    let ir = FunctionIr {
+        function_id: 44,
+        name: "rawDatagramSocketSelector".to_string(),
+        entry_va: 0x100b0,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0x100b0,
+            instrs: vec![
+                LlirInstr {
+                    va: 0x100b0,
+                    op: IROp::Other,
+                    src: "mov x0, #1".to_string(),
+                    target: String::new(),
+                },
+                LlirInstr {
+                    va: 0x100b4,
+                    op: IROp::LoadPool,
+                    src: "x1".to_string(),
+                    target: "pool[27]".to_string(),
+                },
+                LlirInstr {
+                    va: 0x100b8,
+                    op: IROp::Call,
+                    src: "bl #0x7930".to_string(),
+                    target: "#0x7930".to_string(),
+                },
+                LlirInstr {
+                    va: 0x100bc,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+
+    let mut symbols = HashMap::new();
+    symbols.insert(0x7930, "sub_7930".to_string());
+    let mut pool = HashMap::new();
+    pool.insert(27u64, "_RawDatagramSocket".to_string());
+    let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
+    assert!(
+        artifact.source.contains(
+            "dart.io.RawDatagramSocket.new(1, \"_RawDatagramSocket\" /* pool[27] */, param2, param3); // stdlib:dart.io.RawDatagramSocket.new [selector], was: sub_7930"
+        ),
+        "missing internal RawDatagramSocket selector annotation:\n{}",
+        artifact.source
+    );
+}
+
+#[test]
 fn annotates_dart_core_compile_time_error_selector_from_pool_string() {
     let ir = FunctionIr {
         function_id: 32,

@@ -513,6 +513,12 @@ fn classify_internal_standard_selector(raw: &str) -> Option<String> {
     if t.eq_ignore_ascii_case("_prependTypeArguments") {
         return Some("runtime:dart_vm.prependTypeArguments [selector]".to_string());
     }
+    if t.eq_ignore_ascii_case("_StreamController") {
+        return Some("stdlib:dart.async.StreamController.new [selector]".to_string());
+    }
+    if t.eq_ignore_ascii_case("_RawDatagramSocket") {
+        return Some("stdlib:dart.io.RawDatagramSocket.new [selector]".to_string());
+    }
     None
 }
 
