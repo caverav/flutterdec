@@ -765,6 +765,105 @@ fn rewrites_indirect_call_to_dispatch_selector_when_nonstandard() {
 }
 
 #[test]
+fn rewrites_constructor_like_nonstandard_selector_to_new_call() {
+    let ir = FunctionIr {
+        function_id: 481,
+        name: "indirectCtorLikeSelector".to_string(),
+        entry_va: 0xc410,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0xc410,
+            instrs: vec![
+                LlirInstr {
+                    va: 0xc410,
+                    op: IROp::LoadPool,
+                    src: "x1".to_string(),
+                    target: "pool[13]".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc414,
+                    op: IROp::Call,
+                    src: "blr x9".to_string(),
+                    target: "x9".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc418,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+
+    let symbols = HashMap::new();
+    let mut pool = HashMap::new();
+    pool.insert(13u64, "AndroidPermission".to_string());
+    let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
+    assert!(
+        artifact.source.contains(
+            "AndroidPermission.new(receiver, \"AndroidPermission\" /* pool[13] */, param2, param3); // selector: AndroidPermission, heuristic: constructor-like selector, indirect via: indirectTarget9"
+        ),
+        "constructor-like selector should render as .new fallback call:\n{}",
+        artifact.source
+    );
+}
+
+#[test]
+fn keeps_dispatch_fallback_for_acronym_like_selector_names() {
+    let ir = FunctionIr {
+        function_id: 482,
+        name: "indirectAcronymSelector".to_string(),
+        entry_va: 0xc420,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0xc420,
+            instrs: vec![
+                LlirInstr {
+                    va: 0xc420,
+                    op: IROp::LoadPool,
+                    src: "x1".to_string(),
+                    target: "pool[14]".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc424,
+                    op: IROp::Call,
+                    src: "blr x9".to_string(),
+                    target: "x9".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc428,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+
+    let symbols = HashMap::new();
+    let mut pool = HashMap::new();
+    pool.insert(14u64, "TORRENT".to_string());
+    let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
+    assert!(
+        artifact.source.contains(
+            "dispatch.TORRENT(receiver, \"TORRENT\" /* pool[14] */, param2, param3); // selector: TORRENT, indirect via: indirectTarget9"
+        ),
+        "acronym-like selectors should keep dispatch fallback form:\n{}",
+        artifact.source
+    );
+    assert!(
+        !artifact.source.contains("TORRENT.new("),
+        "acronym-like selectors should not be rewritten as constructors:\n{}",
+        artifact.source
+    );
+}
+
+#[test]
 fn keeps_dynamic_call_when_target_selector_is_file_path_like() {
     let ir = FunctionIr {
         function_id: 49,

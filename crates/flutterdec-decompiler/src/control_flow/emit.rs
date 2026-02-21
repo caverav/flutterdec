@@ -245,9 +245,12 @@ impl<'a> FuncEmitter<'a> {
                 );
             } else if let Some(selector) = selector_name.clone() {
                 self.dispatch_selector_calls += 1;
-                let dispatch_name = format!("dispatch.{}", sanitize_name(&selector));
+                let (dispatch_name, constructor_like) = fallback_call_name_from_selector(&selector);
                 let mut comments = Vec::new();
                 comments.push(format!("selector: {}", selector));
+                if constructor_like {
+                    comments.push("heuristic: constructor-like selector".to_string());
+                }
                 comments.push(format!("indirect via: {}", named_target));
                 if target_value != named_target {
                     comments.push(format!("target: {}", self.annotate_pool_refs(&target_value)));

@@ -62,6 +62,14 @@ pub(super) fn infer_call_intent(call_name: &str) -> Option<String> {
     None
 }
 
+pub(super) fn fallback_call_name_from_selector(selector: &str) -> (String, bool) {
+    let normalized = sanitize_name(selector);
+    if looks_constructor_like_selector(selector) {
+        return (format!("{}.new", normalized), true);
+    }
+    (format!("dispatch.{}", normalized), false)
+}
+
 fn infer_flutter_framework_intent(call_name: &str) -> Option<String> {
     if !call_name.to_ascii_lowercase().starts_with("flutter_") {
         return None;
@@ -359,6 +367,27 @@ fn constructor_like_selector(selector: &str, owner_class: &str) -> bool {
     let sel = normalize(selector);
     let owner = normalize(owner_class);
     !sel.is_empty() && sel == owner
+}
+
+fn looks_constructor_like_selector(selector: &str) -> bool {
+    let token = sanitize_semantic_token(selector);
+    if token.is_empty() {
+        return false;
+    }
+    let mut chars = token.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    if !first.is_ascii_uppercase() {
+        return false;
+    }
+    if token
+        .chars()
+        .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
+    {
+        return false;
+    }
+    true
 }
 
 fn sanitize_semantic_token(input: &str) -> String {
