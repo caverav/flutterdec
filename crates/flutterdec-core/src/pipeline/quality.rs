@@ -12,6 +12,9 @@ fn quality_from_artifacts(
     let mut placeholder_ifs = 0usize;
     let mut unresolved_cf = 0usize;
     let mut raw_register_calls = 0usize;
+    let mut semantic_direct_calls = 0usize;
+    let mut semantic_indirect_calls = 0usize;
+    let mut dispatch_selector_calls = 0usize;
     let mut block_helper_refs = 0usize;
     let mut raw_arg_name_refs = 0usize;
     let mut raw_register_name_refs = 0usize;
@@ -25,6 +28,9 @@ fn quality_from_artifacts(
         placeholder_ifs += p.placeholder_ifs;
         unresolved_cf += p.unresolved_cf;
         raw_register_calls += p.raw_register_calls;
+        semantic_direct_calls += p.semantic_direct_calls;
+        semantic_indirect_calls += p.semantic_indirect_calls;
+        dispatch_selector_calls += p.dispatch_selector_calls;
         block_helper_refs += p.source.matches("_block_").count();
         placeholder_cond_markers += p.source.matches("/* cond */").count();
         omitted_path_markers += p.source.matches("omitted complex path").count();
@@ -75,6 +81,9 @@ fn quality_from_artifacts(
         placeholder_ifs,
         unresolved_cf,
         raw_register_calls,
+        semantic_direct_calls,
+        semantic_indirect_calls,
+        dispatch_selector_calls,
         block_helper_refs,
         raw_arg_name_refs,
         raw_register_name_refs,

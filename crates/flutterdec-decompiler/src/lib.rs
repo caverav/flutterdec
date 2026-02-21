@@ -12,6 +12,9 @@ pub struct PseudocodeArtifact {
     pub raw_register_calls: usize,
     pub total_calls: usize,
     pub indirect_calls: usize,
+    pub semantic_direct_calls: usize,
+    pub semantic_indirect_calls: usize,
+    pub dispatch_selector_calls: usize,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -43,6 +46,9 @@ struct FuncEmitter<'a> {
     raw_register_calls: usize,
     total_calls: usize,
     indirect_calls: usize,
+    semantic_direct_calls: usize,
+    semantic_indirect_calls: usize,
+    dispatch_selector_calls: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -111,6 +117,9 @@ impl<'a> FuncEmitter<'a> {
             raw_register_calls: 0,
             total_calls: 0,
             indirect_calls: 0,
+            semantic_direct_calls: 0,
+            semantic_indirect_calls: 0,
+            dispatch_selector_calls: 0,
         }
     }
 
@@ -168,6 +177,9 @@ impl<'a> FuncEmitter<'a> {
             raw_register_calls: self.raw_register_calls,
             total_calls: self.total_calls,
             indirect_calls: self.indirect_calls,
+            semantic_direct_calls: self.semantic_direct_calls,
+            semantic_indirect_calls: self.semantic_indirect_calls,
+            dispatch_selector_calls: self.dispatch_selector_calls,
         }
     }
 

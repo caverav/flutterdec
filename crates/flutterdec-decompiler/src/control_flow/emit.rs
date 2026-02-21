@@ -115,6 +115,7 @@ impl<'a> FuncEmitter<'a> {
                 .or(target_selector_intent);
             let selector_name = selector_name.or(target_selector_name);
             if let Some(rewritten_name) = readable_call_name_from_intent(&named_target, intent.as_deref()) {
+                self.semantic_indirect_calls += 1;
                 let mut comments = Vec::new();
                 if let Some(v) = intent {
                     comments.push(v);
@@ -129,6 +130,7 @@ impl<'a> FuncEmitter<'a> {
                     &format!("final {} = {}({});{}", tname, rewritten_name, args, suffix),
                 );
             } else if let Some(selector) = selector_name.clone() {
+                self.dispatch_selector_calls += 1;
                 let dispatch_name = format!("dispatch.{}", sanitize_name(&selector));
                 let mut comments = Vec::new();
                 comments.push(format!("selector: {}", selector));
@@ -178,6 +180,9 @@ impl<'a> FuncEmitter<'a> {
                 .or(selector_intent);
             let emitted_call_name = readable_call_name_from_intent(&call_name, intent.as_deref())
                 .unwrap_or_else(|| call_name.clone());
+            if emitted_call_name != call_name {
+                self.semantic_direct_calls += 1;
+            }
             let mut comments = Vec::new();
             if let Some(v) = intent {
                 comments.push(v);
