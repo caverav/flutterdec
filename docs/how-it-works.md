@@ -89,6 +89,8 @@ sequenceDiagram
 - when intent is deterministic, callsites are rewritten to semantic paths and include `was: <original_name>` for traceability
 - selector-backed intent can also rewrite indirect callsites and annotate `indirect via: <target_alias>`
 - when a call argument is exactly `pool[<idx>]` and a string hint is known, it is rendered as `"value" /* pool[<idx>] */`
+- non-exact pool expressions preserve structure and gain inline pool mapping comments (`pool[<idx> /* "value" */]`)
+- selector intent coverage includes additional Flutter/Dart standards (for example `Stream.listen`, `Future.catchError`, `SchedulerBinding.addPostFrameCallback`, and `ChangeNotifier.addListener`)
 - canonical names derived from adapter class/library ownership can deterministically label Flutter framework calls (`framework:flutter.*`) and Dart stdlib calls (`stdlib:dart.*`)
 
 3. `adapter`

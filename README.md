@@ -103,11 +103,14 @@ Naming and semantic behavior:
 - recognized calls add intent comments in pseudocode, for example:
   - `// stdlib:dart.core.print`
   - `// stdlib:dart.core.map [selector]`
+  - `// stdlib:dart.async.Stream.listen [selector]`
   - `// framework:flutter.widgets.State.setState`
   - `// framework:flutter.widgets.Widget.build [selector]`
+  - `// framework:flutter.scheduler.SchedulerBinding.addPostFrameCallback [selector]`
   - `// runtime:dart_vm.invoke`
   - `// native:libc.memcpy`
   - `final t2 = flutter.widgets.Widget.build(...); // framework:flutter.widgets.Widget.build [selector], was: sub_bbb20c`
+  - `final t3 = dart.core.map(...); // stdlib:dart.core.map [selector], indirect via: dispatchTarget, target: (pool[40 /* "_offsetInBytes" */]).f7`
 
 ### `adapter`
 
