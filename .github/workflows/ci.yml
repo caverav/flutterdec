@@ -15,8 +15,14 @@ permissions:
 
 jobs:
   rust:
-    name: Rust Checks
-    runs-on: ubuntu-latest
+    name: Rust Checks (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
 
     steps:
       - name: Checkout
@@ -24,6 +30,9 @@ jobs:
 
       - name: Install Nix
         uses: cachix/install-nix-action@v30
+
+      - name: Enable Nix cache
+        uses: DeterminateSystems/magic-nix-cache-action@v7
 
       - name: Format
         run: nix develop -c cargo fmt --all --check
