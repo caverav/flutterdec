@@ -166,6 +166,7 @@ Current scope:
 - selector resolution now also handles `dart:io` and typed-data style selectors such as `supportsAnsiEscapes`, `offsetInBytes`, and `nativeSetFloat32`
 - selector mapping now also recognizes internal stdlib constructors such as `_NativeSocket` and `_CompileTimeError`
 - runtime helper selectors such as `yieldStarIterable` are now tagged and rewritten to readable runtime semantic paths
+- VM-internal selector constructors such as `_Closure` and `_TypeParameter` now rewrite to runtime semantic constructor paths
 - standalone stack-pointer offset arguments now normalize to slot notation (`sp[-0x10]`) instead of raw arithmetic (`(sp - 0x10)`)
 - optional ELF engine fingerprinting to estimate build identity from build-id and marker strings
 
