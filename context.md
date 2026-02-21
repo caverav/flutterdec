@@ -127,7 +127,7 @@ The CLI writes `quality.json` and fails the run when strict thresholds are viola
 - target-va symbol rewrite count
 - report-level semantic intent counts (`framework`, `stdlib`, `runtime`, `native`, selector-tagged, constructor calls)
 - metadata coverage counters in `report.json` (`pool_value_hints`, `pool_semantic_hints`, `pool_target_symbols`)
-- selector fallback diagnostics in `report.json` (`total`, `unique`, and top unresolved `selector:` names)
+- selector fallback diagnostics in `report.json` (`total`, `unique`, top unresolved `selector:` names, and sample call lines)
 - readability regressions such as helper block leakage and raw token leakage
 - omitted path marker count for complex regions that are currently summarized
 - residual loop back-edge summary marker count for loops that are not yet structured
