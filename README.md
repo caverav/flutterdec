@@ -116,6 +116,7 @@ Naming and semantic behavior:
 - selector extraction skips file/URI/path-like strings (for example `*.dart` paths) to avoid false-positive rewrites
 - exact `pool[<idx>]` call arguments are rendered as `"value" /* pool[<idx>] */` when a string hint is available
 - argument and local declaration types are inferred from deterministic semantic call ownership and literal assignments (for example `flutter.widgets.State receiver`, `String tmp`, `bool tmp`)
+- constructor-like selectors are also mapped when deterministic (for example `flutter.widgets.KeyedSubtree.new`, `dart.async.StreamIterator.new`, `dart.typed_data.Float32x4List.new`)
 - recognized calls add intent comments in pseudocode, for example:
   - `// stdlib:dart.core.print`
   - `// stdlib:dart.core.map [selector]`

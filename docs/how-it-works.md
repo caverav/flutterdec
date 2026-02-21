@@ -92,6 +92,7 @@ sequenceDiagram
 - non-exact pool expressions preserve structure and gain inline pool mapping comments (`pool[<idx> /* "value" */]`)
 - selector intent coverage includes additional Flutter/Dart standards (for example `Stream.listen`, `Future.catchError`, `SchedulerBinding.addPostFrameCallback`, and `ChangeNotifier.addListener`)
 - selector catalog now also covers more standard APIs such as `Navigator.pushNamed` and `List.removeAt`
+- constructor-style standard selectors are recognized too (for example `flutter.widgets.KeyedSubtree.new`, `dart.async.StreamIterator.new`, `dart.typed_data.Float32x4List.new`)
 - if selector evidence exists but no known standard mapping applies, indirect callsites use `dispatch.<selector>(...)` as a readable fallback
 - selector evidence for indirect calls is inferred from both call arguments and indirect target expressions
 - selector extraction ignores file/URI/path-like strings to reduce false-positive standard-call rewrites
