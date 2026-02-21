@@ -47,7 +47,14 @@ struct PoolMetadataStats {
 struct SelectorFallbackSummary {
     total: usize,
     unique: usize,
-    top: Vec<(String, usize)>,
+    top: Vec<SelectorFallbackEntry>,
+}
+
+#[derive(Debug, Clone)]
+struct SelectorFallbackEntry {
+    selector: String,
+    count: usize,
+    sample: String,
 }
 
 pub fn run_decompile(
@@ -201,7 +208,13 @@ pub fn run_decompile(
     let selector_fallback_top = selector_fallback
         .top
         .iter()
-        .map(|(selector, count)| json!({"selector": selector, "count": count}))
+        .map(|entry| {
+            json!({
+                "selector": entry.selector,
+                "count": entry.count,
+                "sample": entry.sample
+            })
+        })
         .collect::<Vec<_>>();
     let semantic_total =
         report.semantic_direct_calls + report.semantic_indirect_calls + report.dispatch_selector_calls;
@@ -332,7 +345,7 @@ fn collect_semantic_intent_summary(pseudo: &[PseudocodeArtifact]) -> SemanticInt
 
 fn collect_selector_fallback_summary(pseudo: &[PseudocodeArtifact]) -> SelectorFallbackSummary {
     let mut out = SelectorFallbackSummary::default();
-    let mut counts: HashMap<String, usize> = HashMap::new();
+    let mut counts: HashMap<String, (usize, String)> = HashMap::new();
     for artifact in pseudo {
         for line in artifact.source.lines() {
             let Some(start) = line.find("// selector:") else {
@@ -344,12 +357,39 @@ fn collect_selector_fallback_summary(pseudo: &[PseudocodeArtifact]) -> SelectorF
                 continue;
             }
             out.total += 1;
-            *counts.entry(selector.to_string()).or_insert(0) += 1;
+            let sample = line
+                .trim()
+                .replace('\t', " ")
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ");
+            let sample = if sample.len() > 180 {
+                let mut truncated = sample[..180].to_string();
+                truncated.push_str("...");
+                truncated
+            } else {
+                sample
+            };
+            counts
+                .entry(selector.to_string())
+                .and_modify(|(count, _)| *count += 1)
+                .or_insert((1, sample));
         }
     }
 
-    let mut ranked = counts.into_iter().collect::<Vec<_>>();
-    ranked.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    let mut ranked = counts
+        .into_iter()
+        .map(|(selector, (count, sample))| SelectorFallbackEntry {
+            selector,
+            count,
+            sample,
+        })
+        .collect::<Vec<_>>();
+    ranked.sort_by(|a, b| {
+        b.count
+            .cmp(&a.count)
+            .then_with(|| a.selector.cmp(&b.selector))
+    });
     out.unique = ranked.len();
     out.top = ranked.into_iter().take(10).collect();
     out
@@ -1106,10 +1146,20 @@ mod runners_tests {
         let summary = collect_selector_fallback_summary(&pseudo);
         assert_eq!(summary.total, 3);
         assert_eq!(summary.unique, 2);
-        assert_eq!(summary.top.first().map(|v| v.0.as_str()), Some("current"));
-        assert_eq!(summary.top.first().map(|v| v.1), Some(2));
-        assert_eq!(summary.top.get(1).map(|v| v.0.as_str()), Some("customAction"));
-        assert_eq!(summary.top.get(1).map(|v| v.1), Some(1));
+        assert_eq!(summary.top.first().map(|v| v.selector.as_str()), Some("current"));
+        assert_eq!(summary.top.first().map(|v| v.count), Some(2));
+        assert!(
+            summary
+                .top
+                .first()
+                .map(|v| v.sample.contains("dispatch.current("))
+                .unwrap_or(false)
+        );
+        assert_eq!(
+            summary.top.get(1).map(|v| v.selector.as_str()),
+            Some("customAction")
+        );
+        assert_eq!(summary.top.get(1).map(|v| v.count), Some(1));
     }
 
     #[test]
