@@ -95,6 +95,7 @@ sequenceDiagram
 - constructor-style standard selectors are recognized too (for example `flutter.widgets.KeyedSubtree.new`, `dart.async.StreamIterator.new`, `dart.typed_data.Float32x4List.new`)
 - selector catalog now includes more `dart:io` and typed-data APIs (for example `Stdout.supportsAnsiEscapes`, `TypedData.offsetInBytes`, and `ByteData.setFloat32`)
 - selector catalog now also includes internal stdlib constructor names such as `dart.io._NativeSocket.new` and `dart.core._CompileTimeError.new`
+- selector catalog also includes internal std/core forms like `match_end_index` -> `dart.core.Match.end`
 - runtime helper selectors such as `yieldStarIterable` are now rewritten to runtime semantic paths (`runtime:dart_vm.*`)
 - VM-internal constructor selectors such as `_Closure` and `_TypeParameter` are rewritten to runtime constructor paths (`dart_vm.*.new`)
 - if selector evidence exists but no known standard mapping applies, indirect callsites use readable selector fallback forms: `dispatch.<selector>(...)` for general selectors and `<Selector>.new(...)` for constructor-like selectors (annotated with `heuristic: constructor-like selector`)

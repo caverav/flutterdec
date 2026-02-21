@@ -133,6 +133,7 @@ Naming and semantic behavior:
 - recognized calls add intent comments in pseudocode, for example:
   - `// stdlib:dart.core.print`
   - `// stdlib:dart.core.map [selector]`
+  - `// stdlib:dart.core.Match.end [selector]`
   - `// stdlib:dart.core.List.removeAt [selector]`
   - `// stdlib:dart.async.Stream.listen [selector]`
   - `// framework:flutter.widgets.State.setState`
