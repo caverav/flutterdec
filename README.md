@@ -65,6 +65,8 @@ Arguments:
 - `--emit-asm`: also write disassembly files
 - `--emit-ir`: also write IR JSON files
 - `--extra-symbol-elf <PATH>`: load extra ELF function symbols for call naming (repeatable)
+- `--extra-symbol-map-targets <PATH>`: load `symbol_target_summary.json` style mappings from `map-symbols` (repeatable)
+- `--include-nearest-symbol-map`: also ingest `nearest` symbol matches from symbol-map targets (default is `exact` only)
 - `--focus <FOCUS>`: decompile functions matching a filter
 - `--max-functions <N>`: limit number of functions to process
 - `--max-placeholder-ifs <N>`: quality gate threshold (default `0`)
@@ -79,6 +81,7 @@ flutterdec decompile ./sample.apk -o ./out
 flutterdec decompile ./sample.apk -o ./out --emit-asm --emit-ir
 flutterdec decompile ./sample.apk -o ./out --max-functions 120 --min-disassembly-ratio 0.0
 flutterdec decompile ./sample.apk -o ./out --extra-symbol-elf ./libflutter.unstripped.so
+flutterdec decompile ./sample.apk -o ./out --extra-symbol-map-targets ./out/symbol-map/symbol_target_summary.json
 ```
 
 Output files:
@@ -162,7 +165,9 @@ Combined naming workflow:
 ```bash
 flutterdec engine-fingerprint ./libflutter.unstripped.so --json
 flutterdec map-symbols --stripped ./libflutter.stripped.so --unstripped ./libflutter.unstripped.so -o ./out/symbol-map --require-exec-match
-flutterdec decompile ./sample.apk -o ./out --extra-symbol-elf ./libflutter.unstripped.so
+flutterdec decompile ./sample.apk -o ./out \
+  --extra-symbol-map-targets ./out/symbol-map/symbol_target_summary.json \
+  --extra-symbol-elf ./libflutter.unstripped.so
 ```
 
 ## Real Golden Checks (Optional)

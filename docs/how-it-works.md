@@ -83,7 +83,8 @@ sequenceDiagram
 - full path from loader to pseudocode and quality gates
 - writes artifacts under output directory
 - may fail after writing artifacts if quality gates fail
-- can ingest extra ELF symbol tables to improve direct call naming in pseudocode
+- can ingest extra ELF symbol tables and `map-symbols` target JSON to improve direct call naming
+- external descriptive names replace generic placeholders like `sub_*` and `fn_0x*` when addresses match
 
 3. `adapter`
 - management path for adapter installation and listing
@@ -127,6 +128,8 @@ if model.arch != "arm64":
 disasm = disassemble_program(model, bundle.isolate_instr, bundle.isolate_instr_va, focus, max_functions)
 ir = build_program_ir(disasm)
 symbols = merge(model.functions names, disasm names)
+symbols = merge(extra ELF symbols, with generic-name replacement policy)
+symbols = merge(extra symbol-map targets, exact-only unless nearest explicitly enabled)
 pseudo = emit_program(ir, symbols)
 
 write pseudocode files
@@ -644,7 +647,7 @@ Symptom: pseudocode has too many omitted path summaries
 Symptom: function names are too synthetic
 
 - improve adapter metadata extraction first
-- then improve symbol map merge logic in core
+- then run `map-symbols` on stripped/unstripped pairs and feed `symbol_target_summary.json` into `decompile --extra-symbol-map-targets ...`
 
 Symptom: control flow is valid but hard to read
 

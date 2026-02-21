@@ -136,6 +136,7 @@ Current scope:
 - IR and pseudo Dart generation with iterative readability passes
 - readability passes now prune dead statements after terminal control flow and unwrap non-retry `while (true)` wrappers when the body already terminates
 - optional stripped vs unstripped ELF symbol mapping to recover readable direct-call targets
+- decompile can now ingest `map-symbols` target JSON directly to inject mapped call names into pseudocode
 - optional ELF engine fingerprinting to estimate build identity from build-id and marker strings
 
 Known limits:
@@ -163,7 +164,8 @@ Python remains useful at the adapter boundary for faster version specific parser
 - refresh decompiler golden snapshots with `FLUTTERDEC_UPDATE_GOLDEN=1 cargo test -p flutterdec-decompiler golden_` when output changes intentionally
 - for end-to-end real binary regression checks, use `scripts/real-golden.sh record|check` for single profiles, or `scripts/real-golden-matrix.sh check` for multi-profile runs
 - keep profile configs in `testdata/real-golden/profiles/*/profile.env`
-- for naming improvements on direct call targets, use `decompile --extra-symbol-elf /path/to/libflutter.unstripped.so` when addresses align
+- for naming improvements on direct call targets, use `map-symbols` on stripped/unstripped ELF pairs, then pass `decompile --extra-symbol-map-targets /path/to/symbol_target_summary.json`
+- `decompile` prefers external descriptive names over generic internal names (`sub_*`, `fn_0x*`) when addresses match
 - test against real Flutter binaries, not only synthetic fixtures
 - prioritize output readability improvements that are backed by concrete sample evidence
 
