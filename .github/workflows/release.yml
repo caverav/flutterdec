@@ -1,0 +1,53 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build Release (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v30
+
+      - name: Enable Nix cache
+        uses: DeterminateSystems/magic-nix-cache-action@v7
+
+      - name: Build release CLI
+        run: nix develop -c cargo build -p flutterdec-cli --release
+
+      - name: Package artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          os="${{ runner.os }}"
+          arch="${{ runner.arch }}"
+          out_dir="dist"
+          mkdir -p "$out_dir"
+          bin_name="flutterdec"
+          archive="$out_dir/flutterdec-${{ github.ref_name }}-${os}-${arch}.tar.gz"
+          tar -C target/release -czf "$archive" "$bin_name"
+          echo "archive=$archive" >> "$GITHUB_ENV"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: flutterdec-${{ github.ref_name }}-${{ runner.os }}-${{ runner.arch }}
+          path: ${{ env.archive }}
+
