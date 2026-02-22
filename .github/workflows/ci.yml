@@ -42,3 +42,6 @@ jobs:
 
       - name: Test
         run: nix develop -c cargo test --workspace
+
+      - name: Build release CLI
+        run: nix develop -c cargo build -p flutterdec-cli --release
