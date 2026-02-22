@@ -32,7 +32,7 @@ jobs:
         uses: cachix/install-nix-action@v31
 
       - name: Enable Nix cache
-        uses: DeterminateSystems/magic-nix-cache-action@v7
+        uses: DeterminateSystems/magic-nix-cache-action@v13
 
       - name: Validate flake
         run: nix flake check
