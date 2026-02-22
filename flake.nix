@@ -40,6 +40,20 @@
               cache_root="''${XDG_CACHE_HOME:-$HOME/.cache}/flutterdec/blutter"
               src_cache="$cache_root/src"
               src_store="${blutter-src}"
+              compat_include_dir="$cache_root/include-compat"
+
+              mkdir -p "$compat_include_dir"
+              cat >"$compat_include_dir/capstone.h" <<'EOF'
+#include <capstone/capstone.h>
+EOF
+
+              export CPATH="$compat_include_dir:${pkgs.lib.getDev pkgs.capstone}/include''${CPATH:+:$CPATH}"
+              export CPLUS_INCLUDE_PATH="$compat_include_dir:${pkgs.lib.getDev pkgs.capstone}/include''${CPLUS_INCLUDE_PATH:+:$CPLUS_INCLUDE_PATH}"
+              export LIBRARY_PATH="${pkgs.lib.getLib pkgs.capstone}/lib''${LIBRARY_PATH:+:$LIBRARY_PATH}"
+              export LD_LIBRARY_PATH="${pkgs.lib.getLib pkgs.capstone}/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+              export DYLD_LIBRARY_PATH="${pkgs.lib.getLib pkgs.capstone}/lib''${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}"
+              export PKG_CONFIG_PATH="${pkgs.lib.getDev pkgs.capstone}/lib/pkgconfig''${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+              export CMAKE_PREFIX_PATH="${pkgs.lib.getDev pkgs.capstone}''${CMAKE_PREFIX_PATH:+:$CMAKE_PREFIX_PATH}"
 
               if [[ ! -x "$src_cache/blutter.py" ]]; then
                 mkdir -p "$cache_root"
@@ -79,7 +93,19 @@
               flutterdecBlutter
             ];
             shellHook = ''
+              compat_include_dir="''${XDG_CACHE_HOME:-$HOME/.cache}/flutterdec/blutter/include-compat"
+              mkdir -p "$compat_include_dir"
+              cat >"$compat_include_dir/capstone.h" <<'EOF'
+#include <capstone/capstone.h>
+EOF
               export FLUTTERDEC_BLUTTER_CMD="${flutterdecBlutter}/bin/flutterdec-blutter"
+              export CPATH="$compat_include_dir:${pkgs.lib.getDev pkgs.capstone}/include''${CPATH:+:$CPATH}"
+              export CPLUS_INCLUDE_PATH="$compat_include_dir:${pkgs.lib.getDev pkgs.capstone}/include''${CPLUS_INCLUDE_PATH:+:$CPLUS_INCLUDE_PATH}"
+              export LIBRARY_PATH="${pkgs.lib.getLib pkgs.capstone}/lib''${LIBRARY_PATH:+:$LIBRARY_PATH}"
+              export LD_LIBRARY_PATH="${pkgs.lib.getLib pkgs.capstone}/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+              export DYLD_LIBRARY_PATH="${pkgs.lib.getLib pkgs.capstone}/lib''${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}"
+              export PKG_CONFIG_PATH="${pkgs.lib.getDev pkgs.capstone}/lib/pkgconfig''${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+              export CMAKE_PREFIX_PATH="${pkgs.lib.getDev pkgs.capstone}''${CMAKE_PREFIX_PATH:+:$CMAKE_PREFIX_PATH}"
             '';
           };
         });
@@ -107,6 +133,20 @@
               cache_root="''${XDG_CACHE_HOME:-$HOME/.cache}/flutterdec/blutter"
               src_cache="$cache_root/src"
               src_store="${blutter-src}"
+              compat_include_dir="$cache_root/include-compat"
+
+              mkdir -p "$compat_include_dir"
+              cat >"$compat_include_dir/capstone.h" <<'EOF'
+#include <capstone/capstone.h>
+EOF
+
+              export CPATH="$compat_include_dir:${pkgs.lib.getDev pkgs.capstone}/include''${CPATH:+:$CPATH}"
+              export CPLUS_INCLUDE_PATH="$compat_include_dir:${pkgs.lib.getDev pkgs.capstone}/include''${CPLUS_INCLUDE_PATH:+:$CPLUS_INCLUDE_PATH}"
+              export LIBRARY_PATH="${pkgs.lib.getLib pkgs.capstone}/lib''${LIBRARY_PATH:+:$LIBRARY_PATH}"
+              export LD_LIBRARY_PATH="${pkgs.lib.getLib pkgs.capstone}/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+              export DYLD_LIBRARY_PATH="${pkgs.lib.getLib pkgs.capstone}/lib''${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}"
+              export PKG_CONFIG_PATH="${pkgs.lib.getDev pkgs.capstone}/lib/pkgconfig''${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+              export CMAKE_PREFIX_PATH="${pkgs.lib.getDev pkgs.capstone}''${CMAKE_PREFIX_PATH:+:$CMAKE_PREFIX_PATH}"
 
               if [[ ! -x "$src_cache/blutter.py" ]]; then
                 mkdir -p "$cache_root"
