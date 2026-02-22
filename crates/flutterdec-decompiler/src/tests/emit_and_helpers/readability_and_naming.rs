@@ -359,6 +359,34 @@ fn infers_string_and_bool_types_for_literal_assigned_locals() {
 }
 
 #[test]
+fn infers_string_type_for_pool_mapped_literal_assignment() {
+    let ir = FunctionIr {
+        function_id: 810,
+        name: "typedPoolLiteral".to_string(),
+        entry_va: 0x80a000,
+        blocks: Vec::new(),
+    };
+    let symbols = HashMap::new();
+    let mut emitter = FuncEmitter::new(&ir, &symbols);
+    emitter.locals.insert(-8, "local_m8".to_string());
+    emitter.lines = vec![
+        "dynamic typedPoolLiteral(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {".to_string(),
+        "  var local_m8;".to_string(),
+        "".to_string(),
+        "  local_m8 = \"setState\" /* pool[42] */;".to_string(),
+        "  return local_m8;".to_string(),
+        "}".to_string(),
+    ];
+
+    emitter.apply_name_and_type_hints("typedPoolLiteral");
+    let out = emitter.lines.join("\n");
+    assert!(
+        out.contains("String tmp"),
+        "pool-mapped literal assignment should infer String local type:\n{out}"
+    );
+}
+
+#[test]
 fn infers_local_types_from_semantic_return_paths() {
     let ir = FunctionIr {
         function_id: 808,

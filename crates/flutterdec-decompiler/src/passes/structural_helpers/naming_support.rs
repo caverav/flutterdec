@@ -210,6 +210,14 @@ impl<'a> FuncEmitter<'a> {
                 let rhs_trim = rhs.trim();
                 if rhs_trim.starts_with('"') && rhs_trim.ends_with('"') && rhs_trim.len() >= 2 {
                     Self::upsert_inferred_type(&mut out, id, "String");
+                } else if let Some((literal_prefix, _)) = rhs_trim.split_once("/* pool[") {
+                    let literal_prefix = literal_prefix.trim();
+                    if literal_prefix.starts_with('"')
+                        && literal_prefix.ends_with('"')
+                        && literal_prefix.len() >= 2
+                    {
+                        Self::upsert_inferred_type(&mut out, id, "String");
+                    }
                 } else if rhs_trim == "true" || rhs_trim == "false" {
                     Self::upsert_inferred_type(&mut out, id, "bool");
                 } else if Self::is_integer_literal(rhs_trim) {
