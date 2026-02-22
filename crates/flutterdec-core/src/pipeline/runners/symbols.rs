@@ -364,9 +364,7 @@ fn try_demangle_cpp(name: &str) -> Option<String> {
         return None;
     }
     let symbol = cpp_demangle::Symbol::new(name).ok()?;
-    symbol
-        .demangle(&cpp_demangle::DemangleOptions::default())
-        .ok()
+    symbol.demangle().ok()
 }
 
 fn canonicalize_known_symbol(symbol: &str) -> Option<String> {
@@ -490,4 +488,3 @@ fn sanitize_symbol_token_stream(input: &str) -> String {
     }
     out.trim_matches('_').to_string()
 }
-
