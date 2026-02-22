@@ -14,15 +14,34 @@ Inputs:
 
 ## Setup
 
+Prerequisite:
+
+- Nix with flakes enabled
+
+Run a command without installing:
+
 ```bash
-nix develop
-nix develop -c cargo build -p flutterdec-cli
+nix develop -c cargo run -p flutterdec-cli -- --help
 ```
 
-Run CLI from source:
+Install the CLI to your user Cargo bin directory:
 
 ```bash
-nix develop -c cargo run -p flutterdec-cli -- <command> ...
+nix develop -c cargo install --path crates/flutterdec-cli
+~/.cargo/bin/flutterdec --help
+```
+
+If `flutterdec` is not found:
+
+```bash
+export PATH="$HOME/.cargo/bin:$PATH"
+```
+
+Build a release binary:
+
+```bash
+nix develop -c cargo build -p flutterdec-cli --release
+./target/release/flutterdec --help
 ```
 
 ## Basic Commands

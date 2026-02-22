@@ -17,15 +17,40 @@ It takes an APK (or `libapp.so`) and emits readable pseudo-Dart plus optional IR
 
 Prerequisites:
 
-- Nix (`nix develop`)
+- Nix with flakes enabled
 
-Run from source:
+Run once without installing:
 
 ```bash
 nix develop -c cargo run -p flutterdec-cli -- info ./sample.apk --json
 ```
 
-Or build/install and run as `flutterdec`.
+Install `flutterdec` into your user Cargo bin directory:
+
+```bash
+nix develop -c cargo install --path crates/flutterdec-cli
+~/.cargo/bin/flutterdec --help
+```
+
+If `flutterdec` is not found in your shell, add Cargo bin to `PATH`:
+
+```bash
+export PATH="$HOME/.cargo/bin:$PATH"
+```
+
+Build a standalone release binary (no Cargo install):
+
+```bash
+nix develop -c cargo build -p flutterdec-cli --release
+./target/release/flutterdec --help
+```
+
+Optional system-wide install from that binary:
+
+```bash
+sudo install -m 0755 ./target/release/flutterdec /usr/local/bin/flutterdec
+flutterdec --help
+```
 
 ## Typical Workflow
 
