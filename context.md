@@ -190,6 +190,7 @@ Current scope:
 - internal selector-only mappings now also include framework/runtime helpers such as `_listEquals` -> `flutter.foundation.listEquals` and `_prependTypeArguments` -> `dart_vm.prependTypeArguments`
 - internal selector-only stdlib constructor mappings now also include `_StreamController` -> `dart.async.StreamController.new` and `_RawDatagramSocket` -> `dart.io.RawDatagramSocket.new`
 - internal typed-data selector mappings now also include `_nativeSetFloat32x4` -> `dart.typed_data.ByteData.setFloat32x4`, `_UnmodifiableUint8ArrayView` -> `dart.typed_data._UnmodifiableUint8ArrayView.new`, and `_Int32ArrayView` -> `dart.typed_data._Int32ArrayView.new`
+- selector coverage now also includes additional deterministic Flutter observer/scheduler/navigation APIs (for example `didPushRouteInformation`, `handleCommitBackGesture`, `scheduleWarmUpFrame`, `restorablePushNamed`) plus broader async/core/typed-data standard selectors (for example `scheduleMicrotask`, `runtimeType`, `setInt64`, `getFloat64x2`)
 - runtime helper selectors such as `yieldStarIterable` are now tagged and rewritten to readable runtime semantic paths
 - VM-internal selector constructors such as `_Closure` and `_TypeParameter` now rewrite to runtime semantic constructor paths
 - standalone stack-pointer offset arguments now normalize to slot notation (`sp[-0x10]`) instead of raw arithmetic (`(sp - 0x10)`)
