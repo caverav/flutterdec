@@ -1,3 +1,11 @@
+#[path = "runners/reporting.rs"]
+mod runners_reporting;
+use runners_reporting::{
+    collect_call_fallback_summary, collect_semantic_intent_summary,
+    collect_selector_fallback_summary, CallFallbackSummary, SelectorFallbackSummary,
+    SemanticIntentSummary,
+};
+
 pub fn run_info(repo_root: &Path, input_path: &Path) -> Result<InfoOutput> {
     let bundle = load_snapshot_bundle(input_path)?;
     let adapter_installed = resolve_adapter_exec(repo_root, &bundle.snapshot_hash).is_ok();
@@ -25,44 +33,12 @@ pub fn run_info(repo_root: &Path, input_path: &Path) -> Result<InfoOutput> {
 }
 
 #[derive(Debug, Default, Clone, Copy)]
-struct SemanticIntentSummary {
-    framework: usize,
-    stdlib: usize,
-    runtime: usize,
-    native: usize,
-    selector_tagged: usize,
-    constructor_calls: usize,
-}
-
-#[derive(Debug, Default, Clone, Copy)]
 struct PoolMetadataStats {
     total_entries: usize,
     with_target_va: usize,
     with_selector: usize,
     with_owner_class: usize,
     with_library_uri: usize,
-}
-
-#[derive(Debug, Default, Clone)]
-struct SelectorFallbackSummary {
-    total: usize,
-    unique: usize,
-    top: Vec<SelectorFallbackEntry>,
-}
-
-#[derive(Debug, Clone)]
-struct SelectorFallbackEntry {
-    selector: String,
-    count: usize,
-    sample: String,
-}
-
-#[derive(Debug, Default, Clone, Copy)]
-struct CallFallbackSummary {
-    dynamic_call: usize,
-    dispatch_invoke: usize,
-    dispatch_target_invoke: usize,
-    generic_invoke: usize,
 }
 
 pub fn run_decompile(
@@ -373,128 +349,6 @@ pub fn run_decompile(
     }
 
     Ok(report)
-}
-
-fn collect_semantic_intent_summary(pseudo: &[PseudocodeArtifact]) -> SemanticIntentSummary {
-    let mut out = SemanticIntentSummary::default();
-    for artifact in pseudo {
-        for line in artifact.source.lines() {
-            if line.contains("// framework:") {
-                out.framework += 1;
-            }
-            if line.contains("// stdlib:") {
-                out.stdlib += 1;
-            }
-            if line.contains("// runtime:") {
-                out.runtime += 1;
-            }
-            if line.contains("// native:") {
-                out.native += 1;
-            }
-            if line.contains("[selector]") {
-                out.selector_tagged += 1;
-            }
-            if line.contains("final ")
-                && line.contains(".new(")
-                && (line.contains("flutter.") || line.contains("dart."))
-            {
-                out.constructor_calls += 1;
-            }
-        }
-    }
-    out
-}
-
-fn collect_selector_fallback_summary(pseudo: &[PseudocodeArtifact]) -> SelectorFallbackSummary {
-    let mut out = SelectorFallbackSummary::default();
-    let mut counts: HashMap<String, (usize, String)> = HashMap::new();
-    for artifact in pseudo {
-        for line in artifact.source.lines() {
-            let Some(start) = line.find("// selector:") else {
-                continue;
-            };
-            let rest = &line[start + "// selector:".len()..];
-            let selector = rest.split(',').next().unwrap_or("").trim();
-            if selector.is_empty() {
-                continue;
-            }
-            out.total += 1;
-            let sample = line
-                .trim()
-                .replace('\t', " ")
-                .split_whitespace()
-                .collect::<Vec<_>>()
-                .join(" ");
-            let sample = if sample.len() > 180 {
-                let mut truncated = sample[..180].to_string();
-                truncated.push_str("...");
-                truncated
-            } else {
-                sample
-            };
-            counts
-                .entry(selector.to_string())
-                .and_modify(|(count, _)| *count += 1)
-                .or_insert((1, sample));
-        }
-    }
-
-    let mut ranked = counts
-        .into_iter()
-        .map(|(selector, (count, sample))| SelectorFallbackEntry {
-            selector,
-            count,
-            sample,
-        })
-        .collect::<Vec<_>>();
-    ranked.sort_by(|a, b| {
-        b.count
-            .cmp(&a.count)
-            .then_with(|| a.selector.cmp(&b.selector))
-    });
-    out.unique = ranked.len();
-    out.top = ranked.into_iter().take(10).collect();
-    out
-}
-
-fn collect_call_fallback_summary(pseudo: &[PseudocodeArtifact]) -> CallFallbackSummary {
-    let mut out = CallFallbackSummary::default();
-    for artifact in pseudo {
-        for line in artifact.source.lines() {
-            let callee = extract_assignment_callee(line).unwrap_or("");
-            if line.contains("dynamicCall(") {
-                out.dynamic_call += 1;
-            }
-            if line.contains("dispatch.invoke(") {
-                out.dispatch_invoke += 1;
-            }
-            if line.contains("indirect via: dispatchTarget")
-                && callee != "dispatch.invoke"
-                && (callee.ends_with(".invoke")
-                    || (!line.contains("[selector]")
-                        && !line.contains("target_va:")
-                        && !line.contains("framework:")
-                        && !line.contains("stdlib:")
-                        && !line.contains("runtime:")
-                        && !line.contains("native:")
-                        && !line.contains("package:")))
-            {
-                out.dispatch_target_invoke += 1;
-            }
-            if line.contains("indirect via: indirectTarget") && callee.starts_with("indirectTarget")
-            {
-                out.generic_invoke += 1;
-            }
-        }
-    }
-    out
-}
-
-fn extract_assignment_callee(line: &str) -> Option<&str> {
-    let eq_idx = line.find("= ")?;
-    let rhs = line.get(eq_idx + 2..)?.trim();
-    let open_idx = rhs.find('(')?;
-    rhs.get(..open_idx).map(str::trim)
 }
 
 pub fn available_adapters(repo_root: &Path) -> Result<Vec<(String, String, String, bool)>> {
