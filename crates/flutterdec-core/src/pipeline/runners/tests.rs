@@ -1,0 +1,492 @@
+    use super::*;
+
+    #[test]
+    fn merge_symbol_name_replaces_generic_only() {
+        let mut map = HashMap::new();
+        map.insert(0x1000, "sub_1000".to_string());
+        map.insert(0x2000, "StrongName".to_string());
+
+        let mut inserted = 0usize;
+        let mut replaced = 0usize;
+        let mut skipped = 0usize;
+
+        merge_symbol_name(
+            &mut map,
+            0x1000,
+            "RealSymbol".to_string(),
+            &mut inserted,
+            &mut replaced,
+            &mut skipped,
+        );
+        merge_symbol_name(
+            &mut map,
+            0x2000,
+            "OtherSymbol".to_string(),
+            &mut inserted,
+            &mut replaced,
+            &mut skipped,
+        );
+        merge_symbol_name(
+            &mut map,
+            0x3000,
+            "InsertedSymbol".to_string(),
+            &mut inserted,
+            &mut replaced,
+            &mut skipped,
+        );
+
+        assert_eq!(map.get(&0x1000).map(String::as_str), Some("RealSymbol"));
+        assert_eq!(map.get(&0x2000).map(String::as_str), Some("StrongName"));
+        assert_eq!(map.get(&0x3000).map(String::as_str), Some("InsertedSymbol"));
+        assert_eq!(inserted, 1);
+        assert_eq!(replaced, 1);
+        assert_eq!(skipped, 1);
+    }
+
+    #[test]
+    fn generic_name_detection_is_strict() {
+        assert!(is_generic_symbol_name("sub_1234"));
+        assert!(is_generic_symbol_name("fn_0x55"));
+        assert!(is_generic_symbol_name("unknown"));
+        assert!(!is_generic_symbol_name("Dart_Invoke"));
+    }
+
+    #[test]
+    fn normalizes_known_external_symbols() {
+        assert_eq!(
+            normalize_external_symbol_name("Dart_Invoke"),
+            "vm_runtime_Invoke"
+        );
+        assert_eq!(
+            normalize_external_symbol_name("memcpy@LIBC"),
+            "native_libc_memcpy"
+        );
+        assert_eq!(
+            normalize_external_symbol_name("__android_log_print"),
+            "native_android_log_print"
+        );
+        assert_eq!(
+            normalize_external_symbol_name("dart:core::print"),
+            "dart_core_print"
+        );
+    }
+
+    #[test]
+    fn canonicalizes_standard_model_function_names() {
+        let mut class_lib = HashMap::new();
+        class_lib.insert("_StringBase".to_string(), "dart:core".to_string());
+        class_lib.insert(
+            "State".to_string(),
+            "package:flutter/src/widgets/framework.dart".to_string(),
+        );
+        class_lib.insert(
+            "RenderObject".to_string(),
+            "package:flutter/src/rendering/object.dart".to_string(),
+        );
+
+        let dart_fn = flutterdec_adapter::FunctionInfo {
+            id: 1,
+            name: "toString".to_string(),
+            owner_class: "_StringBase".to_string(),
+            entry_va: 0x1000,
+            size: 4,
+            code_section_va: 0x1000,
+        };
+        assert_eq!(
+            canonical_standard_model_name(&dart_fn, &class_lib).as_deref(),
+            Some("dart_core_toString")
+        );
+
+        let flutter_fn = flutterdec_adapter::FunctionInfo {
+            id: 2,
+            name: "setState".to_string(),
+            owner_class: "State".to_string(),
+            entry_va: 0x2000,
+            size: 4,
+            code_section_va: 0x2000,
+        };
+        assert_eq!(
+            canonical_standard_model_name(&flutter_fn, &class_lib).as_deref(),
+            Some("flutter_widgets_State_setState")
+        );
+
+        let render_fn = flutterdec_adapter::FunctionInfo {
+            id: 3,
+            name: "layout".to_string(),
+            owner_class: "RenderObject".to_string(),
+            entry_va: 0x3000,
+            size: 4,
+            code_section_va: 0x3000,
+        };
+        assert_eq!(
+            canonical_standard_model_name(&render_fn, &class_lib).as_deref(),
+            Some("flutter_rendering_RenderObject_layout")
+        );
+
+        let generic_fn = flutterdec_adapter::FunctionInfo {
+            id: 4,
+            name: "sub_1234".to_string(),
+            owner_class: "State".to_string(),
+            entry_va: 0x4000,
+            size: 4,
+            code_section_va: 0x4000,
+        };
+        assert!(canonical_standard_model_name(&generic_fn, &class_lib).is_none());
+    }
+
+    #[test]
+    fn aggregates_semantic_intent_counts_from_pseudocode() {
+        let pseudo = vec![
+            PseudocodeArtifact {
+                function_id: 1,
+                function_name: "f1".to_string(),
+                source: r#"dynamic f1(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {
+  final t1 = flutter.widgets.KeyedSubtree.new(arg0, arg1, arg2, arg3); // framework:flutter.widgets.KeyedSubtree.new [selector]
+  final t2 = dart.core.List.removeAt(arg0, arg1, arg2, arg3); // stdlib:dart.core.List.removeAt [selector]
+  final t3 = vm_runtime_Invoke(arg0, arg1, arg2, arg3); // runtime:dart_vm.invoke
+  final t4 = native_libc_memcpy(arg0, arg1, arg2, arg3); // native:libc.memcpy
+  return t4;
+}"#
+                .to_string(),
+                placeholder_ifs: 0,
+                unresolved_cf: 0,
+                raw_register_calls: 0,
+                total_calls: 4,
+                indirect_calls: 0,
+                semantic_direct_calls: 0,
+                semantic_indirect_calls: 0,
+                dispatch_selector_calls: 0,
+                target_va_symbol_calls: 0,
+            },
+            PseudocodeArtifact {
+                function_id: 2,
+                function_name: "f2".to_string(),
+                source: r#"dynamic f2(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {
+  final t1 = dispatch.invoke(arg0, arg1, arg2, arg3); // indirect via: dispatchTarget
+  return t1;
+}"#
+                .to_string(),
+                placeholder_ifs: 0,
+                unresolved_cf: 0,
+                raw_register_calls: 0,
+                total_calls: 1,
+                indirect_calls: 1,
+                semantic_direct_calls: 0,
+                semantic_indirect_calls: 0,
+                dispatch_selector_calls: 0,
+                target_va_symbol_calls: 0,
+            },
+        ];
+
+        let summary = collect_semantic_intent_summary(&pseudo);
+        assert_eq!(summary.framework, 1);
+        assert_eq!(summary.stdlib, 1);
+        assert_eq!(summary.runtime, 1);
+        assert_eq!(summary.native, 1);
+        assert_eq!(summary.selector_tagged, 2);
+        assert_eq!(summary.constructor_calls, 1);
+    }
+
+    #[test]
+    fn summarizes_selector_fallback_counts_from_pseudocode() {
+        let pseudo = vec![
+            PseudocodeArtifact {
+                function_id: 1,
+                function_name: "f1".to_string(),
+                source: r#"dynamic f1(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {
+  final t1 = dispatch.current(arg0, arg1, arg2, arg3); // selector: current, indirect via: dispatchTarget
+  final t2 = dispatch.current(arg0, arg1, arg2, arg3); // selector: current, indirect via: dispatchTarget
+  return t2;
+}"#
+                .to_string(),
+                placeholder_ifs: 0,
+                unresolved_cf: 0,
+                raw_register_calls: 0,
+                total_calls: 2,
+                indirect_calls: 2,
+                semantic_direct_calls: 0,
+                semantic_indirect_calls: 0,
+                dispatch_selector_calls: 2,
+                target_va_symbol_calls: 0,
+            },
+            PseudocodeArtifact {
+                function_id: 2,
+                function_name: "f2".to_string(),
+                source: r#"dynamic f2(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {
+  final t1 = dispatch.customAction(arg0, arg1, arg2, arg3); // selector: customAction, indirect via: indirectTarget9
+  return t1;
+}"#
+                .to_string(),
+                placeholder_ifs: 0,
+                unresolved_cf: 0,
+                raw_register_calls: 0,
+                total_calls: 1,
+                indirect_calls: 1,
+                semantic_direct_calls: 0,
+                semantic_indirect_calls: 0,
+                dispatch_selector_calls: 1,
+                target_va_symbol_calls: 0,
+            },
+        ];
+
+        let summary = collect_selector_fallback_summary(&pseudo);
+        assert_eq!(summary.total, 3);
+        assert_eq!(summary.unique, 2);
+        assert_eq!(summary.top.first().map(|v| v.selector.as_str()), Some("current"));
+        assert_eq!(summary.top.first().map(|v| v.count), Some(2));
+        assert!(
+            summary
+                .top
+                .first()
+                .map(|v| v.sample.contains("dispatch.current("))
+                .unwrap_or(false)
+        );
+        assert_eq!(
+            summary.top.get(1).map(|v| v.selector.as_str()),
+            Some("customAction")
+        );
+        assert_eq!(summary.top.get(1).map(|v| v.count), Some(1));
+    }
+
+    #[test]
+    fn summarizes_call_fallback_counts_from_pseudocode() {
+        let pseudo = vec![PseudocodeArtifact {
+            function_id: 1,
+            function_name: "f1".to_string(),
+            source: r#"dynamic f1(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {
+  final t1 = dispatch.invoke(arg0, arg1, arg2, arg3); // indirect via: dispatchTarget
+  final t11 = dispatchTargetFn(arg0, arg1, arg2, arg3); // indirect via: dispatchTarget
+  final t2 = indirectTarget9(arg0, arg1, arg2, arg3); // indirect via: indirectTarget9
+  final t3 = dynamicCall(opaqueTarget, [arg0, arg1, arg2, arg3]); // target: opaqueTarget
+  return t3;
+}"#
+            .to_string(),
+            placeholder_ifs: 0,
+            unresolved_cf: 0,
+            raw_register_calls: 0,
+            total_calls: 4,
+            indirect_calls: 4,
+            semantic_direct_calls: 0,
+            semantic_indirect_calls: 0,
+            dispatch_selector_calls: 0,
+            target_va_symbol_calls: 0,
+        }];
+
+        let summary = collect_call_fallback_summary(&pseudo);
+        assert_eq!(summary.dynamic_call, 1);
+        assert_eq!(summary.dispatch_invoke, 1);
+        assert_eq!(summary.dispatch_target_invoke, 1);
+        assert_eq!(summary.generic_invoke, 1);
+    }
+
+    #[test]
+    fn decompile_engine_profile_light_is_minimal() {
+        let cfg = DecompileEngineOptions::for_profile(DecompileAnalysisProfile::Light);
+        assert!(!cfg.canonical_model_symbols);
+        assert!(!cfg.pool_value_hints);
+        assert!(!cfg.pool_semantic_hints);
+        assert!(!cfg.semantic_reporting);
+    }
+
+    #[test]
+    fn decompile_engine_overrides_can_disable_balanced_defaults() {
+        let base = DecompileEngineOptions::for_profile(DecompileAnalysisProfile::Balanced);
+        let overrides = DecompileEngineOptionOverrides {
+            canonical_model_symbols: Some(false),
+            pool_value_hints: None,
+            pool_semantic_hints: Some(false),
+            semantic_reporting: Some(false),
+        };
+        let cfg = base.with_overrides(&overrides);
+        assert!(!cfg.canonical_model_symbols);
+        assert!(cfg.pool_value_hints);
+        assert!(!cfg.pool_semantic_hints);
+        assert!(!cfg.semantic_reporting);
+    }
+
+    #[test]
+    fn builds_pool_semantic_hints_from_adapter_metadata() {
+        let model = ProgramModel {
+            schema_version: 2,
+            adapter_kind: "python".to_string(),
+            dart_version: "3.0.0".to_string(),
+            snapshot_hash: "deadbeef".to_string(),
+            arch: "arm64".to_string(),
+            libraries: Vec::new(),
+            classes: Vec::new(),
+            functions: Vec::new(),
+            object_pool: vec![
+                flutterdec_adapter::ObjectPoolEntry {
+                    index: 7,
+                    kind: "String".to_string(),
+                    value: "didChangeMetrics".to_string(),
+                    decoded_kind: Some("selector".to_string()),
+                    selector: Some("didChangeMetrics".to_string()),
+                    target_va: Some(0x1234),
+                    owner_class: Some("WidgetsBindingObserver".to_string()),
+                    library_uri: Some("package:flutter/src/widgets/binding.dart".to_string()),
+                },
+                flutterdec_adapter::ObjectPoolEntry {
+                    index: 8,
+                    kind: "Smi".to_string(),
+                    value: "42".to_string(),
+                    decoded_kind: None,
+                    selector: None,
+                    target_va: None,
+                    owner_class: None,
+                    library_uri: None,
+                },
+            ],
+        };
+
+        let class_to_library = build_class_library_lookup(&model);
+        let hints = build_pool_semantic_hints(&model, &class_to_library);
+        assert_eq!(hints.len(), 1);
+        let h = hints.get(&7).expect("missing semantic hint entry");
+        assert_eq!(h.selector.as_deref(), Some("didChangeMetrics"));
+        assert_eq!(h.owner_class.as_deref(), Some("WidgetsBindingObserver"));
+        assert_eq!(
+            h.library_uri.as_deref(),
+            Some("package:flutter/src/widgets/binding.dart")
+        );
+        assert_eq!(h.target_va, Some(0x1234));
+    }
+
+    #[test]
+    fn collects_pool_metadata_coverage_stats() {
+        let model = ProgramModel {
+            schema_version: 2,
+            adapter_kind: "python".to_string(),
+            dart_version: "3.0.0".to_string(),
+            snapshot_hash: "deadbeef".to_string(),
+            arch: "arm64".to_string(),
+            libraries: Vec::new(),
+            classes: Vec::new(),
+            functions: Vec::new(),
+            object_pool: vec![
+                flutterdec_adapter::ObjectPoolEntry {
+                    index: 1,
+                    kind: "String".to_string(),
+                    value: "a".to_string(),
+                    decoded_kind: None,
+                    selector: Some("setState".to_string()),
+                    target_va: Some(0x1000),
+                    owner_class: Some("State".to_string()),
+                    library_uri: Some("package:flutter/src/widgets/framework.dart".to_string()),
+                },
+                flutterdec_adapter::ObjectPoolEntry {
+                    index: 2,
+                    kind: "Smi".to_string(),
+                    value: "42".to_string(),
+                    decoded_kind: None,
+                    selector: None,
+                    target_va: None,
+                    owner_class: None,
+                    library_uri: None,
+                },
+            ],
+        };
+
+        let stats = collect_pool_metadata_stats(&model);
+        assert_eq!(stats.total_entries, 2);
+        assert_eq!(stats.with_target_va, 1);
+        assert_eq!(stats.with_selector, 1);
+        assert_eq!(stats.with_owner_class, 1);
+        assert_eq!(stats.with_library_uri, 1);
+    }
+
+    #[test]
+    fn builds_pool_target_symbols_from_metadata() {
+        let model = ProgramModel {
+            schema_version: 2,
+            adapter_kind: "python".to_string(),
+            dart_version: "3.0.0".to_string(),
+            snapshot_hash: "deadbeef".to_string(),
+            arch: "arm64".to_string(),
+            libraries: Vec::new(),
+            classes: Vec::new(),
+            functions: Vec::new(),
+            object_pool: vec![
+                flutterdec_adapter::ObjectPoolEntry {
+                    index: 7,
+                    kind: "String".to_string(),
+                    value: "didChangeMetrics".to_string(),
+                    decoded_kind: Some("selector".to_string()),
+                    selector: Some("didChangeMetrics".to_string()),
+                    target_va: Some(0x1234),
+                    owner_class: Some("WidgetsBindingObserver".to_string()),
+                    library_uri: Some("package:flutter/src/widgets/binding.dart".to_string()),
+                },
+                flutterdec_adapter::ObjectPoolEntry {
+                    index: 8,
+                    kind: "String".to_string(),
+                    value: "Int64List".to_string(),
+                    decoded_kind: Some("selector".to_string()),
+                    selector: Some("Int64List".to_string()),
+                    target_va: Some(0x2234),
+                    owner_class: Some("Int64List".to_string()),
+                    library_uri: Some("dart:typed_data".to_string()),
+                },
+            ],
+        };
+
+        let class_to_library = build_class_library_lookup(&model);
+        let hints = build_pool_semantic_hints(&model, &class_to_library);
+        let values = build_pool_value_hints(&model);
+        let map = build_pool_target_symbols(&hints, &values);
+        assert_eq!(
+            map.get(&0x1234).map(String::as_str),
+            Some("flutter_widgets_WidgetsBindingObserver_didChangeMetrics")
+        );
+        assert_eq!(
+            map.get(&0x2234).map(String::as_str),
+            Some("dart_typed_data_Int64List_new")
+        );
+    }
+
+    #[test]
+    fn enriches_pool_semantic_hints_from_function_metadata() {
+        let model = ProgramModel {
+            schema_version: 2,
+            adapter_kind: "python".to_string(),
+            dart_version: "3.0.0".to_string(),
+            snapshot_hash: "deadbeef".to_string(),
+            arch: "arm64".to_string(),
+            libraries: Vec::new(),
+            classes: vec![flutterdec_adapter::ClassInfo {
+                id: 1,
+                name: "State".to_string(),
+                super_name: "Object".to_string(),
+                library_uri: "package:flutter/src/widgets/framework.dart".to_string(),
+            }],
+            functions: vec![flutterdec_adapter::FunctionInfo {
+                id: 11,
+                name: "setState".to_string(),
+                owner_class: "State".to_string(),
+                entry_va: 0x4000,
+                size: 4,
+                code_section_va: 0x4000,
+            }],
+            object_pool: vec![flutterdec_adapter::ObjectPoolEntry {
+                index: 21,
+                kind: "Closure".to_string(),
+                value: "opaque".to_string(),
+                decoded_kind: None,
+                selector: None,
+                target_va: Some(0x4000),
+                owner_class: None,
+                library_uri: None,
+            }],
+        };
+
+        let class_to_library = build_class_library_lookup(&model);
+        let hints = build_pool_semantic_hints(&model, &class_to_library);
+        let h = hints.get(&21).expect("missing enriched semantic hint");
+        assert_eq!(h.selector.as_deref(), Some("setState"));
+        assert_eq!(h.owner_class.as_deref(), Some("State"));
+        assert_eq!(
+            h.library_uri.as_deref(),
+            Some("package:flutter/src/widgets/framework.dart")
+        );
+        assert_eq!(h.target_va, Some(0x4000));
+    }
