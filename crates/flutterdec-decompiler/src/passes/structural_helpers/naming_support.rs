@@ -357,9 +357,6 @@ impl<'a> FuncEmitter<'a> {
             }
             return Some("dart.async.Future".to_string());
         }
-        if path == "dart.async.scheduleMicrotask" {
-            return Some("void".to_string());
-        }
         if path.starts_with("dart.async.Stream.") && method == "listen" {
             return Some("dart.async.StreamSubscription".to_string());
         }
