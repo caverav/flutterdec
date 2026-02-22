@@ -12,6 +12,7 @@ Common commands:
 
 ```bash
 cargo fmt --all --check
+./scripts/lint-shell.sh
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
@@ -70,6 +71,7 @@ CI runs on:
 Workflow checks:
 
 - `cargo fmt --check`
+- `scripts/lint-shell.sh`
 - `cargo clippy` with warnings denied
 - `cargo test --workspace`
 - `cargo build -p flutterdec-cli --release`

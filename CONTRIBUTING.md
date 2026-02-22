@@ -12,6 +12,7 @@ Run:
 
 ```bash
 cargo fmt --all --check
+./scripts/lint-shell.sh
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
