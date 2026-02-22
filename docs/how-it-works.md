@@ -348,6 +348,8 @@ The current Python template adapter:
 - guesses libraries from `package:...dart` strings
 - recovers function starts with simple ARM64 heuristics
 - builds object pool from extracted strings
+- can run in `auto|internal|blutter` backend mode (Blutter first in `auto` when configured)
+- in Blutter mode, parses `asm/*.dart` and `pp.txt` and synthesizes `EntryPointCandidate` pool metadata for `main`/`runApp`-like functions
 - emits schema version 2 JSON
 
 Validation in Rust enforces:

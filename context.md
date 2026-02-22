@@ -185,11 +185,12 @@ Current scope:
 - adapter object-pool metadata fields (`decoded_kind`, `selector`, `target_va`, `owner_class`, `library_uri`) are now consumed by decompile for deterministic owner-qualified selector rewrites
 - adapter execution now supports backend selection (`auto`, `internal`, `blutter`) so deterministic parser backends can be introduced without changing decompiler core contracts
 - default adapter backend mode is `auto`: it attempts Blutter bridge parsing when configured (`FLUTTERDEC_BLUTTER_CMD` or `FLUTTERDEC_BLUTTER_PY`) and falls back to internal parsing for resilience
-- Blutter bridge parsing currently normalizes `asm/*.dart` and `pp.txt` output into `ProgramModel` (`libraries`, `classes`, `functions`, and best-effort `object_pool` target metadata)
+- Blutter bridge parsing currently normalizes `asm/*.dart` and `pp.txt` output into `ProgramModel` (`libraries`, `classes`, `functions`, and best-effort `object_pool` target metadata), and now synthesizes deterministic `EntryPointCandidate` pool entries for `main`/`runApp`-like functions when present
 - owner-only metadata (selector + owner_class without library URI) can still rewrite indirect selector calls to deterministic owner-qualified call paths
 - if pool entries miss selector/owner/library metadata, core now backfills semantic hints from function ownership metadata keyed by `target_va`
 - when metadata includes `target_va` and that address resolves to a non-generic symbol, indirect calls can be rewritten to the resolved symbol path (with `target_va` traceability in comments)
 - model-backed canonical naming now deterministically tags Dart stdlib (`dart:*`), Flutter framework (`package:flutter/*`), and package-owned calls (`package:*`) when adapter metadata includes class/library ownership
+- Dart patch-library semantic naming now includes patch module stems when available (for example `dart:core-patch/bool_patch.dart` -> `dart.core_patch.bool_patch.*`) to reduce ambiguous `dart.core_patch.*` callsites
 - selector coverage now includes additional standard families such as `Navigator.pushNamed` and `List.removeAt`, improving deterministic semantic rewrites on real samples
 - selector coverage also includes internal/std selector forms such as `match_end_index` -> `dart.core.Match.end`
 - constructor-like standard selectors are now recognized too (for example `KeyedSubtree`, `StreamIterator`, `Float32x4List`, `Int64List`) and rewritten to semantic `.new` paths
