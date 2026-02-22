@@ -58,6 +58,9 @@ Current module layout:
     - instruction parsing in `src/helpers/instruction_parse.rs`
     - naming helpers in `src/helpers/naming.rs`
     - selector catalog in `src/helpers/selector_table.rs`
+    - selector catalog categories in `src/helpers/selector_table/categories.rs`
+    - selector candidate normalization in `src/helpers/selector_table/candidates.rs`
+    - selector catalog matching in `src/helpers/selector_table/matching.rs`
     - call-intent entry in `src/helpers/call_intent.rs`
     - call-intent intent mapping in `src/helpers/call_intent/intent.rs`
     - call-intent library-context mapping in `src/helpers/call_intent/library.rs`
