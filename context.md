@@ -218,6 +218,7 @@ Python remains useful at the adapter boundary for faster version specific parser
 - use `README.md` for user-facing quick usage and command flow, and `docs/development.md` for contributor/development workflows
 - CI now runs formatting, clippy, full workspace tests, and a release CLI build on both Linux and Darwin runners for PRs and on `main` pushes (`.github/workflows/ci.yml`)
 - CI also lint-checks repository shell scripts via `scripts/lint-shell.sh` to keep automation scripts maintainable
+- CI validates Nix project configuration with `nix flake check` before Rust checks
 - GitHub contribution hygiene is bootstrapped with issue templates, PR template, CODEOWNERS routing, and weekly Dependabot update PRs under `.github/`
 - local CI-parity validation is available via `scripts/ci-check.sh` (also exposed as `nix run .#ci-check`)
 - refresh decompiler golden snapshots with `FLUTTERDEC_UPDATE_GOLDEN=1 cargo test -p flutterdec-decompiler golden_` when output changes intentionally
