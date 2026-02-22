@@ -2289,6 +2289,159 @@ fn propagates_selector_hint_through_object_field_assignment() {
 }
 
 #[test]
+fn propagates_selector_hint_through_object_base_alias() {
+    let ir = FunctionIr {
+        function_id: 491,
+        name: "indirectSelectorViaObjectBaseAlias".to_string(),
+        entry_va: 0xc4d0,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0xc4d0,
+            instrs: vec![
+                LlirInstr {
+                    va: 0xc4d0,
+                    op: IROp::LoadPool,
+                    src: "x1".to_string(),
+                    target: "pool[16]".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc4d4,
+                    op: IROp::Other,
+                    src: "str x1, [x0, #15]".to_string(),
+                    target: String::new(),
+                },
+                LlirInstr {
+                    va: 0xc4d8,
+                    op: IROp::Other,
+                    src: "mov x3, x0".to_string(),
+                    target: String::new(),
+                },
+                LlirInstr {
+                    va: 0xc4dc,
+                    op: IROp::Other,
+                    src: "ldr x2, [x3, #15]".to_string(),
+                    target: String::new(),
+                },
+                LlirInstr {
+                    va: 0xc4e0,
+                    op: IROp::Call,
+                    src: "blr x9".to_string(),
+                    target: "x9".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc4e4,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+
+    let symbols = HashMap::new();
+    let mut pool = HashMap::new();
+    pool.insert(16u64, "String: \"icon\"".to_string());
+    let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
+    assert!(
+        artifact.source.contains("dispatch.icon("),
+        "selector should survive object base aliasing:\n{}",
+        artifact.source
+    );
+    assert!(
+        artifact
+            .source
+            .contains("// selector: icon, indirect via: indirectTarget9"),
+        "selector annotation should remain after object base aliasing:\n{}",
+        artifact.source
+    );
+}
+
+#[test]
+fn drops_stale_selector_hint_after_object_base_alias_reassignment() {
+    let ir = FunctionIr {
+        function_id: 492,
+        name: "indirectSelectorDropsStaleObjectBaseAlias".to_string(),
+        entry_va: 0xc4f0,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0xc4f0,
+            instrs: vec![
+                LlirInstr {
+                    va: 0xc4f0,
+                    op: IROp::LoadPool,
+                    src: "x1".to_string(),
+                    target: "pool[16]".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc4f4,
+                    op: IROp::Other,
+                    src: "str x1, [x0, #15]".to_string(),
+                    target: String::new(),
+                },
+                LlirInstr {
+                    va: 0xc4f8,
+                    op: IROp::Other,
+                    src: "mov x3, x0".to_string(),
+                    target: String::new(),
+                },
+                LlirInstr {
+                    va: 0xc4fc,
+                    op: IROp::Other,
+                    src: "mov x3, x22".to_string(),
+                    target: String::new(),
+                },
+                LlirInstr {
+                    va: 0xc500,
+                    op: IROp::Other,
+                    src: "mov x1, x22".to_string(),
+                    target: String::new(),
+                },
+                LlirInstr {
+                    va: 0xc504,
+                    op: IROp::Other,
+                    src: "ldr x2, [x3, #15]".to_string(),
+                    target: String::new(),
+                },
+                LlirInstr {
+                    va: 0xc508,
+                    op: IROp::Call,
+                    src: "blr x9".to_string(),
+                    target: "x9".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc50c,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+
+    let symbols = HashMap::new();
+    let mut pool = HashMap::new();
+    pool.insert(16u64, "String: \"icon\"".to_string());
+    let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
+    assert!(
+        !artifact.source.contains("dispatch.icon("),
+        "stale selector hint should be purged when object alias is reassigned:\n{}",
+        artifact.source
+    );
+    assert!(
+        artifact
+            .source
+            .contains("indirectTarget9(")
+            && artifact.source.contains("// indirect via: indirectTarget9"),
+        "without live selector hints, indirect call should fall back:\n{}",
+        artifact.source
+    );
+}
+
+#[test]
 fn keeps_dynamic_call_when_target_selector_is_file_path_like() {
     let ir = FunctionIr {
         function_id: 49,

@@ -40,6 +40,41 @@ impl<'a> FuncEmitter<'a> {
         Self::canonical_stack_slot_expr(trimmed)
     }
 
+    fn is_simple_identifier_key(key: &str) -> bool {
+        Self::is_simple_identifier_expr(key)
+    }
+
+    fn purge_selector_hints_for_base(&mut self, base: &str) {
+        let prefix = format!("{base}.");
+        self.state
+            .selector_hints
+            .retain(|k, _| k != base && !k.starts_with(&prefix));
+    }
+
+    fn propagate_selector_hints_for_base_alias(&mut self, dst_base: &str, src_base: &str) {
+        if dst_base == src_base {
+            return;
+        }
+        let src_prefix = format!("{src_base}.");
+        let entries = self
+            .state
+            .selector_hints
+            .iter()
+            .filter_map(|(k, v)| {
+                if k == src_base {
+                    Some((dst_base.to_string(), v.clone()))
+                } else if let Some(suffix) = k.strip_prefix(&src_prefix) {
+                    Some((format!("{dst_base}.{suffix}"), v.clone()))
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        for (k, v) in entries {
+            self.state.selector_hints.insert(k, v);
+        }
+    }
+
     fn selector_hint_from_expr(&self, expr: &str) -> Option<String> {
         let mut cur = expr.trim();
         if cur.is_empty() {
@@ -107,6 +142,16 @@ impl<'a> FuncEmitter<'a> {
         let Some(key) = Self::selector_binding_key(lhs) else {
             return;
         };
+
+        if Self::is_simple_identifier_key(&key) {
+            self.purge_selector_hints_for_base(&key);
+            if let Some(rhs_key) = Self::selector_binding_key(rhs) {
+                if Self::is_simple_identifier_key(&rhs_key) {
+                    self.propagate_selector_hints_for_base_alias(&key, &rhs_key);
+                }
+            }
+        }
+
         if let Some(sel) = self.selector_hint_from_expr(rhs) {
             self.state.selector_hints.insert(key, sel);
         } else {
