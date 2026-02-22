@@ -3,7 +3,7 @@ use capstone::prelude::*;
 use flutterdec_adapter::{FunctionInfo, ProgramModel};
 use regex::Regex;
 use serde::Serialize;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet, VecDeque};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct AsmInstruction {
@@ -161,6 +161,17 @@ fn build_owner_library_lookup(model: &ProgramModel) -> HashMap<String, String> {
             .or_insert_with(|| class.library_uri.clone());
     }
     out
+}
+
+fn decode_bl_target(pc: u64, word: u32) -> Option<u64> {
+    if ((word >> 26) & 0x3F) != 0b100101 {
+        return None;
+    }
+    let mut imm26 = (word & 0x03FF_FFFF) as i64;
+    if (imm26 & (1 << 25)) != 0 {
+        imm26 -= 1 << 26;
+    }
+    Some(((pc as i64) + (imm26 << 2)) as u64)
 }
 
 fn looks_generic_name(name: &str) -> bool {
@@ -354,10 +365,190 @@ fn build_target_va_priority_hints(model: &ProgramModel) -> HashMap<u64, i32> {
     out
 }
 
+fn package_name_from_library_uri(uri: &str) -> Option<String> {
+    let rest = uri.strip_prefix("package:")?;
+    let name = rest
+        .split('/')
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_ascii_lowercase();
+    if name.is_empty() || name == "flutter" {
+        None
+    } else {
+        Some(name)
+    }
+}
+
+fn build_app_package_boosts(
+    model: &ProgramModel,
+    owner_library: &HashMap<String, String>,
+) -> HashMap<String, i32> {
+    let mut counts: HashMap<String, usize> = HashMap::new();
+    for f in &model.functions {
+        let Some(uri) = owner_library.get(&f.owner_class) else {
+            continue;
+        };
+        let Some(pkg) = package_name_from_library_uri(uri) else {
+            continue;
+        };
+        *counts.entry(pkg).or_insert(0) += 1;
+    }
+
+    let mut ranked = counts.into_iter().collect::<Vec<_>>();
+    ranked.sort_by(|(a_name, a_count), (b_name, b_count)| {
+        b_count.cmp(a_count).then(a_name.cmp(b_name))
+    });
+
+    let mut out = HashMap::new();
+    for (rank, (pkg, count)) in ranked.into_iter().enumerate().take(6) {
+        if count < 8 {
+            continue;
+        }
+        let mut bonus = match rank {
+            0 => 900,
+            1 => 650,
+            2 => 500,
+            3 => 380,
+            4 => 300,
+            _ => 240,
+        };
+        if pkg == "app" {
+            bonus += 160;
+        }
+        out.insert(pkg, bonus);
+    }
+    out
+}
+
+fn collect_direct_call_targets(
+    func: &FunctionInfo,
+    iso_instr: &[u8],
+    iso_base_va: u64,
+    known_entries: &HashSet<u64>,
+) -> Vec<u64> {
+    if func.entry_va < iso_base_va {
+        return Vec::new();
+    }
+    let rel = (func.entry_va - iso_base_va) as usize;
+    if rel >= iso_instr.len() {
+        return Vec::new();
+    }
+    let requested = usize::try_from(func.size).unwrap_or(0);
+    let max_scan = requested.min(iso_instr.len() - rel).min(0x400);
+    if max_scan < 4 {
+        return Vec::new();
+    }
+
+    let mut out = Vec::new();
+    let mut seen = HashSet::new();
+    let mut off = 0usize;
+    while off + 4 <= max_scan {
+        let word = u32::from_le_bytes([
+            iso_instr[rel + off],
+            iso_instr[rel + off + 1],
+            iso_instr[rel + off + 2],
+            iso_instr[rel + off + 3],
+        ]);
+        let pc = func.entry_va + off as u64;
+        if let Some(target) = decode_bl_target(pc, word) {
+            if known_entries.contains(&target) && seen.insert(target) {
+                out.push(target);
+            }
+        }
+        off += 4;
+    }
+    out
+}
+
+fn build_entrypoint_frontier_scores(
+    candidates: &[&FunctionInfo],
+    target_va_hints: &HashMap<u64, i32>,
+    iso_instr: &[u8],
+    iso_base_va: u64,
+) -> HashMap<u64, i32> {
+    let known_entries: HashSet<u64> = candidates.iter().map(|f| f.entry_va).collect();
+    if known_entries.is_empty() {
+        return HashMap::new();
+    }
+
+    let mut adjacency: HashMap<u64, Vec<u64>> = HashMap::new();
+    for f in candidates {
+        let callees = collect_direct_call_targets(f, iso_instr, iso_base_va, &known_entries);
+        if !callees.is_empty() {
+            adjacency.insert(f.entry_va, callees);
+        }
+    }
+
+    let mut seeds = HashSet::new();
+    for f in candidates {
+        let name_lower = f.name.to_ascii_lowercase();
+        if is_main_like_name(&name_lower)
+            || name_lower.contains("runapp")
+            || name_lower.contains("ensureinitialized")
+            || target_va_hints.get(&f.entry_va).copied().unwrap_or(0) >= 1200
+        {
+            seeds.insert(f.entry_va);
+        }
+    }
+    if seeds.is_empty() {
+        return HashMap::new();
+    }
+
+    let depth_score = |depth: usize| -> i32 {
+        match depth {
+            0 => 2200,
+            1 => 1300,
+            2 => 760,
+            3 => 420,
+            _ => 0,
+        }
+    };
+
+    let mut out = HashMap::new();
+    let mut visited_depth: HashMap<u64, usize> = HashMap::new();
+    let mut q = VecDeque::new();
+    for seed in seeds {
+        visited_depth.insert(seed, 0);
+        q.push_back((seed, 0usize));
+    }
+
+    while let Some((va, depth)) = q.pop_front() {
+        let score = depth_score(depth);
+        if score > 0 {
+            let slot = out.entry(va).or_insert(0);
+            if score > *slot {
+                *slot = score;
+            }
+        }
+        if depth >= 3 {
+            continue;
+        }
+        let Some(next) = adjacency.get(&va) else {
+            continue;
+        };
+        for &callee in next {
+            let next_depth = depth + 1;
+            let seen_better = visited_depth
+                .get(&callee)
+                .copied()
+                .is_some_and(|d| d <= next_depth);
+            if seen_better {
+                continue;
+            }
+            visited_depth.insert(callee, next_depth);
+            q.push_back((callee, next_depth));
+        }
+    }
+    out
+}
+
 fn function_priority(
     func: &FunctionInfo,
     owner_library: &HashMap<String, String>,
     target_va_hints: &HashMap<u64, i32>,
+    app_package_boosts: &HashMap<String, i32>,
+    entrypoint_frontier_scores: &HashMap<u64, i32>,
 ) -> i32 {
     let mut score = 0i32;
     let name_lower = func.name.to_ascii_lowercase();
@@ -367,6 +558,12 @@ fn function_priority(
         score -= 40;
     } else {
         score += 10;
+    }
+    if name_lower.starts_with("closure_") {
+        score -= 900;
+    }
+    if name_lower.starts_with('_') {
+        score -= 90;
     }
     if is_main_like_name(&name_lower) {
         score += 900;
@@ -397,11 +594,26 @@ fn function_priority(
             score -= 360;
         } else if uri_lower.starts_with("package:") {
             score += 220;
+            if uri_lower.contains("/src/") {
+                score -= 50;
+            }
+            if let Some(pkg) = package_name_from_library_uri(&uri_lower) {
+                if let Some(extra) = app_package_boosts.get(&pkg) {
+                    score += *extra;
+                }
+            }
         }
         score += deep_link_signal_score_lower(&uri_lower);
     }
     if let Some(extra) = target_va_hints.get(&func.entry_va) {
         score += *extra;
+    }
+    if let Some(extra) = entrypoint_frontier_scores.get(&func.entry_va) {
+        if name_lower.starts_with("closure_") {
+            score += *extra / 8;
+        } else {
+            score += *extra;
+        }
     }
 
     score
@@ -418,6 +630,7 @@ pub fn disassemble_program(
     let cs = build_capstone();
     let owner_library = build_owner_library_lookup(model);
     let target_va_hints = build_target_va_priority_hints(model);
+    let app_package_boosts = build_app_package_boosts(model, &owner_library);
     let mut candidates = model
         .functions
         .iter()
@@ -431,11 +644,29 @@ pub fn disassemble_program(
         })
         .map(|(index, f)| (index, f))
         .collect::<Vec<_>>();
+    let frontier_scores = if max_functions.is_some() {
+        let funcs = candidates.iter().map(|(_, f)| *f).collect::<Vec<_>>();
+        build_entrypoint_frontier_scores(&funcs, &target_va_hints, iso_instr, iso_base_va)
+    } else {
+        HashMap::new()
+    };
 
     if max_functions.is_some() {
         candidates.sort_by(|(a_idx, a), (b_idx, b)| {
-            let a_score = function_priority(a, &owner_library, &target_va_hints);
-            let b_score = function_priority(b, &owner_library, &target_va_hints);
+            let a_score = function_priority(
+                a,
+                &owner_library,
+                &target_va_hints,
+                &app_package_boosts,
+                &frontier_scores,
+            );
+            let b_score = function_priority(
+                b,
+                &owner_library,
+                &target_va_hints,
+                &app_package_boosts,
+                &frontier_scores,
+            );
             b_score.cmp(&a_score).then(a_idx.cmp(b_idx))
         });
     }
@@ -867,5 +1098,197 @@ mod tests {
         let d = disassemble_program(&model, &bytes, 0x5100, None, Some(1));
         assert_eq!(d.len(), 1);
         assert_eq!(d[0].function_name, "sub_5104");
+    }
+
+    #[test]
+    fn prioritizes_top_app_package_when_names_are_generic() {
+        let model = ProgramModel {
+            schema_version: 2,
+            adapter_kind: "test".to_string(),
+            dart_version: "unknown".to_string(),
+            snapshot_hash: "h".to_string(),
+            arch: "arm64".to_string(),
+            libraries: vec![
+                LibraryInfo {
+                    id: 0,
+                    uri: "package:other_pkg/core.dart".to_string(),
+                    name_display: "package:other_pkg/core.dart".to_string(),
+                },
+                LibraryInfo {
+                    id: 1,
+                    uri: "package:app_pkg/feature.dart".to_string(),
+                    name_display: "package:app_pkg/feature.dart".to_string(),
+                },
+            ],
+            classes: vec![
+                ClassInfo {
+                    id: 0,
+                    name: "OtherCls".to_string(),
+                    super_name: "Object".to_string(),
+                    library_uri: "package:other_pkg/core.dart".to_string(),
+                },
+                ClassInfo {
+                    id: 1,
+                    name: "AppCls".to_string(),
+                    super_name: "Object".to_string(),
+                    library_uri: "package:app_pkg/feature.dart".to_string(),
+                },
+            ],
+            functions: vec![
+                FunctionInfo {
+                    id: 0,
+                    name: "sub_2000".to_string(),
+                    owner_class: "OtherCls".to_string(),
+                    entry_va: 0x2000,
+                    size: 4,
+                    code_section_va: 0x2000,
+                },
+                FunctionInfo {
+                    id: 1,
+                    name: "sub_2004".to_string(),
+                    owner_class: "AppCls".to_string(),
+                    entry_va: 0x2004,
+                    size: 4,
+                    code_section_va: 0x2000,
+                },
+                FunctionInfo {
+                    id: 2,
+                    name: "sub_2008".to_string(),
+                    owner_class: "AppCls".to_string(),
+                    entry_va: 0x2008,
+                    size: 4,
+                    code_section_va: 0x2000,
+                },
+                FunctionInfo {
+                    id: 3,
+                    name: "sub_200c".to_string(),
+                    owner_class: "AppCls".to_string(),
+                    entry_va: 0x200c,
+                    size: 4,
+                    code_section_va: 0x2000,
+                },
+                FunctionInfo {
+                    id: 4,
+                    name: "sub_2010".to_string(),
+                    owner_class: "AppCls".to_string(),
+                    entry_va: 0x2010,
+                    size: 4,
+                    code_section_va: 0x2000,
+                },
+                FunctionInfo {
+                    id: 5,
+                    name: "sub_2014".to_string(),
+                    owner_class: "AppCls".to_string(),
+                    entry_va: 0x2014,
+                    size: 4,
+                    code_section_va: 0x2000,
+                },
+                FunctionInfo {
+                    id: 6,
+                    name: "sub_2018".to_string(),
+                    owner_class: "AppCls".to_string(),
+                    entry_va: 0x2018,
+                    size: 4,
+                    code_section_va: 0x2000,
+                },
+                FunctionInfo {
+                    id: 7,
+                    name: "sub_201c".to_string(),
+                    owner_class: "AppCls".to_string(),
+                    entry_va: 0x201c,
+                    size: 4,
+                    code_section_va: 0x2000,
+                },
+                FunctionInfo {
+                    id: 8,
+                    name: "sub_2020".to_string(),
+                    owner_class: "AppCls".to_string(),
+                    entry_va: 0x2020,
+                    size: 4,
+                    code_section_va: 0x2000,
+                },
+            ],
+            object_pool: vec![ObjectPoolEntry {
+                index: 0,
+                kind: "String".to_string(),
+                value: "x".to_string(),
+                decoded_kind: None,
+                selector: None,
+                target_va: None,
+                owner_class: None,
+                library_uri: None,
+            }],
+        };
+        let bytes = [0xc0u8, 0x03, 0x5f, 0xd6].repeat(9);
+        let d = disassemble_program(&model, &bytes, 0x2000, None, Some(1));
+        assert_eq!(d.len(), 1);
+        assert_eq!(d[0].owner_class, "AppCls");
+    }
+
+    #[test]
+    fn prioritizes_entrypoint_frontier_callee_when_names_are_generic() {
+        let model = ProgramModel {
+            schema_version: 2,
+            adapter_kind: "test".to_string(),
+            dart_version: "unknown".to_string(),
+            snapshot_hash: "h".to_string(),
+            arch: "arm64".to_string(),
+            libraries: vec![LibraryInfo {
+                id: 0,
+                uri: "package:app/main.dart".to_string(),
+                name_display: "package:app/main.dart".to_string(),
+            }],
+            classes: vec![ClassInfo {
+                id: 0,
+                name: "Global".to_string(),
+                super_name: "Object".to_string(),
+                library_uri: "package:app/main.dart".to_string(),
+            }],
+            functions: vec![
+                FunctionInfo {
+                    id: 0,
+                    name: "sub_1000".to_string(),
+                    owner_class: "Global".to_string(),
+                    entry_va: 0x1000,
+                    size: 4,
+                    code_section_va: 0x1000,
+                },
+                FunctionInfo {
+                    id: 1,
+                    name: "sub_1004".to_string(),
+                    owner_class: "Global".to_string(),
+                    entry_va: 0x1004,
+                    size: 4,
+                    code_section_va: 0x1000,
+                },
+                FunctionInfo {
+                    id: 2,
+                    name: "sub_1008".to_string(),
+                    owner_class: "Global".to_string(),
+                    entry_va: 0x1008,
+                    size: 4,
+                    code_section_va: 0x1000,
+                },
+            ],
+            object_pool: vec![ObjectPoolEntry {
+                index: 0,
+                kind: "String".to_string(),
+                value: "entrypoint:main".to_string(),
+                decoded_kind: Some("EntryPointCandidate".to_string()),
+                selector: Some("main".to_string()),
+                target_va: Some(0x1000),
+                owner_class: Some("Global".to_string()),
+                library_uri: Some("package:app/main.dart".to_string()),
+            }],
+        };
+        let bytes = vec![
+            0x02, 0x00, 0x00, 0x94, // bl #0x1008
+            0xc0, 0x03, 0x5f, 0xd6, // ret
+            0xc0, 0x03, 0x5f, 0xd6, // ret
+        ];
+        let d = disassemble_program(&model, &bytes, 0x1000, None, Some(2));
+        assert_eq!(d.len(), 2);
+        assert_eq!(d[0].function_name, "sub_1000");
+        assert_eq!(d[1].function_name, "sub_1008");
     }
 }
