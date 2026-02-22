@@ -42,6 +42,49 @@ fn emits_callable_style_for_generic_indirect_targets() {
 }
 
 #[test]
+fn emits_callable_style_for_noncanonical_indirect_targets() {
+    let ir = FunctionIr {
+        function_id: 121,
+        name: "indirectCallNoncanonical".to_string(),
+        entry_va: 0xc020,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0xc020,
+            instrs: vec![
+                LlirInstr {
+                    va: 0xc020,
+                    op: IROp::Call,
+                    src: "blr xzr".to_string(),
+                    target: "xzr".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc024,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+    let symbols = HashMap::new();
+    let artifact = emit_pseudocode(&ir, &symbols);
+    assert!(
+        artifact
+            .source
+            .contains("xzr(receiver, param1, param2, param3); // indirect via: xzr"),
+        "noncanonical indirect targets should still prefer callable fallback style:\n{}",
+        artifact.source
+    );
+    assert!(
+        !artifact.source.contains("dynamicCall(xzr"),
+        "noncanonical indirect targets should avoid dynamicCall when callable fallback is safe:\n{}",
+        artifact.source
+    );
+}
+
+#[test]
 fn rewrites_dispatch_target_fallback_to_dispatch_invoke() {
     let ir = FunctionIr {
         function_id: 45,

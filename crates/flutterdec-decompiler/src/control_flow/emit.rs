@@ -108,6 +108,42 @@ impl<'a> FuncEmitter<'a> {
         t.is_empty() || t == "unknown" || t.starts_with("sub_") || t.starts_with("fn_0x")
     }
 
+    fn is_numeric_literal_expr(expr: &str) -> bool {
+        let t = expr.trim();
+        if t.is_empty() {
+            return false;
+        }
+        let rest = t.strip_prefix('-').unwrap_or(t);
+        if let Some(hex) = rest.strip_prefix("0x").or_else(|| rest.strip_prefix("0X")) {
+            return !hex.is_empty() && hex.chars().all(|c| c.is_ascii_hexdigit());
+        }
+        rest.chars().all(|c| c.is_ascii_digit())
+    }
+
+    fn render_callable_fallback_target(expr: &str) -> Option<String> {
+        let t = expr.trim();
+        if t.is_empty()
+            || t.eq_ignore_ascii_case("null")
+            || (t.starts_with('"') && t.ends_with('"'))
+            || Self::is_numeric_literal_expr(t)
+        {
+            return None;
+        }
+
+        let simple = t.chars().all(|c| {
+            c.is_ascii_alphanumeric()
+                || matches!(
+                    c,
+                    '_' | '.' | '[' | ']' | '-' | '+' | '*' | '/' | '$' | '#'
+                )
+        });
+        if simple {
+            Some(t.to_string())
+        } else {
+            Some(format!("({})", t))
+        }
+    }
+
     fn resolve_indirect_target_symbol_call_name(&self, target_expr: &str) -> Option<(String, u64)> {
         for idx in Self::extract_pool_indices(target_expr) {
             let Some(hint) = self.pool_semantic_hints.get(&idx) else {
@@ -336,13 +372,38 @@ impl<'a> FuncEmitter<'a> {
                     } else {
                         format!(" // {}", comments.join(", "))
                     };
-                    self.push_line(
-                        indent,
-                        &format!(
-                            "final {} = dynamicCall({}, [{}]);{}",
-                            tname, named_target, args, target_suffix
-                        ),
-                    );
+                    let fallback_target_expr = if target_value != named_target {
+                        self.display_indirect_target_value(&target_value)
+                    } else {
+                        named_target.clone()
+                    };
+                    if let Some(callable_target) =
+                        Self::render_callable_fallback_target(&fallback_target_expr)
+                    {
+                        if !comments
+                            .iter()
+                            .any(|c| c == &format!("indirect via: {}", named_target))
+                        {
+                            comments.push(format!("indirect via: {}", named_target));
+                        }
+                        let suffix = if comments.is_empty() {
+                            String::new()
+                        } else {
+                            format!(" // {}", comments.join(", "))
+                        };
+                        self.push_line(
+                            indent,
+                            &format!("final {} = {}({});{}", tname, callable_target, args, suffix),
+                        );
+                    } else {
+                        self.push_line(
+                            indent,
+                            &format!(
+                                "final {} = dynamicCall({}, [{}]);{}",
+                                tname, named_target, args, target_suffix
+                            ),
+                        );
+                    }
                 }
             }
         } else {
