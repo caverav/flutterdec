@@ -84,12 +84,72 @@ const FLUTTER_SELECTORS: &[(&str, &str)] = &[
         "framework:flutter.widgets.WidgetsBindingObserver.didChangeAccessibilityFeatures",
     ),
     (
+        "didpushroute",
+        "framework:flutter.widgets.WidgetsBindingObserver.didPushRoute",
+    ),
+    (
+        "didpoproute",
+        "framework:flutter.widgets.WidgetsBindingObserver.didPopRoute",
+    ),
+    (
+        "didpushrouteinformation",
+        "framework:flutter.widgets.WidgetsBindingObserver.didPushRouteInformation",
+    ),
+    (
+        "didrequestappexit",
+        "framework:flutter.widgets.WidgetsBindingObserver.didRequestAppExit",
+    ),
+    (
+        "didchangeviewfocus",
+        "framework:flutter.widgets.WidgetsBindingObserver.didChangeViewFocus",
+    ),
+    (
+        "handlestartbackgesture",
+        "framework:flutter.widgets.WidgetsBindingObserver.handleStartBackGesture",
+    ),
+    (
+        "handleupdatebackgestureprogress",
+        "framework:flutter.widgets.WidgetsBindingObserver.handleUpdateBackGestureProgress",
+    ),
+    (
+        "handlecommitbackgesture",
+        "framework:flutter.widgets.WidgetsBindingObserver.handleCommitBackGesture",
+    ),
+    (
+        "handlecancelbackgesture",
+        "framework:flutter.widgets.WidgetsBindingObserver.handleCancelBackGesture",
+    ),
+    (
         "didhavememorypressure",
         "framework:flutter.widgets.WidgetsBindingObserver.didHaveMemoryPressure",
     ),
     (
         "addobserver",
         "framework:flutter.widgets.WidgetsBinding.addObserver",
+    ),
+    (
+        "addpersistentframecallback",
+        "framework:flutter.scheduler.SchedulerBinding.addPersistentFrameCallback",
+    ),
+    (
+        "addtimingscallback",
+        "framework:flutter.scheduler.SchedulerBinding.addTimingsCallback",
+    ),
+    (
+        "removetimingscallback",
+        "framework:flutter.scheduler.SchedulerBinding.removeTimingsCallback",
+    ),
+    (
+        "scheduleframe",
+        "framework:flutter.scheduler.SchedulerBinding.scheduleFrame",
+    ),
+    (
+        "schedulewarmupframe",
+        "framework:flutter.scheduler.SchedulerBinding.scheduleWarmUpFrame",
+    ),
+    (
+        "ensurevisualupdate",
+        "framework:flutter.scheduler.SchedulerBinding.ensureVisualUpdate",
     ),
     (
         "removeobserver",
@@ -103,8 +163,29 @@ const FLUTTER_SELECTORS: &[(&str, &str)] = &[
         "pushreplacementnamed",
         "framework:flutter.widgets.Navigator.pushReplacementNamed",
     ),
+    (
+        "pushreplacement",
+        "framework:flutter.widgets.Navigator.pushReplacement",
+    ),
     ("pushnamed", "framework:flutter.widgets.Navigator.pushNamed"),
+    (
+        "pushandremoveuntil",
+        "framework:flutter.widgets.Navigator.pushAndRemoveUntil",
+    ),
+    (
+        "popandpushnamed",
+        "framework:flutter.widgets.Navigator.popAndPushNamed",
+    ),
+    ("maybepop", "framework:flutter.widgets.Navigator.maybePop"),
     ("popuntil", "framework:flutter.widgets.Navigator.popUntil"),
+    (
+        "restorablepush",
+        "framework:flutter.widgets.Navigator.restorablePush",
+    ),
+    (
+        "restorablepushnamed",
+        "framework:flutter.widgets.Navigator.restorablePushNamed",
+    ),
     ("push", "framework:flutter.widgets.Navigator.push"),
     ("pop", "framework:flutter.widgets.Navigator.pop"),
     (
@@ -131,6 +212,15 @@ const DART_ASYNC_SELECTORS: &[(&str, &str)] = &[
     ("delayed", "stdlib:dart.async.Future.delayed"),
     ("timeout", "stdlib:dart.async.Future.timeout"),
     ("asstream", "stdlib:dart.async.Future.asStream"),
+    ("futurevalue", "stdlib:dart.async.Future.value"),
+    ("futureerror", "stdlib:dart.async.Future.error"),
+    ("futuresync", "stdlib:dart.async.Future.sync"),
+    ("futuremicrotask", "stdlib:dart.async.Future.microtask"),
+    ("completer", "stdlib:dart.async.Completer.new"),
+    ("timer", "stdlib:dart.async.Timer.new"),
+    ("periodic", "stdlib:dart.async.Timer.periodic"),
+    ("schedulemicrotask", "stdlib:dart.async.scheduleMicrotask"),
+    ("streamcontroller", "stdlib:dart.async.StreamController.new"),
     ("transform", "stdlib:dart.async.Stream.transform"),
     ("distinct", "stdlib:dart.async.Stream.distinct"),
     ("takewhile", "stdlib:dart.async.Stream.takeWhile"),
@@ -146,6 +236,14 @@ const DART_CORE_SELECTORS: &[(&str, &str)] = &[
     ("contains", "stdlib:dart.core.contains"),
     ("containskey", "stdlib:dart.core.Map.containsKey"),
     ("putifabsent", "stdlib:dart.core.Map.putIfAbsent"),
+    ("runtimetype", "stdlib:dart.core.Object.runtimeType"),
+    ("nosuchmethod", "stdlib:dart.core.Object.noSuchMethod"),
+    ("isempty", "stdlib:dart.core.isEmpty"),
+    ("isnotempty", "stdlib:dart.core.isNotEmpty"),
+    ("wheretype", "stdlib:dart.core.Iterable.whereType"),
+    ("expand", "stdlib:dart.core.Iterable.expand"),
+    ("fold", "stdlib:dart.core.Iterable.fold"),
+    ("reduce", "stdlib:dart.core.Iterable.reduce"),
     ("firstwhere", "stdlib:dart.core.Iterable.firstWhere"),
     ("singlewhere", "stdlib:dart.core.Iterable.singleWhere"),
     ("map", "stdlib:dart.core.map"),
@@ -184,6 +282,7 @@ const DART_VM_RUNTIME_SELECTORS: &[(&str, &str)] = &[
     ("yieldstariterable", "runtime:dart_vm.yieldStarIterable"),
     ("closure", "runtime:dart_vm.Closure.new"),
     ("typeparameter", "runtime:dart_vm.TypeParameter.new"),
+    ("prependtypearguments", "runtime:dart_vm.prependTypeArguments"),
 ];
 
 const DART_TYPED_DATA_SELECTORS: &[(&str, &str)] = &[
@@ -199,11 +298,32 @@ const DART_TYPED_DATA_SELECTORS: &[(&str, &str)] = &[
         "stdlib:dart.typed_data.TypedData.elementSizeInBytes",
     ),
     ("setfloat32", "stdlib:dart.typed_data.ByteData.setFloat32"),
+    ("setfloat32x4", "stdlib:dart.typed_data.ByteData.setFloat32x4"),
     ("setfloat64", "stdlib:dart.typed_data.ByteData.setFloat64"),
+    ("setfloat64x2", "stdlib:dart.typed_data.ByteData.setFloat64x2"),
+    ("setint8", "stdlib:dart.typed_data.ByteData.setInt8"),
+    ("setuint8", "stdlib:dart.typed_data.ByteData.setUint8"),
+    ("setint16", "stdlib:dart.typed_data.ByteData.setInt16"),
+    ("setuint16", "stdlib:dart.typed_data.ByteData.setUint16"),
     ("setint32", "stdlib:dart.typed_data.ByteData.setInt32"),
     ("setuint32", "stdlib:dart.typed_data.ByteData.setUint32"),
+    ("setint64", "stdlib:dart.typed_data.ByteData.setInt64"),
+    ("setuint64", "stdlib:dart.typed_data.ByteData.setUint64"),
+    ("getint8", "stdlib:dart.typed_data.ByteData.getInt8"),
+    ("getuint8", "stdlib:dart.typed_data.ByteData.getUint8"),
+    ("getint16", "stdlib:dart.typed_data.ByteData.getInt16"),
+    ("getuint16", "stdlib:dart.typed_data.ByteData.getUint16"),
     ("getfloat32", "stdlib:dart.typed_data.ByteData.getFloat32"),
+    ("getfloat32x4", "stdlib:dart.typed_data.ByteData.getFloat32x4"),
     ("getfloat64", "stdlib:dart.typed_data.ByteData.getFloat64"),
+    ("getfloat64x2", "stdlib:dart.typed_data.ByteData.getFloat64x2"),
     ("getint32", "stdlib:dart.typed_data.ByteData.getInt32"),
     ("getuint32", "stdlib:dart.typed_data.ByteData.getUint32"),
+    ("getint64", "stdlib:dart.typed_data.ByteData.getInt64"),
+    ("getuint64", "stdlib:dart.typed_data.ByteData.getUint64"),
+    (
+        "unmodifiableuint8arrayview",
+        "stdlib:dart.typed_data._UnmodifiableUint8ArrayView.new",
+    ),
+    ("int32arrayview", "stdlib:dart.typed_data._Int32ArrayView.new"),
 ];
