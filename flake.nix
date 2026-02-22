@@ -83,18 +83,22 @@
           real-golden = {
             type = "app";
             program = "${realGolden}/bin/real-golden";
+            meta.description = "Run single-profile real-binary golden checks";
           };
           real-golden-matrix = {
             type = "app";
             program = "${realGoldenMatrix}/bin/real-golden-matrix";
+            meta.description = "Run multi-profile real-binary golden checks";
           };
           default = {
             type = "app";
             program = "${realGolden}/bin/real-golden";
+            meta.description = "Default real-binary golden check app";
           };
           ci-check = {
             type = "app";
             program = "${ciCheck}/bin/ci-check";
+            meta.description = "Run local CI-parity checks";
           };
         });
     };
