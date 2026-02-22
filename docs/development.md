@@ -16,6 +16,14 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
+CI-parity local check:
+
+```bash
+scripts/ci-check.sh
+# or
+nix run .#ci-check
+```
+
 ## Repository Layout
 
 - `crates/flutterdec-cli`: command parsing and dispatch

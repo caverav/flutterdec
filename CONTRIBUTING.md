@@ -16,6 +16,12 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
+Or run the CI-parity script:
+
+```bash
+scripts/ci-check.sh
+```
+
 For decompiler behavior changes, validate with real binaries using:
 
 - `scripts/real-golden.sh`
