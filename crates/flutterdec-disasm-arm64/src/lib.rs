@@ -590,6 +590,7 @@ fn function_priority(
     app_package_boosts: &HashMap<String, i32>,
     entrypoint_frontier_scores: &HashMap<u64, i32>,
     call_out_degree: usize,
+    name_occurrences: usize,
 ) -> (i32, Vec<(String, i32)>) {
     let mut score = 0i32;
     let mut components = Vec::new();
@@ -602,6 +603,15 @@ fn function_priority(
     } else {
         score += 10;
         push_component(&mut components, "named_function_bonus", 10);
+        if name_occurrences > 1 {
+            let repeated_name_penalty = (name_occurrences.saturating_sub(1).min(10) as i32) * 240;
+            score -= repeated_name_penalty;
+            push_component(
+                &mut components,
+                format!("repeated_name_penalty:{name_occurrences}"),
+                -repeated_name_penalty,
+            );
+        }
     }
     if name_lower.starts_with("closure_") {
         score -= 900;
@@ -757,6 +767,12 @@ fn rank_candidates<'a>(
             }
         })
         .collect::<Vec<_>>();
+    let mut name_occurrences: HashMap<String, usize> = HashMap::new();
+    for (_, func) in &candidates {
+        *name_occurrences
+            .entry(func.name.to_ascii_lowercase())
+            .or_insert(0) += 1;
+    }
     let (frontier_scores, call_out_degree) = if max_functions.is_some() {
         let funcs = candidates.iter().map(|(_, f)| *f).collect::<Vec<_>>();
         let adjacency = build_call_adjacency(&funcs, iso_instr, iso_base_va);
@@ -783,6 +799,10 @@ fn rank_candidates<'a>(
                     &app_package_boosts,
                     &frontier_scores,
                     call_out_degree.get(&func.entry_va).copied().unwrap_or(0),
+                    name_occurrences
+                        .get(&func.name.to_ascii_lowercase())
+                        .copied()
+                        .unwrap_or(1),
                 );
                 RankedCandidate {
                     index,
@@ -1529,6 +1549,76 @@ mod tests {
         let d = disassemble_program(&model, &bytes, 0x1000, None, Some(1));
         assert_eq!(d.len(), 1);
         assert_eq!(d[0].function_name, "sub_1000");
+    }
+
+    #[test]
+    fn penalizes_repeated_named_functions_for_capped_selection() {
+        let model = ProgramModel {
+            schema_version: 2,
+            adapter_kind: "test".to_string(),
+            dart_version: "unknown".to_string(),
+            snapshot_hash: "h".to_string(),
+            arch: "arm64".to_string(),
+            libraries: vec![LibraryInfo {
+                id: 0,
+                uri: "package:app/main.dart".to_string(),
+                name_display: "package:app/main.dart".to_string(),
+            }],
+            classes: vec![ClassInfo {
+                id: 0,
+                name: "Global".to_string(),
+                super_name: "Object".to_string(),
+                library_uri: "package:app/main.dart".to_string(),
+            }],
+            functions: vec![
+                FunctionInfo {
+                    id: 0,
+                    name: "processUpdate".to_string(),
+                    owner_class: "Global".to_string(),
+                    entry_va: 0x1000,
+                    size: 32,
+                    code_section_va: 0x1000,
+                },
+                FunctionInfo {
+                    id: 1,
+                    name: "processUpdate".to_string(),
+                    owner_class: "Global".to_string(),
+                    entry_va: 0x1020,
+                    size: 32,
+                    code_section_va: 0x1000,
+                },
+                FunctionInfo {
+                    id: 2,
+                    name: "processUpdate".to_string(),
+                    owner_class: "Global".to_string(),
+                    entry_va: 0x1040,
+                    size: 32,
+                    code_section_va: 0x1000,
+                },
+                FunctionInfo {
+                    id: 3,
+                    name: "startCLI".to_string(),
+                    owner_class: "Global".to_string(),
+                    entry_va: 0x1060,
+                    size: 32,
+                    code_section_va: 0x1000,
+                },
+            ],
+            object_pool: vec![ObjectPoolEntry {
+                index: 0,
+                kind: "String".to_string(),
+                value: "x".to_string(),
+                decoded_kind: None,
+                selector: None,
+                target_va: None,
+                owner_class: None,
+                library_uri: None,
+            }],
+        };
+        let bytes = [0xc0u8, 0x03, 0x5f, 0xd6].repeat(40);
+        let d = disassemble_program(&model, &bytes, 0x1000, None, Some(1));
+        assert_eq!(d.len(), 1);
+        assert_eq!(d[0].function_name, "startCLI");
     }
 
     #[test]
