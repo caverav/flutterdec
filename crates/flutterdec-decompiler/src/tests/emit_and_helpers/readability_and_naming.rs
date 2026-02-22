@@ -421,6 +421,68 @@ fn infers_bool_types_from_if_condition_context() {
 }
 
 #[test]
+fn aliases_repeated_pool_mapped_literals() {
+    let ir = FunctionIr {
+        function_id: 812,
+        name: "poolLiteralAlias".to_string(),
+        entry_va: 0x80c000,
+        blocks: Vec::new(),
+    };
+    let symbols = HashMap::new();
+    let mut emitter = FuncEmitter::new(&ir, &symbols);
+    emitter.lines = vec![
+        "dynamic poolLiteralAlias(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {".to_string(),
+        "  final t1 = dispatch.customAction(arg0, \"setState\" /* pool[42] */, arg2, arg3);".to_string(),
+        "  final t2 = dispatch.customAction(arg0, \"setState\" /* pool[42] */, arg2, arg3);".to_string(),
+        "  final t3 = dispatch.customAction(arg0, \"setState\" /* pool[42] */, arg2, arg3);".to_string(),
+        "  return t3;".to_string(),
+        "}".to_string(),
+    ];
+
+    emitter.apply_name_and_type_hints("poolLiteralAlias");
+    let out = emitter.lines.join("\n");
+    assert!(
+        out.contains("final String poolStr42 = \"setState\" /* pool[42] */;"),
+        "repeated pool literal should hoist to String alias:\n{out}"
+    );
+    assert!(
+        out.contains("dispatch.customAction(receiver, poolStr42, param2, param3);"),
+        "repeated pool literal callsites should use hoisted alias:\n{out}"
+    );
+    assert_eq!(
+        out.matches("\"setState\" /* pool[42] */").count(),
+        1,
+        "pool literal should appear only in hoisted alias declaration:\n{out}"
+    );
+}
+
+#[test]
+fn does_not_alias_pool_mapped_literal_when_usage_is_sparse() {
+    let ir = FunctionIr {
+        function_id: 813,
+        name: "poolLiteralNoAlias".to_string(),
+        entry_va: 0x80d000,
+        blocks: Vec::new(),
+    };
+    let symbols = HashMap::new();
+    let mut emitter = FuncEmitter::new(&ir, &symbols);
+    emitter.lines = vec![
+        "dynamic poolLiteralNoAlias(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {".to_string(),
+        "  final t1 = dispatch.customAction(arg0, \"setState\" /* pool[42] */, arg2, arg3);".to_string(),
+        "  final t2 = dispatch.customAction(arg0, \"setState\" /* pool[42] */, arg2, arg3);".to_string(),
+        "  return t2;".to_string(),
+        "}".to_string(),
+    ];
+
+    emitter.apply_name_and_type_hints("poolLiteralNoAlias");
+    let out = emitter.lines.join("\n");
+    assert!(
+        !out.contains("final String poolStr42"),
+        "sparse pool literal usage should not create alias noise:\n{out}"
+    );
+}
+
+#[test]
 fn infers_local_types_from_semantic_return_paths() {
     let ir = FunctionIr {
         function_id: 808,

@@ -92,6 +92,63 @@ impl<'a> FuncEmitter<'a> {
         }
     }
 
+    fn alias_repeated_pool_literals(&mut self) {
+        if self.lines.len() < 4 {
+            return;
+        }
+
+        let mut counts: HashMap<String, usize> = HashMap::new();
+        for line in &self.lines {
+            for lit in Self::pool_mapped_literals(line) {
+                *counts.entry(lit).or_insert(0) += 1;
+            }
+        }
+
+        let mut candidates: Vec<String> = counts
+            .into_iter()
+            .filter_map(|(lit, count)| if count >= 3 { Some(lit) } else { None })
+            .collect();
+        candidates.sort();
+        if candidates.is_empty() {
+            return;
+        }
+
+        let insert_idx = Self::prelude_insert_index(&self.lines);
+        let mut inserts = Vec::new();
+        for literal in candidates {
+            if !self.lines.iter().any(|l| l.contains(&literal)) {
+                continue;
+            }
+            let base = Self::pool_literal_alias_base(&literal);
+            let mut alias = base.clone();
+            let mut n = 2usize;
+            while Self::name_taken(&self.lines, &alias)
+                || inserts
+                    .iter()
+                    .any(|l: &String| l.contains(&format!(" {alias} = ")))
+            {
+                alias = format!("{base}{n}");
+                n += 1;
+            }
+
+            let mut replaced = false;
+            for line in &mut self.lines {
+                if line.contains(&literal) {
+                    *line = line.replace(&literal, &alias);
+                    replaced = true;
+                }
+            }
+
+            if replaced {
+                inserts.push(format!("  final String {alias} = {literal};"));
+            }
+        }
+
+        if !inserts.is_empty() {
+            self.lines.splice(insert_idx..insert_idx, inserts);
+        }
+    }
+
     fn stack_slot_refs(line: &str) -> Vec<String> {
         let mut out = Vec::new();
         let mut i = 0usize;
@@ -149,6 +206,84 @@ impl<'a> FuncEmitter<'a> {
             format!("stackSlotNeg{}", rest.to_ascii_lowercase())
         } else {
             format!("stackSlot{}", token.to_ascii_lowercase())
+        }
+    }
+
+    fn pool_mapped_literals(line: &str) -> Vec<String> {
+        let bytes = line.as_bytes();
+        let mut out = Vec::new();
+        let mut i = 0usize;
+        while i < bytes.len() {
+            if bytes[i] != b'"' {
+                i += 1;
+                continue;
+            }
+
+            let mut j = i + 1;
+            while j < bytes.len() {
+                if bytes[j] == b'\\' && j + 1 < bytes.len() {
+                    j += 2;
+                    continue;
+                }
+                if bytes[j] == b'"' {
+                    break;
+                }
+                j += 1;
+            }
+            if j >= bytes.len() {
+                break;
+            }
+
+            let mut k = j + 1;
+            while k < bytes.len() && bytes[k].is_ascii_whitespace() {
+                k += 1;
+            }
+            if k + 1 >= bytes.len() || bytes[k] != b'/' || bytes[k + 1] != b'*' {
+                i = j + 1;
+                continue;
+            }
+            k += 2;
+            while k < bytes.len() && bytes[k].is_ascii_whitespace() {
+                k += 1;
+            }
+            if k + 5 > bytes.len() || &bytes[k..k + 5] != b"pool[" {
+                i = j + 1;
+                continue;
+            }
+            k += 5;
+            let digit_start = k;
+            while k < bytes.len() && bytes[k].is_ascii_digit() {
+                k += 1;
+            }
+            if k == digit_start || k >= bytes.len() || bytes[k] != b']' {
+                i = j + 1;
+                continue;
+            }
+            k += 1;
+            while k < bytes.len() && bytes[k].is_ascii_whitespace() {
+                k += 1;
+            }
+            if k + 1 >= bytes.len() || bytes[k] != b'*' || bytes[k + 1] != b'/' {
+                i = j + 1;
+                continue;
+            }
+            let end = k + 2;
+            out.push(line[i..end].to_string());
+            i = end;
+        }
+        out
+    }
+
+    fn pool_literal_alias_base(literal: &str) -> String {
+        let Some(start) = literal.find("/* pool[") else {
+            return "poolStr".to_string();
+        };
+        let rest = &literal[start + "/* pool[".len()..];
+        let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+        if digits.is_empty() {
+            "poolStr".to_string()
+        } else {
+            format!("poolStr{}", digits)
         }
     }
 
@@ -380,5 +515,6 @@ impl<'a> FuncEmitter<'a> {
 
         self.alias_dispatch_target_slot_calls();
         self.alias_repeated_stack_slots();
+        self.alias_repeated_pool_literals();
     }
 }
