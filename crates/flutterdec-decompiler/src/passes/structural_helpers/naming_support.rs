@@ -706,3 +706,16 @@ impl<'a> FuncEmitter<'a> {
     }
 
 }
+
+#[cfg(test)]
+mod naming_support_utf8_tests {
+    use super::*;
+
+    #[test]
+    fn replace_identifier_token_handles_utf8_text() {
+        let line = r#"final title = "Možete"; final x = local + 1;"#;
+        let out = FuncEmitter::replace_identifier_token(line, "local", "renamed");
+        assert!(out.contains(r#""Možete""#));
+        assert!(out.contains("renamed + 1"));
+    }
+}

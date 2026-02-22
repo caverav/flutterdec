@@ -268,3 +268,15 @@ impl<'a> FuncEmitter<'a> {
     }
 
 }
+
+#[cfg(test)]
+mod guard_and_flow_utf8_tests {
+    use super::*;
+
+    #[test]
+    fn assigns_ident_handles_utf8_text() {
+        let line = r#"final t5 = call(local, "Možete", local2);"#;
+        assert!(!FuncEmitter::assigns_ident(line, "local"));
+        assert!(FuncEmitter::assigns_ident("local = 1;", "local"));
+    }
+}

@@ -288,3 +288,24 @@ impl<'a> FuncEmitter<'a> {
         s
     }
 }
+
+#[cfg(test)]
+mod expr_cleanup_utf8_tests {
+    use super::*;
+
+    #[test]
+    fn rewrite_negated_comparisons_handles_utf8_text() {
+        let input = r#"final s = "Možete"; if (!((a != b))) { return s; }"#;
+        let out = FuncEmitter::rewrite_negated_comparisons(input);
+        assert!(out.contains(r#""Možete""#));
+        assert!(out.contains("(a == b)"));
+    }
+
+    #[test]
+    fn rewrite_bitfield_classid_handles_utf8_text() {
+        let input = r#"final s = "pronaći"; final x = bitField(obj._tag, 0xc, 0x14);"#;
+        let out = FuncEmitter::rewrite_bitfield_classid(input);
+        assert!(out.contains(r#""pronaći""#));
+        assert!(out.contains("classId(obj)"));
+    }
+}

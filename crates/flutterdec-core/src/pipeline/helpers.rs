@@ -46,3 +46,14 @@ fn count_ident_token(hay: &str, token: &str) -> usize {
     }
     count
 }
+
+#[cfg(test)]
+mod helpers_tests {
+    use super::*;
+
+    #[test]
+    fn count_ident_token_handles_utf8_text() {
+        let hay = r#"dynamic x = local; final s = "Možete"; local = 2;"#;
+        assert_eq!(count_ident_token(hay, "local"), 2);
+    }
+}
