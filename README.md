@@ -157,6 +157,11 @@ Blutter backend environment knobs:
 - `FLUTTERDEC_BLUTTER_CMD`: full command to launch Blutter (for example `python3 /path/to/blutter.py`)
 - `FLUTTERDEC_BLUTTER_PY`: path to `blutter.py` (uses current Python interpreter)
 
+Nix integration:
+
+- `nix develop` now provides `flutterdec-blutter` and auto-exports `FLUTTERDEC_BLUTTER_CMD` to that wrapper.
+- You can also run the wrapper directly via `nix run .#blutter-bridge -- --help`.
+
 You can explicitly enable/disable individual engine toggles:
 
 - `--with-canonical-model-symbols` / `--no-canonical-model-symbols`

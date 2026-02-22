@@ -8,6 +8,9 @@ Use Nix shell for reproducible builds:
 nix develop
 ```
 
+`nix develop` also exports `FLUTTERDEC_BLUTTER_CMD` to a Nix-managed `flutterdec-blutter`
+wrapper, so `--adapter-backend blutter` can run without manual Blutter path wiring.
+
 Common commands:
 
 ```bash
