@@ -52,6 +52,142 @@
     }
 
     #[test]
+    fn classifies_function_scope_from_library_uri() {
+        assert_eq!(
+            classify_library_uri("package:flutter/src/widgets/framework.dart"),
+            ScopedFunctionKind::Framework
+        );
+        assert_eq!(classify_library_uri("dart:core"), ScopedFunctionKind::Stdlib);
+        assert_eq!(
+            classify_library_uri("package:spotube/models/connect/load.dart"),
+            ScopedFunctionKind::App
+        );
+        assert_eq!(classify_library_uri(""), ScopedFunctionKind::Unknown);
+    }
+
+    #[test]
+    fn applies_app_unknown_scope_filter() {
+        let model = ProgramModel {
+            schema_version: 2,
+            adapter_kind: "python".to_string(),
+            dart_version: "3.0.0".to_string(),
+            snapshot_hash: "deadbeef".to_string(),
+            arch: "arm64".to_string(),
+            libraries: Vec::new(),
+            classes: vec![
+                flutterdec_adapter::ClassInfo {
+                    id: 1,
+                    name: "State".to_string(),
+                    super_name: "Object".to_string(),
+                    library_uri: "package:flutter/src/widgets/framework.dart".to_string(),
+                },
+                flutterdec_adapter::ClassInfo {
+                    id: 2,
+                    name: "_StringBase".to_string(),
+                    super_name: "Object".to_string(),
+                    library_uri: "dart:core".to_string(),
+                },
+                flutterdec_adapter::ClassInfo {
+                    id: 3,
+                    name: "ConnectService".to_string(),
+                    super_name: "Object".to_string(),
+                    library_uri: "package:spotube/models/connect/load.dart".to_string(),
+                },
+            ],
+            functions: vec![
+                flutterdec_adapter::FunctionInfo {
+                    id: 10,
+                    name: "setState".to_string(),
+                    owner_class: "State".to_string(),
+                    entry_va: 0x1000,
+                    size: 4,
+                    code_section_va: 0x1000,
+                },
+                flutterdec_adapter::FunctionInfo {
+                    id: 11,
+                    name: "toString".to_string(),
+                    owner_class: "_StringBase".to_string(),
+                    entry_va: 0x1100,
+                    size: 4,
+                    code_section_va: 0x1100,
+                },
+                flutterdec_adapter::FunctionInfo {
+                    id: 12,
+                    name: "executeCommandAsync".to_string(),
+                    owner_class: "ConnectService".to_string(),
+                    entry_va: 0x1200,
+                    size: 4,
+                    code_section_va: 0x1200,
+                },
+                flutterdec_adapter::FunctionInfo {
+                    id: 13,
+                    name: "sub_1300".to_string(),
+                    owner_class: "UnknownOwner".to_string(),
+                    entry_va: 0x1300,
+                    size: 4,
+                    code_section_va: 0x1300,
+                },
+            ],
+            object_pool: Vec::new(),
+        };
+
+        let (scoped, stats) = apply_function_scope_filter(&model, FunctionScope::AppUnknown);
+        let ids = scoped.functions.iter().map(|f| f.id).collect::<Vec<_>>();
+        assert_eq!(ids, vec![12, 13]);
+        assert_eq!(stats.total_before_filter, 4);
+        assert_eq!(stats.total_after_filter, 2);
+        assert_eq!(stats.excluded, 2);
+        assert_eq!(stats.app, 1);
+        assert_eq!(stats.framework, 1);
+        assert_eq!(stats.stdlib, 1);
+        assert_eq!(stats.unknown, 1);
+    }
+
+    #[test]
+    fn applies_app_scope_filter() {
+        let model = ProgramModel {
+            schema_version: 2,
+            adapter_kind: "python".to_string(),
+            dart_version: "3.0.0".to_string(),
+            snapshot_hash: "deadbeef".to_string(),
+            arch: "arm64".to_string(),
+            libraries: Vec::new(),
+            classes: vec![flutterdec_adapter::ClassInfo {
+                id: 3,
+                name: "ConnectService".to_string(),
+                super_name: "Object".to_string(),
+                library_uri: "package:spotube/models/connect/load.dart".to_string(),
+            }],
+            functions: vec![
+                flutterdec_adapter::FunctionInfo {
+                    id: 12,
+                    name: "executeCommandAsync".to_string(),
+                    owner_class: "ConnectService".to_string(),
+                    entry_va: 0x1200,
+                    size: 4,
+                    code_section_va: 0x1200,
+                },
+                flutterdec_adapter::FunctionInfo {
+                    id: 13,
+                    name: "sub_1300".to_string(),
+                    owner_class: "UnknownOwner".to_string(),
+                    entry_va: 0x1300,
+                    size: 4,
+                    code_section_va: 0x1300,
+                },
+            ],
+            object_pool: Vec::new(),
+        };
+
+        let (scoped, stats) = apply_function_scope_filter(&model, FunctionScope::App);
+        let ids = scoped.functions.iter().map(|f| f.id).collect::<Vec<_>>();
+        assert_eq!(ids, vec![12]);
+        assert_eq!(stats.total_before_filter, 2);
+        assert_eq!(stats.total_after_filter, 1);
+        assert_eq!(stats.excluded, 1);
+    }
+
+    #[test]
     fn normalizes_known_external_symbols() {
         assert_eq!(
             normalize_external_symbol_name("Dart_Invoke"),

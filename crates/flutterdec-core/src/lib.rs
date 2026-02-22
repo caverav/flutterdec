@@ -26,8 +26,26 @@ pub struct DecompileOptions {
     pub max_unresolved_cf: usize,
     pub max_indirect_call_ratio: f64,
     pub min_disassembly_ratio: f64,
+    pub function_scope: FunctionScope,
     pub analysis_profile: DecompileAnalysisProfile,
     pub engine_options: DecompileEngineOptions,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+pub enum FunctionScope {
+    AppUnknown,
+    App,
+    All,
+}
+
+impl FunctionScope {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::AppUnknown => "app-unknown",
+            Self::App => "app",
+            Self::All => "all",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]

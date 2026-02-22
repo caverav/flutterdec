@@ -4,7 +4,7 @@ use flutterdec_adapter::install_adapter;
 use flutterdec_core::{
     available_adapters, run_decompile, run_engine_fingerprint, run_info, run_symbol_map,
     DecompileAnalysisProfile, DecompileEngineOptionOverrides, DecompileEngineOptions,
-    DecompileOptions, EngineFingerprintOptions, SymbolMapOptions,
+    DecompileOptions, EngineFingerprintOptions, FunctionScope, SymbolMapOptions,
 };
 use std::path::{Path, PathBuf};
 
@@ -59,6 +59,8 @@ struct DecompileCmd {
     max_indirect_call_ratio: f64,
     #[arg(long, default_value_t = 0.80)]
     min_disassembly_ratio: f64,
+    #[arg(long, value_enum, default_value_t = FunctionScopeArg::AppUnknown)]
+    function_scope: FunctionScopeArg,
     #[arg(long, value_enum, default_value_t = AnalysisProfileArg::Balanced)]
     analysis_profile: AnalysisProfileArg,
     #[arg(long)]
@@ -90,6 +92,26 @@ impl AnalysisProfileArg {
         match self {
             Self::Light => DecompileAnalysisProfile::Light,
             Self::Balanced => DecompileAnalysisProfile::Balanced,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum FunctionScopeArg {
+    #[value(name = "app-unknown")]
+    AppUnknown,
+    #[value(name = "app")]
+    App,
+    #[value(name = "all")]
+    All,
+}
+
+impl FunctionScopeArg {
+    fn to_core(self) -> FunctionScope {
+        match self {
+            Self::AppUnknown => FunctionScope::AppUnknown,
+            Self::App => FunctionScope::App,
+            Self::All => FunctionScope::All,
         }
     }
 }
@@ -213,6 +235,7 @@ fn build_decompile_options(cmd: DecompileCmd) -> Result<DecompileOptions> {
         max_unresolved_cf: cmd.max_unresolved_cf,
         max_indirect_call_ratio: cmd.max_indirect_call_ratio,
         min_disassembly_ratio: cmd.min_disassembly_ratio,
+        function_scope: cmd.function_scope.to_core(),
         analysis_profile: profile,
         engine_options,
     })
@@ -353,4 +376,37 @@ fn resolve_toggle(with: bool, without: bool, name: &str) -> Result<Option<bool>>
         return Ok(Some(false));
     }
     Ok(None)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn decompile_scope_defaults_to_app_unknown() {
+        let cli = Cli::try_parse_from(["flutterdec", "decompile", "sample.apk", "-o", "out"])
+            .expect("parse");
+        let Command::Decompile(cmd) = cli.command else {
+            panic!("expected decompile command");
+        };
+        assert!(matches!(cmd.function_scope, FunctionScopeArg::AppUnknown));
+    }
+
+    #[test]
+    fn decompile_scope_accepts_all() {
+        let cli = Cli::try_parse_from([
+            "flutterdec",
+            "decompile",
+            "sample.apk",
+            "-o",
+            "out",
+            "--function-scope",
+            "all",
+        ])
+        .expect("parse");
+        let Command::Decompile(cmd) = cli.command else {
+            panic!("expected decompile command");
+        };
+        assert!(matches!(cmd.function_scope, FunctionScopeArg::All));
+    }
 }

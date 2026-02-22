@@ -15,6 +15,106 @@ use runners_symbols::{
 #[cfg(test)]
 use runners_symbols::{is_generic_symbol_name, normalize_external_symbol_name};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ScopedFunctionKind {
+    App,
+    Framework,
+    Stdlib,
+    Unknown,
+}
+
+#[derive(Debug, Clone)]
+struct FunctionScopeStats {
+    total_before_filter: usize,
+    total_after_filter: usize,
+    excluded: usize,
+    app: usize,
+    framework: usize,
+    stdlib: usize,
+    unknown: usize,
+}
+
+impl FunctionScopeStats {
+    fn from_total(total: usize) -> Self {
+        Self {
+            total_before_filter: total,
+            total_after_filter: total,
+            excluded: 0,
+            app: 0,
+            framework: 0,
+            stdlib: 0,
+            unknown: 0,
+        }
+    }
+}
+
+fn classify_library_uri(uri: &str) -> ScopedFunctionKind {
+    let t = uri.trim();
+    if t.starts_with("package:flutter/") {
+        return ScopedFunctionKind::Framework;
+    }
+    if t.starts_with("dart:") {
+        return ScopedFunctionKind::Stdlib;
+    }
+    if t.starts_with("package:") {
+        return ScopedFunctionKind::App;
+    }
+    ScopedFunctionKind::Unknown
+}
+
+fn function_kind_from_model(
+    f: &flutterdec_adapter::FunctionInfo,
+    class_to_library: &HashMap<String, String>,
+) -> ScopedFunctionKind {
+    let Some(uri) = class_to_library.get(&f.owner_class) else {
+        return ScopedFunctionKind::Unknown;
+    };
+    classify_library_uri(uri)
+}
+
+fn include_function_kind(scope: FunctionScope, kind: ScopedFunctionKind) -> bool {
+    match scope {
+        FunctionScope::All => true,
+        FunctionScope::App => kind == ScopedFunctionKind::App,
+        FunctionScope::AppUnknown => {
+            kind == ScopedFunctionKind::App || kind == ScopedFunctionKind::Unknown
+        }
+    }
+}
+
+fn apply_function_scope_filter(
+    model: &ProgramModel,
+    scope: FunctionScope,
+) -> (ProgramModel, FunctionScopeStats) {
+    let mut class_to_library = HashMap::new();
+    for c in &model.classes {
+        class_to_library
+            .entry(c.name.clone())
+            .or_insert_with(|| c.library_uri.clone());
+    }
+
+    let mut stats = FunctionScopeStats::from_total(model.functions.len());
+    let mut filtered_functions = Vec::new();
+    for f in &model.functions {
+        let kind = function_kind_from_model(f, &class_to_library);
+        match kind {
+            ScopedFunctionKind::App => stats.app += 1,
+            ScopedFunctionKind::Framework => stats.framework += 1,
+            ScopedFunctionKind::Stdlib => stats.stdlib += 1,
+            ScopedFunctionKind::Unknown => stats.unknown += 1,
+        }
+        if include_function_kind(scope, kind) {
+            filtered_functions.push(f.clone());
+        }
+    }
+    stats.total_after_filter = filtered_functions.len();
+    stats.excluded = stats.total_before_filter.saturating_sub(stats.total_after_filter);
+
+    let mut scoped = model.clone();
+    scoped.functions = filtered_functions;
+    (scoped, stats)
+}
+
 pub fn run_info(repo_root: &Path, input_path: &Path) -> Result<InfoOutput> {
     let bundle = load_snapshot_bundle(input_path)?;
     let adapter_installed = resolve_adapter_exec(repo_root, &bundle.snapshot_hash).is_ok();
@@ -48,13 +148,20 @@ pub fn run_decompile(
 ) -> Result<QualityReport> {
     let bundle = load_snapshot_bundle(input_path)?;
     let model = load_model(repo_root, &bundle)?;
+    let (scoped_model, function_scope_stats) = apply_function_scope_filter(&model, opt.function_scope);
 
-    if model.arch != "arm64" {
-        bail!("model arch {} unsupported in v1", model.arch);
+    if scoped_model.arch != "arm64" {
+        bail!("model arch {} unsupported in v1", scoped_model.arch);
+    }
+    if scoped_model.functions.is_empty() {
+        bail!(
+            "no functions matched --function-scope {}. try --function-scope all",
+            opt.function_scope.as_str()
+        );
     }
 
     let disasm = disassemble_program(
-        &model,
+        &scoped_model,
         &bundle.isolate_instr,
         bundle.isolate_instr_va,
         opt.focus.as_deref(),
@@ -69,7 +176,7 @@ pub fn run_decompile(
     let class_to_library = if opt.engine_options.canonical_model_symbols
         || opt.engine_options.pool_semantic_hints
     {
-        build_class_library_lookup(&model)
+        build_class_library_lookup(&scoped_model)
     } else {
         HashMap::new()
     };
@@ -94,7 +201,7 @@ pub fn run_decompile(
         HashMap::new()
     };
 
-    for f in &model.functions {
+    for f in &scoped_model.functions {
         let resolved = if opt.engine_options.canonical_model_symbols {
             let resolved = canonical_standard_model_name(f, &class_to_library)
                 .unwrap_or_else(|| f.name.clone());
@@ -213,7 +320,7 @@ pub fn run_decompile(
         }
     }
 
-    let report = quality_from_artifacts(&model, &disasm, &pseudo, opt);
+    let report = quality_from_artifacts(&scoped_model, &disasm, &pseudo, opt);
     let (semantic_intent, call_fallback, selector_fallback, selector_fallback_top) =
         if opt.engine_options.semantic_reporting {
             let semantic_intent = collect_semantic_intent_summary(&pseudo);
@@ -273,10 +380,23 @@ pub fn run_decompile(
         },
         "adapter_kind": model.adapter_kind,
         "dart_version": model.dart_version,
+        "function_scope": {
+            "selected": opt.function_scope.as_str(),
+            "total_before_filter": function_scope_stats.total_before_filter,
+            "total_after_filter": function_scope_stats.total_after_filter,
+            "excluded": function_scope_stats.excluded,
+            "categories": {
+                "app": function_scope_stats.app,
+                "framework": function_scope_stats.framework,
+                "stdlib": function_scope_stats.stdlib,
+                "unknown": function_scope_stats.unknown
+            }
+        },
         "counts": {
             "libraries": model.libraries.len(),
             "classes": model.classes.len(),
-            "functions": model.functions.len(),
+            "functions": scoped_model.functions.len(),
+            "functions_total": model.functions.len(),
             "object_pool": model.object_pool.len(),
             "disassembled_functions": disasm.len()
         },
