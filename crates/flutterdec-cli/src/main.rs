@@ -61,6 +61,8 @@ struct DecompileCmd {
     min_disassembly_ratio: f64,
     #[arg(long, value_enum, default_value_t = FunctionScopeArg::AppUnknown)]
     function_scope: FunctionScopeArg,
+    #[arg(long = "app-package")]
+    app_packages: Vec<String>,
     #[arg(long, value_enum, default_value_t = AnalysisProfileArg::Balanced)]
     analysis_profile: AnalysisProfileArg,
     #[arg(long)]
@@ -236,6 +238,7 @@ fn build_decompile_options(cmd: DecompileCmd) -> Result<DecompileOptions> {
         max_indirect_call_ratio: cmd.max_indirect_call_ratio,
         min_disassembly_ratio: cmd.min_disassembly_ratio,
         function_scope: cmd.function_scope.to_core(),
+        app_packages: cmd.app_packages,
         analysis_profile: profile,
         engine_options,
     })
@@ -408,5 +411,25 @@ mod tests {
             panic!("expected decompile command");
         };
         assert!(matches!(cmd.function_scope, FunctionScopeArg::All));
+    }
+
+    #[test]
+    fn decompile_accepts_repeated_app_package_filter() {
+        let cli = Cli::try_parse_from([
+            "flutterdec",
+            "decompile",
+            "sample.apk",
+            "-o",
+            "out",
+            "--app-package",
+            "spotube",
+            "--app-package",
+            "provider",
+        ])
+        .expect("parse");
+        let Command::Decompile(cmd) = cli.command else {
+            panic!("expected decompile command");
+        };
+        assert_eq!(cmd.app_packages, vec!["spotube", "provider"]);
     }
 }

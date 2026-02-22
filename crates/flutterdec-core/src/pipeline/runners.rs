@@ -14,6 +14,7 @@ use runners_symbols::{
 };
 #[cfg(test)]
 use runners_symbols::{is_generic_symbol_name, normalize_external_symbol_name};
+use std::collections::HashSet;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ScopedFunctionKind {
@@ -32,6 +33,7 @@ struct FunctionScopeStats {
     framework: usize,
     stdlib: usize,
     unknown: usize,
+    excluded_by_app_package: usize,
 }
 
 impl FunctionScopeStats {
@@ -44,6 +46,7 @@ impl FunctionScopeStats {
             framework: 0,
             stdlib: 0,
             unknown: 0,
+            excluded_by_app_package: 0,
         }
     }
 }
@@ -72,6 +75,35 @@ fn function_kind_from_model(
     classify_library_uri(uri)
 }
 
+fn normalize_package_name(raw: &str) -> Option<String> {
+    let token = raw.trim();
+    if token.is_empty() {
+        return None;
+    }
+    let token = token.strip_prefix("package:").unwrap_or(token);
+    let name = token.split('/').next().unwrap_or_default().trim();
+    if name.is_empty() {
+        return None;
+    }
+    Some(name.to_ascii_lowercase())
+}
+
+fn package_name_from_library_uri(uri: &str) -> Option<String> {
+    let raw = uri.strip_prefix("package:")?;
+    let name = raw.split('/').next().unwrap_or_default().trim();
+    if name.is_empty() {
+        return None;
+    }
+    Some(name.to_ascii_lowercase())
+}
+
+fn normalize_package_filters(values: &[String]) -> HashSet<String> {
+    values
+        .iter()
+        .filter_map(|v| normalize_package_name(v))
+        .collect()
+}
+
 fn include_function_kind(scope: FunctionScope, kind: ScopedFunctionKind) -> bool {
     match scope {
         FunctionScope::All => true,
@@ -82,9 +114,34 @@ fn include_function_kind(scope: FunctionScope, kind: ScopedFunctionKind) -> bool
     }
 }
 
+fn include_by_package_filter(
+    kind: ScopedFunctionKind,
+    package_name: Option<&str>,
+    package_filters: &HashSet<String>,
+    stats: &mut FunctionScopeStats,
+) -> bool {
+    if package_filters.is_empty() {
+        return true;
+    }
+    if kind != ScopedFunctionKind::App {
+        stats.excluded_by_app_package += 1;
+        return false;
+    }
+    let Some(name) = package_name else {
+        stats.excluded_by_app_package += 1;
+        return false;
+    };
+    let included = package_filters.contains(name);
+    if !included {
+        stats.excluded_by_app_package += 1;
+    }
+    included
+}
+
 fn apply_function_scope_filter(
     model: &ProgramModel,
     scope: FunctionScope,
+    app_packages: &[String],
 ) -> (ProgramModel, FunctionScopeStats) {
     let mut class_to_library = HashMap::new();
     for c in &model.classes {
@@ -92,18 +149,29 @@ fn apply_function_scope_filter(
             .entry(c.name.clone())
             .or_insert_with(|| c.library_uri.clone());
     }
+    let package_filters = normalize_package_filters(app_packages);
 
     let mut stats = FunctionScopeStats::from_total(model.functions.len());
     let mut filtered_functions = Vec::new();
     for f in &model.functions {
         let kind = function_kind_from_model(f, &class_to_library);
+        let package_name = class_to_library
+            .get(&f.owner_class)
+            .and_then(|uri| package_name_from_library_uri(uri));
         match kind {
             ScopedFunctionKind::App => stats.app += 1,
             ScopedFunctionKind::Framework => stats.framework += 1,
             ScopedFunctionKind::Stdlib => stats.stdlib += 1,
             ScopedFunctionKind::Unknown => stats.unknown += 1,
         }
-        if include_function_kind(scope, kind) {
+        if include_function_kind(scope, kind)
+            && include_by_package_filter(
+                kind,
+                package_name.as_deref(),
+                &package_filters,
+                &mut stats,
+            )
+        {
             filtered_functions.push(f.clone());
         }
     }
@@ -148,15 +216,25 @@ pub fn run_decompile(
 ) -> Result<QualityReport> {
     let bundle = load_snapshot_bundle(input_path)?;
     let model = load_model(repo_root, &bundle)?;
-    let (scoped_model, function_scope_stats) = apply_function_scope_filter(&model, opt.function_scope);
+    let normalized_app_packages = normalize_package_filters(&opt.app_packages);
+    let mut normalized_app_package_list = normalized_app_packages.iter().cloned().collect::<Vec<_>>();
+    normalized_app_package_list.sort();
+    let (scoped_model, function_scope_stats) =
+        apply_function_scope_filter(&model, opt.function_scope, &opt.app_packages);
 
     if scoped_model.arch != "arm64" {
         bail!("model arch {} unsupported in v1", scoped_model.arch);
     }
     if scoped_model.functions.is_empty() {
+        let app_package_note = if normalized_app_packages.is_empty() {
+            String::new()
+        } else {
+            " and/or selected --app-package filters".to_string()
+        };
         bail!(
-            "no functions matched --function-scope {}. try --function-scope all",
-            opt.function_scope.as_str()
+            "no functions matched --function-scope {}{}. try --function-scope all",
+            opt.function_scope.as_str(),
+            app_package_note
         );
     }
 
@@ -385,6 +463,8 @@ pub fn run_decompile(
             "total_before_filter": function_scope_stats.total_before_filter,
             "total_after_filter": function_scope_stats.total_after_filter,
             "excluded": function_scope_stats.excluded,
+            "excluded_by_app_package": function_scope_stats.excluded_by_app_package,
+            "app_packages": normalized_app_package_list,
             "categories": {
                 "app": function_scope_stats.app,
                 "framework": function_scope_stats.framework,

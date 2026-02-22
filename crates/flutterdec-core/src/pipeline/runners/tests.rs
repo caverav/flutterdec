@@ -66,6 +66,23 @@
     }
 
     #[test]
+    fn normalizes_package_names_and_library_uris() {
+        assert_eq!(
+            normalize_package_name(" package:Spotube/models/connect.dart "),
+            Some("spotube".to_string())
+        );
+        assert_eq!(
+            normalize_package_name("provider"),
+            Some("provider".to_string())
+        );
+        assert_eq!(
+            package_name_from_library_uri("package:spotube/models/connect/load.dart"),
+            Some("spotube".to_string())
+        );
+        assert_eq!(package_name_from_library_uri("dart:core"), None);
+    }
+
+    #[test]
     fn applies_app_unknown_scope_filter() {
         let model = ProgramModel {
             schema_version: 2,
@@ -131,7 +148,7 @@
             object_pool: Vec::new(),
         };
 
-        let (scoped, stats) = apply_function_scope_filter(&model, FunctionScope::AppUnknown);
+        let (scoped, stats) = apply_function_scope_filter(&model, FunctionScope::AppUnknown, &[]);
         let ids = scoped.functions.iter().map(|f| f.id).collect::<Vec<_>>();
         assert_eq!(ids, vec![12, 13]);
         assert_eq!(stats.total_before_filter, 4);
@@ -179,12 +196,89 @@
             object_pool: Vec::new(),
         };
 
-        let (scoped, stats) = apply_function_scope_filter(&model, FunctionScope::App);
+        let (scoped, stats) = apply_function_scope_filter(&model, FunctionScope::App, &[]);
         let ids = scoped.functions.iter().map(|f| f.id).collect::<Vec<_>>();
         assert_eq!(ids, vec![12]);
         assert_eq!(stats.total_before_filter, 2);
         assert_eq!(stats.total_after_filter, 1);
         assert_eq!(stats.excluded, 1);
+    }
+
+    #[test]
+    fn applies_app_package_filter_to_scoped_functions() {
+        let model = ProgramModel {
+            schema_version: 2,
+            adapter_kind: "python".to_string(),
+            dart_version: "3.0.0".to_string(),
+            snapshot_hash: "deadbeef".to_string(),
+            arch: "arm64".to_string(),
+            libraries: Vec::new(),
+            classes: vec![
+                flutterdec_adapter::ClassInfo {
+                    id: 3,
+                    name: "ConnectService".to_string(),
+                    super_name: "Object".to_string(),
+                    library_uri: "package:spotube/models/connect/load.dart".to_string(),
+                },
+                flutterdec_adapter::ClassInfo {
+                    id: 4,
+                    name: "ProviderCore".to_string(),
+                    super_name: "Object".to_string(),
+                    library_uri: "package:provider/src/provider.dart".to_string(),
+                },
+                flutterdec_adapter::ClassInfo {
+                    id: 5,
+                    name: "State".to_string(),
+                    super_name: "Object".to_string(),
+                    library_uri: "package:flutter/src/widgets/framework.dart".to_string(),
+                },
+            ],
+            functions: vec![
+                flutterdec_adapter::FunctionInfo {
+                    id: 12,
+                    name: "executeCommandAsync".to_string(),
+                    owner_class: "ConnectService".to_string(),
+                    entry_va: 0x1200,
+                    size: 4,
+                    code_section_va: 0x1200,
+                },
+                flutterdec_adapter::FunctionInfo {
+                    id: 13,
+                    name: "watch".to_string(),
+                    owner_class: "ProviderCore".to_string(),
+                    entry_va: 0x1300,
+                    size: 4,
+                    code_section_va: 0x1300,
+                },
+                flutterdec_adapter::FunctionInfo {
+                    id: 14,
+                    name: "setState".to_string(),
+                    owner_class: "State".to_string(),
+                    entry_va: 0x1400,
+                    size: 4,
+                    code_section_va: 0x1400,
+                },
+                flutterdec_adapter::FunctionInfo {
+                    id: 15,
+                    name: "sub_1500".to_string(),
+                    owner_class: "UnknownOwner".to_string(),
+                    entry_va: 0x1500,
+                    size: 4,
+                    code_section_va: 0x1500,
+                },
+            ],
+            object_pool: Vec::new(),
+        };
+
+        let app_packages = vec!["spotube".to_string()];
+        let (scoped, stats) =
+            apply_function_scope_filter(&model, FunctionScope::AppUnknown, &app_packages);
+        let ids = scoped.functions.iter().map(|f| f.id).collect::<Vec<_>>();
+        assert_eq!(ids, vec![12]);
+        assert_eq!(stats.total_before_filter, 4);
+        assert_eq!(stats.total_after_filter, 1);
+        assert_eq!(stats.excluded, 3);
+        assert_eq!(stats.excluded_by_app_package, 2);
     }
 
     #[test]

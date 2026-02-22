@@ -27,6 +27,7 @@ pub struct DecompileOptions {
     pub max_indirect_call_ratio: f64,
     pub min_disassembly_ratio: f64,
     pub function_scope: FunctionScope,
+    pub app_packages: Vec<String>,
     pub analysis_profile: DecompileAnalysisProfile,
     pub engine_options: DecompileEngineOptions,
 }
