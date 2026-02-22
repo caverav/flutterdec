@@ -140,6 +140,17 @@ flutterdec decompile ./sample.apk -o ./out --analysis-profile balanced
 flutterdec decompile ./sample.apk -o ./out --analysis-profile light
 ```
 
+Adapter backend options:
+
+- `--adapter-backend auto` (default): attempt Blutter bridge backend when configured, otherwise fallback to internal adapter
+- `--adapter-backend internal`: force internal adapter only
+- `--adapter-backend blutter`: require Blutter bridge backend (no fallback)
+
+Blutter bridge environment variables:
+
+- `FLUTTERDEC_BLUTTER_CMD`: full command used to launch Blutter (example: `python3 /opt/blutter/blutter.py`)
+- `FLUTTERDEC_BLUTTER_PY`: direct path to `blutter.py` (uses current Python interpreter)
+
 Per-feature toggles (override profile defaults):
 
 - `--with-canonical-model-symbols` / `--no-canonical-model-symbols`

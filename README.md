@@ -146,6 +146,17 @@ Example:
 flutterdec decompile ./sample.apk -o ./out --analysis-profile light
 ```
 
+Adapter backend selection:
+
+- `--adapter-backend auto` (default): try Blutter backend if configured, otherwise fallback to internal adapter
+- `--adapter-backend internal`: force internal snapshot-string adapter
+- `--adapter-backend blutter`: require Blutter backend (fail if unavailable)
+
+Blutter backend environment knobs:
+
+- `FLUTTERDEC_BLUTTER_CMD`: full command to launch Blutter (for example `python3 /path/to/blutter.py`)
+- `FLUTTERDEC_BLUTTER_PY`: path to `blutter.py` (uses current Python interpreter)
+
 You can explicitly enable/disable individual engine toggles:
 
 - `--with-canonical-model-symbols` / `--no-canonical-model-symbols`

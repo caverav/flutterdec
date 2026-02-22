@@ -39,6 +39,7 @@ General options:
 - `--max-functions <N>`
 - `--function-scope <app-unknown|app|all>` (default `app-unknown`)
 - `--app-package <NAME>` (repeatable; restricts to selected `package:<NAME>/...` libraries)
+- `--adapter-backend <auto|internal|blutter>` (default `auto`)
 
 Symbol ingestion:
 
@@ -71,6 +72,11 @@ Analysis-engine feature toggles:
 Conflict rule:
 
 - each `--with-*` conflicts with its matching `--no-*`
+
+Adapter backend environment:
+
+- `FLUTTERDEC_BLUTTER_CMD`: full command to execute Blutter bridge backend
+- `FLUTTERDEC_BLUTTER_PY`: path to `blutter.py` (uses current Python interpreter)
 
 ## `flutterdec engine-fingerprint`
 
