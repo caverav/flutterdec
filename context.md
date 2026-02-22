@@ -81,7 +81,12 @@ Current module layout:
   - runner reporting helpers in `src/pipeline/runners/reporting.rs`
   - runner symbol and pool naming helpers in `src/pipeline/runners/symbols.rs`
   - runner-focused tests in `src/pipeline/runners/tests.rs`
-  - stripped/unstripped ELF call-target mapping in `src/pipeline/symbol_map.rs`
+  - symbol-map entry in `src/pipeline/symbol_map.rs`
+  - symbol-map types in `src/pipeline/symbol_map/types.rs`
+  - symbol-map run/load path in `src/pipeline/symbol_map/run.rs`
+  - symbol-map ELF section and symbol helpers in `src/pipeline/symbol_map/elf.rs`
+  - symbol-map call-scan and target-resolution helpers in `src/pipeline/symbol_map/analysis.rs`
+  - symbol-map tests in `src/pipeline/symbol_map/tests.rs`
   - ELF fingerprint extraction in `src/pipeline/engine_fingerprint.rs`
 - `crates/flutterdec-cli`: user facing commands
 
