@@ -146,6 +146,7 @@ The CLI writes `quality.json` and fails the run when strict thresholds are viola
 - metadata coverage counters in `report.json` (`pool_value_hints`, `pool_semantic_hints`, `pool_target_symbols`)
 - selector fallback diagnostics in `report.json` (`total`, `unique`, top unresolved `selector:` names, and sample call lines)
 - call fallback diagnostics in `report.json` (`dynamicCall`, `dispatch.invoke`, `dispatchTarget` non-dispatch fallback calls, and generic `indirectTargetN(...)` fallback counts)
+- prioritization diagnostics in `report.json` (`prioritization.enabled`, `selected_count`, and per-function component score breakdown for selected capped functions)
 - readability regressions such as helper block leakage and raw token leakage
 - omitted path marker count for complex regions that are currently summarized
 - residual loop back-edge summary marker count for loops that are not yet structured
@@ -213,7 +214,7 @@ Current scope:
 - decompile now also supports package-level scoping via repeatable `--app-package <name>`, so researchers can isolate pseudocode to selected app Dart packages and exclude unknown/dependency/framework noise more aggressively
 - report output now includes detected app package frequency (`function_scope.app_package_counts_top`) to guide package scoping without guesswork
 - `info` output now surfaces top detected app packages too, so package scoping can be selected before a full decompile run
-- capped-function disassembly ordering now prioritizes likely high-value targets (entrypoint-like names, lifecycle/router selectors such as `createState`/`build`/`onGenerateRoute`, and deeplink/activity signals including object-pool `target_va` hints), and now also applies app-package frequency boosts plus shallow entrypoint-callee frontier boosts so capped runs pull more app-call-path functions
+- capped-function disassembly ordering now prioritizes likely high-value targets (entrypoint-like names, lifecycle/router selectors such as `createState`/`build`/`onGenerateRoute`, and deeplink/activity signals including object-pool `target_va` hints), applies app-package frequency boosts plus shallow entrypoint-callee frontier boosts, and now adds structural tie-break signals (function size and internal call out-degree) so capped runs bias toward heavier app logic instead of early-address ties
 
 Known limits:
 
