@@ -205,6 +205,7 @@ Current scope:
 - optional ELF engine fingerprinting to estimate build identity from build-id and marker strings
 - decompile now exposes engine-level analysis profiles (`balanced` and `light`) plus per-feature `--with-*`/`--no-*` toggles for canonical model symbols, pool hints, and semantic reporting to trade throughput vs readability
 - decompile now defaults to app-focused function scoping (`app-unknown`) so reverse-engineering output prioritizes app/user-defined code; you can switch to `--function-scope app` or `--function-scope all` when needed
+- decompile now also supports package-level scoping via repeatable `--app-package <name>`, so researchers can isolate pseudocode to selected app Dart packages and exclude unknown/dependency/framework noise more aggressively
 
 Known limits:
 

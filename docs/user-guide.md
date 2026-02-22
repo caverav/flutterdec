@@ -100,6 +100,14 @@ Default scope is app-focused:
 - `app`: only app (`package:*`) functions
 - `all`: include Flutter/Dart/runtime/framework internals too
 
+Limit output to selected app packages (repeat `--app-package` as needed):
+
+```bash
+flutterdec decompile ./sample.apk -o ./out \
+  --function-scope app-unknown \
+  --app-package my_app
+```
+
 Include everything:
 
 ```bash

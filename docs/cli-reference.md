@@ -33,6 +33,7 @@ General options:
 - `--focus <FOCUS>`
 - `--max-functions <N>`
 - `--function-scope <app-unknown|app|all>` (default `app-unknown`)
+- `--app-package <NAME>` (repeatable; restricts to selected `package:<NAME>/...` libraries)
 
 Symbol ingestion:
 

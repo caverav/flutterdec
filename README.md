@@ -102,6 +102,14 @@ To include all functions (app + Flutter + Dart/runtime):
 flutterdec decompile ./sample.apk -o ./out --function-scope all
 ```
 
+To focus only specific Dart packages (repeatable):
+
+```bash
+flutterdec decompile ./sample.apk -o ./out \
+  --function-scope app-unknown \
+  --app-package my_app
+```
+
 4. Optional: improve call names with stripped/unstripped engine pair:
 
 ```bash
