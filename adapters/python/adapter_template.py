@@ -149,6 +149,23 @@ def _selector_from_string(s: str) -> Optional[str]:
     return cleaned
 
 
+def _entrypoint_selector_from_name(name: str) -> Optional[str]:
+    selector = _selector_from_string(name or "")
+    if not selector:
+        return None
+    lower = selector.strip().lower()
+    if (
+        lower == "main"
+        or lower.endswith(".main")
+        or lower.endswith("::main")
+        or lower.endswith("_main")
+        or lower == "runapp"
+        or lower.endswith(".runapp")
+    ):
+        return selector
+    return None
+
+
 def _pool_entries(strings: List[str]) -> List[dict]:
     entries = []
     for i, s in enumerate(strings):
@@ -174,6 +191,39 @@ def _pool_entries(strings: List[str]) -> List[dict]:
             }
         )
     return entries
+
+
+def _append_synthetic_pool_entries(base: List[dict], synthetic: List[dict]) -> List[dict]:
+    out = list(base)
+    next_index = len(out)
+    seen: Set[Tuple[Optional[str], Optional[str], Optional[int], Optional[str], Optional[str]]] = set()
+    for e in out:
+        seen.add(
+            (
+                e.get("decoded_kind"),
+                e.get("selector"),
+                e.get("target_va"),
+                e.get("owner_class"),
+                e.get("library_uri"),
+            )
+        )
+
+    for e in synthetic:
+        key = (
+            e.get("decoded_kind"),
+            e.get("selector"),
+            e.get("target_va"),
+            e.get("owner_class"),
+            e.get("library_uri"),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        entry = dict(e)
+        entry["index"] = next_index
+        next_index += 1
+        out.append(entry)
+    return out
 
 
 def _normalize_library_uri(raw: str) -> Optional[str]:
@@ -319,7 +369,7 @@ def _parse_blutter_pp(pool_path: Path) -> List[dict]:
     return entries
 
 
-def _parse_blutter_asm(asm_dir: Path) -> Tuple[List[dict], List[dict], List[dict]]:
+def _parse_blutter_asm(asm_dir: Path) -> Tuple[List[dict], List[dict], List[dict], List[dict]]:
     if not asm_dir.exists() or not asm_dir.is_dir():
         raise RuntimeError(f"blutter asm directory not found: {asm_dir}")
 
@@ -330,6 +380,8 @@ def _parse_blutter_asm(asm_dir: Path) -> Tuple[List[dict], List[dict], List[dict
     classes: Dict[Tuple[str, str], dict] = {}
     functions: List[dict] = []
     seen_entry: Set[int] = set()
+    entrypoint_candidates: List[dict] = []
+    seen_entrypoint_target: Set[int] = set()
 
     def ensure_library(uri: str) -> str:
         normalized = _normalize_library_uri(uri) or uri
@@ -408,6 +460,21 @@ def _parse_blutter_asm(asm_dir: Path) -> Tuple[List[dict], List[dict], List[dict
                     "code_section_va": 0,
                 }
             )
+            selector = _entrypoint_selector_from_name(name)
+            if selector and entry not in seen_entrypoint_target:
+                seen_entrypoint_target.add(entry)
+                entrypoint_candidates.append(
+                    {
+                        "index": 0,
+                        "kind": "String",
+                        "value": f"entrypoint:{selector}",
+                        "decoded_kind": "EntryPointCandidate",
+                        "selector": selector,
+                        "target_va": int(entry),
+                        "owner_class": owner,
+                        "library_uri": pending_lib,
+                    }
+                )
             pending_name = None
 
     libs = sorted(libraries.values(), key=lambda v: int(v["id"]))
@@ -416,7 +483,7 @@ def _parse_blutter_asm(asm_dir: Path) -> Tuple[List[dict], List[dict], List[dict
         libs = [{"id": 0, "uri": "package:app/main.dart", "name_display": "package:app/main.dart"}]
     if not clss:
         clss = [{"id": 0, "name": "Global", "super": "Object", "lib": libs[0]["uri"]}]
-    return libs, clss, functions
+    return libs, clss, functions, entrypoint_candidates
 
 
 def _runner_mode(cmd: List[str]) -> str:
@@ -495,13 +562,15 @@ def _build_blutter_model(
 ) -> dict:
     blutter_out = _run_blutter_dump(input_path, libapp_path)
     asm_dir = blutter_out / "asm"
-    libs, classes, funcs = _parse_blutter_asm(asm_dir)
+    libs, classes, funcs, entrypoint_candidates = _parse_blutter_asm(asm_dir)
     if not funcs:
         raise RuntimeError("blutter output did not contain recoverable functions")
 
     pool_entries = _parse_blutter_pp(blutter_out / "pp.txt")
     if not pool_entries:
         pool_entries = _pool_entries(_extract_strings(vm_data + iso_data))
+    if entrypoint_candidates:
+        pool_entries = _append_synthetic_pool_entries(pool_entries, entrypoint_candidates)
 
     snapshot_hash = _detect_snapshot_hash(vm_data, iso_data, default_snapshot_hash)
     return {
