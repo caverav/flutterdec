@@ -94,6 +94,18 @@ Decompile:
 flutterdec decompile ./sample.apk -o ./out
 ```
 
+Default scope is app-focused:
+
+- `app-unknown` (default): app (`package:*`) + unknown ownership functions
+- `app`: only app (`package:*`) functions
+- `all`: include Flutter/Dart/runtime/framework internals too
+
+Include everything:
+
+```bash
+flutterdec decompile ./sample.apk -o ./out --function-scope all
+```
+
 Decompile with extra artifacts:
 
 ```bash

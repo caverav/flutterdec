@@ -94,6 +94,14 @@ flutterdec adapter install --dart-hash <HASH>
 flutterdec decompile ./sample.apk -o ./out
 ```
 
+By default, `decompile` focuses app reversing (`--function-scope app-unknown`) and excludes known Flutter/Dart framework internals.
+
+To include all functions (app + Flutter + Dart/runtime):
+
+```bash
+flutterdec decompile ./sample.apk -o ./out --function-scope all
+```
+
 4. Optional: improve call names with stripped/unstripped engine pair:
 
 ```bash

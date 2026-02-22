@@ -32,6 +32,7 @@ General options:
 - `--emit-ir`
 - `--focus <FOCUS>`
 - `--max-functions <N>`
+- `--function-scope <app-unknown|app|all>` (default `app-unknown`)
 
 Symbol ingestion:
 
