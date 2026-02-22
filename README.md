@@ -110,6 +110,8 @@ flutterdec decompile ./sample.apk -o ./out \
   --app-package my_app
 ```
 
+If package names are unknown, inspect `report.json` at `function_scope.app_package_counts_top`.
+
 4. Optional: improve call names with stripped/unstripped engine pair:
 
 ```bash

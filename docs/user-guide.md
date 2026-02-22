@@ -108,6 +108,8 @@ flutterdec decompile ./sample.apk -o ./out \
   --app-package my_app
 ```
 
+Tip: if you are not sure about package names, check `report.json` under `function_scope.app_package_counts_top`.
+
 Include everything:
 
 ```bash
