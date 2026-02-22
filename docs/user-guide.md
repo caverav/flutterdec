@@ -14,64 +14,59 @@ Inputs:
 
 ## Setup
 
-Recommended install: GitHub release artifact.
-
-Install the first alpha release (current tag: `v0.1.0-alpha.1`):
+1. Run with `nix run` (recommended):
 
 ```bash
-TAG="v0.1.0-alpha.1"
-OS="$(uname -s)"
-ARCH="$(uname -m)"
+nix run github:caverav/flutterdec -- --help
+nix run github:caverav/flutterdec -- info ./sample.apk --json
+```
 
-case "$OS" in
-  Linux) os_name="Linux" ;;
-  Darwin) os_name="macOS" ;;
-  *) echo "Unsupported OS: $OS" >&2; exit 1 ;;
-esac
+From this repository checkout:
 
-case "$ARCH" in
-  x86_64|amd64) arch_name="X64" ;;
-  arm64|aarch64) arch_name="ARM64" ;;
-  *) echo "Unsupported arch: $ARCH" >&2; exit 1 ;;
-esac
+```bash
+nix run . -- --help
+```
 
-asset="flutterdec-${TAG}-${os_name}-${arch_name}.tar.gz"
-url="https://github.com/caverav/flutterdec/releases/download/${TAG}/${asset}"
+2. Install from release binary (`v0.1.0-alpha.1`):
 
-curl -fL -o "$asset" "$url"
-tar -xzf "$asset"
+Linux x64:
+
+```bash
+curl -fLO https://github.com/caverav/flutterdec/releases/download/v0.1.0-alpha.1/flutterdec-v0.1.0-alpha.1-Linux-X64.tar.gz
+tar -xzf flutterdec-v0.1.0-alpha.1-Linux-X64.tar.gz
 sudo install -m 0755 flutterdec /usr/local/bin/flutterdec
 flutterdec --help
 ```
 
-If your platform artifact is not available, open:
-
-[v0.1.0-alpha.1 release page](https://github.com/caverav/flutterdec/releases/tag/v0.1.0-alpha.1)
-
-Other options (source install):
-
-- Prerequisite: Nix with flakes enabled
-
-Run without installing:
+macOS arm64:
 
 ```bash
-nix develop -c cargo run -p flutterdec-cli -- --help
+curl -fLO https://github.com/caverav/flutterdec/releases/download/v0.1.0-alpha.1/flutterdec-v0.1.0-alpha.1-macOS-ARM64.tar.gz
+tar -xzf flutterdec-v0.1.0-alpha.1-macOS-ARM64.tar.gz
+sudo install -m 0755 flutterdec /usr/local/bin/flutterdec
+flutterdec --help
 ```
 
-Install CLI to user Cargo bin:
+Other platforms and future tags:
+
+[Releases page](https://github.com/caverav/flutterdec/releases)
+
+3. Other options:
+
+Install to user Cargo bin (requires Nix with flakes enabled):
 
 ```bash
 nix develop -c cargo install --path crates/flutterdec-cli
 ~/.cargo/bin/flutterdec --help
 ```
 
-If `flutterdec` is not found:
+Run from source without installing:
 
 ```bash
-export PATH="$HOME/.cargo/bin:$PATH"
+nix develop -c cargo run -p flutterdec-cli -- --help
 ```
 
-Build release binary:
+Build local release binary:
 
 ```bash
 nix develop -c cargo build -p flutterdec-cli --release
