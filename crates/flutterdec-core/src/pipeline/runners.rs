@@ -227,6 +227,8 @@ pub fn run_info(repo_root: &Path, input_path: &Path) -> Result<InfoOutput> {
         function_count: None,
         class_count: None,
         object_pool_count: None,
+        app_package_count_total: None,
+        app_package_counts_top: None,
     };
 
     if adapter_installed {
@@ -234,6 +236,15 @@ pub fn run_info(repo_root: &Path, input_path: &Path) -> Result<InfoOutput> {
             out.function_count = Some(model.functions.len());
             out.class_count = Some(model.classes.len());
             out.object_pool_count = Some(model.object_pool.len());
+            let app_package_counts = collect_app_package_counts(&model);
+            out.app_package_count_total = Some(app_package_counts.len());
+            out.app_package_counts_top = Some(
+                app_package_counts
+                    .into_iter()
+                    .take(20)
+                    .map(|(package, functions)| PackageCount { package, functions })
+                    .collect::<Vec<_>>(),
+            );
         }
     }
 

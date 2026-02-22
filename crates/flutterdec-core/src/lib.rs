@@ -125,6 +125,14 @@ pub struct InfoOutput {
     pub function_count: Option<usize>,
     pub class_count: Option<usize>,
     pub object_pool_count: Option<usize>,
+    pub app_package_count_total: Option<usize>,
+    pub app_package_counts_top: Option<Vec<PackageCount>>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct PackageCount {
+    pub package: String,
+    pub functions: usize,
 }
 
 #[derive(Debug, Clone, Serialize)]

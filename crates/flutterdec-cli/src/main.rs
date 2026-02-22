@@ -208,6 +208,14 @@ fn handle_info(repo_root: &Path, cmd: InfoCmd) -> Result<()> {
         if let Some(n) = out.function_count {
             println!("functions: {}", n);
         }
+        if let Some(total) = out.app_package_count_total {
+            println!("app packages: {}", total);
+            if let Some(top) = out.app_package_counts_top.as_ref() {
+                for item in top.iter().take(8) {
+                    println!("  - {} ({})", item.package, item.functions);
+                }
+            }
+        }
     }
     Ok(())
 }
