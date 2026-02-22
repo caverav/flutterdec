@@ -1,5 +1,8 @@
 # flutterdec
 
+[![CI](https://github.com/caverav/flutterdec/actions/workflows/ci.yml/badge.svg)](https://github.com/caverav/flutterdec/actions/workflows/ci.yml)
+[![Release](https://github.com/caverav/flutterdec/actions/workflows/release.yml/badge.svg)](https://github.com/caverav/flutterdec/actions/workflows/release.yml)
+
 `flutterdec` is a static Flutter AOT decompiler research tool for Android ARM64 binaries.
 
 It takes an APK (or `libapp.so`) and emits readable pseudo-Dart plus optional IR/ASM artifacts.
