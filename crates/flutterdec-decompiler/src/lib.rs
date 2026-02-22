@@ -259,7 +259,8 @@ pub fn emit_program_with_pool_context(
     pool_value_hints: &HashMap<u64, String>,
     pool_semantic_hints: &HashMap<u64, PoolSemanticHint>,
 ) -> Vec<PseudocodeArtifact> {
-    ir.iter()
+    let mut artifacts = ir
+        .iter()
         .map(|f| {
             emit_pseudocode_with_pool_context(
                 f,
@@ -268,7 +269,162 @@ pub fn emit_program_with_pool_context(
                 pool_semantic_hints,
             )
         })
-        .collect()
+        .collect::<Vec<_>>();
+    apply_program_level_generic_call_rewrites(&mut artifacts);
+    artifacts
+}
+
+fn apply_program_level_generic_call_rewrites(artifacts: &mut [PseudocodeArtifact]) {
+    let aliases = collect_generic_symbol_aliases(artifacts);
+    if aliases.is_empty() {
+        return;
+    }
+    for artifact in artifacts {
+        let mut changed = false;
+        let mut lines = Vec::new();
+        for line in artifact.source.lines() {
+            if let Some(rewritten) = rewrite_generic_call_line(line, &aliases) {
+                lines.push(rewritten);
+                changed = true;
+            } else {
+                lines.push(line.to_string());
+            }
+        }
+        if changed {
+            artifact.source = lines.join("\n");
+        }
+    }
+}
+
+fn collect_generic_symbol_aliases(artifacts: &[PseudocodeArtifact]) -> HashMap<String, String> {
+    let mut candidates: HashMap<String, HashMap<String, usize>> = HashMap::new();
+    let mut generic_reference_counts: HashMap<String, usize> = HashMap::new();
+    for artifact in artifacts {
+        for line in artifact.source.lines() {
+            let Some((callee, original)) = extract_rewrite_evidence(line) else {
+                if let Some(callee) = extract_call_callee(line) {
+                    if is_generic_call_name(callee) {
+                        *generic_reference_counts
+                            .entry(callee.to_string())
+                            .or_insert(0) += 1;
+                    }
+                }
+                continue;
+            };
+            *generic_reference_counts
+                .entry(original.clone())
+                .or_insert(0) += 1;
+            let by_name = candidates.entry(original).or_default();
+            *by_name.entry(callee).or_insert(0) += 1;
+        }
+    }
+
+    let mut aliases = HashMap::new();
+    for (original, by_name) in candidates {
+        let mut ranked = by_name.into_iter().collect::<Vec<_>>();
+        ranked.sort_by(|(a_name, a_count), (b_name, b_count)| {
+            b_count
+                .cmp(a_count)
+                .then_with(|| semantic_name_score(b_name).cmp(&semantic_name_score(a_name)))
+                .then_with(|| a_name.cmp(b_name))
+        });
+        let Some((best_name, best_count)) = ranked.first().cloned() else {
+            continue;
+        };
+        if best_count < 2 {
+            continue;
+        }
+        let total_references = generic_reference_counts
+            .get(&original)
+            .copied()
+            .unwrap_or(best_count);
+        if best_count * 2 < total_references {
+            continue;
+        }
+        if let Some((_, second_count)) = ranked.get(1) {
+            if *second_count * 2 >= best_count {
+                continue;
+            }
+        }
+        aliases.insert(original, best_name);
+    }
+    aliases
+}
+
+fn semantic_name_score(name: &str) -> usize {
+    if name.starts_with("flutter.") {
+        return 5;
+    }
+    if name.starts_with("package:") {
+        return 4;
+    }
+    if name.starts_with("dart.") {
+        return 3;
+    }
+    if name.starts_with("dart_vm.") {
+        return 2;
+    }
+    1
+}
+
+fn extract_rewrite_evidence(line: &str) -> Option<(String, String)> {
+    if !line.contains("was: ") {
+        return None;
+    }
+    let eq = line.find("= ")?;
+    let call_start = eq + 2;
+    let open = line[call_start..].find('(')? + call_start;
+    let callee = line[call_start..open].trim().to_string();
+    if callee.is_empty() || callee.starts_with("sub_") || callee.starts_with("fn_0x") {
+        return None;
+    }
+    let was_idx = line.find("was: ")? + 5;
+    let tail = &line[was_idx..];
+    let original = tail
+        .split([',', ' ', ')'])
+        .find(|s| !s.trim().is_empty())?
+        .trim()
+        .to_string();
+    if !original.starts_with("sub_") && !original.starts_with("fn_0x") {
+        return None;
+    }
+    Some((callee, original))
+}
+
+fn rewrite_generic_call_line(line: &str, aliases: &HashMap<String, String>) -> Option<String> {
+    if line.contains("was: ") {
+        return None;
+    }
+    let eq = line.find("= ")?;
+    let call_start = eq + 2;
+    let open = line[call_start..].find('(')? + call_start;
+    let original = line[call_start..open].trim();
+    if !original.starts_with("sub_") && !original.starts_with("fn_0x") {
+        return None;
+    }
+    let alias = aliases.get(original)?;
+
+    let mut rewritten = String::new();
+    rewritten.push_str(&line[..call_start]);
+    rewritten.push_str(alias);
+    rewritten.push_str(&line[open..]);
+    if let Some(comment_idx) = rewritten.find("//") {
+        rewritten.insert_str(comment_idx + 2, &format!(" inferred from: {}, ", original));
+    } else {
+        rewritten.push_str(&format!(" // inferred from: {}", original));
+    }
+    Some(rewritten)
+}
+
+fn extract_call_callee(line: &str) -> Option<&str> {
+    let eq = line.find("= ")?;
+    let call_start = eq + 2;
+    let open = line[call_start..].find('(')? + call_start;
+    Some(line[call_start..open].trim())
+}
+
+fn is_generic_call_name(name: &str) -> bool {
+    name.starts_with("sub_") || name.starts_with("fn_0x")
 }
 
 #[cfg(test)]

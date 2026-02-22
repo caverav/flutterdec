@@ -42,6 +42,295 @@ fn emits_callable_style_for_generic_indirect_targets() {
 }
 
 #[test]
+fn propagates_resolved_generic_direct_symbol_names_across_program() {
+    let ir = vec![
+        FunctionIr {
+            function_id: 501,
+            name: "producer".to_string(),
+            entry_va: 0x1500,
+            blocks: vec![BasicBlock {
+                id: 0,
+                start_va: 0x1500,
+                instrs: vec![
+                    LlirInstr {
+                        va: 0x1500,
+                        op: IROp::LoadPool,
+                        src: "x1".to_string(),
+                        target: "pool[64]".to_string(),
+                    },
+                    LlirInstr {
+                        va: 0x1504,
+                        op: IROp::Call,
+                        src: "bl #0x9000".to_string(),
+                        target: "0x9000".to_string(),
+                    },
+                    LlirInstr {
+                        va: 0x1508,
+                        op: IROp::LoadPool,
+                        src: "x1".to_string(),
+                        target: "pool[64]".to_string(),
+                    },
+                    LlirInstr {
+                        va: 0x150c,
+                        op: IROp::Call,
+                        src: "bl #0x9000".to_string(),
+                        target: "0x9000".to_string(),
+                    },
+                    LlirInstr {
+                        va: 0x1510,
+                        op: IROp::Return,
+                        src: "ret".to_string(),
+                        target: String::new(),
+                    },
+                ],
+                succs: Vec::new(),
+                preds: Vec::new(),
+            }],
+        },
+        FunctionIr {
+            function_id: 502,
+            name: "consumer".to_string(),
+            entry_va: 0x1600,
+            blocks: vec![BasicBlock {
+                id: 0,
+                start_va: 0x1600,
+                instrs: vec![
+                    LlirInstr {
+                        va: 0x1600,
+                        op: IROp::Call,
+                        src: "bl #0x9000".to_string(),
+                        target: "0x9000".to_string(),
+                    },
+                    LlirInstr {
+                        va: 0x1604,
+                        op: IROp::Return,
+                        src: "ret".to_string(),
+                        target: String::new(),
+                    },
+                ],
+                succs: Vec::new(),
+                preds: Vec::new(),
+            }],
+        },
+    ];
+    let mut symbols = HashMap::new();
+    symbols.insert(0x9000u64, "sub_9000".to_string());
+    let mut pool = HashMap::new();
+    pool.insert(64u64, "_CompileTimeError".to_string());
+    let artifacts = emit_program_with_pool_hints(&ir, &symbols, &pool);
+    let producer = artifacts
+        .iter()
+        .find(|a| a.function_id == 501)
+        .expect("producer artifact");
+    let consumer = artifacts
+        .iter()
+        .find(|a| a.function_id == 502)
+        .expect("consumer artifact");
+    assert!(
+        producer
+            .source
+            .contains("dart.core._CompileTimeError.new("),
+        "producer should resolve generic call from selector evidence:\n{}",
+        producer.source
+    );
+    assert!(
+        consumer
+            .source
+            .contains("dart.core._CompileTimeError.new("),
+        "consumer should reuse resolved generic symbol alias from program context:\n{}",
+        consumer.source
+    );
+    assert!(
+        consumer
+            .source
+            .contains("inferred from: sub_9000"),
+        "program-level rewrite should preserve traceability:\n{}",
+        consumer.source
+    );
+}
+
+#[test]
+fn does_not_propagate_generic_alias_when_evidence_is_sparse() {
+    let ir = vec![
+        FunctionIr {
+            function_id: 601,
+            name: "producerSparse".to_string(),
+            entry_va: 0x1a00,
+            blocks: vec![BasicBlock {
+                id: 0,
+                start_va: 0x1a00,
+                instrs: vec![
+                    LlirInstr {
+                        va: 0x1a00,
+                        op: IROp::LoadPool,
+                        src: "x1".to_string(),
+                        target: "pool[64]".to_string(),
+                    },
+                    LlirInstr {
+                        va: 0x1a04,
+                        op: IROp::Call,
+                        src: "bl #0x9003".to_string(),
+                        target: "0x9003".to_string(),
+                    },
+                    LlirInstr {
+                        va: 0x1a08,
+                        op: IROp::LoadPool,
+                        src: "x1".to_string(),
+                        target: "pool[64]".to_string(),
+                    },
+                    LlirInstr {
+                        va: 0x1a0c,
+                        op: IROp::Call,
+                        src: "bl #0x9003".to_string(),
+                        target: "0x9003".to_string(),
+                    },
+                    LlirInstr {
+                        va: 0x1a10,
+                        op: IROp::Return,
+                        src: "ret".to_string(),
+                        target: String::new(),
+                    },
+                ],
+                succs: Vec::new(),
+                preds: Vec::new(),
+            }],
+        },
+        FunctionIr {
+            function_id: 602,
+            name: "consumerSparse".to_string(),
+            entry_va: 0x1b00,
+            blocks: vec![BasicBlock {
+                id: 0,
+                start_va: 0x1b00,
+                instrs: vec![
+                    LlirInstr {
+                        va: 0x1b00,
+                        op: IROp::Call,
+                        src: "bl #0x9003".to_string(),
+                        target: "0x9003".to_string(),
+                    },
+                    LlirInstr {
+                        va: 0x1b04,
+                        op: IROp::Call,
+                        src: "bl #0x9003".to_string(),
+                        target: "0x9003".to_string(),
+                    },
+                    LlirInstr {
+                        va: 0x1b08,
+                        op: IROp::Call,
+                        src: "bl #0x9003".to_string(),
+                        target: "0x9003".to_string(),
+                    },
+                    LlirInstr {
+                        va: 0x1b0c,
+                        op: IROp::Call,
+                        src: "bl #0x9003".to_string(),
+                        target: "0x9003".to_string(),
+                    },
+                    LlirInstr {
+                        va: 0x1b10,
+                        op: IROp::Call,
+                        src: "bl #0x9003".to_string(),
+                        target: "0x9003".to_string(),
+                    },
+                    LlirInstr {
+                        va: 0x1b14,
+                        op: IROp::Return,
+                        src: "ret".to_string(),
+                        target: String::new(),
+                    },
+                ],
+                succs: Vec::new(),
+                preds: Vec::new(),
+            }],
+        },
+    ];
+    let mut symbols = HashMap::new();
+    symbols.insert(0x9003u64, "sub_9003".to_string());
+    let mut pool = HashMap::new();
+    pool.insert(64u64, "_CompileTimeError".to_string());
+    let artifacts = emit_program_with_pool_hints(&ir, &symbols, &pool);
+    let producer = artifacts
+        .iter()
+        .find(|a| a.function_id == 601)
+        .expect("producerSparse artifact");
+    let consumer = artifacts
+        .iter()
+        .find(|a| a.function_id == 602)
+        .expect("consumerSparse artifact");
+    assert!(
+        producer
+            .source
+            .contains("dart.core._CompileTimeError.new("),
+        "producer with selector evidence should still rewrite:\n{}",
+        producer.source
+    );
+    assert!(
+        consumer.source.contains("sub_9003("),
+        "consumer should keep generic call when alias evidence is sparse:\n{}",
+        consumer.source
+    );
+    assert!(
+        !consumer.source.contains("inferred from: sub_9003"),
+        "sparse alias evidence should not trigger program-level inferred rewrite:\n{}",
+        consumer.source
+    );
+}
+
+#[test]
+fn ignores_long_sentence_like_owner_markers() {
+    let ir = FunctionIr {
+        function_id: 503,
+        name: "ownerSentenceFilter".to_string(),
+        entry_va: 0x1700,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0x1700,
+            instrs: vec![
+                LlirInstr {
+                    va: 0x1700,
+                    op: IROp::LoadPool,
+                    src: "x3".to_string(),
+                    target: "pool[2488]".to_string(),
+                },
+                LlirInstr {
+                    va: 0x1704,
+                    op: IROp::Call,
+                    src: "bl #0x9001".to_string(),
+                    target: "0x9001".to_string(),
+                },
+                LlirInstr {
+                    va: 0x1708,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+    let mut symbols = HashMap::new();
+    symbols.insert(0x9001u64, "sub_9001".to_string());
+    let mut pool = HashMap::new();
+    pool.insert(
+        2488u64,
+        "To resolve this error, maintain at least one listener on the stream, or create an ImageStreamCompleterHandle from the keepAlive method, or create a new stream for the image.".to_string(),
+    );
+    let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
+    assert!(
+        artifact.source.contains("sub_9001("),
+        "sentence-like marker should not become synthetic owner.invoke path:\n{}",
+        artifact.source
+    );
+    assert!(
+        !artifact.source.contains(".invoke("),
+        "sentence-like marker should not produce owner invoke rewrite:\n{}",
+        artifact.source
+    );
+}
+
+#[test]
 fn emits_callable_style_for_noncanonical_indirect_targets() {
     let ir = FunctionIr {
         function_id: 121,
@@ -286,6 +575,58 @@ fn rewrites_generic_direct_call_to_owner_invoke_when_library_and_owner_markers_e
     assert!(
         !artifact.source.contains("sub_6141f8("),
         "rewritten semantic owner call should not keep generic sub_* call name:\n{}",
+        artifact.source
+    );
+}
+
+#[test]
+fn rewrites_generic_direct_call_to_library_invoke_when_only_library_marker_exists() {
+    let ir = FunctionIr {
+        function_id: 456,
+        name: "directLibraryInvokeRewrite".to_string(),
+        entry_va: 0xc130,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0xc130,
+            instrs: vec![
+                LlirInstr {
+                    va: 0xc130,
+                    op: IROp::LoadPool,
+                    src: "x1".to_string(),
+                    target: "pool[4656]".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc134,
+                    op: IROp::Call,
+                    src: "bl #0x9002".to_string(),
+                    target: "0x9002".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc138,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+    let mut symbols = HashMap::new();
+    symbols.insert(0x9002u64, "sub_9002".to_string());
+    let mut pool = HashMap::new();
+    pool.insert(4656u64, "dart:core-patch/bool_patch.dart".to_string());
+    let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
+    assert!(
+        artifact.source.contains(
+            "dart.core_patch.invoke(receiver, \"dart:core-patch/bool_patch.dart\" /* pool[4656] */, param2, param3); // stdlib:dart.core_patch.invoke [library], was: sub_9002"
+        ),
+        "generic direct calls with only library marker should rewrite to semantic library invoke:\n{}",
+        artifact.source
+    );
+    assert!(
+        !artifact.source.contains("sub_9002("),
+        "rewritten semantic library call should not keep generic sub_* call name:\n{}",
         artifact.source
     );
 }

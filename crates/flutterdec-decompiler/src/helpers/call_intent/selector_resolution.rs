@@ -178,6 +178,18 @@ fn owner_marker_from_raw(raw: &str) -> Option<String> {
         t = inner.trim();
     }
     let marker = t.strip_suffix('.')?;
+    if marker.is_empty() || marker.len() > 120 {
+        return None;
+    }
+    if marker.chars().any(|c| c.is_whitespace()) {
+        return None;
+    }
+    if !marker
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$')
+    {
+        return None;
+    }
     let owner = sanitize_semantic_token(marker);
     if owner.is_empty() {
         return None;

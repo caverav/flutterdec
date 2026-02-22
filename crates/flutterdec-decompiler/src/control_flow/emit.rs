@@ -426,7 +426,8 @@ impl<'a> FuncEmitter<'a> {
                 &self.pool_value_hints,
                 &self.pool_semantic_hints,
             )
-            .or(selector_intent);
+            .or(selector_intent)
+            .or(library_intent.clone());
             let emitted_call_name = readable_call_name_from_intent(&call_name, intent.as_deref())
                 .unwrap_or_else(|| call_name.clone());
             if emitted_call_name != call_name {
