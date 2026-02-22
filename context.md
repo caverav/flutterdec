@@ -180,6 +180,7 @@ Current scope:
 - declaration typing now also recognizes constructor-like fallback call paths with PascalCase roots (for example `AndroidPermission.new(...)`) so inferred local types stay concrete even when standard library ownership metadata is missing
 - declaration typing now also treats pool-mapped literal assignments (`"value" /* pool[...] */`) as concrete `String` locals instead of leaving them as `dynamic`
 - declaration typing now also infers `bool` from condition context (`if (x)`, `x && y`, `x == true`) so argument/local declarations keep less `dynamic` noise in control-flow-heavy functions
+- repeated pool-mapped selector literals now hoist into local `String` aliases (for example `poolStr42`) so repeated callsites stay compact and readable
 - adapter object-pool metadata fields (`decoded_kind`, `selector`, `target_va`, `owner_class`, `library_uri`) are now consumed by decompile for deterministic owner-qualified selector rewrites
 - owner-only metadata (selector + owner_class without library URI) can still rewrite indirect selector calls to deterministic owner-qualified call paths
 - if pool entries miss selector/owner/library metadata, core now backfills semantic hints from function ownership metadata keyed by `target_va`
