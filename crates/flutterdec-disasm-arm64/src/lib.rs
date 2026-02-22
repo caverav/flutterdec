@@ -234,6 +234,39 @@ fn deep_link_signal_score(text: &str) -> i32 {
     deep_link_signal_score_lower(&text.to_ascii_lowercase())
 }
 
+fn entrypoint_signal_score(entry: &flutterdec_adapter::ObjectPoolEntry) -> i32 {
+    let mut score = 0i32;
+
+    if entry
+        .decoded_kind
+        .as_deref()
+        .map(|v| v.eq_ignore_ascii_case("EntryPointCandidate"))
+        .unwrap_or(false)
+    {
+        score += 5000;
+    }
+
+    if let Some(selector) = entry.selector.as_deref() {
+        let selector_lower = selector.trim().to_ascii_lowercase();
+        if is_main_like_name(&selector_lower) {
+            score += 3200;
+        } else if selector_lower == "runapp" || selector_lower.ends_with(".runapp") {
+            score += 500;
+        }
+    }
+
+    if entry
+        .value
+        .trim()
+        .to_ascii_lowercase()
+        .starts_with("entrypoint:")
+    {
+        score += 1800;
+    }
+
+    score
+}
+
 fn build_target_va_priority_hints(model: &ProgramModel) -> HashMap<u64, i32> {
     let mut out = HashMap::new();
     for entry in &model.object_pool {
@@ -241,6 +274,7 @@ fn build_target_va_priority_hints(model: &ProgramModel) -> HashMap<u64, i32> {
             continue;
         };
         let mut score = 0i32;
+        score += entrypoint_signal_score(entry);
         score += deep_link_signal_score(&entry.value);
         score += entry
             .decoded_kind
@@ -265,7 +299,7 @@ fn build_target_va_priority_hints(model: &ProgramModel) -> HashMap<u64, i32> {
         if score <= 0 {
             continue;
         }
-        let clamped = score.min(1200);
+        let clamped = score.min(6000);
         let slot = out.entry(target_va).or_insert(0);
         if clamped > *slot {
             *slot = clamped;
@@ -679,5 +713,59 @@ mod tests {
         let d = disassemble_program(&model, &bytes, 0x4000, None, Some(1));
         assert_eq!(d.len(), 1);
         assert_eq!(d[0].function_name, "sub_4004");
+    }
+
+    #[test]
+    fn prioritizes_entrypoint_candidate_target_va_when_names_are_generic() {
+        let model = ProgramModel {
+            schema_version: 2,
+            adapter_kind: "test".to_string(),
+            dart_version: "unknown".to_string(),
+            snapshot_hash: "h".to_string(),
+            arch: "arm64".to_string(),
+            libraries: vec![LibraryInfo {
+                id: 0,
+                uri: "package:app/main.dart".to_string(),
+                name_display: "package:app/main.dart".to_string(),
+            }],
+            classes: vec![ClassInfo {
+                id: 0,
+                name: "Global".to_string(),
+                super_name: "Object".to_string(),
+                library_uri: "package:app/main.dart".to_string(),
+            }],
+            functions: vec![
+                FunctionInfo {
+                    id: 0,
+                    name: "sub_5000".to_string(),
+                    owner_class: "Global".to_string(),
+                    entry_va: 0x5000,
+                    size: 4,
+                    code_section_va: 0x5000,
+                },
+                FunctionInfo {
+                    id: 1,
+                    name: "sub_5004".to_string(),
+                    owner_class: "Global".to_string(),
+                    entry_va: 0x5004,
+                    size: 4,
+                    code_section_va: 0x5000,
+                },
+            ],
+            object_pool: vec![ObjectPoolEntry {
+                index: 0,
+                kind: "String".to_string(),
+                value: "entrypoint:main".to_string(),
+                decoded_kind: Some("EntryPointCandidate".to_string()),
+                selector: Some("main".to_string()),
+                target_va: Some(0x5004),
+                owner_class: Some("Global".to_string()),
+                library_uri: Some("package:app/main.dart".to_string()),
+            }],
+        };
+        let bytes = vec![0xc0, 0x03, 0x5f, 0xd6, 0xc0, 0x03, 0x5f, 0xd6];
+        let d = disassemble_program(&model, &bytes, 0x5000, None, Some(1));
+        assert_eq!(d.len(), 1);
+        assert_eq!(d[0].function_name, "sub_5004");
     }
 }
