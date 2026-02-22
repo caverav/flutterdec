@@ -67,6 +67,17 @@
               exec "${self}/scripts/real-golden-matrix.sh" "$@"
             '';
           };
+          ciCheck = pkgs.writeShellApplication {
+            name = "ci-check";
+            runtimeInputs = with pkgs; [
+              bash
+              coreutils
+              nix
+            ];
+            text = ''
+              exec "${self}/scripts/ci-check.sh" "$@"
+            '';
+          };
         in {
           real-golden = {
             type = "app";
@@ -79,6 +90,10 @@
           default = {
             type = "app";
             program = "${realGolden}/bin/real-golden";
+          };
+          ci-check = {
+            type = "app";
+            program = "${ciCheck}/bin/ci-check";
           };
         });
     };
