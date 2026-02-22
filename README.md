@@ -101,4 +101,5 @@ Main outputs under `-o <OUT_DIR>`:
 - Architecture: [docs/architecture.md](docs/architecture.md)
 - Internals walkthrough: [docs/how-it-works.md](docs/how-it-works.md)
 - Research decisions: [docs/research-decisions.md](docs/research-decisions.md)
+- Contributing: [CONTRIBUTING.md](CONTRIBUTING.md)
 - Context and project history: [context.md](context.md)

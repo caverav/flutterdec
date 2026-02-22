@@ -68,6 +68,7 @@ Workflow checks:
 See: `.github/workflows/ci.yml`
 
 Issue and PR templates live under `.github/` and should be used for all external contributions.
+Repository defaults also include `.github/CODEOWNERS` for review routing and `.github/dependabot.yml` for weekly Cargo/Actions update PRs.
 
 ## Contribution Conventions
 
