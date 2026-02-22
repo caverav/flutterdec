@@ -21,16 +21,17 @@ fn count_ident_token(hay: &str, token: &str) -> usize {
 
     let mut count = 0usize;
     let bytes = hay.as_bytes();
+    let token_bytes = token.as_bytes();
     let mut i = 0usize;
-    while i + token.len() <= hay.len() {
-        if hay[i..].starts_with(token) {
+    while i + token_bytes.len() <= bytes.len() {
+        if bytes[i..].starts_with(token_bytes) {
             let prev_ok = if i == 0 {
                 true
             } else {
                 !is_ident_char(bytes[i - 1] as char)
             };
-            let next_i = i + token.len();
-            let next_ok = if next_i >= hay.len() {
+            let next_i = i + token_bytes.len();
+            let next_ok = if next_i >= bytes.len() {
                 true
             } else {
                 !is_ident_char(bytes[next_i] as char)

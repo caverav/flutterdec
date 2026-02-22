@@ -4,32 +4,33 @@ impl<'a> FuncEmitter<'a> {
             return line.to_string();
         }
 
-        let mut out = String::with_capacity(line.len());
         let bytes = line.as_bytes();
+        let from_bytes = from.as_bytes();
+        let mut out: Vec<u8> = Vec::with_capacity(bytes.len() + to.len());
         let mut i = 0usize;
-        while i < line.len() {
-            if line[i..].starts_with(from) {
+        while i < bytes.len() {
+            if i + from_bytes.len() <= bytes.len() && bytes[i..].starts_with(from_bytes) {
                 let prev_ok = if i == 0 {
                     true
                 } else {
                     !Self::is_ident_char(bytes[i - 1] as char)
                 };
-                let next_i = i + from.len();
-                let next_ok = if next_i >= line.len() {
+                let next_i = i + from_bytes.len();
+                let next_ok = if next_i >= bytes.len() {
                     true
                 } else {
                     !Self::is_ident_char(bytes[next_i] as char)
                 };
                 if prev_ok && next_ok {
-                    out.push_str(to);
-                    i += from.len();
+                    out.extend_from_slice(to.as_bytes());
+                    i += from_bytes.len();
                     continue;
                 }
             }
-            out.push(bytes[i] as char);
+            out.push(bytes[i]);
             i += 1;
         }
-        out
+        String::from_utf8(out).unwrap_or_else(|_| line.to_string())
     }
 
     pub(super) fn collect_ident_stats(lines: &[String], id: &str) -> IdentStats {

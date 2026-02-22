@@ -16,17 +16,16 @@ impl<'a> FuncEmitter<'a> {
 
     fn simplify_wrapped_member_access_once(input: &str) -> String {
         let bytes = input.as_bytes();
-        let mut out = String::new();
+        let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
         let mut i = 0usize;
         while i < bytes.len() {
             if i + 3 < bytes.len() && bytes[i] == b'(' && bytes[i + 1] == b'(' {
                 let mut depth = 0i32;
                 let mut j = i;
                 while j < bytes.len() {
-                    let c = bytes[j] as char;
-                    if c == '(' {
+                    if bytes[j] == b'(' {
                         depth += 1;
-                    } else if c == ')' {
+                    } else if bytes[j] == b')' {
                         depth -= 1;
                         if depth == 0 {
                             break;
@@ -40,35 +39,36 @@ impl<'a> FuncEmitter<'a> {
                     && j >= i + 3
                     && bytes[j - 1] == b')'
                 {
-                    let inner = input[i + 2..j - 1].trim();
-                    if Self::is_simple_member_expr(inner) {
-                        out.push('(');
-                        out.push_str(inner);
-                        out.push(')');
-                        i = j + 1;
-                        continue;
+                    if let Ok(inner_raw) = std::str::from_utf8(&bytes[i + 2..j - 1]) {
+                        let inner = inner_raw.trim();
+                        if Self::is_simple_member_expr(inner) {
+                            out.push(b'(');
+                            out.extend_from_slice(inner.as_bytes());
+                            out.push(b')');
+                            i = j + 1;
+                            continue;
+                        }
                     }
                 }
             }
-            out.push(bytes[i] as char);
+            out.push(bytes[i]);
             i += 1;
         }
-        out
+        String::from_utf8(out).unwrap_or_else(|_| input.to_string())
     }
 
     fn simplify_parenthesized_member_access_once(input: &str) -> String {
         let bytes = input.as_bytes();
-        let mut out = String::new();
+        let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
         let mut i = 0usize;
         while i < bytes.len() {
             if bytes[i] == b'(' {
                 let mut depth = 0i32;
                 let mut j = i;
                 while j < bytes.len() {
-                    let c = bytes[j] as char;
-                    if c == '(' {
+                    if bytes[j] == b'(' {
                         depth += 1;
-                    } else if c == ')' {
+                    } else if bytes[j] == b')' {
                         depth -= 1;
                         if depth == 0 {
                             break;
@@ -77,18 +77,20 @@ impl<'a> FuncEmitter<'a> {
                     j += 1;
                 }
                 if j < bytes.len() && j + 1 < bytes.len() && bytes[j + 1] == b'.' {
-                    let inner = input[i + 1..j].trim();
-                    if Self::is_simple_member_expr(inner) {
-                        out.push_str(inner);
-                        i = j + 1;
-                        continue;
+                    if let Ok(inner_raw) = std::str::from_utf8(&bytes[i + 1..j]) {
+                        let inner = inner_raw.trim();
+                        if Self::is_simple_member_expr(inner) {
+                            out.extend_from_slice(inner.as_bytes());
+                            i = j + 1;
+                            continue;
+                        }
                     }
                 }
             }
-            out.push(bytes[i] as char);
+            out.push(bytes[i]);
             i += 1;
         }
-        out
+        String::from_utf8(out).unwrap_or_else(|_| input.to_string())
     }
 
     fn simplify_wrapped_member_accesses(input: &str) -> String {
@@ -138,20 +140,19 @@ impl<'a> FuncEmitter<'a> {
     }
 
     pub(super) fn rewrite_bitfield_classid(input: &str) -> String {
-        let mut out = String::new();
         let bytes = input.as_bytes();
+        let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
         let mut i = 0usize;
 
         while i < bytes.len() {
-            if input[i..].starts_with("bitField(") {
+            if bytes[i..].starts_with(b"bitField(") {
                 let start = i + "bitField(".len();
                 let mut j = start;
                 let mut depth = 1i32;
                 while j < bytes.len() {
-                    let c = bytes[j] as char;
-                    if c == '(' {
+                    if bytes[j] == b'(' {
                         depth += 1;
-                    } else if c == ')' {
+                    } else if bytes[j] == b')' {
                         depth -= 1;
                         if depth == 0 {
                             break;
@@ -160,36 +161,37 @@ impl<'a> FuncEmitter<'a> {
                     j += 1;
                 }
                 if j < bytes.len() {
-                    let inside = input[start..j].trim();
-                    if let Some(prefix) = inside.strip_suffix(", 0xc, 0x14") {
-                        let base = prefix.trim().strip_suffix("._tag").unwrap_or(prefix.trim());
-                        out.push_str(&format!("classId({})", base));
-                        i = j + 1;
-                        continue;
+                    if let Ok(inside_raw) = std::str::from_utf8(&bytes[start..j]) {
+                        let inside = inside_raw.trim();
+                        if let Some(prefix) = inside.strip_suffix(", 0xc, 0x14") {
+                            let base = prefix.trim().strip_suffix("._tag").unwrap_or(prefix.trim());
+                            out.extend_from_slice(format!("classId({})", base).as_bytes());
+                            i = j + 1;
+                            continue;
+                        }
                     }
                 }
             }
-            out.push(bytes[i] as char);
+            out.push(bytes[i]);
             i += 1;
         }
-        out
+        String::from_utf8(out).unwrap_or_else(|_| input.to_string())
     }
 
     pub(super) fn rewrite_negated_comparisons(input: &str) -> String {
-        let mut out = String::new();
         let bytes = input.as_bytes();
+        let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
         let mut i = 0usize;
 
         while i < bytes.len() {
-            if input[i..].starts_with("!((") {
+            if bytes[i..].starts_with(b"!((") {
                 let mut depth = 0i32;
                 let mut end = None;
                 let mut j = i + 1;
                 while j < bytes.len() {
-                    let c = bytes[j] as char;
-                    if c == '(' {
+                    if bytes[j] == b'(' {
                         depth += 1;
-                    } else if c == ')' {
+                    } else if bytes[j] == b')' {
                         depth -= 1;
                         if depth == 0 {
                             end = Some(j);
@@ -200,35 +202,37 @@ impl<'a> FuncEmitter<'a> {
                 }
 
                 if let Some(end_idx) = end {
-                    let wrapped = &input[i + 1..=end_idx];
-                    if let Some(inner) = wrapped.strip_prefix('(').and_then(|s| s.strip_suffix(')'))
-                    {
-                        if let Some((lhs, rhs)) = inner.split_once(" != ") {
-                            out.push('(');
-                            out.push_str(lhs.trim());
-                            out.push_str(" == ");
-                            out.push_str(rhs.trim());
-                            out.push(')');
-                            i = end_idx + 1;
-                            continue;
-                        }
-                        if let Some((lhs, rhs)) = inner.split_once(" == ") {
-                            out.push('(');
-                            out.push_str(lhs.trim());
-                            out.push_str(" != ");
-                            out.push_str(rhs.trim());
-                            out.push(')');
-                            i = end_idx + 1;
-                            continue;
+                    if let Ok(wrapped) = std::str::from_utf8(&bytes[i + 1..=end_idx]) {
+                        if let Some(inner) =
+                            wrapped.strip_prefix('(').and_then(|s| s.strip_suffix(')'))
+                        {
+                            if let Some((lhs, rhs)) = inner.split_once(" != ") {
+                                out.push(b'(');
+                                out.extend_from_slice(lhs.trim().as_bytes());
+                                out.extend_from_slice(b" == ");
+                                out.extend_from_slice(rhs.trim().as_bytes());
+                                out.push(b')');
+                                i = end_idx + 1;
+                                continue;
+                            }
+                            if let Some((lhs, rhs)) = inner.split_once(" == ") {
+                                out.push(b'(');
+                                out.extend_from_slice(lhs.trim().as_bytes());
+                                out.extend_from_slice(b" != ");
+                                out.extend_from_slice(rhs.trim().as_bytes());
+                                out.push(b')');
+                                i = end_idx + 1;
+                                continue;
+                            }
                         }
                     }
                 }
             }
-            out.push(bytes[i] as char);
+            out.push(bytes[i]);
             i += 1;
         }
 
-        out
+        String::from_utf8(out).unwrap_or_else(|_| input.to_string())
     }
 
     pub(super) fn strip_outer_parens_once(expr: &str) -> Option<&str> {

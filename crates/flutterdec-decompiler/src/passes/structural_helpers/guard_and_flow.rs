@@ -169,25 +169,31 @@ impl<'a> FuncEmitter<'a> {
         if t.starts_with("if (") {
             return false;
         }
+        if ident.is_empty() {
+            return false;
+        }
         let mut i = 0usize;
         let bytes = t.as_bytes();
-        while i + ident.len() <= t.len() {
-            if t[i..].starts_with(ident) {
+        let ident_bytes = ident.as_bytes();
+        while i + ident_bytes.len() <= bytes.len() {
+            if bytes[i..].starts_with(ident_bytes) {
                 let prev_ok = if i == 0 {
                     true
                 } else {
                     !Self::is_ident_char(bytes[i - 1] as char)
                 };
-                let next_i = i + ident.len();
-                let next_ok = if next_i >= t.len() {
+                let next_i = i + ident_bytes.len();
+                let next_ok = if next_i >= bytes.len() {
                     true
                 } else {
                     !Self::is_ident_char(bytes[next_i] as char)
                 };
                 if prev_ok && next_ok {
-                    let rest = t[next_i..].trim_start();
-                    if rest.starts_with('=') && !rest.starts_with("==") {
-                        return true;
+                    if let Ok(rest) = std::str::from_utf8(&bytes[next_i..]) {
+                        let rest = rest.trim_start();
+                        if rest.starts_with('=') && !rest.starts_with("==") {
+                            return true;
+                        }
                     }
                 }
             }
