@@ -27,7 +27,7 @@ jobs:
         uses: cachix/install-nix-action@v30
 
       - name: Enable Nix cache
-        uses: DeterminateSystems/magic-nix-cache-action@v7
+        uses: DeterminateSystems/magic-nix-cache-action@v13
 
       - name: Build release CLI
         run: nix develop -c cargo build -p flutterdec-cli --release
