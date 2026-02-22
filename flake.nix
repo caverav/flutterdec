@@ -2,8 +2,12 @@
   description = "flutterdec development environment";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+  inputs.blutter-src = {
+    url = "github:worawit/blutter";
+    flake = false;
+  };
 
-  outputs = { self, nixpkgs }:
+  outputs = { self, nixpkgs, blutter-src }:
     let
       systems = [
         "x86_64-linux"
@@ -16,6 +20,39 @@
       devShells = forAllSystems (system:
         let
           pkgs = import nixpkgs { inherit system; };
+          flutterdecBlutter = pkgs.writeShellApplication {
+            name = "flutterdec-blutter";
+            runtimeInputs = with pkgs; [
+              bash
+              coreutils
+              git
+              cmake
+              ninja
+              pkg-config
+              capstone
+              icu
+              python3
+              python3Packages.requests
+              python3Packages.pyelftools
+            ];
+            text = ''
+              set -euo pipefail
+              cache_root="''${XDG_CACHE_HOME:-$HOME/.cache}/flutterdec/blutter"
+              src_cache="$cache_root/src"
+              src_store="${blutter-src}"
+
+              if [[ ! -x "$src_cache/blutter.py" ]]; then
+                mkdir -p "$cache_root"
+                rm -rf "$src_cache.tmp"
+                cp -R "$src_store" "$src_cache.tmp"
+                chmod -R u+w "$src_cache.tmp"
+                rm -rf "$src_cache"
+                mv "$src_cache.tmp" "$src_cache"
+              fi
+
+              exec python3 "$src_cache/blutter.py" "$@"
+            '';
+          };
         in {
           default = pkgs.mkShell {
             packages = with pkgs; [
@@ -33,13 +70,56 @@
               zip
               capstone
               shellcheck
+              cmake
+              ninja
+              git
+              icu
+              python3Packages.requests
+              python3Packages.pyelftools
+              flutterdecBlutter
             ];
+            shellHook = ''
+              export FLUTTERDEC_BLUTTER_CMD="${flutterdecBlutter}/bin/flutterdec-blutter"
+            '';
           };
         });
 
       packages = forAllSystems (system:
         let
           pkgs = import nixpkgs { inherit system; };
+          flutterdecBlutter = pkgs.writeShellApplication {
+            name = "flutterdec-blutter";
+            runtimeInputs = with pkgs; [
+              bash
+              coreutils
+              git
+              cmake
+              ninja
+              pkg-config
+              capstone
+              icu
+              python3
+              python3Packages.requests
+              python3Packages.pyelftools
+            ];
+            text = ''
+              set -euo pipefail
+              cache_root="''${XDG_CACHE_HOME:-$HOME/.cache}/flutterdec/blutter"
+              src_cache="$cache_root/src"
+              src_store="${blutter-src}"
+
+              if [[ ! -x "$src_cache/blutter.py" ]]; then
+                mkdir -p "$cache_root"
+                rm -rf "$src_cache.tmp"
+                cp -R "$src_store" "$src_cache.tmp"
+                chmod -R u+w "$src_cache.tmp"
+                rm -rf "$src_cache"
+                mv "$src_cache.tmp" "$src_cache"
+              fi
+
+              exec python3 "$src_cache/blutter.py" "$@"
+            '';
+          };
           flutterdecCli = pkgs.rustPlatform.buildRustPackage {
             pname = "flutterdec";
             version = "0.1.0";
@@ -52,12 +132,14 @@
           };
         in {
           flutterdec = flutterdecCli;
+          blutter-bridge = flutterdecBlutter;
           default = flutterdecCli;
         });
 
       apps = forAllSystems (system:
         let
           pkgs = import nixpkgs { inherit system; };
+          blutterBridge = self.packages.${system}.blutter-bridge;
           flutterdecApp = {
             type = "app";
             program = "${self.packages.${system}.flutterdec}/bin/flutterdec";
@@ -104,6 +186,11 @@
           };
         in {
           flutterdec = flutterdecApp;
+          blutter-bridge = {
+            type = "app";
+            program = "${blutterBridge}/bin/flutterdec-blutter";
+            meta.description = "Run Blutter via Nix-managed bridge wrapper";
+          };
           real-golden = {
             type = "app";
             program = "${realGolden}/bin/real-golden";

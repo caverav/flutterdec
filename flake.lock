@@ -1,5 +1,21 @@
 {
   "nodes": {
+    "blutter-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1769961126,
+        "narHash": "sha256-UvT+MjPff7YHre0ee0vOzgOvliA5XKiSc9R97mTW9R0=",
+        "owner": "worawit",
+        "repo": "blutter",
+        "rev": "fe37a71ca17d1b3379a49bfa4fee50649dbb4fb3",
+        "type": "github"
+      },
+      "original": {
+        "owner": "worawit",
+        "repo": "blutter",
+        "type": "github"
+      }
+    },
     "nixpkgs": {
       "locked": {
         "lastModified": 1771369470,
@@ -18,6 +34,7 @@
     },
     "root": {
       "inputs": {
+        "blutter-src": "blutter-src",
         "nixpkgs": "nixpkgs"
       }
     }
