@@ -267,6 +267,51 @@ fn entrypoint_signal_score(entry: &flutterdec_adapter::ObjectPoolEntry) -> i32 {
     score
 }
 
+fn selector_signal_score(entry: &flutterdec_adapter::ObjectPoolEntry) -> i32 {
+    let selector = entry
+        .selector
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .map(|v| v.to_ascii_lowercase());
+    let Some(selector) = selector else {
+        return 0;
+    };
+
+    let mut score = match selector.as_str() {
+        "runapp" => 1600,
+        "createstate" => 1500,
+        "build" => 1200,
+        "initstate" | "dispose" => 1100,
+        "didupdatewidget" | "didchangedependencies" => 900,
+        "didpushrouteinformation"
+        | "didpushroute"
+        | "setnewroutepath"
+        | "parserouteinformation"
+        | "ongenerateroute"
+        | "onnewintent"
+        | "handleintent" => 1400,
+        "main" => 1800,
+        _ => 0,
+    };
+    if score == 0 {
+        return 0;
+    }
+
+    let lib = entry
+        .library_uri
+        .as_deref()
+        .map(str::trim)
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    if lib.starts_with("package:flutter/") {
+        score /= 4;
+    } else if lib.starts_with("dart:") {
+        score /= 5;
+    }
+    score
+}
+
 fn build_target_va_priority_hints(model: &ProgramModel) -> HashMap<u64, i32> {
     let mut out = HashMap::new();
     for entry in &model.object_pool {
@@ -275,6 +320,7 @@ fn build_target_va_priority_hints(model: &ProgramModel) -> HashMap<u64, i32> {
         };
         let mut score = 0i32;
         score += entrypoint_signal_score(entry);
+        score += selector_signal_score(entry);
         score += deep_link_signal_score(&entry.value);
         score += entry
             .decoded_kind
@@ -767,5 +813,59 @@ mod tests {
         let d = disassemble_program(&model, &bytes, 0x5000, None, Some(1));
         assert_eq!(d.len(), 1);
         assert_eq!(d[0].function_name, "sub_5004");
+    }
+
+    #[test]
+    fn prioritizes_lifecycle_selector_target_va_when_names_are_generic() {
+        let model = ProgramModel {
+            schema_version: 2,
+            adapter_kind: "test".to_string(),
+            dart_version: "unknown".to_string(),
+            snapshot_hash: "h".to_string(),
+            arch: "arm64".to_string(),
+            libraries: vec![LibraryInfo {
+                id: 0,
+                uri: "package:spotube/main.dart".to_string(),
+                name_display: "package:spotube/main.dart".to_string(),
+            }],
+            classes: vec![ClassInfo {
+                id: 0,
+                name: "Global".to_string(),
+                super_name: "Object".to_string(),
+                library_uri: "package:spotube/main.dart".to_string(),
+            }],
+            functions: vec![
+                FunctionInfo {
+                    id: 0,
+                    name: "sub_5100".to_string(),
+                    owner_class: "Global".to_string(),
+                    entry_va: 0x5100,
+                    size: 4,
+                    code_section_va: 0x5100,
+                },
+                FunctionInfo {
+                    id: 1,
+                    name: "sub_5104".to_string(),
+                    owner_class: "Global".to_string(),
+                    entry_va: 0x5104,
+                    size: 4,
+                    code_section_va: 0x5100,
+                },
+            ],
+            object_pool: vec![ObjectPoolEntry {
+                index: 0,
+                kind: "String".to_string(),
+                value: "createState".to_string(),
+                decoded_kind: Some("BlutterUnlinkedCall".to_string()),
+                selector: Some("createState".to_string()),
+                target_va: Some(0x5104),
+                owner_class: Some("MyApp".to_string()),
+                library_uri: Some("package:spotube/main.dart".to_string()),
+            }],
+        };
+        let bytes = vec![0xc0, 0x03, 0x5f, 0xd6, 0xc0, 0x03, 0x5f, 0xd6];
+        let d = disassemble_program(&model, &bytes, 0x5100, None, Some(1));
+        assert_eq!(d.len(), 1);
+        assert_eq!(d[0].function_name, "sub_5104");
     }
 }
