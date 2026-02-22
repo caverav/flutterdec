@@ -174,7 +174,111 @@ fn is_main_like_name(name_lower: &str) -> bool {
         || name_lower.ends_with("_main")
 }
 
-fn function_priority(func: &FunctionInfo, owner_library: &HashMap<String, String>) -> i32 {
+fn deep_link_signal_score_lower(text_lower: &str) -> i32 {
+    if text_lower.is_empty() {
+        return 0;
+    }
+
+    let high_confidence = [
+        "android.intent.action.view",
+        "onnewintent",
+        "handleintent",
+        "deeplink",
+        "deep_link",
+        "applink",
+        "app_link",
+        "universallink",
+        "universal_link",
+        "didpushrouteinformation",
+        "didpushroute",
+        "setnewroutepath",
+        "parserouteinformation",
+        "ongenerateroute",
+        "getinitialuri",
+        "urilinkstream",
+        "firebase_dynamic_links",
+        "uni_links",
+        "app_links",
+    ];
+    let medium_confidence = [
+        "routeinformation",
+        "route_info",
+        "dynamiclink",
+        "dynamic_link",
+        "intent",
+        "activity",
+        "android",
+    ];
+
+    let mut score = 0i32;
+    for needle in high_confidence {
+        if text_lower.contains(needle) {
+            score += 220;
+        }
+    }
+    for needle in medium_confidence {
+        if text_lower.contains(needle) {
+            score += 90;
+        }
+    }
+    if text_lower.contains("://")
+        || text_lower.contains("http://")
+        || text_lower.contains("https://")
+    {
+        score += 120;
+    }
+    score
+}
+
+fn deep_link_signal_score(text: &str) -> i32 {
+    deep_link_signal_score_lower(&text.to_ascii_lowercase())
+}
+
+fn build_target_va_priority_hints(model: &ProgramModel) -> HashMap<u64, i32> {
+    let mut out = HashMap::new();
+    for entry in &model.object_pool {
+        let Some(target_va) = entry.target_va else {
+            continue;
+        };
+        let mut score = 0i32;
+        score += deep_link_signal_score(&entry.value);
+        score += entry
+            .decoded_kind
+            .as_deref()
+            .map(deep_link_signal_score)
+            .unwrap_or(0);
+        score += entry
+            .selector
+            .as_deref()
+            .map(deep_link_signal_score)
+            .unwrap_or(0);
+        score += entry
+            .owner_class
+            .as_deref()
+            .map(deep_link_signal_score)
+            .unwrap_or(0);
+        score += entry
+            .library_uri
+            .as_deref()
+            .map(deep_link_signal_score)
+            .unwrap_or(0);
+        if score <= 0 {
+            continue;
+        }
+        let clamped = score.min(1200);
+        let slot = out.entry(target_va).or_insert(0);
+        if clamped > *slot {
+            *slot = clamped;
+        }
+    }
+    out
+}
+
+fn function_priority(
+    func: &FunctionInfo,
+    owner_library: &HashMap<String, String>,
+    target_va_hints: &HashMap<u64, i32>,
+) -> i32 {
     let mut score = 0i32;
     let name_lower = func.name.to_ascii_lowercase();
     let owner_lower = func.owner_class.to_ascii_lowercase();
@@ -196,6 +300,8 @@ fn function_priority(func: &FunctionInfo, owner_library: &HashMap<String, String
     if owner_lower.contains("main") {
         score += 80;
     }
+    score += deep_link_signal_score_lower(&name_lower);
+    score += deep_link_signal_score_lower(&owner_lower);
 
     if let Some(uri) = owner_library.get(&func.owner_class) {
         let uri_lower = uri.to_ascii_lowercase();
@@ -212,6 +318,10 @@ fn function_priority(func: &FunctionInfo, owner_library: &HashMap<String, String
         } else if uri_lower.starts_with("package:") {
             score += 220;
         }
+        score += deep_link_signal_score_lower(&uri_lower);
+    }
+    if let Some(extra) = target_va_hints.get(&func.entry_va) {
+        score += *extra;
     }
 
     score
@@ -227,6 +337,7 @@ pub fn disassemble_program(
     let mut out = Vec::new();
     let cs = build_capstone();
     let owner_library = build_owner_library_lookup(model);
+    let target_va_hints = build_target_va_priority_hints(model);
     let mut candidates = model
         .functions
         .iter()
@@ -243,8 +354,8 @@ pub fn disassemble_program(
 
     if max_functions.is_some() {
         candidates.sort_by(|(a_idx, a), (b_idx, b)| {
-            let a_score = function_priority(a, &owner_library);
-            let b_score = function_priority(b, &owner_library);
+            let a_score = function_priority(a, &owner_library, &target_va_hints);
+            let b_score = function_priority(b, &owner_library, &target_va_hints);
             b_score.cmp(&a_score).then(a_idx.cmp(b_idx))
         });
     }
@@ -448,5 +559,125 @@ mod tests {
         let d = disassemble_program(&model, &bytes, 0x2000, None, Some(1));
         assert_eq!(d.len(), 1);
         assert_eq!(d[0].function_name, "sub_b000");
+    }
+
+    #[test]
+    fn prioritizes_deeplink_and_activity_handler_names_when_limited() {
+        let model = ProgramModel {
+            schema_version: 2,
+            adapter_kind: "test".to_string(),
+            dart_version: "unknown".to_string(),
+            snapshot_hash: "h".to_string(),
+            arch: "arm64".to_string(),
+            libraries: vec![LibraryInfo {
+                id: 0,
+                uri: "package:app/navigation.dart".to_string(),
+                name_display: "package:app/navigation.dart".to_string(),
+            }],
+            classes: vec![ClassInfo {
+                id: 0,
+                name: "RouterHost".to_string(),
+                super_name: "Object".to_string(),
+                library_uri: "package:app/navigation.dart".to_string(),
+            }],
+            functions: vec![
+                FunctionInfo {
+                    id: 0,
+                    name: "sub_3000".to_string(),
+                    owner_class: "RouterHost".to_string(),
+                    entry_va: 0x3000,
+                    size: 4,
+                    code_section_va: 0x3000,
+                },
+                FunctionInfo {
+                    id: 1,
+                    name: "handleIncomingIntent".to_string(),
+                    owner_class: "RouterHost".to_string(),
+                    entry_va: 0x3004,
+                    size: 4,
+                    code_section_va: 0x3000,
+                },
+            ],
+            object_pool: vec![ObjectPoolEntry {
+                index: 0,
+                kind: "String".to_string(),
+                value: "x".to_string(),
+                decoded_kind: None,
+                selector: None,
+                target_va: None,
+                owner_class: None,
+                library_uri: None,
+            }],
+        };
+        let bytes = vec![0xc0, 0x03, 0x5f, 0xd6, 0xc0, 0x03, 0x5f, 0xd6];
+        let d = disassemble_program(&model, &bytes, 0x3000, None, Some(1));
+        assert_eq!(d.len(), 1);
+        assert_eq!(d[0].function_name, "handleIncomingIntent");
+    }
+
+    #[test]
+    fn prioritizes_pool_target_va_with_deeplink_selector_when_limited() {
+        let model = ProgramModel {
+            schema_version: 2,
+            adapter_kind: "test".to_string(),
+            dart_version: "unknown".to_string(),
+            snapshot_hash: "h".to_string(),
+            arch: "arm64".to_string(),
+            libraries: vec![LibraryInfo {
+                id: 0,
+                uri: "package:app/main.dart".to_string(),
+                name_display: "package:app/main.dart".to_string(),
+            }],
+            classes: vec![ClassInfo {
+                id: 0,
+                name: "Global".to_string(),
+                super_name: "Object".to_string(),
+                library_uri: "package:app/main.dart".to_string(),
+            }],
+            functions: vec![
+                FunctionInfo {
+                    id: 0,
+                    name: "sub_4000".to_string(),
+                    owner_class: "Global".to_string(),
+                    entry_va: 0x4000,
+                    size: 4,
+                    code_section_va: 0x4000,
+                },
+                FunctionInfo {
+                    id: 1,
+                    name: "sub_4004".to_string(),
+                    owner_class: "Global".to_string(),
+                    entry_va: 0x4004,
+                    size: 4,
+                    code_section_va: 0x4000,
+                },
+            ],
+            object_pool: vec![
+                ObjectPoolEntry {
+                    index: 0,
+                    kind: "String".to_string(),
+                    value: "android.intent.action.VIEW".to_string(),
+                    decoded_kind: Some("selector".to_string()),
+                    selector: Some("onNewIntent".to_string()),
+                    target_va: Some(0x4004),
+                    owner_class: Some("MainActivity".to_string()),
+                    library_uri: Some("package:app/main.dart".to_string()),
+                },
+                ObjectPoolEntry {
+                    index: 1,
+                    kind: "String".to_string(),
+                    value: "x".to_string(),
+                    decoded_kind: None,
+                    selector: None,
+                    target_va: None,
+                    owner_class: None,
+                    library_uri: None,
+                },
+            ],
+        };
+        let bytes = vec![0xc0, 0x03, 0x5f, 0xd6, 0xc0, 0x03, 0x5f, 0xd6];
+        let d = disassemble_program(&model, &bytes, 0x4000, None, Some(1));
+        assert_eq!(d.len(), 1);
+        assert_eq!(d[0].function_name, "sub_4004");
     }
 }
