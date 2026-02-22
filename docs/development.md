@@ -64,6 +64,7 @@ Workflow checks:
 - `cargo fmt --check`
 - `cargo clippy` with warnings denied
 - `cargo test --workspace`
+- `cargo build -p flutterdec-cli --release`
 
 See: `.github/workflows/ci.yml`
 
