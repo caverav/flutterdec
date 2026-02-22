@@ -232,6 +232,65 @@ fn rewrites_dispatch_target_fallback_to_library_invoke_when_uri_is_known() {
 }
 
 #[test]
+fn rewrites_generic_direct_call_to_owner_invoke_when_library_and_owner_markers_exist() {
+    let ir = FunctionIr {
+        function_id: 455,
+        name: "directOwnerInvokeRewrite".to_string(),
+        entry_va: 0xc113,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0xc113,
+            instrs: vec![
+                LlirInstr {
+                    va: 0xc113,
+                    op: IROp::LoadPool,
+                    src: "x2".to_string(),
+                    target: "pool[44]".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc117,
+                    op: IROp::LoadPool,
+                    src: "x3".to_string(),
+                    target: "pool[45]".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc11b,
+                    op: IROp::Call,
+                    src: "bl #0x6141f8".to_string(),
+                    target: "0x6141f8".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc11f,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+    let mut symbols = HashMap::new();
+    symbols.insert(0x6141f8u64, "sub_6141f8".to_string());
+    let mut pool = HashMap::new();
+    pool.insert(44u64, "package:flutter/src/widgets/heroes.dart".to_string());
+    pool.insert(45u64, "RenderErrorBox.".to_string());
+    let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
+    assert!(
+        artifact.source.contains(
+            "flutter.widgets.RenderErrorBox.invoke(receiver, param1, \"package:flutter/src/widgets/heroes.dart\" /* pool[44] */, \"RenderErrorBox.\" /* pool[45] */); // framework:flutter.widgets.RenderErrorBox.invoke, was: sub_6141f8"
+        ),
+        "generic direct calls with owner/library markers should rewrite to semantic owner invoke:\n{}",
+        artifact.source
+    );
+    assert!(
+        !artifact.source.contains("sub_6141f8("),
+        "rewritten semantic owner call should not keep generic sub_* call name:\n{}",
+        artifact.source
+    );
+}
+
+#[test]
 fn rewrites_dispatch_target_library_comment_target_to_dispatch_alias() {
     let ir = FunctionIr {
         function_id: 454,

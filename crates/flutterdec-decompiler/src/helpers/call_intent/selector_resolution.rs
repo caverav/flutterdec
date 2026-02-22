@@ -7,7 +7,10 @@ pub(super) fn infer_call_intent_with_context(
     if let Some(v) = infer_call_intent(call_name) {
         return Some(v);
     }
-    infer_selector_intent_from_context(args, pool_value_hints, pool_semantic_hints)
+    if let Some(v) = infer_selector_intent_from_context(args, pool_value_hints, pool_semantic_hints) {
+        return Some(v);
+    }
+    infer_owner_intent_from_context(args, pool_value_hints, pool_semantic_hints)
 }
 
 pub(super) fn infer_selector_intent_from_context(
@@ -90,6 +93,106 @@ fn infer_selector_intent_from_pool_metadata(
         }
     }
     None
+}
+
+fn infer_owner_intent_from_context(
+    args: &[String],
+    pool_value_hints: &HashMap<u64, String>,
+    pool_semantic_hints: &HashMap<u64, crate::PoolSemanticHint>,
+) -> Option<String> {
+    let mut owner: Option<String> = None;
+    let mut library_uri: Option<String> = None;
+
+    for arg in args {
+        for idx in extract_pool_indices(arg) {
+            if owner.is_none() {
+                if let Some(token) = pool_semantic_hints
+                    .get(&idx)
+                    .and_then(|hint| hint.owner_class.as_deref())
+                    .and_then(normalize_owner_class_token)
+                {
+                    owner = Some(token);
+                } else if let Some(token) = pool_value_hints
+                    .get(&idx)
+                    .and_then(|value| owner_marker_from_raw(value))
+                {
+                    owner = Some(token);
+                }
+            }
+
+            if library_uri.is_none() {
+                if let Some(uri) = pool_semantic_hints
+                    .get(&idx)
+                    .and_then(|hint| hint.library_uri.as_deref())
+                    .and_then(normalize_library_uri)
+                {
+                    library_uri = Some(uri);
+                } else if let Some(uri) = pool_value_hints
+                    .get(&idx)
+                    .and_then(|value| normalize_library_uri(value))
+                {
+                    library_uri = Some(uri);
+                }
+            }
+        }
+
+        for lit in extract_string_literals(arg) {
+            if owner.is_none() {
+                owner = owner_marker_from_raw(&lit);
+            }
+            if library_uri.is_none() {
+                library_uri = normalize_library_uri(&lit);
+            }
+        }
+    }
+
+    let owner = owner?;
+    if let Some(uri) = library_uri {
+        if let Some(seg) = dart_library_segment(&uri) {
+            return Some(format!("stdlib:dart.{}.{}.invoke", seg, owner));
+        }
+        if let Some(seg) = flutter_library_segment(&uri) {
+            return Some(format!("framework:flutter.{}.{}.invoke", seg, owner));
+        }
+        if let Some(seg) = package_library_segment(&uri) {
+            return Some(format!("package:{}.{}.invoke", seg, owner));
+        }
+    }
+    Some(format!("owner:{}.invoke", owner))
+}
+
+fn normalize_owner_class_token(raw: &str) -> Option<String> {
+    let token = sanitize_semantic_token(raw);
+    if token.is_empty() {
+        return None;
+    }
+    Some(token)
+}
+
+fn owner_marker_from_raw(raw: &str) -> Option<String> {
+    let mut t = raw.trim();
+    if let Some((before, _)) = t.split_once("/* pool[") {
+        t = before.trim();
+    }
+    if let Some(inner) = t.strip_prefix('"').and_then(|s| s.strip_suffix('"')) {
+        t = inner.trim();
+    }
+    let marker = t.strip_suffix('.')?;
+    let owner = sanitize_semantic_token(marker);
+    if owner.is_empty() {
+        return None;
+    }
+    let first = owner.chars().next()?;
+    if !first.is_ascii_uppercase() && first != '_' {
+        return None;
+    }
+    if owner
+        .chars()
+        .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
+    {
+        return None;
+    }
+    Some(owner)
 }
 
 fn selector_from_pool_hint(
