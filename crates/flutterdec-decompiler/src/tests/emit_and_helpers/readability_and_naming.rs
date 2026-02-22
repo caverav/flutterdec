@@ -359,6 +359,79 @@ fn infers_string_and_bool_types_for_literal_assigned_locals() {
 }
 
 #[test]
+fn infers_local_types_from_semantic_return_paths() {
+    let ir = FunctionIr {
+        function_id: 808,
+        name: "typedSemanticReturns".to_string(),
+        entry_va: 0x808000,
+        blocks: Vec::new(),
+    };
+    let symbols = HashMap::new();
+    let mut emitter = FuncEmitter::new(&ir, &symbols);
+    emitter.locals.insert(-8, "local_m8".to_string());
+    emitter.locals.insert(-16, "local_m16".to_string());
+    emitter.locals.insert(-24, "local_m24".to_string());
+    emitter.locals.insert(-32, "local_m32".to_string());
+    emitter.locals.insert(-40, "local_m40".to_string());
+    emitter.locals.insert(-48, "local_m48".to_string());
+    emitter.locals.insert(-56, "local_m56".to_string());
+    emitter.locals.insert(-64, "local_m64".to_string());
+    emitter.lines = vec![
+        "dynamic typedSemanticReturns(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {".to_string(),
+        "  var local_m8;".to_string(),
+        "  var local_m16;".to_string(),
+        "  var local_m24;".to_string(),
+        "  var local_m32;".to_string(),
+        "  var local_m40;".to_string(),
+        "  var local_m48;".to_string(),
+        "  var local_m56;".to_string(),
+        "  var local_m64;".to_string(),
+        "".to_string(),
+        "  local_m8 = sub_1000(arg0, arg1, arg2, arg3); // stdlib:dart.core.String.substring [selector], was: sub_1000".to_string(),
+        "  local_m16 = sub_1001(arg0, arg1, arg2, arg3); // stdlib:dart.core.String.startsWith [selector], was: sub_1001".to_string(),
+        "  local_m24 = sub_1002(arg0, arg1, arg2, arg3); // stdlib:dart.core.String.indexOf [selector], was: sub_1002".to_string(),
+        "  local_m32 = sub_1003(arg0, arg1, arg2, arg3); // stdlib:dart.typed_data.ByteData.getFloat64 [selector], was: sub_1003".to_string(),
+        "  local_m40 = sub_1004(arg0, arg1, arg2, arg3); // stdlib:dart.core.Object.runtimeType [selector], was: sub_1004".to_string(),
+        "  local_m48 = sub_1005(arg0, arg1, arg2, arg3); // stdlib:dart.async.Future.then [selector], was: sub_1005".to_string(),
+        "  local_m56 = sub_1006(arg0, arg1, arg2, arg3); // stdlib:dart.async.Stream.listen [selector], was: sub_1006".to_string(),
+        "  local_m64 = dart.typed_data.ByteData.getUint32(arg0, arg1, arg2, arg3);".to_string(),
+        "  return local_m8;".to_string(),
+        "}".to_string(),
+    ];
+
+    emitter.apply_name_and_type_hints("typedSemanticReturns");
+    let out = emitter.lines.join("\n");
+    assert!(
+        out.contains("\n  String "),
+        "semantic substring return should infer String local type:\n{out}"
+    );
+    assert!(
+        out.contains("\n  bool "),
+        "semantic startsWith return should infer bool local type:\n{out}"
+    );
+    assert!(
+        out.contains("\n  int "),
+        "semantic index/getUint32 return should infer int local type:\n{out}"
+    );
+    assert!(
+        out.contains("\n  double "),
+        "semantic getFloat64 return should infer double local type:\n{out}"
+    );
+    assert!(
+        out.contains("\n  Type "),
+        "semantic runtimeType return should infer Type local type:\n{out}"
+    );
+    assert!(
+        out.contains("\n  dart.async.Future "),
+        "semantic Future.then return should infer Future local type:\n{out}"
+    );
+    assert!(
+        out.contains("\n  dart.async.StreamSubscription "),
+        "semantic Stream.listen return should infer StreamSubscription local type:\n{out}"
+    );
+}
+
+#[test]
 fn renames_receiver_argument_from_field_usage() {
     let ir = FunctionIr {
         function_id: 9,

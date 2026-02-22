@@ -165,8 +165,16 @@ impl<'a> FuncEmitter<'a> {
                     if ids.contains(&assign_id) {
                         if let Some(local_ty) = Self::constructed_type_from_semantic_path(&callee) {
                             Self::upsert_inferred_type(&mut out, &assign_id, &local_ty);
+                        } else if let Some(local_ty) =
+                            Self::return_type_from_semantic_path(&callee)
+                        {
+                            Self::upsert_inferred_type(&mut out, &assign_id, &local_ty);
                         } else if let Some(path) = Self::extract_semantic_path_from_comment(line) {
                             if let Some(local_ty) = Self::constructed_type_from_semantic_path(&path)
+                            {
+                                Self::upsert_inferred_type(&mut out, &assign_id, &local_ty);
+                            } else if let Some(local_ty) =
+                                Self::return_type_from_semantic_path(&path)
                             {
                                 Self::upsert_inferred_type(&mut out, &assign_id, &local_ty);
                             }
@@ -327,6 +335,90 @@ impl<'a> FuncEmitter<'a> {
         }
 
         Some(parts[..parts.len() - 1].join("."))
+    }
+
+    fn return_type_from_semantic_path(path: &str) -> Option<String> {
+        let parts: Vec<&str> = path.split('.').filter(|p| !p.is_empty()).collect();
+        if parts.len() < 2 {
+            return None;
+        }
+        let method = parts.last().copied().unwrap_or("").to_ascii_lowercase();
+        if method.is_empty() || method == "new" {
+            return None;
+        }
+
+        if path.starts_with("dart.async.Future.") {
+            if method == "asstream" {
+                return Some("dart.async.Stream".to_string());
+            }
+            return Some("dart.async.Future".to_string());
+        }
+        if path == "dart.async.scheduleMicrotask" {
+            return Some("void".to_string());
+        }
+        if path.starts_with("dart.async.Stream.") && method == "listen" {
+            return Some("dart.async.StreamSubscription".to_string());
+        }
+
+        if matches!(
+            method.as_str(),
+            "startswith"
+                | "endswith"
+                | "contains"
+                | "containskey"
+                | "supportsansiescapes"
+                | "isempty"
+                | "isnotempty"
+        ) {
+            return Some("bool".to_string());
+        }
+
+        if matches!(
+            method.as_str(),
+            "hashcode"
+                | "compareto"
+                | "indexof"
+                | "lastindexof"
+                | "codeunitat"
+                | "offsetinbytes"
+                | "lengthinbytes"
+                | "elementsizeinbytes"
+                | "getint8"
+                | "getuint8"
+                | "getint16"
+                | "getuint16"
+                | "getint32"
+                | "getuint32"
+                | "getint64"
+                | "getuint64"
+        ) {
+            return Some("int".to_string());
+        }
+
+        if matches!(method.as_str(), "getfloat32" | "getfloat64") {
+            return Some("double".to_string());
+        }
+
+        if matches!(
+            method.as_str(),
+            "tostring"
+                | "substring"
+                | "replaceall"
+                | "tolowercase"
+                | "touppercase"
+                | "trim"
+                | "trimleft"
+                | "trimright"
+                | "join"
+        ) {
+            return Some("String".to_string());
+        }
+
+        if method == "runtimetype" {
+            return Some("Type".to_string());
+        }
+
+        None
     }
 
     fn extract_call_site(line: &str) -> Option<(String, Vec<String>)> {
