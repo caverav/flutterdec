@@ -79,6 +79,7 @@ Workflow checks:
 - `cargo build -p flutterdec-cli --release`
 
 See: `.github/workflows/ci.yml`
+Tag pushes matching `v*` build release CLI artifacts for Linux and macOS in `.github/workflows/release.yml`.
 
 Issue and PR templates live under `.github/` and should be used for all external contributions.
 Repository defaults also include `.github/CODEOWNERS` for review routing and `.github/dependabot.yml` for weekly Cargo/Actions update PRs.
