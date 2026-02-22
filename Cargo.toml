@@ -23,7 +23,7 @@ serde_json = "1"
 thiserror = "1"
 regex = "1"
 goblin = "0.8"
-zip = { version = "2", default-features = false, features = ["deflate"] }
+zip = { version = "8", default-features = false, features = ["deflate"] }
 tempfile = "3"
 walkdir = "2"
 capstone = "0.14"
