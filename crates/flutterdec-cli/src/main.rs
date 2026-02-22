@@ -161,159 +161,184 @@ fn main() -> Result<()> {
     let repo_root = find_repo_root(&cwd);
 
     match cli.command {
-        Command::Info(cmd) => {
-            let out = run_info(&repo_root, &cmd.input)?;
-            if cmd.json {
-                println!("{}", serde_json::to_string_pretty(&out)?);
-            } else {
-                println!("input: {}", out.input_path);
-                println!("libapp: {}", out.libapp_path);
-                println!("arch: {}", out.arch);
-                println!("snapshot hash: {}", out.snapshot_hash);
-                println!("adapter installed: {}", out.adapter_installed);
-                if let Some(n) = out.function_count {
-                    println!("functions: {}", n);
-                }
-            }
-        }
-        Command::Decompile(cmd) => {
-            let profile = cmd.analysis_profile.to_core();
-            let canonical_model_symbols = resolve_toggle(
-                cmd.with_canonical_model_symbols,
-                cmd.no_canonical_model_symbols,
-                "--with-canonical-model-symbols/--no-canonical-model-symbols",
-            )?;
-            let pool_value_hints = resolve_toggle(
-                cmd.with_pool_value_hints,
-                cmd.no_pool_value_hints,
-                "--with-pool-value-hints/--no-pool-value-hints",
-            )?;
-            let pool_semantic_hints = resolve_toggle(
-                cmd.with_pool_semantic_hints,
-                cmd.no_pool_semantic_hints,
-                "--with-pool-semantic-hints/--no-pool-semantic-hints",
-            )?;
-            let semantic_reporting = resolve_toggle(
-                cmd.with_semantic_reporting,
-                cmd.no_semantic_reporting,
-                "--with-semantic-reporting/--no-semantic-reporting",
-            )?;
-            let overrides = DecompileEngineOptionOverrides {
-                canonical_model_symbols,
-                pool_value_hints,
-                pool_semantic_hints,
-                semantic_reporting,
-            };
-            let engine_options =
-                DecompileEngineOptions::for_profile(profile).with_overrides(&overrides);
-            let opt = DecompileOptions {
-                out_dir: cmd.out_dir,
-                emit_asm: cmd.emit_asm,
-                emit_ir: cmd.emit_ir,
-                extra_symbol_elfs: cmd.extra_symbol_elfs,
-                extra_symbol_map_targets: cmd.extra_symbol_map_targets,
-                include_nearest_symbol_map: cmd.include_nearest_symbol_map,
-                focus: cmd.focus,
-                max_functions: cmd.max_functions,
-                max_placeholder_ifs: cmd.max_placeholder_ifs,
-                max_unresolved_cf: cmd.max_unresolved_cf,
-                max_indirect_call_ratio: cmd.max_indirect_call_ratio,
-                min_disassembly_ratio: cmd.min_disassembly_ratio,
-                analysis_profile: profile,
-                engine_options,
-            };
-            let quality = run_decompile(&repo_root, &cmd.input, &opt)?;
-            println!("{}", serde_json::to_string_pretty(&quality)?);
-        }
-        Command::EngineFingerprint(cmd) => {
-            let opt = EngineFingerprintOptions {
-                out_dir: cmd.out_dir,
-                max_markers: cmd.max_markers,
-            };
-            let report = run_engine_fingerprint(&cmd.input, &opt)?;
-            if cmd.json {
-                println!("{}", serde_json::to_string_pretty(&report)?);
-            } else {
-                println!("input: {}", report.input_path);
-                println!("machine: {} ({})", report.machine, report.machine_id);
-                println!("build id: {}", report.build_id.as_deref().unwrap_or("-"));
-                println!(
-                    "candidates: flutter={} dart={}",
-                    report.candidate_flutter_version.as_deref().unwrap_or("-"),
-                    report.candidate_dart_version.as_deref().unwrap_or("-")
-                );
-                println!("confidence: {}", report.confidence);
-                println!(
-                    "symbols: symtab={} dynsym={}",
-                    report.symbol_count, report.dyn_symbol_count
-                );
-                println!(
-                    "exec sections: count={} total_size=0x{:x}",
-                    report.exec_section_count, report.exec_section_total_size
-                );
-                if let Some(path) = report.report_path.as_deref() {
-                    println!("report: {}", path);
-                }
-            }
-        }
-        Command::MapSymbols(cmd) => {
-            let opt = SymbolMapOptions {
-                out_dir: cmd.out_dir,
-                include_branches: cmd.include_branches,
-                nearest_max_distance: cmd.nearest_max_distance,
-                require_exec_match: cmd.require_exec_match,
-            };
-            let report = run_symbol_map(&cmd.stripped_path, &cmd.unstripped_path, &opt)?;
-            if cmd.json {
-                println!("{}", serde_json::to_string_pretty(&report)?);
-            } else {
-                println!("stripped: {}", report.stripped_path);
-                println!("unstripped: {}", report.unstripped_path);
-                println!("arch: {}", report.arch);
-                println!(
-                    "exec match: layout={} bytes={}",
-                    report.exec_layout_match, report.exec_bytes_match
-                );
-                println!(
-                    "calls: total={} exact={} nearest={} unresolved={}",
-                    report.total_direct_calls,
-                    report.exact_symbol_hits,
-                    report.nearest_symbol_hits,
-                    report.unresolved_calls
-                );
-                println!("unique targets: {}", report.unique_call_targets);
-                println!("report: {}", report.report_path);
-                println!("targets: {}", report.targets_path);
-                println!("callsites: {}", report.callsites_path);
-                if !report.notes.is_empty() {
-                    println!("notes:");
-                    for n in &report.notes {
-                        println!("  - {}", n);
-                    }
-                }
-            }
-        }
-        Command::Adapter(adapter_cmd) => match adapter_cmd.subcommand {
-            AdapterSubcommand::Install(cmd) => {
-                let path = install_adapter(&repo_root, &cmd.dart_hash)?;
-                println!("installed adapter: {}", path.display());
-            }
-            AdapterSubcommand::List => {
-                let rows = available_adapters(&repo_root)?;
-                if rows.is_empty() {
-                    println!("no manifest entries");
-                } else {
-                    for (hash, version, adapter, installed) in rows {
-                        println!(
-                            "hash={} version={} adapter={} installed={}",
-                            hash, version, adapter, installed
-                        );
-                    }
-                }
-            }
-        },
+        Command::Info(cmd) => handle_info(&repo_root, cmd)?,
+        Command::Decompile(cmd) => handle_decompile(&repo_root, cmd)?,
+        Command::EngineFingerprint(cmd) => handle_engine_fingerprint(cmd)?,
+        Command::MapSymbols(cmd) => handle_map_symbols(cmd)?,
+        Command::Adapter(cmd) => handle_adapter(&repo_root, cmd)?,
     }
 
+    Ok(())
+}
+
+fn handle_info(repo_root: &Path, cmd: InfoCmd) -> Result<()> {
+    let out = run_info(repo_root, &cmd.input)?;
+    if cmd.json {
+        println!("{}", serde_json::to_string_pretty(&out)?);
+    } else {
+        println!("input: {}", out.input_path);
+        println!("libapp: {}", out.libapp_path);
+        println!("arch: {}", out.arch);
+        println!("snapshot hash: {}", out.snapshot_hash);
+        println!("adapter installed: {}", out.adapter_installed);
+        if let Some(n) = out.function_count {
+            println!("functions: {}", n);
+        }
+    }
+    Ok(())
+}
+
+fn handle_decompile(repo_root: &Path, cmd: DecompileCmd) -> Result<()> {
+    let input = cmd.input.clone();
+    let opt = build_decompile_options(cmd)?;
+    let quality = run_decompile(repo_root, &input, &opt)?;
+    println!("{}", serde_json::to_string_pretty(&quality)?);
+    Ok(())
+}
+
+fn build_decompile_options(cmd: DecompileCmd) -> Result<DecompileOptions> {
+    let profile = cmd.analysis_profile.to_core();
+    let overrides = resolve_decompile_overrides(&cmd)?;
+    let engine_options = DecompileEngineOptions::for_profile(profile).with_overrides(&overrides);
+    Ok(DecompileOptions {
+        out_dir: cmd.out_dir,
+        emit_asm: cmd.emit_asm,
+        emit_ir: cmd.emit_ir,
+        extra_symbol_elfs: cmd.extra_symbol_elfs,
+        extra_symbol_map_targets: cmd.extra_symbol_map_targets,
+        include_nearest_symbol_map: cmd.include_nearest_symbol_map,
+        focus: cmd.focus,
+        max_functions: cmd.max_functions,
+        max_placeholder_ifs: cmd.max_placeholder_ifs,
+        max_unresolved_cf: cmd.max_unresolved_cf,
+        max_indirect_call_ratio: cmd.max_indirect_call_ratio,
+        min_disassembly_ratio: cmd.min_disassembly_ratio,
+        analysis_profile: profile,
+        engine_options,
+    })
+}
+
+fn resolve_decompile_overrides(cmd: &DecompileCmd) -> Result<DecompileEngineOptionOverrides> {
+    let canonical_model_symbols = resolve_toggle(
+        cmd.with_canonical_model_symbols,
+        cmd.no_canonical_model_symbols,
+        "--with-canonical-model-symbols/--no-canonical-model-symbols",
+    )?;
+    let pool_value_hints = resolve_toggle(
+        cmd.with_pool_value_hints,
+        cmd.no_pool_value_hints,
+        "--with-pool-value-hints/--no-pool-value-hints",
+    )?;
+    let pool_semantic_hints = resolve_toggle(
+        cmd.with_pool_semantic_hints,
+        cmd.no_pool_semantic_hints,
+        "--with-pool-semantic-hints/--no-pool-semantic-hints",
+    )?;
+    let semantic_reporting = resolve_toggle(
+        cmd.with_semantic_reporting,
+        cmd.no_semantic_reporting,
+        "--with-semantic-reporting/--no-semantic-reporting",
+    )?;
+    Ok(DecompileEngineOptionOverrides {
+        canonical_model_symbols,
+        pool_value_hints,
+        pool_semantic_hints,
+        semantic_reporting,
+    })
+}
+
+fn handle_engine_fingerprint(cmd: EngineFingerprintCmd) -> Result<()> {
+    let opt = EngineFingerprintOptions {
+        out_dir: cmd.out_dir,
+        max_markers: cmd.max_markers,
+    };
+    let report = run_engine_fingerprint(&cmd.input, &opt)?;
+    if cmd.json {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        println!("input: {}", report.input_path);
+        println!("machine: {} ({})", report.machine, report.machine_id);
+        println!("build id: {}", report.build_id.as_deref().unwrap_or("-"));
+        println!(
+            "candidates: flutter={} dart={}",
+            report.candidate_flutter_version.as_deref().unwrap_or("-"),
+            report.candidate_dart_version.as_deref().unwrap_or("-")
+        );
+        println!("confidence: {}", report.confidence);
+        println!(
+            "symbols: symtab={} dynsym={}",
+            report.symbol_count, report.dyn_symbol_count
+        );
+        println!(
+            "exec sections: count={} total_size=0x{:x}",
+            report.exec_section_count, report.exec_section_total_size
+        );
+        if let Some(path) = report.report_path.as_deref() {
+            println!("report: {}", path);
+        }
+    }
+    Ok(())
+}
+
+fn handle_map_symbols(cmd: MapSymbolsCmd) -> Result<()> {
+    let opt = SymbolMapOptions {
+        out_dir: cmd.out_dir,
+        include_branches: cmd.include_branches,
+        nearest_max_distance: cmd.nearest_max_distance,
+        require_exec_match: cmd.require_exec_match,
+    };
+    let report = run_symbol_map(&cmd.stripped_path, &cmd.unstripped_path, &opt)?;
+    if cmd.json {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        println!("stripped: {}", report.stripped_path);
+        println!("unstripped: {}", report.unstripped_path);
+        println!("arch: {}", report.arch);
+        println!(
+            "exec match: layout={} bytes={}",
+            report.exec_layout_match, report.exec_bytes_match
+        );
+        println!(
+            "calls: total={} exact={} nearest={} unresolved={}",
+            report.total_direct_calls,
+            report.exact_symbol_hits,
+            report.nearest_symbol_hits,
+            report.unresolved_calls
+        );
+        println!("unique targets: {}", report.unique_call_targets);
+        println!("report: {}", report.report_path);
+        println!("targets: {}", report.targets_path);
+        println!("callsites: {}", report.callsites_path);
+        if !report.notes.is_empty() {
+            println!("notes:");
+            for n in &report.notes {
+                println!("  - {}", n);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn handle_adapter(repo_root: &Path, cmd: AdapterCmd) -> Result<()> {
+    match cmd.subcommand {
+        AdapterSubcommand::Install(cmd) => {
+            let path = install_adapter(repo_root, &cmd.dart_hash)?;
+            println!("installed adapter: {}", path.display());
+        }
+        AdapterSubcommand::List => {
+            let rows = available_adapters(repo_root)?;
+            if rows.is_empty() {
+                println!("no manifest entries");
+            } else {
+                for (hash, version, adapter, installed) in rows {
+                    println!(
+                        "hash={} version={} adapter={} installed={}",
+                        hash, version, adapter, installed
+                    );
+                }
+            }
+        }
+    }
     Ok(())
 }
 
