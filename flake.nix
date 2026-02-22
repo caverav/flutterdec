@@ -1,5 +1,5 @@
 {
-  description = "flutterdec reboot dev environment";
+  description = "flutterdec development environment";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
@@ -37,9 +37,32 @@
           };
         });
 
+      packages = forAllSystems (system:
+        let
+          pkgs = import nixpkgs { inherit system; };
+          flutterdecCli = pkgs.rustPlatform.buildRustPackage {
+            pname = "flutterdec";
+            version = "0.1.0";
+            src = self;
+            cargoLock.lockFile = ./Cargo.lock;
+            cargoBuildFlags = [ "-p" "flutterdec-cli" ];
+            doCheck = false;
+            nativeBuildInputs = with pkgs; [ pkg-config ];
+            buildInputs = with pkgs; [ capstone ];
+          };
+        in {
+          flutterdec = flutterdecCli;
+          default = flutterdecCli;
+        });
+
       apps = forAllSystems (system:
         let
           pkgs = import nixpkgs { inherit system; };
+          flutterdecApp = {
+            type = "app";
+            program = "${self.packages.${system}.flutterdec}/bin/flutterdec";
+            meta.description = "Run flutterdec CLI";
+          };
           realGolden = pkgs.writeShellApplication {
             name = "real-golden";
             runtimeInputs = with pkgs; [
@@ -80,6 +103,7 @@
             '';
           };
         in {
+          flutterdec = flutterdecApp;
           real-golden = {
             type = "app";
             program = "${realGolden}/bin/real-golden";
@@ -90,11 +114,7 @@
             program = "${realGoldenMatrix}/bin/real-golden-matrix";
             meta.description = "Run multi-profile real-binary golden checks";
           };
-          default = {
-            type = "app";
-            program = "${realGolden}/bin/real-golden";
-            meta.description = "Default real-binary golden check app";
-          };
+          default = flutterdecApp;
           ci-check = {
             type = "app";
             program = "${ciCheck}/bin/ci-check";
