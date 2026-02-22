@@ -37,6 +37,9 @@ jobs:
       - name: Format
         run: nix develop -c cargo fmt --all --check
 
+      - name: Lint shell scripts
+        run: nix develop -c ./scripts/lint-shell.sh
+
       - name: Clippy
         run: nix develop -c cargo clippy --workspace --all-targets -- -D warnings
 
