@@ -57,6 +57,12 @@ Current module layout:
     - expression simplification in `src/helpers/expr.rs`
     - instruction parsing in `src/helpers/instruction_parse.rs`
     - naming helpers in `src/helpers/naming.rs`
+    - selector catalog in `src/helpers/selector_table.rs`
+    - call-intent entry in `src/helpers/call_intent.rs`
+    - call-intent intent mapping in `src/helpers/call_intent/intent.rs`
+    - call-intent library-context mapping in `src/helpers/call_intent/library.rs`
+    - call-intent selector resolution in `src/helpers/call_intent/selector_resolution.rs`
+    - call-intent text extraction helpers in `src/helpers/call_intent/extract.rs`
     - lift-state and branch-condition helpers in `src/helpers/state_and_flow.rs`
     - regression test entry in `src/tests.rs`
     - test groups in `src/tests/shared.rs`, `src/tests/emit_and_helpers.rs`, `src/tests/cfg_and_stack.rs`, `src/tests/compaction_and_aliasing.rs`, and `src/tests/golden_and_parser.rs`
