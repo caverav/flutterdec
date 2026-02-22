@@ -13,6 +13,11 @@ Arguments:
 - `<INPUT>`: APK or `libapp.so`
 - `--json`: print JSON output
 
+If adapter metadata is available, JSON output also includes app-package hints:
+
+- `app_package_count_total`
+- `app_package_counts_top`
+
 ## `flutterdec decompile`
 
 Usage:

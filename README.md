@@ -82,6 +82,8 @@ nix develop -c cargo build -p flutterdec-cli --release
 flutterdec info ./sample.apk --json
 ```
 
+`info` now includes detected app package candidates (`app_package_counts_top`) when adapter metadata is available.
+
 2. Install adapter for the detected Dart hash:
 
 ```bash

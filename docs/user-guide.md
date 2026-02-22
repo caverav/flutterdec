@@ -81,6 +81,8 @@ Inspect target metadata:
 flutterdec info ./sample.apk --json
 ```
 
+If adapter metadata is available, `info` reports `app_package_counts_top` to help pick `--app-package` values.
+
 Install adapter for Dart hash:
 
 ```bash
