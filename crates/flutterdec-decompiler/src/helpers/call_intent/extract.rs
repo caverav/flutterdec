@@ -1,28 +1,5 @@
 fn extract_pool_indices(s: &str) -> Vec<u64> {
-    let mut out = Vec::new();
-    let bytes = s.as_bytes();
-    let mut i = 0usize;
-    while i + 5 <= bytes.len() {
-        if &bytes[i..i + 5] == b"pool[" {
-            let mut j = i + 5;
-            let mut val = 0u64;
-            let mut has_digit = false;
-            while j < bytes.len() && bytes[j].is_ascii_digit() {
-                has_digit = true;
-                val = val
-                    .saturating_mul(10)
-                    .saturating_add((bytes[j] - b'0') as u64);
-                j += 1;
-            }
-            if has_digit && j < bytes.len() && bytes[j] == b']' {
-                out.push(val);
-                i = j + 1;
-                continue;
-            }
-        }
-        i += 1;
-    }
-    out
+    collect_pool_indices(s)
 }
 
 fn extract_string_literals(s: &str) -> Vec<String> {

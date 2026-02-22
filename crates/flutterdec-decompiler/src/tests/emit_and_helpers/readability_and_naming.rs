@@ -735,6 +735,76 @@ fn aliases_dispatch_target_slot_callable_calls() {
 }
 
 #[test]
+fn resolves_shifted_pool_target_to_symbol_call_name() {
+    let ir = FunctionIr {
+        function_id: 215,
+        name: "shiftedPoolTarget".to_string(),
+        entry_va: 0xf640,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0xf640,
+            instrs: vec![
+                LlirInstr {
+                    va: 0xf640,
+                    op: IROp::Other,
+                    src: "mov x21, ((pool + 8 /* lsl #12 */)).f3640".to_string(),
+                    target: String::new(),
+                },
+                LlirInstr {
+                    va: 0xf644,
+                    op: IROp::Call,
+                    src: "blr x21".to_string(),
+                    target: "x21".to_string(),
+                },
+                LlirInstr {
+                    va: 0xf648,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+    let mut symbols = HashMap::new();
+    symbols.insert(0x9100, "dart_core_print".to_string());
+    let pool = HashMap::new();
+    let mut semantic = HashMap::new();
+    semantic.insert(
+        4551u64,
+        PoolSemanticHint {
+            target_va: Some(0x9100),
+            ..PoolSemanticHint::default()
+        },
+    );
+
+    let artifact = emit_pseudocode_with_pool_context(&ir, &symbols, &pool, &semantic);
+    assert!(
+        artifact
+            .source
+            .contains("dart.core.print(receiver, param1, param2, param3);"),
+        "shifted pool target should resolve to readable symbol call:\n{}",
+        artifact.source
+    );
+    assert!(
+        artifact.source.contains("target: pool[4551]"),
+        "shifted pool target should normalize to pool index in comments:\n{}",
+        artifact.source
+    );
+    assert!(
+        artifact.source.contains("target_va: 0x9100"),
+        "resolved call should report target_va from pool semantic hint:\n{}",
+        artifact.source
+    );
+    assert!(
+        !artifact.source.contains("pool + 8 /* lsl #12 */"),
+        "normalized output should not leak shifted-pool raw syntax:\n{}",
+        artifact.source
+    );
+}
+
+#[test]
 fn aliases_repeated_stack_slot_reads() {
     let ir = FunctionIr {
         function_id: 212,

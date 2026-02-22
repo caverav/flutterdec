@@ -38,13 +38,14 @@ impl<'a> FuncEmitter<'a> {
     }
 
     fn annotate_pool_refs(&self, expr: &str) -> String {
-        let exact = self.render_pool_value_hint(expr);
-        if exact != expr {
+        let normalized = normalize_pool_page_field_exprs(expr);
+        let exact = self.render_pool_value_hint(&normalized);
+        if exact != normalized {
             return exact;
         }
 
         let mut out = String::new();
-        let bytes = expr.as_bytes();
+        let bytes = normalized.as_bytes();
         let mut i = 0usize;
         while i < bytes.len() {
             if i + 5 <= bytes.len() && &bytes[i..i + 5] == b"pool[" {
@@ -77,30 +78,7 @@ impl<'a> FuncEmitter<'a> {
     }
 
     fn extract_pool_indices(expr: &str) -> Vec<u64> {
-        let mut out = Vec::new();
-        let bytes = expr.as_bytes();
-        let mut i = 0usize;
-        while i + 5 <= bytes.len() {
-            if &bytes[i..i + 5] == b"pool[" {
-                let mut j = i + 5;
-                let mut val = 0u64;
-                let mut has_digit = false;
-                while j < bytes.len() && bytes[j].is_ascii_digit() {
-                    has_digit = true;
-                    val = val
-                        .saturating_mul(10)
-                        .saturating_add((bytes[j] - b'0') as u64);
-                    j += 1;
-                }
-                if has_digit && j < bytes.len() && bytes[j] == b']' {
-                    out.push(val);
-                    i = j + 1;
-                    continue;
-                }
-            }
-            i += 1;
-        }
-        out
+        collect_pool_indices(expr)
     }
 
     fn is_generic_call_name(name: &str) -> bool {

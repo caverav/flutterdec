@@ -280,6 +280,7 @@ impl<'a> FuncEmitter<'a> {
         s = s.replace(" + x28", "");
         s = Self::rewrite_negated_comparisons(&s);
         s = Self::rewrite_bitfield_classid(&s);
+        s = normalize_pool_page_field_exprs(&s);
         s = Self::simplify_wrapped_member_accesses(&s);
         s = Self::simplify_wrapped_if_condition(&s);
         if let Some(stack_slot) = Self::normalize_stack_slot_expr(&s) {
@@ -307,5 +308,19 @@ mod expr_cleanup_utf8_tests {
         let out = FuncEmitter::rewrite_bitfield_classid(input);
         assert!(out.contains(r#""pronaći""#));
         assert!(out.contains("classId(obj)"));
+    }
+
+    #[test]
+    fn clean_expr_normalizes_shifted_pool_field_access() {
+        let input = "((pool + 8 /* lsl #12 */)).f3640".to_string();
+        let out = FuncEmitter::clean_expr(input);
+        assert_eq!(out, "pool[4551]");
+    }
+
+    #[test]
+    fn clean_expr_normalizes_nested_shifted_pool_field_access() {
+        let input = "((((pool + 8 /* lsl #12 */)).f816).f7)".to_string();
+        let out = FuncEmitter::clean_expr(input);
+        assert_eq!(out, "(pool[4198].f7)");
     }
 }

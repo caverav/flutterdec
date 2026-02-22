@@ -180,3 +180,157 @@ pub(super) fn simplify_bin_expr(lhs: String, op: &str, rhs: String) -> String {
 
     format!("({lt} {op} {rt})")
 }
+
+fn skip_ascii_ws(bytes: &[u8], mut i: usize) -> usize {
+    while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+        i += 1;
+    }
+    i
+}
+
+fn parse_non_negative_i64_token(token: &str) -> Option<u64> {
+    let parsed = parse_int(token)?;
+    (parsed >= 0).then_some(parsed as u64)
+}
+
+fn try_parse_shifted_pool_field(bytes: &[u8], start: usize) -> Option<(usize, u64)> {
+    if start + 2 >= bytes.len() || bytes[start] != b'(' || bytes[start + 1] != b'(' {
+        return None;
+    }
+
+    let mut i = start + 2;
+    i = skip_ascii_ws(bytes, i);
+    if i + 4 > bytes.len() || &bytes[i..i + 4] != b"pool" {
+        return None;
+    }
+    i += 4;
+    i = skip_ascii_ws(bytes, i);
+    if i >= bytes.len() || bytes[i] != b'+' {
+        return None;
+    }
+    i += 1;
+    i = skip_ascii_ws(bytes, i);
+
+    let page_start = i;
+    while i < bytes.len()
+        && !bytes[i].is_ascii_whitespace()
+        && bytes[i] != b'/'
+        && bytes[i] != b')'
+    {
+        i += 1;
+    }
+    if i == page_start {
+        return None;
+    }
+    let page_token = std::str::from_utf8(&bytes[page_start..i]).ok()?;
+    let page = parse_non_negative_i64_token(page_token)?;
+
+    i = skip_ascii_ws(bytes, i);
+    if i + 2 > bytes.len() || &bytes[i..i + 2] != b"/*" {
+        return None;
+    }
+    i += 2;
+    i = skip_ascii_ws(bytes, i);
+    if i + 3 > bytes.len() || &bytes[i..i + 3] != b"lsl" {
+        return None;
+    }
+    i += 3;
+    i = skip_ascii_ws(bytes, i);
+    if i < bytes.len() && bytes[i] == b'#' {
+        i += 1;
+    }
+
+    let shift_start = i;
+    while i < bytes.len()
+        && !bytes[i].is_ascii_whitespace()
+        && bytes[i] != b'*'
+        && bytes[i] != b'/'
+    {
+        i += 1;
+    }
+    if i == shift_start {
+        return None;
+    }
+    let shift_token = std::str::from_utf8(&bytes[shift_start..i]).ok()?;
+    let shift = parse_non_negative_i64_token(shift_token)?;
+    if shift > 63 {
+        return None;
+    }
+
+    i = skip_ascii_ws(bytes, i);
+    if i + 2 > bytes.len() || &bytes[i..i + 2] != b"*/" {
+        return None;
+    }
+    i += 2;
+    i = skip_ascii_ws(bytes, i);
+
+    if i + 2 > bytes.len() || bytes[i] != b')' || bytes[i + 1] != b')' {
+        return None;
+    }
+    i += 2;
+    if i + 2 > bytes.len() || bytes[i] != b'.' || bytes[i + 1] != b'f' {
+        return None;
+    }
+    i += 2;
+
+    let off_start = i;
+    while i < bytes.len() && bytes[i].is_ascii_digit() {
+        i += 1;
+    }
+    if i == off_start {
+        return None;
+    }
+    let offset = std::str::from_utf8(&bytes[off_start..i]).ok()?.parse::<u64>().ok()?;
+
+    let page_bytes = page.checked_shl(shift as u32)?;
+    let total = page_bytes.checked_add(offset)?;
+    if total % 8 != 0 {
+        return None;
+    }
+
+    Some((i, total / 8))
+}
+
+pub(super) fn normalize_pool_page_field_exprs(input: &str) -> String {
+    let bytes = input.as_bytes();
+    let mut out = String::with_capacity(input.len());
+    let mut i = 0usize;
+    while i < bytes.len() {
+        if let Some((end, idx)) = try_parse_shifted_pool_field(bytes, i) {
+            out.push_str(&format!("pool[{idx}]"));
+            i = end;
+            continue;
+        }
+        out.push(bytes[i] as char);
+        i += 1;
+    }
+    out
+}
+
+pub(super) fn collect_pool_indices(expr: &str) -> Vec<u64> {
+    let normalized = normalize_pool_page_field_exprs(expr);
+    let bytes = normalized.as_bytes();
+    let mut out = Vec::new();
+    let mut i = 0usize;
+    while i + 5 <= bytes.len() {
+        if &bytes[i..i + 5] == b"pool[" {
+            let mut j = i + 5;
+            let mut idx = 0u64;
+            let mut has_digit = false;
+            while j < bytes.len() && bytes[j].is_ascii_digit() {
+                has_digit = true;
+                idx = idx
+                    .saturating_mul(10)
+                    .saturating_add((bytes[j] - b'0') as u64);
+                j += 1;
+            }
+            if has_digit && j < bytes.len() && bytes[j] == b']' {
+                out.push(idx);
+                i = j + 1;
+                continue;
+            }
+        }
+        i += 1;
+    }
+    out
+}
