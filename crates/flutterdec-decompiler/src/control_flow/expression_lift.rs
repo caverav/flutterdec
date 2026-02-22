@@ -108,10 +108,12 @@ impl<'a> FuncEmitter<'a> {
                             .get(&off)
                             .cloned()
                             .unwrap_or_else(|| local_name(off));
+                        self.update_selector_binding_from_assignment(&local, &rhs);
                         self.push_line(indent, &format!("{} = {};", local, rhs));
                     } else {
                         let base_expr = self.state.reg_values.get(&base).cloned().unwrap_or(base);
                         let lhs = Self::field_expr(&base_expr, off);
+                        self.update_selector_binding_from_assignment(&lhs, &rhs);
                         self.push_line(indent, &format!("{} = {};", lhs, rhs));
                     }
                 }

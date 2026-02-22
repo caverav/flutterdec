@@ -1,4 +1,101 @@
 impl<'a> FuncEmitter<'a> {
+    fn is_simple_identifier_expr(expr: &str) -> bool {
+        let t = expr.trim();
+        !t.is_empty()
+            && t.chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$')
+    }
+
+    fn canonical_stack_slot_expr(expr: &str) -> Option<String> {
+        let (base, off) = parse_stack_base_offset(expr.trim())?;
+        Some(format!("{base}[{}]", fmt_int(off)))
+    }
+
+    fn selector_binding_key(expr: &str) -> Option<String> {
+        let trimmed = expr.trim();
+        if trimmed.is_empty() {
+            return None;
+        }
+        if Self::is_simple_identifier_expr(trimmed) {
+            return Some(trimmed.to_string());
+        }
+        Self::canonical_stack_slot_expr(trimmed)
+    }
+
+    fn selector_hint_from_expr(&self, expr: &str) -> Option<String> {
+        let mut cur = expr.trim();
+        if cur.is_empty() {
+            return None;
+        }
+
+        let direct = [cur.to_string()];
+        if let Some(sel) =
+            infer_selector_name_from_context(&direct, &self.pool_value_hints, &self.pool_semantic_hints)
+        {
+            return Some(sel);
+        }
+
+        if let Some(key) = Self::selector_binding_key(cur) {
+            if let Some(sel) = self.state.selector_hints.get(&key) {
+                return Some(sel.clone());
+            }
+        }
+
+        if let Some(inner) = cur.strip_prefix("classId(").and_then(|s| s.strip_suffix(')')) {
+            if let Some(sel) = self.selector_hint_from_expr(inner) {
+                return Some(sel);
+            }
+        }
+
+        while let Some(inner) = Self::strip_outer_parens_once(cur) {
+            cur = inner.trim();
+            if cur.is_empty() {
+                break;
+            }
+            let nested = [cur.to_string()];
+            if let Some(sel) =
+                infer_selector_name_from_context(&nested, &self.pool_value_hints, &self.pool_semantic_hints)
+            {
+                return Some(sel);
+            }
+            if let Some(key) = Self::selector_binding_key(cur) {
+                if let Some(sel) = self.state.selector_hints.get(&key) {
+                    return Some(sel.clone());
+                }
+            }
+        }
+
+        None
+    }
+
+    fn selector_context_expr(&self, expr: &str) -> String {
+        let trimmed = expr.trim();
+        if trimmed.is_empty() {
+            return expr.to_string();
+        }
+        let direct = [trimmed.to_string()];
+        if infer_selector_name_from_context(&direct, &self.pool_value_hints, &self.pool_semantic_hints)
+            .is_some()
+        {
+            return trimmed.to_string();
+        }
+        if let Some(sel) = self.selector_hint_from_expr(trimmed) {
+            return format!("\"{}\"", Self::escape_hint_text(&sel));
+        }
+        trimmed.to_string()
+    }
+
+    fn update_selector_binding_from_assignment(&mut self, lhs: &str, rhs: &str) {
+        let Some(key) = Self::selector_binding_key(lhs) else {
+            return;
+        };
+        if let Some(sel) = self.selector_hint_from_expr(rhs) {
+            self.state.selector_hints.insert(key, sel);
+        } else {
+            self.state.selector_hints.remove(&key);
+        }
+    }
+
     fn display_indirect_target_value(&self, target_value: &str) -> String {
         let rendered = self.annotate_pool_refs(target_value);
         if rendered == "x21.f0" || rendered == "reg21.f0" {
@@ -156,14 +253,18 @@ impl<'a> FuncEmitter<'a> {
                     .unwrap_or_else(|| format!("arg{r}"))
             })
             .collect::<Vec<_>>();
+        let selector_context_values = raw_arg_values
+            .iter()
+            .map(|a| self.selector_context_expr(a))
+            .collect::<Vec<_>>();
         let selector_intent =
             infer_selector_intent_from_context(
-                &raw_arg_values,
+                &selector_context_values,
                 &self.pool_value_hints,
                 &self.pool_semantic_hints,
             );
         let selector_name = infer_selector_name_from_context(
-            &raw_arg_values,
+            &selector_context_values,
             &self.pool_value_hints,
             &self.pool_semantic_hints,
         );
@@ -189,13 +290,14 @@ impl<'a> FuncEmitter<'a> {
                 .get(&target)
                 .cloned()
                 .unwrap_or_else(|| named_target.clone());
+            let target_selector_context = self.selector_context_expr(&target_value);
             let target_selector_intent = infer_selector_intent_from_context(
-                std::slice::from_ref(&target_value),
+                std::slice::from_ref(&target_selector_context),
                 &self.pool_value_hints,
                 &self.pool_semantic_hints,
             );
             let target_selector_name = infer_selector_name_from_context(
-                std::slice::from_ref(&target_value),
+                std::slice::from_ref(&target_selector_context),
                 &self.pool_value_hints,
                 &self.pool_semantic_hints,
             );

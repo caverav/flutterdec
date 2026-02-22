@@ -2093,6 +2093,132 @@ fn keeps_callable_fallback_for_null_pool_marker() {
 }
 
 #[test]
+fn propagates_selector_hint_through_local_slot_assignment() {
+    let ir = FunctionIr {
+        function_id: 488,
+        name: "indirectSelectorViaLocalSlot".to_string(),
+        entry_va: 0xc470,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0xc470,
+            instrs: vec![
+                LlirInstr {
+                    va: 0xc470,
+                    op: IROp::LoadPool,
+                    src: "x1".to_string(),
+                    target: "pool[16]".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc474,
+                    op: IROp::Other,
+                    src: "stur x1, [x29, #-8]".to_string(),
+                    target: String::new(),
+                },
+                LlirInstr {
+                    va: 0xc478,
+                    op: IROp::Other,
+                    src: "ldur x2, [x29, #-8]".to_string(),
+                    target: String::new(),
+                },
+                LlirInstr {
+                    va: 0xc47c,
+                    op: IROp::Call,
+                    src: "blr x9".to_string(),
+                    target: "x9".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc480,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+
+    let symbols = HashMap::new();
+    let mut pool = HashMap::new();
+    pool.insert(16u64, "String: \"icon\"".to_string());
+    let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
+    assert!(
+        artifact.source.contains("dispatch.icon("),
+        "selector should survive local-slot temp traffic:\n{}",
+        artifact.source
+    );
+    assert!(
+        artifact.source.contains("// selector: icon, indirect via: indirectTarget9"),
+        "selector annotation should remain after local-slot load:\n{}",
+        artifact.source
+    );
+}
+
+#[test]
+fn propagates_selector_hint_through_stack_slot_assignment() {
+    let ir = FunctionIr {
+        function_id: 489,
+        name: "indirectSelectorViaStackSlot".to_string(),
+        entry_va: 0xc490,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0xc490,
+            instrs: vec![
+                LlirInstr {
+                    va: 0xc490,
+                    op: IROp::LoadPool,
+                    src: "x1".to_string(),
+                    target: "pool[16]".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc494,
+                    op: IROp::Other,
+                    src: "stur x1, [x15, #-0x10]".to_string(),
+                    target: String::new(),
+                },
+                LlirInstr {
+                    va: 0xc498,
+                    op: IROp::Other,
+                    src: "ldur x2, [x15, #-0x10]".to_string(),
+                    target: String::new(),
+                },
+                LlirInstr {
+                    va: 0xc49c,
+                    op: IROp::Call,
+                    src: "blr x9".to_string(),
+                    target: "x9".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc4a0,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+
+    let symbols = HashMap::new();
+    let mut pool = HashMap::new();
+    pool.insert(16u64, "String: \"icon\"".to_string());
+    let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
+    assert!(
+        artifact.source.contains("dispatch.icon("),
+        "selector should survive stack-slot temp traffic:\n{}",
+        artifact.source
+    );
+    assert!(
+        artifact
+            .source
+            .contains("// selector: icon, indirect via: indirectTarget9"),
+        "selector annotation should remain after stack-slot load:\n{}",
+        artifact.source
+    );
+}
+
+#[test]
 fn keeps_dynamic_call_when_target_selector_is_file_path_like() {
     let ir = FunctionIr {
         function_id: 49,

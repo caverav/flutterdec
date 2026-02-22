@@ -29,6 +29,7 @@ pub struct PoolSemanticHint {
 #[derive(Debug, Default, Clone)]
 struct LiftState {
     reg_values: HashMap<String, String>,
+    selector_hints: HashMap<String, String>,
     last_cmp: Option<(String, String)>,
     call_index: usize,
 }
