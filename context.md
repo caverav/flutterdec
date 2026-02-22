@@ -213,7 +213,7 @@ Current scope:
 - decompile now also supports package-level scoping via repeatable `--app-package <name>`, so researchers can isolate pseudocode to selected app Dart packages and exclude unknown/dependency/framework noise more aggressively
 - report output now includes detected app package frequency (`function_scope.app_package_counts_top`) to guide package scoping without guesswork
 - `info` output now surfaces top detected app packages too, so package scoping can be selected before a full decompile run
-- capped-function disassembly ordering now prioritizes likely high-value targets (entrypoint-like names, `main.dart` app library ownership, lifecycle/router selectors such as `createState`/`build`/`onGenerateRoute`, and deeplink or activity-intent related signals, including object-pool `target_va` hints)
+- capped-function disassembly ordering now prioritizes likely high-value targets (entrypoint-like names, lifecycle/router selectors such as `createState`/`build`/`onGenerateRoute`, and deeplink/activity signals including object-pool `target_va` hints), and now also applies app-package frequency boosts plus shallow entrypoint-callee frontier boosts so capped runs pull more app-call-path functions
 
 Known limits:
 
