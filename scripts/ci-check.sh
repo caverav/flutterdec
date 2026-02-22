@@ -7,11 +7,12 @@ Usage:
   scripts/ci-check.sh [--skip-tests]
 
 Runs the same checks as CI from the local workspace:
-  1) cargo fmt --all --check
-  2) scripts/lint-shell.sh
-  3) cargo clippy --workspace --all-targets -- -D warnings
-  4) cargo test --workspace            (unless --skip-tests)
-  5) cargo build -p flutterdec-cli --release
+  1) nix flake check
+  2) cargo fmt --all --check
+  3) scripts/lint-shell.sh
+  4) cargo clippy --workspace --all-targets -- -D warnings
+  5) cargo test --workspace            (unless --skip-tests)
+  6) cargo build -p flutterdec-cli --release
 EOF
 }
 
@@ -37,6 +38,9 @@ done
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "${script_dir}/.." && pwd)"
 cd "$repo_root"
+
+echo "[ci-check] nix flake check"
+nix flake check
 
 echo "[ci-check] cargo fmt --all --check"
 nix develop -c cargo fmt --all --check
