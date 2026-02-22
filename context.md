@@ -68,7 +68,10 @@ Current module layout:
   - pipeline utilities in `src/pipeline/helpers.rs`
   - adapter-model loading in `src/pipeline/model.rs`
   - quality gate computation in `src/pipeline/quality.rs`
-  - command runners in `src/pipeline/runners.rs`
+  - command-runner orchestration entry in `src/pipeline/runners.rs`
+  - runner reporting helpers in `src/pipeline/runners/reporting.rs`
+  - runner symbol and pool naming helpers in `src/pipeline/runners/symbols.rs`
+  - runner-focused tests in `src/pipeline/runners/tests.rs`
   - stripped/unstripped ELF call-target mapping in `src/pipeline/symbol_map.rs`
   - ELF fingerprint extraction in `src/pipeline/engine_fingerprint.rs`
 - `crates/flutterdec-cli`: user facing commands
