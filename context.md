@@ -175,6 +175,7 @@ Current scope:
 - low-level dispatch slot expressions such as `reg21.f0` are now surfaced through a readable alias (`dispatchTargetFn`) before unresolved callable callsites
 - selector extraction now ignores likely file/URI/path-like strings (`*.dart`, paths, URLs) to reduce false-positive standard-call labeling
 - declaration typing now uses deterministic context: semantic call ownership (`flutter.*`/`dart.*`/owner-qualified package paths), constructor semantics (`*.new`), and literal assignments can upgrade `dynamic` declarations into concrete types (for example `flutter.widgets.State`, `dart.async.Future`, `dart.async.StreamIterator`, `String`, `bool`)
+- declaration typing now also infers local return types from deterministic semantic call paths (for example `String`, `bool`, `int`, `double`, `Type`, `dart.async.Future`, `dart.async.StreamSubscription`) to reduce `dynamic` noise on non-constructor standard calls
 - adapter object-pool metadata fields (`decoded_kind`, `selector`, `target_va`, `owner_class`, `library_uri`) are now consumed by decompile for deterministic owner-qualified selector rewrites
 - owner-only metadata (selector + owner_class without library URI) can still rewrite indirect selector calls to deterministic owner-qualified call paths
 - if pool entries miss selector/owner/library metadata, core now backfills semantic hints from function ownership metadata keyed by `target_va`
