@@ -8,9 +8,10 @@ Usage:
 
 Runs the same checks as CI from the local workspace:
   1) cargo fmt --all --check
-  2) cargo clippy --workspace --all-targets -- -D warnings
-  3) cargo test --workspace            (unless --skip-tests)
-  4) cargo build -p flutterdec-cli --release
+  2) scripts/lint-shell.sh
+  3) cargo clippy --workspace --all-targets -- -D warnings
+  4) cargo test --workspace            (unless --skip-tests)
+  5) cargo build -p flutterdec-cli --release
 EOF
 }
 
@@ -40,6 +41,9 @@ cd "$repo_root"
 echo "[ci-check] cargo fmt --all --check"
 nix develop -c cargo fmt --all --check
 
+echo "[ci-check] scripts/lint-shell.sh"
+nix develop -c ./scripts/lint-shell.sh
+
 echo "[ci-check] cargo clippy --workspace --all-targets -- -D warnings"
 nix develop -c cargo clippy --workspace --all-targets -- -D warnings
 
@@ -52,4 +56,3 @@ echo "[ci-check] cargo build -p flutterdec-cli --release"
 nix develop -c cargo build -p flutterdec-cli --release
 
 echo "[ci-check] all checks passed"
-

@@ -32,6 +32,7 @@
               unzip
               zip
               capstone
+              shellcheck
             ];
           };
         });
