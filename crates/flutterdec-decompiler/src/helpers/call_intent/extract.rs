@@ -44,41 +44,82 @@ fn extract_string_literals(s: &str) -> Vec<String> {
 }
 
 fn extract_selector_name(raw: &str) -> Option<String> {
-    let raw_trim = raw.trim();
-    if raw_trim.is_empty() {
-        return None;
+    fn strip_pool_comment_token(input: &str) -> &str {
+        if let Some((prefix, _)) = input.split_once("/* pool[") {
+            prefix.trim()
+        } else {
+            input.trim()
+        }
     }
-    let raw_lower = raw_trim.to_ascii_lowercase();
+
+    fn strip_wrapped_quotes(input: &str) -> &str {
+        if let Some(inner) = input.strip_prefix('"').and_then(|s| s.strip_suffix('"')) {
+            inner.trim()
+        } else {
+            input.trim()
+        }
+    }
+
+    fn normalize_selector_candidate(raw: &str) -> Option<String> {
+        let mut t = strip_pool_comment_token(raw);
+        if t.is_empty() {
+            return None;
+        }
+
+        t = strip_wrapped_quotes(t);
+        if t.is_empty() {
+            return None;
+        }
+
+        if let Some(rest) = t.strip_prefix("String:") {
+            t = strip_wrapped_quotes(rest.trim());
+        } else if t.starts_with("Type:") || t.starts_with("Obj!") || t.starts_with("Field <") {
+            return None;
+        }
+
+        if let Some((before, _)) = t.split_once('@') {
+            t = before.trim();
+        }
+        if let Some((_, after)) = t.split_once(':') {
+            t = after.trim();
+        }
+
+        while let Some(rest) = t.strip_prefix('_') {
+            t = rest;
+        }
+        if let Some(rest) = t.strip_prefix("init") {
+            t = rest.trim();
+        }
+        if t.is_empty() {
+            return None;
+        }
+
+        Some(t.to_string())
+    }
+
+    let Some(candidate) = normalize_selector_candidate(raw) else {
+        return None;
+    };
+    let raw_lower = candidate.to_ascii_lowercase();
     if raw_lower.contains(".dart") || raw_lower.contains('/') || raw_lower.contains('\\') {
         return None;
     }
-    if raw_trim.contains("://") {
+    if candidate.contains("://") {
         return None;
     }
-    if raw_trim.contains(' ') {
+    if candidate.contains(' ') {
         return None;
     }
 
-    let mut t = raw_trim;
-    if let Some(inner) = t.strip_prefix('"').and_then(|s| s.strip_suffix('"')) {
-        t = inner.trim();
-    }
-    if let Some((prefix, _)) = t.split_once("/* pool[") {
-        t = prefix.trim();
-    }
-    if let Some((before, _)) = t.split_once('@') {
-        t = before.trim();
-    }
-    if let Some((_, after)) = t.split_once(':') {
-        t = after.trim();
-    }
-    while let Some(rest) = t.strip_prefix('_') {
-        t = rest;
-    }
-    if let Some(rest) = t.strip_prefix("init") {
-        t = rest.trim();
-    }
+    let t = candidate.trim();
     if t.is_empty() || t.len() > 96 {
+        return None;
+    }
+    let t_lower = t.to_ascii_lowercase();
+    if matches!(
+        t_lower.as_str(),
+        "null" | "type" | "object" | "dynamic" | "never" | "void"
+    ) {
         return None;
     }
 

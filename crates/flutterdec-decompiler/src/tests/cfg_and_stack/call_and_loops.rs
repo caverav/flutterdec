@@ -1786,6 +1786,58 @@ fn rewrites_constructor_like_nonstandard_selector_to_new_call() {
 }
 
 #[test]
+fn keeps_dispatch_fallback_for_single_word_titlecase_selector() {
+    let ir = FunctionIr {
+        function_id: 487,
+        name: "indirectTitlecaseSelector".to_string(),
+        entry_va: 0xc418,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0xc418,
+            instrs: vec![
+                LlirInstr {
+                    va: 0xc418,
+                    op: IROp::LoadPool,
+                    src: "x1".to_string(),
+                    target: "pool[19]".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc41c,
+                    op: IROp::Call,
+                    src: "blr x9".to_string(),
+                    target: "x9".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc420,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+
+    let symbols = HashMap::new();
+    let mut pool = HashMap::new();
+    pool.insert(19u64, "Omiljeno".to_string());
+    let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
+    assert!(
+        artifact.source.contains(
+            "dispatch.Omiljeno(receiver, \"Omiljeno\" /* pool[19] */, param2, param3); // selector: Omiljeno, indirect via: indirectTarget9"
+        ),
+        "single-word titlecase selectors should keep dispatch fallback:\n{}",
+        artifact.source
+    );
+    assert!(
+        !artifact.source.contains("Omiljeno.new("),
+        "single-word titlecase selectors should not be rewritten as constructors:\n{}",
+        artifact.source
+    );
+}
+
+#[test]
 fn keeps_dispatch_fallback_for_acronym_like_selector_names() {
     let ir = FunctionIr {
         function_id: 482,
@@ -1885,6 +1937,157 @@ fn keeps_dispatch_fallback_for_builtin_type_selector_names() {
     assert!(
         !artifact.source.contains("Function.new("),
         "builtin type selectors should not be rewritten as constructors:\n{}",
+        artifact.source
+    );
+}
+
+#[test]
+fn resolves_dispatch_selector_from_string_prefixed_pool_value() {
+    let ir = FunctionIr {
+        function_id: 484,
+        name: "indirectStringPrefixedSelector".to_string(),
+        entry_va: 0xc440,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0xc440,
+            instrs: vec![
+                LlirInstr {
+                    va: 0xc440,
+                    op: IROp::LoadPool,
+                    src: "x1".to_string(),
+                    target: "pool[16]".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc444,
+                    op: IROp::Call,
+                    src: "blr x9".to_string(),
+                    target: "x9".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc448,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+
+    let symbols = HashMap::new();
+    let mut pool = HashMap::new();
+    pool.insert(16u64, "String: \"icon\"".to_string());
+    let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
+    assert!(
+        artifact.source.contains(
+            "dispatch.icon(receiver, \"String: \\\"icon\\\"\" /* pool[16] */, param2, param3); // selector: icon, indirect via: indirectTarget9"
+        ),
+        "string-prefixed selector should resolve to dispatch.icon fallback:\n{}",
+        artifact.source
+    );
+}
+
+#[test]
+fn keeps_callable_fallback_for_type_prefixed_pool_value() {
+    let ir = FunctionIr {
+        function_id: 485,
+        name: "indirectTypePrefixedSelector".to_string(),
+        entry_va: 0xc450,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0xc450,
+            instrs: vec![
+                LlirInstr {
+                    va: 0xc450,
+                    op: IROp::LoadPool,
+                    src: "x1".to_string(),
+                    target: "pool[17]".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc454,
+                    op: IROp::Call,
+                    src: "blr x9".to_string(),
+                    target: "x9".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc458,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+
+    let symbols = HashMap::new();
+    let mut pool = HashMap::new();
+    pool.insert(17u64, "Type: CloseMenuIntent".to_string());
+    let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
+    assert!(
+        artifact.source.contains(
+            "indirectTarget9(receiver, \"Type: CloseMenuIntent\" /* pool[17] */, param2, param3); // indirect via: indirectTarget9"
+        ),
+        "type-prefixed values should not be promoted to selector fallbacks:\n{}",
+        artifact.source
+    );
+    assert!(
+        !artifact.source.contains("dispatch.CloseMenuIntent("),
+        "type-prefixed values should avoid selector-like dispatch rewrites:\n{}",
+        artifact.source
+    );
+}
+
+#[test]
+fn keeps_callable_fallback_for_null_pool_marker() {
+    let ir = FunctionIr {
+        function_id: 486,
+        name: "indirectNullMarkerSelector".to_string(),
+        entry_va: 0xc460,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0xc460,
+            instrs: vec![
+                LlirInstr {
+                    va: 0xc460,
+                    op: IROp::LoadPool,
+                    src: "x1".to_string(),
+                    target: "pool[18]".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc464,
+                    op: IROp::Call,
+                    src: "blr x9".to_string(),
+                    target: "x9".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc468,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+
+    let symbols = HashMap::new();
+    let mut pool = HashMap::new();
+    pool.insert(18u64, "Null".to_string());
+    let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
+    assert!(
+        artifact.source.contains(
+            "indirectTarget9(receiver, \"Null\" /* pool[18] */, param2, param3); // indirect via: indirectTarget9"
+        ),
+        "null marker should avoid selector-based dispatch rewrites:\n{}",
+        artifact.source
+    );
+    assert!(
+        !artifact.source.contains("dispatch.Null("),
+        "null marker should not render dispatch.Null(...):\n{}",
         artifact.source
     );
 }

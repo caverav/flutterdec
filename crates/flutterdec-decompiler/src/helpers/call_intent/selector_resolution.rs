@@ -284,6 +284,10 @@ fn looks_constructor_like_selector(selector: &str) -> bool {
     if !first.is_ascii_uppercase() {
         return false;
     }
+    let has_upper_after_first = chars.any(|c| c.is_ascii_uppercase());
+    if !has_upper_after_first {
+        return false;
+    }
     if token
         .chars()
         .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
