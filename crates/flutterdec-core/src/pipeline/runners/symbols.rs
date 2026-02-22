@@ -317,15 +317,33 @@ pub(super) fn canonical_standard_model_name(
 
 fn dart_library_segment(uri: &str) -> Option<String> {
     let rest = uri.strip_prefix("dart:")?;
-    let seg = rest
-        .split('/')
-        .next()
-        .unwrap_or("")
-        .split('.')
-        .next()
-        .unwrap_or("");
+    let mut head_tail = rest.splitn(2, '/');
+    let head_raw = head_tail.next().unwrap_or("");
+    let seg = head_raw.split('.').next().unwrap_or("");
     let seg = sanitize_symbol_token_stream(seg);
-    if seg.is_empty() { None } else { Some(seg) }
+    if seg.is_empty() {
+        return None;
+    }
+
+    let mut out = seg;
+    let patch_like = head_raw.to_ascii_lowercase().contains("patch");
+    if patch_like {
+        if let Some(tail) = head_tail.next() {
+            let stem = tail
+                .rsplit('/')
+                .next()
+                .unwrap_or("")
+                .trim()
+                .trim_end_matches(".dart");
+            let stem = sanitize_symbol_token_stream(stem);
+            if !stem.is_empty() && stem != out {
+                out.push('_');
+                out.push_str(&stem);
+            }
+        }
+    }
+
+    Some(out)
 }
 
 fn flutter_library_segment(uri: &str) -> Option<String> {

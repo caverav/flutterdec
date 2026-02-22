@@ -619,7 +619,7 @@ fn rewrites_generic_direct_call_to_library_invoke_when_only_library_marker_exist
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
         artifact.source.contains(
-            "dart.core_patch.invoke(receiver, \"dart:core-patch/bool_patch.dart\" /* pool[4656] */, param2, param3); // stdlib:dart.core_patch.invoke [library], was: sub_9002"
+            "dart.core_patch.bool_patch.invoke(receiver, \"dart:core-patch/bool_patch.dart\" /* pool[4656] */, param2, param3); // stdlib:dart.core_patch.bool_patch.invoke [library], was: sub_9002"
         ),
         "generic direct calls with only library marker should rewrite to semantic library invoke:\n{}",
         artifact.source

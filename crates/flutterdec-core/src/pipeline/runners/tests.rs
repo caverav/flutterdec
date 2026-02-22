@@ -379,6 +379,10 @@
         let mut class_lib = HashMap::new();
         class_lib.insert("_StringBase".to_string(), "dart:core".to_string());
         class_lib.insert(
+            "_BoolPatch".to_string(),
+            "dart:core-patch/bool_patch.dart".to_string(),
+        );
+        class_lib.insert(
             "State".to_string(),
             "package:flutter/src/widgets/framework.dart".to_string(),
         );
@@ -398,6 +402,19 @@
         assert_eq!(
             canonical_standard_model_name(&dart_fn, &class_lib).as_deref(),
             Some("dart_core_toString")
+        );
+
+        let dart_patch_fn = flutterdec_adapter::FunctionInfo {
+            id: 5,
+            name: "fromEnvironment".to_string(),
+            owner_class: "_BoolPatch".to_string(),
+            entry_va: 0x1800,
+            size: 4,
+            code_section_va: 0x1800,
+        };
+        assert_eq!(
+            canonical_standard_model_name(&dart_patch_fn, &class_lib).as_deref(),
+            Some("dart_core_patch_bool_patch_fromEnvironment")
         );
 
         let flutter_fn = flutterdec_adapter::FunctionInfo {
