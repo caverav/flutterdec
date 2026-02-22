@@ -296,4 +296,88 @@ mod tests {
         assert_eq!(manifest.entries.len(), 1);
         assert_eq!(manifest.entries[0].snapshot_hash, "abcd1234");
     }
+
+    #[test]
+    fn run_adapter_blutter_backend_synthesizes_entrypoint_candidate() {
+        let td = tempdir().expect("tempdir");
+        let root = td.path();
+        let python_dir = root.join("python");
+        fs::create_dir_all(&python_dir).expect("mkdir python");
+
+        let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .canonicalize()
+            .expect("canonicalize repo root");
+        let template_src = repo_root.join("adapters/python/adapter_template.py");
+        fs::copy(&template_src, python_dir.join("adapter_template.py"))
+            .expect("copy adapter template");
+
+        let fake_blutter = root.join("fake_blutter");
+        fs::write(
+            &fake_blutter,
+            r#"#!/usr/bin/env python3
+from pathlib import Path
+import sys
+
+if len(sys.argv) < 3:
+    raise SystemExit("usage: fake_blutter <input> <outdir>")
+out_dir = Path(sys.argv[2])
+asm_dir = out_dir / "asm"
+asm_dir.mkdir(parents=True, exist_ok=True)
+(asm_dir / "main.dart").write_text(
+    "// lib: 0, url: package:app/main.dart\n"
+    "  dynamic main() {\n"
+    "// ** addr: 0x1000, size: 0x10\n"
+    "}\n",
+    encoding="utf-8",
+)
+(out_dir / "pp.txt").write_text("", encoding="utf-8")
+"#,
+        )
+        .expect("write fake blutter");
+        let mut fake_perms = fs::metadata(&fake_blutter).expect("metadata").permissions();
+        fake_perms.set_mode(0o755);
+        fs::set_permissions(&fake_blutter, fake_perms).expect("chmod fake blutter");
+
+        let exec = root.join("adapter_exec.py");
+        fs::write(
+            &exec,
+            "#!/usr/bin/env python3\nfrom pathlib import Path\nimport os\nimport sys\nroot = Path(__file__).resolve().parent\nos.environ['FLUTTERDEC_BLUTTER_CMD'] = str(root / 'fake_blutter')\nsys.path.insert(0, str(root / 'python'))\nimport adapter_template\nif __name__ == '__main__':\n    raise SystemExit(adapter_template.entrypoint(default_snapshot_hash='testhash', default_version='unknown'))\n",
+        )
+        .expect("write exec");
+        let mut perms = fs::metadata(&exec).expect("metadata").permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&exec, perms).expect("chmod exec");
+
+        let input_dir = root.join("input");
+        fs::create_dir_all(&input_dir).expect("mkdir input");
+        let input_file = input_dir.join("app.apk");
+        fs::write(&input_file, b"dummy").expect("write dummy input");
+
+        let vm_data = vec![0u8; 64];
+        let iso_data = vec![0u8; 64];
+        let vm_instr = vec![0u8; 16];
+        let iso_instr = vec![0u8; 16];
+        let input = AdapterInput {
+            input_path: Some(&input_file),
+            libapp_path: None,
+            vm_data: &vm_data,
+            isolate_data: &iso_data,
+            vm_instr: &vm_instr,
+            isolate_instr: &iso_instr,
+            vm_instr_va: 0,
+            isolate_instr_va: 0,
+            backend: Some("blutter"),
+        };
+
+        let model = run_adapter(&exec, &input).expect("run adapter");
+        assert!(model.functions.iter().any(|f| f.entry_va == 0x1000));
+        let entrypoint = model
+            .object_pool
+            .iter()
+            .find(|e| e.decoded_kind.as_deref() == Some("EntryPointCandidate"))
+            .expect("entrypoint candidate");
+        assert_eq!(entrypoint.selector.as_deref(), Some("main"));
+        assert_eq!(entrypoint.target_va, Some(0x1000));
+    }
 }
