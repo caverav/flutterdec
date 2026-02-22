@@ -11,6 +11,7 @@ nix develop
 Common commands:
 
 ```bash
+nix flake check
 cargo fmt --all --check
 ./scripts/lint-shell.sh
 cargo clippy --workspace --all-targets -- -D warnings
@@ -70,6 +71,7 @@ CI runs on:
 
 Workflow checks:
 
+- `nix flake check`
 - `cargo fmt --check`
 - `scripts/lint-shell.sh`
 - `cargo clippy` with warnings denied

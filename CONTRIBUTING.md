@@ -11,6 +11,7 @@ nix develop
 Run:
 
 ```bash
+nix flake check
 cargo fmt --all --check
 ./scripts/lint-shell.sh
 cargo clippy --workspace --all-targets -- -D warnings
