@@ -575,6 +575,7 @@
             function_name: "f1".to_string(),
             source: r#"dynamic f1(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {
   final t1 = dispatch.invoke(arg0, arg1, arg2, arg3); // indirect via: dispatchTarget
+  final t0 = dispatch.icon(arg0, arg1, arg2, arg3); // selector: icon, indirect via: dispatchTarget, target: dispatchTargetFn
   final t11 = dispatchTargetFn(arg0, arg1, arg2, arg3); // indirect via: dispatchTarget
   final t2 = indirectTarget9(arg0, arg1, arg2, arg3); // indirect via: indirectTarget9
   final t3 = dynamicCall(opaqueTarget, [arg0, arg1, arg2, arg3]); // target: opaqueTarget
@@ -584,8 +585,8 @@
             placeholder_ifs: 0,
             unresolved_cf: 0,
             raw_register_calls: 0,
-            total_calls: 4,
-            indirect_calls: 4,
+            total_calls: 5,
+            indirect_calls: 5,
             semantic_direct_calls: 0,
             semantic_indirect_calls: 0,
             dispatch_selector_calls: 0,

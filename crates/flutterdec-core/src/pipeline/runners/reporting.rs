@@ -132,8 +132,10 @@ pub(super) fn collect_call_fallback_summary(pseudo: &[PseudocodeArtifact]) -> Ca
             }
             if line.contains("indirect via: dispatchTarget")
                 && callee != "dispatch.invoke"
+                && !callee.starts_with("dispatch.")
                 && (callee.ends_with(".invoke")
                     || (!line.contains("[selector]")
+                        && !line.contains("selector:")
                         && !line.contains("target_va:")
                         && !line.contains("framework:")
                         && !line.contains("stdlib:")
@@ -158,4 +160,3 @@ fn extract_assignment_callee(line: &str) -> Option<&str> {
     let open_idx = rhs.find('(')?;
     rhs.get(..open_idx).map(str::trim)
 }
-
