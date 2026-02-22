@@ -24,6 +24,22 @@ pub struct FunctionDisassembly {
     pub instructions: Vec<AsmInstruction>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct FunctionPriorityComponent {
+    pub name: String,
+    pub score: i32,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct FunctionPriorityBreakdown {
+    pub function_id: u64,
+    pub function_name: String,
+    pub owner_class: String,
+    pub entry_va: u64,
+    pub total_score: i32,
+    pub components: Vec<FunctionPriorityComponent>,
+}
+
 fn build_capstone() -> Option<Capstone> {
     Capstone::new()
         .arm64()
@@ -365,6 +381,12 @@ fn build_target_va_priority_hints(model: &ProgramModel) -> HashMap<u64, i32> {
     out
 }
 
+fn push_component(out: &mut Vec<(String, i32)>, name: impl Into<String>, score: i32) {
+    if score != 0 {
+        out.push((name.into(), score));
+    }
+}
+
 fn package_name_from_library_uri(uri: &str) -> Option<String> {
     let rest = uri.strip_prefix("package:")?;
     let name = rest
@@ -549,89 +571,142 @@ fn function_priority(
     target_va_hints: &HashMap<u64, i32>,
     app_package_boosts: &HashMap<String, i32>,
     entrypoint_frontier_scores: &HashMap<u64, i32>,
-) -> i32 {
+) -> (i32, Vec<(String, i32)>) {
     let mut score = 0i32;
+    let mut components = Vec::new();
     let name_lower = func.name.to_ascii_lowercase();
     let owner_lower = func.owner_class.to_ascii_lowercase();
 
     if looks_generic_name(&name_lower) {
         score -= 40;
+        push_component(&mut components, "generic_name_penalty", -40);
     } else {
         score += 10;
+        push_component(&mut components, "named_function_bonus", 10);
     }
     if name_lower.starts_with("closure_") {
         score -= 900;
+        push_component(&mut components, "closure_name_penalty", -900);
     }
     if name_lower.starts_with('_') {
         score -= 90;
+        push_component(&mut components, "private_name_penalty", -90);
+    }
+    if func.size <= 8 && (name_lower.starts_with("closure_") || name_lower.starts_with('_')) {
+        score -= 220;
+        push_component(&mut components, "tiny_wrapper_penalty", -220);
     }
     if is_main_like_name(&name_lower) {
         score += 900;
+        push_component(&mut components, "main_name_bonus", 900);
     }
     if name_lower.contains("runapp") {
         score += 700;
+        push_component(&mut components, "runapp_name_bonus", 700);
     }
     if name_lower.contains("ensureinitialized") {
         score += 400;
+        push_component(&mut components, "ensure_initialized_bonus", 400);
     }
     if owner_lower.contains("main") {
         score += 80;
+        push_component(&mut components, "owner_main_bonus", 80);
     }
-    score += deep_link_signal_score_lower(&name_lower);
-    score += deep_link_signal_score_lower(&owner_lower);
+    let name_deeplink = deep_link_signal_score_lower(&name_lower);
+    score += name_deeplink;
+    push_component(&mut components, "name_deeplink_signal", name_deeplink);
+    let owner_deeplink = deep_link_signal_score_lower(&owner_lower);
+    score += owner_deeplink;
+    push_component(&mut components, "owner_deeplink_signal", owner_deeplink);
 
     if let Some(uri) = owner_library.get(&func.owner_class) {
         let uri_lower = uri.to_ascii_lowercase();
         if uri_lower.ends_with("/main.dart") || uri_lower.ends_with("main.dart") {
             score += 700;
+            push_component(&mut components, "library_main_bonus", 700);
         }
         if uri_lower.contains("generated_plugin_registrant.dart") {
             score += 300;
+            push_component(&mut components, "plugin_registrant_bonus", 300);
         }
         if uri_lower.starts_with("package:flutter/") {
             score -= 280;
+            push_component(&mut components, "framework_library_penalty", -280);
         } else if uri_lower.starts_with("dart:") {
             score -= 360;
+            push_component(&mut components, "stdlib_library_penalty", -360);
         } else if uri_lower.starts_with("package:") {
             score += 220;
+            push_component(&mut components, "package_library_bonus", 220);
             if uri_lower.contains("/src/") {
                 score -= 50;
+                push_component(&mut components, "package_src_penalty", -50);
             }
             if let Some(pkg) = package_name_from_library_uri(&uri_lower) {
                 if let Some(extra) = app_package_boosts.get(&pkg) {
                     score += *extra;
+                    push_component(&mut components, format!("app_package_boost:{pkg}"), *extra);
                 }
             }
         }
-        score += deep_link_signal_score_lower(&uri_lower);
+        let library_deeplink = deep_link_signal_score_lower(&uri_lower);
+        score += library_deeplink;
+        push_component(&mut components, "library_deeplink_signal", library_deeplink);
     }
     if let Some(extra) = target_va_hints.get(&func.entry_va) {
         score += *extra;
+        push_component(&mut components, "pool_target_va_hint", *extra);
     }
     if let Some(extra) = entrypoint_frontier_scores.get(&func.entry_va) {
         if name_lower.starts_with("closure_") {
-            score += *extra / 8;
+            let boosted = *extra / 8;
+            score += boosted;
+            push_component(&mut components, "entrypoint_frontier_boost", boosted);
         } else {
             score += *extra;
+            push_component(&mut components, "entrypoint_frontier_boost", *extra);
         }
     }
 
-    score
+    (score, components)
 }
 
-pub fn disassemble_program(
-    model: &ProgramModel,
+struct RankedCandidate<'a> {
+    index: usize,
+    func: &'a FunctionInfo,
+    score: i32,
+    components: Vec<(String, i32)>,
+}
+
+fn to_breakdown(candidate: &RankedCandidate<'_>) -> FunctionPriorityBreakdown {
+    FunctionPriorityBreakdown {
+        function_id: candidate.func.id,
+        function_name: candidate.func.name.clone(),
+        owner_class: candidate.func.owner_class.clone(),
+        entry_va: candidate.func.entry_va,
+        total_score: candidate.score,
+        components: candidate
+            .components
+            .iter()
+            .map(|(name, score)| FunctionPriorityComponent {
+                name: name.clone(),
+                score: *score,
+            })
+            .collect(),
+    }
+}
+
+fn rank_candidates<'a>(
+    model: &'a ProgramModel,
     iso_instr: &[u8],
     iso_base_va: u64,
     focus_prefix: Option<&str>,
     max_functions: Option<usize>,
-) -> Vec<FunctionDisassembly> {
-    let mut out = Vec::new();
-    let cs = build_capstone();
+) -> Vec<RankedCandidate<'a>> {
     let owner_library = build_owner_library_lookup(model);
     let target_va_hints = build_target_va_priority_hints(model);
     let app_package_boosts = build_app_package_boosts(model, &owner_library);
-    let mut candidates = model
+    let candidates = model
         .functions
         .iter()
         .enumerate()
@@ -642,7 +717,6 @@ pub fn disassemble_program(
                 true
             }
         })
-        .map(|(index, f)| (index, f))
         .collect::<Vec<_>>();
     let frontier_scores = if max_functions.is_some() {
         let funcs = candidates.iter().map(|(_, f)| *f).collect::<Vec<_>>();
@@ -651,29 +725,79 @@ pub fn disassemble_program(
         HashMap::new()
     };
 
-    if max_functions.is_some() {
-        candidates.sort_by(|(a_idx, a), (b_idx, b)| {
-            let a_score = function_priority(
-                a,
-                &owner_library,
-                &target_va_hints,
-                &app_package_boosts,
-                &frontier_scores,
-            );
-            let b_score = function_priority(
-                b,
-                &owner_library,
-                &target_va_hints,
-                &app_package_boosts,
-                &frontier_scores,
-            );
-            b_score.cmp(&a_score).then(a_idx.cmp(b_idx))
-        });
-    }
+    let mut ranked = candidates
+        .into_iter()
+        .map(|(index, func)| {
+            if max_functions.is_some() {
+                let (score, components) = function_priority(
+                    func,
+                    &owner_library,
+                    &target_va_hints,
+                    &app_package_boosts,
+                    &frontier_scores,
+                );
+                RankedCandidate {
+                    index,
+                    func,
+                    score,
+                    components,
+                }
+            } else {
+                RankedCandidate {
+                    index,
+                    func,
+                    score: 0,
+                    components: Vec::new(),
+                }
+            }
+        })
+        .collect::<Vec<_>>();
 
-    for (_, f) in candidates {
-        if let Some(d) = decode_function(f, iso_instr, iso_base_va, cs.as_ref()) {
+    if max_functions.is_some() {
+        ranked.sort_by(|a, b| b.score.cmp(&a.score).then(a.index.cmp(&b.index)));
+    }
+    ranked
+}
+
+pub fn rank_program_functions(
+    model: &ProgramModel,
+    iso_instr: &[u8],
+    iso_base_va: u64,
+    focus_prefix: Option<&str>,
+    max_functions: Option<usize>,
+) -> Vec<FunctionPriorityBreakdown> {
+    rank_candidates(model, iso_instr, iso_base_va, focus_prefix, max_functions)
+        .iter()
+        .map(to_breakdown)
+        .collect()
+}
+
+pub fn disassemble_program(
+    model: &ProgramModel,
+    iso_instr: &[u8],
+    iso_base_va: u64,
+    focus_prefix: Option<&str>,
+    max_functions: Option<usize>,
+) -> Vec<FunctionDisassembly> {
+    disassemble_program_with_priorities(model, iso_instr, iso_base_va, focus_prefix, max_functions)
+        .0
+}
+
+pub fn disassemble_program_with_priorities(
+    model: &ProgramModel,
+    iso_instr: &[u8],
+    iso_base_va: u64,
+    focus_prefix: Option<&str>,
+    max_functions: Option<usize>,
+) -> (Vec<FunctionDisassembly>, Vec<FunctionPriorityBreakdown>) {
+    let mut out = Vec::new();
+    let mut priorities = Vec::new();
+    let cs = build_capstone();
+    let ranked = rank_candidates(model, iso_instr, iso_base_va, focus_prefix, max_functions);
+    for candidate in ranked {
+        if let Some(d) = decode_function(candidate.func, iso_instr, iso_base_va, cs.as_ref()) {
             out.push(d);
+            priorities.push(to_breakdown(&candidate));
             if let Some(max) = max_functions {
                 if out.len() >= max {
                     break;
@@ -682,7 +806,7 @@ pub fn disassemble_program(
         }
     }
 
-    out
+    (out, priorities)
 }
 
 #[cfg(test)]

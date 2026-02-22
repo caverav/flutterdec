@@ -298,7 +298,7 @@ pub fn run_decompile(
         );
     }
 
-    let disasm = disassemble_program(
+    let (disasm, selected_priorities) = disassemble_program_with_priorities(
         &scoped_model,
         &bundle.isolate_instr,
         bundle.isolate_instr_va,
@@ -502,6 +502,11 @@ pub fn run_decompile(
         (report.semantic_indirect_calls + report.dispatch_selector_calls) as f64
             / report.indirect_calls as f64
     };
+    let prioritization_selected = selected_priorities
+        .iter()
+        .take(64)
+        .cloned()
+        .collect::<Vec<FunctionPriorityBreakdown>>();
     fs::create_dir_all(&opt.out_dir)?;
 
     let quality_path = opt.out_dir.join("quality.json");
@@ -598,6 +603,12 @@ pub fn run_decompile(
             "dispatch_invoke": call_fallback.dispatch_invoke,
             "dispatch_target_invoke": call_fallback.dispatch_target_invoke,
             "generic_invoke": call_fallback.generic_invoke
+        },
+        "prioritization": {
+            "enabled": opt.max_functions.is_some(),
+            "focus": opt.focus.clone(),
+            "selected_count": selected_priorities.len(),
+            "selected": prioritization_selected
         }
     });
 

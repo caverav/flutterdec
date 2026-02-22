@@ -3,7 +3,9 @@ use flutterdec_adapter::{
     list_adapters, resolve_adapter_exec, run_adapter, AdapterInput, ProgramModel,
 };
 use flutterdec_decompiler::{emit_program_with_pool_context, PseudocodeArtifact};
-use flutterdec_disasm_arm64::{disassemble_program, FunctionDisassembly};
+use flutterdec_disasm_arm64::{
+    disassemble_program_with_priorities, FunctionDisassembly, FunctionPriorityBreakdown,
+};
 use flutterdec_ir::{build_program_ir, FunctionIr};
 use flutterdec_loader::{load_snapshot_bundle, SnapshotBundle};
 use serde::Serialize;
