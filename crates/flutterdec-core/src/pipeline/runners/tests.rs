@@ -282,6 +282,79 @@
     }
 
     #[test]
+    fn collects_app_package_function_counts() {
+        let model = ProgramModel {
+            schema_version: 2,
+            adapter_kind: "python".to_string(),
+            dart_version: "3.0.0".to_string(),
+            snapshot_hash: "deadbeef".to_string(),
+            arch: "arm64".to_string(),
+            libraries: Vec::new(),
+            classes: vec![
+                flutterdec_adapter::ClassInfo {
+                    id: 1,
+                    name: "AppA".to_string(),
+                    super_name: "Object".to_string(),
+                    library_uri: "package:spotube/a.dart".to_string(),
+                },
+                flutterdec_adapter::ClassInfo {
+                    id: 2,
+                    name: "AppB".to_string(),
+                    super_name: "Object".to_string(),
+                    library_uri: "package:provider/b.dart".to_string(),
+                },
+                flutterdec_adapter::ClassInfo {
+                    id: 3,
+                    name: "State".to_string(),
+                    super_name: "Object".to_string(),
+                    library_uri: "package:flutter/src/widgets/framework.dart".to_string(),
+                },
+            ],
+            functions: vec![
+                flutterdec_adapter::FunctionInfo {
+                    id: 10,
+                    name: "f10".to_string(),
+                    owner_class: "AppA".to_string(),
+                    entry_va: 0x1000,
+                    size: 4,
+                    code_section_va: 0x1000,
+                },
+                flutterdec_adapter::FunctionInfo {
+                    id: 11,
+                    name: "f11".to_string(),
+                    owner_class: "AppA".to_string(),
+                    entry_va: 0x1100,
+                    size: 4,
+                    code_section_va: 0x1100,
+                },
+                flutterdec_adapter::FunctionInfo {
+                    id: 12,
+                    name: "f12".to_string(),
+                    owner_class: "AppB".to_string(),
+                    entry_va: 0x1200,
+                    size: 4,
+                    code_section_va: 0x1200,
+                },
+                flutterdec_adapter::FunctionInfo {
+                    id: 13,
+                    name: "setState".to_string(),
+                    owner_class: "State".to_string(),
+                    entry_va: 0x1300,
+                    size: 4,
+                    code_section_va: 0x1300,
+                },
+            ],
+            object_pool: Vec::new(),
+        };
+
+        let counts = collect_app_package_counts(&model);
+        assert_eq!(
+            counts,
+            vec![("spotube".to_string(), 2), ("provider".to_string(), 1)]
+        );
+    }
+
+    #[test]
     fn normalizes_known_external_symbols() {
         assert_eq!(
             normalize_external_symbol_name("Dart_Invoke"),

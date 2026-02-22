@@ -104,6 +104,37 @@ fn normalize_package_filters(values: &[String]) -> HashSet<String> {
         .collect()
 }
 
+fn collect_app_package_counts(model: &ProgramModel) -> Vec<(String, usize)> {
+    let mut class_to_library = HashMap::new();
+    for c in &model.classes {
+        class_to_library
+            .entry(c.name.clone())
+            .or_insert_with(|| c.library_uri.clone());
+    }
+
+    let mut counts: HashMap<String, usize> = HashMap::new();
+    for f in &model.functions {
+        let Some(uri) = class_to_library.get(&f.owner_class) else {
+            continue;
+        };
+        if classify_library_uri(uri) != ScopedFunctionKind::App {
+            continue;
+        }
+        let Some(name) = package_name_from_library_uri(uri) else {
+            continue;
+        };
+        *counts.entry(name).or_insert(0) += 1;
+    }
+
+    let mut items = counts.into_iter().collect::<Vec<_>>();
+    items.sort_by(|(a_name, a_count), (b_name, b_count)| {
+        b_count
+            .cmp(a_count)
+            .then_with(|| a_name.cmp(b_name))
+    });
+    items
+}
+
 fn include_function_kind(scope: FunctionScope, kind: ScopedFunctionKind) -> bool {
     match scope {
         FunctionScope::All => true,
@@ -216,6 +247,12 @@ pub fn run_decompile(
 ) -> Result<QualityReport> {
     let bundle = load_snapshot_bundle(input_path)?;
     let model = load_model(repo_root, &bundle)?;
+    let app_package_counts = collect_app_package_counts(&model);
+    let app_package_counts_top = app_package_counts
+        .iter()
+        .take(20)
+        .map(|(package, functions)| json!({ "package": package, "functions": functions }))
+        .collect::<Vec<_>>();
     let normalized_app_packages = normalize_package_filters(&opt.app_packages);
     let mut normalized_app_package_list = normalized_app_packages.iter().cloned().collect::<Vec<_>>();
     normalized_app_package_list.sort();
@@ -229,7 +266,19 @@ pub fn run_decompile(
         let app_package_note = if normalized_app_packages.is_empty() {
             String::new()
         } else {
-            " and/or selected --app-package filters".to_string()
+            let available = app_package_counts
+                .iter()
+                .take(8)
+                .map(|(name, _)| name.clone())
+                .collect::<Vec<_>>();
+            if available.is_empty() {
+                " and/or selected --app-package filters".to_string()
+            } else {
+                format!(
+                    " and/or selected --app-package filters (available: {})",
+                    available.join(", ")
+                )
+            }
         };
         bail!(
             "no functions matched --function-scope {}{}. try --function-scope all",
@@ -465,6 +514,8 @@ pub fn run_decompile(
             "excluded": function_scope_stats.excluded,
             "excluded_by_app_package": function_scope_stats.excluded_by_app_package,
             "app_packages": normalized_app_package_list,
+            "app_package_count_total": app_package_counts.len(),
+            "app_package_counts_top": app_package_counts_top,
             "categories": {
                 "app": function_scope_stats.app,
                 "framework": function_scope_stats.framework,
