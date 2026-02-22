@@ -483,12 +483,11 @@ fn collect_direct_call_targets(
     out
 }
 
-fn build_entrypoint_frontier_scores(
+fn build_call_adjacency(
     candidates: &[&FunctionInfo],
-    target_va_hints: &HashMap<u64, i32>,
     iso_instr: &[u8],
     iso_base_va: u64,
-) -> HashMap<u64, i32> {
+) -> HashMap<u64, Vec<u64>> {
     let known_entries: HashSet<u64> = candidates.iter().map(|f| f.entry_va).collect();
     if known_entries.is_empty() {
         return HashMap::new();
@@ -501,7 +500,14 @@ fn build_entrypoint_frontier_scores(
             adjacency.insert(f.entry_va, callees);
         }
     }
+    adjacency
+}
 
+fn build_entrypoint_frontier_scores(
+    candidates: &[&FunctionInfo],
+    target_va_hints: &HashMap<u64, i32>,
+    adjacency: &HashMap<u64, Vec<u64>>,
+) -> HashMap<u64, i32> {
     let mut seeds = HashSet::new();
     for f in candidates {
         let name_lower = f.name.to_ascii_lowercase();
@@ -565,12 +571,25 @@ fn build_entrypoint_frontier_scores(
     out
 }
 
+fn function_size_bonus(size: u64) -> i32 {
+    match size {
+        0..=16 => 0,
+        17..=32 => 20,
+        33..=64 => 55,
+        65..=128 => 95,
+        129..=256 => 150,
+        257..=512 => 220,
+        _ => 280,
+    }
+}
+
 fn function_priority(
     func: &FunctionInfo,
     owner_library: &HashMap<String, String>,
     target_va_hints: &HashMap<u64, i32>,
     app_package_boosts: &HashMap<String, i32>,
     entrypoint_frontier_scores: &HashMap<u64, i32>,
+    call_out_degree: usize,
 ) -> (i32, Vec<(String, i32)>) {
     let mut score = 0i32;
     let mut components = Vec::new();
@@ -592,10 +611,17 @@ fn function_priority(
         score -= 90;
         push_component(&mut components, "private_name_penalty", -90);
     }
+    if func.size <= 16 && looks_generic_name(&name_lower) {
+        score -= 80;
+        push_component(&mut components, "tiny_generic_penalty", -80);
+    }
     if func.size <= 8 && (name_lower.starts_with("closure_") || name_lower.starts_with('_')) {
         score -= 220;
         push_component(&mut components, "tiny_wrapper_penalty", -220);
     }
+    let size_bonus = function_size_bonus(func.size);
+    score += size_bonus;
+    push_component(&mut components, "function_size_bonus", size_bonus);
     if is_main_like_name(&name_lower) {
         score += 900;
         push_component(&mut components, "main_name_bonus", 900);
@@ -667,6 +693,18 @@ fn function_priority(
             push_component(&mut components, "entrypoint_frontier_boost", *extra);
         }
     }
+    if call_out_degree > 0 {
+        let mut call_bonus = (call_out_degree.min(6) as i32) * 60;
+        if func.size <= 16 {
+            call_bonus /= 2;
+        }
+        score += call_bonus;
+        push_component(
+            &mut components,
+            format!("call_out_degree_bonus:{call_out_degree}"),
+            call_bonus,
+        );
+    }
 
     (score, components)
 }
@@ -675,6 +713,7 @@ struct RankedCandidate<'a> {
     index: usize,
     func: &'a FunctionInfo,
     score: i32,
+    out_degree: usize,
     components: Vec<(String, i32)>,
 }
 
@@ -718,11 +757,19 @@ fn rank_candidates<'a>(
             }
         })
         .collect::<Vec<_>>();
-    let frontier_scores = if max_functions.is_some() {
+    let (frontier_scores, call_out_degree) = if max_functions.is_some() {
         let funcs = candidates.iter().map(|(_, f)| *f).collect::<Vec<_>>();
-        build_entrypoint_frontier_scores(&funcs, &target_va_hints, iso_instr, iso_base_va)
+        let adjacency = build_call_adjacency(&funcs, iso_instr, iso_base_va);
+        let out_degree = adjacency
+            .iter()
+            .map(|(entry, callees)| (*entry, callees.len()))
+            .collect::<HashMap<_, _>>();
+        (
+            build_entrypoint_frontier_scores(&funcs, &target_va_hints, &adjacency),
+            out_degree,
+        )
     } else {
-        HashMap::new()
+        (HashMap::new(), HashMap::new())
     };
 
     let mut ranked = candidates
@@ -735,11 +782,13 @@ fn rank_candidates<'a>(
                     &target_va_hints,
                     &app_package_boosts,
                     &frontier_scores,
+                    call_out_degree.get(&func.entry_va).copied().unwrap_or(0),
                 );
                 RankedCandidate {
                     index,
                     func,
                     score,
+                    out_degree: call_out_degree.get(&func.entry_va).copied().unwrap_or(0),
                     components,
                 }
             } else {
@@ -747,6 +796,7 @@ fn rank_candidates<'a>(
                     index,
                     func,
                     score: 0,
+                    out_degree: 0,
                     components: Vec::new(),
                 }
             }
@@ -754,7 +804,13 @@ fn rank_candidates<'a>(
         .collect::<Vec<_>>();
 
     if max_functions.is_some() {
-        ranked.sort_by(|a, b| b.score.cmp(&a.score).then(a.index.cmp(&b.index)));
+        ranked.sort_by(|a, b| {
+            b.score
+                .cmp(&a.score)
+                .then(b.func.size.cmp(&a.func.size))
+                .then(b.out_degree.cmp(&a.out_degree))
+                .then(a.index.cmp(&b.index))
+        });
     }
     ranked
 }
@@ -1347,6 +1403,132 @@ mod tests {
         let d = disassemble_program(&model, &bytes, 0x2000, None, Some(1));
         assert_eq!(d.len(), 1);
         assert_eq!(d[0].owner_class, "AppCls");
+    }
+
+    #[test]
+    fn prioritizes_larger_function_when_names_are_generic_and_scores_tie() {
+        let model = ProgramModel {
+            schema_version: 2,
+            adapter_kind: "test".to_string(),
+            dart_version: "unknown".to_string(),
+            snapshot_hash: "h".to_string(),
+            arch: "arm64".to_string(),
+            libraries: vec![LibraryInfo {
+                id: 0,
+                uri: "package:app/main.dart".to_string(),
+                name_display: "package:app/main.dart".to_string(),
+            }],
+            classes: vec![ClassInfo {
+                id: 0,
+                name: "Global".to_string(),
+                super_name: "Object".to_string(),
+                library_uri: "package:app/main.dart".to_string(),
+            }],
+            functions: vec![
+                FunctionInfo {
+                    id: 0,
+                    name: "sub_1000".to_string(),
+                    owner_class: "Global".to_string(),
+                    entry_va: 0x1000,
+                    size: 8,
+                    code_section_va: 0x1000,
+                },
+                FunctionInfo {
+                    id: 1,
+                    name: "sub_1010".to_string(),
+                    owner_class: "Global".to_string(),
+                    entry_va: 0x1010,
+                    size: 0x100,
+                    code_section_va: 0x1000,
+                },
+            ],
+            object_pool: vec![ObjectPoolEntry {
+                index: 0,
+                kind: "String".to_string(),
+                value: "x".to_string(),
+                decoded_kind: None,
+                selector: None,
+                target_va: None,
+                owner_class: None,
+                library_uri: None,
+            }],
+        };
+        let bytes = [0xc0u8, 0x03, 0x5f, 0xd6].repeat(68);
+        let d = disassemble_program(&model, &bytes, 0x1000, None, Some(1));
+        assert_eq!(d.len(), 1);
+        assert_eq!(d[0].function_name, "sub_1010");
+    }
+
+    #[test]
+    fn prioritizes_hub_function_by_call_out_degree_when_names_are_generic() {
+        let model = ProgramModel {
+            schema_version: 2,
+            adapter_kind: "test".to_string(),
+            dart_version: "unknown".to_string(),
+            snapshot_hash: "h".to_string(),
+            arch: "arm64".to_string(),
+            libraries: vec![LibraryInfo {
+                id: 0,
+                uri: "package:app/main.dart".to_string(),
+                name_display: "package:app/main.dart".to_string(),
+            }],
+            classes: vec![ClassInfo {
+                id: 0,
+                name: "Global".to_string(),
+                super_name: "Object".to_string(),
+                library_uri: "package:app/main.dart".to_string(),
+            }],
+            functions: vec![
+                FunctionInfo {
+                    id: 0,
+                    name: "sub_1000".to_string(),
+                    owner_class: "Global".to_string(),
+                    entry_va: 0x1000,
+                    size: 12,
+                    code_section_va: 0x1000,
+                },
+                FunctionInfo {
+                    id: 1,
+                    name: "sub_1010".to_string(),
+                    owner_class: "Global".to_string(),
+                    entry_va: 0x1010,
+                    size: 4,
+                    code_section_va: 0x1000,
+                },
+                FunctionInfo {
+                    id: 2,
+                    name: "sub_1020".to_string(),
+                    owner_class: "Global".to_string(),
+                    entry_va: 0x1020,
+                    size: 4,
+                    code_section_va: 0x1000,
+                },
+            ],
+            object_pool: vec![ObjectPoolEntry {
+                index: 0,
+                kind: "String".to_string(),
+                value: "x".to_string(),
+                decoded_kind: None,
+                selector: None,
+                target_va: None,
+                owner_class: None,
+                library_uri: None,
+            }],
+        };
+        let bytes = vec![
+            0x04, 0x00, 0x00, 0x94, // bl #0x1010
+            0x07, 0x00, 0x00, 0x94, // bl #0x1020
+            0xc0, 0x03, 0x5f, 0xd6, // ret
+            0xc0, 0x03, 0x5f, 0xd6, // filler
+            0xc0, 0x03, 0x5f, 0xd6, // 0x1010 ret
+            0xc0, 0x03, 0x5f, 0xd6, // filler
+            0xc0, 0x03, 0x5f, 0xd6, // filler
+            0xc0, 0x03, 0x5f, 0xd6, // filler
+            0xc0, 0x03, 0x5f, 0xd6, // 0x1020 ret
+        ];
+        let d = disassemble_program(&model, &bytes, 0x1000, None, Some(1));
+        assert_eq!(d.len(), 1);
+        assert_eq!(d[0].function_name, "sub_1000");
     }
 
     #[test]
