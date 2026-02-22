@@ -1,9 +1,24 @@
 impl<'a> FuncEmitter<'a> {
+    fn strip_wrapped_expr<'b>(expr: &'b str) -> &'b str {
+        let mut cur = expr.trim();
+        while let Some(inner) = Self::strip_outer_parens_once(cur) {
+            cur = inner.trim();
+        }
+        cur
+    }
+
     fn is_simple_identifier_expr(expr: &str) -> bool {
         let t = expr.trim();
         !t.is_empty()
             && t.chars()
                 .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$')
+    }
+
+    fn is_simple_selector_member_expr(expr: &str) -> bool {
+        let t = expr.trim();
+        t.contains('.')
+            && t.chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$' || c == '.')
     }
 
     fn canonical_stack_slot_expr(expr: &str) -> Option<String> {
@@ -12,11 +27,14 @@ impl<'a> FuncEmitter<'a> {
     }
 
     fn selector_binding_key(expr: &str) -> Option<String> {
-        let trimmed = expr.trim();
+        let trimmed = Self::strip_wrapped_expr(expr);
         if trimmed.is_empty() {
             return None;
         }
         if Self::is_simple_identifier_expr(trimmed) {
+            return Some(trimmed.to_string());
+        }
+        if Self::is_simple_selector_member_expr(trimmed) {
             return Some(trimmed.to_string());
         }
         Self::canonical_stack_slot_expr(trimmed)

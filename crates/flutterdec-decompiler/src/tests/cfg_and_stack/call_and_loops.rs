@@ -2219,6 +2219,76 @@ fn propagates_selector_hint_through_stack_slot_assignment() {
 }
 
 #[test]
+fn propagates_selector_hint_through_object_field_assignment() {
+    let ir = FunctionIr {
+        function_id: 490,
+        name: "indirectSelectorViaObjectField".to_string(),
+        entry_va: 0xc4b0,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0xc4b0,
+            instrs: vec![
+                LlirInstr {
+                    va: 0xc4b0,
+                    op: IROp::LoadPool,
+                    src: "x1".to_string(),
+                    target: "pool[16]".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc4b4,
+                    op: IROp::Other,
+                    src: "str x1, [x0, #15]".to_string(),
+                    target: String::new(),
+                },
+                LlirInstr {
+                    va: 0xc4b8,
+                    op: IROp::Other,
+                    src: "mov x1, x22".to_string(),
+                    target: String::new(),
+                },
+                LlirInstr {
+                    va: 0xc4bc,
+                    op: IROp::Other,
+                    src: "ldr x2, [x0, #15]".to_string(),
+                    target: String::new(),
+                },
+                LlirInstr {
+                    va: 0xc4c0,
+                    op: IROp::Call,
+                    src: "blr x9".to_string(),
+                    target: "x9".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc4c4,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+
+    let symbols = HashMap::new();
+    let mut pool = HashMap::new();
+    pool.insert(16u64, "String: \"icon\"".to_string());
+    let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
+    assert!(
+        artifact.source.contains("dispatch.icon("),
+        "selector should survive object-field temp traffic:\n{}",
+        artifact.source
+    );
+    assert!(
+        artifact
+            .source
+            .contains("// selector: icon, indirect via: indirectTarget9"),
+        "selector annotation should remain after object-field load:\n{}",
+        artifact.source
+    );
+}
+
+#[test]
 fn keeps_dynamic_call_when_target_selector_is_file_path_like() {
     let ir = FunctionIr {
         function_id: 49,
