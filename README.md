@@ -15,17 +15,49 @@ It takes an APK (or `libapp.so`) and emits readable pseudo-Dart plus optional IR
 
 ## Quick Start
 
-Prerequisites:
+Recommended install: use GitHub release artifacts.
 
-- Nix with flakes enabled
+1. Download and install the first alpha release (current tag: `v0.1.0-alpha.1`):
 
-Run once without installing:
+```bash
+TAG="v0.1.0-alpha.1"
+OS="$(uname -s)"
+ARCH="$(uname -m)"
+
+case "$OS" in
+  Linux) os_name="Linux" ;;
+  Darwin) os_name="macOS" ;;
+  *) echo "Unsupported OS: $OS" >&2; exit 1 ;;
+esac
+
+case "$ARCH" in
+  x86_64|amd64) arch_name="X64" ;;
+  arm64|aarch64) arch_name="ARM64" ;;
+  *) echo "Unsupported arch: $ARCH" >&2; exit 1 ;;
+esac
+
+asset="flutterdec-${TAG}-${os_name}-${arch_name}.tar.gz"
+url="https://github.com/caverav/flutterdec/releases/download/${TAG}/${asset}"
+
+curl -fL -o "$asset" "$url"
+tar -xzf "$asset"
+sudo install -m 0755 flutterdec /usr/local/bin/flutterdec
+flutterdec --help
+```
+
+If your platform artifact is not available yet, open:
+
+[v0.1.0-alpha.1 release page](https://github.com/caverav/flutterdec/releases/tag/v0.1.0-alpha.1)
+
+Other install options:
+
+- Run from source (no install, requires Nix with flakes enabled):
 
 ```bash
 nix develop -c cargo run -p flutterdec-cli -- info ./sample.apk --json
 ```
 
-Install `flutterdec` into your user Cargo bin directory:
+- Install into user Cargo bin (requires Nix with flakes enabled):
 
 ```bash
 nix develop -c cargo install --path crates/flutterdec-cli
