@@ -232,7 +232,7 @@ pub fn run_info(repo_root: &Path, input_path: &Path) -> Result<InfoOutput> {
     };
 
     if adapter_installed {
-        if let Ok(model) = load_model(repo_root, &bundle) {
+        if let Ok(model) = load_model(repo_root, &bundle, AdapterBackend::Auto) {
             out.function_count = Some(model.functions.len());
             out.class_count = Some(model.classes.len());
             out.object_pool_count = Some(model.object_pool.len());
@@ -257,7 +257,7 @@ pub fn run_decompile(
     opt: &DecompileOptions,
 ) -> Result<QualityReport> {
     let bundle = load_snapshot_bundle(input_path)?;
-    let model = load_model(repo_root, &bundle)?;
+    let model = load_model(repo_root, &bundle, opt.adapter_backend)?;
     let app_package_counts = collect_app_package_counts(&model);
     let app_package_counts_top = app_package_counts
         .iter()

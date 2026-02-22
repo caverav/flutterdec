@@ -28,6 +28,7 @@ pub struct DecompileOptions {
     pub min_disassembly_ratio: f64,
     pub function_scope: FunctionScope,
     pub app_packages: Vec<String>,
+    pub adapter_backend: AdapterBackend,
     pub analysis_profile: DecompileAnalysisProfile,
     pub engine_options: DecompileEngineOptions,
 }
@@ -60,6 +61,23 @@ impl DecompileAnalysisProfile {
         match self {
             Self::Light => "light",
             Self::Balanced => "balanced",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+pub enum AdapterBackend {
+    Auto,
+    Internal,
+    Blutter,
+}
+
+impl AdapterBackend {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Internal => "internal",
+            Self::Blutter => "blutter",
         }
     }
 }

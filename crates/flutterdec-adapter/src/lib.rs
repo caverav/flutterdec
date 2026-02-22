@@ -78,12 +78,15 @@ pub struct AdapterManifestEntry {
 
 #[derive(Debug, Clone)]
 pub struct AdapterInput<'a> {
+    pub input_path: Option<&'a Path>,
+    pub libapp_path: Option<&'a Path>,
     pub vm_data: &'a [u8],
     pub isolate_data: &'a [u8],
     pub vm_instr: &'a [u8],
     pub isolate_instr: &'a [u8],
     pub vm_instr_va: u64,
     pub isolate_instr_va: u64,
+    pub backend: Option<&'a str>,
 }
 
 fn manifest_path(repo_root: &Path) -> PathBuf {
@@ -223,8 +226,8 @@ pub fn run_adapter(exec_path: &Path, input: &AdapterInput<'_>) -> Result<Program
     fs::File::create(&vm_instr)?.write_all(input.vm_instr)?;
     fs::File::create(&iso_instr)?.write_all(input.isolate_instr)?;
 
-    let output = Command::new(exec_path)
-        .arg("--vm-data")
+    let mut cmd = Command::new(exec_path);
+    cmd.arg("--vm-data")
         .arg(&vm_data)
         .arg("--isolate-data")
         .arg(&iso_data)
@@ -237,7 +240,17 @@ pub fn run_adapter(exec_path: &Path, input: &AdapterInput<'_>) -> Result<Program
         .arg("--isolate-instr-va")
         .arg(input.isolate_instr_va.to_string())
         .arg("--out")
-        .arg(&out_json)
+        .arg(&out_json);
+    if let Some(path) = input.input_path {
+        cmd.arg("--input-path").arg(path);
+    }
+    if let Some(path) = input.libapp_path {
+        cmd.arg("--libapp-path").arg(path);
+    }
+    if let Some(backend) = input.backend {
+        cmd.env("FLUTTERDEC_ADAPTER_BACKEND", backend);
+    }
+    let output = cmd
         .output()
         .with_context(|| format!("launch adapter: {}", exec_path.display()))?;
 

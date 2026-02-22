@@ -3,8 +3,9 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 use flutterdec_adapter::install_adapter;
 use flutterdec_core::{
     available_adapters, run_decompile, run_engine_fingerprint, run_info, run_symbol_map,
-    DecompileAnalysisProfile, DecompileEngineOptionOverrides, DecompileEngineOptions,
-    DecompileOptions, EngineFingerprintOptions, FunctionScope, SymbolMapOptions,
+    AdapterBackend, DecompileAnalysisProfile, DecompileEngineOptionOverrides,
+    DecompileEngineOptions, DecompileOptions, EngineFingerprintOptions, FunctionScope,
+    SymbolMapOptions,
 };
 use std::path::{Path, PathBuf};
 
@@ -63,6 +64,8 @@ struct DecompileCmd {
     function_scope: FunctionScopeArg,
     #[arg(long = "app-package")]
     app_packages: Vec<String>,
+    #[arg(long, value_enum, default_value_t = AdapterBackendArg::Auto)]
+    adapter_backend: AdapterBackendArg,
     #[arg(long, value_enum, default_value_t = AnalysisProfileArg::Balanced)]
     analysis_profile: AnalysisProfileArg,
     #[arg(long)]
@@ -114,6 +117,23 @@ impl FunctionScopeArg {
             Self::AppUnknown => FunctionScope::AppUnknown,
             Self::App => FunctionScope::App,
             Self::All => FunctionScope::All,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum AdapterBackendArg {
+    Auto,
+    Internal,
+    Blutter,
+}
+
+impl AdapterBackendArg {
+    fn to_core(self) -> AdapterBackend {
+        match self {
+            Self::Auto => AdapterBackend::Auto,
+            Self::Internal => AdapterBackend::Internal,
+            Self::Blutter => AdapterBackend::Blutter,
         }
     }
 }
@@ -247,6 +267,7 @@ fn build_decompile_options(cmd: DecompileCmd) -> Result<DecompileOptions> {
         min_disassembly_ratio: cmd.min_disassembly_ratio,
         function_scope: cmd.function_scope.to_core(),
         app_packages: cmd.app_packages,
+        adapter_backend: cmd.adapter_backend.to_core(),
         analysis_profile: profile,
         engine_options,
     })
@@ -439,5 +460,33 @@ mod tests {
             panic!("expected decompile command");
         };
         assert_eq!(cmd.app_packages, vec!["spotube", "provider"]);
+    }
+
+    #[test]
+    fn decompile_adapter_backend_defaults_to_auto() {
+        let cli = Cli::try_parse_from(["flutterdec", "decompile", "sample.apk", "-o", "out"])
+            .expect("parse");
+        let Command::Decompile(cmd) = cli.command else {
+            panic!("expected decompile command");
+        };
+        assert!(matches!(cmd.adapter_backend, AdapterBackendArg::Auto));
+    }
+
+    #[test]
+    fn decompile_adapter_backend_accepts_blutter() {
+        let cli = Cli::try_parse_from([
+            "flutterdec",
+            "decompile",
+            "sample.apk",
+            "-o",
+            "out",
+            "--adapter-backend",
+            "blutter",
+        ])
+        .expect("parse");
+        let Command::Decompile(cmd) = cli.command else {
+            panic!("expected decompile command");
+        };
+        assert!(matches!(cmd.adapter_backend, AdapterBackendArg::Blutter));
     }
 }
