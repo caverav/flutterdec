@@ -160,6 +160,14 @@ impl<'a> FuncEmitter<'a> {
         let mut out: HashMap<String, String> = HashMap::new();
 
         for line in lines {
+            if let Some(condition) = Self::extract_if_condition(line) {
+                for id in ids {
+                    if Self::condition_suggests_bool(&condition, id) {
+                        Self::upsert_inferred_type(&mut out, id, "bool");
+                    }
+                }
+            }
+
             if let Some((callee, args)) = Self::extract_call_site(line) {
                 if let Some(assign_id) = Self::extract_assignment_ident(line) {
                     if ids.contains(&assign_id) {
@@ -226,6 +234,82 @@ impl<'a> FuncEmitter<'a> {
             }
         }
 
+        out
+    }
+
+    fn extract_if_condition(line: &str) -> Option<String> {
+        let t = line.trim();
+        if !t.starts_with("if ") && !t.starts_with("if(") {
+            return None;
+        }
+        let open = t.find('(')?;
+        let close = Self::match_paren(t, open)?;
+        let cond = t[open + 1..close].trim();
+        if cond.is_empty() {
+            None
+        } else {
+            Some(cond.to_string())
+        }
+    }
+
+    fn condition_suggests_bool(cond: &str, id: &str) -> bool {
+        let compact: String = cond.chars().filter(|c| !c.is_whitespace()).collect();
+        let trimmed = compact.trim_matches(|c| c == '(' || c == ')');
+        if trimmed == id || trimmed == format!("!{id}") {
+            return true;
+        }
+
+        for pos in Self::identifier_positions(trimmed, id) {
+            let before = &trimmed[..pos];
+            let after = &trimmed[pos + id.len()..];
+            if after.starts_with("==true")
+                || after.starts_with("==false")
+                || after.starts_with("!=true")
+                || after.starts_with("!=false")
+            {
+                return true;
+            }
+            if before.ends_with("true==")
+                || before.ends_with("false==")
+                || before.ends_with("true!=")
+                || before.ends_with("false!=")
+            {
+                return true;
+            }
+            if after.starts_with("&&")
+                || after.starts_with("||")
+                || before.ends_with("&&")
+                || before.ends_with("||")
+            {
+                return true;
+            }
+            if before.ends_with('!') && (after.is_empty() || after.starts_with("&&") || after.starts_with("||")) {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn identifier_positions(s: &str, id: &str) -> Vec<usize> {
+        let mut out = Vec::new();
+        for (idx, _) in s.match_indices(id) {
+            let prev_ok = idx == 0
+                || s[..idx]
+                    .chars()
+                    .last()
+                    .map(|c| !Self::is_ident_char(c))
+                    .unwrap_or(true);
+            let next_i = idx + id.len();
+            let next_ok = next_i >= s.len()
+                || s[next_i..]
+                    .chars()
+                    .next()
+                    .map(|c| !Self::is_ident_char(c))
+                    .unwrap_or(true);
+            if prev_ok && next_ok {
+                out.push(idx);
+            }
+        }
         out
     }
 

@@ -387,6 +387,40 @@ fn infers_string_type_for_pool_mapped_literal_assignment() {
 }
 
 #[test]
+fn infers_bool_types_from_if_condition_context() {
+    let ir = FunctionIr {
+        function_id: 811,
+        name: "typedConditionBools".to_string(),
+        entry_va: 0x80b000,
+        blocks: Vec::new(),
+    };
+    let symbols = HashMap::new();
+    let mut emitter = FuncEmitter::new(&ir, &symbols);
+    emitter.locals.insert(-8, "local_m8".to_string());
+    emitter.lines = vec![
+        "dynamic typedConditionBools(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {".to_string(),
+        "  var local_m8;".to_string(),
+        "".to_string(),
+        "  if (arg1 && (local_m8 == true)) {".to_string(),
+        "    return arg0;".to_string(),
+        "  }".to_string(),
+        "  return arg0;".to_string(),
+        "}".to_string(),
+    ];
+
+    emitter.apply_name_and_type_hints("typedConditionBools");
+    let out = emitter.lines.join("\n");
+    assert!(
+        out.contains("bool param1"),
+        "if-condition use should infer bool argument type:\n{out}"
+    );
+    assert!(
+        out.contains("bool tmp"),
+        "if-condition bool comparison should infer bool local type:\n{out}"
+    );
+}
+
+#[test]
 fn infers_local_types_from_semantic_return_paths() {
     let ir = FunctionIr {
         function_id: 808,
