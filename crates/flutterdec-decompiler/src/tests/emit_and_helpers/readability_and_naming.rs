@@ -432,6 +432,34 @@ fn infers_local_types_from_semantic_return_paths() {
 }
 
 #[test]
+fn infers_local_type_from_constructor_like_fallback_call_path() {
+    let ir = FunctionIr {
+        function_id: 809,
+        name: "typedFallbackCtorLocal".to_string(),
+        entry_va: 0x809000,
+        blocks: Vec::new(),
+    };
+    let symbols = HashMap::new();
+    let mut emitter = FuncEmitter::new(&ir, &symbols);
+    emitter.locals.insert(-8, "local_m8".to_string());
+    emitter.lines = vec![
+        "dynamic typedFallbackCtorLocal(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {".to_string(),
+        "  var local_m8;".to_string(),
+        "".to_string(),
+        "  local_m8 = AndroidPermission.new(arg0, arg1, arg2, arg3); // selector: AndroidPermission, heuristic: constructor-like selector".to_string(),
+        "  return local_m8;".to_string(),
+        "}".to_string(),
+    ];
+
+    emitter.apply_name_and_type_hints("typedFallbackCtorLocal");
+    let out = emitter.lines.join("\n");
+    assert!(
+        out.contains("AndroidPermission tmp"),
+        "constructor-like fallback call path should infer local constructor type:\n{out}"
+    );
+}
+
+#[test]
 fn renames_receiver_argument_from_field_usage() {
     let ir = FunctionIr {
         function_id: 9,

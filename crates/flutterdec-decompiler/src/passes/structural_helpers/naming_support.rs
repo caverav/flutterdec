@@ -329,6 +329,10 @@ impl<'a> FuncEmitter<'a> {
             || first == "dart_vm"
             || first
                 .chars()
+                .next()
+                .is_some_and(|c| c.is_ascii_uppercase())
+            || first
+                .chars()
                 .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_');
         if !first_is_supported_root {
             return None;
