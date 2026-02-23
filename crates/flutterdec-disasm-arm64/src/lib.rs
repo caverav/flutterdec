@@ -289,6 +289,11 @@ fn entrypoint_signal_score(entry: &flutterdec_adapter::ObjectPoolEntry) -> i32 {
         "deeplinkhandlercandidate" => 2600,
         "activityhandlercandidate" => 2400,
         "bootstrapinitcandidate" => 1800,
+        "manifestmaincandidate" => 5400,
+        "manifestrunappcandidate" => 3200,
+        "manifestdeeplinkcandidate" => 2100,
+        "manifestactivitycandidate" => 1900,
+        "manifestbootstrapcandidate" => 1400,
         _ => 0,
     };
 
@@ -305,6 +310,16 @@ fn entrypoint_signal_score(entry: &flutterdec_adapter::ObjectPoolEntry) -> i32 {
         score += 800;
     } else if value_lower.starts_with("bootflow:init:") {
         score += 700;
+    } else if value_lower.starts_with("manifest:main") {
+        score += 1800;
+    } else if value_lower.starts_with("manifest:runapp") {
+        score += 1000;
+    } else if value_lower.starts_with("manifest:deeplink") {
+        score += 700;
+    } else if value_lower.starts_with("manifest:activity") {
+        score += 650;
+    } else if value_lower.starts_with("manifest:bootstrap") {
+        score += 520;
     }
 
     if let Some(selector) = entry.selector.as_deref() {
@@ -320,7 +335,12 @@ fn entrypoint_signal_score(entry: &flutterdec_adapter::ObjectPoolEntry) -> i32 {
     // handlers should dominate capped reverse-engineering output.
     let framework_weighted_kind = matches!(
         decoded_kind_lower.as_str(),
-        "deeplinkhandlercandidate" | "activityhandlercandidate" | "bootstrapinitcandidate"
+        "deeplinkhandlercandidate"
+            | "activityhandlercandidate"
+            | "bootstrapinitcandidate"
+            | "manifestdeeplinkcandidate"
+            | "manifestactivitycandidate"
+            | "manifestbootstrapcandidate"
     );
     if framework_weighted_kind && library_lower.starts_with("package:flutter/") {
         score /= 4;
@@ -1394,6 +1414,60 @@ mod tests {
         let d = disassemble_program(&model, &bytes, 0x50a0, None, Some(1));
         assert_eq!(d.len(), 1);
         assert_eq!(d[0].function_name, "sub_50a4");
+    }
+
+    #[test]
+    fn prioritizes_manifest_main_candidate_target_va_when_names_are_generic() {
+        let model = ProgramModel {
+            schema_version: 2,
+            adapter_kind: "test".to_string(),
+            dart_version: "unknown".to_string(),
+            snapshot_hash: "h".to_string(),
+            arch: "arm64".to_string(),
+            libraries: vec![LibraryInfo {
+                id: 0,
+                uri: "package:app/main.dart".to_string(),
+                name_display: "package:app/main.dart".to_string(),
+            }],
+            classes: vec![ClassInfo {
+                id: 0,
+                name: "Global".to_string(),
+                super_name: "Object".to_string(),
+                library_uri: "package:app/main.dart".to_string(),
+            }],
+            functions: vec![
+                FunctionInfo {
+                    id: 0,
+                    name: "sub_50aa".to_string(),
+                    owner_class: "Global".to_string(),
+                    entry_va: 0x50aa,
+                    size: 4,
+                    code_section_va: 0x50aa,
+                },
+                FunctionInfo {
+                    id: 1,
+                    name: "sub_50ae".to_string(),
+                    owner_class: "Global".to_string(),
+                    entry_va: 0x50ae,
+                    size: 4,
+                    code_section_va: 0x50aa,
+                },
+            ],
+            object_pool: vec![ObjectPoolEntry {
+                index: 0,
+                kind: "String".to_string(),
+                value: "manifest:main-launcher".to_string(),
+                decoded_kind: Some("ManifestMainCandidate".to_string()),
+                selector: Some("main".to_string()),
+                target_va: Some(0x50ae),
+                owner_class: Some("Global".to_string()),
+                library_uri: Some("package:app/main.dart".to_string()),
+            }],
+        };
+        let bytes = vec![0xc0, 0x03, 0x5f, 0xd6, 0xc0, 0x03, 0x5f, 0xd6];
+        let d = disassemble_program(&model, &bytes, 0x50aa, None, Some(1));
+        assert_eq!(d.len(), 1);
+        assert_eq!(d[0].function_name, "sub_50ae");
     }
 
     #[test]
