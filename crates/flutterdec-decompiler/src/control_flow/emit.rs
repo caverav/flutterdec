@@ -1,5 +1,5 @@
 impl<'a> FuncEmitter<'a> {
-    fn strip_wrapped_expr<'b>(expr: &'b str) -> &'b str {
+    fn strip_wrapped_expr(expr: &str) -> &str {
         let mut cur = expr.trim();
         while let Some(inner) = Self::strip_outer_parens_once(cur) {
             cur = inner.trim();
@@ -63,10 +63,9 @@ impl<'a> FuncEmitter<'a> {
             .filter_map(|(k, v)| {
                 if k == src_base {
                     Some((dst_base.to_string(), v.clone()))
-                } else if let Some(suffix) = k.strip_prefix(&src_prefix) {
-                    Some((format!("{dst_base}.{suffix}"), v.clone()))
                 } else {
-                    None
+                    k.strip_prefix(&src_prefix)
+                        .map(|suffix| (format!("{dst_base}.{suffix}"), v.clone()))
                 }
             })
             .collect::<Vec<_>>();

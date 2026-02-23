@@ -97,9 +97,7 @@ fn extract_selector_name(raw: &str) -> Option<String> {
         Some(t.to_string())
     }
 
-    let Some(candidate) = normalize_selector_candidate(raw) else {
-        return None;
-    };
+    let candidate = normalize_selector_candidate(raw)?;
     let raw_lower = candidate.to_ascii_lowercase();
     if raw_lower.contains(".dart") || raw_lower.contains('/') || raw_lower.contains('\\') {
         return None;
