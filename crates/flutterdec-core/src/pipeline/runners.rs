@@ -625,7 +625,14 @@ pub fn run_decompile(
         },
         "android_manifest": {
             "present": manifest_inspection.present,
+            "parse_mode": manifest_inspection.parse_mode,
             "parse_error": manifest_inspection.parse_error,
+            "confidence": {
+                "package_name": manifest_inspection.confidence.package_name,
+                "launcher": manifest_inspection.confidence.launcher,
+                "deeplink": manifest_inspection.confidence.deeplink,
+                "activities": manifest_inspection.confidence.activities
+            },
             "package_name": manifest_inspection.signals.package_name,
             "main_launcher": manifest_inspection.signals.has_main_launcher,
             "view_browsable": manifest_inspection.signals.has_view_browsable,
