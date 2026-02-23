@@ -687,6 +687,7 @@ fn function_priority(
     owner_library: &HashMap<String, String>,
     target_va_hints: &HashMap<u64, i32>,
     app_package_boosts: &HashMap<String, i32>,
+    preferred_packages: &HashSet<String>,
     entrypoint_frontier_scores: &HashMap<u64, i32>,
     call_out_degree: usize,
     name_occurrences: usize,
@@ -787,6 +788,21 @@ fn function_priority(
                 push_component(&mut components, "package_src_penalty", -50);
             }
             if let Some(pkg) = package_name_from_library_uri(&uri_lower) {
+                if preferred_packages.contains(&pkg) {
+                    score += 420;
+                    push_component(
+                        &mut components,
+                        format!("preferred_package_bonus:{pkg}"),
+                        420,
+                    );
+                } else if !preferred_packages.is_empty() && pkg != "app" {
+                    score -= 220;
+                    push_component(
+                        &mut components,
+                        format!("non_preferred_package_penalty:{pkg}"),
+                        -220,
+                    );
+                }
                 if let Some(extra) = app_package_boosts.get(&pkg) {
                     score += *extra;
                     push_component(&mut components, format!("app_package_boost:{pkg}"), *extra);
@@ -917,6 +933,7 @@ fn rank_candidates<'a>(
                     &owner_library,
                     &target_va_hints,
                     &app_package_boosts,
+                    &preferred_package_set,
                     &frontier_scores,
                     call_out_degree.get(&func.entry_va).copied().unwrap_or(0),
                     name_occurrences
@@ -2102,6 +2119,7 @@ mod tests {
             &owner_library,
             &HashMap::new(),
             &HashMap::new(),
+            &HashSet::new(),
             &HashMap::new(),
             0,
             1,
@@ -2111,6 +2129,7 @@ mod tests {
             &owner_library,
             &HashMap::new(),
             &HashMap::new(),
+            &HashSet::new(),
             &HashMap::new(),
             0,
             1,
@@ -2168,6 +2187,7 @@ mod tests {
             &owner_library,
             &HashMap::new(),
             &HashMap::new(),
+            &HashSet::new(),
             &HashMap::new(),
             0,
             1,
@@ -2177,6 +2197,7 @@ mod tests {
             &owner_library,
             &HashMap::new(),
             &HashMap::new(),
+            &HashSet::new(),
             &HashMap::new(),
             0,
             1,
@@ -2197,6 +2218,73 @@ mod tests {
         assert!(
             isolate_score < core_score,
             "dart:isolate functions should rank below other stdlib functions when tied (isolate={isolate_score}, core={core_score})"
+        );
+    }
+
+    #[test]
+    fn preferred_package_bonus_beats_non_preferred_package_for_generic_names() {
+        let preferred_func = FunctionInfo {
+            id: 0,
+            name: "sub_7100".to_string(),
+            owner_class: "SpotubeCore".to_string(),
+            entry_va: 0x7100,
+            size: 64,
+            code_section_va: 0x7000,
+        };
+        let dep_func = FunctionInfo {
+            id: 1,
+            name: "sub_7200".to_string(),
+            owner_class: "ProviderCore".to_string(),
+            entry_va: 0x7200,
+            size: 64,
+            code_section_va: 0x7000,
+        };
+        let mut owner_library = HashMap::new();
+        owner_library.insert(
+            "SpotubeCore".to_string(),
+            "package:spotube/main.dart".to_string(),
+        );
+        owner_library.insert(
+            "ProviderCore".to_string(),
+            "package:provider/src/provider.dart".to_string(),
+        );
+        let preferred = HashSet::from(["spotube".to_string()]);
+
+        let (preferred_score, preferred_components) = function_priority(
+            &preferred_func,
+            &owner_library,
+            &HashMap::new(),
+            &HashMap::new(),
+            &preferred,
+            &HashMap::new(),
+            0,
+            1,
+        );
+        let (dep_score, dep_components) = function_priority(
+            &dep_func,
+            &owner_library,
+            &HashMap::new(),
+            &HashMap::new(),
+            &preferred,
+            &HashMap::new(),
+            0,
+            1,
+        );
+        assert!(
+            preferred_components
+                .iter()
+                .any(|(name, score)| name == "preferred_package_bonus:spotube" && *score == 420),
+            "preferred package bonus should be applied: {preferred_components:?}"
+        );
+        assert!(
+            dep_components.iter().any(|(name, score)| name
+                == "non_preferred_package_penalty:provider"
+                && *score == -220),
+            "non-preferred package penalty should be applied: {dep_components:?}"
+        );
+        assert!(
+            preferred_score > dep_score,
+            "preferred package should outrank dependency package (preferred={preferred_score}, dep={dep_score})"
         );
     }
 
