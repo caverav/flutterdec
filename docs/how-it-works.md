@@ -628,6 +628,7 @@ File naming convention:
 - `android_manifest` aggregate
 - `function_scope.priority_package_hints` (effective package boosts used by capped prioritization)
 - `prioritization.selected_package_counts_top` and `prioritization.selected_unknown_library_count` (selected top-N ownership mix)
+- `prioritization.selected_scope_mix` and `prioritization.selected_app_like_ratio` (selected top-N scope quality)
 
 ## How `info` differs from `decompile`
 

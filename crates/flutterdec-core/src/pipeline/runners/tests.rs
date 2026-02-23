@@ -178,6 +178,53 @@
     }
 
     #[test]
+    fn collects_selected_priority_scope_mix() {
+        let selected = vec![
+            FunctionPriorityBreakdown {
+                function_id: 1,
+                function_name: "main".to_string(),
+                owner_class: "Global".to_string(),
+                library_uri: "package:spotube/main.dart".to_string(),
+                entry_va: 0x1000,
+                total_score: 100,
+                components: Vec::new(),
+            },
+            FunctionPriorityBreakdown {
+                function_id: 2,
+                function_name: "setState".to_string(),
+                owner_class: "State".to_string(),
+                library_uri: "package:flutter/src/widgets/framework.dart".to_string(),
+                entry_va: 0x1010,
+                total_score: 90,
+                components: Vec::new(),
+            },
+            FunctionPriorityBreakdown {
+                function_id: 3,
+                function_name: "toString".to_string(),
+                owner_class: "Object".to_string(),
+                library_uri: "dart:core".to_string(),
+                entry_va: 0x1020,
+                total_score: 80,
+                components: Vec::new(),
+            },
+            FunctionPriorityBreakdown {
+                function_id: 4,
+                function_name: "sub_1030".to_string(),
+                owner_class: "Unknown".to_string(),
+                library_uri: "".to_string(),
+                entry_va: 0x1030,
+                total_score: 70,
+                components: Vec::new(),
+            },
+        ];
+        let mix = collect_selected_priority_scope_mix(&selected);
+        assert_eq!(mix.app, 1);
+        assert_eq!(mix.framework, 1);
+        assert_eq!(mix.stdlib, 1);
+        assert_eq!(mix.unknown, 1);
+    }
+
+    #[test]
     fn applies_app_unknown_scope_filter() {
         let model = ProgramModel {
             schema_version: 2,
