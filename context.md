@@ -186,7 +186,7 @@ Current scope:
 - adapter object-pool metadata fields (`decoded_kind`, `selector`, `target_va`, `owner_class`, `library_uri`) are now consumed by decompile for deterministic owner-qualified selector rewrites
 - adapter execution now supports backend selection (`auto`, `internal`, `blutter`) so deterministic parser backends can be introduced without changing decompiler core contracts
 - default adapter backend mode is `auto`: it attempts Blutter bridge parsing when configured (`FLUTTERDEC_BLUTTER_CMD` or `FLUTTERDEC_BLUTTER_PY`) and falls back to internal parsing for resilience
-- Blutter bridge parsing currently normalizes `asm/*.dart` and `pp.txt` output into `ProgramModel` (`libraries`, `classes`, `functions`, and best-effort `object_pool` target metadata), and now synthesizes deterministic `EntryPointCandidate` pool entries for `main`/`runApp`-like functions when present
+- Blutter bridge parsing currently normalizes `asm/*.dart` and `pp.txt` output into `ProgramModel` (`libraries`, `classes`, `functions`, and best-effort `object_pool` target metadata), synthesizes deterministic `EntryPointCandidate` pool entries for `main`/`runApp`-like functions when present, and serializes blutter invocations with a cache lock to avoid concurrent runner races
 - owner-only metadata (selector + owner_class without library URI) can still rewrite indirect selector calls to deterministic owner-qualified call paths
 - if pool entries miss selector/owner/library metadata, core now backfills semantic hints from function ownership metadata keyed by `target_va`
 - when metadata includes `target_va` and that address resolves to a non-generic symbol, indirect calls can be rewritten to the resolved symbol path (with `target_va` traceability in comments)
