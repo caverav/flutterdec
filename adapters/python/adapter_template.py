@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import fcntl
 import json
 import os
 import re
@@ -542,7 +543,13 @@ def _run_blutter_dump(input_path: Optional[str], libapp_path: Optional[str]) -> 
             raise RuntimeError("custom blutter backend needs --input-path")
         cmd = runner + [input_path, str(out_dir)]
 
-    proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    lock_dir = Path.home() / ".cache" / "flutterdec"
+    lock_dir.mkdir(parents=True, exist_ok=True)
+    lock_file = lock_dir / "blutter-run.lock"
+    with lock_file.open("w") as lock_fp:
+        fcntl.flock(lock_fp.fileno(), fcntl.LOCK_EX)
+        proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        fcntl.flock(lock_fp.fileno(), fcntl.LOCK_UN)
     if proc.returncode != 0:
         raise RuntimeError(
             "blutter failed with status {}\nstdout:\n{}\nstderr:\n{}".format(
