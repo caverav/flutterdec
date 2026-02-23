@@ -703,6 +703,7 @@ Symptom: capped `--max-functions` output is dominated by runtime helper paths
 - keep `--function-scope app-unknown` (default) or tighten with `--function-scope app`
 - inspect `report.json` -> `prioritization.selected[*]` for ranking reasons (`components`) and package/library ownership (`library_uri`)
 - if needed, set explicit `--app-package <name>`; otherwise decompile derives a package hint from `AndroidManifest.xml` when available
+- when package hints are present, non-preferred third-party packages are also downranked, so app package functions should dominate capped selections
 - note: scorer downranks explicit `no isolate` markers and `dart:isolate*` library paths by default
 
 Symptom: pseudocode has too many omitted path summaries
