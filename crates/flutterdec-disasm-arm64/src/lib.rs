@@ -682,6 +682,11 @@ fn function_size_bonus(size: u64) -> i32 {
     }
 }
 
+struct FunctionScoreStats {
+    call_out_degree: usize,
+    name_occurrences: usize,
+}
+
 fn function_priority(
     func: &FunctionInfo,
     owner_library: &HashMap<String, String>,
@@ -689,8 +694,7 @@ fn function_priority(
     app_package_boosts: &HashMap<String, i32>,
     preferred_packages: &HashSet<String>,
     entrypoint_frontier_scores: &HashMap<u64, i32>,
-    call_out_degree: usize,
-    name_occurrences: usize,
+    stats: FunctionScoreStats,
 ) -> (i32, Vec<(String, i32)>) {
     let mut score = 0i32;
     let mut components = Vec::new();
@@ -708,12 +712,13 @@ fn function_priority(
     } else {
         score += 10;
         push_component(&mut components, "named_function_bonus", 10);
-        if name_occurrences > 1 {
-            let repeated_name_penalty = (name_occurrences.saturating_sub(1).min(10) as i32) * 240;
+        if stats.name_occurrences > 1 {
+            let repeated_name_penalty =
+                (stats.name_occurrences.saturating_sub(1).min(10) as i32) * 240;
             score -= repeated_name_penalty;
             push_component(
                 &mut components,
-                format!("repeated_name_penalty:{name_occurrences}"),
+                format!("repeated_name_penalty:{}", stats.name_occurrences),
                 -repeated_name_penalty,
             );
         }
@@ -827,15 +832,15 @@ fn function_priority(
             push_component(&mut components, "entrypoint_frontier_boost", *extra);
         }
     }
-    if call_out_degree > 0 {
-        let mut call_bonus = (call_out_degree.min(6) as i32) * 60;
+    if stats.call_out_degree > 0 {
+        let mut call_bonus = (stats.call_out_degree.min(6) as i32) * 60;
         if func.size <= 16 {
             call_bonus /= 2;
         }
         score += call_bonus;
         push_component(
             &mut components,
-            format!("call_out_degree_bonus:{call_out_degree}"),
+            format!("call_out_degree_bonus:{}", stats.call_out_degree),
             call_bonus,
         );
     }
@@ -935,11 +940,13 @@ fn rank_candidates<'a>(
                     &app_package_boosts,
                     &preferred_package_set,
                     &frontier_scores,
-                    call_out_degree.get(&func.entry_va).copied().unwrap_or(0),
-                    name_occurrences
-                        .get(&func.name.to_ascii_lowercase())
-                        .copied()
-                        .unwrap_or(1),
+                    FunctionScoreStats {
+                        call_out_degree: call_out_degree.get(&func.entry_va).copied().unwrap_or(0),
+                        name_occurrences: name_occurrences
+                            .get(&func.name.to_ascii_lowercase())
+                            .copied()
+                            .unwrap_or(1),
+                    },
                 );
                 RankedCandidate {
                     index,
@@ -2121,8 +2128,10 @@ mod tests {
             &HashMap::new(),
             &HashSet::new(),
             &HashMap::new(),
-            0,
-            1,
+            FunctionScoreStats {
+                call_out_degree: 0,
+                name_occurrences: 1,
+            },
         );
         let (noisy_score, noisy_components) = function_priority(
             &noisy,
@@ -2131,8 +2140,10 @@ mod tests {
             &HashMap::new(),
             &HashSet::new(),
             &HashMap::new(),
-            0,
-            1,
+            FunctionScoreStats {
+                call_out_degree: 0,
+                name_occurrences: 1,
+            },
         );
 
         assert!(
@@ -2189,8 +2200,10 @@ mod tests {
             &HashMap::new(),
             &HashSet::new(),
             &HashMap::new(),
-            0,
-            1,
+            FunctionScoreStats {
+                call_out_degree: 0,
+                name_occurrences: 1,
+            },
         );
         let (core_score, core_components) = function_priority(
             &core_func,
@@ -2199,8 +2212,10 @@ mod tests {
             &HashMap::new(),
             &HashSet::new(),
             &HashMap::new(),
-            0,
-            1,
+            FunctionScoreStats {
+                call_out_degree: 0,
+                name_occurrences: 1,
+            },
         );
 
         assert!(
@@ -2257,8 +2272,10 @@ mod tests {
             &HashMap::new(),
             &preferred,
             &HashMap::new(),
-            0,
-            1,
+            FunctionScoreStats {
+                call_out_degree: 0,
+                name_occurrences: 1,
+            },
         );
         let (dep_score, dep_components) = function_priority(
             &dep_func,
@@ -2267,8 +2284,10 @@ mod tests {
             &HashMap::new(),
             &preferred,
             &HashMap::new(),
-            0,
-            1,
+            FunctionScoreStats {
+                call_out_degree: 0,
+                name_occurrences: 1,
+            },
         );
         assert!(
             preferred_components
