@@ -35,6 +35,7 @@ pub struct FunctionPriorityBreakdown {
     pub function_id: u64,
     pub function_name: String,
     pub owner_class: String,
+    pub library_uri: String,
     pub entry_va: u64,
     pub total_score: i32,
     pub components: Vec<FunctionPriorityComponent>,
@@ -463,9 +464,28 @@ fn package_name_from_library_uri(uri: &str) -> Option<String> {
     }
 }
 
+fn normalize_package_filter(raw: &str) -> Option<String> {
+    let token = raw.trim();
+    if token.is_empty() {
+        return None;
+    }
+    let token = token.strip_prefix("package:").unwrap_or(token);
+    let name = token
+        .split('/')
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_ascii_lowercase();
+    if name.is_empty() || name == "flutter" {
+        return None;
+    }
+    Some(name)
+}
+
 fn build_app_package_boosts(
     model: &ProgramModel,
     owner_library: &HashMap<String, String>,
+    preferred_packages: &HashSet<String>,
 ) -> HashMap<String, i32> {
     let mut counts: HashMap<String, usize> = HashMap::new();
     for f in &model.functions {
@@ -477,6 +497,7 @@ fn build_app_package_boosts(
         };
         *counts.entry(pkg).or_insert(0) += 1;
     }
+    let counts_snapshot = counts.clone();
 
     let mut ranked = counts.into_iter().collect::<Vec<_>>();
     ranked.sort_by(|(a_name, a_count), (b_name, b_count)| {
@@ -500,6 +521,23 @@ fn build_app_package_boosts(
             bonus += 160;
         }
         out.insert(pkg, bonus);
+    }
+
+    // Let caller-provided package hints (for example, manifest-derived app package)
+    // override count-only ranking so capped runs stay app-centric.
+    for pkg in preferred_packages {
+        let seen = counts_snapshot.get(pkg).copied().unwrap_or(0);
+        let forced = if seen >= 12 {
+            1800
+        } else if seen >= 3 {
+            1500
+        } else {
+            1200
+        };
+        let slot = out.entry(pkg.clone()).or_insert(forced);
+        if forced > *slot {
+            *slot = forced;
+        }
     }
     out
 }
@@ -792,6 +830,7 @@ fn function_priority(
 struct RankedCandidate<'a> {
     index: usize,
     func: &'a FunctionInfo,
+    library_uri: String,
     score: i32,
     out_degree: usize,
     components: Vec<(String, i32)>,
@@ -802,6 +841,7 @@ fn to_breakdown(candidate: &RankedCandidate<'_>) -> FunctionPriorityBreakdown {
         function_id: candidate.func.id,
         function_name: candidate.func.name.clone(),
         owner_class: candidate.func.owner_class.clone(),
+        library_uri: candidate.library_uri.clone(),
         entry_va: candidate.func.entry_va,
         total_score: candidate.score,
         components: candidate
@@ -821,10 +861,16 @@ fn rank_candidates<'a>(
     iso_base_va: u64,
     focus_prefix: Option<&str>,
     max_functions: Option<usize>,
+    preferred_packages: &[String],
 ) -> Vec<RankedCandidate<'a>> {
     let owner_library = build_owner_library_lookup(model);
     let target_va_hints = build_target_va_priority_hints(model);
-    let app_package_boosts = build_app_package_boosts(model, &owner_library);
+    let preferred_package_set = preferred_packages
+        .iter()
+        .filter_map(|v| normalize_package_filter(v))
+        .collect::<HashSet<_>>();
+    let app_package_boosts =
+        build_app_package_boosts(model, &owner_library, &preferred_package_set);
     let candidates = model
         .functions
         .iter()
@@ -861,6 +907,10 @@ fn rank_candidates<'a>(
     let mut ranked = candidates
         .into_iter()
         .map(|(index, func)| {
+            let library_uri = owner_library
+                .get(&func.owner_class)
+                .cloned()
+                .unwrap_or_default();
             if max_functions.is_some() {
                 let (score, components) = function_priority(
                     func,
@@ -877,6 +927,7 @@ fn rank_candidates<'a>(
                 RankedCandidate {
                     index,
                     func,
+                    library_uri,
                     score,
                     out_degree: call_out_degree.get(&func.entry_va).copied().unwrap_or(0),
                     components,
@@ -885,6 +936,7 @@ fn rank_candidates<'a>(
                 RankedCandidate {
                     index,
                     func,
+                    library_uri,
                     score: 0,
                     out_degree: 0,
                     components: Vec::new(),
@@ -912,10 +964,17 @@ pub fn rank_program_functions(
     focus_prefix: Option<&str>,
     max_functions: Option<usize>,
 ) -> Vec<FunctionPriorityBreakdown> {
-    rank_candidates(model, iso_instr, iso_base_va, focus_prefix, max_functions)
-        .iter()
-        .map(to_breakdown)
-        .collect()
+    rank_candidates(
+        model,
+        iso_instr,
+        iso_base_va,
+        focus_prefix,
+        max_functions,
+        &[],
+    )
+    .iter()
+    .map(to_breakdown)
+    .collect()
 }
 
 pub fn disassemble_program(
@@ -925,21 +984,36 @@ pub fn disassemble_program(
     focus_prefix: Option<&str>,
     max_functions: Option<usize>,
 ) -> Vec<FunctionDisassembly> {
-    disassemble_program_with_priorities(model, iso_instr, iso_base_va, focus_prefix, max_functions)
-        .0
+    disassemble_program_with_priorities_and_package_hints(
+        model,
+        iso_instr,
+        iso_base_va,
+        focus_prefix,
+        max_functions,
+        &[],
+    )
+    .0
 }
 
-pub fn disassemble_program_with_priorities(
+pub fn disassemble_program_with_priorities_and_package_hints(
     model: &ProgramModel,
     iso_instr: &[u8],
     iso_base_va: u64,
     focus_prefix: Option<&str>,
     max_functions: Option<usize>,
+    preferred_packages: &[String],
 ) -> (Vec<FunctionDisassembly>, Vec<FunctionPriorityBreakdown>) {
     let mut out = Vec::new();
     let mut priorities = Vec::new();
     let cs = build_capstone();
-    let ranked = rank_candidates(model, iso_instr, iso_base_va, focus_prefix, max_functions);
+    let ranked = rank_candidates(
+        model,
+        iso_instr,
+        iso_base_va,
+        focus_prefix,
+        max_functions,
+        preferred_packages,
+    );
 
     if let Some(max) = max_functions {
         const DIVERSITY_FIRST_PASS_MAX_PER_NAME: usize = 2;
@@ -999,6 +1073,23 @@ pub fn disassemble_program_with_priorities(
     }
 
     (out, priorities)
+}
+
+pub fn disassemble_program_with_priorities(
+    model: &ProgramModel,
+    iso_instr: &[u8],
+    iso_base_va: u64,
+    focus_prefix: Option<&str>,
+    max_functions: Option<usize>,
+) -> (Vec<FunctionDisassembly>, Vec<FunctionPriorityBreakdown>) {
+    disassemble_program_with_priorities_and_package_hints(
+        model,
+        iso_instr,
+        iso_base_va,
+        focus_prefix,
+        max_functions,
+        &[],
+    )
 }
 
 #[cfg(test)]
@@ -2106,6 +2197,61 @@ mod tests {
         assert!(
             isolate_score < core_score,
             "dart:isolate functions should rank below other stdlib functions when tied (isolate={isolate_score}, core={core_score})"
+        );
+    }
+
+    #[test]
+    fn preferred_package_boost_overrides_count_only_package_ranking() {
+        let mut functions = Vec::new();
+        for i in 0..20u64 {
+            functions.push(FunctionInfo {
+                id: i,
+                name: format!("dep_{i}"),
+                owner_class: "ProviderCore".to_string(),
+                entry_va: 0x8000 + (i * 4),
+                size: 32,
+                code_section_va: 0x8000,
+            });
+        }
+        for i in 0..3u64 {
+            functions.push(FunctionInfo {
+                id: 100 + i,
+                name: format!("app_{i}"),
+                owner_class: "AppCore".to_string(),
+                entry_va: 0x9000 + (i * 4),
+                size: 32,
+                code_section_va: 0x8000,
+            });
+        }
+
+        let model = ProgramModel {
+            schema_version: 2,
+            adapter_kind: "test".to_string(),
+            dart_version: "unknown".to_string(),
+            snapshot_hash: "h".to_string(),
+            arch: "arm64".to_string(),
+            libraries: Vec::new(),
+            classes: Vec::new(),
+            functions,
+            object_pool: Vec::new(),
+        };
+        let owner_library = HashMap::from([
+            (
+                "ProviderCore".to_string(),
+                "package:provider/src/provider.dart".to_string(),
+            ),
+            (
+                "AppCore".to_string(),
+                "package:spotube/main.dart".to_string(),
+            ),
+        ]);
+        let preferred = HashSet::from(["spotube".to_string()]);
+        let boosts = build_app_package_boosts(&model, &owner_library, &preferred);
+        let provider = boosts.get("provider").copied().unwrap_or(0);
+        let spotube = boosts.get("spotube").copied().unwrap_or(0);
+        assert!(
+            spotube > provider,
+            "preferred package should dominate count-only ranking (spotube={spotube}, provider={provider})"
         );
     }
 
