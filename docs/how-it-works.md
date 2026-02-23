@@ -626,6 +626,7 @@ File naming convention:
 - `call_fallback` aggregate
 - `bootflow_discovery` aggregate
 - `android_manifest` aggregate
+- `function_scope.priority_package_hints` (effective package boosts used by capped prioritization)
 
 ## How `info` differs from `decompile`
 
@@ -700,7 +701,8 @@ Symptom: quality gate fails with low disassembly ratio
 Symptom: capped `--max-functions` output is dominated by runtime helper paths
 
 - keep `--function-scope app-unknown` (default) or tighten with `--function-scope app`
-- inspect `report.json` -> `prioritization.selected[*].components` for ranking reasons
+- inspect `report.json` -> `prioritization.selected[*]` for ranking reasons (`components`) and package/library ownership (`library_uri`)
+- if needed, set explicit `--app-package <name>`; otherwise decompile derives a package hint from `AndroidManifest.xml` when available
 - note: scorer downranks explicit `no isolate` markers and `dart:isolate*` library paths by default
 
 Symptom: pseudocode has too many omitted path summaries

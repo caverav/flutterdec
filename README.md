@@ -113,6 +113,7 @@ flutterdec decompile ./sample.apk -o ./out \
 ```
 
 If package names are unknown, inspect `report.json` at `function_scope.app_package_counts_top`.
+When `--app-package` is not provided, capped prioritization also applies manifest-derived package hints (`function_scope.priority_package_hints`) to favor app-owned code.
 
 4. Optional: improve call names with stripped/unstripped engine pair:
 
