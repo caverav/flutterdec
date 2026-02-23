@@ -217,29 +217,38 @@ fn is_bootstrap_selector(selector_lower: &str) -> bool {
     )
 }
 
+struct BootflowEntrySeed<'a> {
+    decoded_kind: &'a str,
+    selector: &'a str,
+    target_va: u64,
+    owner_class: &'a str,
+    library_uri: &'a str,
+    value: &'a str,
+}
+
 fn push_bootflow_entry(
     out: &mut Vec<BootflowDiscoveryEntry>,
     seen: &mut HashSet<String>,
     category: &str,
-    decoded_kind: &str,
-    selector: &str,
-    target_va: u64,
-    owner_class: &str,
-    library_uri: &str,
-    value: &str,
+    seed: &BootflowEntrySeed<'_>,
 ) {
-    let key = format!("{}|0x{:x}|{}", category, target_va, selector.to_ascii_lowercase());
+    let key = format!(
+        "{}|0x{:x}|{}",
+        category,
+        seed.target_va,
+        seed.selector.to_ascii_lowercase()
+    );
     if seen.contains(&key) {
         return;
     }
     seen.insert(key);
     out.push(BootflowDiscoveryEntry {
-        decoded_kind: decoded_kind.to_string(),
-        selector: selector.to_string(),
-        target_va,
-        owner_class: owner_class.to_string(),
-        library_uri: library_uri.to_string(),
-        value: value.to_string(),
+        decoded_kind: seed.decoded_kind.to_string(),
+        selector: seed.selector.to_string(),
+        target_va: seed.target_va,
+        owner_class: seed.owner_class.to_string(),
+        library_uri: seed.library_uri.to_string(),
+        value: seed.value.to_string(),
     });
 }
 
@@ -273,6 +282,14 @@ pub(super) fn collect_bootflow_discovery(model: &ProgramModel) -> BootflowDiscov
         let value_lower = value.to_ascii_lowercase();
         let owner_class = entry.owner_class.as_deref().map(str::trim).unwrap_or("");
         let library_uri = entry.library_uri.as_deref().map(str::trim).unwrap_or("");
+        let seed = BootflowEntrySeed {
+            decoded_kind,
+            selector,
+            target_va,
+            owner_class,
+            library_uri,
+            value,
+        };
 
         if decoded_kind_lower == "bootmaincandidate"
             || decoded_kind_lower == "manifestmaincandidate"
@@ -284,12 +301,7 @@ pub(super) fn collect_bootflow_discovery(model: &ProgramModel) -> BootflowDiscov
                 &mut out.main,
                 &mut seen,
                 "main",
-                decoded_kind,
-                selector,
-                target_va,
-                owner_class,
-                library_uri,
-                value,
+                &seed,
             );
         }
 
@@ -303,12 +315,7 @@ pub(super) fn collect_bootflow_discovery(model: &ProgramModel) -> BootflowDiscov
                 &mut out.runapp,
                 &mut seen,
                 "runapp",
-                decoded_kind,
-                selector,
-                target_va,
-                owner_class,
-                library_uri,
-                value,
+                &seed,
             );
         }
 
@@ -322,12 +329,7 @@ pub(super) fn collect_bootflow_discovery(model: &ProgramModel) -> BootflowDiscov
                 &mut out.deeplink,
                 &mut seen,
                 "deeplink",
-                decoded_kind,
-                selector,
-                target_va,
-                owner_class,
-                library_uri,
-                value,
+                &seed,
             );
         }
 
@@ -341,12 +343,7 @@ pub(super) fn collect_bootflow_discovery(model: &ProgramModel) -> BootflowDiscov
                 &mut out.activity,
                 &mut seen,
                 "activity",
-                decoded_kind,
-                selector,
-                target_va,
-                owner_class,
-                library_uri,
-                value,
+                &seed,
             );
         }
 
@@ -360,12 +357,7 @@ pub(super) fn collect_bootflow_discovery(model: &ProgramModel) -> BootflowDiscov
                 &mut out.bootstrap,
                 &mut seen,
                 "bootstrap",
-                decoded_kind,
-                selector,
-                target_va,
-                owner_class,
-                library_uri,
-                value,
+                &seed,
             );
         }
     }
