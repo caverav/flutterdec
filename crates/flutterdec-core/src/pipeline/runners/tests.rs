@@ -89,6 +89,14 @@
             vec!["spotube".to_string()]
         );
         assert_eq!(
+            derive_manifest_package_hints(Some("org.localsend.localsend_app")),
+            vec!["localsend".to_string(), "localsend_app".to_string()]
+        );
+        assert_eq!(
+            derive_manifest_package_hints(Some("dev.foo.mobile_flutter")),
+            vec!["mobile".to_string(), "mobile_flutter".to_string()]
+        );
+        assert_eq!(
             derive_manifest_package_hints(Some("com.acme.app")),
             vec!["acme".to_string()]
         );

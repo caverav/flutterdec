@@ -126,6 +126,39 @@ fn is_non_app_manifest_segment(segment: &str) -> bool {
     )
 }
 
+fn normalized_manifest_segment(segment: &str) -> Option<String> {
+    let lowered = segment.trim().to_ascii_lowercase();
+    if lowered.is_empty() {
+        return None;
+    }
+    let valid = lowered
+        .chars()
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_');
+    if !valid {
+        return None;
+    }
+    Some(lowered)
+}
+
+fn push_manifest_hint(hints: &mut HashSet<String>, candidate: &str) {
+    let Some(normalized) = normalized_manifest_segment(candidate) else {
+        return;
+    };
+    if is_non_app_manifest_segment(&normalized) {
+        return;
+    }
+    hints.insert(normalized.clone());
+    for suffix in ["_app", "_flutter"] {
+        if let Some(base) = normalized.strip_suffix(suffix) {
+            let trimmed = base.trim_matches('_');
+            if trimmed.is_empty() || is_non_app_manifest_segment(trimmed) {
+                continue;
+            }
+            hints.insert(trimmed.to_string());
+        }
+    }
+}
+
 fn derive_manifest_package_hints(package_name: Option<&str>) -> Vec<String> {
     let Some(raw) = package_name else {
         return Vec::new();
@@ -143,14 +176,10 @@ fn derive_manifest_package_hints(package_name: Option<&str>) -> Vec<String> {
 
     let mut hints = HashSet::new();
     if let Some(last) = parts.last() {
-        if !is_non_app_manifest_segment(last) {
-            hints.insert(last.clone());
-        }
+        push_manifest_hint(&mut hints, last);
         if last == "app" && parts.len() >= 2 {
             let prev = &parts[parts.len() - 2];
-            if !is_non_app_manifest_segment(prev) {
-                hints.insert(prev.clone());
-            }
+            push_manifest_hint(&mut hints, prev);
         }
     }
 
