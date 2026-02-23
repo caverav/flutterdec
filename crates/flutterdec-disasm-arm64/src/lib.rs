@@ -885,14 +885,60 @@ pub fn disassemble_program_with_priorities(
     let mut priorities = Vec::new();
     let cs = build_capstone();
     let ranked = rank_candidates(model, iso_instr, iso_base_va, focus_prefix, max_functions);
-    for candidate in ranked {
-        if let Some(d) = decode_function(candidate.func, iso_instr, iso_base_va, cs.as_ref()) {
-            out.push(d);
-            priorities.push(to_breakdown(&candidate));
-            if let Some(max) = max_functions {
-                if out.len() >= max {
-                    break;
-                }
+
+    if let Some(max) = max_functions {
+        const DIVERSITY_FIRST_PASS_MAX_PER_NAME: usize = 2;
+        const DIVERSITY_FIRST_PASS_MAX_PER_OWNER_NAME: usize = 1;
+
+        let mut selected_name_counts: HashMap<String, usize> = HashMap::new();
+        let mut selected_owner_name_counts: HashMap<String, usize> = HashMap::new();
+        let mut deferred = Vec::new();
+
+        for candidate in ranked {
+            if out.len() >= max {
+                break;
+            }
+            let name_key = candidate.func.name.to_ascii_lowercase();
+            let owner_name_key = format!(
+                "{}::{}",
+                candidate.func.owner_class.to_ascii_lowercase(),
+                name_key
+            );
+            let name_seen = selected_name_counts.get(&name_key).copied().unwrap_or(0);
+            let owner_name_seen = selected_owner_name_counts
+                .get(&owner_name_key)
+                .copied()
+                .unwrap_or(0);
+            if name_seen >= DIVERSITY_FIRST_PASS_MAX_PER_NAME
+                || owner_name_seen >= DIVERSITY_FIRST_PASS_MAX_PER_OWNER_NAME
+            {
+                deferred.push(candidate);
+                continue;
+            }
+            if let Some(d) = decode_function(candidate.func, iso_instr, iso_base_va, cs.as_ref()) {
+                out.push(d);
+                priorities.push(to_breakdown(&candidate));
+                *selected_name_counts.entry(name_key).or_insert(0) += 1;
+                *selected_owner_name_counts
+                    .entry(owner_name_key)
+                    .or_insert(0) += 1;
+            }
+        }
+
+        for candidate in deferred {
+            if out.len() >= max {
+                break;
+            }
+            if let Some(d) = decode_function(candidate.func, iso_instr, iso_base_va, cs.as_ref()) {
+                out.push(d);
+                priorities.push(to_breakdown(&candidate));
+            }
+        }
+    } else {
+        for candidate in ranked {
+            if let Some(d) = decode_function(candidate.func, iso_instr, iso_base_va, cs.as_ref()) {
+                out.push(d);
+                priorities.push(to_breakdown(&candidate));
             }
         }
     }
@@ -1830,5 +1876,123 @@ mod tests {
         assert_eq!(d.len(), 2);
         assert_eq!(d[0].function_name, "sub_1000");
         assert_eq!(d[1].function_name, "sub_1008");
+    }
+
+    #[test]
+    fn capped_selection_prefers_diversity_before_duplicate_owner_name() {
+        let model = ProgramModel {
+            schema_version: 2,
+            adapter_kind: "test".to_string(),
+            dart_version: "unknown".to_string(),
+            snapshot_hash: "h".to_string(),
+            arch: "arm64".to_string(),
+            libraries: vec![LibraryInfo {
+                id: 0,
+                uri: "package:app/main.dart".to_string(),
+                name_display: "package:app/main.dart".to_string(),
+            }],
+            classes: vec![ClassInfo {
+                id: 0,
+                name: "Global".to_string(),
+                super_name: "Object".to_string(),
+                library_uri: "package:app/main.dart".to_string(),
+            }],
+            functions: vec![
+                FunctionInfo {
+                    id: 0,
+                    name: "main".to_string(),
+                    owner_class: "Global".to_string(),
+                    entry_va: 0x7000,
+                    size: 4,
+                    code_section_va: 0x7000,
+                },
+                FunctionInfo {
+                    id: 1,
+                    name: "main".to_string(),
+                    owner_class: "Global".to_string(),
+                    entry_va: 0x7004,
+                    size: 4,
+                    code_section_va: 0x7000,
+                },
+                FunctionInfo {
+                    id: 2,
+                    name: "startCLI".to_string(),
+                    owner_class: "Global".to_string(),
+                    entry_va: 0x7008,
+                    size: 4,
+                    code_section_va: 0x7000,
+                },
+            ],
+            object_pool: vec![ObjectPoolEntry {
+                index: 0,
+                kind: "String".to_string(),
+                value: "x".to_string(),
+                decoded_kind: None,
+                selector: None,
+                target_va: None,
+                owner_class: None,
+                library_uri: None,
+            }],
+        };
+        let bytes = [0xc0u8, 0x03, 0x5f, 0xd6].repeat(3);
+        let d = disassemble_program(&model, &bytes, 0x7000, None, Some(2));
+        assert_eq!(d.len(), 2);
+        assert_eq!(d[0].function_name, "main");
+        assert_eq!(d[1].function_name, "startCLI");
+    }
+
+    #[test]
+    fn capped_selection_backfills_deferred_duplicates_when_needed() {
+        let model = ProgramModel {
+            schema_version: 2,
+            adapter_kind: "test".to_string(),
+            dart_version: "unknown".to_string(),
+            snapshot_hash: "h".to_string(),
+            arch: "arm64".to_string(),
+            libraries: vec![LibraryInfo {
+                id: 0,
+                uri: "package:app/main.dart".to_string(),
+                name_display: "package:app/main.dart".to_string(),
+            }],
+            classes: vec![ClassInfo {
+                id: 0,
+                name: "Global".to_string(),
+                super_name: "Object".to_string(),
+                library_uri: "package:app/main.dart".to_string(),
+            }],
+            functions: vec![
+                FunctionInfo {
+                    id: 0,
+                    name: "main".to_string(),
+                    owner_class: "Global".to_string(),
+                    entry_va: 0x7100,
+                    size: 4,
+                    code_section_va: 0x7100,
+                },
+                FunctionInfo {
+                    id: 1,
+                    name: "main".to_string(),
+                    owner_class: "Global".to_string(),
+                    entry_va: 0x7104,
+                    size: 4,
+                    code_section_va: 0x7100,
+                },
+            ],
+            object_pool: vec![ObjectPoolEntry {
+                index: 0,
+                kind: "String".to_string(),
+                value: "x".to_string(),
+                decoded_kind: None,
+                selector: None,
+                target_va: None,
+                owner_class: None,
+                library_uri: None,
+            }],
+        };
+        let bytes = [0xc0u8, 0x03, 0x5f, 0xd6].repeat(2);
+        let d = disassemble_program(&model, &bytes, 0x7100, None, Some(2));
+        assert_eq!(d.len(), 2);
+        assert_eq!(d[0].function_name, "main");
+        assert_eq!(d[1].function_name, "main");
     }
 }
