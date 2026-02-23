@@ -627,6 +627,7 @@ File naming convention:
 - `bootflow_discovery` aggregate
 - `android_manifest` aggregate
 - `function_scope.priority_package_hints` (effective package boosts used by capped prioritization)
+- `prioritization.selected_package_counts_top` and `prioritization.selected_unknown_library_count` (selected top-N ownership mix)
 
 ## How `info` differs from `decompile`
 

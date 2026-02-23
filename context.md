@@ -223,6 +223,7 @@ Current scope:
 - when no explicit `--app-package` is provided, capped prioritization derives package hints from the parsed manifest package (for example `oss.krtirtho.spotube` -> `spotube`, `org.localsend.localsend_app` -> `localsend_app` + `localsend`) and boosts matching `package:<name>/...` functions so selected output stays focused on app-owned logic
 - when priority package hints exist, capped prioritization also applies a moderate penalty to non-preferred third-party `package:<dep>/...` functions (excluding `package:app/...`) to reduce dependency noise in top-N selection
 - prioritization report entries now include `library_uri`, so package ownership of selected functions is directly inspectable in `report.json`
+- prioritization reporting now also includes selected package-distribution aggregates (`prioritization.selected_package_counts_top`, `selected_package_count_total`, `selected_unknown_library_count`) so app-vs-dependency coverage can be evaluated without post-processing scripts
 - text rewrite and quality helper passes now avoid byte-index string slicing on UTF-8 content so non-ASCII pool strings do not panic decompile runs
 
 Known limits:
