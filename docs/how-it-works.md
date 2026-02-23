@@ -575,6 +575,7 @@ The run fails when thresholds are violated.
 `report.json` also includes `selector_fallback` diagnostics with total/unique unresolved selector fallback counts, top selector names, and sample call lines.
 `report.json` also includes `call_fallback` diagnostics for `dynamicCall(...)`, `dispatch.invoke(...)`, `dispatchTarget` non-dispatch fallback call forms (`<target>(...)` and semantic library `*.invoke(...)`), and generic `indirectTargetN(...)` fallback forms.
 `report.json` also includes `bootflow_discovery` diagnostics with deterministic categorized candidates (`main`, `runapp`, `deeplink`, `activity`, `bootstrap`) sourced from adapter metadata and selector evidence.
+Activity/bootstrap candidate synthesis is context-aware (owner/library gating), and overlapping category hits with the same target/selector are deduplicated.
 
 Metric formulas:
 
