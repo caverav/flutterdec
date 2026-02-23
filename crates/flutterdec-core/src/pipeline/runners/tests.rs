@@ -601,6 +601,84 @@
     }
 
     #[test]
+    fn discovers_bootflow_candidates_from_pool_metadata() {
+        let model = ProgramModel {
+            schema_version: 2,
+            adapter_kind: "python".to_string(),
+            dart_version: "3.0.0".to_string(),
+            snapshot_hash: "deadbeef".to_string(),
+            arch: "arm64".to_string(),
+            libraries: Vec::new(),
+            classes: Vec::new(),
+            functions: Vec::new(),
+            object_pool: vec![
+                flutterdec_adapter::ObjectPoolEntry {
+                    index: 1,
+                    kind: "String".to_string(),
+                    value: "bootflow:main:main".to_string(),
+                    decoded_kind: Some("BootMainCandidate".to_string()),
+                    selector: Some("main".to_string()),
+                    target_va: Some(0x1000),
+                    owner_class: Some("Global".to_string()),
+                    library_uri: Some("package:app/main.dart".to_string()),
+                },
+                flutterdec_adapter::ObjectPoolEntry {
+                    index: 2,
+                    kind: "String".to_string(),
+                    value: "bootflow:deeplink:onNewIntent".to_string(),
+                    decoded_kind: Some("DeepLinkHandlerCandidate".to_string()),
+                    selector: Some("onNewIntent".to_string()),
+                    target_va: Some(0x1010),
+                    owner_class: Some("RouterHost".to_string()),
+                    library_uri: Some("package:app/router.dart".to_string()),
+                },
+                flutterdec_adapter::ObjectPoolEntry {
+                    index: 3,
+                    kind: "String".to_string(),
+                    value: "bootflow:activity:onResume".to_string(),
+                    decoded_kind: Some("ActivityHandlerCandidate".to_string()),
+                    selector: Some("onResume".to_string()),
+                    target_va: Some(0x1020),
+                    owner_class: Some("MainActivityHost".to_string()),
+                    library_uri: Some("package:app/main.dart".to_string()),
+                },
+                flutterdec_adapter::ObjectPoolEntry {
+                    index: 4,
+                    kind: "String".to_string(),
+                    value: "bootflow:init:ensureInitialized".to_string(),
+                    decoded_kind: Some("BootstrapInitCandidate".to_string()),
+                    selector: Some("ensureInitialized".to_string()),
+                    target_va: Some(0x1030),
+                    owner_class: Some("Global".to_string()),
+                    library_uri: Some("package:app/main.dart".to_string()),
+                },
+            ],
+        };
+
+        let summary = collect_bootflow_discovery(&model);
+        assert_eq!(summary.main.len(), 1);
+        assert_eq!(summary.runapp.len(), 0);
+        assert_eq!(summary.deeplink.len(), 1);
+        assert_eq!(summary.activity.len(), 2);
+        assert_eq!(summary.bootstrap.len(), 1);
+        assert_eq!(summary.main[0].target_va, 0x1000);
+        assert_eq!(summary.deeplink[0].selector, "onNewIntent");
+        assert!(
+            summary
+                .activity
+                .iter()
+                .any(|entry| entry.selector == "onResume")
+        );
+        assert!(
+            summary
+                .activity
+                .iter()
+                .any(|entry| entry.selector == "onNewIntent")
+        );
+        assert_eq!(summary.bootstrap[0].selector, "ensureInitialized");
+    }
+
+    #[test]
     fn decompile_engine_profile_light_is_minimal() {
         let cfg = DecompileEngineOptions::for_profile(DecompileAnalysisProfile::Light);
         assert!(!cfg.canonical_model_symbols);

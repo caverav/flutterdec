@@ -1,7 +1,7 @@
 #[path = "runners/reporting.rs"]
 mod runners_reporting;
 use runners_reporting::{
-    collect_call_fallback_summary, collect_semantic_intent_summary,
+    collect_bootflow_discovery, collect_call_fallback_summary, collect_semantic_intent_summary,
     collect_selector_fallback_summary, CallFallbackSummary, SelectorFallbackSummary,
     SemanticIntentSummary,
 };
@@ -507,6 +507,77 @@ pub fn run_decompile(
         .take(64)
         .cloned()
         .collect::<Vec<FunctionPriorityBreakdown>>();
+    let bootflow_discovery = collect_bootflow_discovery(&model);
+    let bootflow_main = bootflow_discovery
+        .main
+        .iter()
+        .map(|entry| {
+            json!({
+                "decoded_kind": entry.decoded_kind,
+                "selector": entry.selector,
+                "target_va": entry.target_va,
+                "owner_class": entry.owner_class,
+                "library_uri": entry.library_uri,
+                "value": entry.value
+            })
+        })
+        .collect::<Vec<_>>();
+    let bootflow_runapp = bootflow_discovery
+        .runapp
+        .iter()
+        .map(|entry| {
+            json!({
+                "decoded_kind": entry.decoded_kind,
+                "selector": entry.selector,
+                "target_va": entry.target_va,
+                "owner_class": entry.owner_class,
+                "library_uri": entry.library_uri,
+                "value": entry.value
+            })
+        })
+        .collect::<Vec<_>>();
+    let bootflow_deeplink = bootflow_discovery
+        .deeplink
+        .iter()
+        .map(|entry| {
+            json!({
+                "decoded_kind": entry.decoded_kind,
+                "selector": entry.selector,
+                "target_va": entry.target_va,
+                "owner_class": entry.owner_class,
+                "library_uri": entry.library_uri,
+                "value": entry.value
+            })
+        })
+        .collect::<Vec<_>>();
+    let bootflow_activity = bootflow_discovery
+        .activity
+        .iter()
+        .map(|entry| {
+            json!({
+                "decoded_kind": entry.decoded_kind,
+                "selector": entry.selector,
+                "target_va": entry.target_va,
+                "owner_class": entry.owner_class,
+                "library_uri": entry.library_uri,
+                "value": entry.value
+            })
+        })
+        .collect::<Vec<_>>();
+    let bootflow_bootstrap = bootflow_discovery
+        .bootstrap
+        .iter()
+        .map(|entry| {
+            json!({
+                "decoded_kind": entry.decoded_kind,
+                "selector": entry.selector,
+                "target_va": entry.target_va,
+                "owner_class": entry.owner_class,
+                "library_uri": entry.library_uri,
+                "value": entry.value
+            })
+        })
+        .collect::<Vec<_>>();
     fs::create_dir_all(&opt.out_dir)?;
 
     let quality_path = opt.out_dir.join("quality.json");
@@ -609,6 +680,18 @@ pub fn run_decompile(
             "focus": opt.focus.clone(),
             "selected_count": selected_priorities.len(),
             "selected": prioritization_selected
+        },
+        "bootflow_discovery": {
+            "main_count": bootflow_discovery.main.len(),
+            "runapp_count": bootflow_discovery.runapp.len(),
+            "deeplink_count": bootflow_discovery.deeplink.len(),
+            "activity_count": bootflow_discovery.activity.len(),
+            "bootstrap_count": bootflow_discovery.bootstrap.len(),
+            "main": bootflow_main,
+            "runapp": bootflow_runapp,
+            "deeplink": bootflow_deeplink,
+            "activity": bootflow_activity,
+            "bootstrap": bootflow_bootstrap
         }
     });
 

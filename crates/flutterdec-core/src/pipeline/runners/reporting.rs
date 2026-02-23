@@ -1,5 +1,6 @@
 use flutterdec_decompiler::PseudocodeArtifact;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use flutterdec_adapter::ProgramModel;
 
 #[derive(Debug, Default, Clone, Copy)]
 pub(super) struct SemanticIntentSummary {
@@ -31,6 +32,25 @@ pub(super) struct CallFallbackSummary {
     pub(super) dispatch_invoke: usize,
     pub(super) dispatch_target_invoke: usize,
     pub(super) generic_invoke: usize,
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct BootflowDiscoveryEntry {
+    pub(super) decoded_kind: String,
+    pub(super) selector: String,
+    pub(super) target_va: u64,
+    pub(super) owner_class: String,
+    pub(super) library_uri: String,
+    pub(super) value: String,
+}
+
+#[derive(Debug, Default, Clone)]
+pub(super) struct BootflowDiscoverySummary {
+    pub(super) main: Vec<BootflowDiscoveryEntry>,
+    pub(super) runapp: Vec<BootflowDiscoveryEntry>,
+    pub(super) deeplink: Vec<BootflowDiscoveryEntry>,
+    pub(super) activity: Vec<BootflowDiscoveryEntry>,
+    pub(super) bootstrap: Vec<BootflowDiscoveryEntry>,
 }
 
 pub(super) fn collect_semantic_intent_summary(
@@ -151,6 +171,206 @@ pub(super) fn collect_call_fallback_summary(pseudo: &[PseudocodeArtifact]) -> Ca
             }
         }
     }
+    out
+}
+
+fn is_main_like_selector(selector_lower: &str) -> bool {
+    selector_lower == "main"
+        || selector_lower.ends_with(".main")
+        || selector_lower.ends_with("::main")
+        || selector_lower.ends_with("_main")
+}
+
+fn is_runapp_selector(selector_lower: &str) -> bool {
+    selector_lower == "runapp" || selector_lower.ends_with(".runapp")
+}
+
+fn is_deeplink_selector(selector_lower: &str) -> bool {
+    matches!(
+        selector_lower,
+        "didpushrouteinformation"
+            | "didpushroute"
+            | "didpoproute"
+            | "setnewroutepath"
+            | "parserouteinformation"
+            | "ongenerateroute"
+            | "onunknownroute"
+            | "onnewintent"
+            | "handleintent"
+    )
+}
+
+fn is_activity_selector(selector_lower: &str) -> bool {
+    matches!(
+        selector_lower,
+        "onnewintent" | "handleintent" | "oncreate" | "onstart" | "onresume" | "onpause" | "onstop"
+    )
+}
+
+fn is_bootstrap_selector(selector_lower: &str) -> bool {
+    matches!(
+        selector_lower,
+        "ensureinitialized"
+            | "nativeensureinitialized"
+            | "startinitialization"
+            | "ensureinitializationcomplete"
+    )
+}
+
+fn push_bootflow_entry(
+    out: &mut Vec<BootflowDiscoveryEntry>,
+    seen: &mut HashSet<String>,
+    category: &str,
+    decoded_kind: &str,
+    selector: &str,
+    target_va: u64,
+    owner_class: &str,
+    library_uri: &str,
+    value: &str,
+) {
+    let key = format!(
+        "{}|0x{:x}|{}|{}",
+        category,
+        target_va,
+        selector.to_ascii_lowercase(),
+        decoded_kind.to_ascii_lowercase()
+    );
+    if seen.contains(&key) {
+        return;
+    }
+    seen.insert(key);
+    out.push(BootflowDiscoveryEntry {
+        decoded_kind: decoded_kind.to_string(),
+        selector: selector.to_string(),
+        target_va,
+        owner_class: owner_class.to_string(),
+        library_uri: library_uri.to_string(),
+        value: value.to_string(),
+    });
+}
+
+fn normalize_bootflow_entries(entries: &mut Vec<BootflowDiscoveryEntry>) {
+    entries.sort_by(|a, b| {
+        a.target_va
+            .cmp(&b.target_va)
+            .then_with(|| a.selector.cmp(&b.selector))
+            .then_with(|| a.decoded_kind.cmp(&b.decoded_kind))
+    });
+    entries.truncate(20);
+}
+
+pub(super) fn collect_bootflow_discovery(model: &ProgramModel) -> BootflowDiscoverySummary {
+    let mut out = BootflowDiscoverySummary::default();
+    let mut seen = HashSet::new();
+
+    for entry in &model.object_pool {
+        let Some(target_va) = entry.target_va else {
+            continue;
+        };
+        let decoded_kind = entry
+            .decoded_kind
+            .as_deref()
+            .map(str::trim)
+            .unwrap_or("");
+        let decoded_kind_lower = decoded_kind.to_ascii_lowercase();
+        let selector = entry.selector.as_deref().map(str::trim).unwrap_or("");
+        let selector_lower = selector.to_ascii_lowercase();
+        let value = entry.value.trim();
+        let value_lower = value.to_ascii_lowercase();
+        let owner_class = entry.owner_class.as_deref().map(str::trim).unwrap_or("");
+        let library_uri = entry.library_uri.as_deref().map(str::trim).unwrap_or("");
+
+        if decoded_kind_lower == "bootmaincandidate"
+            || value_lower.starts_with("bootflow:main:")
+            || (decoded_kind_lower == "entrypointcandidate" && is_main_like_selector(&selector_lower))
+        {
+            push_bootflow_entry(
+                &mut out.main,
+                &mut seen,
+                "main",
+                decoded_kind,
+                selector,
+                target_va,
+                owner_class,
+                library_uri,
+                value,
+            );
+        }
+
+        if decoded_kind_lower == "bootrunappcandidate"
+            || value_lower.starts_with("bootflow:runapp:")
+            || (decoded_kind_lower == "entrypointcandidate" && is_runapp_selector(&selector_lower))
+        {
+            push_bootflow_entry(
+                &mut out.runapp,
+                &mut seen,
+                "runapp",
+                decoded_kind,
+                selector,
+                target_va,
+                owner_class,
+                library_uri,
+                value,
+            );
+        }
+
+        if decoded_kind_lower == "deeplinkhandlercandidate"
+            || value_lower.starts_with("bootflow:deeplink:")
+            || is_deeplink_selector(&selector_lower)
+        {
+            push_bootflow_entry(
+                &mut out.deeplink,
+                &mut seen,
+                "deeplink",
+                decoded_kind,
+                selector,
+                target_va,
+                owner_class,
+                library_uri,
+                value,
+            );
+        }
+
+        if decoded_kind_lower == "activityhandlercandidate"
+            || value_lower.starts_with("bootflow:activity:")
+            || is_activity_selector(&selector_lower)
+        {
+            push_bootflow_entry(
+                &mut out.activity,
+                &mut seen,
+                "activity",
+                decoded_kind,
+                selector,
+                target_va,
+                owner_class,
+                library_uri,
+                value,
+            );
+        }
+
+        if decoded_kind_lower == "bootstrapinitcandidate"
+            || value_lower.starts_with("bootflow:init:")
+            || is_bootstrap_selector(&selector_lower)
+        {
+            push_bootflow_entry(
+                &mut out.bootstrap,
+                &mut seen,
+                "bootstrap",
+                decoded_kind,
+                selector,
+                target_va,
+                owner_class,
+                library_uri,
+                value,
+            );
+        }
+    }
+
+    normalize_bootflow_entries(&mut out.main);
+    normalize_bootflow_entries(&mut out.runapp);
+    normalize_bootflow_entries(&mut out.deeplink);
+    normalize_bootflow_entries(&mut out.activity);
+    normalize_bootflow_entries(&mut out.bootstrap);
     out
 }
 
