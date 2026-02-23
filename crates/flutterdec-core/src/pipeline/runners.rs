@@ -248,6 +248,29 @@ fn collect_selected_priority_package_counts(
     out
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+struct SelectedPriorityScopeMix {
+    app: usize,
+    framework: usize,
+    stdlib: usize,
+    unknown: usize,
+}
+
+fn collect_selected_priority_scope_mix(
+    selected: &[FunctionPriorityBreakdown],
+) -> SelectedPriorityScopeMix {
+    let mut mix = SelectedPriorityScopeMix::default();
+    for item in selected {
+        match classify_library_uri(&item.library_uri) {
+            ScopedFunctionKind::App => mix.app += 1,
+            ScopedFunctionKind::Framework => mix.framework += 1,
+            ScopedFunctionKind::Stdlib => mix.stdlib += 1,
+            ScopedFunctionKind::Unknown => mix.unknown += 1,
+        }
+    }
+    mix
+}
+
 fn include_function_kind(scope: FunctionScope, kind: ScopedFunctionKind) -> bool {
     match scope {
         FunctionScope::All => true,
@@ -638,6 +661,12 @@ pub fn run_decompile(
         .take(20)
         .map(|(package, functions)| json!({ "package": package, "functions": functions }))
         .collect::<Vec<_>>();
+    let prioritization_scope_mix = collect_selected_priority_scope_mix(&prioritization_selected);
+    let prioritization_app_like_ratio = if prioritization_selected.is_empty() {
+        0.0
+    } else {
+        prioritization_scope_mix.app as f64 / prioritization_selected.len() as f64
+    };
     let prioritization_unknown_count = prioritization_package_counts
         .iter()
         .find(|(name, _)| name == "unknown")
@@ -838,6 +867,13 @@ pub fn run_decompile(
             "selected_package_count_total": prioritization_package_counts.len(),
             "selected_unknown_library_count": prioritization_unknown_count,
             "selected_package_counts_top": prioritization_package_counts_top,
+            "selected_scope_mix": {
+                "app": prioritization_scope_mix.app,
+                "framework": prioritization_scope_mix.framework,
+                "stdlib": prioritization_scope_mix.stdlib,
+                "unknown": prioritization_scope_mix.unknown
+            },
+            "selected_app_like_ratio": prioritization_app_like_ratio,
             "selected": prioritization_selected
         },
         "bootflow_discovery": {
