@@ -167,6 +167,69 @@ def _entrypoint_selector_from_name(name: str) -> Optional[str]:
     return None
 
 
+def _bootflow_candidates_from_name(name: str) -> List[Tuple[str, str, str]]:
+    selector = _selector_from_string(name or "")
+    if not selector:
+        return []
+    lower = selector.strip().lower()
+    out: List[Tuple[str, str, str]] = []
+
+    if (
+        lower == "main"
+        or lower.endswith(".main")
+        or lower.endswith("::main")
+        or lower.endswith("_main")
+    ):
+        out.append(("EntryPointCandidate", selector, f"entrypoint:{selector}"))
+        out.append(("BootMainCandidate", selector, f"bootflow:main:{selector}"))
+
+    if lower == "runapp" or lower.endswith(".runapp"):
+        out.append(("EntryPointCandidate", selector, f"entrypoint:{selector}"))
+        out.append(("BootRunAppCandidate", selector, f"bootflow:runapp:{selector}"))
+
+    if lower in {
+        "didpushrouteinformation",
+        "didpushroute",
+        "didpoproute",
+        "setnewroutepath",
+        "parserouteinformation",
+        "ongenerateroute",
+        "onunknownroute",
+        "onnewintent",
+        "handleintent",
+    }:
+        out.append(("DeepLinkHandlerCandidate", selector, f"bootflow:deeplink:{selector}"))
+
+    if lower in {
+        "onnewintent",
+        "handleintent",
+        "oncreate",
+        "onstart",
+        "onresume",
+        "onpause",
+        "onstop",
+    }:
+        out.append(("ActivityHandlerCandidate", selector, f"bootflow:activity:{selector}"))
+
+    if lower in {
+        "ensureinitialized",
+        "nativeensureinitialized",
+        "startinitialization",
+        "ensureinitializationcomplete",
+    }:
+        out.append(("BootstrapInitCandidate", selector, f"bootflow:init:{selector}"))
+
+    deduped: List[Tuple[str, str, str]] = []
+    seen: Set[Tuple[str, str]] = set()
+    for decoded_kind, sel, value in out:
+        key = (decoded_kind, sel.lower())
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append((decoded_kind, sel, value))
+    return deduped
+
+
 def _pool_entries(strings: List[str]) -> List[dict]:
     entries = []
     for i, s in enumerate(strings):
@@ -382,7 +445,7 @@ def _parse_blutter_asm(asm_dir: Path) -> Tuple[List[dict], List[dict], List[dict
     functions: List[dict] = []
     seen_entry: Set[int] = set()
     entrypoint_candidates: List[dict] = []
-    seen_entrypoint_target: Set[int] = set()
+    seen_bootflow_target: Set[Tuple[int, str, str]] = set()
 
     def ensure_library(uri: str) -> str:
         normalized = _normalize_library_uri(uri) or uri
@@ -461,15 +524,17 @@ def _parse_blutter_asm(asm_dir: Path) -> Tuple[List[dict], List[dict], List[dict
                     "code_section_va": 0,
                 }
             )
-            selector = _entrypoint_selector_from_name(name)
-            if selector and entry not in seen_entrypoint_target:
-                seen_entrypoint_target.add(entry)
+            for decoded_kind, selector, value in _bootflow_candidates_from_name(name):
+                key = (entry, decoded_kind, selector.lower())
+                if key in seen_bootflow_target:
+                    continue
+                seen_bootflow_target.add(key)
                 entrypoint_candidates.append(
                     {
                         "index": 0,
                         "kind": "String",
-                        "value": f"entrypoint:{selector}",
-                        "decoded_kind": "EntryPointCandidate",
+                        "value": value,
+                        "decoded_kind": decoded_kind,
                         "selector": selector,
                         "target_va": int(entry),
                         "owner_class": owner,

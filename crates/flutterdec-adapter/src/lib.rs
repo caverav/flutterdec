@@ -331,6 +331,15 @@ asm_dir.mkdir(parents=True, exist_ok=True)
     "}\n",
     encoding="utf-8",
 )
+(asm_dir / "router.dart").write_text(
+    "// lib: 1, url: package:app/router.dart\n"
+    "class RouterHost {\n"
+    "  dynamic onNewIntent() {\n"
+    "// ** addr: 0x1010, size: 0x10\n"
+    "  }\n"
+    "}\n",
+    encoding="utf-8",
+)
 (out_dir / "pp.txt").write_text("", encoding="utf-8")
 "#,
         )
@@ -379,5 +388,12 @@ asm_dir.mkdir(parents=True, exist_ok=True)
             .expect("entrypoint candidate");
         assert_eq!(entrypoint.selector.as_deref(), Some("main"));
         assert_eq!(entrypoint.target_va, Some(0x1000));
+        let deeplink = model
+            .object_pool
+            .iter()
+            .find(|e| e.decoded_kind.as_deref() == Some("DeepLinkHandlerCandidate"))
+            .expect("deeplink candidate");
+        assert_eq!(deeplink.selector.as_deref(), Some("onNewIntent"));
+        assert_eq!(deeplink.target_va, Some(0x1010));
     }
 }
