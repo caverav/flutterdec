@@ -275,6 +275,12 @@ fn entrypoint_signal_score(entry: &flutterdec_adapter::ObjectPoolEntry) -> i32 {
         .map(str::trim)
         .unwrap_or("")
         .to_ascii_lowercase();
+    let library_lower = entry
+        .library_uri
+        .as_deref()
+        .map(str::trim)
+        .unwrap_or("")
+        .to_ascii_lowercase();
 
     score += match decoded_kind_lower.as_str() {
         "entrypointcandidate" => 5000,
@@ -308,6 +314,18 @@ fn entrypoint_signal_score(entry: &flutterdec_adapter::ObjectPoolEntry) -> i32 {
         } else if selector_lower == "runapp" || selector_lower.ends_with(".runapp") {
             score += 500;
         }
+    }
+
+    // Framework/stdlib metadata is useful for graph seeding, but app-owned
+    // handlers should dominate capped reverse-engineering output.
+    let framework_weighted_kind = matches!(
+        decoded_kind_lower.as_str(),
+        "deeplinkhandlercandidate" | "activityhandlercandidate" | "bootstrapinitcandidate"
+    );
+    if framework_weighted_kind && library_lower.starts_with("package:flutter/") {
+        score /= 4;
+    } else if framework_weighted_kind && library_lower.starts_with("dart:") {
+        score /= 5;
     }
 
     score
@@ -1430,6 +1448,87 @@ mod tests {
         let d = disassemble_program(&model, &bytes, 0x50b0, None, Some(1));
         assert_eq!(d.len(), 1);
         assert_eq!(d[0].function_name, "sub_50b4");
+    }
+
+    #[test]
+    fn prefers_app_deeplink_candidate_over_framework_deeplink_candidate() {
+        let model = ProgramModel {
+            schema_version: 2,
+            adapter_kind: "test".to_string(),
+            dart_version: "unknown".to_string(),
+            snapshot_hash: "h".to_string(),
+            arch: "arm64".to_string(),
+            libraries: vec![
+                LibraryInfo {
+                    id: 0,
+                    uri: "package:app/router.dart".to_string(),
+                    name_display: "package:app/router.dart".to_string(),
+                },
+                LibraryInfo {
+                    id: 1,
+                    uri: "package:flutter/src/widgets/app.dart".to_string(),
+                    name_display: "package:flutter/src/widgets/app.dart".to_string(),
+                },
+            ],
+            classes: vec![
+                ClassInfo {
+                    id: 0,
+                    name: "AppRouterHost".to_string(),
+                    super_name: "Object".to_string(),
+                    library_uri: "package:app/router.dart".to_string(),
+                },
+                ClassInfo {
+                    id: 1,
+                    name: "WidgetsBindingObserver".to_string(),
+                    super_name: "Object".to_string(),
+                    library_uri: "package:flutter/src/widgets/app.dart".to_string(),
+                },
+            ],
+            functions: vec![
+                FunctionInfo {
+                    id: 0,
+                    name: "sub_50c0".to_string(),
+                    owner_class: "AppRouterHost".to_string(),
+                    entry_va: 0x50c0,
+                    size: 4,
+                    code_section_va: 0x50c0,
+                },
+                FunctionInfo {
+                    id: 1,
+                    name: "sub_50c4".to_string(),
+                    owner_class: "WidgetsBindingObserver".to_string(),
+                    entry_va: 0x50c4,
+                    size: 4,
+                    code_section_va: 0x50c0,
+                },
+            ],
+            object_pool: vec![
+                ObjectPoolEntry {
+                    index: 0,
+                    kind: "String".to_string(),
+                    value: "bootflow:deeplink:onNewIntent".to_string(),
+                    decoded_kind: Some("DeepLinkHandlerCandidate".to_string()),
+                    selector: Some("onNewIntent".to_string()),
+                    target_va: Some(0x50c0),
+                    owner_class: Some("AppRouterHost".to_string()),
+                    library_uri: Some("package:app/router.dart".to_string()),
+                },
+                ObjectPoolEntry {
+                    index: 1,
+                    kind: "String".to_string(),
+                    value: "bootflow:deeplink:didPushRouteInformation".to_string(),
+                    decoded_kind: Some("DeepLinkHandlerCandidate".to_string()),
+                    selector: Some("didPushRouteInformation".to_string()),
+                    target_va: Some(0x50c4),
+                    owner_class: Some("WidgetsBindingObserver".to_string()),
+                    library_uri: Some("package:flutter/src/widgets/app.dart".to_string()),
+                },
+            ],
+        };
+        let bytes = vec![0xc0, 0x03, 0x5f, 0xd6, 0xc0, 0x03, 0x5f, 0xd6];
+        let d = disassemble_program(&model, &bytes, 0x50c0, None, Some(1));
+        assert_eq!(d.len(), 1);
+        assert_eq!(d[0].function_name, "sub_50c0");
     }
 
     #[test]
