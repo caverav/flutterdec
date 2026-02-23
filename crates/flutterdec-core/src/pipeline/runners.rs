@@ -219,6 +219,35 @@ fn collect_app_package_counts(model: &ProgramModel) -> Vec<(String, usize)> {
     items
 }
 
+fn priority_package_from_library_uri(uri: &str) -> String {
+    let trimmed = uri.trim();
+    if trimmed.is_empty() {
+        return "unknown".to_string();
+    }
+    if trimmed.starts_with("dart:") {
+        return "dart".to_string();
+    }
+    if let Some(pkg) = package_name_from_library_uri(trimmed) {
+        return pkg;
+    }
+    "unknown".to_string()
+}
+
+fn collect_selected_priority_package_counts(
+    selected: &[FunctionPriorityBreakdown],
+) -> Vec<(String, usize)> {
+    let mut counts: HashMap<String, usize> = HashMap::new();
+    for item in selected {
+        let key = priority_package_from_library_uri(&item.library_uri);
+        *counts.entry(key).or_insert(0) += 1;
+    }
+    let mut out = counts.into_iter().collect::<Vec<_>>();
+    out.sort_by(|(a_name, a_count), (b_name, b_count)| {
+        b_count.cmp(a_count).then_with(|| a_name.cmp(b_name))
+    });
+    out
+}
+
 fn include_function_kind(scope: FunctionScope, kind: ScopedFunctionKind) -> bool {
     match scope {
         FunctionScope::All => true,
@@ -603,6 +632,17 @@ pub fn run_decompile(
         .take(64)
         .cloned()
         .collect::<Vec<FunctionPriorityBreakdown>>();
+    let prioritization_package_counts = collect_selected_priority_package_counts(&prioritization_selected);
+    let prioritization_package_counts_top = prioritization_package_counts
+        .iter()
+        .take(20)
+        .map(|(package, functions)| json!({ "package": package, "functions": functions }))
+        .collect::<Vec<_>>();
+    let prioritization_unknown_count = prioritization_package_counts
+        .iter()
+        .find(|(name, _)| name == "unknown")
+        .map(|(_, count)| *count)
+        .unwrap_or(0usize);
     let bootflow_discovery = collect_bootflow_discovery(&model);
     let bootflow_main = bootflow_discovery
         .main
@@ -795,6 +835,9 @@ pub fn run_decompile(
             "enabled": opt.max_functions.is_some(),
             "focus": opt.focus.clone(),
             "selected_count": selected_priorities.len(),
+            "selected_package_count_total": prioritization_package_counts.len(),
+            "selected_unknown_library_count": prioritization_unknown_count,
+            "selected_package_counts_top": prioritization_package_counts_top,
             "selected": prioritization_selected
         },
         "bootflow_discovery": {
