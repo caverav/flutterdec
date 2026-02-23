@@ -692,6 +692,12 @@ Symptom: quality gate fails with low disassembly ratio
 - check adapter function boundaries
 - inspect emitted asm for many fallback `word` instructions
 
+Symptom: capped `--max-functions` output is dominated by runtime helper paths
+
+- keep `--function-scope app-unknown` (default) or tighten with `--function-scope app`
+- inspect `report.json` -> `prioritization.selected[*].components` for ranking reasons
+- note: scorer downranks explicit `no isolate` markers and `dart:isolate*` library paths by default
+
 Symptom: pseudocode has too many omitted path summaries
 
 - inspect large CFG functions in IR output (`--emit-ir`)
