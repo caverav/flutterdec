@@ -551,44 +551,44 @@ fn signals_from_parsed_binary_manifest(parsed: &ParsedBinaryManifest) -> Android
 }
 
 fn confidence_for_signals(signals: &AndroidManifestSignals, structured: bool) -> AndroidManifestConfidence {
-    let mut confidence = AndroidManifestConfidence::default();
-    confidence.package_name = if signals.package_name.is_some() {
-        if structured {
-            "high".to_string()
+    AndroidManifestConfidence {
+        package_name: if signals.package_name.is_some() {
+            if structured {
+                "high".to_string()
+            } else {
+                "medium".to_string()
+            }
         } else {
-            "medium".to_string()
-        }
-    } else {
-        "low".to_string()
-    };
-    confidence.launcher = if signals.has_main_launcher {
-        if structured {
-            "high".to_string()
+            "low".to_string()
+        },
+        launcher: if signals.has_main_launcher {
+            if structured {
+                "high".to_string()
+            } else {
+                "medium".to_string()
+            }
         } else {
-            "medium".to_string()
-        }
-    } else {
-        "low".to_string()
-    };
-    confidence.deeplink = if signals.has_view_browsable || !signals.deeplink_entries.is_empty() {
-        if structured {
-            "high".to_string()
+            "low".to_string()
+        },
+        deeplink: if signals.has_view_browsable || !signals.deeplink_entries.is_empty() {
+            if structured {
+                "high".to_string()
+            } else {
+                "medium".to_string()
+            }
         } else {
-            "medium".to_string()
-        }
-    } else {
-        "low".to_string()
-    };
-    confidence.activities = if !signals.activities.is_empty() {
-        if structured {
-            "high".to_string()
+            "low".to_string()
+        },
+        activities: if !signals.activities.is_empty() {
+            if structured {
+                "high".to_string()
+            } else {
+                "medium".to_string()
+            }
         } else {
-            "medium".to_string()
-        }
-    } else {
-        "low".to_string()
-    };
-    confidence
+            "low".to_string()
+        },
+    }
 }
 
 fn collect_ascii_strings(bytes: &[u8], min_len: usize, max_items: usize) -> Vec<String> {
@@ -987,21 +987,25 @@ fn inspect_manifest_bytes(bytes: &[u8]) -> AndroidManifestInspection {
     }
 }
 
+struct SyntheticHintInput<'a> {
+    decoded_kind: &'a str,
+    selector: &'a str,
+    target_va: u64,
+    owner_class: &'a str,
+    library_uri: &'a str,
+    value: &'a str,
+}
+
 fn push_synthetic_hint(
     model: &mut ProgramModel,
     seen: &mut HashSet<String>,
-    decoded_kind: &str,
-    selector: &str,
-    target_va: u64,
-    owner_class: &str,
-    library_uri: &str,
-    value: &str,
+    hint: &SyntheticHintInput<'_>,
 ) -> bool {
     let key = format!(
         "{}|{}|0x{:x}",
-        decoded_kind.to_ascii_lowercase(),
-        selector.to_ascii_lowercase(),
-        target_va
+        hint.decoded_kind.to_ascii_lowercase(),
+        hint.selector.to_ascii_lowercase(),
+        hint.target_va
     );
     if seen.contains(&key) {
         return false;
@@ -1011,12 +1015,12 @@ fn push_synthetic_hint(
     model.object_pool.push(ObjectPoolEntry {
         index: next_index,
         kind: "String".to_string(),
-        value: value.to_string(),
-        decoded_kind: Some(decoded_kind.to_string()),
-        selector: Some(selector.to_string()),
-        target_va: Some(target_va),
-        owner_class: Some(owner_class.to_string()),
-        library_uri: Some(library_uri.to_string()),
+        value: hint.value.to_string(),
+        decoded_kind: Some(hint.decoded_kind.to_string()),
+        selector: Some(hint.selector.to_string()),
+        target_va: Some(hint.target_va),
+        owner_class: Some(hint.owner_class.to_string()),
+        library_uri: Some(hint.library_uri.to_string()),
     });
     true
 }
@@ -1068,82 +1072,93 @@ pub(super) fn enrich_model_with_manifest_bootflow_hints(
             .unwrap_or_default();
         let library_lower = library_uri.to_ascii_lowercase();
 
-        if signals.has_main_launcher && is_main_like_selector(&selector) {
-            if push_synthetic_hint(
+        if signals.has_main_launcher
+            && is_main_like_selector(&selector)
+            && push_synthetic_hint(
                 &mut enriched,
                 &mut seen,
-                "ManifestMainCandidate",
-                &selector,
-                function.entry_va,
-                owner,
-                &library_uri,
-                "manifest:main-launcher",
-            ) {
+                &SyntheticHintInput {
+                    decoded_kind: "ManifestMainCandidate",
+                    selector: &selector,
+                    target_va: function.entry_va,
+                    owner_class: owner,
+                    library_uri: &library_uri,
+                    value: "manifest:main-launcher",
+                },
+            )
+        {
                 inserted += 1;
-            }
         }
-        if signals.has_main_launcher && is_runapp_selector(&selector) {
-            if push_synthetic_hint(
+        if signals.has_main_launcher
+            && is_runapp_selector(&selector)
+            && push_synthetic_hint(
                 &mut enriched,
                 &mut seen,
-                "ManifestRunAppCandidate",
-                &selector,
-                function.entry_va,
-                owner,
-                &library_uri,
-                "manifest:runapp",
-            ) {
+                &SyntheticHintInput {
+                    decoded_kind: "ManifestRunAppCandidate",
+                    selector: &selector,
+                    target_va: function.entry_va,
+                    owner_class: owner,
+                    library_uri: &library_uri,
+                    value: "manifest:runapp",
+                },
+            )
+        {
                 inserted += 1;
-            }
         }
-        if has_deeplink_signal && is_deeplink_selector(&selector) {
-            if push_synthetic_hint(
+        if has_deeplink_signal
+            && is_deeplink_selector(&selector)
+            && push_synthetic_hint(
                 &mut enriched,
                 &mut seen,
-                "ManifestDeepLinkCandidate",
-                &selector,
-                function.entry_va,
-                owner,
-                &library_uri,
-                "manifest:deeplink",
-            ) {
+                &SyntheticHintInput {
+                    decoded_kind: "ManifestDeepLinkCandidate",
+                    selector: &selector,
+                    target_va: function.entry_va,
+                    owner_class: owner,
+                    library_uri: &library_uri,
+                    value: "manifest:deeplink",
+                },
+            )
+        {
                 inserted += 1;
-            }
         }
         if has_deeplink_signal
             && class_matches_manifest_activity(owner, &activity_set)
             && is_activity_handler_selector(&selector)
-        {
-            if push_synthetic_hint(
+            && push_synthetic_hint(
                 &mut enriched,
                 &mut seen,
-                "ManifestActivityCandidate",
-                &selector,
-                function.entry_va,
-                owner,
-                &library_uri,
-                "manifest:activity",
-            ) {
-                inserted += 1;
-            }
+                &SyntheticHintInput {
+                    decoded_kind: "ManifestActivityCandidate",
+                    selector: &selector,
+                    target_va: function.entry_va,
+                    owner_class: owner,
+                    library_uri: &library_uri,
+                    value: "manifest:activity",
+                },
+            )
+        {
+            inserted += 1;
         }
         if signals.has_main_launcher
             && is_bootstrap_selector(&selector)
             && (owner_is_bootstrap_context(&owner_lower)
                 || library_is_bootstrap_context(&library_lower))
-        {
-            if push_synthetic_hint(
+            && push_synthetic_hint(
                 &mut enriched,
                 &mut seen,
-                "ManifestBootstrapCandidate",
-                &selector,
-                function.entry_va,
-                owner,
-                &library_uri,
-                "manifest:bootstrap",
-            ) {
-                inserted += 1;
-            }
+                &SyntheticHintInput {
+                    decoded_kind: "ManifestBootstrapCandidate",
+                    selector: &selector,
+                    target_va: function.entry_va,
+                    owner_class: owner,
+                    library_uri: &library_uri,
+                    value: "manifest:bootstrap",
+                },
+            )
+        {
+            inserted += 1;
         }
     }
 
