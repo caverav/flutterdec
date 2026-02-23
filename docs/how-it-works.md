@@ -574,6 +574,7 @@ The run fails when thresholds are violated.
 `report.json` also includes a `semantic_intent` aggregate section with framework/stdlib/runtime/native counts, selector-tagged count, and constructor-call count.
 `report.json` also includes `selector_fallback` diagnostics with total/unique unresolved selector fallback counts, top selector names, and sample call lines.
 `report.json` also includes `call_fallback` diagnostics for `dynamicCall(...)`, `dispatch.invoke(...)`, `dispatchTarget` non-dispatch fallback call forms (`<target>(...)` and semantic library `*.invoke(...)`), and generic `indirectTargetN(...)` fallback forms.
+`report.json` also includes `bootflow_discovery` diagnostics with deterministic categorized candidates (`main`, `runapp`, `deeplink`, `activity`, `bootstrap`) sourced from adapter metadata and selector evidence.
 
 Metric formulas:
 
@@ -621,6 +622,7 @@ File naming convention:
 - `semantic_intent` aggregate
 - `selector_fallback` aggregate
 - `call_fallback` aggregate
+- `bootflow_discovery` aggregate
 
 ## How `info` differs from `decompile`
 
