@@ -576,6 +576,7 @@ The run fails when thresholds are violated.
 `report.json` also includes `call_fallback` diagnostics for `dynamicCall(...)`, `dispatch.invoke(...)`, `dispatchTarget` non-dispatch fallback call forms (`<target>(...)` and semantic library `*.invoke(...)`), and generic `indirectTargetN(...)` fallback forms.
 `report.json` also includes `bootflow_discovery` diagnostics with deterministic categorized candidates (`main`, `runapp`, `deeplink`, `activity`, `bootstrap`) sourced from adapter metadata and selector evidence.
 Activity/bootstrap candidate synthesis is context-aware (owner/library gating), and overlapping category hits with the same target/selector are deduplicated.
+`report.json` also includes `android_manifest` diagnostics (APK inputs): launcher/deeplink signal flags, manifest activity candidates, deeplink entries, parse errors, and the number of manifest-derived synthetic bootflow hints injected into the model.
 
 Metric formulas:
 
@@ -624,6 +625,7 @@ File naming convention:
 - `selector_fallback` aggregate
 - `call_fallback` aggregate
 - `bootflow_discovery` aggregate
+- `android_manifest` aggregate
 
 ## How `info` differs from `decompile`
 
