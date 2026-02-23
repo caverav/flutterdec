@@ -340,6 +340,15 @@ asm_dir.mkdir(parents=True, exist_ok=True)
     "}\n",
     encoding="utf-8",
 )
+(asm_dir / "subject.dart").write_text(
+    "// lib: 2, url: package:app/state/subject.dart\n"
+    "class Subject {\n"
+    "  dynamic onResume() {\n"
+    "// ** addr: 0x1020, size: 0x10\n"
+    "  }\n"
+    "}\n",
+    encoding="utf-8",
+)
 (out_dir / "pp.txt").write_text("", encoding="utf-8")
 "#,
         )
@@ -395,5 +404,19 @@ asm_dir.mkdir(parents=True, exist_ok=True)
             .expect("deeplink candidate");
         assert_eq!(deeplink.selector.as_deref(), Some("onNewIntent"));
         assert_eq!(deeplink.target_va, Some(0x1010));
+        let activity_targets = model
+            .object_pool
+            .iter()
+            .filter(|e| e.decoded_kind.as_deref() == Some("ActivityHandlerCandidate"))
+            .map(|e| e.target_va.unwrap_or_default())
+            .collect::<Vec<_>>();
+        assert!(
+            activity_targets.contains(&0x1010),
+            "expected onNewIntent to be tagged as activity handler"
+        );
+        assert!(
+            !activity_targets.contains(&0x1020),
+            "generic onResume in non-activity owner should not be tagged as activity handler"
+        );
     }
 }

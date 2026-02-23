@@ -167,11 +167,15 @@ def _entrypoint_selector_from_name(name: str) -> Optional[str]:
     return None
 
 
-def _bootflow_candidates_from_name(name: str) -> List[Tuple[str, str, str]]:
+def _bootflow_candidates_from_name(
+    name: str, owner_class: str, library_uri: str
+) -> List[Tuple[str, str, str]]:
     selector = _selector_from_string(name or "")
     if not selector:
         return []
     lower = selector.strip().lower()
+    owner_lower = (owner_class or "").strip().lower()
+    library_lower = (library_uri or "").strip().lower()
     out: List[Tuple[str, str, str]] = []
 
     if (
@@ -200,23 +204,43 @@ def _bootflow_candidates_from_name(name: str) -> List[Tuple[str, str, str]]:
     }:
         out.append(("DeepLinkHandlerCandidate", selector, f"bootflow:deeplink:{selector}"))
 
-    if lower in {
-        "onnewintent",
-        "handleintent",
-        "oncreate",
-        "onstart",
-        "onresume",
-        "onpause",
-        "onstop",
-    }:
+    looks_activity_owner = "activity" in owner_lower or "flutterjni" in owner_lower
+    looks_activity_lib = (
+        "activity" in library_lower
+        or "android" in library_lower
+        or library_lower.startswith("package:flutter/src/embedding")
+    )
+    if lower in {"onnewintent", "handleintent"}:
+        out.append(("ActivityHandlerCandidate", selector, f"bootflow:activity:{selector}"))
+    elif lower in {"oncreate", "onstart", "onresume", "onpause", "onstop"} and (
+        looks_activity_owner or looks_activity_lib
+    ):
         out.append(("ActivityHandlerCandidate", selector, f"bootflow:activity:{selector}"))
 
+    bootstrap_like_owner = (
+        "binding" in owner_lower
+        or "engine" in owner_lower
+        or "jni" in owner_lower
+        or "bootstrap" in owner_lower
+        or owner_lower == "global"
+        or owner_lower.endswith("binding")
+    )
+    bootstrap_like_library = (
+        library_lower.endswith("/main.dart")
+        or library_lower.startswith("package:flutter/")
+        or "/bootstrap" in library_lower
+        or "/engine" in library_lower
+    )
     if lower in {
         "ensureinitialized",
         "nativeensureinitialized",
         "startinitialization",
         "ensureinitializationcomplete",
-    }:
+    } and (
+        lower != "ensureinitialized"
+        or bootstrap_like_owner
+        or bootstrap_like_library
+    ):
         out.append(("BootstrapInitCandidate", selector, f"bootflow:init:{selector}"))
 
     deduped: List[Tuple[str, str, str]] = []
@@ -524,7 +548,9 @@ def _parse_blutter_asm(asm_dir: Path) -> Tuple[List[dict], List[dict], List[dict
                     "code_section_va": 0,
                 }
             )
-            for decoded_kind, selector, value in _bootflow_candidates_from_name(name):
+            for decoded_kind, selector, value in _bootflow_candidates_from_name(
+                name, owner, pending_lib
+            ):
                 key = (entry, decoded_kind, selector.lower())
                 if key in seen_bootflow_target:
                     continue
