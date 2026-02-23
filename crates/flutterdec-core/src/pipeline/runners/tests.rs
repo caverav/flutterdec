@@ -720,6 +720,106 @@
     }
 
     #[test]
+    fn enriches_model_with_manifest_synthetic_bootflow_hints() {
+        let model = ProgramModel {
+            schema_version: 2,
+            adapter_kind: "python".to_string(),
+            dart_version: "3.0.0".to_string(),
+            snapshot_hash: "deadbeef".to_string(),
+            arch: "arm64".to_string(),
+            libraries: vec![flutterdec_adapter::LibraryInfo {
+                id: 1,
+                uri: "package:app/main.dart".to_string(),
+                name_display: "package:app/main.dart".to_string(),
+            }],
+            classes: vec![
+                flutterdec_adapter::ClassInfo {
+                    id: 1,
+                    name: "Global".to_string(),
+                    super_name: "Object".to_string(),
+                    library_uri: "package:app/main.dart".to_string(),
+                },
+                flutterdec_adapter::ClassInfo {
+                    id: 2,
+                    name: "MainActivity".to_string(),
+                    super_name: "Object".to_string(),
+                    library_uri: "package:app/main.dart".to_string(),
+                },
+                flutterdec_adapter::ClassInfo {
+                    id: 3,
+                    name: "SettingsMapper".to_string(),
+                    super_name: "Object".to_string(),
+                    library_uri: "package:app/model/settings.dart".to_string(),
+                },
+            ],
+            functions: vec![
+                flutterdec_adapter::FunctionInfo {
+                    id: 1,
+                    name: "main".to_string(),
+                    owner_class: "Global".to_string(),
+                    entry_va: 0x1000,
+                    size: 4,
+                    code_section_va: 0x1000,
+                },
+                flutterdec_adapter::FunctionInfo {
+                    id: 2,
+                    name: "runApp".to_string(),
+                    owner_class: "Global".to_string(),
+                    entry_va: 0x1004,
+                    size: 4,
+                    code_section_va: 0x1000,
+                },
+                flutterdec_adapter::FunctionInfo {
+                    id: 3,
+                    name: "onNewIntent".to_string(),
+                    owner_class: "MainActivity".to_string(),
+                    entry_va: 0x1008,
+                    size: 4,
+                    code_section_va: 0x1000,
+                },
+                flutterdec_adapter::FunctionInfo {
+                    id: 4,
+                    name: "onResume".to_string(),
+                    owner_class: "MainActivity".to_string(),
+                    entry_va: 0x100c,
+                    size: 4,
+                    code_section_va: 0x1000,
+                },
+                flutterdec_adapter::FunctionInfo {
+                    id: 5,
+                    name: "ensureInitialized".to_string(),
+                    owner_class: "SettingsMapper".to_string(),
+                    entry_va: 0x1010,
+                    size: 4,
+                    code_section_va: 0x1000,
+                },
+            ],
+            object_pool: Vec::new(),
+        };
+        let signals = AndroidManifestSignals {
+            package_name: Some("com.example.app".to_string()),
+            has_main_launcher: true,
+            has_view_browsable: true,
+            activities: vec!["com.example.app.MainActivity".to_string()],
+            deeplink_entries: vec!["myapp://open".to_string()],
+        };
+
+        let (enriched, inserted) = enrich_model_with_manifest_bootflow_hints(&model, &signals);
+        assert!(inserted >= 4);
+
+        let kinds = enriched
+            .object_pool
+            .iter()
+            .filter_map(|e| e.decoded_kind.as_deref())
+            .collect::<Vec<_>>();
+        assert!(kinds.contains(&"ManifestMainCandidate"));
+        assert!(kinds.contains(&"ManifestRunAppCandidate"));
+        assert!(kinds.contains(&"ManifestDeepLinkCandidate"));
+        assert!(kinds.contains(&"ManifestActivityCandidate"));
+        assert!(!kinds.contains(&"ManifestBootstrapCandidate"));
+    }
+
+    #[test]
     fn decompile_engine_profile_light_is_minimal() {
         let cfg = DecompileEngineOptions::for_profile(DecompileAnalysisProfile::Light);
         assert!(!cfg.canonical_model_symbols);

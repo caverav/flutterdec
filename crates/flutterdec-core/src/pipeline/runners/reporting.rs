@@ -275,7 +275,9 @@ pub(super) fn collect_bootflow_discovery(model: &ProgramModel) -> BootflowDiscov
         let library_uri = entry.library_uri.as_deref().map(str::trim).unwrap_or("");
 
         if decoded_kind_lower == "bootmaincandidate"
+            || decoded_kind_lower == "manifestmaincandidate"
             || value_lower.starts_with("bootflow:main:")
+            || value_lower.starts_with("manifest:main")
             || (decoded_kind_lower == "entrypointcandidate" && is_main_like_selector(&selector_lower))
         {
             push_bootflow_entry(
@@ -292,7 +294,9 @@ pub(super) fn collect_bootflow_discovery(model: &ProgramModel) -> BootflowDiscov
         }
 
         if decoded_kind_lower == "bootrunappcandidate"
+            || decoded_kind_lower == "manifestrunappcandidate"
             || value_lower.starts_with("bootflow:runapp:")
+            || value_lower.starts_with("manifest:runapp")
             || (decoded_kind_lower == "entrypointcandidate" && is_runapp_selector(&selector_lower))
         {
             push_bootflow_entry(
@@ -309,7 +313,9 @@ pub(super) fn collect_bootflow_discovery(model: &ProgramModel) -> BootflowDiscov
         }
 
         if decoded_kind_lower == "deeplinkhandlercandidate"
+            || decoded_kind_lower == "manifestdeeplinkcandidate"
             || value_lower.starts_with("bootflow:deeplink:")
+            || value_lower.starts_with("manifest:deeplink")
             || is_deeplink_selector(&selector_lower)
         {
             push_bootflow_entry(
@@ -326,7 +332,9 @@ pub(super) fn collect_bootflow_discovery(model: &ProgramModel) -> BootflowDiscov
         }
 
         if decoded_kind_lower == "activityhandlercandidate"
+            || decoded_kind_lower == "manifestactivitycandidate"
             || value_lower.starts_with("bootflow:activity:")
+            || value_lower.starts_with("manifest:activity")
             || is_activity_selector(&selector_lower)
         {
             push_bootflow_entry(
@@ -343,7 +351,9 @@ pub(super) fn collect_bootflow_discovery(model: &ProgramModel) -> BootflowDiscov
         }
 
         if decoded_kind_lower == "bootstrapinitcandidate"
+            || decoded_kind_lower == "manifestbootstrapcandidate"
             || value_lower.starts_with("bootflow:init:")
+            || value_lower.starts_with("manifest:bootstrap")
             || is_bootstrap_selector(&selector_lower)
         {
             push_bootflow_entry(

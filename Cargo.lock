@@ -258,6 +258,7 @@ dependencies = [
  "goblin",
  "serde",
  "serde_json",
+ "zip",
 ]
 
 [[package]]

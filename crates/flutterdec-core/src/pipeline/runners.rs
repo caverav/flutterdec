@@ -5,6 +5,13 @@ use runners_reporting::{
     collect_selector_fallback_summary, CallFallbackSummary, SelectorFallbackSummary,
     SemanticIntentSummary,
 };
+#[path = "runners/manifest.rs"]
+mod runners_manifest;
+use runners_manifest::{
+    enrich_model_with_manifest_bootflow_hints, inspect_android_manifest,
+};
+#[cfg(test)]
+use runners_manifest::AndroidManifestSignals;
 #[path = "runners/symbols.rs"]
 mod runners_symbols;
 use runners_symbols::{
@@ -257,7 +264,13 @@ pub fn run_decompile(
     opt: &DecompileOptions,
 ) -> Result<QualityReport> {
     let bundle = load_snapshot_bundle(input_path)?;
-    let model = load_model(repo_root, &bundle, opt.adapter_backend)?;
+    let loaded_model = load_model(repo_root, &bundle, opt.adapter_backend)?;
+    let manifest_inspection = inspect_android_manifest(input_path);
+    let (model, manifest_synthetic_hints) = if manifest_inspection.present {
+        enrich_model_with_manifest_bootflow_hints(&loaded_model, &manifest_inspection.signals)
+    } else {
+        (loaded_model, 0)
+    };
     let app_package_counts = collect_app_package_counts(&model);
     let app_package_counts_top = app_package_counts
         .iter()
@@ -609,6 +622,18 @@ pub fn run_decompile(
                 "stdlib": function_scope_stats.stdlib,
                 "unknown": function_scope_stats.unknown
             }
+        },
+        "android_manifest": {
+            "present": manifest_inspection.present,
+            "parse_error": manifest_inspection.parse_error,
+            "package_name": manifest_inspection.signals.package_name,
+            "main_launcher": manifest_inspection.signals.has_main_launcher,
+            "view_browsable": manifest_inspection.signals.has_view_browsable,
+            "activity_count": manifest_inspection.signals.activities.len(),
+            "activities": manifest_inspection.signals.activities,
+            "deeplink_entry_count": manifest_inspection.signals.deeplink_entries.len(),
+            "deeplink_entries": manifest_inspection.signals.deeplink_entries,
+            "synthetic_bootflow_hints": manifest_synthetic_hints
         },
         "counts": {
             "libraries": model.libraries.len(),
