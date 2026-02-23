@@ -228,13 +228,7 @@ fn push_bootflow_entry(
     library_uri: &str,
     value: &str,
 ) {
-    let key = format!(
-        "{}|0x{:x}|{}|{}",
-        category,
-        target_va,
-        selector.to_ascii_lowercase(),
-        decoded_kind.to_ascii_lowercase()
-    );
+    let key = format!("{}|0x{:x}|{}", category, target_va, selector.to_ascii_lowercase());
     if seen.contains(&key) {
         return;
     }

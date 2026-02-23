@@ -679,6 +679,47 @@
     }
 
     #[test]
+    fn dedupes_bootflow_entries_with_same_target_and_selector() {
+        let model = ProgramModel {
+            schema_version: 2,
+            adapter_kind: "python".to_string(),
+            dart_version: "3.0.0".to_string(),
+            snapshot_hash: "deadbeef".to_string(),
+            arch: "arm64".to_string(),
+            libraries: Vec::new(),
+            classes: Vec::new(),
+            functions: Vec::new(),
+            object_pool: vec![
+                flutterdec_adapter::ObjectPoolEntry {
+                    index: 1,
+                    kind: "String".to_string(),
+                    value: "entrypoint:main".to_string(),
+                    decoded_kind: Some("EntryPointCandidate".to_string()),
+                    selector: Some("main".to_string()),
+                    target_va: Some(0x2000),
+                    owner_class: Some("Global".to_string()),
+                    library_uri: Some("package:app/main.dart".to_string()),
+                },
+                flutterdec_adapter::ObjectPoolEntry {
+                    index: 2,
+                    kind: "String".to_string(),
+                    value: "bootflow:main:main".to_string(),
+                    decoded_kind: Some("BootMainCandidate".to_string()),
+                    selector: Some("main".to_string()),
+                    target_va: Some(0x2000),
+                    owner_class: Some("Global".to_string()),
+                    library_uri: Some("package:app/main.dart".to_string()),
+                },
+            ],
+        };
+
+        let summary = collect_bootflow_discovery(&model);
+        assert_eq!(summary.main.len(), 1);
+        assert_eq!(summary.main[0].target_va, 0x2000);
+        assert_eq!(summary.main[0].selector, "main");
+    }
+
+    #[test]
     fn decompile_engine_profile_light_is_minimal() {
         let cfg = DecompileEngineOptions::for_profile(DecompileAnalysisProfile::Light);
         assert!(!cfg.canonical_model_symbols);
