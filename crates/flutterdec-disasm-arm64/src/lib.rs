@@ -194,6 +194,12 @@ fn looks_generic_name(name: &str) -> bool {
     name.starts_with("sub_") || name.starts_with("fn_0x")
 }
 
+fn has_no_isolate_marker(text_lower: &str) -> bool {
+    text_lower.contains("no isolate")
+        || text_lower.contains("no_isolate")
+        || text_lower.contains("no-isolate")
+}
+
 fn is_main_like_name(name_lower: &str) -> bool {
     name_lower == "main"
         || name_lower.ends_with(".main")
@@ -597,6 +603,11 @@ fn function_priority(
     let name_lower = func.name.to_ascii_lowercase();
     let owner_lower = func.owner_class.to_ascii_lowercase();
 
+    if has_no_isolate_marker(&name_lower) || has_no_isolate_marker(&owner_lower) {
+        score -= 650;
+        push_component(&mut components, "no_isolate_marker_penalty", -650);
+    }
+
     if looks_generic_name(&name_lower) {
         score -= 40;
         push_component(&mut components, "generic_name_penalty", -40);
@@ -671,6 +682,10 @@ fn function_priority(
         } else if uri_lower.starts_with("dart:") {
             score -= 360;
             push_component(&mut components, "stdlib_library_penalty", -360);
+            if uri_lower.starts_with("dart:isolate") {
+                score -= 420;
+                push_component(&mut components, "dart_isolate_library_penalty", -420);
+            }
         } else if uri_lower.starts_with("package:") {
             score += 220;
             push_component(&mut components, "package_library_bonus", 220);
@@ -1619,6 +1634,135 @@ mod tests {
         let d = disassemble_program(&model, &bytes, 0x1000, None, Some(1));
         assert_eq!(d.len(), 1);
         assert_eq!(d[0].function_name, "startCLI");
+    }
+
+    #[test]
+    fn penalizes_no_isolate_markers_in_name_or_owner() {
+        let clean = FunctionInfo {
+            id: 0,
+            name: "sub_6000".to_string(),
+            owner_class: "Global".to_string(),
+            entry_va: 0x6000,
+            size: 32,
+            code_section_va: 0x6000,
+        };
+        let noisy = FunctionInfo {
+            id: 1,
+            name: "sub_6010".to_string(),
+            owner_class: "Global no isolate".to_string(),
+            entry_va: 0x6010,
+            size: 32,
+            code_section_va: 0x6000,
+        };
+
+        let mut owner_library = HashMap::new();
+        owner_library.insert("Global".to_string(), "package:app/main.dart".to_string());
+        owner_library.insert(
+            "Global no isolate".to_string(),
+            "package:app/main.dart".to_string(),
+        );
+
+        let (clean_score, clean_components) = function_priority(
+            &clean,
+            &owner_library,
+            &HashMap::new(),
+            &HashMap::new(),
+            &HashMap::new(),
+            0,
+            1,
+        );
+        let (noisy_score, noisy_components) = function_priority(
+            &noisy,
+            &owner_library,
+            &HashMap::new(),
+            &HashMap::new(),
+            &HashMap::new(),
+            0,
+            1,
+        );
+
+        assert!(
+            noisy_components
+                .iter()
+                .any(|(name, score)| name == "no_isolate_marker_penalty" && *score == -650),
+            "no-isolate marker should add an explicit penalty component: {noisy_components:?}"
+        );
+        assert!(
+            clean_components
+                .iter()
+                .all(|(name, _)| name != "no_isolate_marker_penalty"),
+            "clean function should not get no-isolate penalty: {clean_components:?}"
+        );
+        assert!(
+            noisy_score < clean_score,
+            "no-isolate marker should lower score (clean={clean_score}, noisy={noisy_score})"
+        );
+    }
+
+    #[test]
+    fn penalizes_dart_isolate_library_more_than_generic_stdlib() {
+        let isolate_func = FunctionInfo {
+            id: 0,
+            name: "sub_6100".to_string(),
+            owner_class: "IsolateWorker".to_string(),
+            entry_va: 0x6100,
+            size: 32,
+            code_section_va: 0x6100,
+        };
+        let core_func = FunctionInfo {
+            id: 1,
+            name: "sub_6110".to_string(),
+            owner_class: "CoreWorker".to_string(),
+            entry_va: 0x6110,
+            size: 32,
+            code_section_va: 0x6100,
+        };
+
+        let mut owner_library = HashMap::new();
+        owner_library.insert(
+            "IsolateWorker".to_string(),
+            "dart:isolate-patch/isolate_patch.dart".to_string(),
+        );
+        owner_library.insert(
+            "CoreWorker".to_string(),
+            "dart:core-patch/core_patch.dart".to_string(),
+        );
+
+        let (isolate_score, isolate_components) = function_priority(
+            &isolate_func,
+            &owner_library,
+            &HashMap::new(),
+            &HashMap::new(),
+            &HashMap::new(),
+            0,
+            1,
+        );
+        let (core_score, core_components) = function_priority(
+            &core_func,
+            &owner_library,
+            &HashMap::new(),
+            &HashMap::new(),
+            &HashMap::new(),
+            0,
+            1,
+        );
+
+        assert!(
+            isolate_components
+                .iter()
+                .any(|(name, score)| name == "dart_isolate_library_penalty" && *score == -420),
+            "dart:isolate library should add isolate-specific penalty: {isolate_components:?}"
+        );
+        assert!(
+            core_components
+                .iter()
+                .all(|(name, _)| name != "dart_isolate_library_penalty"),
+            "non-isolate stdlib function should not get isolate-specific penalty: {core_components:?}"
+        );
+        assert!(
+            isolate_score < core_score,
+            "dart:isolate functions should rank below other stdlib functions when tied (isolate={isolate_score}, core={core_score})"
+        );
     }
 
     #[test]
