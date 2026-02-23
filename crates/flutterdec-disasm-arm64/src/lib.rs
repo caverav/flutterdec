@@ -269,14 +269,36 @@ fn deep_link_signal_score(text: &str) -> i32 {
 
 fn entrypoint_signal_score(entry: &flutterdec_adapter::ObjectPoolEntry) -> i32 {
     let mut score = 0i32;
-
-    if entry
+    let decoded_kind_lower = entry
         .decoded_kind
         .as_deref()
-        .map(|v| v.eq_ignore_ascii_case("EntryPointCandidate"))
-        .unwrap_or(false)
-    {
-        score += 5000;
+        .map(str::trim)
+        .unwrap_or("")
+        .to_ascii_lowercase();
+
+    score += match decoded_kind_lower.as_str() {
+        "entrypointcandidate" => 5000,
+        "bootmaincandidate" => 6200,
+        "bootrunappcandidate" => 3800,
+        "deeplinkhandlercandidate" => 2600,
+        "activityhandlercandidate" => 2400,
+        "bootstrapinitcandidate" => 1800,
+        _ => 0,
+    };
+
+    let value_lower = entry.value.trim().to_ascii_lowercase();
+    if value_lower.starts_with("entrypoint:") {
+        score += 1800;
+    } else if value_lower.starts_with("bootflow:main:") {
+        score += 2200;
+    } else if value_lower.starts_with("bootflow:runapp:") {
+        score += 1200;
+    } else if value_lower.starts_with("bootflow:deeplink:") {
+        score += 900;
+    } else if value_lower.starts_with("bootflow:activity:") {
+        score += 800;
+    } else if value_lower.starts_with("bootflow:init:") {
+        score += 700;
     }
 
     if let Some(selector) = entry.selector.as_deref() {
@@ -286,15 +308,6 @@ fn entrypoint_signal_score(entry: &flutterdec_adapter::ObjectPoolEntry) -> i32 {
         } else if selector_lower == "runapp" || selector_lower.ends_with(".runapp") {
             score += 500;
         }
-    }
-
-    if entry
-        .value
-        .trim()
-        .to_ascii_lowercase()
-        .starts_with("entrypoint:")
-    {
-        score += 1800;
     }
 
     score
@@ -319,11 +332,15 @@ fn selector_signal_score(entry: &flutterdec_adapter::ObjectPoolEntry) -> i32 {
         "didupdatewidget" | "didchangedependencies" => 900,
         "didpushrouteinformation"
         | "didpushroute"
+        | "didpoproute"
         | "setnewroutepath"
         | "parserouteinformation"
         | "ongenerateroute"
+        | "onunknownroute"
         | "onnewintent"
         | "handleintent" => 1400,
+        "oncreate" | "onstart" | "onresume" | "onpause" | "onstop" => 900,
+        "ensureinitialized" | "nativeensureinitialized" | "ensureinitializationcomplete" => 700,
         "main" => 1800,
         _ => 0,
     };
@@ -1305,6 +1322,114 @@ mod tests {
         let d = disassemble_program(&model, &bytes, 0x5000, None, Some(1));
         assert_eq!(d.len(), 1);
         assert_eq!(d[0].function_name, "sub_5004");
+    }
+
+    #[test]
+    fn prioritizes_boot_main_candidate_target_va_when_names_are_generic() {
+        let model = ProgramModel {
+            schema_version: 2,
+            adapter_kind: "test".to_string(),
+            dart_version: "unknown".to_string(),
+            snapshot_hash: "h".to_string(),
+            arch: "arm64".to_string(),
+            libraries: vec![LibraryInfo {
+                id: 0,
+                uri: "package:app/main.dart".to_string(),
+                name_display: "package:app/main.dart".to_string(),
+            }],
+            classes: vec![ClassInfo {
+                id: 0,
+                name: "Global".to_string(),
+                super_name: "Object".to_string(),
+                library_uri: "package:app/main.dart".to_string(),
+            }],
+            functions: vec![
+                FunctionInfo {
+                    id: 0,
+                    name: "sub_50a0".to_string(),
+                    owner_class: "Global".to_string(),
+                    entry_va: 0x50a0,
+                    size: 4,
+                    code_section_va: 0x50a0,
+                },
+                FunctionInfo {
+                    id: 1,
+                    name: "sub_50a4".to_string(),
+                    owner_class: "Global".to_string(),
+                    entry_va: 0x50a4,
+                    size: 4,
+                    code_section_va: 0x50a0,
+                },
+            ],
+            object_pool: vec![ObjectPoolEntry {
+                index: 0,
+                kind: "String".to_string(),
+                value: "bootflow:main:main".to_string(),
+                decoded_kind: Some("BootMainCandidate".to_string()),
+                selector: Some("main".to_string()),
+                target_va: Some(0x50a4),
+                owner_class: Some("Global".to_string()),
+                library_uri: Some("package:app/main.dart".to_string()),
+            }],
+        };
+        let bytes = vec![0xc0, 0x03, 0x5f, 0xd6, 0xc0, 0x03, 0x5f, 0xd6];
+        let d = disassemble_program(&model, &bytes, 0x50a0, None, Some(1));
+        assert_eq!(d.len(), 1);
+        assert_eq!(d[0].function_name, "sub_50a4");
+    }
+
+    #[test]
+    fn prioritizes_deeplink_candidate_target_va_when_names_are_generic() {
+        let model = ProgramModel {
+            schema_version: 2,
+            adapter_kind: "test".to_string(),
+            dart_version: "unknown".to_string(),
+            snapshot_hash: "h".to_string(),
+            arch: "arm64".to_string(),
+            libraries: vec![LibraryInfo {
+                id: 0,
+                uri: "package:app/router.dart".to_string(),
+                name_display: "package:app/router.dart".to_string(),
+            }],
+            classes: vec![ClassInfo {
+                id: 0,
+                name: "RouterHost".to_string(),
+                super_name: "Object".to_string(),
+                library_uri: "package:app/router.dart".to_string(),
+            }],
+            functions: vec![
+                FunctionInfo {
+                    id: 0,
+                    name: "sub_50b0".to_string(),
+                    owner_class: "RouterHost".to_string(),
+                    entry_va: 0x50b0,
+                    size: 4,
+                    code_section_va: 0x50b0,
+                },
+                FunctionInfo {
+                    id: 1,
+                    name: "sub_50b4".to_string(),
+                    owner_class: "RouterHost".to_string(),
+                    entry_va: 0x50b4,
+                    size: 4,
+                    code_section_va: 0x50b0,
+                },
+            ],
+            object_pool: vec![ObjectPoolEntry {
+                index: 0,
+                kind: "String".to_string(),
+                value: "bootflow:deeplink:onNewIntent".to_string(),
+                decoded_kind: Some("DeepLinkHandlerCandidate".to_string()),
+                selector: Some("onNewIntent".to_string()),
+                target_va: Some(0x50b4),
+                owner_class: Some("RouterHost".to_string()),
+                library_uri: Some("package:app/router.dart".to_string()),
+            }],
+        };
+        let bytes = vec![0xc0, 0x03, 0x5f, 0xd6, 0xc0, 0x03, 0x5f, 0xd6];
+        let d = disassemble_program(&model, &bytes, 0x50b0, None, Some(1));
+        assert_eq!(d.len(), 1);
+        assert_eq!(d[0].function_name, "sub_50b4");
     }
 
     #[test]
