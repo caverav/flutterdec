@@ -83,6 +83,19 @@
     }
 
     #[test]
+    fn derives_manifest_priority_package_hints() {
+        assert_eq!(
+            derive_manifest_package_hints(Some("oss.krtirtho.spotube")),
+            vec!["spotube".to_string()]
+        );
+        assert_eq!(
+            derive_manifest_package_hints(Some("com.acme.app")),
+            vec!["acme".to_string()]
+        );
+        assert_eq!(derive_manifest_package_hints(None), Vec::<String>::new());
+    }
+
+    #[test]
     fn applies_app_unknown_scope_filter() {
         let model = ProgramModel {
             schema_version: 2,

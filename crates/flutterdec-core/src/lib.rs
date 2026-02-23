@@ -4,7 +4,8 @@ use flutterdec_adapter::{
 };
 use flutterdec_decompiler::{emit_program_with_pool_context, PseudocodeArtifact};
 use flutterdec_disasm_arm64::{
-    disassemble_program_with_priorities, FunctionDisassembly, FunctionPriorityBreakdown,
+    disassemble_program_with_priorities_and_package_hints, FunctionDisassembly,
+    FunctionPriorityBreakdown,
 };
 use flutterdec_ir::{build_program_ir, FunctionIr};
 use flutterdec_loader::{load_snapshot_bundle, SnapshotBundle};

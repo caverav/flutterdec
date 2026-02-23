@@ -111,6 +111,54 @@ fn normalize_package_filters(values: &[String]) -> HashSet<String> {
         .collect()
 }
 
+fn is_non_app_manifest_segment(segment: &str) -> bool {
+    matches!(
+        segment,
+        "com"
+            | "org"
+            | "net"
+            | "io"
+            | "app"
+            | "dev"
+            | "android"
+            | "androidx"
+            | "example"
+    )
+}
+
+fn derive_manifest_package_hints(package_name: Option<&str>) -> Vec<String> {
+    let Some(raw) = package_name else {
+        return Vec::new();
+    };
+    let parts = raw
+        .trim()
+        .to_ascii_lowercase()
+        .split('.')
+        .filter(|segment| !segment.trim().is_empty())
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    if parts.is_empty() {
+        return Vec::new();
+    }
+
+    let mut hints = HashSet::new();
+    if let Some(last) = parts.last() {
+        if !is_non_app_manifest_segment(last) {
+            hints.insert(last.clone());
+        }
+        if last == "app" && parts.len() >= 2 {
+            let prev = &parts[parts.len() - 2];
+            if !is_non_app_manifest_segment(prev) {
+                hints.insert(prev.clone());
+            }
+        }
+    }
+
+    let mut out = hints.into_iter().collect::<Vec<_>>();
+    out.sort();
+    out
+}
+
 fn collect_app_package_counts(model: &ProgramModel) -> Vec<(String, usize)> {
     let mut class_to_library = HashMap::new();
     for c in &model.classes {
@@ -280,6 +328,11 @@ pub fn run_decompile(
     let normalized_app_packages = normalize_package_filters(&opt.app_packages);
     let mut normalized_app_package_list = normalized_app_packages.iter().cloned().collect::<Vec<_>>();
     normalized_app_package_list.sort();
+    let mut priority_package_hints = normalized_app_package_list.clone();
+    if priority_package_hints.is_empty() {
+        priority_package_hints =
+            derive_manifest_package_hints(manifest_inspection.signals.package_name.as_deref());
+    }
     let (scoped_model, function_scope_stats) =
         apply_function_scope_filter(&model, opt.function_scope, &opt.app_packages);
 
@@ -311,12 +364,13 @@ pub fn run_decompile(
         );
     }
 
-    let (disasm, selected_priorities) = disassemble_program_with_priorities(
+    let (disasm, selected_priorities) = disassemble_program_with_priorities_and_package_hints(
         &scoped_model,
         &bundle.isolate_instr,
         bundle.isolate_instr_va,
         opt.focus.as_deref(),
         opt.max_functions,
+        &priority_package_hints,
     );
     let ir: Vec<FunctionIr> = build_program_ir(&disasm);
     let mut symbol_names: HashMap<u64, String> = HashMap::new();
@@ -614,6 +668,7 @@ pub fn run_decompile(
             "excluded": function_scope_stats.excluded,
             "excluded_by_app_package": function_scope_stats.excluded_by_app_package,
             "app_packages": normalized_app_package_list,
+            "priority_package_hints": priority_package_hints,
             "app_package_count_total": app_package_counts.len(),
             "app_package_counts_top": app_package_counts_top,
             "categories": {
