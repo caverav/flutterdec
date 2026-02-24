@@ -33,6 +33,10 @@ pub(super) fn infer_call_intent(call_name: &str) -> Option<String> {
         return Some(tag);
     }
 
+    if let Some(tag) = infer_package_intent(call_name) {
+        return Some(tag);
+    }
+
     if lower.starts_with("vm_runtime_") {
         let name = lower.trim_start_matches("vm_runtime_");
         if !name.is_empty() {
@@ -91,6 +95,29 @@ fn infer_flutter_framework_intent(call_name: &str) -> Option<String> {
     ))
 }
 
+fn infer_package_intent(call_name: &str) -> Option<String> {
+    if !call_name.to_ascii_lowercase().starts_with("package_") {
+        return None;
+    }
+    let mut parts = call_name.split('_');
+    let head = parts.next().unwrap_or_default();
+    if !head.eq_ignore_ascii_case("package") {
+        return None;
+    }
+    let pkg = parts.next()?.trim();
+    let owner = parts.next()?.trim();
+    let method = parts.collect::<Vec<_>>().join("_");
+    if pkg.is_empty() || owner.is_empty() || method.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "package:{}.{}.{}",
+        pkg.to_ascii_lowercase(),
+        owner,
+        method
+    ))
+}
+
 pub(super) fn readable_call_name_from_intent(
     call_name: &str,
     intent: Option<&str>,
@@ -107,6 +134,7 @@ pub(super) fn readable_call_name_from_intent(
         lower == "dispatchtarget" || lower == "cachedtarget" || lower.starts_with("indirecttarget");
     let known_machine_name = lower.starts_with("dart_")
         || lower.starts_with("flutter_")
+        || lower.starts_with("package_")
         || lower.starts_with("vm_runtime_")
         || lower.starts_with("native_libc_")
         || lower.starts_with("native_android_log_");

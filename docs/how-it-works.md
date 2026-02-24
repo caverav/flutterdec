@@ -90,8 +90,9 @@ sequenceDiagram
 - auto-generated disassembler names such as `FUN_<hex>`, `nullsub_*`, `loc_*`, and `off_*` are also treated as generic placeholders during merge
 - pool target metadata now also emits deterministic `package_<pkg>_<Owner>_<method>` symbols for `package:*` libraries (not only `dart:*`/`package:flutter/*`)
 - when stronger external names are available for the same VA, heuristic canonical names (`dart_*`/`flutter_*`/`package_*`) are replaced automatically
-- recognized call names emit semantic intent comments (stdlib/runtime/native) next to call lines
+- recognized call names emit semantic intent comments (stdlib/runtime/native/package) next to call lines
 - when intent is deterministic, callsites are rewritten to semantic paths and include `was: <original_name>` for traceability
+- canonical `package_<pkg>_<Owner>_<method>` symbols are now rewritten to readable `pkg.Owner.method(...)` callsites with `package:<...>` intent tags
 - selector-backed intent can also rewrite indirect callsites and annotate `indirect via: <target_alias>`
 - when a call argument is exactly `pool[<idx>]` and a string hint is known, it is rendered as `"value" /* pool[<idx>] */`
 - non-exact pool expressions preserve structure and gain inline pool mapping comments (`pool[<idx> /* "value" */]`)
