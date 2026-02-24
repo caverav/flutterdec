@@ -87,6 +87,7 @@ sequenceDiagram
 - profile defaults can be overridden with per-feature `--with-*` / `--no-*` engine flags (canonical model symbols, pool hints, semantic reporting, bootflow category seeding)
 - can ingest extra ELF symbol tables and `map-symbols` target JSON to improve direct call naming
 - external descriptive names replace generic placeholders like `sub_*` and `fn_0x*` when addresses match
+- auto-generated disassembler names such as `FUN_<hex>`, `nullsub_*`, `loc_*`, and `off_*` are also treated as generic placeholders during merge
 - pool target metadata now also emits deterministic `package_<pkg>_<Owner>_<method>` symbols for `package:*` libraries (not only `dart:*`/`package:flutter/*`)
 - when stronger external names are available for the same VA, heuristic canonical names (`dart_*`/`flutter_*`/`package_*`) are replaced automatically
 - recognized call names emit semantic intent comments (stdlib/runtime/native) next to call lines
