@@ -1634,6 +1634,74 @@ fn does_not_rewrite_indirect_call_from_target_va_when_symbol_is_generic() {
 }
 
 #[test]
+fn does_not_rewrite_indirect_call_from_target_va_when_symbol_is_tool_placeholder() {
+    let ir = FunctionIr {
+        function_id: 467,
+        name: "indirectMetadataTargetVaToolPlaceholder".to_string(),
+        entry_va: 0xc280,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0xc280,
+            instrs: vec![
+                LlirInstr {
+                    va: 0xc280,
+                    op: IROp::LoadPool,
+                    src: "x9".to_string(),
+                    target: "pool[92]".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc284,
+                    op: IROp::Call,
+                    src: "blr x9".to_string(),
+                    target: "x9".to_string(),
+                },
+                LlirInstr {
+                    va: 0xc288,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+
+    let mut symbols = HashMap::new();
+    symbols.insert(0x5002u64, "FUN_0012ABCD".to_string());
+    let pool = HashMap::new();
+    let mut metadata = HashMap::new();
+    metadata.insert(
+        92u64,
+        PoolSemanticHint {
+            selector: None,
+            owner_class: None,
+            library_uri: None,
+            target_va: Some(0x5002),
+        },
+    );
+
+    let artifact = emit_pseudocode_with_pool_context(&ir, &symbols, &pool, &metadata);
+    assert!(
+        artifact
+            .source
+            .contains("indirectTarget9(receiver, param1, param2, param3)"),
+        "tool placeholder target symbols should not force semantic rewrite:\n{}",
+        artifact.source
+    );
+    assert!(
+        !artifact.source.contains("FUN_0012ABCD("),
+        "tool placeholder target symbols should not render as callable names:\n{}",
+        artifact.source
+    );
+    assert_eq!(
+        artifact.target_va_symbol_calls, 0,
+        "target_va rewrite counter should remain zero for tool placeholder symbols:\n{}",
+        artifact.source
+    );
+}
+
+#[test]
 fn annotates_pool_mapping_in_indirect_target_comment() {
     let ir = FunctionIr {
         function_id: 47,
