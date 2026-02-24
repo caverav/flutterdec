@@ -2,8 +2,8 @@
 mod runners_reporting;
 use runners_reporting::{
     collect_bootflow_discovery, collect_call_fallback_summary, collect_semantic_intent_summary,
-    collect_selector_fallback_summary, CallFallbackSummary, SelectorFallbackSummary,
-    SemanticIntentSummary,
+    collect_selector_fallback_summary, BootflowDiscoveryEntry, BootflowDiscoverySummary,
+    CallFallbackSummary, SelectorFallbackSummary, SemanticIntentSummary,
 };
 #[path = "runners/manifest.rs"]
 mod runners_manifest;
@@ -321,6 +321,162 @@ fn collect_selected_priority_component_totals(
             .then_with(|| a_name.cmp(b_name))
     });
     out
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+struct SelectedBootflowCategoryStats {
+    discovered: usize,
+    selected: usize,
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+struct SelectedBootflowStats {
+    main: SelectedBootflowCategoryStats,
+    runapp: SelectedBootflowCategoryStats,
+    deeplink: SelectedBootflowCategoryStats,
+    activity: SelectedBootflowCategoryStats,
+    bootstrap: SelectedBootflowCategoryStats,
+    any: SelectedBootflowCategoryStats,
+}
+
+#[derive(Debug, Clone)]
+struct SelectedBootflowHit {
+    category: String,
+    decoded_kind: String,
+    selector: String,
+    target_va: u64,
+    function_name: String,
+    owner_class: String,
+    library_uri: String,
+    total_score: i32,
+}
+
+fn collect_selected_bootflow_category_hits(
+    category: &str,
+    entries: &[BootflowDiscoveryEntry],
+    selected_by_entry_va: &HashMap<u64, &FunctionPriorityBreakdown>,
+    any_discovered: &mut HashSet<u64>,
+    any_selected: &mut HashSet<u64>,
+    hits: &mut Vec<SelectedBootflowHit>,
+) -> SelectedBootflowCategoryStats {
+    let mut category_discovered = HashSet::new();
+    let mut category_selected = HashSet::new();
+    let mut seen_hit_keys = HashSet::new();
+    for entry in entries {
+        category_discovered.insert(entry.target_va);
+        any_discovered.insert(entry.target_va);
+        let Some(selected) = selected_by_entry_va.get(&entry.target_va) else {
+            continue;
+        };
+        category_selected.insert(entry.target_va);
+        any_selected.insert(entry.target_va);
+        let hit_key = format!(
+            "{}|0x{:x}|{}",
+            category,
+            entry.target_va,
+            entry.selector.to_ascii_lowercase()
+        );
+        if !seen_hit_keys.insert(hit_key) {
+            continue;
+        }
+        hits.push(SelectedBootflowHit {
+            category: category.to_string(),
+            decoded_kind: entry.decoded_kind.clone(),
+            selector: entry.selector.clone(),
+            target_va: entry.target_va,
+            function_name: selected.function_name.clone(),
+            owner_class: selected.owner_class.clone(),
+            library_uri: selected.library_uri.clone(),
+            total_score: selected.total_score,
+        });
+    }
+    SelectedBootflowCategoryStats {
+        discovered: category_discovered.len(),
+        selected: category_selected.len(),
+    }
+}
+
+fn collect_selected_bootflow_hits(
+    selected: &[FunctionPriorityBreakdown],
+    bootflow: &BootflowDiscoverySummary,
+) -> (SelectedBootflowStats, Vec<SelectedBootflowHit>) {
+    let selected_by_entry_va = selected
+        .iter()
+        .map(|item| (item.entry_va, item))
+        .collect::<HashMap<_, _>>();
+
+    let mut any_discovered = HashSet::new();
+    let mut any_selected = HashSet::new();
+    let mut hits = Vec::new();
+
+    let main = collect_selected_bootflow_category_hits(
+        "main",
+        &bootflow.main,
+        &selected_by_entry_va,
+        &mut any_discovered,
+        &mut any_selected,
+        &mut hits,
+    );
+    let runapp = collect_selected_bootflow_category_hits(
+        "runapp",
+        &bootflow.runapp,
+        &selected_by_entry_va,
+        &mut any_discovered,
+        &mut any_selected,
+        &mut hits,
+    );
+    let deeplink = collect_selected_bootflow_category_hits(
+        "deeplink",
+        &bootflow.deeplink,
+        &selected_by_entry_va,
+        &mut any_discovered,
+        &mut any_selected,
+        &mut hits,
+    );
+    let activity = collect_selected_bootflow_category_hits(
+        "activity",
+        &bootflow.activity,
+        &selected_by_entry_va,
+        &mut any_discovered,
+        &mut any_selected,
+        &mut hits,
+    );
+    let bootstrap = collect_selected_bootflow_category_hits(
+        "bootstrap",
+        &bootflow.bootstrap,
+        &selected_by_entry_va,
+        &mut any_discovered,
+        &mut any_selected,
+        &mut hits,
+    );
+
+    hits.sort_by(|a, b| {
+        b.total_score
+            .cmp(&a.total_score)
+            .then_with(|| a.category.cmp(&b.category))
+            .then_with(|| a.target_va.cmp(&b.target_va))
+            .then_with(|| a.selector.cmp(&b.selector))
+    });
+
+    let stats = SelectedBootflowStats {
+        main,
+        runapp,
+        deeplink,
+        activity,
+        bootstrap,
+        any: SelectedBootflowCategoryStats {
+            discovered: any_discovered.len(),
+            selected: any_selected.len(),
+        },
+    };
+    (stats, hits)
+}
+
+fn selected_bootflow_coverage_ratio(stats: SelectedBootflowCategoryStats) -> f64 {
+    if stats.discovered == 0 {
+        return 0.0;
+    }
+    stats.selected as f64 / stats.discovered as f64
 }
 
 fn include_function_kind(scope: FunctionScope, kind: ScopedFunctionKind) -> bool {
@@ -756,6 +912,56 @@ pub fn run_decompile(
         })
         .collect::<Vec<_>>();
     let bootflow_discovery = collect_bootflow_discovery(&model);
+    let (selected_bootflow_stats, selected_bootflow_hits) =
+        collect_selected_bootflow_hits(&prioritization_selected, &bootflow_discovery);
+    let selected_bootflow_hits_top = selected_bootflow_hits
+        .iter()
+        .take(20)
+        .map(|hit| {
+            json!({
+                "category": hit.category,
+                "decoded_kind": hit.decoded_kind,
+                "selector": hit.selector,
+                "target_va": hit.target_va,
+                "function_name": hit.function_name,
+                "owner_class": hit.owner_class,
+                "library_uri": hit.library_uri,
+                "total_score": hit.total_score
+            })
+        })
+        .collect::<Vec<_>>();
+    let selected_bootflow_coverage = json!({
+        "main": {
+            "selected": selected_bootflow_stats.main.selected,
+            "discovered": selected_bootflow_stats.main.discovered,
+            "coverage": selected_bootflow_coverage_ratio(selected_bootflow_stats.main)
+        },
+        "runapp": {
+            "selected": selected_bootflow_stats.runapp.selected,
+            "discovered": selected_bootflow_stats.runapp.discovered,
+            "coverage": selected_bootflow_coverage_ratio(selected_bootflow_stats.runapp)
+        },
+        "deeplink": {
+            "selected": selected_bootflow_stats.deeplink.selected,
+            "discovered": selected_bootflow_stats.deeplink.discovered,
+            "coverage": selected_bootflow_coverage_ratio(selected_bootflow_stats.deeplink)
+        },
+        "activity": {
+            "selected": selected_bootflow_stats.activity.selected,
+            "discovered": selected_bootflow_stats.activity.discovered,
+            "coverage": selected_bootflow_coverage_ratio(selected_bootflow_stats.activity)
+        },
+        "bootstrap": {
+            "selected": selected_bootflow_stats.bootstrap.selected,
+            "discovered": selected_bootflow_stats.bootstrap.discovered,
+            "coverage": selected_bootflow_coverage_ratio(selected_bootflow_stats.bootstrap)
+        },
+        "any": {
+            "selected": selected_bootflow_stats.any.selected,
+            "discovered": selected_bootflow_stats.any.discovered,
+            "coverage": selected_bootflow_coverage_ratio(selected_bootflow_stats.any)
+        }
+    });
     let bootflow_main = bootflow_discovery
         .main
         .iter()
@@ -961,6 +1167,8 @@ pub fn run_decompile(
             "selected_other_app_count": preferred_package_stats.other_app,
             "selected_preferred_app_ratio": preferred_package_ratio,
             "selected_component_totals_top": prioritization_component_totals_top,
+            "selected_bootflow_coverage": selected_bootflow_coverage,
+            "selected_bootflow_hits_top": selected_bootflow_hits_top,
             "selected": prioritization_selected
         },
         "bootflow_discovery": {

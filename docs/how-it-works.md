@@ -631,6 +631,8 @@ File naming convention:
 - `prioritization.selected_scope_mix` and `prioritization.selected_app_like_ratio` (selected top-N scope quality)
 - `prioritization.selected_preferred_app_count`, `selected_other_app_count`, and `selected_preferred_app_ratio` (selected app-package precision against preferred hints)
 - `prioritization.selected_component_totals_top` (which score components dominated capped selection)
+- `prioritization.selected_bootflow_coverage` (how much discovered main/runApp/deeplink/activity/bootstrap bootflow is represented in selected top-N)
+- `prioritization.selected_bootflow_hits_top` (top selected functions that matched bootflow targets)
 
 ## How `info` differs from `decompile`
 

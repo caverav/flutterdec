@@ -325,6 +325,102 @@
     }
 
     #[test]
+    fn collects_selected_bootflow_hits_and_coverage() {
+        let selected = vec![
+            FunctionPriorityBreakdown {
+                function_id: 1,
+                function_name: "main".to_string(),
+                owner_class: "Global".to_string(),
+                library_uri: "package:app/main.dart".to_string(),
+                entry_va: 0x1000,
+                total_score: 100,
+                components: Vec::new(),
+            },
+            FunctionPriorityBreakdown {
+                function_id: 2,
+                function_name: "runApp".to_string(),
+                owner_class: "Global".to_string(),
+                library_uri: "package:app/main.dart".to_string(),
+                entry_va: 0x1010,
+                total_score: 90,
+                components: Vec::new(),
+            },
+        ];
+        let bootflow = BootflowDiscoverySummary {
+            main: vec![
+                BootflowDiscoveryEntry {
+                    decoded_kind: "pool".to_string(),
+                    selector: "main".to_string(),
+                    target_va: 0x1000,
+                    owner_class: "Global".to_string(),
+                    library_uri: "package:app/main.dart".to_string(),
+                    value: "bootflow:main:main".to_string(),
+                },
+                BootflowDiscoveryEntry {
+                    decoded_kind: "pool".to_string(),
+                    selector: "main".to_string(),
+                    target_va: 0x2000,
+                    owner_class: "Global".to_string(),
+                    library_uri: "package:app/main.dart".to_string(),
+                    value: "bootflow:main:main".to_string(),
+                },
+            ],
+            runapp: vec![BootflowDiscoveryEntry {
+                decoded_kind: "pool".to_string(),
+                selector: "runApp".to_string(),
+                target_va: 0x1010,
+                owner_class: "Global".to_string(),
+                library_uri: "package:app/main.dart".to_string(),
+                value: "bootflow:runapp:runApp".to_string(),
+            }],
+            deeplink: vec![BootflowDiscoveryEntry {
+                decoded_kind: "pool".to_string(),
+                selector: "onNewIntent".to_string(),
+                target_va: 0x3000,
+                owner_class: "MainActivity".to_string(),
+                library_uri: "package:app/main.dart".to_string(),
+                value: "bootflow:deeplink:onNewIntent".to_string(),
+            }],
+            activity: Vec::new(),
+            bootstrap: vec![BootflowDiscoveryEntry {
+                decoded_kind: "pool".to_string(),
+                selector: "ensureInitialized".to_string(),
+                target_va: 0x1000,
+                owner_class: "WidgetsFlutterBinding".to_string(),
+                library_uri: "package:flutter/src/widgets/binding.dart".to_string(),
+                value: "bootflow:init:ensureInitialized".to_string(),
+            }],
+        };
+
+        let (stats, hits) = collect_selected_bootflow_hits(&selected, &bootflow);
+        assert_eq!(stats.main.discovered, 2);
+        assert_eq!(stats.main.selected, 1);
+        assert_eq!(stats.runapp.discovered, 1);
+        assert_eq!(stats.runapp.selected, 1);
+        assert_eq!(stats.deeplink.discovered, 1);
+        assert_eq!(stats.deeplink.selected, 0);
+        assert_eq!(stats.bootstrap.discovered, 1);
+        assert_eq!(stats.bootstrap.selected, 1);
+        assert_eq!(stats.any.discovered, 4);
+        assert_eq!(stats.any.selected, 2);
+        assert!((selected_bootflow_coverage_ratio(stats.any) - 0.5).abs() < f64::EPSILON);
+
+        assert!(hits.iter().any(|hit| {
+            hit.category == "main" && hit.target_va == 0x1000 && hit.function_name == "main"
+        }));
+        assert!(hits.iter().any(|hit| {
+            hit.category == "runapp"
+                && hit.target_va == 0x1010
+                && hit.function_name == "runApp"
+        }));
+        assert!(hits.iter().any(|hit| {
+            hit.category == "bootstrap"
+                && hit.target_va == 0x1000
+                && hit.function_name == "main"
+        }));
+    }
+
+    #[test]
     fn applies_app_unknown_scope_filter() {
         let model = ProgramModel {
             schema_version: 2,
