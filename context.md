@@ -193,6 +193,7 @@ Current scope:
 - model-backed canonical naming now deterministically tags Dart stdlib (`dart:*`), Flutter framework (`package:flutter/*`), and package-owned calls (`package:*`) when adapter metadata includes class/library ownership
 - pool target symbol synthesis now also emits deterministic `package_<pkg>_<Owner>_<method>` names for `package:*` library targets, improving generic direct-call replacement in app/dependency code paths
 - symbol merge precedence now upgrades heuristic canonical names (`dart_*`, `flutter_*`, `package_*`) to stronger external symbols when both map to the same VA, reducing synthetic call names when symbol maps/ELFs are provided
+- generic symbol detection now also covers common tool-generated placeholders (`FUN_<hex>`, `nullsub_*`, `loc_*`, `off_*`) so deterministic semantic/external names can replace them
 - Dart patch-library semantic naming now includes patch module stems when available (for example `dart:core-patch/bool_patch.dart` -> `dart.core_patch.bool_patch.*`) to reduce ambiguous `dart.core_patch.*` callsites
 - selector coverage now includes additional standard families such as `Navigator.pushNamed` and `List.removeAt`, improving deterministic semantic rewrites on real samples
 - selector coverage also includes internal/std selector forms such as `match_end_index` -> `dart.core.Match.end`
