@@ -23,6 +23,7 @@ pub(super) fn merge_symbol_name(
     if candidate.is_empty() {
         return;
     }
+    let candidate_rank = symbol_name_rank(&candidate);
 
     match symbol_names.get(&va) {
         None => {
@@ -30,7 +31,8 @@ pub(super) fn merge_symbol_name(
             *inserted += 1;
         }
         Some(existing) => {
-            if is_generic_symbol_name(existing) && !is_generic_symbol_name(&candidate) {
+            let existing_rank = symbol_name_rank(existing);
+            if candidate_rank > existing_rank {
                 symbol_names.insert(va, candidate);
                 *replaced_generic += 1;
             } else {
@@ -49,6 +51,20 @@ pub(super) fn is_generic_symbol_name(name: &str) -> bool {
         return true;
     }
     false
+}
+
+fn is_heuristic_canonical_symbol_name(name: &str) -> bool {
+    name.starts_with("dart_") || name.starts_with("flutter_") || name.starts_with("package_")
+}
+
+fn symbol_name_rank(name: &str) -> u8 {
+    if is_generic_symbol_name(name) {
+        0
+    } else if is_heuristic_canonical_symbol_name(name) {
+        1
+    } else {
+        2
+    }
 }
 
 pub(super) fn build_class_library_lookup(model: &ProgramModel) -> HashMap<String, String> {
