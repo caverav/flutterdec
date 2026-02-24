@@ -629,6 +629,7 @@ File naming convention:
 - `function_scope.priority_package_hints` (effective package boosts used by capped prioritization)
 - `prioritization.selected_package_counts_top` and `prioritization.selected_unknown_library_count` (selected top-N ownership mix)
 - `prioritization.selected_scope_mix` and `prioritization.selected_app_like_ratio` (selected top-N scope quality)
+- `prioritization.selected_preferred_app_count`, `selected_other_app_count`, and `selected_preferred_app_ratio` (selected app-package precision against preferred hints)
 
 ## How `info` differs from `decompile`
 

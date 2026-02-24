@@ -225,6 +225,7 @@ Current scope:
 - prioritization report entries now include `library_uri`, so package ownership of selected functions is directly inspectable in `report.json`
 - prioritization reporting now also includes selected package-distribution aggregates (`prioritization.selected_package_counts_top`, `selected_package_count_total`, `selected_unknown_library_count`) so app-vs-dependency coverage can be evaluated without post-processing scripts
 - prioritization reporting now also includes selected scope mix and ratio (`prioritization.selected_scope_mix`, `selected_app_like_ratio`) to quickly assess how app-heavy capped selections are
+- prioritization reporting now also includes preferred-vs-other app package precision metrics (`selected_preferred_app_count`, `selected_other_app_count`, `selected_preferred_app_ratio`) based on effective preferred package hints
 - text rewrite and quality helper passes now avoid byte-index string slicing on UTF-8 content so non-ASCII pool strings do not panic decompile runs
 
 Known limits:

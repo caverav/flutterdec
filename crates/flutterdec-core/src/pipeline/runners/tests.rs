@@ -225,6 +225,52 @@
     }
 
     #[test]
+    fn collects_selected_preferred_package_stats() {
+        let selected = vec![
+            FunctionPriorityBreakdown {
+                function_id: 1,
+                function_name: "main".to_string(),
+                owner_class: "Global".to_string(),
+                library_uri: "package:app/main.dart".to_string(),
+                entry_va: 0x1000,
+                total_score: 100,
+                components: Vec::new(),
+            },
+            FunctionPriorityBreakdown {
+                function_id: 2,
+                function_name: "init".to_string(),
+                owner_class: "Global".to_string(),
+                library_uri: "package:spotube/main.dart".to_string(),
+                entry_va: 0x1010,
+                total_score: 90,
+                components: Vec::new(),
+            },
+            FunctionPriorityBreakdown {
+                function_id: 3,
+                function_name: "watch".to_string(),
+                owner_class: "Provider".to_string(),
+                library_uri: "package:provider/src/provider.dart".to_string(),
+                entry_va: 0x1020,
+                total_score: 80,
+                components: Vec::new(),
+            },
+            FunctionPriorityBreakdown {
+                function_id: 4,
+                function_name: "toString".to_string(),
+                owner_class: "Object".to_string(),
+                library_uri: "dart:core".to_string(),
+                entry_va: 0x1030,
+                total_score: 70,
+                components: Vec::new(),
+            },
+        ];
+        let preferred = HashSet::from(["app".to_string(), "spotube".to_string()]);
+        let stats = collect_selected_preferred_package_stats(&selected, &preferred);
+        assert_eq!(stats.preferred_app, 2);
+        assert_eq!(stats.other_app, 1);
+    }
+
+    #[test]
     fn applies_app_unknown_scope_filter() {
         let model = ProgramModel {
             schema_version: 2,
