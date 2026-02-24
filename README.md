@@ -169,6 +169,7 @@ You can explicitly enable/disable individual engine toggles:
 - `--with-pool-value-hints` / `--no-pool-value-hints`
 - `--with-pool-semantic-hints` / `--no-pool-semantic-hints`
 - `--with-semantic-reporting` / `--no-semantic-reporting`
+- `--with-bootflow-category-seeds` / `--no-bootflow-category-seeds`
 
 ## Output
 
