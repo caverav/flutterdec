@@ -45,6 +45,42 @@
     }
 
     #[test]
+    fn merge_symbol_name_replaces_heuristic_with_stronger_symbol() {
+        let mut map = HashMap::new();
+        map.insert(0x1000, "package_spotube_Global_main".to_string());
+
+        let mut inserted = 0usize;
+        let mut replaced = 0usize;
+        let mut skipped = 0usize;
+
+        merge_symbol_name(
+            &mut map,
+            0x1000,
+            "RealMainEntry".to_string(),
+            &mut inserted,
+            &mut replaced,
+            &mut skipped,
+        );
+        assert_eq!(map.get(&0x1000).map(String::as_str), Some("RealMainEntry"));
+        assert_eq!(inserted, 0);
+        assert_eq!(replaced, 1);
+        assert_eq!(skipped, 0);
+
+        merge_symbol_name(
+            &mut map,
+            0x1000,
+            "package_spotube_Global_main".to_string(),
+            &mut inserted,
+            &mut replaced,
+            &mut skipped,
+        );
+        assert_eq!(map.get(&0x1000).map(String::as_str), Some("RealMainEntry"));
+        assert_eq!(inserted, 0);
+        assert_eq!(replaced, 1);
+        assert_eq!(skipped, 1);
+    }
+
+    #[test]
     fn generic_name_detection_is_strict() {
         assert!(is_generic_symbol_name("sub_1234"));
         assert!(is_generic_symbol_name("fn_0x55"));
