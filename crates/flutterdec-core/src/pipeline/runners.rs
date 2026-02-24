@@ -298,6 +298,31 @@ fn collect_selected_preferred_package_stats(
     out
 }
 
+fn collect_selected_priority_component_totals(
+    selected: &[FunctionPriorityBreakdown],
+) -> Vec<(String, usize, i64)> {
+    let mut totals: HashMap<String, (usize, i64)> = HashMap::new();
+    for item in selected {
+        for component in &item.components {
+            let slot = totals.entry(component.name.clone()).or_insert((0, 0));
+            slot.0 += 1;
+            slot.1 += component.score as i64;
+        }
+    }
+    let mut out = totals
+        .into_iter()
+        .map(|(name, (occurrences, total_score))| (name, occurrences, total_score))
+        .collect::<Vec<_>>();
+    out.sort_by(|(a_name, a_occ, a_total), (b_name, b_occ, b_total)| {
+        b_total
+            .abs()
+            .cmp(&a_total.abs())
+            .then_with(|| b_occ.cmp(a_occ))
+            .then_with(|| a_name.cmp(b_name))
+    });
+    out
+}
+
 fn include_function_kind(scope: FunctionScope, kind: ScopedFunctionKind) -> bool {
     match scope {
         FunctionScope::All => true,
@@ -712,6 +737,24 @@ pub fn run_decompile(
         .find(|(name, _)| name == "unknown")
         .map(|(_, count)| *count)
         .unwrap_or(0usize);
+    let prioritization_component_totals = collect_selected_priority_component_totals(&prioritization_selected);
+    let prioritization_component_totals_top = prioritization_component_totals
+        .iter()
+        .take(30)
+        .map(|(component, occurrences, score_total)| {
+            let avg = if *occurrences == 0 {
+                0.0
+            } else {
+                *score_total as f64 / *occurrences as f64
+            };
+            json!({
+                "component": component,
+                "occurrences": occurrences,
+                "score_total": score_total,
+                "score_avg": avg
+            })
+        })
+        .collect::<Vec<_>>();
     let bootflow_discovery = collect_bootflow_discovery(&model);
     let bootflow_main = bootflow_discovery
         .main
@@ -917,6 +960,7 @@ pub fn run_decompile(
             "selected_preferred_app_count": preferred_package_stats.preferred_app,
             "selected_other_app_count": preferred_package_stats.other_app,
             "selected_preferred_app_ratio": preferred_package_ratio,
+            "selected_component_totals_top": prioritization_component_totals_top,
             "selected": prioritization_selected
         },
         "bootflow_discovery": {
