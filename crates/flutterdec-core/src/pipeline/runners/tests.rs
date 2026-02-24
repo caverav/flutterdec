@@ -1,4 +1,5 @@
     use super::*;
+    use flutterdec_disasm_arm64::FunctionPriorityComponent;
 
     #[test]
     fn merge_symbol_name_replaces_generic_only() {
@@ -268,6 +269,59 @@
         let stats = collect_selected_preferred_package_stats(&selected, &preferred);
         assert_eq!(stats.preferred_app, 2);
         assert_eq!(stats.other_app, 1);
+    }
+
+    #[test]
+    fn collects_selected_priority_component_totals() {
+        let selected = vec![
+            FunctionPriorityBreakdown {
+                function_id: 1,
+                function_name: "main".to_string(),
+                owner_class: "Global".to_string(),
+                library_uri: "package:app/main.dart".to_string(),
+                entry_va: 0x1000,
+                total_score: 100,
+                components: vec![
+                    FunctionPriorityComponent {
+                        name: "main_name_bonus".to_string(),
+                        score: 900,
+                    },
+                    FunctionPriorityComponent {
+                        name: "package_library_bonus".to_string(),
+                        score: 220,
+                    },
+                ],
+            },
+            FunctionPriorityBreakdown {
+                function_id: 2,
+                function_name: "sub_1010".to_string(),
+                owner_class: "Provider".to_string(),
+                library_uri: "package:provider/src/provider.dart".to_string(),
+                entry_va: 0x1010,
+                total_score: 90,
+                components: vec![
+                    FunctionPriorityComponent {
+                        name: "main_name_bonus".to_string(),
+                        score: 900,
+                    },
+                    FunctionPriorityComponent {
+                        name: "non_preferred_package_penalty:provider".to_string(),
+                        score: -220,
+                    },
+                ],
+            },
+        ];
+        let totals = collect_selected_priority_component_totals(&selected);
+        assert_eq!(
+            totals.first(),
+            Some(&("main_name_bonus".to_string(), 2, 1800))
+        );
+        assert!(totals.contains(&("package_library_bonus".to_string(), 1, 220)));
+        assert!(totals.contains(&(
+            "non_preferred_package_penalty:provider".to_string(),
+            1,
+            -220,
+        )));
     }
 
     #[test]
