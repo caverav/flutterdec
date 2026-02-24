@@ -196,6 +196,7 @@ Current scope:
 - generic symbol detection now also covers common tool-generated placeholders (`FUN_<hex>`, `nullsub_*`, `loc_*`, `off_*`) so deterministic semantic/external names can replace them
 - decompiler target-va rewrite now shares the same generic placeholder guard (`sub_*`, `fn_0x*`, `FUN_<hex>`, `nullsub_*`, `loc_*`, `off_*`, `fun_<hex>`) so indirect calls do not regress into tool placeholder callnames
 - decompiler call intent now rewrites canonical package-machine symbols (`package_<pkg>_<Owner>_<method>`) into readable `pkg.Owner.method(...)` call paths and emits matching `package:<...>` semantic comments
+- package-machine intent parsing now preserves underscore-heavy owner/method splits (for example `package_spotube_Foo_Bar_internal_init` -> `spotube.Foo_Bar.internal_init`)
 - Dart patch-library semantic naming now includes patch module stems when available (for example `dart:core-patch/bool_patch.dart` -> `dart.core_patch.bool_patch.*`) to reduce ambiguous `dart.core_patch.*` callsites
 - direct-call intent parsing now preserves full Dart library token paths and owner class segments from canonical names (for example `dart_core_patch_bool_patch_fromEnvironment` and `dart_typed_data_TypedData_offsetInBytes`) instead of collapsing to `dart.core.*`
 - selector coverage now includes additional standard families such as `Navigator.pushNamed` and `List.removeAt`, improving deterministic semantic rewrites on real samples

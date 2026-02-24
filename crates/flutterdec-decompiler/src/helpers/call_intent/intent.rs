@@ -178,8 +178,29 @@ fn infer_package_intent(call_name: &str) -> Option<String> {
         return None;
     }
     let pkg = parts.next()?.trim();
-    let owner = parts.next()?.trim();
-    let method = parts.collect::<Vec<_>>().join("_");
+    let tail: Vec<&str> = parts.filter(|p| !p.is_empty()).collect();
+    if tail.len() < 2 {
+        return None;
+    }
+
+    let owner_end = tail
+        .iter()
+        .enumerate()
+        .rev()
+        .find_map(|(i, token)| {
+            if is_probable_owner_token(token) {
+                Some(i + 1)
+            } else {
+                None
+            }
+        })
+        .unwrap_or(1);
+    if owner_end >= tail.len() {
+        return None;
+    }
+
+    let owner = tail[..owner_end].join("_");
+    let method = tail[owner_end..].join("_");
     if pkg.is_empty() || owner.is_empty() || method.is_empty() {
         return None;
     }
@@ -189,6 +210,13 @@ fn infer_package_intent(call_name: &str) -> Option<String> {
         owner,
         method
     ))
+}
+
+fn is_probable_owner_token(token: &str) -> bool {
+    token
+        .chars()
+        .next()
+        .is_some_and(|c| c.is_ascii_uppercase())
 }
 
 pub(super) fn readable_call_name_from_intent(
