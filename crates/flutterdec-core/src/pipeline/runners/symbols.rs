@@ -47,8 +47,21 @@ pub(super) fn is_generic_symbol_name(name: &str) -> bool {
     if trimmed.is_empty() {
         return true;
     }
-    if trimmed.starts_with("sub_") || trimmed.starts_with("fn_0x") || trimmed == "unknown" {
+    let lowered = trimmed.to_ascii_lowercase();
+    if lowered == "unknown"
+        || lowered.starts_with("sub_")
+        || lowered.starts_with("fn_0x")
+        || lowered.starts_with("nullsub_")
+        || lowered.starts_with("loc_")
+        || lowered.starts_with("off_")
+    {
         return true;
+    }
+    if let Some(rest) = lowered.strip_prefix("fun_") {
+        let token = rest.strip_prefix("0x").unwrap_or(rest).trim_matches('_');
+        if !token.is_empty() && token.chars().all(|c| c.is_ascii_hexdigit()) {
+            return true;
+        }
     }
     false
 }

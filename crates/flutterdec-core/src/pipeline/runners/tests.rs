@@ -85,7 +85,12 @@
         assert!(is_generic_symbol_name("sub_1234"));
         assert!(is_generic_symbol_name("fn_0x55"));
         assert!(is_generic_symbol_name("unknown"));
+        assert!(is_generic_symbol_name("FUN_0012ABCD"));
+        assert!(is_generic_symbol_name("nullsub_12"));
+        assert!(is_generic_symbol_name("loc_10"));
+        assert!(is_generic_symbol_name("off_20"));
         assert!(!is_generic_symbol_name("Dart_Invoke"));
+        assert!(!is_generic_symbol_name("fun_processData"));
     }
 
     #[test]
