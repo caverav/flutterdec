@@ -84,6 +84,10 @@ struct DecompileCmd {
     with_semantic_reporting: bool,
     #[arg(long)]
     no_semantic_reporting: bool,
+    #[arg(long)]
+    with_bootflow_category_seeds: bool,
+    #[arg(long)]
+    no_bootflow_category_seeds: bool,
 }
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
@@ -294,11 +298,17 @@ fn resolve_decompile_overrides(cmd: &DecompileCmd) -> Result<DecompileEngineOpti
         cmd.no_semantic_reporting,
         "--with-semantic-reporting/--no-semantic-reporting",
     )?;
+    let bootflow_category_seeds = resolve_toggle(
+        cmd.with_bootflow_category_seeds,
+        cmd.no_bootflow_category_seeds,
+        "--with-bootflow-category-seeds/--no-bootflow-category-seeds",
+    )?;
     Ok(DecompileEngineOptionOverrides {
         canonical_model_symbols,
         pool_value_hints,
         pool_semantic_hints,
         semantic_reporting,
+        bootflow_category_seeds,
     })
 }
 
