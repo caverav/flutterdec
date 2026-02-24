@@ -271,6 +271,33 @@ fn collect_selected_priority_scope_mix(
     mix
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+struct SelectedPreferredPackageStats {
+    preferred_app: usize,
+    other_app: usize,
+}
+
+fn collect_selected_preferred_package_stats(
+    selected: &[FunctionPriorityBreakdown],
+    preferred_packages: &HashSet<String>,
+) -> SelectedPreferredPackageStats {
+    let mut out = SelectedPreferredPackageStats::default();
+    for item in selected {
+        if classify_library_uri(&item.library_uri) != ScopedFunctionKind::App {
+            continue;
+        }
+        let Some(pkg) = package_name_from_library_uri(&item.library_uri) else {
+            continue;
+        };
+        if preferred_packages.contains(&pkg) {
+            out.preferred_app += 1;
+        } else {
+            out.other_app += 1;
+        }
+    }
+    out
+}
+
 fn include_function_kind(scope: FunctionScope, kind: ScopedFunctionKind) -> bool {
     match scope {
         FunctionScope::All => true,
@@ -667,6 +694,19 @@ pub fn run_decompile(
     } else {
         prioritization_scope_mix.app as f64 / prioritization_selected.len() as f64
     };
+    let mut preferred_priority_packages = normalize_package_filters(&priority_package_hints);
+    preferred_priority_packages.insert("app".to_string());
+    let preferred_package_stats =
+        collect_selected_preferred_package_stats(&prioritization_selected, &preferred_priority_packages);
+    let preferred_package_ratio = if preferred_package_stats.preferred_app
+        + preferred_package_stats.other_app
+        == 0
+    {
+        0.0
+    } else {
+        preferred_package_stats.preferred_app as f64
+            / (preferred_package_stats.preferred_app + preferred_package_stats.other_app) as f64
+    };
     let prioritization_unknown_count = prioritization_package_counts
         .iter()
         .find(|(name, _)| name == "unknown")
@@ -874,6 +914,9 @@ pub fn run_decompile(
                 "unknown": prioritization_scope_mix.unknown
             },
             "selected_app_like_ratio": prioritization_app_like_ratio,
+            "selected_preferred_app_count": preferred_package_stats.preferred_app,
+            "selected_other_app_count": preferred_package_stats.other_app,
+            "selected_preferred_app_ratio": preferred_package_ratio,
             "selected": prioritization_selected
         },
         "bootflow_discovery": {
