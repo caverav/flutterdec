@@ -87,6 +87,7 @@ sequenceDiagram
 - profile defaults can be overridden with per-feature `--with-*` / `--no-*` engine flags (canonical model symbols, pool hints, semantic reporting, bootflow category seeding)
 - can ingest extra ELF symbol tables and `map-symbols` target JSON to improve direct call naming
 - external descriptive names replace generic placeholders like `sub_*` and `fn_0x*` when addresses match
+- pool target metadata now also emits deterministic `package_<pkg>_<Owner>_<method>` symbols for `package:*` libraries (not only `dart:*`/`package:flutter/*`)
 - recognized call names emit semantic intent comments (stdlib/runtime/native) next to call lines
 - when intent is deterministic, callsites are rewritten to semantic paths and include `was: <original_name>` for traceability
 - selector-backed intent can also rewrite indirect callsites and annotate `indirect via: <target_alias>`

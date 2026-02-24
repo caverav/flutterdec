@@ -1309,6 +1309,16 @@
                     owner_class: Some("Int64List".to_string()),
                     library_uri: Some("dart:typed_data".to_string()),
                 },
+                flutterdec_adapter::ObjectPoolEntry {
+                    index: 9,
+                    kind: "String".to_string(),
+                    value: "executeCommandAsync".to_string(),
+                    decoded_kind: Some("selector".to_string()),
+                    selector: Some("executeCommandAsync".to_string()),
+                    target_va: Some(0x3234),
+                    owner_class: Some("ConnectService".to_string()),
+                    library_uri: Some("package:spotube/models/connect/load.dart".to_string()),
+                },
             ],
         };
 
@@ -1323,6 +1333,10 @@
         assert_eq!(
             map.get(&0x2234).map(String::as_str),
             Some("dart_typed_data_Int64List_new")
+        );
+        assert_eq!(
+            map.get(&0x3234).map(String::as_str),
+            Some("package_spotube_ConnectService_executeCommandAsync")
         );
     }
 
