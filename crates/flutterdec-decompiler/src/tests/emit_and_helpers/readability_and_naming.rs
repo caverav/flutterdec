@@ -1132,6 +1132,46 @@ fn annotates_flutter_framework_call_intents() {
 }
 
 #[test]
+fn preserves_flutter_class_and_method_tokens_with_underscores() {
+    let ir = FunctionIr {
+        function_id: 241,
+        name: "frameworkUnderscoreCall".to_string(),
+        entry_va: 0xf910,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0xf910,
+            instrs: vec![
+                LlirInstr {
+                    va: 0xf910,
+                    op: IROp::Call,
+                    src: "bl #0x6210".to_string(),
+                    target: "#0x6210".to_string(),
+                },
+                LlirInstr {
+                    va: 0xf914,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+
+    let mut symbols = HashMap::new();
+    symbols.insert(0x6210, "flutter_widgets_Render_Flex_perform_layout".to_string());
+    let artifact = emit_pseudocode(&ir, &symbols);
+    assert!(
+        artifact.source.contains(
+            "flutter.widgets.Render_Flex.perform_layout(receiver, param1, param2, param3); // framework:flutter.widgets.Render_Flex.perform_layout, was: flutter_widgets_Render_Flex_perform_layout"
+        ),
+        "flutter intent parsing should preserve underscore-heavy class/method splits:\n{}",
+        artifact.source
+    );
+}
+
+#[test]
 fn annotates_framework_from_pool_selector_when_call_name_is_generic() {
     let ir = FunctionIr {
         function_id: 25,
