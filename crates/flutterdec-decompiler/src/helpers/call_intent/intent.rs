@@ -4,29 +4,8 @@ pub(super) fn infer_call_intent(call_name: &str) -> Option<String> {
         return None;
     }
 
-    if let Some(rest) = lower.strip_prefix("dart_") {
-        let parts: Vec<&str> = rest.split('_').filter(|p| !p.is_empty()).collect();
-        if let Some(lib) = parts.first() {
-            let known_lib = matches!(
-                *lib,
-                "core"
-                    | "async"
-                    | "collection"
-                    | "convert"
-                    | "io"
-                    | "isolate"
-                    | "math"
-                    | "typed_data"
-                    | "ffi"
-                    | "developer"
-            );
-            if known_lib {
-                if let Some(method) = parts.last() {
-                    return Some(format!("stdlib:dart.{}.{}", lib, method));
-                }
-                return Some(format!("stdlib:dart.{}", lib));
-            }
-        }
+    if let Some(tag) = infer_dart_stdlib_intent(call_name) {
+        return Some(tag);
     }
 
     if let Some(tag) = infer_flutter_framework_intent(call_name) {
@@ -62,6 +41,76 @@ pub(super) fn infer_call_intent(call_name: &str) -> Option<String> {
     }
 
     None
+}
+
+fn infer_dart_stdlib_intent(call_name: &str) -> Option<String> {
+    if !call_name.to_ascii_lowercase().starts_with("dart_") {
+        return None;
+    }
+    let mut parts = call_name.split('_');
+    let head = parts.next().unwrap_or_default();
+    if !head.eq_ignore_ascii_case("dart") {
+        return None;
+    }
+    let tail: Vec<&str> = parts.filter(|p| !p.is_empty()).collect();
+    if tail.len() < 2 {
+        return None;
+    }
+
+    let mut lib_token_end = tail.len() - 1;
+    let mut owner: Option<&str> = None;
+    if tail.len() >= 3 {
+        let owner_candidate = tail[tail.len() - 2];
+        if is_probable_dart_owner_token(owner_candidate) {
+            owner = Some(owner_candidate);
+            lib_token_end = tail.len() - 2;
+        }
+    }
+    if lib_token_end == 0 {
+        return None;
+    }
+
+    let method = tail[tail.len() - 1];
+    if method.is_empty() {
+        return None;
+    }
+    let lib = tail[..lib_token_end]
+        .iter()
+        .map(|v| v.to_ascii_lowercase())
+        .collect::<Vec<_>>()
+        .join("_");
+    let lib_display = render_dart_library_display_segment(&lib);
+    let base_lib = lib.split('_').next().unwrap_or_default();
+    let known_lib = matches!(
+        base_lib,
+        "core" | "async" | "collection" | "convert" | "io" | "isolate" | "math" | "typed"
+            | "ffi" | "developer"
+    );
+    if !known_lib {
+        return None;
+    }
+
+    if let Some(owner) = owner {
+        return Some(format!("stdlib:dart.{}.{}.{}", lib_display, owner, method));
+    }
+    Some(format!("stdlib:dart.{}.{}", lib_display, method))
+}
+
+fn is_probable_dart_owner_token(token: &str) -> bool {
+    token
+        .chars()
+        .next()
+        .is_some_and(|c| c.is_ascii_uppercase())
+}
+
+fn render_dart_library_display_segment(lib: &str) -> String {
+    let trimmed = lib.trim().to_ascii_lowercase();
+    if let Some((head, tail)) = trimmed.split_once("_patch_") {
+        if !head.is_empty() && !tail.is_empty() {
+            return format!("{}_patch.{}", head, tail);
+        }
+    }
+    trimmed
 }
 
 pub(super) fn is_generic_symbol_placeholder(name: &str) -> bool {

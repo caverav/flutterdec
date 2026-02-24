@@ -944,6 +944,86 @@ fn annotates_stdlib_call_intent_when_symbol_is_named() {
 }
 
 #[test]
+fn preserves_dart_patch_library_segments_in_call_intent() {
+    let ir = FunctionIr {
+        function_id: 220,
+        name: "dartPatchCall".to_string(),
+        entry_va: 0xf710,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0xf710,
+            instrs: vec![
+                LlirInstr {
+                    va: 0xf710,
+                    op: IROp::Call,
+                    src: "bl #0x5100".to_string(),
+                    target: "#0x5100".to_string(),
+                },
+                LlirInstr {
+                    va: 0xf714,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+
+    let mut symbols = HashMap::new();
+    symbols.insert(0x5100, "dart_core_patch_bool_patch_fromEnvironment".to_string());
+    let artifact = emit_pseudocode(&ir, &symbols);
+    assert!(
+        artifact.source.contains(
+            "final t1 = dart.core_patch.bool_patch.fromEnvironment(receiver, param1, param2, param3); // stdlib:dart.core_patch.bool_patch.fromEnvironment, was: dart_core_patch_bool_patch_fromEnvironment"
+        ),
+        "dart patch library segment should be preserved in semantic direct-call rewrite:\n{}",
+        artifact.source
+    );
+}
+
+#[test]
+fn preserves_dart_owner_segment_in_call_intent() {
+    let ir = FunctionIr {
+        function_id: 221,
+        name: "dartOwnerCall".to_string(),
+        entry_va: 0xf718,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0xf718,
+            instrs: vec![
+                LlirInstr {
+                    va: 0xf718,
+                    op: IROp::Call,
+                    src: "bl #0x5200".to_string(),
+                    target: "#0x5200".to_string(),
+                },
+                LlirInstr {
+                    va: 0xf71c,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+
+    let mut symbols = HashMap::new();
+    symbols.insert(0x5200, "dart_typed_data_TypedData_offsetInBytes".to_string());
+    let artifact = emit_pseudocode(&ir, &symbols);
+    assert!(
+        artifact.source.contains(
+            "final t1 = dart.typed_data.TypedData.offsetInBytes(receiver, param1, param2, param3); // stdlib:dart.typed_data.TypedData.offsetInBytes, was: dart_typed_data_TypedData_offsetInBytes"
+        ),
+        "dart owner segment should be preserved in semantic direct-call rewrite:\n{}",
+        artifact.source
+    );
+}
+
+#[test]
 fn annotates_runtime_and_native_call_intents() {
     let ir = FunctionIr {
         function_id: 23,
