@@ -1112,6 +1112,49 @@ fn annotates_framework_from_pool_selector_when_call_name_is_generic() {
 }
 
 #[test]
+fn annotates_package_call_intents_from_machine_symbol_names() {
+    let ir = FunctionIr {
+        function_id: 26,
+        name: "packageCalls".to_string(),
+        entry_va: 0xfb00,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0xfb00,
+            instrs: vec![
+                LlirInstr {
+                    va: 0xfb00,
+                    op: IROp::Call,
+                    src: "bl #0x6300".to_string(),
+                    target: "#0x6300".to_string(),
+                },
+                LlirInstr {
+                    va: 0xfb04,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+
+    let mut symbols = HashMap::new();
+    symbols.insert(
+        0x6300,
+        "package_spotube_ConnectService_executeCommandAsync".to_string(),
+    );
+    let artifact = emit_pseudocode(&ir, &symbols);
+    assert!(
+        artifact
+            .source
+            .contains("spotube.ConnectService.executeCommandAsync(receiver, param1, param2, param3); // package:spotube.ConnectService.executeCommandAsync, was: package_spotube_ConnectService_executeCommandAsync"),
+        "missing package call intent annotation:\n{}",
+        artifact.source
+    );
+}
+
+#[test]
 fn annotates_flutter_scheduler_selector_from_pool_string() {
     let ir = FunctionIr {
         function_id: 26,
