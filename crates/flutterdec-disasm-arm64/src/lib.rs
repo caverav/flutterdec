@@ -1168,6 +1168,7 @@ pub fn disassemble_program(
         focus_prefix,
         max_functions,
         &[],
+        true,
     )
     .0
 }
@@ -1179,6 +1180,7 @@ pub fn disassemble_program_with_priorities_and_package_hints(
     focus_prefix: Option<&str>,
     max_functions: Option<usize>,
     preferred_packages: &[String],
+    seed_bootflow_categories: bool,
 ) -> (Vec<FunctionDisassembly>, Vec<FunctionPriorityBreakdown>) {
     let mut out = Vec::new();
     let mut priorities = Vec::new();
@@ -1196,9 +1198,12 @@ pub fn disassemble_program_with_priorities_and_package_hints(
         const DIVERSITY_FIRST_PASS_MAX_PER_NAME: usize = 2;
         const DIVERSITY_FIRST_PASS_MAX_PER_OWNER_NAME: usize = 1;
 
-        let target_va_bootflow_categories = build_target_va_bootflow_categories(model);
-        let bootflow_seed_entry_vas =
-            collect_bootflow_seed_entry_vas(&ranked, &target_va_bootflow_categories);
+        let bootflow_seed_entry_vas = if seed_bootflow_categories {
+            let target_va_bootflow_categories = build_target_va_bootflow_categories(model);
+            collect_bootflow_seed_entry_vas(&ranked, &target_va_bootflow_categories)
+        } else {
+            Vec::new()
+        };
 
         let mut selected_entry_vas = HashSet::new();
         let mut selected_name_counts: HashMap<String, usize> = HashMap::new();
@@ -1306,6 +1311,7 @@ pub fn disassemble_program_with_priorities(
         focus_prefix,
         max_functions,
         &[],
+        true,
     )
 }
 
@@ -2004,6 +2010,106 @@ mod tests {
         assert!(
             selected.contains(&0x5200) || selected.contains(&0x5204),
             "a main bootflow candidate should also be seeded: {selected:?}"
+        );
+    }
+
+    #[test]
+    fn can_disable_bootflow_category_seeding() {
+        let model = ProgramModel {
+            schema_version: 2,
+            adapter_kind: "test".to_string(),
+            dart_version: "unknown".to_string(),
+            snapshot_hash: "h".to_string(),
+            arch: "arm64".to_string(),
+            libraries: vec![LibraryInfo {
+                id: 0,
+                uri: "package:app/router.dart".to_string(),
+                name_display: "package:app/router.dart".to_string(),
+            }],
+            classes: vec![ClassInfo {
+                id: 0,
+                name: "RouterHost".to_string(),
+                super_name: "Object".to_string(),
+                library_uri: "package:app/router.dart".to_string(),
+            }],
+            functions: vec![
+                FunctionInfo {
+                    id: 0,
+                    name: "sub_5300".to_string(),
+                    owner_class: "RouterHost".to_string(),
+                    entry_va: 0x5300,
+                    size: 4,
+                    code_section_va: 0x5300,
+                },
+                FunctionInfo {
+                    id: 1,
+                    name: "sub_5304".to_string(),
+                    owner_class: "RouterHost".to_string(),
+                    entry_va: 0x5304,
+                    size: 4,
+                    code_section_va: 0x5300,
+                },
+                FunctionInfo {
+                    id: 2,
+                    name: "sub_5308".to_string(),
+                    owner_class: "RouterHost".to_string(),
+                    entry_va: 0x5308,
+                    size: 4,
+                    code_section_va: 0x5300,
+                },
+            ],
+            object_pool: vec![
+                ObjectPoolEntry {
+                    index: 0,
+                    kind: "String".to_string(),
+                    value: "bootflow:main:main".to_string(),
+                    decoded_kind: Some("BootMainCandidate".to_string()),
+                    selector: Some("main".to_string()),
+                    target_va: Some(0x5300),
+                    owner_class: Some("RouterHost".to_string()),
+                    library_uri: Some("package:app/router.dart".to_string()),
+                },
+                ObjectPoolEntry {
+                    index: 1,
+                    kind: "String".to_string(),
+                    value: "bootflow:main:main".to_string(),
+                    decoded_kind: Some("BootMainCandidate".to_string()),
+                    selector: Some("main".to_string()),
+                    target_va: Some(0x5304),
+                    owner_class: Some("RouterHost".to_string()),
+                    library_uri: Some("package:app/router.dart".to_string()),
+                },
+                ObjectPoolEntry {
+                    index: 2,
+                    kind: "String".to_string(),
+                    value: "bootflow:deeplink:onNewIntent".to_string(),
+                    decoded_kind: Some("DeepLinkHandlerCandidate".to_string()),
+                    selector: Some("onNewIntent".to_string()),
+                    target_va: Some(0x5308),
+                    owner_class: Some("RouterHost".to_string()),
+                    library_uri: Some("package:app/router.dart".to_string()),
+                },
+            ],
+        };
+        let bytes = vec![
+            0xc0, 0x03, 0x5f, 0xd6, 0xc0, 0x03, 0x5f, 0xd6, 0xc0, 0x03, 0x5f, 0xd6,
+        ];
+        let (d, _) = disassemble_program_with_priorities_and_package_hints(
+            &model,
+            &bytes,
+            0x5300,
+            None,
+            Some(2),
+            &[],
+            false,
+        );
+        assert_eq!(d.len(), 2);
+        let selected = d.iter().map(|f| f.entry_va).collect::<HashSet<_>>();
+        assert!(selected.contains(&0x5300));
+        assert!(selected.contains(&0x5304));
+        assert!(
+            !selected.contains(&0x5308),
+            "deeplink target should only be forced when bootflow seeding is enabled: {selected:?}"
         );
     }
 

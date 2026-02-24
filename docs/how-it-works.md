@@ -84,7 +84,7 @@ sequenceDiagram
 - writes artifacts under output directory
 - may fail after writing artifacts if quality gates fail
 - supports analysis-engine profiles: `balanced` (default) and `light`
-- profile defaults can be overridden with per-feature `--with-*` / `--no-*` engine flags (canonical model symbols, pool hints, semantic reporting)
+- profile defaults can be overridden with per-feature `--with-*` / `--no-*` engine flags (canonical model symbols, pool hints, semantic reporting, bootflow category seeding)
 - can ingest extra ELF symbol tables and `map-symbols` target JSON to improve direct call naming
 - external descriptive names replace generic placeholders like `sub_*` and `fn_0x*` when addresses match
 - recognized call names emit semantic intent comments (stdlib/runtime/native) next to call lines

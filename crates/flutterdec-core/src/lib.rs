@@ -91,6 +91,7 @@ pub struct DecompileEngineOptionOverrides {
     pub pool_value_hints: Option<bool>,
     pub pool_semantic_hints: Option<bool>,
     pub semantic_reporting: Option<bool>,
+    pub bootflow_category_seeds: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -99,6 +100,7 @@ pub struct DecompileEngineOptions {
     pub pool_value_hints: bool,
     pub pool_semantic_hints: bool,
     pub semantic_reporting: bool,
+    pub bootflow_category_seeds: bool,
 }
 
 impl DecompileEngineOptions {
@@ -109,12 +111,14 @@ impl DecompileEngineOptions {
                 pool_value_hints: false,
                 pool_semantic_hints: false,
                 semantic_reporting: false,
+                bootflow_category_seeds: false,
             },
             DecompileAnalysisProfile::Balanced => Self {
                 canonical_model_symbols: true,
                 pool_value_hints: true,
                 pool_semantic_hints: true,
                 semantic_reporting: true,
+                bootflow_category_seeds: true,
             },
         }
     }
@@ -131,6 +135,9 @@ impl DecompileEngineOptions {
         }
         if let Some(v) = overrides.semantic_reporting {
             self.semantic_reporting = v;
+        }
+        if let Some(v) = overrides.bootflow_category_seeds {
+            self.bootflow_category_seeds = v;
         }
         self
     }

@@ -660,6 +660,7 @@ pub fn run_decompile(
         opt.focus.as_deref(),
         opt.max_functions,
         &priority_package_hints,
+        opt.engine_options.bootflow_category_seeds,
     );
     let ir: Vec<FunctionIr> = build_program_ir(&disasm);
     let mut symbol_names: HashMap<u64, String> = HashMap::new();
