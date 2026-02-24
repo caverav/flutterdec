@@ -251,6 +251,8 @@ pub(super) fn build_pool_target_symbols(
             format!("dart_{}_{}_{}", seg, owner, method)
         } else if let Some(seg) = flutter_library_segment(lib_uri) {
             format!("flutter_{}_{}_{}", seg, owner, method)
+        } else if let Some(pkg) = package_library_segment(lib_uri) {
+            format!("package_{}_{}_{}", pkg, owner, method)
         } else {
             continue;
         };
@@ -352,6 +354,20 @@ fn flutter_library_segment(uri: &str) -> Option<String> {
     let seg = rest.split('/').next().unwrap_or("").trim_end_matches(".dart");
     let seg = sanitize_symbol_token_stream(seg);
     if seg.is_empty() { None } else { Some(seg) }
+}
+
+fn package_library_segment(uri: &str) -> Option<String> {
+    let rest = uri.strip_prefix("package:")?;
+    let pkg = rest.split('/').next().unwrap_or("").trim();
+    if pkg.is_empty() || pkg.eq_ignore_ascii_case("flutter") {
+        return None;
+    }
+    let seg = sanitize_symbol_token_stream(pkg);
+    if seg.is_empty() {
+        None
+    } else {
+        Some(seg.to_ascii_lowercase())
+    }
 }
 
 pub(super) fn normalize_external_symbol_name(raw: &str) -> String {
