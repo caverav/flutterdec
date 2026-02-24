@@ -1235,6 +1235,49 @@ fn annotates_package_call_intents_from_machine_symbol_names() {
 }
 
 #[test]
+fn preserves_package_owner_and_method_tokens_with_underscores() {
+    let ir = FunctionIr {
+        function_id: 27,
+        name: "packageUnderscoreCall".to_string(),
+        entry_va: 0xfb08,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0xfb08,
+            instrs: vec![
+                LlirInstr {
+                    va: 0xfb08,
+                    op: IROp::Call,
+                    src: "bl #0x6310".to_string(),
+                    target: "#0x6310".to_string(),
+                },
+                LlirInstr {
+                    va: 0xfb0c,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+
+    let mut symbols = HashMap::new();
+    symbols.insert(
+        0x6310,
+        "package_spotube_Foo_Bar_internal_init".to_string(),
+    );
+    let artifact = emit_pseudocode(&ir, &symbols);
+    assert!(
+        artifact.source.contains(
+            "spotube.Foo_Bar.internal_init(receiver, param1, param2, param3); // package:spotube.Foo_Bar.internal_init, was: package_spotube_Foo_Bar_internal_init"
+        ),
+        "package intent parsing should preserve underscore-heavy owner/method splits:\n{}",
+        artifact.source
+    );
+}
+
+#[test]
 fn annotates_flutter_scheduler_selector_from_pool_string() {
     let ir = FunctionIr {
         function_id: 26,
