@@ -401,6 +401,134 @@ fn selector_signal_score(entry: &flutterdec_adapter::ObjectPoolEntry) -> i32 {
     score
 }
 
+const BOOTFLOW_SEED_CATEGORY_ORDER: [&str; 5] =
+    ["main", "runapp", "deeplink", "activity", "bootstrap"];
+
+fn selector_is_runapp_like(selector_lower: &str) -> bool {
+    selector_lower == "runapp" || selector_lower.ends_with(".runapp")
+}
+
+fn selector_is_deeplink_like(selector_lower: &str) -> bool {
+    matches!(
+        selector_lower,
+        "didpushrouteinformation"
+            | "didpushroute"
+            | "didpoproute"
+            | "setnewroutepath"
+            | "parserouteinformation"
+            | "ongenerateroute"
+            | "onunknownroute"
+            | "onnewintent"
+            | "handleintent"
+    )
+}
+
+fn selector_is_activity_like(selector_lower: &str) -> bool {
+    matches!(
+        selector_lower,
+        "onnewintent" | "handleintent" | "oncreate" | "onstart" | "onresume" | "onpause" | "onstop"
+    )
+}
+
+fn selector_is_bootstrap_like(selector_lower: &str) -> bool {
+    matches!(
+        selector_lower,
+        "ensureinitialized"
+            | "nativeensureinitialized"
+            | "startinitialization"
+            | "ensureinitializationcomplete"
+    )
+}
+
+fn infer_bootflow_categories(entry: &flutterdec_adapter::ObjectPoolEntry) -> HashSet<&'static str> {
+    let mut categories = HashSet::new();
+    let decoded_kind_lower = entry
+        .decoded_kind
+        .as_deref()
+        .map(str::trim)
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    let value_lower = entry.value.trim().to_ascii_lowercase();
+    let selector_lower = entry
+        .selector
+        .as_deref()
+        .map(str::trim)
+        .unwrap_or("")
+        .to_ascii_lowercase();
+
+    if matches!(
+        decoded_kind_lower.as_str(),
+        "entrypointcandidate" | "bootmaincandidate" | "manifestmaincandidate"
+    ) || value_lower.starts_with("entrypoint:")
+        || value_lower.starts_with("bootflow:main:")
+        || value_lower.starts_with("manifest:main")
+        || is_main_like_name(&selector_lower)
+    {
+        categories.insert("main");
+    }
+
+    if matches!(
+        decoded_kind_lower.as_str(),
+        "bootrunappcandidate" | "manifestrunappcandidate"
+    ) || value_lower.starts_with("bootflow:runapp:")
+        || value_lower.starts_with("manifest:runapp")
+        || selector_is_runapp_like(&selector_lower)
+    {
+        categories.insert("runapp");
+    }
+
+    if matches!(
+        decoded_kind_lower.as_str(),
+        "deeplinkhandlercandidate" | "manifestdeeplinkcandidate"
+    ) || value_lower.starts_with("bootflow:deeplink:")
+        || value_lower.starts_with("manifest:deeplink")
+        || selector_is_deeplink_like(&selector_lower)
+    {
+        categories.insert("deeplink");
+    }
+
+    if matches!(
+        decoded_kind_lower.as_str(),
+        "activityhandlercandidate" | "manifestactivitycandidate"
+    ) || value_lower.starts_with("bootflow:activity:")
+        || value_lower.starts_with("manifest:activity")
+        || selector_is_activity_like(&selector_lower)
+    {
+        categories.insert("activity");
+    }
+
+    if matches!(
+        decoded_kind_lower.as_str(),
+        "bootstrapinitcandidate" | "manifestbootstrapcandidate"
+    ) || value_lower.starts_with("bootflow:init:")
+        || value_lower.starts_with("manifest:bootstrap")
+        || selector_is_bootstrap_like(&selector_lower)
+    {
+        categories.insert("bootstrap");
+    }
+
+    categories
+}
+
+fn build_target_va_bootflow_categories(
+    model: &ProgramModel,
+) -> HashMap<u64, HashSet<&'static str>> {
+    let mut out = HashMap::new();
+    for entry in &model.object_pool {
+        let Some(target_va) = entry.target_va else {
+            continue;
+        };
+        let inferred = infer_bootflow_categories(entry);
+        if inferred.is_empty() {
+            continue;
+        }
+        out.entry(target_va)
+            .or_insert_with(HashSet::new)
+            .extend(inferred);
+    }
+    out
+}
+
 fn build_target_va_priority_hints(model: &ProgramModel) -> HashMap<u64, i32> {
     let mut out = HashMap::new();
     for entry in &model.object_pool {
@@ -981,6 +1109,31 @@ fn rank_candidates<'a>(
     ranked
 }
 
+fn collect_bootflow_seed_entry_vas(
+    ranked: &[RankedCandidate<'_>],
+    target_va_bootflow_categories: &HashMap<u64, HashSet<&'static str>>,
+) -> Vec<u64> {
+    let mut selected = HashSet::new();
+    let mut out = Vec::new();
+
+    for category in BOOTFLOW_SEED_CATEGORY_ORDER {
+        let Some(candidate) = ranked.iter().find(|candidate| {
+            if selected.contains(&candidate.func.entry_va) {
+                return false;
+            }
+            target_va_bootflow_categories
+                .get(&candidate.func.entry_va)
+                .is_some_and(|categories| categories.contains(category))
+        }) else {
+            continue;
+        };
+        selected.insert(candidate.func.entry_va);
+        out.push(candidate.func.entry_va);
+    }
+
+    out
+}
+
 pub fn rank_program_functions(
     model: &ProgramModel,
     iso_instr: &[u8],
@@ -1043,13 +1196,48 @@ pub fn disassemble_program_with_priorities_and_package_hints(
         const DIVERSITY_FIRST_PASS_MAX_PER_NAME: usize = 2;
         const DIVERSITY_FIRST_PASS_MAX_PER_OWNER_NAME: usize = 1;
 
+        let target_va_bootflow_categories = build_target_va_bootflow_categories(model);
+        let bootflow_seed_entry_vas =
+            collect_bootflow_seed_entry_vas(&ranked, &target_va_bootflow_categories);
+
+        let mut selected_entry_vas = HashSet::new();
         let mut selected_name_counts: HashMap<String, usize> = HashMap::new();
         let mut selected_owner_name_counts: HashMap<String, usize> = HashMap::new();
         let mut deferred = Vec::new();
 
+        for seed_entry_va in bootflow_seed_entry_vas {
+            if out.len() >= max {
+                break;
+            }
+            let Some(candidate) = ranked
+                .iter()
+                .find(|candidate| candidate.func.entry_va == seed_entry_va)
+            else {
+                continue;
+            };
+            if let Some(d) = decode_function(candidate.func, iso_instr, iso_base_va, cs.as_ref()) {
+                out.push(d);
+                priorities.push(to_breakdown(candidate));
+                selected_entry_vas.insert(seed_entry_va);
+                let name_key = candidate.func.name.to_ascii_lowercase();
+                let owner_name_key = format!(
+                    "{}::{}",
+                    candidate.func.owner_class.to_ascii_lowercase(),
+                    name_key
+                );
+                *selected_name_counts.entry(name_key).or_insert(0) += 1;
+                *selected_owner_name_counts
+                    .entry(owner_name_key)
+                    .or_insert(0) += 1;
+            }
+        }
+
         for candidate in ranked {
             if out.len() >= max {
                 break;
+            }
+            if selected_entry_vas.contains(&candidate.func.entry_va) {
+                continue;
             }
             let name_key = candidate.func.name.to_ascii_lowercase();
             let owner_name_key = format!(
@@ -1071,6 +1259,7 @@ pub fn disassemble_program_with_priorities_and_package_hints(
             if let Some(d) = decode_function(candidate.func, iso_instr, iso_base_va, cs.as_ref()) {
                 out.push(d);
                 priorities.push(to_breakdown(&candidate));
+                selected_entry_vas.insert(candidate.func.entry_va);
                 *selected_name_counts.entry(name_key).or_insert(0) += 1;
                 *selected_owner_name_counts
                     .entry(owner_name_key)
@@ -1082,9 +1271,13 @@ pub fn disassemble_program_with_priorities_and_package_hints(
             if out.len() >= max {
                 break;
             }
+            if selected_entry_vas.contains(&candidate.func.entry_va) {
+                continue;
+            }
             if let Some(d) = decode_function(candidate.func, iso_instr, iso_base_va, cs.as_ref()) {
                 out.push(d);
                 priorities.push(to_breakdown(&candidate));
+                selected_entry_vas.insert(candidate.func.entry_va);
             }
         }
     } else {
@@ -1718,6 +1911,100 @@ mod tests {
         let d = disassemble_program(&model, &bytes, 0x50c0, None, Some(1));
         assert_eq!(d.len(), 1);
         assert_eq!(d[0].function_name, "sub_50c0");
+    }
+
+    #[test]
+    fn seeds_bootflow_categories_in_capped_selection() {
+        let model = ProgramModel {
+            schema_version: 2,
+            adapter_kind: "test".to_string(),
+            dart_version: "unknown".to_string(),
+            snapshot_hash: "h".to_string(),
+            arch: "arm64".to_string(),
+            libraries: vec![LibraryInfo {
+                id: 0,
+                uri: "package:app/router.dart".to_string(),
+                name_display: "package:app/router.dart".to_string(),
+            }],
+            classes: vec![ClassInfo {
+                id: 0,
+                name: "RouterHost".to_string(),
+                super_name: "Object".to_string(),
+                library_uri: "package:app/router.dart".to_string(),
+            }],
+            functions: vec![
+                FunctionInfo {
+                    id: 0,
+                    name: "sub_5200".to_string(),
+                    owner_class: "RouterHost".to_string(),
+                    entry_va: 0x5200,
+                    size: 4,
+                    code_section_va: 0x5200,
+                },
+                FunctionInfo {
+                    id: 1,
+                    name: "sub_5204".to_string(),
+                    owner_class: "RouterHost".to_string(),
+                    entry_va: 0x5204,
+                    size: 4,
+                    code_section_va: 0x5200,
+                },
+                FunctionInfo {
+                    id: 2,
+                    name: "sub_5208".to_string(),
+                    owner_class: "RouterHost".to_string(),
+                    entry_va: 0x5208,
+                    size: 4,
+                    code_section_va: 0x5200,
+                },
+            ],
+            object_pool: vec![
+                ObjectPoolEntry {
+                    index: 0,
+                    kind: "String".to_string(),
+                    value: "bootflow:main:main".to_string(),
+                    decoded_kind: Some("BootMainCandidate".to_string()),
+                    selector: Some("main".to_string()),
+                    target_va: Some(0x5200),
+                    owner_class: Some("RouterHost".to_string()),
+                    library_uri: Some("package:app/router.dart".to_string()),
+                },
+                ObjectPoolEntry {
+                    index: 1,
+                    kind: "String".to_string(),
+                    value: "bootflow:main:main".to_string(),
+                    decoded_kind: Some("BootMainCandidate".to_string()),
+                    selector: Some("main".to_string()),
+                    target_va: Some(0x5204),
+                    owner_class: Some("RouterHost".to_string()),
+                    library_uri: Some("package:app/router.dart".to_string()),
+                },
+                ObjectPoolEntry {
+                    index: 2,
+                    kind: "String".to_string(),
+                    value: "bootflow:deeplink:onNewIntent".to_string(),
+                    decoded_kind: Some("DeepLinkHandlerCandidate".to_string()),
+                    selector: Some("onNewIntent".to_string()),
+                    target_va: Some(0x5208),
+                    owner_class: Some("RouterHost".to_string()),
+                    library_uri: Some("package:app/router.dart".to_string()),
+                },
+            ],
+        };
+        let bytes = vec![
+            0xc0, 0x03, 0x5f, 0xd6, 0xc0, 0x03, 0x5f, 0xd6, 0xc0, 0x03, 0x5f, 0xd6,
+        ];
+        let d = disassemble_program(&model, &bytes, 0x5200, None, Some(2));
+        assert_eq!(d.len(), 2);
+        let selected = d.iter().map(|f| f.entry_va).collect::<HashSet<_>>();
+        assert!(
+            selected.contains(&0x5208),
+            "deeplink bootflow candidate should be seeded into capped output: {selected:?}"
+        );
+        assert!(
+            selected.contains(&0x5200) || selected.contains(&0x5204),
+            "a main bootflow candidate should also be seeded: {selected:?}"
+        );
     }
 
     #[test]

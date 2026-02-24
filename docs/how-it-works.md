@@ -711,6 +711,7 @@ Symptom: capped `--max-functions` output is dominated by runtime helper paths
 - if needed, set explicit `--app-package <name>`; otherwise decompile derives package hints from `AndroidManifest.xml` when available (including normalized suffix variants such as `_app`/`_flutter`)
 - when package hints are present, non-preferred third-party packages are also downranked, so app package functions should dominate capped selections
 - note: scorer downranks explicit `no isolate` markers and `dart:isolate*` library paths by default
+- capped mode also seeds one function per discovered bootflow category (`main`, `runapp`, `deeplink`, `activity`, `bootstrap`) before normal diversity selection
 
 Symptom: pseudocode has too many omitted path summaries
 
