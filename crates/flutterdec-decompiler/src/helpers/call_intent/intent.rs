@@ -1,6 +1,6 @@
 pub(super) fn infer_call_intent(call_name: &str) -> Option<String> {
     let lower = call_name.to_ascii_lowercase();
-    if lower.starts_with("fn_0x") || lower.starts_with("sub_") {
+    if is_generic_symbol_placeholder(call_name) {
         return None;
     }
 
@@ -62,6 +62,30 @@ pub(super) fn infer_call_intent(call_name: &str) -> Option<String> {
     }
 
     None
+}
+
+pub(super) fn is_generic_symbol_placeholder(name: &str) -> bool {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return true;
+    }
+    let lowered = trimmed.to_ascii_lowercase();
+    if lowered == "unknown"
+        || lowered.starts_with("sub_")
+        || lowered.starts_with("fn_0x")
+        || lowered.starts_with("nullsub_")
+        || lowered.starts_with("loc_")
+        || lowered.starts_with("off_")
+    {
+        return true;
+    }
+    if let Some(rest) = lowered.strip_prefix("fun_") {
+        let token = rest.strip_prefix("0x").unwrap_or(rest).trim_matches('_');
+        if !token.is_empty() && token.chars().all(|c| c.is_ascii_hexdigit()) {
+            return true;
+        }
+    }
+    false
 }
 
 pub(super) fn fallback_call_name_from_selector(selector: &str) -> (String, bool) {
@@ -129,7 +153,7 @@ pub(super) fn readable_call_name_from_intent(
     }
 
     let lower = call_name.to_ascii_lowercase();
-    let generic = lower.starts_with("fn_0x") || lower.starts_with("sub_");
+    let generic = is_generic_symbol_placeholder(call_name);
     let indirect_alias =
         lower == "dispatchtarget" || lower == "cachedtarget" || lower.starts_with("indirecttarget");
     let known_machine_name = lower.starts_with("dart_")

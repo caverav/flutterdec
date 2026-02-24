@@ -88,6 +88,7 @@ sequenceDiagram
 - can ingest extra ELF symbol tables and `map-symbols` target JSON to improve direct call naming
 - external descriptive names replace generic placeholders like `sub_*` and `fn_0x*` when addresses match
 - auto-generated disassembler names such as `FUN_<hex>`, `nullsub_*`, `loc_*`, and `off_*` are also treated as generic placeholders during merge
+- indirect `target_va` symbol rewrites apply the same generic-placeholder filter, so tool placeholders are not emitted as callable names
 - pool target metadata now also emits deterministic `package_<pkg>_<Owner>_<method>` symbols for `package:*` libraries (not only `dart:*`/`package:flutter/*`)
 - when stronger external names are available for the same VA, heuristic canonical names (`dart_*`/`flutter_*`/`package_*`) are replaced automatically
 - recognized call names emit semantic intent comments (stdlib/runtime/native/package) next to call lines

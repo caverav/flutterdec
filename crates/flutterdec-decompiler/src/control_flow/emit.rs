@@ -241,8 +241,7 @@ impl<'a> FuncEmitter<'a> {
     }
 
     fn is_generic_call_name(name: &str) -> bool {
-        let t = name.trim();
-        t.is_empty() || t == "unknown" || t.starts_with("sub_") || t.starts_with("fn_0x")
+        is_generic_symbol_placeholder(name)
     }
 
     fn is_numeric_literal_expr(expr: &str) -> bool {
