@@ -95,6 +95,7 @@ sequenceDiagram
 - when intent is deterministic, callsites are rewritten to semantic paths and include `was: <original_name>` for traceability
 - canonical `package_<pkg>_<Owner>_<method>` symbols are now rewritten to readable `pkg.Owner.method(...)` callsites with `package:<...>` intent tags
 - package intent parsing now supports underscore-heavy owner/method tokens so generated call paths stay stable on sanitized class/method names
+- framework intent parsing now supports underscore-heavy class/method tokens from sanitized machine names
 - canonical Dart direct-call symbols preserve patch-library and owner segments in emitted semantic paths (for example `dart.core_patch.bool_patch.fromEnvironment` and `dart.typed_data.TypedData.offsetInBytes`)
 - selector-backed intent can also rewrite indirect callsites and annotate `indirect via: <target_alias>`
 - when a call argument is exactly `pool[<idx>]` and a string hint is known, it is rendered as `"value" /* pool[<idx>] */`

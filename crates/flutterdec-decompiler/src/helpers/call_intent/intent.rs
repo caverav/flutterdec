@@ -155,8 +155,27 @@ fn infer_flutter_framework_intent(call_name: &str) -> Option<String> {
         return None;
     }
     let lib = parts.next()?;
-    let class = parts.next()?;
-    let method = parts.collect::<Vec<_>>().join("_");
+    let tail: Vec<&str> = parts.filter(|p| !p.is_empty()).collect();
+    if tail.len() < 2 {
+        return None;
+    }
+    let class_end = tail
+        .iter()
+        .enumerate()
+        .rev()
+        .find_map(|(i, token)| {
+            if is_probable_owner_token(token) {
+                Some(i + 1)
+            } else {
+                None
+            }
+        })
+        .unwrap_or(1);
+    if class_end >= tail.len() {
+        return None;
+    }
+    let class = tail[..class_end].join("_");
+    let method = tail[class_end..].join("_");
     if lib.is_empty() || class.is_empty() || method.is_empty() {
         return None;
     }
