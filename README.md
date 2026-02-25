@@ -191,3 +191,9 @@ Main outputs under `-o <OUT_DIR>`:
 - Research decisions: [docs/research-decisions.md](docs/research-decisions.md)
 - Contributing: [CONTRIBUTING.md](CONTRIBUTING.md)
 - Context and project history: [context.md](context.md)
+
+## Issue Types
+
+- Bug report: [new bug issue](https://github.com/caverav/flutterdec/issues/new?template=bug_report.md)
+- Feature request: [new feature issue](https://github.com/caverav/flutterdec/issues/new?template=feature_request.md)
+- Research finding: [new research issue](https://github.com/caverav/flutterdec/issues/new?template=research_finding.md)
