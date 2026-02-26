@@ -184,6 +184,7 @@ Adapter backend selection:
 - `--adapter-backend auto` (default): try Blutter backend if configured, otherwise fallback to internal adapter
 - `--adapter-backend internal`: force internal snapshot-string adapter
 - `--adapter-backend blutter`: require Blutter backend (fail if unavailable)
+- `--require-snapshot-hash-match`: fail early when adapter-reported snapshot hash does not match loader snapshot hash
 
 Blutter backend environment knobs:
 

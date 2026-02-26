@@ -37,6 +37,7 @@ pub struct DecompileOptions {
     pub function_scope: FunctionScope,
     pub app_packages: Vec<String>,
     pub adapter_backend: AdapterBackend,
+    pub require_snapshot_hash_match: bool,
     pub analysis_profile: DecompileAnalysisProfile,
     pub engine_options: DecompileEngineOptions,
 }
@@ -47,6 +48,7 @@ pub struct DiffOptions {
     pub adapter_backend: AdapterBackend,
     pub function_scope: FunctionScope,
     pub app_packages: Vec<String>,
+    pub require_snapshot_hash_match: bool,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
@@ -208,6 +210,9 @@ pub struct DiffReport {
     pub new_input_path: String,
     pub old_snapshot_hash: String,
     pub new_snapshot_hash: String,
+    pub old_snapshot_hash_match: bool,
+    pub new_snapshot_hash_match: bool,
+    pub require_snapshot_hash_match: bool,
     pub old_dart_version: String,
     pub new_dart_version: String,
     pub function_scope: String,

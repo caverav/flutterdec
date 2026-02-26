@@ -1114,6 +1114,24 @@ fn collect_diff_package_counts(descriptors: &[String]) -> Vec<PackageCount> {
     items
 }
 
+fn enforce_snapshot_hash_match(
+    require_match: bool,
+    context_label: &str,
+    bundle_snapshot_hash: &str,
+    adapter_snapshot_hash: &str,
+) -> Result<bool> {
+    let matches = bundle_snapshot_hash == adapter_snapshot_hash;
+    if require_match && !matches {
+        bail!(
+            "{} snapshot hash mismatch: bundle={} adapter={}",
+            context_label,
+            bundle_snapshot_hash,
+            adapter_snapshot_hash
+        );
+    }
+    Ok(matches)
+}
+
 pub fn run_diff(
     repo_root: &Path,
     old_input_path: &Path,
@@ -1125,6 +1143,18 @@ pub fn run_diff(
 
     let old_loaded = load_model(repo_root, &old_bundle, opt.adapter_backend)?;
     let new_loaded = load_model(repo_root, &new_bundle, opt.adapter_backend)?;
+    let old_snapshot_hash_match = enforce_snapshot_hash_match(
+        opt.require_snapshot_hash_match,
+        "old input",
+        &old_bundle.snapshot_hash,
+        &old_loaded.model.snapshot_hash,
+    )?;
+    let new_snapshot_hash_match = enforce_snapshot_hash_match(
+        opt.require_snapshot_hash_match,
+        "new input",
+        &new_bundle.snapshot_hash,
+        &new_loaded.model.snapshot_hash,
+    )?;
     let old_model = old_loaded.model;
     let new_model = new_loaded.model;
 
@@ -1156,6 +1186,9 @@ pub fn run_diff(
         new_input_path: new_bundle.input_path.display().to_string(),
         old_snapshot_hash: old_bundle.snapshot_hash,
         new_snapshot_hash: new_bundle.snapshot_hash,
+        old_snapshot_hash_match,
+        new_snapshot_hash_match,
+        require_snapshot_hash_match: opt.require_snapshot_hash_match,
         old_dart_version: old_model.dart_version,
         new_dart_version: new_model.dart_version,
         function_scope: opt.function_scope.as_str().to_string(),
@@ -1199,7 +1232,12 @@ pub fn run_decompile(
         AdapterBackend::Auto => false,
         _ => resolved_backend.is_some_and(|value| value != requested_backend),
     };
-    let snapshot_hash_match = bundle.snapshot_hash == loaded_adapter_snapshot_hash;
+    let snapshot_hash_match = enforce_snapshot_hash_match(
+        opt.require_snapshot_hash_match,
+        "decompile input",
+        &bundle.snapshot_hash,
+        &loaded_adapter_snapshot_hash,
+    )?;
     let engine_context = try_collect_engine_fingerprint(input_path, &bundle.arch);
     let manifest_inspection = inspect_android_manifest(input_path);
     let (model, manifest_synthetic_hints) = if manifest_inspection.present {
@@ -1713,6 +1751,7 @@ pub fn run_decompile(
             "resolved_backend": backend_label(resolved_backend),
             "resolved_from_adapter_kind": loaded_adapter_kind,
             "backend_mismatch": backend_mismatch,
+            "require_snapshot_hash_match": opt.require_snapshot_hash_match,
             "adapter_exec_path": adapter_exec_path,
             "manifest_entry_adapter": manifest_entry_adapter,
             "manifest_entry_version": manifest_entry_version,
