@@ -196,7 +196,7 @@ Main outputs under `-o <OUT_DIR>`:
 - `report.json`
 - `asm/*.s` (if `--emit-asm`)
 - opcode-prefixed asm lines (if `--emit-asm --emit-asm-opcodes`)
-- `ghidra_apply_symbols.py` (if `--emit-ghidra-script`)
+- `ghidra_apply_symbols.py` (if `--emit-ghidra-script`; applies symbol names and pool-load comments)
 - `ir/*.json` (if `--emit-ir`)
 
 ## Documentation

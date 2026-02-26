@@ -642,7 +642,7 @@ File naming convention:
 - `semantic_intent` aggregate
 - `selector_fallback` aggregate
 - `call_fallback` aggregate
-- `ghidra_script` output metadata (`enabled`, path, and symbol count)
+- `ghidra_script` output metadata (`enabled`, path, symbol count, and pool-comment count)
 - `engine_fingerprint_context` (best-effort `libflutter.so` fingerprint metadata and errors when unavailable)
 - `bootflow_discovery` aggregate
 - `android_manifest` aggregate
