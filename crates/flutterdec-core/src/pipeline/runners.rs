@@ -60,6 +60,44 @@ impl FunctionScopeStats {
     }
 }
 
+#[derive(Debug, Default, Clone, Copy)]
+struct FunctionNameKindStats {
+    exact: usize,
+    external: usize,
+    heuristic: usize,
+    placeholder: usize,
+    unknown: usize,
+    unspecified: usize,
+}
+
+impl FunctionNameKindStats {
+    fn tagged(self) -> usize {
+        self.exact + self.external + self.heuristic + self.placeholder + self.unknown
+    }
+}
+
+fn collect_function_name_kind_stats(functions: &[flutterdec_adapter::FunctionInfo]) -> FunctionNameKindStats {
+    let mut stats = FunctionNameKindStats::default();
+    for f in functions {
+        let Some(raw) = f.name_kind.as_deref().map(str::trim) else {
+            stats.unspecified += 1;
+            continue;
+        };
+        if raw.is_empty() {
+            stats.unspecified += 1;
+            continue;
+        }
+        match symbol_name_quality_from_name_kind(Some(raw)) {
+            Some(SymbolNameQuality::Exact) => stats.exact += 1,
+            Some(SymbolNameQuality::External) => stats.external += 1,
+            Some(SymbolNameQuality::Heuristic) => stats.heuristic += 1,
+            Some(SymbolNameQuality::Placeholder) => stats.placeholder += 1,
+            None => stats.unknown += 1,
+        }
+    }
+    stats
+}
+
 fn classify_library_uri(uri: &str) -> ScopedFunctionKind {
     let t = uri.trim();
     if t.starts_with("package:flutter/") {
@@ -759,16 +797,7 @@ pub fn run_decompile(
         HashMap::new()
     };
     let pool_metadata = collect_pool_metadata_stats(&model);
-    let function_name_kind_count = model
-        .functions
-        .iter()
-        .filter(|f| {
-            f.name_kind
-                .as_deref()
-                .map(str::trim)
-                .is_some_and(|v| !v.is_empty())
-        })
-        .count();
+    let function_name_kind_stats = collect_function_name_kind_stats(&model.functions);
     let pool_confidence_count = model
         .object_pool
         .iter()
@@ -1174,7 +1203,15 @@ pub fn run_decompile(
         "adapter_schema": {
             "schema_version": model.schema_version,
             "compatibility_mode": if model.schema_version == 2 { "v2_compat" } else { "native_v3" },
-            "function_name_kind_count": function_name_kind_count,
+            "function_name_kind_count": function_name_kind_stats.tagged(),
+            "function_name_kind_breakdown": {
+                "exact": function_name_kind_stats.exact,
+                "external": function_name_kind_stats.external,
+                "heuristic": function_name_kind_stats.heuristic,
+                "placeholder": function_name_kind_stats.placeholder,
+                "unknown": function_name_kind_stats.unknown,
+                "unspecified": function_name_kind_stats.unspecified
+            },
             "pool_confidence_count": pool_confidence_count,
             "pool_source_count": pool_source_count
         },

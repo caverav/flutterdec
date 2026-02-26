@@ -195,6 +195,83 @@
     }
 
     #[test]
+    fn collects_function_name_kind_breakdown() {
+        let functions = vec![
+            flutterdec_adapter::FunctionInfo {
+                id: 1,
+                name: "main".to_string(),
+                owner_class: "Global".to_string(),
+                entry_va: 0x1000,
+                size: 16,
+                code_section_va: 0x1000,
+                name_kind: Some("exact".to_string()),
+            },
+            flutterdec_adapter::FunctionInfo {
+                id: 2,
+                name: "native_libc_printf".to_string(),
+                owner_class: "Global".to_string(),
+                entry_va: 0x1010,
+                size: 16,
+                code_section_va: 0x1000,
+                name_kind: Some("external".to_string()),
+            },
+            flutterdec_adapter::FunctionInfo {
+                id: 3,
+                name: "flutter_widgets_State_build".to_string(),
+                owner_class: "State".to_string(),
+                entry_va: 0x1020,
+                size: 16,
+                code_section_va: 0x1000,
+                name_kind: Some("heuristic".to_string()),
+            },
+            flutterdec_adapter::FunctionInfo {
+                id: 4,
+                name: "sub_1030".to_string(),
+                owner_class: "Global".to_string(),
+                entry_va: 0x1030,
+                size: 16,
+                code_section_va: 0x1000,
+                name_kind: Some("placeholder".to_string()),
+            },
+            flutterdec_adapter::FunctionInfo {
+                id: 5,
+                name: "fun_custom".to_string(),
+                owner_class: "Global".to_string(),
+                entry_va: 0x1040,
+                size: 16,
+                code_section_va: 0x1000,
+                name_kind: Some("mystery".to_string()),
+            },
+            flutterdec_adapter::FunctionInfo {
+                id: 6,
+                name: "sub_1050".to_string(),
+                owner_class: "Global".to_string(),
+                entry_va: 0x1050,
+                size: 16,
+                code_section_va: 0x1000,
+                name_kind: None,
+            },
+            flutterdec_adapter::FunctionInfo {
+                id: 7,
+                name: "sub_1060".to_string(),
+                owner_class: "Global".to_string(),
+                entry_va: 0x1060,
+                size: 16,
+                code_section_va: 0x1000,
+                name_kind: Some(" ".to_string()),
+            },
+        ];
+        let stats = collect_function_name_kind_stats(&functions);
+        assert_eq!(stats.exact, 1);
+        assert_eq!(stats.external, 1);
+        assert_eq!(stats.heuristic, 1);
+        assert_eq!(stats.placeholder, 1);
+        assert_eq!(stats.unknown, 1);
+        assert_eq!(stats.unspecified, 2);
+        assert_eq!(stats.tagged(), 5);
+    }
+
+    #[test]
     fn generic_name_detection_is_strict() {
         assert!(is_generic_symbol_name("sub_1234"));
         assert!(is_generic_symbol_name("fn_0x55"));
