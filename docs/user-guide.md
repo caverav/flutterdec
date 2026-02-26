@@ -244,3 +244,5 @@ Written under output directory:
 - `ghidra_apply_symbols.py` with `--emit-ghidra-script` (symbol names + pool load comments)
 - `ida_apply_symbols.py` with `--emit-ida-script` (symbol names + pool load comments)
 - `ir/*.json` with `--emit-ir`
+
+`report.json` includes compatibility diagnostics (schema support, manifest-entry presence, and snapshot-hash alignment).

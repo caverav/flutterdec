@@ -938,6 +938,24 @@ fn enforce_snapshot_hash_match(
     Ok(matches)
 }
 
+fn collect_compatibility_warnings(
+    manifest_entry_present: bool,
+    snapshot_hash_match: bool,
+    backend_mismatch: bool,
+) -> Vec<String> {
+    let mut warnings = Vec::new();
+    if !manifest_entry_present {
+        warnings.push("adapter manifest entry missing for this snapshot hash".to_string());
+    }
+    if !snapshot_hash_match {
+        warnings.push("adapter snapshot hash differs from loader snapshot hash".to_string());
+    }
+    if backend_mismatch {
+        warnings.push("resolved adapter backend differs from requested backend".to_string());
+    }
+    warnings
+}
+
 pub fn run_diff(
     repo_root: &Path,
     old_input_path: &Path,
@@ -1541,6 +1559,14 @@ pub fn run_decompile(
     let quality_path = opt.out_dir.join("quality.json");
     fs::write(&quality_path, serde_json::to_vec_pretty(&report)?)?;
     let bundle_snapshot_hash = bundle.snapshot_hash.clone();
+    let manifest_entry_present = manifest_entry_adapter.is_some();
+    let compatibility_warnings =
+        collect_compatibility_warnings(manifest_entry_present, snapshot_hash_match, backend_mismatch);
+    let compatibility_status = if compatibility_warnings.is_empty() {
+        "ok"
+    } else {
+        "warning"
+    };
 
     let summary = json!({
         "input": bundle.input_path,
@@ -1596,6 +1622,18 @@ pub fn run_decompile(
             "dyn_symbol_count": engine_context.dyn_symbol_count,
             "exec_section_count": engine_context.exec_section_count,
             "error": engine_context.error
+        },
+        "compatibility": {
+            "status": compatibility_status,
+            "schema": {
+                "version": model.schema_version,
+                "supported_versions": [2, 3],
+                "supported": model.schema_version == 2 || model.schema_version == 3
+            },
+            "snapshot_hash_match": snapshot_hash_match,
+            "snapshot_hash_match_required": opt.require_snapshot_hash_match,
+            "manifest_entry_present": manifest_entry_present,
+            "warnings": compatibility_warnings
         },
         "dart_version": model.dart_version,
         "function_scope": {

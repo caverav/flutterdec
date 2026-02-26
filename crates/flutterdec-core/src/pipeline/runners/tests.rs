@@ -450,6 +450,24 @@
     }
 
     #[test]
+    fn collects_compatibility_warnings_from_flags() {
+        let warnings = collect_compatibility_warnings(false, false, true);
+        assert_eq!(warnings.len(), 3);
+        assert!(warnings
+            .iter()
+            .any(|w| w.contains("manifest entry missing")));
+        assert!(warnings
+            .iter()
+            .any(|w| w.contains("snapshot hash differs")));
+        assert!(warnings
+            .iter()
+            .any(|w| w.contains("backend differs")));
+
+        let warnings = collect_compatibility_warnings(true, true, false);
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
     fn resolves_backend_from_adapter_kind_values() {
         assert_eq!(
             resolved_backend_from_adapter_kind("blutter_bridge_model_v1"),

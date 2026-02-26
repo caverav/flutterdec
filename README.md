@@ -218,6 +218,8 @@ Main outputs under `-o <OUT_DIR>`:
 - `ida_apply_symbols.py` (if `--emit-ida-script`; applies symbol names and pool-load comments in IDA)
 - `ir/*.json` (if `--emit-ir`)
 
+`report.json` also includes a `compatibility` section for schema/hash/manifest alignment diagnostics.
+
 ## Documentation
 
 - User guide: [docs/user-guide.md](docs/user-guide.md)
