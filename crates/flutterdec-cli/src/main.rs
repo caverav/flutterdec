@@ -310,6 +310,18 @@ fn handle_diff(repo_root: &Path, cmd: DiffCmd) -> Result<()> {
             report.added_function_count,
             report.removed_function_count
         );
+        if !report.added_packages_top.is_empty() {
+            println!("top added packages:");
+            for item in report.added_packages_top.iter().take(5) {
+                println!("  + {} ({})", item.package, item.functions);
+            }
+        }
+        if !report.removed_packages_top.is_empty() {
+            println!("top removed packages:");
+            for item in report.removed_packages_top.iter().take(5) {
+                println!("  - {} ({})", item.package, item.functions);
+            }
+        }
         println!("report: {}", report.report_path);
     }
     Ok(())

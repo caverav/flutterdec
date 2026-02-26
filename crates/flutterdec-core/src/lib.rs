@@ -219,6 +219,8 @@ pub struct DiffReport {
     pub removed_function_count: usize,
     pub added_functions_top: Vec<String>,
     pub removed_functions_top: Vec<String>,
+    pub added_packages_top: Vec<PackageCount>,
+    pub removed_packages_top: Vec<PackageCount>,
     pub report_path: String,
 }
 

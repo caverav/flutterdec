@@ -130,6 +130,8 @@ Compare two builds at recovered-function level:
 flutterdec diff --old ./old.apk --new ./new.apk -o ./out-diff --json
 ```
 
+Diff JSON output also includes `added_packages_top` and `removed_packages_top` to quickly see where most churn happened.
+
 Include raw opcode words in asm output:
 
 ```bash
