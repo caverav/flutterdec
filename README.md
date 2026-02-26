@@ -195,6 +195,7 @@ Main outputs under `-o <OUT_DIR>`:
 - `quality.json`
 - `report.json`
 - `asm/*.s` (if `--emit-asm`)
+- opcode-prefixed asm lines (if `--emit-asm --emit-asm-opcodes`)
 - `ir/*.json` (if `--emit-ir`)
 
 ## Documentation
