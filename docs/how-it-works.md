@@ -618,6 +618,7 @@ Interpretation guidance:
 - `out_dir/pseudocode/*.dartpseudo`
 - `out_dir/asm/*.s` (when `--emit-asm`)
 - asm lines include raw opcode words when `--emit-asm-opcodes` is set
+- `out_dir/ghidra_apply_symbols.py` (when `--emit-ghidra-script`)
 - `out_dir/ir/*.json` (when `--emit-ir`)
 - `out_dir/quality.json`
 - `out_dir/report.json`
@@ -639,6 +640,7 @@ File naming convention:
 - `semantic_intent` aggregate
 - `selector_fallback` aggregate
 - `call_fallback` aggregate
+- `ghidra_script` output metadata (`enabled`, path, and symbol count)
 - `bootflow_discovery` aggregate
 - `android_manifest` aggregate
 - `function_scope.priority_package_hints` (effective package boosts used by capped prioritization)
