@@ -28,6 +28,20 @@
     }
 
     #[test]
+    fn builds_ghidra_symbol_script_with_sorted_entries_and_escaped_names() {
+        let mut symbols = HashMap::new();
+        symbols.insert(0x2000, "sub_2000".to_string());
+        symbols.insert(0x1000, "RenderErrorBox.\"main\"".to_string());
+
+        let script = build_ghidra_symbol_script(&symbols).expect("script");
+        let first = script.find("(0x1000,").expect("0x1000");
+        let second = script.find("(0x2000,").expect("0x2000");
+        assert!(first < second, "entries should be sorted by VA");
+        assert!(script.contains("RenderErrorBox.\\\"main\\\""));
+        assert!(script.contains("createLabel(addr, name, True)"));
+    }
+
+    #[test]
     fn merge_symbol_name_replaces_generic_only() {
         let mut map = HashMap::new();
         map.insert(0x1000, "sub_1000".to_string());

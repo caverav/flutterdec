@@ -43,6 +43,8 @@ struct DecompileCmd {
     #[arg(long)]
     emit_asm_opcodes: bool,
     #[arg(long)]
+    emit_ghidra_script: bool,
+    #[arg(long)]
     emit_ir: bool,
     #[arg(long = "extra-symbol-elf")]
     extra_symbol_elfs: Vec<PathBuf>,
@@ -265,6 +267,7 @@ fn build_decompile_options(cmd: DecompileCmd) -> Result<DecompileOptions> {
         out_dir: cmd.out_dir,
         emit_asm: cmd.emit_asm,
         emit_asm_opcodes: cmd.emit_asm_opcodes,
+        emit_ghidra_script: cmd.emit_ghidra_script,
         emit_ir: cmd.emit_ir,
         extra_symbol_elfs: cmd.extra_symbol_elfs,
         extra_symbol_map_targets: cmd.extra_symbol_map_targets,
@@ -515,6 +518,23 @@ mod tests {
         assert!(err
             .to_string()
             .contains("--emit-asm-opcodes requires --emit-asm"));
+    }
+
+    #[test]
+    fn decompile_accepts_emit_ghidra_script() {
+        let cli = Cli::try_parse_from([
+            "flutterdec",
+            "decompile",
+            "sample.apk",
+            "-o",
+            "out",
+            "--emit-ghidra-script",
+        ])
+        .expect("parse");
+        let Command::Decompile(cmd) = cli.command else {
+            panic!("expected decompile command");
+        };
+        assert!(cmd.emit_ghidra_script);
     }
 
     #[test]
