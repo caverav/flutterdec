@@ -142,6 +142,12 @@ Generate a Ghidra import script with recovered symbols:
 flutterdec decompile ./sample.apk -o ./out --emit-ghidra-script
 ```
 
+Generate an IDA import script with recovered symbols:
+
+```bash
+flutterdec decompile ./sample.apk -o ./out --emit-ida-script
+```
+
 ## Analysis Engine Profiles
 
 `decompile` profile controls analysis depth vs throughput.
@@ -233,4 +239,5 @@ Written under output directory:
 - `asm/*.s` with `--emit-asm`
 - opcode-prefixed asm lines with `--emit-asm --emit-asm-opcodes`
 - `ghidra_apply_symbols.py` with `--emit-ghidra-script` (symbol names + pool load comments)
+- `ida_apply_symbols.py` with `--emit-ida-script` (symbol names + pool load comments)
 - `ir/*.json` with `--emit-ir`

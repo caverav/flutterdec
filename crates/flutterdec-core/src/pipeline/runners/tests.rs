@@ -43,6 +43,22 @@
     }
 
     #[test]
+    fn builds_ida_symbol_script_with_sorted_entries_and_pool_comments() {
+        let mut symbols = HashMap::new();
+        symbols.insert(0x2000, "sub_2000".to_string());
+        symbols.insert(0x1000, "RenderErrorBox.\"main\"".to_string());
+        let pool_comments = vec![(0x1004, "pool[4584] = surface".to_string())];
+
+        let script = build_ida_symbol_script(&symbols, &pool_comments).expect("script");
+        let first = script.find("(0x1000,").expect("0x1000");
+        let second = script.find("(0x2000,").expect("0x2000");
+        assert!(first < second, "entries should be sorted by VA");
+        assert!(script.contains("RenderErrorBox.\\\"main\\\""));
+        assert!(script.contains("ida_name.set_name"));
+        assert!(script.contains("idc.set_cmt(va, text, 0)"));
+    }
+
+    #[test]
     fn parses_pool_annotation_indexes() {
         assert_eq!(parse_pool_annotation_index("pool[4584]"), Some(4584));
         assert_eq!(parse_pool_annotation_index(" pool[0] "), Some(0));

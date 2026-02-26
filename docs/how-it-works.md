@@ -619,6 +619,7 @@ Interpretation guidance:
 - `out_dir/asm/*.s` (when `--emit-asm`)
 - asm lines include raw opcode words when `--emit-asm-opcodes` is set
 - `out_dir/ghidra_apply_symbols.py` (when `--emit-ghidra-script`)
+- `out_dir/ida_apply_symbols.py` (when `--emit-ida-script`)
 - `out_dir/ir/*.json` (when `--emit-ir`)
 - `out_dir/quality.json`
 - `out_dir/report.json`
@@ -643,6 +644,7 @@ File naming convention:
 - `selector_fallback` aggregate
 - `call_fallback` aggregate
 - `ghidra_script` output metadata (`enabled`, path, symbol count, and pool-comment count)
+- `ida_script` output metadata (`enabled`, path, symbol count, and pool-comment count)
 - `engine_fingerprint_context` (best-effort `libflutter.so` fingerprint metadata and errors when unavailable)
 - `bootflow_discovery` aggregate
 - `android_manifest` aggregate

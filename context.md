@@ -225,6 +225,7 @@ Current scope:
 - decompile now exposes engine-level analysis profiles (`balanced` and `light`) plus per-feature `--with-*`/`--no-*` toggles for canonical model symbols, pool hints, semantic reporting, and bootflow category seeding to trade throughput vs readability
 - decompile now defaults to app-focused function scoping (`app-unknown`) so reverse-engineering output prioritizes app/user-defined code; you can switch to `--function-scope app` or `--function-scope all` when needed
 - decompile can optionally emit `ghidra_apply_symbols.py` (`--emit-ghidra-script`) to apply recovered names as labels/functions inside Ghidra analysis sessions
+- decompile can optionally emit `ida_apply_symbols.py` (`--emit-ida-script`) to apply recovered names and pool-load comments inside IDA sessions
 - emitted Ghidra scripts also include pool-load comments derived from `pool[...]` annotations and recovered string hints, improving patching context directly in Ghidra
 - decompile now also supports package-level scoping via repeatable `--app-package <name>`, so researchers can isolate pseudocode to selected app Dart packages and exclude unknown/dependency/framework noise more aggressively
 - report output now includes detected app package frequency (`function_scope.app_package_counts_top`) to guide package scoping without guesswork
