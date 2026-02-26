@@ -32,78 +32,152 @@
         let mut map = HashMap::new();
         map.insert(0x1000, "sub_1000".to_string());
         map.insert(0x2000, "StrongName".to_string());
+        let mut quality = HashMap::new();
+        quality.insert(0x1000, SymbolNameQuality::Placeholder);
+        quality.insert(0x2000, SymbolNameQuality::External);
 
-        let mut inserted = 0usize;
-        let mut replaced = 0usize;
-        let mut skipped = 0usize;
+        let mut stats = SymbolMergeStats::default();
 
         merge_symbol_name(
             &mut map,
+            &mut quality,
             0x1000,
             "RealSymbol".to_string(),
-            &mut inserted,
-            &mut replaced,
-            &mut skipped,
+            Some(SymbolNameQuality::External),
+            &mut stats,
         );
         merge_symbol_name(
             &mut map,
+            &mut quality,
             0x2000,
             "OtherSymbol".to_string(),
-            &mut inserted,
-            &mut replaced,
-            &mut skipped,
+            Some(SymbolNameQuality::External),
+            &mut stats,
         );
         merge_symbol_name(
             &mut map,
+            &mut quality,
             0x3000,
             "InsertedSymbol".to_string(),
-            &mut inserted,
-            &mut replaced,
-            &mut skipped,
+            Some(SymbolNameQuality::Heuristic),
+            &mut stats,
         );
 
         assert_eq!(map.get(&0x1000).map(String::as_str), Some("RealSymbol"));
         assert_eq!(map.get(&0x2000).map(String::as_str), Some("StrongName"));
         assert_eq!(map.get(&0x3000).map(String::as_str), Some("InsertedSymbol"));
-        assert_eq!(inserted, 1);
-        assert_eq!(replaced, 1);
-        assert_eq!(skipped, 1);
+        assert_eq!(stats.inserted, 1);
+        assert_eq!(stats.replaced, 1);
+        assert_eq!(stats.skipped, 1);
+        assert_eq!(stats.replaced_to_external, 1);
     }
 
     #[test]
     fn merge_symbol_name_replaces_heuristic_with_stronger_symbol() {
         let mut map = HashMap::new();
         map.insert(0x1000, "package_spotube_Global_main".to_string());
-
-        let mut inserted = 0usize;
-        let mut replaced = 0usize;
-        let mut skipped = 0usize;
+        let mut quality = HashMap::new();
+        quality.insert(0x1000, SymbolNameQuality::Heuristic);
+        let mut stats = SymbolMergeStats::default();
 
         merge_symbol_name(
             &mut map,
+            &mut quality,
             0x1000,
             "RealMainEntry".to_string(),
-            &mut inserted,
-            &mut replaced,
-            &mut skipped,
+            Some(SymbolNameQuality::External),
+            &mut stats,
         );
         assert_eq!(map.get(&0x1000).map(String::as_str), Some("RealMainEntry"));
-        assert_eq!(inserted, 0);
-        assert_eq!(replaced, 1);
-        assert_eq!(skipped, 0);
+        assert_eq!(stats.inserted, 0);
+        assert_eq!(stats.replaced, 1);
+        assert_eq!(stats.skipped, 0);
+        assert_eq!(stats.replaced_to_external, 1);
 
         merge_symbol_name(
             &mut map,
+            &mut quality,
             0x1000,
             "package_spotube_Global_main".to_string(),
-            &mut inserted,
-            &mut replaced,
-            &mut skipped,
+            Some(SymbolNameQuality::Heuristic),
+            &mut stats,
         );
         assert_eq!(map.get(&0x1000).map(String::as_str), Some("RealMainEntry"));
-        assert_eq!(inserted, 0);
-        assert_eq!(replaced, 1);
-        assert_eq!(skipped, 1);
+        assert_eq!(stats.inserted, 0);
+        assert_eq!(stats.replaced, 1);
+        assert_eq!(stats.skipped, 1);
+    }
+
+    #[test]
+    fn merge_symbol_name_prefers_exact_over_external_heuristic_and_placeholder() {
+        let mut map = HashMap::new();
+        map.insert(0x1000, "sub_1000".to_string());
+        let mut quality = HashMap::new();
+        quality.insert(0x1000, SymbolNameQuality::Placeholder);
+        let mut stats = SymbolMergeStats::default();
+
+        merge_symbol_name(
+            &mut map,
+            &mut quality,
+            0x1000,
+            "package_spotube_Global_main".to_string(),
+            Some(SymbolNameQuality::Heuristic),
+            &mut stats,
+        );
+        merge_symbol_name(
+            &mut map,
+            &mut quality,
+            0x1000,
+            "RealMainEntry".to_string(),
+            Some(SymbolNameQuality::External),
+            &mut stats,
+        );
+        merge_symbol_name(
+            &mut map,
+            &mut quality,
+            0x1000,
+            "SpotubeMain".to_string(),
+            Some(SymbolNameQuality::Exact),
+            &mut stats,
+        );
+        merge_symbol_name(
+            &mut map,
+            &mut quality,
+            0x1000,
+            "native_libc_printf".to_string(),
+            Some(SymbolNameQuality::External),
+            &mut stats,
+        );
+
+        assert_eq!(map.get(&0x1000).map(String::as_str), Some("SpotubeMain"));
+        assert_eq!(quality.get(&0x1000), Some(&SymbolNameQuality::Exact));
+        assert_eq!(stats.replaced, 3);
+        assert_eq!(stats.replaced_to_heuristic, 1);
+        assert_eq!(stats.replaced_to_external, 1);
+        assert_eq!(stats.replaced_to_exact, 1);
+        assert_eq!(stats.skipped, 1);
+    }
+
+    #[test]
+    fn resolves_symbol_quality_from_name_kind_values() {
+        assert_eq!(
+            symbol_name_quality_from_name_kind(Some("exact")),
+            Some(SymbolNameQuality::Exact)
+        );
+        assert_eq!(
+            symbol_name_quality_from_name_kind(Some("external")),
+            Some(SymbolNameQuality::External)
+        );
+        assert_eq!(
+            symbol_name_quality_from_name_kind(Some("heuristic")),
+            Some(SymbolNameQuality::Heuristic)
+        );
+        assert_eq!(
+            symbol_name_quality_from_name_kind(Some("placeholder")),
+            Some(SymbolNameQuality::Placeholder)
+        );
+        assert_eq!(symbol_name_quality_from_name_kind(Some("unknown")), None);
+        assert_eq!(symbol_name_quality_from_name_kind(None), None);
     }
 
     #[test]

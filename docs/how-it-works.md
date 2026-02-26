@@ -633,6 +633,7 @@ File naming convention:
 - input metadata
 - counts for libraries, classes, functions, pool entries
 - embedded `quality` object
+- `name_resolution` aggregate (final name-quality mix and merge replacement diagnostics)
 - `pool_value_hints`, `pool_semantic_hints`, and `pool_target_symbols` counts
 - `semantic_rewrite` aggregate
 - `semantic_intent` aggregate
