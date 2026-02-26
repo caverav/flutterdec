@@ -144,6 +144,12 @@ flutterdec decompile ./sample.apk -o ./out \
   --extra-symbol-elf ./libflutter.unstripped.so
 ```
 
+5. Optional: compare two builds by recovered function signatures:
+
+```bash
+flutterdec diff --old ./old.apk --new ./new.apk -o ./out-diff --json
+```
+
 ## Analysis Profiles
 
 `decompile` exposes analysis-engine profiles so you can trade detail for speed.
@@ -194,6 +200,7 @@ Main outputs under `-o <OUT_DIR>`:
 - `pseudocode/*.dartpseudo`
 - `quality.json`
 - `report.json`
+- `diff_report.json` (if `flutterdec diff`)
 - `asm/*.s` (if `--emit-asm`)
 - opcode-prefixed asm lines (if `--emit-asm --emit-asm-opcodes`)
 - `ghidra_apply_symbols.py` (if `--emit-ghidra-script`; applies symbol names and pool-load comments)

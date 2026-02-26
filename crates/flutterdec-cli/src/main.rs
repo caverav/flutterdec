@@ -2,9 +2,9 @@ use anyhow::{bail, Context, Result};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use flutterdec_adapter::install_adapter;
 use flutterdec_core::{
-    available_adapters, run_decompile, run_engine_fingerprint, run_info, run_symbol_map,
+    available_adapters, run_decompile, run_diff, run_engine_fingerprint, run_info, run_symbol_map,
     AdapterBackend, DecompileAnalysisProfile, DecompileEngineOptionOverrides,
-    DecompileEngineOptions, DecompileOptions, EngineFingerprintOptions, FunctionScope,
+    DecompileEngineOptions, DecompileOptions, DiffOptions, EngineFingerprintOptions, FunctionScope,
     SymbolMapOptions,
 };
 use std::path::{Path, PathBuf};
@@ -21,6 +21,7 @@ struct Cli {
 enum Command {
     Info(InfoCmd),
     Decompile(DecompileCmd),
+    Diff(DiffCmd),
     EngineFingerprint(EngineFingerprintCmd),
     MapSymbols(MapSymbolsCmd),
     Adapter(AdapterCmd),
@@ -92,6 +93,24 @@ struct DecompileCmd {
     with_bootflow_category_seeds: bool,
     #[arg(long)]
     no_bootflow_category_seeds: bool,
+}
+
+#[derive(Args, Debug)]
+struct DiffCmd {
+    #[arg(long = "old")]
+    old_input: PathBuf,
+    #[arg(long = "new")]
+    new_input: PathBuf,
+    #[arg(short = 'o', long = "out")]
+    out_dir: PathBuf,
+    #[arg(long, value_enum, default_value_t = FunctionScopeArg::AppUnknown)]
+    function_scope: FunctionScopeArg,
+    #[arg(long = "app-package")]
+    app_packages: Vec<String>,
+    #[arg(long, value_enum, default_value_t = AdapterBackendArg::Auto)]
+    adapter_backend: AdapterBackendArg,
+    #[arg(long)]
+    json: bool,
 }
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
@@ -215,6 +234,7 @@ fn main() -> Result<()> {
     match cli.command {
         Command::Info(cmd) => handle_info(&repo_root, cmd)?,
         Command::Decompile(cmd) => handle_decompile(&repo_root, cmd)?,
+        Command::Diff(cmd) => handle_diff(&repo_root, cmd)?,
         Command::EngineFingerprint(cmd) => handle_engine_fingerprint(cmd)?,
         Command::MapSymbols(cmd) => handle_map_symbols(cmd)?,
         Command::Adapter(cmd) => handle_adapter(&repo_root, cmd)?,
@@ -253,6 +273,43 @@ fn handle_decompile(repo_root: &Path, cmd: DecompileCmd) -> Result<()> {
     let opt = build_decompile_options(cmd)?;
     let quality = run_decompile(repo_root, &input, &opt)?;
     println!("{}", serde_json::to_string_pretty(&quality)?);
+    Ok(())
+}
+
+fn handle_diff(repo_root: &Path, cmd: DiffCmd) -> Result<()> {
+    let old_input = cmd.old_input.clone();
+    let new_input = cmd.new_input.clone();
+    let json = cmd.json;
+    let opt = DiffOptions {
+        out_dir: cmd.out_dir,
+        adapter_backend: cmd.adapter_backend.to_core(),
+        function_scope: cmd.function_scope.to_core(),
+        app_packages: cmd.app_packages,
+    };
+    let report = run_diff(repo_root, &old_input, &new_input, &opt)?;
+    if json {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        println!("old input: {}", report.old_input_path);
+        println!("new input: {}", report.new_input_path);
+        println!(
+            "snapshot hash: old={} new={}",
+            report.old_snapshot_hash, report.new_snapshot_hash
+        );
+        println!(
+            "dart version: old={} new={}",
+            report.old_dart_version, report.new_dart_version
+        );
+        println!(
+            "functions: old={} new={} common={} added={} removed={}",
+            report.old_function_count,
+            report.new_function_count,
+            report.common_function_count,
+            report.added_function_count,
+            report.removed_function_count
+        );
+        println!("report: {}", report.report_path);
+    }
     Ok(())
 }
 
@@ -563,5 +620,53 @@ mod tests {
             panic!("expected decompile command");
         };
         assert!(matches!(cmd.adapter_backend, AdapterBackendArg::Blutter));
+    }
+
+    #[test]
+    fn diff_scope_defaults_to_app_unknown() {
+        let cli = Cli::try_parse_from([
+            "flutterdec",
+            "diff",
+            "--old",
+            "old.apk",
+            "--new",
+            "new.apk",
+            "-o",
+            "out",
+        ])
+        .expect("parse");
+        let Command::Diff(cmd) = cli.command else {
+            panic!("expected diff command");
+        };
+        assert!(matches!(cmd.function_scope, FunctionScopeArg::AppUnknown));
+    }
+
+    #[test]
+    fn diff_accepts_backend_and_package_filters() {
+        let cli = Cli::try_parse_from([
+            "flutterdec",
+            "diff",
+            "--old",
+            "old.apk",
+            "--new",
+            "new.apk",
+            "-o",
+            "out",
+            "--adapter-backend",
+            "blutter",
+            "--app-package",
+            "spotube",
+            "--app-package",
+            "provider",
+            "--function-scope",
+            "all",
+        ])
+        .expect("parse");
+        let Command::Diff(cmd) = cli.command else {
+            panic!("expected diff command");
+        };
+        assert!(matches!(cmd.adapter_backend, AdapterBackendArg::Blutter));
+        assert!(matches!(cmd.function_scope, FunctionScopeArg::All));
+        assert_eq!(cmd.app_packages, vec!["spotube", "provider"]);
     }
 }

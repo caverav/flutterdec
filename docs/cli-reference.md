@@ -80,6 +80,27 @@ Adapter backend environment:
 - `FLUTTERDEC_BLUTTER_CMD`: full command to execute Blutter bridge backend
 - `FLUTTERDEC_BLUTTER_PY`: path to `blutter.py` (uses current Python interpreter)
 
+## `flutterdec diff`
+
+Usage:
+
+```bash
+flutterdec diff --old <OLD_INPUT> --new <NEW_INPUT> -o <OUT_DIR> [OPTIONS]
+```
+
+Required:
+
+- `--old <OLD_INPUT>`: APK or `libapp.so` baseline
+- `--new <NEW_INPUT>`: APK or `libapp.so` candidate
+- `-o, --out <OUT_DIR>`
+
+Options:
+
+- `--function-scope <app-unknown|app|all>` (default `app-unknown`)
+- `--app-package <NAME>` (repeatable; limit compare set to selected app packages)
+- `--adapter-backend <auto|internal|blutter>` (default `auto`)
+- `--json`
+
 ## `flutterdec engine-fingerprint`
 
 Usage:

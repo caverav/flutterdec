@@ -124,6 +124,12 @@ Decompile with extra artifacts:
 flutterdec decompile ./sample.apk -o ./out --emit-asm --emit-ir
 ```
 
+Compare two builds at recovered-function level:
+
+```bash
+flutterdec diff --old ./old.apk --new ./new.apk -o ./out-diff --json
+```
+
 Include raw opcode words in asm output:
 
 ```bash
@@ -223,6 +229,7 @@ Written under output directory:
 - `pseudocode/*.dartpseudo`
 - `quality.json`
 - `report.json`
+- `diff_report.json` with `flutterdec diff`
 - `asm/*.s` with `--emit-asm`
 - opcode-prefixed asm lines with `--emit-asm --emit-asm-opcodes`
 - `ghidra_apply_symbols.py` with `--emit-ghidra-script` (symbol names + pool load comments)

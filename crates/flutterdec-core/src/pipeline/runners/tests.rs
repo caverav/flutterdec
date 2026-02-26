@@ -318,6 +318,53 @@
     }
 
     #[test]
+    fn collects_function_descriptors_with_library_context() {
+        let model = ProgramModel {
+            schema_version: 3,
+            adapter_kind: "python".to_string(),
+            dart_version: "unknown".to_string(),
+            snapshot_hash: "deadbeef".to_string(),
+            arch: "arm64".to_string(),
+            libraries: vec![flutterdec_adapter::LibraryInfo {
+                id: 0,
+                uri: "package:spotube/main.dart".to_string(),
+                name_display: "package:spotube/main.dart".to_string(),
+            }],
+            classes: vec![flutterdec_adapter::ClassInfo {
+                id: 0,
+                name: "Global".to_string(),
+                super_name: "Object".to_string(),
+                library_uri: "package:spotube/main.dart".to_string(),
+            }],
+            functions: vec![
+                flutterdec_adapter::FunctionInfo {
+                    id: 0,
+                    name: "main".to_string(),
+                    owner_class: "Global".to_string(),
+                    entry_va: 0x1000,
+                    size: 16,
+                    code_section_va: 0x1000,
+                    name_kind: Some("heuristic".to_string()),
+                },
+                flutterdec_adapter::FunctionInfo {
+                    id: 1,
+                    name: "sub_2000".to_string(),
+                    owner_class: "UnknownOwner".to_string(),
+                    entry_va: 0x2000,
+                    size: 16,
+                    code_section_va: 0x1000,
+                    name_kind: Some("placeholder".to_string()),
+                },
+            ],
+            object_pool: Vec::new(),
+        };
+
+        let descriptors = collect_function_descriptors(&model);
+        assert!(descriptors.contains("package:spotube/main.dart::Global::main"));
+        assert!(descriptors.contains("UnknownOwner::sub_2000"));
+    }
+
+    #[test]
     fn resolves_backend_from_adapter_kind_values() {
         assert_eq!(
             resolved_backend_from_adapter_kind("blutter_bridge_model_v1"),

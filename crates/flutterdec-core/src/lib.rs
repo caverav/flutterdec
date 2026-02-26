@@ -40,6 +40,14 @@ pub struct DecompileOptions {
     pub engine_options: DecompileEngineOptions,
 }
 
+#[derive(Debug, Clone)]
+pub struct DiffOptions {
+    pub out_dir: PathBuf,
+    pub adapter_backend: AdapterBackend,
+    pub function_scope: FunctionScope,
+    pub app_packages: Vec<String>,
+}
+
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 pub enum FunctionScope {
     AppUnknown,
@@ -191,6 +199,26 @@ pub struct QualityReport {
     pub placeholder_cond_markers: usize,
     pub omitted_path_markers: usize,
     pub loop_backedge_markers: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DiffReport {
+    pub old_input_path: String,
+    pub new_input_path: String,
+    pub old_snapshot_hash: String,
+    pub new_snapshot_hash: String,
+    pub old_dart_version: String,
+    pub new_dart_version: String,
+    pub function_scope: String,
+    pub app_packages: Vec<String>,
+    pub old_function_count: usize,
+    pub new_function_count: usize,
+    pub common_function_count: usize,
+    pub added_function_count: usize,
+    pub removed_function_count: usize,
+    pub added_functions_top: Vec<String>,
+    pub removed_functions_top: Vec<String>,
+    pub report_path: String,
 }
 
 include!("pipeline/helpers.rs");
