@@ -259,6 +259,23 @@ fn handle_info(repo_root: &Path, cmd: InfoCmd) -> Result<()> {
         println!("arch: {}", out.arch);
         println!("snapshot hash: {}", out.snapshot_hash);
         println!("adapter installed: {}", out.adapter_installed);
+        if let Some(kind) = out.adapter_kind.as_deref() {
+            println!("adapter kind: {}", kind);
+        }
+        if let Some(present) = out.manifest_entry_present {
+            println!("manifest entry present: {}", present);
+        }
+        if let Some(hash_match) = out.adapter_snapshot_hash_match {
+            println!("adapter snapshot hash match: {}", hash_match);
+        }
+        if let Some(warnings) = out.compatibility_warnings.as_ref() {
+            if !warnings.is_empty() {
+                println!("compatibility warnings:");
+                for warning in warnings {
+                    println!("  - {}", warning);
+                }
+            }
+        }
         if let Some(n) = out.function_count {
             println!("functions: {}", n);
         }

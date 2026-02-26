@@ -17,6 +17,10 @@ If adapter metadata is available, JSON output also includes app-package hints:
 
 - `app_package_count_total`
 - `app_package_counts_top`
+- `adapter_kind`
+- `manifest_entry_present`
+- `adapter_snapshot_hash_match`
+- `compatibility_warnings`
 
 ## `flutterdec decompile`
 
