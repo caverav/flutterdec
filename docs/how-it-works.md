@@ -634,6 +634,7 @@ File naming convention:
 - input metadata
 - counts for libraries, classes, functions, pool entries
 - `adapter_schema.function_name_kind_breakdown` (exact/external/heuristic/placeholder/unknown/unspecified)
+- `adapter_selection` trace (requested backend, resolved backend, adapter exec, manifest mapping, snapshot hash match)
 - embedded `quality` object
 - `name_resolution` aggregate (final name-quality mix and merge replacement diagnostics)
 - `pool_value_hints`, `pool_semantic_hints`, and `pool_target_symbols` counts
@@ -642,6 +643,7 @@ File naming convention:
 - `selector_fallback` aggregate
 - `call_fallback` aggregate
 - `ghidra_script` output metadata (`enabled`, path, and symbol count)
+- `engine_fingerprint_context` (best-effort `libflutter.so` fingerprint metadata and errors when unavailable)
 - `bootflow_discovery` aggregate
 - `android_manifest` aggregate
 - `function_scope.priority_package_hints` (effective package boosts used by capped prioritization)

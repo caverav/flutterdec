@@ -1,5 +1,6 @@
     use super::*;
     use flutterdec_disasm_arm64::{AsmInstruction, FunctionPriorityComponent};
+    use tempfile::tempdir;
 
     #[test]
     fn formats_asm_instruction_without_opcode_word() {
@@ -269,6 +270,33 @@
         assert_eq!(stats.unknown, 1);
         assert_eq!(stats.unspecified, 2);
         assert_eq!(stats.tagged(), 5);
+    }
+
+    #[test]
+    fn resolves_backend_from_adapter_kind_values() {
+        assert_eq!(
+            resolved_backend_from_adapter_kind("blutter_bridge_model_v1"),
+            Some(AdapterBackend::Blutter)
+        );
+        assert_eq!(
+            resolved_backend_from_adapter_kind("dynamic_snapshot_string_model_v1"),
+            Some(AdapterBackend::Internal)
+        );
+        assert_eq!(resolved_backend_from_adapter_kind("custom_model_v2"), None);
+        assert_eq!(backend_label(Some(AdapterBackend::Internal)), "internal");
+        assert_eq!(backend_label(Some(AdapterBackend::Blutter)), "blutter");
+        assert_eq!(backend_label(None), "unknown");
+    }
+
+    #[test]
+    fn engine_fingerprint_context_reports_missing_engine_binary() {
+        let td = tempdir().expect("tempdir");
+        let input = td.path().join("libapp.so");
+        std::fs::write(&input, b"dummy").expect("write dummy input");
+        let ctx = try_collect_engine_fingerprint(&input, "arm64");
+        assert!(!ctx.detected);
+        assert!(ctx.source.is_none());
+        assert!(ctx.error.is_some());
     }
 
     #[test]
