@@ -22,7 +22,7 @@ use runners_symbols::{
 };
 #[cfg(test)]
 use runners_symbols::{is_generic_symbol_name, normalize_external_symbol_name};
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 use std::fmt::Write as FmtWrite;
 use std::io::Read;
 use tempfile::NamedTempFile;
@@ -970,6 +970,88 @@ pub fn run_info(repo_root: &Path, input_path: &Path) -> Result<InfoOutput> {
     }
 
     Ok(out)
+}
+
+fn function_descriptor(
+    func: &flutterdec_adapter::FunctionInfo,
+    class_to_library: &HashMap<String, String>,
+) -> String {
+    let library_uri = class_to_library
+        .get(&func.owner_class)
+        .map(String::as_str)
+        .unwrap_or("");
+    if library_uri.is_empty() {
+        return format!("{}::{}", func.owner_class, func.name);
+    }
+    format!("{}::{}::{}", library_uri, func.owner_class, func.name)
+}
+
+fn collect_function_descriptors(model: &ProgramModel) -> BTreeSet<String> {
+    let class_to_library = build_class_library_lookup(model);
+    model
+        .functions
+        .iter()
+        .map(|func| function_descriptor(func, &class_to_library))
+        .collect::<BTreeSet<_>>()
+}
+
+pub fn run_diff(
+    repo_root: &Path,
+    old_input_path: &Path,
+    new_input_path: &Path,
+    opt: &DiffOptions,
+) -> Result<DiffReport> {
+    let old_bundle = load_snapshot_bundle(old_input_path)?;
+    let new_bundle = load_snapshot_bundle(new_input_path)?;
+
+    let old_loaded = load_model(repo_root, &old_bundle, opt.adapter_backend)?;
+    let new_loaded = load_model(repo_root, &new_bundle, opt.adapter_backend)?;
+    let old_model = old_loaded.model;
+    let new_model = new_loaded.model;
+
+    let (old_scoped, _) =
+        apply_function_scope_filter(&old_model, opt.function_scope, &opt.app_packages);
+    let (new_scoped, _) =
+        apply_function_scope_filter(&new_model, opt.function_scope, &opt.app_packages);
+
+    let old_descriptors = collect_function_descriptors(&old_scoped);
+    let new_descriptors = collect_function_descriptors(&new_scoped);
+
+    let added = new_descriptors
+        .difference(&old_descriptors)
+        .cloned()
+        .collect::<Vec<_>>();
+    let removed = old_descriptors
+        .difference(&new_descriptors)
+        .cloned()
+        .collect::<Vec<_>>();
+    let common_count = old_descriptors
+        .intersection(&new_descriptors)
+        .count();
+
+    fs::create_dir_all(&opt.out_dir)?;
+    let report_path = opt.out_dir.join("diff_report.json");
+
+    let report = DiffReport {
+        old_input_path: old_bundle.input_path.display().to_string(),
+        new_input_path: new_bundle.input_path.display().to_string(),
+        old_snapshot_hash: old_bundle.snapshot_hash,
+        new_snapshot_hash: new_bundle.snapshot_hash,
+        old_dart_version: old_model.dart_version,
+        new_dart_version: new_model.dart_version,
+        function_scope: opt.function_scope.as_str().to_string(),
+        app_packages: opt.app_packages.clone(),
+        old_function_count: old_descriptors.len(),
+        new_function_count: new_descriptors.len(),
+        common_function_count: common_count,
+        added_function_count: added.len(),
+        removed_function_count: removed.len(),
+        added_functions_top: added.iter().take(200).cloned().collect::<Vec<_>>(),
+        removed_functions_top: removed.iter().take(200).cloned().collect::<Vec<_>>(),
+        report_path: report_path.display().to_string(),
+    };
+    fs::write(&report_path, serde_json::to_vec_pretty(&report)?)?;
+    Ok(report)
 }
 
 pub fn run_decompile(
