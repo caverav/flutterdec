@@ -150,6 +150,14 @@ flutterdec decompile ./sample.apk -o ./out \
 flutterdec diff --old ./old.apk --new ./new.apk -o ./out-diff --json
 ```
 
+6. Optional: emit import scripts for RE tools:
+
+```bash
+flutterdec decompile ./sample.apk -o ./out \
+  --emit-ghidra-script \
+  --emit-ida-script
+```
+
 ## Analysis Profiles
 
 `decompile` exposes analysis-engine profiles so you can trade detail for speed.
@@ -204,6 +212,7 @@ Main outputs under `-o <OUT_DIR>`:
 - `asm/*.s` (if `--emit-asm`)
 - opcode-prefixed asm lines (if `--emit-asm --emit-asm-opcodes`)
 - `ghidra_apply_symbols.py` (if `--emit-ghidra-script`; applies symbol names and pool-load comments)
+- `ida_apply_symbols.py` (if `--emit-ida-script`; applies symbol names and pool-load comments in IDA)
 - `ir/*.json` (if `--emit-ir`)
 
 ## Documentation

@@ -23,6 +23,7 @@ pub struct DecompileOptions {
     pub emit_asm: bool,
     pub emit_asm_opcodes: bool,
     pub emit_ghidra_script: bool,
+    pub emit_ida_script: bool,
     pub emit_ir: bool,
     pub extra_symbol_elfs: Vec<PathBuf>,
     pub extra_symbol_map_targets: Vec<PathBuf>,
