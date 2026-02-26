@@ -440,6 +440,16 @@
     }
 
     #[test]
+    fn snapshot_hash_match_enforcement_behaves_as_expected() {
+        let ok = enforce_snapshot_hash_match(false, "test", "aaa", "bbb").expect("not strict");
+        assert!(!ok);
+        let ok = enforce_snapshot_hash_match(true, "test", "aaa", "aaa").expect("strict match");
+        assert!(ok);
+        let err = enforce_snapshot_hash_match(true, "test", "aaa", "bbb").expect_err("mismatch");
+        assert!(err.to_string().contains("snapshot hash mismatch"));
+    }
+
+    #[test]
     fn resolves_backend_from_adapter_kind_values() {
         assert_eq!(
             resolved_backend_from_adapter_kind("blutter_bridge_model_v1"),

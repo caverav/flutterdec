@@ -73,6 +73,8 @@ struct DecompileCmd {
     app_packages: Vec<String>,
     #[arg(long, value_enum, default_value_t = AdapterBackendArg::Auto)]
     adapter_backend: AdapterBackendArg,
+    #[arg(long)]
+    require_snapshot_hash_match: bool,
     #[arg(long, value_enum, default_value_t = AnalysisProfileArg::Balanced)]
     analysis_profile: AnalysisProfileArg,
     #[arg(long)]
@@ -111,6 +113,8 @@ struct DiffCmd {
     app_packages: Vec<String>,
     #[arg(long, value_enum, default_value_t = AdapterBackendArg::Auto)]
     adapter_backend: AdapterBackendArg,
+    #[arg(long)]
+    require_snapshot_hash_match: bool,
     #[arg(long)]
     json: bool,
 }
@@ -287,6 +291,7 @@ fn handle_diff(repo_root: &Path, cmd: DiffCmd) -> Result<()> {
         adapter_backend: cmd.adapter_backend.to_core(),
         function_scope: cmd.function_scope.to_core(),
         app_packages: cmd.app_packages,
+        require_snapshot_hash_match: cmd.require_snapshot_hash_match,
     };
     let report = run_diff(repo_root, &old_input, &new_input, &opt)?;
     if json {
@@ -297,6 +302,12 @@ fn handle_diff(repo_root: &Path, cmd: DiffCmd) -> Result<()> {
         println!(
             "snapshot hash: old={} new={}",
             report.old_snapshot_hash, report.new_snapshot_hash
+        );
+        println!(
+            "snapshot hash match: old={} new={} required={}",
+            report.old_snapshot_hash_match,
+            report.new_snapshot_hash_match,
+            report.require_snapshot_hash_match
         );
         println!(
             "dart version: old={} new={}",
@@ -353,6 +364,7 @@ fn build_decompile_options(cmd: DecompileCmd) -> Result<DecompileOptions> {
         function_scope: cmd.function_scope.to_core(),
         app_packages: cmd.app_packages,
         adapter_backend: cmd.adapter_backend.to_core(),
+        require_snapshot_hash_match: cmd.require_snapshot_hash_match,
         analysis_profile: profile,
         engine_options,
     })
@@ -655,6 +667,23 @@ mod tests {
     }
 
     #[test]
+    fn decompile_accepts_require_snapshot_hash_match() {
+        let cli = Cli::try_parse_from([
+            "flutterdec",
+            "decompile",
+            "sample.apk",
+            "-o",
+            "out",
+            "--require-snapshot-hash-match",
+        ])
+        .expect("parse");
+        let Command::Decompile(cmd) = cli.command else {
+            panic!("expected decompile command");
+        };
+        assert!(cmd.require_snapshot_hash_match);
+    }
+
+    #[test]
     fn diff_scope_defaults_to_app_unknown() {
         let cli = Cli::try_parse_from([
             "flutterdec",
@@ -700,5 +729,25 @@ mod tests {
         assert!(matches!(cmd.adapter_backend, AdapterBackendArg::Blutter));
         assert!(matches!(cmd.function_scope, FunctionScopeArg::All));
         assert_eq!(cmd.app_packages, vec!["spotube", "provider"]);
+    }
+
+    #[test]
+    fn diff_accepts_require_snapshot_hash_match() {
+        let cli = Cli::try_parse_from([
+            "flutterdec",
+            "diff",
+            "--old",
+            "old.apk",
+            "--new",
+            "new.apk",
+            "-o",
+            "out",
+            "--require-snapshot-hash-match",
+        ])
+        .expect("parse");
+        let Command::Diff(cmd) = cli.command else {
+            panic!("expected diff command");
+        };
+        assert!(cmd.require_snapshot_hash_match);
     }
 }

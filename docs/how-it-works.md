@@ -635,7 +635,7 @@ File naming convention:
 - input metadata
 - counts for libraries, classes, functions, pool entries
 - `adapter_schema.function_name_kind_breakdown` (exact/external/heuristic/placeholder/unknown/unspecified)
-- `adapter_selection` trace (requested backend, resolved backend, adapter exec, manifest mapping, snapshot hash match)
+- `adapter_selection` trace (requested backend, resolved backend, adapter exec, manifest mapping, snapshot hash match, and strict hash-match enforcement flag)
 - embedded `quality` object
 - `name_resolution` aggregate (final name-quality mix and merge replacement diagnostics)
 - `pool_value_hints`, `pool_semantic_hints`, and `pool_target_symbols` counts

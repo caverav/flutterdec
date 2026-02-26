@@ -43,6 +43,7 @@ General options:
 - `--function-scope <app-unknown|app|all>` (default `app-unknown`)
 - `--app-package <NAME>` (repeatable; restricts to selected `package:<NAME>/...` libraries)
 - `--adapter-backend <auto|internal|blutter>` (default `auto`)
+- `--require-snapshot-hash-match` (fail if adapter-reported snapshot hash differs from loader hash)
 
 Symbol ingestion:
 
@@ -100,6 +101,7 @@ Options:
 - `--function-scope <app-unknown|app|all>` (default `app-unknown`)
 - `--app-package <NAME>` (repeatable; limit compare set to selected app packages)
 - `--adapter-backend <auto|internal|blutter>` (default `auto`)
+- `--require-snapshot-hash-match` (fail if either side has adapter/loader snapshot hash mismatch)
 - `--json`
 
 Output:

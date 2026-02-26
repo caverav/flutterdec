@@ -171,6 +171,7 @@ Adapter backend options:
 - `--adapter-backend auto` (default): attempt Blutter bridge backend when configured, otherwise fallback to internal adapter
 - `--adapter-backend internal`: force internal adapter only
 - `--adapter-backend blutter`: require Blutter bridge backend (no fallback)
+- `--require-snapshot-hash-match`: fail if adapter snapshot hash does not match loader snapshot hash
 
 Blutter bridge environment variables:
 
