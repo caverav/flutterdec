@@ -150,6 +150,8 @@ flutterdec decompile ./sample.apk -o ./out \
 flutterdec diff --old ./old.apk --new ./new.apk -o ./out-diff --json
 ```
 
+`diff_report.json` includes added/removed/common function counts plus `added_packages_top` and `removed_packages_top` summaries.
+
 6. Optional: emit import scripts for RE tools:
 
 ```bash

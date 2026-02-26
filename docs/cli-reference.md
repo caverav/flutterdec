@@ -102,6 +102,10 @@ Options:
 - `--adapter-backend <auto|internal|blutter>` (default `auto`)
 - `--json`
 
+Output:
+
+- writes `diff_report.json` with function-level deltas and package-level summaries (`added_packages_top`, `removed_packages_top`)
+
 ## `flutterdec engine-fingerprint`
 
 Usage:

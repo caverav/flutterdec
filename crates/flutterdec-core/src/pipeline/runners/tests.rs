@@ -381,6 +381,65 @@
     }
 
     #[test]
+    fn canonicalizes_flutter_build_file_uri_in_descriptors() {
+        let model = ProgramModel {
+            schema_version: 3,
+            adapter_kind: "python".to_string(),
+            dart_version: "unknown".to_string(),
+            snapshot_hash: "deadbeef".to_string(),
+            arch: "arm64".to_string(),
+            libraries: vec![flutterdec_adapter::LibraryInfo {
+                id: 0,
+                uri:
+                    "file:///tmp/build/app/.dart_tool/flutter_build/dart_plugin_registrant.dart"
+                        .to_string(),
+                name_display: "generated".to_string(),
+            }],
+            classes: vec![flutterdec_adapter::ClassInfo {
+                id: 0,
+                name: "_PluginRegistrant".to_string(),
+                super_name: "Object".to_string(),
+                library_uri:
+                    "file:///tmp/build/app/.dart_tool/flutter_build/dart_plugin_registrant.dart"
+                        .to_string(),
+            }],
+            functions: vec![flutterdec_adapter::FunctionInfo {
+                id: 0,
+                name: "register".to_string(),
+                owner_class: "_PluginRegistrant".to_string(),
+                entry_va: 0x3000,
+                size: 16,
+                code_section_va: 0x3000,
+                name_kind: Some("heuristic".to_string()),
+            }],
+            object_pool: Vec::new(),
+        };
+
+        let descriptors = collect_function_descriptors(&model);
+        assert!(descriptors.contains(
+            "file:///.dart_tool/flutter_build/dart_plugin_registrant.dart::_PluginRegistrant::register"
+        ));
+    }
+
+    #[test]
+    fn collects_diff_package_counts_for_added_removed_sets() {
+        let descriptors = vec![
+            "package:spotube/main.dart::Global::main".to_string(),
+            "package:spotube/router.dart::Global::route".to_string(),
+            "dart:core/bool.dart::bool::operator ==".to_string(),
+            "file:///.dart_tool/flutter_build/dart_plugin_registrant.dart::_PluginRegistrant::register".to_string(),
+            "UnknownOwner::sub_1000".to_string(),
+        ];
+
+        let counts = collect_diff_package_counts(&descriptors);
+        assert_eq!(counts.first().map(|p| p.package.as_str()), Some("spotube"));
+        assert_eq!(counts.first().map(|p| p.functions), Some(2));
+        assert!(counts.iter().any(|p| p.package == "dart" && p.functions == 1));
+        assert!(counts.iter().any(|p| p.package == "file" && p.functions == 1));
+        assert!(counts.iter().any(|p| p.package == "unknown" && p.functions == 1));
+    }
+
+    #[test]
     fn resolves_backend_from_adapter_kind_values() {
         assert_eq!(
             resolved_backend_from_adapter_kind("blutter_bridge_model_v1"),
