@@ -617,6 +617,7 @@ Interpretation guidance:
 
 - `out_dir/pseudocode/*.dartpseudo`
 - `out_dir/asm/*.s` (when `--emit-asm`)
+- asm lines include raw opcode words when `--emit-asm-opcodes` is set
 - `out_dir/ir/*.json` (when `--emit-ir`)
 - `out_dir/quality.json`
 - `out_dir/report.json`

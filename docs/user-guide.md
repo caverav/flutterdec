@@ -124,6 +124,12 @@ Decompile with extra artifacts:
 flutterdec decompile ./sample.apk -o ./out --emit-asm --emit-ir
 ```
 
+Include raw opcode words in asm output:
+
+```bash
+flutterdec decompile ./sample.apk -o ./out --emit-asm --emit-asm-opcodes
+```
+
 ## Analysis Engine Profiles
 
 `decompile` profile controls analysis depth vs throughput.
@@ -212,4 +218,5 @@ Written under output directory:
 - `quality.json`
 - `report.json`
 - `asm/*.s` with `--emit-asm`
+- opcode-prefixed asm lines with `--emit-asm --emit-asm-opcodes`
 - `ir/*.json` with `--emit-ir`
