@@ -11,32 +11,120 @@ pub(super) struct PoolMetadataStats {
     pub(super) with_library_uri: usize,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) enum SymbolNameQuality {
+    Placeholder,
+    Heuristic,
+    External,
+    Exact,
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+pub(super) struct SymbolMergeStats {
+    pub(super) inserted: usize,
+    pub(super) replaced: usize,
+    pub(super) skipped: usize,
+    pub(super) replaced_to_placeholder: usize,
+    pub(super) replaced_to_heuristic: usize,
+    pub(super) replaced_to_external: usize,
+    pub(super) replaced_to_exact: usize,
+}
+
+impl SymbolMergeStats {
+    fn record_replacement(&mut self, quality: SymbolNameQuality) {
+        self.replaced += 1;
+        match quality {
+            SymbolNameQuality::Placeholder => self.replaced_to_placeholder += 1,
+            SymbolNameQuality::Heuristic => self.replaced_to_heuristic += 1,
+            SymbolNameQuality::External => self.replaced_to_external += 1,
+            SymbolNameQuality::Exact => self.replaced_to_exact += 1,
+        }
+    }
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+pub(super) struct SymbolQualityCounts {
+    pub(super) placeholder: usize,
+    pub(super) heuristic: usize,
+    pub(super) external: usize,
+    pub(super) exact: usize,
+}
+
+impl SymbolQualityCounts {
+    fn bump(&mut self, quality: SymbolNameQuality) {
+        match quality {
+            SymbolNameQuality::Placeholder => self.placeholder += 1,
+            SymbolNameQuality::Heuristic => self.heuristic += 1,
+            SymbolNameQuality::External => self.external += 1,
+            SymbolNameQuality::Exact => self.exact += 1,
+        }
+    }
+}
+
+pub(super) fn symbol_name_quality_from_name_kind(raw: Option<&str>) -> Option<SymbolNameQuality> {
+    let token = raw?.trim().to_ascii_lowercase();
+    match token.as_str() {
+        "placeholder" => Some(SymbolNameQuality::Placeholder),
+        "heuristic" => Some(SymbolNameQuality::Heuristic),
+        "external" => Some(SymbolNameQuality::External),
+        "exact" => Some(SymbolNameQuality::Exact),
+        _ => None,
+    }
+}
+
+pub(super) fn infer_symbol_name_quality(name: &str) -> SymbolNameQuality {
+    if is_generic_symbol_name(name) {
+        SymbolNameQuality::Placeholder
+    } else if is_heuristic_canonical_symbol_name(name) {
+        SymbolNameQuality::Heuristic
+    } else {
+        SymbolNameQuality::External
+    }
+}
+
+pub(super) fn collect_symbol_quality_counts(
+    symbol_quality: &HashMap<u64, SymbolNameQuality>,
+) -> SymbolQualityCounts {
+    let mut counts = SymbolQualityCounts::default();
+    for quality in symbol_quality.values() {
+        counts.bump(*quality);
+    }
+    counts
+}
+
 pub(super) fn merge_symbol_name(
     symbol_names: &mut HashMap<u64, String>,
+    symbol_quality: &mut HashMap<u64, SymbolNameQuality>,
     va: u64,
     candidate: String,
-    inserted: &mut usize,
-    replaced_generic: &mut usize,
-    skipped: &mut usize,
+    candidate_quality: Option<SymbolNameQuality>,
+    stats: &mut SymbolMergeStats,
 ) {
     let candidate = normalize_external_symbol_name(&candidate);
     if candidate.is_empty() {
         return;
     }
-    let candidate_rank = symbol_name_rank(&candidate);
+    let candidate_quality =
+        candidate_quality.unwrap_or_else(|| infer_symbol_name_quality(&candidate));
 
-    match symbol_names.get(&va) {
+    match symbol_names.get(&va).cloned() {
         None => {
             symbol_names.insert(va, candidate);
-            *inserted += 1;
+            symbol_quality.insert(va, candidate_quality);
+            stats.inserted += 1;
         }
-        Some(existing) => {
-            let existing_rank = symbol_name_rank(existing);
-            if candidate_rank > existing_rank {
+        Some(existing_name) => {
+            let existing_quality = symbol_quality
+                .get(&va)
+                .copied()
+                .unwrap_or_else(|| infer_symbol_name_quality(&existing_name));
+            symbol_quality.entry(va).or_insert(existing_quality);
+            if candidate_quality > existing_quality {
                 symbol_names.insert(va, candidate);
-                *replaced_generic += 1;
+                symbol_quality.insert(va, candidate_quality);
+                stats.record_replacement(candidate_quality);
             } else {
-                *skipped += 1;
+                stats.skipped += 1;
             }
         }
     }
@@ -68,16 +156,6 @@ pub(super) fn is_generic_symbol_name(name: &str) -> bool {
 
 fn is_heuristic_canonical_symbol_name(name: &str) -> bool {
     name.starts_with("dart_") || name.starts_with("flutter_") || name.starts_with("package_")
-}
-
-fn symbol_name_rank(name: &str) -> u8 {
-    if is_generic_symbol_name(name) {
-        0
-    } else if is_heuristic_canonical_symbol_name(name) {
-        1
-    } else {
-        2
-    }
 }
 
 pub(super) fn build_class_library_lookup(model: &ProgramModel) -> HashMap<String, String> {

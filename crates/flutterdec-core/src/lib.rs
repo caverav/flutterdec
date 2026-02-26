@@ -1,3 +1,5 @@
+#![recursion_limit = "512"]
+
 use anyhow::{bail, Context, Result};
 use flutterdec_adapter::{
     list_adapters, resolve_adapter_exec, run_adapter, AdapterInput, ProgramModel,

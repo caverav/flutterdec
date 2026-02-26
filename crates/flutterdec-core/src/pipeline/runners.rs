@@ -17,7 +17,8 @@ mod runners_symbols;
 use runners_symbols::{
     build_class_library_lookup, build_pool_semantic_hints, build_pool_target_symbols,
     build_pool_value_hints, canonical_standard_model_name, collect_pool_metadata_stats,
-    merge_symbol_name,
+    collect_symbol_quality_counts, infer_symbol_name_quality, merge_symbol_name,
+    symbol_name_quality_from_name_kind, SymbolMergeStats, SymbolNameQuality,
 };
 #[cfg(test)]
 use runners_symbols::{is_generic_symbol_name, normalize_external_symbol_name};
@@ -687,9 +688,8 @@ pub fn run_decompile(
     );
     let ir: Vec<FunctionIr> = build_program_ir(&disasm);
     let mut symbol_names: HashMap<u64, String> = HashMap::new();
-    let mut symbol_merge_inserted = 0usize;
-    let mut symbol_merge_replaced_generic = 0usize;
-    let mut symbol_merge_skipped = 0usize;
+    let mut symbol_quality: HashMap<u64, SymbolNameQuality> = HashMap::new();
+    let mut symbol_merge_stats = SymbolMergeStats::default();
     let mut standard_model_symbol_count = 0usize;
     let class_to_library = if opt.engine_options.canonical_model_symbols
         || opt.engine_options.pool_semantic_hints
@@ -755,21 +755,40 @@ pub fn run_decompile(
         } else {
             f.name.clone()
         };
+        let resolved_quality = if resolved != f.name {
+            SymbolNameQuality::Heuristic
+        } else {
+            symbol_name_quality_from_name_kind(f.name_kind.as_deref()).unwrap_or_else(|| {
+                if infer_symbol_name_quality(&resolved) == SymbolNameQuality::Placeholder {
+                    SymbolNameQuality::Placeholder
+                } else {
+                    SymbolNameQuality::Heuristic
+                }
+            })
+        };
         symbol_names.insert(f.entry_va, resolved);
+        symbol_quality.insert(f.entry_va, resolved_quality);
     }
     for f in &disasm {
         symbol_names
             .entry(f.entry_va)
             .or_insert_with(|| f.function_name.clone());
+        symbol_quality.entry(f.entry_va).or_insert_with(|| {
+            if infer_symbol_name_quality(&f.function_name) == SymbolNameQuality::Placeholder {
+                SymbolNameQuality::Placeholder
+            } else {
+                SymbolNameQuality::Heuristic
+            }
+        });
     }
     for (va, name) in &pool_target_symbols {
         merge_symbol_name(
             &mut symbol_names,
+            &mut symbol_quality,
             *va,
             name.clone(),
-            &mut symbol_merge_inserted,
-            &mut symbol_merge_replaced_generic,
-            &mut symbol_merge_skipped,
+            Some(SymbolNameQuality::Heuristic),
+            &mut symbol_merge_stats,
         );
     }
     for elf_path in &opt.extra_symbol_elfs {
@@ -778,11 +797,11 @@ pub fn run_decompile(
         for (va, name) in ext {
             merge_symbol_name(
                 &mut symbol_names,
+                &mut symbol_quality,
                 va,
                 name,
-                &mut symbol_merge_inserted,
-                &mut symbol_merge_replaced_generic,
-                &mut symbol_merge_skipped,
+                Some(SymbolNameQuality::External),
+                &mut symbol_merge_stats,
             );
         }
     }
@@ -797,14 +816,15 @@ pub fn run_decompile(
         for (va, name) in ext {
             merge_symbol_name(
                 &mut symbol_names,
+                &mut symbol_quality,
                 va,
                 name,
-                &mut symbol_merge_inserted,
-                &mut symbol_merge_replaced_generic,
-                &mut symbol_merge_skipped,
+                Some(SymbolNameQuality::External),
+                &mut symbol_merge_stats,
             );
         }
     }
+    let symbol_quality_counts = collect_symbol_quality_counts(&symbol_quality);
     let pseudo = emit_program_with_pool_context(
         &ir,
         &symbol_names,
@@ -1151,10 +1171,27 @@ pub fn run_decompile(
             .map(|p| p.display().to_string())
             .collect::<Vec<_>>(),
         "include_nearest_symbol_map": opt.include_nearest_symbol_map,
+        "name_resolution": {
+            "final_quality": {
+                "placeholder": symbol_quality_counts.placeholder,
+                "heuristic": symbol_quality_counts.heuristic,
+                "external": symbol_quality_counts.external,
+                "exact": symbol_quality_counts.exact
+            },
+            "merge": {
+                "inserted": symbol_merge_stats.inserted,
+                "replaced": symbol_merge_stats.replaced,
+                "skipped": symbol_merge_stats.skipped,
+                "replaced_to_placeholder": symbol_merge_stats.replaced_to_placeholder,
+                "replaced_to_heuristic": symbol_merge_stats.replaced_to_heuristic,
+                "replaced_to_external": symbol_merge_stats.replaced_to_external,
+                "replaced_to_exact": symbol_merge_stats.replaced_to_exact
+            }
+        },
         "symbol_merge": {
-            "inserted": symbol_merge_inserted,
-            "replaced_generic": symbol_merge_replaced_generic,
-            "skipped": symbol_merge_skipped
+            "inserted": symbol_merge_stats.inserted,
+            "replaced_generic": symbol_merge_stats.replaced,
+            "skipped": symbol_merge_stats.skipped
         },
         "standard_model_symbols": standard_model_symbol_count
         ,
