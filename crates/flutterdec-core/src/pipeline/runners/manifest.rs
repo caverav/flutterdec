@@ -1021,6 +1021,8 @@ fn push_synthetic_hint(
         target_va: Some(hint.target_va),
         owner_class: Some(hint.owner_class.to_string()),
         library_uri: Some(hint.library_uri.to_string()),
+        confidence: None,
+        source: None,
     });
     true
 }

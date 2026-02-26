@@ -2,6 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "flutterdec adapter output schema",
   "type": "object",
+  "additionalProperties": true,
   "required": [
     "schema_version",
     "adapter_kind",
@@ -14,14 +15,80 @@
     "object_pool"
   ],
   "properties": {
-    "schema_version": { "type": "integer", "const": 2 },
+    "schema_version": { "type": "integer", "enum": [2, 3] },
     "adapter_kind": { "type": "string" },
     "dart_version": { "type": "string" },
     "snapshot_hash": { "type": "string" },
     "arch": { "type": "string" },
-    "libraries": { "type": "array" },
-    "classes": { "type": "array" },
-    "functions": { "type": "array" },
-    "object_pool": { "type": "array" }
+    "libraries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "uri", "name_display"],
+        "additionalProperties": true,
+        "properties": {
+          "id": { "type": "integer", "minimum": 0 },
+          "uri": { "type": "string" },
+          "name_display": { "type": "string" }
+        }
+      }
+    },
+    "classes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "super", "lib"],
+        "additionalProperties": true,
+        "properties": {
+          "id": { "type": "integer", "minimum": 0 },
+          "name": { "type": "string" },
+          "super": { "type": "string" },
+          "lib": { "type": "string" }
+        }
+      }
+    },
+    "functions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "owner_class", "entry_va", "size", "code_section_va"],
+        "additionalProperties": true,
+        "properties": {
+          "id": { "type": "integer", "minimum": 0 },
+          "name": { "type": "string" },
+          "owner_class": { "type": "string" },
+          "entry_va": { "type": "integer", "minimum": 0 },
+          "size": { "type": "integer", "minimum": 0 },
+          "code_section_va": { "type": "integer", "minimum": 0 },
+          "name_kind": {
+            "type": "string",
+            "enum": ["exact", "external", "heuristic", "placeholder"]
+          }
+        }
+      }
+    },
+    "object_pool": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["index", "kind", "value"],
+        "additionalProperties": true,
+        "properties": {
+          "index": { "type": "integer", "minimum": 0 },
+          "kind": { "type": "string" },
+          "value": { "type": "string" },
+          "decoded_kind": { "type": "string" },
+          "selector": { "type": "string" },
+          "target_va": { "type": "integer", "minimum": 0 },
+          "owner_class": { "type": "string" },
+          "library_uri": { "type": "string" },
+          "confidence": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+          "source": {
+            "type": "string",
+            "enum": ["vm", "blutter", "internal", "synthetic", "unknown"]
+          }
+        }
+      }
+    }
   }
 }

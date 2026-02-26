@@ -1346,6 +1346,7 @@ mod tests {
                 entry_va: 0x1000,
                 size: 8,
                 code_section_va: 0x1000,
+                name_kind: None,
             }],
             object_pool: vec![ObjectPoolEntry {
                 index: 0,
@@ -1356,6 +1357,8 @@ mod tests {
                 target_va: None,
                 owner_class: None,
                 library_uri: None,
+                confidence: None,
+                source: None,
             }],
         };
         let bytes = vec![0xc0, 0x03, 0x5f, 0xd6, 0xc0, 0x03, 0x5f, 0xd6];
@@ -1406,6 +1409,7 @@ mod tests {
                     entry_va: 0x1000,
                     size: 4,
                     code_section_va: 0x1000,
+                    name_kind: None,
                 },
                 FunctionInfo {
                     id: 1,
@@ -1414,6 +1418,7 @@ mod tests {
                     entry_va: 0x1004,
                     size: 4,
                     code_section_va: 0x1000,
+                    name_kind: None,
                 },
             ],
             object_pool: vec![ObjectPoolEntry {
@@ -1425,6 +1430,8 @@ mod tests {
                 target_va: None,
                 owner_class: None,
                 library_uri: None,
+                confidence: None,
+                source: None,
             }],
         };
         let bytes = vec![0xc0, 0x03, 0x5f, 0xd6, 0xc0, 0x03, 0x5f, 0xd6];
@@ -1475,6 +1482,7 @@ mod tests {
                     entry_va: 0x2000,
                     size: 4,
                     code_section_va: 0x2000,
+                    name_kind: None,
                 },
                 FunctionInfo {
                     id: 1,
@@ -1483,6 +1491,7 @@ mod tests {
                     entry_va: 0x2004,
                     size: 4,
                     code_section_va: 0x2000,
+                    name_kind: None,
                 },
             ],
             object_pool: vec![ObjectPoolEntry {
@@ -1494,6 +1503,8 @@ mod tests {
                 target_va: None,
                 owner_class: None,
                 library_uri: None,
+                confidence: None,
+                source: None,
             }],
         };
         let bytes = vec![0xc0, 0x03, 0x5f, 0xd6, 0xc0, 0x03, 0x5f, 0xd6];
@@ -1529,6 +1540,7 @@ mod tests {
                     entry_va: 0x3000,
                     size: 4,
                     code_section_va: 0x3000,
+                    name_kind: None,
                 },
                 FunctionInfo {
                     id: 1,
@@ -1537,6 +1549,7 @@ mod tests {
                     entry_va: 0x3004,
                     size: 4,
                     code_section_va: 0x3000,
+                    name_kind: None,
                 },
             ],
             object_pool: vec![ObjectPoolEntry {
@@ -1548,6 +1561,8 @@ mod tests {
                 target_va: None,
                 owner_class: None,
                 library_uri: None,
+                confidence: None,
+                source: None,
             }],
         };
         let bytes = vec![0xc0, 0x03, 0x5f, 0xd6, 0xc0, 0x03, 0x5f, 0xd6];
@@ -1583,6 +1598,7 @@ mod tests {
                     entry_va: 0x4000,
                     size: 4,
                     code_section_va: 0x4000,
+                    name_kind: None,
                 },
                 FunctionInfo {
                     id: 1,
@@ -1591,6 +1607,7 @@ mod tests {
                     entry_va: 0x4004,
                     size: 4,
                     code_section_va: 0x4000,
+                    name_kind: None,
                 },
             ],
             object_pool: vec![
@@ -1603,6 +1620,8 @@ mod tests {
                     target_va: Some(0x4004),
                     owner_class: Some("MainActivity".to_string()),
                     library_uri: Some("package:app/main.dart".to_string()),
+                    confidence: None,
+                    source: None,
                 },
                 ObjectPoolEntry {
                     index: 1,
@@ -1613,6 +1632,8 @@ mod tests {
                     target_va: None,
                     owner_class: None,
                     library_uri: None,
+                    confidence: None,
+                    source: None,
                 },
             ],
         };
@@ -1649,6 +1670,7 @@ mod tests {
                     entry_va: 0x5000,
                     size: 4,
                     code_section_va: 0x5000,
+                    name_kind: None,
                 },
                 FunctionInfo {
                     id: 1,
@@ -1657,6 +1679,7 @@ mod tests {
                     entry_va: 0x5004,
                     size: 4,
                     code_section_va: 0x5000,
+                    name_kind: None,
                 },
             ],
             object_pool: vec![ObjectPoolEntry {
@@ -1668,6 +1691,8 @@ mod tests {
                 target_va: Some(0x5004),
                 owner_class: Some("Global".to_string()),
                 library_uri: Some("package:app/main.dart".to_string()),
+                confidence: None,
+                source: None,
             }],
         };
         let bytes = vec![0xc0, 0x03, 0x5f, 0xd6, 0xc0, 0x03, 0x5f, 0xd6];
@@ -1703,6 +1728,7 @@ mod tests {
                     entry_va: 0x50a0,
                     size: 4,
                     code_section_va: 0x50a0,
+                    name_kind: None,
                 },
                 FunctionInfo {
                     id: 1,
@@ -1711,6 +1737,7 @@ mod tests {
                     entry_va: 0x50a4,
                     size: 4,
                     code_section_va: 0x50a0,
+                    name_kind: None,
                 },
             ],
             object_pool: vec![ObjectPoolEntry {
@@ -1722,6 +1749,8 @@ mod tests {
                 target_va: Some(0x50a4),
                 owner_class: Some("Global".to_string()),
                 library_uri: Some("package:app/main.dart".to_string()),
+                confidence: None,
+                source: None,
             }],
         };
         let bytes = vec![0xc0, 0x03, 0x5f, 0xd6, 0xc0, 0x03, 0x5f, 0xd6];
@@ -1757,6 +1786,7 @@ mod tests {
                     entry_va: 0x50aa,
                     size: 4,
                     code_section_va: 0x50aa,
+                    name_kind: None,
                 },
                 FunctionInfo {
                     id: 1,
@@ -1765,6 +1795,7 @@ mod tests {
                     entry_va: 0x50ae,
                     size: 4,
                     code_section_va: 0x50aa,
+                    name_kind: None,
                 },
             ],
             object_pool: vec![ObjectPoolEntry {
@@ -1776,6 +1807,8 @@ mod tests {
                 target_va: Some(0x50ae),
                 owner_class: Some("Global".to_string()),
                 library_uri: Some("package:app/main.dart".to_string()),
+                confidence: None,
+                source: None,
             }],
         };
         let bytes = vec![0xc0, 0x03, 0x5f, 0xd6, 0xc0, 0x03, 0x5f, 0xd6];
@@ -1811,6 +1844,7 @@ mod tests {
                     entry_va: 0x50b0,
                     size: 4,
                     code_section_va: 0x50b0,
+                    name_kind: None,
                 },
                 FunctionInfo {
                     id: 1,
@@ -1819,6 +1853,7 @@ mod tests {
                     entry_va: 0x50b4,
                     size: 4,
                     code_section_va: 0x50b0,
+                    name_kind: None,
                 },
             ],
             object_pool: vec![ObjectPoolEntry {
@@ -1830,6 +1865,8 @@ mod tests {
                 target_va: Some(0x50b4),
                 owner_class: Some("RouterHost".to_string()),
                 library_uri: Some("package:app/router.dart".to_string()),
+                confidence: None,
+                source: None,
             }],
         };
         let bytes = vec![0xc0, 0x03, 0x5f, 0xd6, 0xc0, 0x03, 0x5f, 0xd6];
@@ -1880,6 +1917,7 @@ mod tests {
                     entry_va: 0x50c0,
                     size: 4,
                     code_section_va: 0x50c0,
+                    name_kind: None,
                 },
                 FunctionInfo {
                     id: 1,
@@ -1888,6 +1926,7 @@ mod tests {
                     entry_va: 0x50c4,
                     size: 4,
                     code_section_va: 0x50c0,
+                    name_kind: None,
                 },
             ],
             object_pool: vec![
@@ -1900,6 +1939,8 @@ mod tests {
                     target_va: Some(0x50c0),
                     owner_class: Some("AppRouterHost".to_string()),
                     library_uri: Some("package:app/router.dart".to_string()),
+                    confidence: None,
+                    source: None,
                 },
                 ObjectPoolEntry {
                     index: 1,
@@ -1910,6 +1951,8 @@ mod tests {
                     target_va: Some(0x50c4),
                     owner_class: Some("WidgetsBindingObserver".to_string()),
                     library_uri: Some("package:flutter/src/widgets/app.dart".to_string()),
+                    confidence: None,
+                    source: None,
                 },
             ],
         };
@@ -1946,6 +1989,7 @@ mod tests {
                     entry_va: 0x5200,
                     size: 4,
                     code_section_va: 0x5200,
+                    name_kind: None,
                 },
                 FunctionInfo {
                     id: 1,
@@ -1954,6 +1998,7 @@ mod tests {
                     entry_va: 0x5204,
                     size: 4,
                     code_section_va: 0x5200,
+                    name_kind: None,
                 },
                 FunctionInfo {
                     id: 2,
@@ -1962,6 +2007,7 @@ mod tests {
                     entry_va: 0x5208,
                     size: 4,
                     code_section_va: 0x5200,
+                    name_kind: None,
                 },
             ],
             object_pool: vec![
@@ -1974,6 +2020,8 @@ mod tests {
                     target_va: Some(0x5200),
                     owner_class: Some("RouterHost".to_string()),
                     library_uri: Some("package:app/router.dart".to_string()),
+                    confidence: None,
+                    source: None,
                 },
                 ObjectPoolEntry {
                     index: 1,
@@ -1984,6 +2032,8 @@ mod tests {
                     target_va: Some(0x5204),
                     owner_class: Some("RouterHost".to_string()),
                     library_uri: Some("package:app/router.dart".to_string()),
+                    confidence: None,
+                    source: None,
                 },
                 ObjectPoolEntry {
                     index: 2,
@@ -1994,6 +2044,8 @@ mod tests {
                     target_va: Some(0x5208),
                     owner_class: Some("RouterHost".to_string()),
                     library_uri: Some("package:app/router.dart".to_string()),
+                    confidence: None,
+                    source: None,
                 },
             ],
         };
@@ -2040,6 +2092,7 @@ mod tests {
                     entry_va: 0x5300,
                     size: 4,
                     code_section_va: 0x5300,
+                    name_kind: None,
                 },
                 FunctionInfo {
                     id: 1,
@@ -2048,6 +2101,7 @@ mod tests {
                     entry_va: 0x5304,
                     size: 4,
                     code_section_va: 0x5300,
+                    name_kind: None,
                 },
                 FunctionInfo {
                     id: 2,
@@ -2056,6 +2110,7 @@ mod tests {
                     entry_va: 0x5308,
                     size: 4,
                     code_section_va: 0x5300,
+                    name_kind: None,
                 },
             ],
             object_pool: vec![
@@ -2068,6 +2123,8 @@ mod tests {
                     target_va: Some(0x5300),
                     owner_class: Some("RouterHost".to_string()),
                     library_uri: Some("package:app/router.dart".to_string()),
+                    confidence: None,
+                    source: None,
                 },
                 ObjectPoolEntry {
                     index: 1,
@@ -2078,6 +2135,8 @@ mod tests {
                     target_va: Some(0x5304),
                     owner_class: Some("RouterHost".to_string()),
                     library_uri: Some("package:app/router.dart".to_string()),
+                    confidence: None,
+                    source: None,
                 },
                 ObjectPoolEntry {
                     index: 2,
@@ -2088,6 +2147,8 @@ mod tests {
                     target_va: Some(0x5308),
                     owner_class: Some("RouterHost".to_string()),
                     library_uri: Some("package:app/router.dart".to_string()),
+                    confidence: None,
+                    source: None,
                 },
             ],
         };
@@ -2140,6 +2201,7 @@ mod tests {
                     entry_va: 0x5100,
                     size: 4,
                     code_section_va: 0x5100,
+                    name_kind: None,
                 },
                 FunctionInfo {
                     id: 1,
@@ -2148,6 +2210,7 @@ mod tests {
                     entry_va: 0x5104,
                     size: 4,
                     code_section_va: 0x5100,
+                    name_kind: None,
                 },
             ],
             object_pool: vec![ObjectPoolEntry {
@@ -2159,6 +2222,8 @@ mod tests {
                 target_va: Some(0x5104),
                 owner_class: Some("MyApp".to_string()),
                 library_uri: Some("package:spotube/main.dart".to_string()),
+                confidence: None,
+                source: None,
             }],
         };
         let bytes = vec![0xc0, 0x03, 0x5f, 0xd6, 0xc0, 0x03, 0x5f, 0xd6];
@@ -2209,6 +2274,7 @@ mod tests {
                     entry_va: 0x2000,
                     size: 4,
                     code_section_va: 0x2000,
+                    name_kind: None,
                 },
                 FunctionInfo {
                     id: 1,
@@ -2217,6 +2283,7 @@ mod tests {
                     entry_va: 0x2004,
                     size: 4,
                     code_section_va: 0x2000,
+                    name_kind: None,
                 },
                 FunctionInfo {
                     id: 2,
@@ -2225,6 +2292,7 @@ mod tests {
                     entry_va: 0x2008,
                     size: 4,
                     code_section_va: 0x2000,
+                    name_kind: None,
                 },
                 FunctionInfo {
                     id: 3,
@@ -2233,6 +2301,7 @@ mod tests {
                     entry_va: 0x200c,
                     size: 4,
                     code_section_va: 0x2000,
+                    name_kind: None,
                 },
                 FunctionInfo {
                     id: 4,
@@ -2241,6 +2310,7 @@ mod tests {
                     entry_va: 0x2010,
                     size: 4,
                     code_section_va: 0x2000,
+                    name_kind: None,
                 },
                 FunctionInfo {
                     id: 5,
@@ -2249,6 +2319,7 @@ mod tests {
                     entry_va: 0x2014,
                     size: 4,
                     code_section_va: 0x2000,
+                    name_kind: None,
                 },
                 FunctionInfo {
                     id: 6,
@@ -2257,6 +2328,7 @@ mod tests {
                     entry_va: 0x2018,
                     size: 4,
                     code_section_va: 0x2000,
+                    name_kind: None,
                 },
                 FunctionInfo {
                     id: 7,
@@ -2265,6 +2337,7 @@ mod tests {
                     entry_va: 0x201c,
                     size: 4,
                     code_section_va: 0x2000,
+                    name_kind: None,
                 },
                 FunctionInfo {
                     id: 8,
@@ -2273,6 +2346,7 @@ mod tests {
                     entry_va: 0x2020,
                     size: 4,
                     code_section_va: 0x2000,
+                    name_kind: None,
                 },
             ],
             object_pool: vec![ObjectPoolEntry {
@@ -2284,6 +2358,8 @@ mod tests {
                 target_va: None,
                 owner_class: None,
                 library_uri: None,
+                confidence: None,
+                source: None,
             }],
         };
         let bytes = [0xc0u8, 0x03, 0x5f, 0xd6].repeat(9);
@@ -2319,6 +2395,7 @@ mod tests {
                     entry_va: 0x1000,
                     size: 8,
                     code_section_va: 0x1000,
+                    name_kind: None,
                 },
                 FunctionInfo {
                     id: 1,
@@ -2327,6 +2404,7 @@ mod tests {
                     entry_va: 0x1010,
                     size: 0x100,
                     code_section_va: 0x1000,
+                    name_kind: None,
                 },
             ],
             object_pool: vec![ObjectPoolEntry {
@@ -2338,6 +2416,8 @@ mod tests {
                 target_va: None,
                 owner_class: None,
                 library_uri: None,
+                confidence: None,
+                source: None,
             }],
         };
         let bytes = [0xc0u8, 0x03, 0x5f, 0xd6].repeat(68);
@@ -2373,6 +2453,7 @@ mod tests {
                     entry_va: 0x1000,
                     size: 12,
                     code_section_va: 0x1000,
+                    name_kind: None,
                 },
                 FunctionInfo {
                     id: 1,
@@ -2381,6 +2462,7 @@ mod tests {
                     entry_va: 0x1010,
                     size: 4,
                     code_section_va: 0x1000,
+                    name_kind: None,
                 },
                 FunctionInfo {
                     id: 2,
@@ -2389,6 +2471,7 @@ mod tests {
                     entry_va: 0x1020,
                     size: 4,
                     code_section_va: 0x1000,
+                    name_kind: None,
                 },
             ],
             object_pool: vec![ObjectPoolEntry {
@@ -2400,6 +2483,8 @@ mod tests {
                 target_va: None,
                 owner_class: None,
                 library_uri: None,
+                confidence: None,
+                source: None,
             }],
         };
         let bytes = vec![
@@ -2445,6 +2530,7 @@ mod tests {
                     entry_va: 0x1000,
                     size: 32,
                     code_section_va: 0x1000,
+                    name_kind: None,
                 },
                 FunctionInfo {
                     id: 1,
@@ -2453,6 +2539,7 @@ mod tests {
                     entry_va: 0x1020,
                     size: 32,
                     code_section_va: 0x1000,
+                    name_kind: None,
                 },
                 FunctionInfo {
                     id: 2,
@@ -2461,6 +2548,7 @@ mod tests {
                     entry_va: 0x1040,
                     size: 32,
                     code_section_va: 0x1000,
+                    name_kind: None,
                 },
                 FunctionInfo {
                     id: 3,
@@ -2469,6 +2557,7 @@ mod tests {
                     entry_va: 0x1060,
                     size: 32,
                     code_section_va: 0x1000,
+                    name_kind: None,
                 },
             ],
             object_pool: vec![ObjectPoolEntry {
@@ -2480,6 +2569,8 @@ mod tests {
                 target_va: None,
                 owner_class: None,
                 library_uri: None,
+                confidence: None,
+                source: None,
             }],
         };
         let bytes = [0xc0u8, 0x03, 0x5f, 0xd6].repeat(40);
@@ -2497,6 +2588,7 @@ mod tests {
             entry_va: 0x6000,
             size: 32,
             code_section_va: 0x6000,
+            name_kind: None,
         };
         let noisy = FunctionInfo {
             id: 1,
@@ -2505,6 +2597,7 @@ mod tests {
             entry_va: 0x6010,
             size: 32,
             code_section_va: 0x6000,
+            name_kind: None,
         };
 
         let mut owner_library = HashMap::new();
@@ -2566,6 +2659,7 @@ mod tests {
             entry_va: 0x6100,
             size: 32,
             code_section_va: 0x6100,
+            name_kind: None,
         };
         let core_func = FunctionInfo {
             id: 1,
@@ -2574,6 +2668,7 @@ mod tests {
             entry_va: 0x6110,
             size: 32,
             code_section_va: 0x6100,
+            name_kind: None,
         };
 
         let mut owner_library = HashMap::new();
@@ -2638,6 +2733,7 @@ mod tests {
             entry_va: 0x7100,
             size: 64,
             code_section_va: 0x7000,
+            name_kind: None,
         };
         let dep_func = FunctionInfo {
             id: 1,
@@ -2646,6 +2742,7 @@ mod tests {
             entry_va: 0x7200,
             size: 64,
             code_section_va: 0x7000,
+            name_kind: None,
         };
         let mut owner_library = HashMap::new();
         owner_library.insert(
@@ -2711,6 +2808,7 @@ mod tests {
                 entry_va: 0x8000 + (i * 4),
                 size: 32,
                 code_section_va: 0x8000,
+                name_kind: None,
             });
         }
         for i in 0..3u64 {
@@ -2721,6 +2819,7 @@ mod tests {
                 entry_va: 0x9000 + (i * 4),
                 size: 32,
                 code_section_va: 0x8000,
+                name_kind: None,
             });
         }
 
@@ -2782,6 +2881,7 @@ mod tests {
                     entry_va: 0x1000,
                     size: 4,
                     code_section_va: 0x1000,
+                    name_kind: None,
                 },
                 FunctionInfo {
                     id: 1,
@@ -2790,6 +2890,7 @@ mod tests {
                     entry_va: 0x1004,
                     size: 4,
                     code_section_va: 0x1000,
+                    name_kind: None,
                 },
                 FunctionInfo {
                     id: 2,
@@ -2798,6 +2899,7 @@ mod tests {
                     entry_va: 0x1008,
                     size: 4,
                     code_section_va: 0x1000,
+                    name_kind: None,
                 },
             ],
             object_pool: vec![ObjectPoolEntry {
@@ -2809,6 +2911,8 @@ mod tests {
                 target_va: Some(0x1000),
                 owner_class: Some("Global".to_string()),
                 library_uri: Some("package:app/main.dart".to_string()),
+                confidence: None,
+                source: None,
             }],
         };
         let bytes = vec![
@@ -2849,6 +2953,7 @@ mod tests {
                     entry_va: 0x7000,
                     size: 4,
                     code_section_va: 0x7000,
+                    name_kind: None,
                 },
                 FunctionInfo {
                     id: 1,
@@ -2857,6 +2962,7 @@ mod tests {
                     entry_va: 0x7004,
                     size: 4,
                     code_section_va: 0x7000,
+                    name_kind: None,
                 },
                 FunctionInfo {
                     id: 2,
@@ -2865,6 +2971,7 @@ mod tests {
                     entry_va: 0x7008,
                     size: 4,
                     code_section_va: 0x7000,
+                    name_kind: None,
                 },
             ],
             object_pool: vec![ObjectPoolEntry {
@@ -2876,6 +2983,8 @@ mod tests {
                 target_va: None,
                 owner_class: None,
                 library_uri: None,
+                confidence: None,
+                source: None,
             }],
         };
         let bytes = [0xc0u8, 0x03, 0x5f, 0xd6].repeat(3);
@@ -2912,6 +3021,7 @@ mod tests {
                     entry_va: 0x7100,
                     size: 4,
                     code_section_va: 0x7100,
+                    name_kind: None,
                 },
                 FunctionInfo {
                     id: 1,
@@ -2920,6 +3030,7 @@ mod tests {
                     entry_va: 0x7104,
                     size: 4,
                     code_section_va: 0x7100,
+                    name_kind: None,
                 },
             ],
             object_pool: vec![ObjectPoolEntry {
@@ -2931,6 +3042,8 @@ mod tests {
                 target_va: None,
                 owner_class: None,
                 library_uri: None,
+                confidence: None,
+                source: None,
             }],
         };
         let bytes = [0xc0u8, 0x03, 0x5f, 0xd6].repeat(2);

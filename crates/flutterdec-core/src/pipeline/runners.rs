@@ -683,6 +683,31 @@ pub fn run_decompile(
         HashMap::new()
     };
     let pool_metadata = collect_pool_metadata_stats(&model);
+    let function_name_kind_count = model
+        .functions
+        .iter()
+        .filter(|f| {
+            f.name_kind
+                .as_deref()
+                .map(str::trim)
+                .is_some_and(|v| !v.is_empty())
+        })
+        .count();
+    let pool_confidence_count = model
+        .object_pool
+        .iter()
+        .filter(|e| e.confidence.is_some())
+        .count();
+    let pool_source_count = model
+        .object_pool
+        .iter()
+        .filter(|e| {
+            e.source
+                .as_deref()
+                .map(str::trim)
+                .is_some_and(|v| !v.is_empty())
+        })
+        .count();
     let pool_semantic_hints = if opt.engine_options.pool_semantic_hints {
         build_pool_semantic_hints(&model, &class_to_library)
     } else {
@@ -1048,6 +1073,13 @@ pub fn run_decompile(
             "engine": &opt.engine_options
         },
         "adapter_kind": model.adapter_kind,
+        "adapter_schema": {
+            "schema_version": model.schema_version,
+            "compatibility_mode": if model.schema_version == 2 { "v2_compat" } else { "native_v3" },
+            "function_name_kind_count": function_name_kind_count,
+            "pool_confidence_count": pool_confidence_count,
+            "pool_source_count": pool_source_count
+        },
         "dart_version": model.dart_version,
         "function_scope": {
             "selected": opt.function_scope.as_str(),
