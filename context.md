@@ -230,6 +230,7 @@ Current scope:
 - decompile can optionally emit `ida_apply_symbols.py` (`--emit-ida-script`) to apply recovered names and pool-load comments inside IDA sessions
 - emitted Ghidra scripts also include pool-load comments derived from `pool[...]` annotations and recovered string hints, improving patching context directly in Ghidra
 - core pipeline implementation now keeps script-generation helpers in `runners_scripts.rs` (instead of inlining everything in `runners.rs`), reducing core runner file size and isolating RE-tool emit logic
+- diff/descriptor aggregation logic now lives in `runners_diff.rs` so `run_diff` and related descriptor/package helpers are isolated from decompile pipeline internals
 - decompile now also supports package-level scoping via repeatable `--app-package <name>`, so researchers can isolate pseudocode to selected app Dart packages and exclude unknown/dependency/framework noise more aggressively
 - report output now includes detected app package frequency (`function_scope.app_package_counts_top`) to guide package scoping without guesswork
 - report output now includes `function_scope.priority_package_hints`, the effective package hints applied to capped prioritization
