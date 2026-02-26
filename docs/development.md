@@ -64,6 +64,15 @@ Real-binary regression helpers:
 
 Analysis profile and resolved engine options are written into `report.json` under `analysis`.
 
+Core quality KPIs used to evaluate changes:
+
+- semantic rewrite rates: `semantic_direct_calls`, `semantic_indirect_calls`, and ratios
+- unresolved fallback pressure: selector fallback and dynamic/indirect fallback summaries
+- symbol quality: placeholder replacement progress and generic name prevalence
+- app-focused selection quality in capped runs: selected scope mix and preferred-package ratios
+- metadata coverage: pool value/semantic/target symbol counters
+- reproducibility: stable output under repeated runs for same input/options
+
 ## CI
 
 CI runs on:

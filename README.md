@@ -7,6 +7,22 @@
 
 It takes an APK (or `libapp.so`) and emits readable pseudo-Dart plus optional IR/ASM artifacts.
 
+## North Star
+
+Recover readable behavior from Flutter AOT ARM64 binaries with enough semantic structure that reverse engineering decisions can be made from pseudocode and reports.
+
+### Primary Goals
+
+- robust semantic extraction from snapshots and metadata (libraries, classes, functions, selectors, pool semantics)
+- stable reverse-engineering-oriented pseudocode output for Android ARM64 release builds
+- version-aware adapter behavior that can be updated without rewriting core/decompiler logic
+
+### Non-Goals (Current Scope)
+
+- perfect source reconstruction of original Dart code
+- broad multi-arch support in the same maturity level (x86, iOS, JIT modes)
+- dynamic runtime emulation as the default analysis path
+
 ## Who This Is For
 
 - reverse engineers and security researchers
