@@ -814,6 +814,10 @@ pub fn run_info(repo_root: &Path, input_path: &Path) -> Result<InfoOutput> {
         arch: bundle.arch.clone(),
         snapshot_hash: bundle.snapshot_hash.clone(),
         adapter_installed,
+        adapter_kind: None,
+        manifest_entry_present: None,
+        adapter_snapshot_hash_match: None,
+        compatibility_warnings: None,
         function_count: None,
         class_count: None,
         object_pool_count: None,
@@ -823,7 +827,15 @@ pub fn run_info(repo_root: &Path, input_path: &Path) -> Result<InfoOutput> {
 
     if adapter_installed {
         if let Ok(loaded) = load_model(repo_root, &bundle, AdapterBackend::Auto) {
+            let manifest_entry_present = loaded.manifest_entry_adapter.is_some();
             let model = loaded.model;
+            let snapshot_hash_match = bundle.snapshot_hash == model.snapshot_hash;
+            let warnings =
+                collect_compatibility_warnings(manifest_entry_present, snapshot_hash_match, false);
+            out.adapter_kind = Some(model.adapter_kind.clone());
+            out.manifest_entry_present = Some(manifest_entry_present);
+            out.adapter_snapshot_hash_match = Some(snapshot_hash_match);
+            out.compatibility_warnings = Some(warnings);
             out.function_count = Some(model.functions.len());
             out.class_count = Some(model.classes.len());
             out.object_pool_count = Some(model.object_pool.len());
