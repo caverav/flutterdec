@@ -184,6 +184,7 @@ Current scope:
 - declaration typing now also infers `bool` from condition context (`if (x)`, `x && y`, `x == true`) so argument/local declarations keep less `dynamic` noise in control-flow-heavy functions
 - repeated pool-mapped selector literals now hoist into local `String` aliases (for example `poolStr42`) so repeated callsites stay compact and readable
 - adapter object-pool metadata fields (`decoded_kind`, `selector`, `target_va`, `owner_class`, `library_uri`) are now consumed by decompile for deterministic owner-qualified selector rewrites
+- adapter model contract now accepts schema versions `2` and `3`; v3 adds optional per-function `name_kind` and optional object-pool provenance fields (`confidence`, `source`) while preserving v2 compatibility defaults
 - adapter execution now supports backend selection (`auto`, `internal`, `blutter`) so deterministic parser backends can be introduced without changing decompiler core contracts
 - default adapter backend mode is `auto`: it attempts Blutter bridge parsing when configured (`FLUTTERDEC_BLUTTER_CMD` or `FLUTTERDEC_BLUTTER_PY`) and falls back to internal parsing for resilience
 - Blutter bridge parsing currently normalizes `asm/*.dart` and `pp.txt` output into `ProgramModel` (`libraries`, `classes`, `functions`, and best-effort `object_pool` target metadata), synthesizes deterministic `EntryPointCandidate` pool entries for `main`/`runApp`-like functions when present, and serializes blutter invocations with a cache lock to avoid concurrent runner races

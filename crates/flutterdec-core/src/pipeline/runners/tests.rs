@@ -498,6 +498,7 @@
                     entry_va: 0x1000,
                     size: 4,
                     code_section_va: 0x1000,
+                name_kind: None,
                 },
                 flutterdec_adapter::FunctionInfo {
                     id: 11,
@@ -506,6 +507,7 @@
                     entry_va: 0x1100,
                     size: 4,
                     code_section_va: 0x1100,
+                name_kind: None,
                 },
                 flutterdec_adapter::FunctionInfo {
                     id: 12,
@@ -514,6 +516,7 @@
                     entry_va: 0x1200,
                     size: 4,
                     code_section_va: 0x1200,
+                name_kind: None,
                 },
                 flutterdec_adapter::FunctionInfo {
                     id: 13,
@@ -522,6 +525,7 @@
                     entry_va: 0x1300,
                     size: 4,
                     code_section_va: 0x1300,
+                name_kind: None,
                 },
             ],
             object_pool: Vec::new(),
@@ -562,6 +566,7 @@
                     entry_va: 0x1200,
                     size: 4,
                     code_section_va: 0x1200,
+                name_kind: None,
                 },
                 flutterdec_adapter::FunctionInfo {
                     id: 13,
@@ -570,6 +575,7 @@
                     entry_va: 0x1300,
                     size: 4,
                     code_section_va: 0x1300,
+                name_kind: None,
                 },
             ],
             object_pool: Vec::new(),
@@ -620,6 +626,7 @@
                     entry_va: 0x1200,
                     size: 4,
                     code_section_va: 0x1200,
+                name_kind: None,
                 },
                 flutterdec_adapter::FunctionInfo {
                     id: 13,
@@ -628,6 +635,7 @@
                     entry_va: 0x1300,
                     size: 4,
                     code_section_va: 0x1300,
+                name_kind: None,
                 },
                 flutterdec_adapter::FunctionInfo {
                     id: 14,
@@ -636,6 +644,7 @@
                     entry_va: 0x1400,
                     size: 4,
                     code_section_va: 0x1400,
+                name_kind: None,
                 },
                 flutterdec_adapter::FunctionInfo {
                     id: 15,
@@ -644,6 +653,7 @@
                     entry_va: 0x1500,
                     size: 4,
                     code_section_va: 0x1500,
+                name_kind: None,
                 },
             ],
             object_pool: Vec::new(),
@@ -697,6 +707,7 @@
                     entry_va: 0x1000,
                     size: 4,
                     code_section_va: 0x1000,
+                name_kind: None,
                 },
                 flutterdec_adapter::FunctionInfo {
                     id: 11,
@@ -705,6 +716,7 @@
                     entry_va: 0x1100,
                     size: 4,
                     code_section_va: 0x1100,
+                name_kind: None,
                 },
                 flutterdec_adapter::FunctionInfo {
                     id: 12,
@@ -713,6 +725,7 @@
                     entry_va: 0x1200,
                     size: 4,
                     code_section_va: 0x1200,
+                name_kind: None,
                 },
                 flutterdec_adapter::FunctionInfo {
                     id: 13,
@@ -721,6 +734,7 @@
                     entry_va: 0x1300,
                     size: 4,
                     code_section_va: 0x1300,
+                name_kind: None,
                 },
             ],
             object_pool: Vec::new(),
@@ -777,6 +791,7 @@
             entry_va: 0x1000,
             size: 4,
             code_section_va: 0x1000,
+        name_kind: None,
         };
         assert_eq!(
             canonical_standard_model_name(&dart_fn, &class_lib).as_deref(),
@@ -790,6 +805,7 @@
             entry_va: 0x1800,
             size: 4,
             code_section_va: 0x1800,
+        name_kind: None,
         };
         assert_eq!(
             canonical_standard_model_name(&dart_patch_fn, &class_lib).as_deref(),
@@ -803,6 +819,7 @@
             entry_va: 0x2000,
             size: 4,
             code_section_va: 0x2000,
+        name_kind: None,
         };
         assert_eq!(
             canonical_standard_model_name(&flutter_fn, &class_lib).as_deref(),
@@ -816,6 +833,7 @@
             entry_va: 0x3000,
             size: 4,
             code_section_va: 0x3000,
+        name_kind: None,
         };
         assert_eq!(
             canonical_standard_model_name(&render_fn, &class_lib).as_deref(),
@@ -829,6 +847,7 @@
             entry_va: 0x4000,
             size: 4,
             code_section_va: 0x4000,
+        name_kind: None,
         };
         assert!(canonical_standard_model_name(&generic_fn, &class_lib).is_none());
     }
@@ -1000,6 +1019,8 @@
                     target_va: Some(0x1000),
                     owner_class: Some("Global".to_string()),
                     library_uri: Some("package:app/main.dart".to_string()),
+                    confidence: None,
+                    source: None,
                 },
                 flutterdec_adapter::ObjectPoolEntry {
                     index: 2,
@@ -1010,6 +1031,8 @@
                     target_va: Some(0x1010),
                     owner_class: Some("RouterHost".to_string()),
                     library_uri: Some("package:app/router.dart".to_string()),
+                    confidence: None,
+                    source: None,
                 },
                 flutterdec_adapter::ObjectPoolEntry {
                     index: 3,
@@ -1020,6 +1043,8 @@
                     target_va: Some(0x1020),
                     owner_class: Some("MainActivityHost".to_string()),
                     library_uri: Some("package:app/main.dart".to_string()),
+                    confidence: None,
+                    source: None,
                 },
                 flutterdec_adapter::ObjectPoolEntry {
                     index: 4,
@@ -1030,6 +1055,8 @@
                     target_va: Some(0x1030),
                     owner_class: Some("Global".to_string()),
                     library_uri: Some("package:app/main.dart".to_string()),
+                    confidence: None,
+                    source: None,
                 },
             ],
         };
@@ -1078,6 +1105,8 @@
                     target_va: Some(0x2000),
                     owner_class: Some("Global".to_string()),
                     library_uri: Some("package:app/main.dart".to_string()),
+                    confidence: None,
+                    source: None,
                 },
                 flutterdec_adapter::ObjectPoolEntry {
                     index: 2,
@@ -1088,6 +1117,8 @@
                     target_va: Some(0x2000),
                     owner_class: Some("Global".to_string()),
                     library_uri: Some("package:app/main.dart".to_string()),
+                    confidence: None,
+                    source: None,
                 },
             ],
         };
@@ -1139,6 +1170,7 @@
                     entry_va: 0x1000,
                     size: 4,
                     code_section_va: 0x1000,
+                name_kind: None,
                 },
                 flutterdec_adapter::FunctionInfo {
                     id: 2,
@@ -1147,6 +1179,7 @@
                     entry_va: 0x1004,
                     size: 4,
                     code_section_va: 0x1000,
+                name_kind: None,
                 },
                 flutterdec_adapter::FunctionInfo {
                     id: 3,
@@ -1155,6 +1188,7 @@
                     entry_va: 0x1008,
                     size: 4,
                     code_section_va: 0x1000,
+                name_kind: None,
                 },
                 flutterdec_adapter::FunctionInfo {
                     id: 4,
@@ -1163,6 +1197,7 @@
                     entry_va: 0x100c,
                     size: 4,
                     code_section_va: 0x1000,
+                name_kind: None,
                 },
                 flutterdec_adapter::FunctionInfo {
                     id: 5,
@@ -1171,6 +1206,7 @@
                     entry_va: 0x1010,
                     size: 4,
                     code_section_va: 0x1000,
+                name_kind: None,
                 },
             ],
             object_pool: Vec::new(),
@@ -1248,6 +1284,8 @@
                     target_va: Some(0x1234),
                     owner_class: Some("WidgetsBindingObserver".to_string()),
                     library_uri: Some("package:flutter/src/widgets/binding.dart".to_string()),
+                    confidence: None,
+                    source: None,
                 },
                 flutterdec_adapter::ObjectPoolEntry {
                     index: 8,
@@ -1258,6 +1296,8 @@
                     target_va: None,
                     owner_class: None,
                     library_uri: None,
+                    confidence: None,
+                    source: None,
                 },
             ],
         };
@@ -1296,6 +1336,8 @@
                     target_va: Some(0x1000),
                     owner_class: Some("State".to_string()),
                     library_uri: Some("package:flutter/src/widgets/framework.dart".to_string()),
+                    confidence: None,
+                    source: None,
                 },
                 flutterdec_adapter::ObjectPoolEntry {
                     index: 2,
@@ -1306,6 +1348,8 @@
                     target_va: None,
                     owner_class: None,
                     library_uri: None,
+                    confidence: None,
+                    source: None,
                 },
             ],
         };
@@ -1339,6 +1383,8 @@
                     target_va: Some(0x1234),
                     owner_class: Some("WidgetsBindingObserver".to_string()),
                     library_uri: Some("package:flutter/src/widgets/binding.dart".to_string()),
+                    confidence: None,
+                    source: None,
                 },
                 flutterdec_adapter::ObjectPoolEntry {
                     index: 8,
@@ -1349,6 +1395,8 @@
                     target_va: Some(0x2234),
                     owner_class: Some("Int64List".to_string()),
                     library_uri: Some("dart:typed_data".to_string()),
+                    confidence: None,
+                    source: None,
                 },
                 flutterdec_adapter::ObjectPoolEntry {
                     index: 9,
@@ -1359,6 +1407,8 @@
                     target_va: Some(0x3234),
                     owner_class: Some("ConnectService".to_string()),
                     library_uri: Some("package:spotube/models/connect/load.dart".to_string()),
+                    confidence: None,
+                    source: None,
                 },
             ],
         };
@@ -1403,6 +1453,7 @@
                 entry_va: 0x4000,
                 size: 4,
                 code_section_va: 0x4000,
+            name_kind: None,
             }],
             object_pool: vec![flutterdec_adapter::ObjectPoolEntry {
                 index: 21,
@@ -1413,6 +1464,8 @@
                 target_va: Some(0x4000),
                 owner_class: None,
                 library_uri: None,
+                confidence: None,
+                source: None,
             }],
         };
 

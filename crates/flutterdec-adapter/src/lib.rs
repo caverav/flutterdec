@@ -32,6 +32,8 @@ pub struct FunctionInfo {
     pub entry_va: u64,
     pub size: u64,
     pub code_section_va: u64,
+    #[serde(default)]
+    pub name_kind: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -49,6 +51,10 @@ pub struct ObjectPoolEntry {
     pub owner_class: Option<String>,
     #[serde(default)]
     pub library_uri: Option<String>,
+    #[serde(default)]
+    pub confidence: Option<f64>,
+    #[serde(default)]
+    pub source: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -197,7 +203,7 @@ pub fn resolve_adapter_exec(repo_root: &Path, dart_hash: &str) -> Result<PathBuf
 }
 
 fn validate_model(model: &ProgramModel) -> Result<()> {
-    if model.schema_version != 2 {
+    if model.schema_version != 2 && model.schema_version != 3 {
         bail!(
             "unsupported adapter schema version {}",
             model.schema_version

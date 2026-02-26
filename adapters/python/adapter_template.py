@@ -107,6 +107,7 @@ def _recover_functions(instr: bytes, base_va: int) -> List[dict]:
                 "entry_va": int(start),
                 "size": int(size),
                 "code_section_va": int(base_va),
+                "name_kind": "placeholder",
             }
         )
     return funcs
@@ -276,6 +277,8 @@ def _pool_entries(strings: List[str]) -> List[dict]:
                 "target_va": None,
                 "owner_class": None,
                 "library_uri": library_uri,
+                "confidence": 0.4,
+                "source": "internal",
             }
         )
     return entries
@@ -452,6 +455,8 @@ def _parse_blutter_pp(pool_path: Path) -> List[dict]:
                 "target_va": target_va,
                 "owner_class": owner_class,
                 "library_uri": library_uri,
+                "confidence": 0.8 if decoded_kind in ("BlutterUnlinkedCall", "BlutterFunctionRef") else 0.6,
+                "source": "blutter",
             }
         )
     return entries
@@ -546,6 +551,7 @@ def _parse_blutter_asm(asm_dir: Path) -> Tuple[List[dict], List[dict], List[dict
                     "entry_va": entry,
                     "size": max(size, 4),
                     "code_section_va": 0,
+                    "name_kind": "placeholder" if name.startswith("sub_") else "heuristic",
                 }
             )
             for decoded_kind, selector, value in _bootflow_candidates_from_name(
@@ -565,6 +571,8 @@ def _parse_blutter_asm(asm_dir: Path) -> Tuple[List[dict], List[dict], List[dict
                         "target_va": int(entry),
                         "owner_class": owner,
                         "library_uri": pending_lib,
+                        "confidence": 0.85,
+                        "source": "synthetic",
                     }
                 )
             pending_name = None
@@ -672,7 +680,7 @@ def _build_blutter_model(
 
     snapshot_hash = _detect_snapshot_hash(vm_data, iso_data, default_snapshot_hash)
     return {
-        "schema_version": 2,
+        "schema_version": 3,
         "adapter_kind": "blutter_bridge_model_v1",
         "dart_version": default_version,
         "snapshot_hash": snapshot_hash,
@@ -744,11 +752,12 @@ def entrypoint(default_snapshot_hash: str = "unknown", default_version: str = "u
                 "entry_va": int(args.isolate_instr_va or 0x1000),
                 "size": 128,
                 "code_section_va": int(args.isolate_instr_va or 0x1000),
+                "name_kind": "heuristic",
             }
         ]
 
     payload = {
-        "schema_version": 2,
+        "schema_version": 3,
         "adapter_kind": "dynamic_snapshot_string_model_v1",
         "dart_version": default_version,
         "snapshot_hash": snapshot_hash,

@@ -248,19 +248,24 @@ Produced by adapter. Main fields:
 - `functions[]`
 - `object_pool[]`
 
+Schema compatibility:
+
+- v2 and v3 are accepted by core
+- v3 adds richer semantic metadata while preserving v2 compatibility defaults
+
 Minimal example:
 
 ```json
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "adapter_kind": "dynamic_snapshot_string_model_v1",
   "dart_version": "unknown",
   "snapshot_hash": "63f9...abcd",
   "arch": "arm64",
   "libraries": [{"id": 0, "uri": "package:app/main.dart", "name_display": "package:app/main.dart"}],
   "classes": [{"id": 0, "name": "Global", "super": "Object", "lib": "package:app/main.dart"}],
-  "functions": [{"id": 0, "name": "sub_656c1c", "owner_class": "Global", "entry_va": 6640668, "size": 320, "code_section_va": 6635520}],
-  "object_pool": [{"index": 0, "kind": "String", "value": "package:app/main.dart"}]
+  "functions": [{"id": 0, "name": "sub_656c1c", "owner_class": "Global", "entry_va": 6640668, "size": 320, "code_section_va": 6635520, "name_kind": "placeholder"}],
+  "object_pool": [{"index": 0, "kind": "String", "value": "package:app/main.dart", "decoded_kind": "LibraryUri", "library_uri": "package:app/main.dart", "confidence": 0.4, "source": "internal"}]
 }
 ```
 
