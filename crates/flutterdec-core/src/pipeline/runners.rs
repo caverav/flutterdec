@@ -24,6 +24,9 @@ use runners_symbols::{
 use runners_symbols::{is_generic_symbol_name, normalize_external_symbol_name};
 use std::collections::HashSet;
 use std::fmt::Write as FmtWrite;
+use std::io::Read;
+use tempfile::NamedTempFile;
+use zip::ZipArchive;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ScopedFunctionKind {
@@ -96,6 +99,187 @@ fn collect_function_name_kind_stats(functions: &[flutterdec_adapter::FunctionInf
         }
     }
     stats
+}
+
+#[derive(Debug, Default, Clone)]
+struct EngineFingerprintContext {
+    detected: bool,
+    source: Option<String>,
+    machine: Option<String>,
+    machine_id: Option<u16>,
+    machine_matches_bundle_arch: Option<bool>,
+    build_id: Option<String>,
+    candidate_flutter_version: Option<String>,
+    candidate_dart_version: Option<String>,
+    confidence: Option<String>,
+    symbol_count: Option<usize>,
+    dyn_symbol_count: Option<usize>,
+    exec_section_count: Option<usize>,
+    error: Option<String>,
+}
+
+fn resolved_backend_from_adapter_kind(adapter_kind: &str) -> Option<AdapterBackend> {
+    let lowered = adapter_kind.trim().to_ascii_lowercase();
+    if lowered.contains("blutter") {
+        return Some(AdapterBackend::Blutter);
+    }
+    if lowered.contains("snapshot") || lowered.contains("internal") || lowered.contains("dynamic") {
+        return Some(AdapterBackend::Internal);
+    }
+    None
+}
+
+fn backend_label(value: Option<AdapterBackend>) -> &'static str {
+    match value {
+        Some(AdapterBackend::Auto) => "auto",
+        Some(AdapterBackend::Internal) => "internal",
+        Some(AdapterBackend::Blutter) => "blutter",
+        None => "unknown",
+    }
+}
+
+fn bundle_arch_matches_machine_id(bundle_arch: &str, machine_id: u16) -> bool {
+    match bundle_arch {
+        "arm64" => machine_id == goblin::elf::header::EM_AARCH64,
+        _ => false,
+    }
+}
+
+fn fingerprint_engine_path(path: &Path, bundle_arch: &str, source: String) -> EngineFingerprintContext {
+    let mut ctx = EngineFingerprintContext {
+        source: Some(source),
+        ..EngineFingerprintContext::default()
+    };
+    match run_engine_fingerprint(
+        path,
+        &EngineFingerprintOptions {
+            out_dir: None,
+            max_markers: 24,
+        },
+    ) {
+        Ok(report) => {
+            ctx.detected = true;
+            ctx.machine_matches_bundle_arch =
+                Some(bundle_arch_matches_machine_id(bundle_arch, report.machine_id));
+            ctx.machine = Some(report.machine);
+            ctx.machine_id = Some(report.machine_id);
+            ctx.build_id = report.build_id;
+            ctx.candidate_flutter_version = report.candidate_flutter_version;
+            ctx.candidate_dart_version = report.candidate_dart_version;
+            ctx.confidence = Some(report.confidence);
+            ctx.symbol_count = Some(report.symbol_count);
+            ctx.dyn_symbol_count = Some(report.dyn_symbol_count);
+            ctx.exec_section_count = Some(report.exec_section_count);
+        }
+        Err(err) => {
+            ctx.error = Some(err.to_string());
+        }
+    }
+    ctx
+}
+
+fn find_libflutter_in_apk(apk_path: &Path) -> Result<Option<(String, Vec<u8>)>> {
+    let file = fs::File::open(apk_path)
+        .with_context(|| format!("open apk for engine fingerprint: {}", apk_path.display()))?;
+    let mut zip = ZipArchive::new(file).context("parse apk zip for engine fingerprint")?;
+
+    let preferred = ["lib/arm64-v8a/libflutter.so", "base/lib/arm64-v8a/libflutter.so"];
+    for want in preferred {
+        if let Ok(mut entry) = zip.by_name(want) {
+            let mut out = Vec::new();
+            entry.read_to_end(&mut out).context("read preferred libflutter from apk")?;
+            return Ok(Some((want.to_string(), out)));
+        }
+    }
+
+    for idx in 0..zip.len() {
+        let mut entry = zip.by_index(idx)?;
+        let name = entry.name().to_string();
+        if name.ends_with("/libflutter.so") || name == "libflutter.so" {
+            let mut out = Vec::new();
+            entry
+                .read_to_end(&mut out)
+                .context("read fallback libflutter from apk")?;
+            return Ok(Some((name, out)));
+        }
+    }
+
+    Ok(None)
+}
+
+fn try_collect_engine_fingerprint(input_path: &Path, bundle_arch: &str) -> EngineFingerprintContext {
+    let ext = input_path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+
+    if ext == "apk" {
+        match find_libflutter_in_apk(input_path) {
+            Ok(Some((entry_name, bytes))) => {
+                let tmp = match NamedTempFile::new() {
+                    Ok(t) => t,
+                    Err(err) => {
+                        return EngineFingerprintContext {
+                            detected: false,
+                            source: Some(format!("apk:{entry_name}")),
+                            error: Some(format!("create temp file for engine fingerprint: {err}")),
+                            ..EngineFingerprintContext::default()
+                        };
+                    }
+                };
+                if let Err(err) = fs::write(tmp.path(), bytes) {
+                    return EngineFingerprintContext {
+                        detected: false,
+                        source: Some(format!("apk:{entry_name}")),
+                        error: Some(format!("write temp libflutter for engine fingerprint: {err}")),
+                        ..EngineFingerprintContext::default()
+                    };
+                }
+                return fingerprint_engine_path(tmp.path(), bundle_arch, format!("apk:{entry_name}"));
+            }
+            Ok(None) => {
+                return EngineFingerprintContext {
+                    detected: false,
+                    source: None,
+                    error: Some("libflutter.so not found in APK".to_string()),
+                    ..EngineFingerprintContext::default()
+                };
+            }
+            Err(err) => {
+                return EngineFingerprintContext {
+                    detected: false,
+                    source: None,
+                    error: Some(err.to_string()),
+                    ..EngineFingerprintContext::default()
+                };
+            }
+        }
+    }
+
+    let mut candidates = Vec::new();
+    if let Some(parent) = input_path.parent() {
+        candidates.push(parent.join("libflutter.so"));
+    }
+    candidates.push(input_path.with_file_name("libflutter.so"));
+
+    for candidate in candidates {
+        if !candidate.exists() {
+            continue;
+        }
+        return fingerprint_engine_path(
+            &candidate,
+            bundle_arch,
+            format!("filesystem:{}", candidate.display()),
+        );
+    }
+
+    EngineFingerprintContext {
+        detected: false,
+        source: None,
+        error: Some("libflutter.so not found near input".to_string()),
+        ..EngineFingerprintContext::default()
+    }
 }
 
 fn classify_library_uri(uri: &str) -> ScopedFunctionKind {
@@ -691,7 +875,8 @@ pub fn run_info(repo_root: &Path, input_path: &Path) -> Result<InfoOutput> {
     };
 
     if adapter_installed {
-        if let Ok(model) = load_model(repo_root, &bundle, AdapterBackend::Auto) {
+        if let Ok(loaded) = load_model(repo_root, &bundle, AdapterBackend::Auto) {
+            let model = loaded.model;
             out.function_count = Some(model.functions.len());
             out.class_count = Some(model.classes.len());
             out.object_pool_count = Some(model.object_pool.len());
@@ -717,11 +902,24 @@ pub fn run_decompile(
 ) -> Result<QualityReport> {
     let bundle = load_snapshot_bundle(input_path)?;
     let loaded_model = load_model(repo_root, &bundle, opt.adapter_backend)?;
+    let adapter_exec_path = loaded_model.adapter_exec.display().to_string();
+    let manifest_entry_version = loaded_model.manifest_entry_version.clone();
+    let manifest_entry_adapter = loaded_model.manifest_entry_adapter.clone();
+    let loaded_adapter_snapshot_hash = loaded_model.model.snapshot_hash.clone();
+    let loaded_adapter_kind = loaded_model.model.adapter_kind.clone();
+    let requested_backend = opt.adapter_backend;
+    let resolved_backend = resolved_backend_from_adapter_kind(&loaded_adapter_kind);
+    let backend_mismatch = match requested_backend {
+        AdapterBackend::Auto => false,
+        _ => resolved_backend.is_some_and(|value| value != requested_backend),
+    };
+    let snapshot_hash_match = bundle.snapshot_hash == loaded_adapter_snapshot_hash;
+    let engine_context = try_collect_engine_fingerprint(input_path, &bundle.arch);
     let manifest_inspection = inspect_android_manifest(input_path);
     let (model, manifest_synthetic_hints) = if manifest_inspection.present {
-        enrich_model_with_manifest_bootflow_hints(&loaded_model, &manifest_inspection.signals)
+        enrich_model_with_manifest_bootflow_hints(&loaded_model.model, &manifest_inspection.signals)
     } else {
-        (loaded_model, 0)
+        (loaded_model.model, 0)
     };
     let app_package_counts = collect_app_package_counts(&model);
     let app_package_counts_top = app_package_counts
@@ -1189,17 +1387,32 @@ pub fn run_decompile(
 
     let quality_path = opt.out_dir.join("quality.json");
     fs::write(&quality_path, serde_json::to_vec_pretty(&report)?)?;
+    let bundle_snapshot_hash = bundle.snapshot_hash.clone();
 
     let summary = json!({
         "input": bundle.input_path,
         "libapp": bundle.libapp_path,
         "arch": bundle.arch,
-        "snapshot_hash": bundle.snapshot_hash,
+        "snapshot_hash": bundle_snapshot_hash.clone(),
         "analysis": {
             "profile": opt.analysis_profile.as_str(),
             "engine": &opt.engine_options
         },
         "adapter_kind": model.adapter_kind,
+        "adapter_selection": {
+            "requested_backend": requested_backend.as_str(),
+            "resolved_backend": backend_label(resolved_backend),
+            "resolved_from_adapter_kind": loaded_adapter_kind,
+            "backend_mismatch": backend_mismatch,
+            "adapter_exec_path": adapter_exec_path,
+            "manifest_entry_adapter": manifest_entry_adapter,
+            "manifest_entry_version": manifest_entry_version,
+            "snapshot_hash": {
+                "bundle": bundle_snapshot_hash,
+                "adapter_model": loaded_adapter_snapshot_hash,
+                "match": snapshot_hash_match
+            }
+        },
         "adapter_schema": {
             "schema_version": model.schema_version,
             "compatibility_mode": if model.schema_version == 2 { "v2_compat" } else { "native_v3" },
@@ -1214,6 +1427,21 @@ pub fn run_decompile(
             },
             "pool_confidence_count": pool_confidence_count,
             "pool_source_count": pool_source_count
+        },
+        "engine_fingerprint_context": {
+            "detected": engine_context.detected,
+            "source": engine_context.source,
+            "machine": engine_context.machine,
+            "machine_id": engine_context.machine_id,
+            "machine_matches_bundle_arch": engine_context.machine_matches_bundle_arch,
+            "build_id": engine_context.build_id,
+            "candidate_flutter_version": engine_context.candidate_flutter_version,
+            "candidate_dart_version": engine_context.candidate_dart_version,
+            "confidence": engine_context.confidence,
+            "symbol_count": engine_context.symbol_count,
+            "dyn_symbol_count": engine_context.dyn_symbol_count,
+            "exec_section_count": engine_context.exec_section_count,
+            "error": engine_context.error
         },
         "dart_version": model.dart_version,
         "function_scope": {

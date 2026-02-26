@@ -12,6 +12,7 @@ goblin.workspace = true
 capstone.workspace = true
 cpp_demangle.workspace = true
 zip.workspace = true
+tempfile.workspace = true
 flutterdec-loader = { path = "../flutterdec-loader" }
 flutterdec-adapter = { path = "../flutterdec-adapter" }
 flutterdec-disasm-arm64 = { path = "../flutterdec-disasm-arm64" }

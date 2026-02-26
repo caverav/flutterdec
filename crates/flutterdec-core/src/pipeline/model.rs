@@ -1,10 +1,23 @@
+#[derive(Debug, Clone)]
+struct LoadedModel {
+    model: ProgramModel,
+    adapter_exec: PathBuf,
+    manifest_entry_version: Option<String>,
+    manifest_entry_adapter: Option<String>,
+}
+
 fn load_model(
     repo_root: &Path,
     bundle: &SnapshotBundle,
     backend: AdapterBackend,
-) -> Result<ProgramModel> {
+) -> Result<LoadedModel> {
+    let manifest = flutterdec_adapter::load_manifest(repo_root)?;
+    let manifest_entry = manifest
+        .entries
+        .iter()
+        .find(|entry| entry.snapshot_hash == bundle.snapshot_hash);
     let adapter_exec = resolve_adapter_exec(repo_root, &bundle.snapshot_hash)?;
-    run_adapter(
+    let model = run_adapter(
         &adapter_exec,
         &AdapterInput {
             input_path: Some(&bundle.input_path),
@@ -17,5 +30,11 @@ fn load_model(
             isolate_instr_va: bundle.isolate_instr_va,
             backend: Some(backend.as_str()),
         },
-    )
+    )?;
+    Ok(LoadedModel {
+        model,
+        adapter_exec,
+        manifest_entry_version: manifest_entry.map(|entry| entry.version.clone()),
+        manifest_entry_adapter: manifest_entry.map(|entry| entry.adapter.clone()),
+    })
 }
