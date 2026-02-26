@@ -232,6 +232,7 @@ pub struct DiffReport {
 include!("pipeline/helpers.rs");
 include!("pipeline/model.rs");
 include!("pipeline/quality.rs");
+include!("pipeline/runners_scripts.rs");
 include!("pipeline/runners.rs");
 include!("pipeline/symbol_map.rs");
 include!("pipeline/engine_fingerprint.rs");
