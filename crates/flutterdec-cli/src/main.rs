@@ -41,6 +41,8 @@ struct DecompileCmd {
     #[arg(long)]
     emit_asm: bool,
     #[arg(long)]
+    emit_asm_opcodes: bool,
+    #[arg(long)]
     emit_ir: bool,
     #[arg(long = "extra-symbol-elf")]
     extra_symbol_elfs: Vec<PathBuf>,
@@ -253,12 +255,16 @@ fn handle_decompile(repo_root: &Path, cmd: DecompileCmd) -> Result<()> {
 }
 
 fn build_decompile_options(cmd: DecompileCmd) -> Result<DecompileOptions> {
+    if cmd.emit_asm_opcodes && !cmd.emit_asm {
+        bail!("--emit-asm-opcodes requires --emit-asm");
+    }
     let profile = cmd.analysis_profile.to_core();
     let overrides = resolve_decompile_overrides(&cmd)?;
     let engine_options = DecompileEngineOptions::for_profile(profile).with_overrides(&overrides);
     Ok(DecompileOptions {
         out_dir: cmd.out_dir,
         emit_asm: cmd.emit_asm,
+        emit_asm_opcodes: cmd.emit_asm_opcodes,
         emit_ir: cmd.emit_ir,
         extra_symbol_elfs: cmd.extra_symbol_elfs,
         extra_symbol_map_targets: cmd.extra_symbol_map_targets,
@@ -470,6 +476,45 @@ mod tests {
             panic!("expected decompile command");
         };
         assert_eq!(cmd.app_packages, vec!["spotube", "provider"]);
+    }
+
+    #[test]
+    fn decompile_accepts_emit_asm_opcodes() {
+        let cli = Cli::try_parse_from([
+            "flutterdec",
+            "decompile",
+            "sample.apk",
+            "-o",
+            "out",
+            "--emit-asm",
+            "--emit-asm-opcodes",
+        ])
+        .expect("parse");
+        let Command::Decompile(cmd) = cli.command else {
+            panic!("expected decompile command");
+        };
+        assert!(cmd.emit_asm);
+        assert!(cmd.emit_asm_opcodes);
+    }
+
+    #[test]
+    fn decompile_rejects_emit_asm_opcodes_without_emit_asm() {
+        let cli = Cli::try_parse_from([
+            "flutterdec",
+            "decompile",
+            "sample.apk",
+            "-o",
+            "out",
+            "--emit-asm-opcodes",
+        ])
+        .expect("parse");
+        let Command::Decompile(cmd) = cli.command else {
+            panic!("expected decompile command");
+        };
+        let err = build_decompile_options(cmd).expect_err("requires --emit-asm");
+        assert!(err
+            .to_string()
+            .contains("--emit-asm-opcodes requires --emit-asm"));
     }
 
     #[test]

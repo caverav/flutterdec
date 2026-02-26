@@ -1,5 +1,31 @@
     use super::*;
-    use flutterdec_disasm_arm64::FunctionPriorityComponent;
+    use flutterdec_disasm_arm64::{AsmInstruction, FunctionPriorityComponent};
+
+    #[test]
+    fn formats_asm_instruction_without_opcode_word() {
+        let ins = AsmInstruction {
+            va: 0x613468,
+            word: 0x9400_0001,
+            mnemonic: "bl".to_string(),
+            op_str: "0x61346c".to_string(),
+            annotation: "call".to_string(),
+        };
+        let line = format_asm_instruction_line(&ins, false);
+        assert_eq!(line, "0x613468: bl 0x61346c ; call");
+    }
+
+    #[test]
+    fn formats_asm_instruction_with_opcode_word() {
+        let ins = AsmInstruction {
+            va: 0x613468,
+            word: 0x9400_0001,
+            mnemonic: "bl".to_string(),
+            op_str: "0x61346c".to_string(),
+            annotation: "call".to_string(),
+        };
+        let line = format_asm_instruction_line(&ins, true);
+        assert_eq!(line, "0x613468: 94000001 bl 0x61346c ; call");
+    }
 
     #[test]
     fn merge_symbol_name_replaces_generic_only() {

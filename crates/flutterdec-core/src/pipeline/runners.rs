@@ -219,6 +219,29 @@ fn collect_app_package_counts(model: &ProgramModel) -> Vec<(String, usize)> {
     items
 }
 
+fn format_asm_instruction_line(
+    instruction: &flutterdec_disasm_arm64::AsmInstruction,
+    emit_opcodes: bool,
+) -> String {
+    let mut line = if emit_opcodes {
+        format!(
+            "0x{:x}: {:08x} {}",
+            instruction.va, instruction.word, instruction.mnemonic
+        )
+    } else {
+        format!("0x{:x}: {}", instruction.va, instruction.mnemonic)
+    };
+    if !instruction.op_str.is_empty() {
+        line.push(' ');
+        line.push_str(&instruction.op_str);
+    }
+    if !instruction.annotation.is_empty() {
+        line.push_str(" ; ");
+        line.push_str(&instruction.annotation);
+    }
+    line
+}
+
 fn priority_package_from_library_uri(uri: &str) -> String {
     let trimmed = uri.trim();
     if trimmed.is_empty() {
@@ -813,16 +836,7 @@ pub fn run_decompile(
         for f in &disasm {
             let mut lines = Vec::new();
             for i in &f.instructions {
-                let mut line = format!("0x{:x}: {}", i.va, i.mnemonic);
-                if !i.op_str.is_empty() {
-                    line.push(' ');
-                    line.push_str(&i.op_str);
-                }
-                if !i.annotation.is_empty() {
-                    line.push_str(" ; ");
-                    line.push_str(&i.annotation);
-                }
-                lines.push(line);
+                lines.push(format_asm_instruction_line(i, opt.emit_asm_opcodes));
             }
             let filename = format!(
                 "{:05}_{}.s",
