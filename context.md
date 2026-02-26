@@ -227,6 +227,8 @@ Current scope:
 - optional ELF engine fingerprinting to estimate build identity from build-id and marker strings
 - decompile now exposes engine-level analysis profiles (`balanced` and `light`) plus per-feature `--with-*`/`--no-*` toggles for canonical model symbols, pool hints, semantic reporting, and bootflow category seeding to trade throughput vs readability
 - decompile now defaults to app-focused function scoping (`app-unknown`) so reverse-engineering output prioritizes app/user-defined code; you can switch to `--function-scope app` or `--function-scope all` when needed
+- decompile now supports `--target` to isolate a single function by `id:<N>` or `va:0x<ADDR>` (plus shorthand `0x<ADDR>` / `<N>`), so developer workflows can focus decompile/disassembly on one function at a time
+- target mode records deterministic selection diagnostics in `report.json.target_selection` (`kind`, `value`, `matched_count`, `scope_overridden`) and bypasses capped prioritization
 - decompile can optionally emit `ghidra_apply_symbols.py` (`--emit-ghidra-script`) to apply recovered names as labels/functions inside Ghidra analysis sessions
 - decompile can optionally emit `ida_apply_symbols.py` (`--emit-ida-script`) to apply recovered names and pool-load comments inside IDA sessions
 - emitted Ghidra scripts also include pool-load comments derived from `pool[...]` annotations and recovered string hints, improving patching context directly in Ghidra

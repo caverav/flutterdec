@@ -131,6 +131,17 @@ flutterdec decompile ./sample.apk -o ./out \
 If package names are unknown, inspect `report.json` at `function_scope.app_package_counts_top`.
 When `--app-package` is not provided, capped prioritization also applies manifest-derived package hints (`function_scope.priority_package_hints`) to favor app-owned code (including normalized variants like `localsend_app` and `localsend` when applicable).
 
+To target a single function for developer-focused decompile/disassembly:
+
+```bash
+flutterdec decompile ./sample.apk -o ./out \
+  --target va:0x613468 \
+  --emit-asm
+```
+
+`--target` accepts `id:<N>`, `va:0x<ADDR>`, `0x<ADDR>`, or `<N>` (auto id/address match).
+If `<N>` is ambiguous, `flutterdec` asks for explicit `id:` or `va:`. Selection details are emitted in `report.json.target_selection`.
+
 4. Optional: improve call names with stripped/unstripped engine pair:
 
 ```bash

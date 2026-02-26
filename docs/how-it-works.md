@@ -83,6 +83,8 @@ sequenceDiagram
 - full path from loader to pseudocode and quality gates
 - writes artifacts under output directory
 - may fail after writing artifacts if quality gates fail
+- supports `--target` to narrow output to one function by id or entry VA
+- target mode can override scope filtering when the function is not in the selected scope, and records this in `report.json.target_selection.scope_overridden`
 - supports analysis-engine profiles: `balanced` (default) and `light`
 - profile defaults can be overridden with per-feature `--with-*` / `--no-*` engine flags (canonical model symbols, pool hints, semantic reporting, bootflow category seeding)
 - can ingest extra ELF symbol tables and `map-symbols` target JSON to improve direct call naming
@@ -163,24 +165,32 @@ This is the effective high-level control flow in `run_decompile`:
 ```text
 bundle = load_snapshot_bundle(input)
 model = run_adapter(resolve_adapter_exec(bundle.hash), bundle)
+scoped_model = apply_scope_filter(model, function_scope, app_package_filters)
+selected_model = apply_target_filter(scoped_model, model, target?)  // optional --target id/va
 
-if model.arch != "arm64":
+if selected_model.arch != "arm64":
     fail
 
-disasm = disassemble_program(model, bundle.isolate_instr, bundle.isolate_instr_va, focus, max_functions)
+disasm = disassemble_program(
+    selected_model,
+    bundle.isolate_instr,
+    bundle.isolate_instr_va,
+    target ? none : focus,
+    target ? none : max_functions
+)
 ir = build_program_ir(disasm)
-symbols = merge(model.functions names, disasm names)
+symbols = merge(selected_model.functions names, disasm names)
 symbols = merge(extra ELF symbols, with generic-name replacement policy)
 symbols = merge(extra symbol-map targets, exact-only unless nearest explicitly enabled)
 symbols = normalize external names (demangle + canonical runtime/native/stdlib aliases)
-symbols = canonicalize adapter-owned Dart/Flutter standard names from class/library metadata
+symbols = canonicalize adapter-owned Dart/Flutter standard names from selected_model class/library metadata
 pseudo = emit_program(ir, symbols)
 
 write pseudocode files
 optionally write asm files
 optionally write ir files
 
-quality = quality_from_artifacts(model, disasm, pseudo, options)
+quality = quality_from_artifacts(selected_model, disasm, pseudo, options)
 write quality.json
 write report.json
 

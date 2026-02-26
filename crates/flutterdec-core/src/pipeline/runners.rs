@@ -890,6 +890,88 @@ fn collect_compatibility_warnings(
     warnings
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+struct TargetSelectionStats {
+    enabled: bool,
+    scope_overridden: bool,
+    matched_count: usize,
+}
+
+fn function_matches_target(func: &flutterdec_adapter::FunctionInfo, target: FunctionTarget) -> bool {
+    match target {
+        FunctionTarget::FunctionId(id) => func.id == id,
+        FunctionTarget::EntryVa(entry_va) => func.entry_va == entry_va,
+        FunctionTarget::Any(value) => func.id == value || func.entry_va == value,
+    }
+}
+
+fn target_label(target: FunctionTarget) -> String {
+    match target {
+        FunctionTarget::FunctionId(id) => format!("id:{id}"),
+        FunctionTarget::EntryVa(entry_va) => format!("va:0x{entry_va:x}"),
+        FunctionTarget::Any(value) => format!("{value}"),
+    }
+}
+
+fn apply_target_function_filter(
+    full_model: &ProgramModel,
+    scoped_model: &ProgramModel,
+    target: FunctionTarget,
+) -> Result<(ProgramModel, TargetSelectionStats)> {
+    let mut selected_functions = scoped_model
+        .functions
+        .iter()
+        .filter(|func| function_matches_target(func, target))
+        .cloned()
+        .collect::<Vec<_>>();
+    let mut scope_overridden = false;
+
+    if selected_functions.is_empty() {
+        selected_functions = full_model
+            .functions
+            .iter()
+            .filter(|func| function_matches_target(func, target))
+            .cloned()
+            .collect::<Vec<_>>();
+        scope_overridden = !selected_functions.is_empty();
+    }
+
+    if selected_functions.is_empty() {
+        bail!(
+            "target {} matched no functions; try --function-scope all or remove --app-package filters",
+            target_label(target)
+        );
+    }
+    if matches!(target, FunctionTarget::Any(_)) && selected_functions.len() > 1 {
+        let preview = selected_functions
+            .iter()
+            .take(8)
+            .map(|func| format!("id={} va=0x{:x} {}", func.id, func.entry_va, func.name))
+            .collect::<Vec<_>>();
+        bail!(
+            "target {} is ambiguous and matched {} functions: {}. use id:<n> or va:0x<addr>",
+            target_label(target),
+            selected_functions.len(),
+            preview.join(", ")
+        );
+    }
+
+    let mut selected_model = if scope_overridden {
+        full_model.clone()
+    } else {
+        scoped_model.clone()
+    };
+    selected_model.functions = selected_functions.clone();
+    Ok((
+        selected_model,
+        TargetSelectionStats {
+            enabled: true,
+            scope_overridden,
+            matched_count: selected_functions.len(),
+        },
+    ))
+}
+
 pub fn run_decompile(
     repo_root: &Path,
     input_path: &Path,
@@ -937,11 +1019,16 @@ pub fn run_decompile(
     }
     let (scoped_model, function_scope_stats) =
         apply_function_scope_filter(&model, opt.function_scope, &opt.app_packages);
+    let (selected_model, target_selection_stats) = if let Some(target) = opt.function_target {
+        apply_target_function_filter(&model, &scoped_model, target)?
+    } else {
+        (scoped_model.clone(), TargetSelectionStats::default())
+    };
 
-    if scoped_model.arch != "arm64" {
-        bail!("model arch {} unsupported in v1", scoped_model.arch);
+    if selected_model.arch != "arm64" {
+        bail!("model arch {} unsupported in v1", selected_model.arch);
     }
-    if scoped_model.functions.is_empty() {
+    if selected_model.functions.is_empty() {
         let app_package_note = if normalized_app_packages.is_empty() {
             String::new()
         } else {
@@ -967,11 +1054,19 @@ pub fn run_decompile(
     }
 
     let (disasm, selected_priorities) = disassemble_program_with_priorities_and_package_hints(
-        &scoped_model,
+        &selected_model,
         &bundle.isolate_instr,
         bundle.isolate_instr_va,
-        opt.focus.as_deref(),
-        opt.max_functions,
+        if target_selection_stats.enabled {
+            None
+        } else {
+            opt.focus.as_deref()
+        },
+        if target_selection_stats.enabled {
+            None
+        } else {
+            opt.max_functions
+        },
         &priority_package_hints,
         opt.engine_options.bootflow_category_seeds,
     );
@@ -983,7 +1078,7 @@ pub fn run_decompile(
     let class_to_library = if opt.engine_options.canonical_model_symbols
         || opt.engine_options.pool_semantic_hints
     {
-        build_class_library_lookup(&scoped_model)
+        build_class_library_lookup(&selected_model)
     } else {
         HashMap::new()
     };
@@ -1024,7 +1119,7 @@ pub fn run_decompile(
         HashMap::new()
     };
 
-    for f in &scoped_model.functions {
+    for f in &selected_model.functions {
         let resolved = if opt.engine_options.canonical_model_symbols {
             let resolved = canonical_standard_model_name(f, &class_to_library)
                 .unwrap_or_else(|| f.name.clone());
@@ -1188,7 +1283,7 @@ pub fn run_decompile(
         None
     };
 
-    let report = quality_from_artifacts(&scoped_model, &disasm, &pseudo, opt);
+    let report = quality_from_artifacts(&selected_model, &disasm, &pseudo, opt);
     let (semantic_intent, call_fallback, selector_fallback, selector_fallback_top) =
         if opt.engine_options.semantic_reporting {
             let semantic_intent = collect_semantic_intent_summary(&pseudo);
@@ -1527,7 +1622,7 @@ pub fn run_decompile(
         "counts": {
             "libraries": model.libraries.len(),
             "classes": model.classes.len(),
-            "functions": scoped_model.functions.len(),
+            "functions": selected_model.functions.len(),
             "functions_total": model.functions.len(),
             "object_pool": model.object_pool.len(),
             "disassembled_functions": disasm.len()
@@ -1635,8 +1730,8 @@ pub fn run_decompile(
             "generic_invoke": call_fallback.generic_invoke
         },
         "prioritization": {
-            "enabled": opt.max_functions.is_some(),
-            "focus": opt.focus.clone(),
+            "enabled": opt.max_functions.is_some() && !target_selection_stats.enabled,
+            "focus": if target_selection_stats.enabled { None } else { opt.focus.clone() },
             "selected_count": selected_priorities.len(),
             "selected_package_count_total": prioritization_package_counts.len(),
             "selected_unknown_library_count": prioritization_unknown_count,
@@ -1655,6 +1750,14 @@ pub fn run_decompile(
             "selected_bootflow_coverage": selected_bootflow_coverage,
             "selected_bootflow_hits_top": selected_bootflow_hits_top,
             "selected": prioritization_selected
+        },
+        "target_selection": {
+            "enabled": target_selection_stats.enabled,
+            "selector": opt.function_target.map(target_label),
+            "kind": opt.function_target.map(|target| target.kind()),
+            "value": opt.function_target.map(|target| target.value()),
+            "scope_overridden": target_selection_stats.scope_overridden,
+            "matched_count": target_selection_stats.matched_count
         },
         "bootflow_discovery": {
             "main_count": bootflow_discovery.main.len(),

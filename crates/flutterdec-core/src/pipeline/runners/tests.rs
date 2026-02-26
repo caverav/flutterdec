@@ -1894,3 +1894,147 @@
         );
         assert_eq!(h.target_va, Some(0x4000));
     }
+
+    #[test]
+    fn target_filter_matches_function_id_without_scope_override() {
+        let full_model = ProgramModel {
+            schema_version: 3,
+            adapter_kind: "python".to_string(),
+            dart_version: "unknown".to_string(),
+            snapshot_hash: "deadbeef".to_string(),
+            arch: "arm64".to_string(),
+            libraries: Vec::new(),
+            classes: vec![flutterdec_adapter::ClassInfo {
+                id: 1,
+                name: "Global".to_string(),
+                super_name: "Object".to_string(),
+                library_uri: "package:app/main.dart".to_string(),
+            }],
+            functions: vec![flutterdec_adapter::FunctionInfo {
+                id: 42,
+                name: "main".to_string(),
+                owner_class: "Global".to_string(),
+                entry_va: 0x1000,
+                size: 4,
+                code_section_va: 0x1000,
+                name_kind: Some("heuristic".to_string()),
+            }],
+            object_pool: Vec::new(),
+        };
+        let scoped_model = full_model.clone();
+        let (selected, stats) = apply_target_function_filter(
+            &full_model,
+            &scoped_model,
+            FunctionTarget::FunctionId(42),
+        )
+        .expect("target filter");
+
+        assert!(stats.enabled);
+        assert!(!stats.scope_overridden);
+        assert_eq!(stats.matched_count, 1);
+        assert_eq!(selected.functions.len(), 1);
+        assert_eq!(selected.functions[0].id, 42);
+    }
+
+    #[test]
+    fn target_filter_can_override_scope_for_entry_va() {
+        let full_model = ProgramModel {
+            schema_version: 3,
+            adapter_kind: "python".to_string(),
+            dart_version: "unknown".to_string(),
+            snapshot_hash: "deadbeef".to_string(),
+            arch: "arm64".to_string(),
+            libraries: Vec::new(),
+            classes: vec![
+                flutterdec_adapter::ClassInfo {
+                    id: 1,
+                    name: "AppClass".to_string(),
+                    super_name: "Object".to_string(),
+                    library_uri: "package:app/main.dart".to_string(),
+                },
+                flutterdec_adapter::ClassInfo {
+                    id: 2,
+                    name: "CoreClass".to_string(),
+                    super_name: "Object".to_string(),
+                    library_uri: "dart:core".to_string(),
+                },
+            ],
+            functions: vec![
+                flutterdec_adapter::FunctionInfo {
+                    id: 1,
+                    name: "main".to_string(),
+                    owner_class: "AppClass".to_string(),
+                    entry_va: 0x1000,
+                    size: 4,
+                    code_section_va: 0x1000,
+                    name_kind: Some("heuristic".to_string()),
+                },
+                flutterdec_adapter::FunctionInfo {
+                    id: 2,
+                    name: "coreFn".to_string(),
+                    owner_class: "CoreClass".to_string(),
+                    entry_va: 0x2000,
+                    size: 4,
+                    code_section_va: 0x2000,
+                    name_kind: Some("heuristic".to_string()),
+                },
+            ],
+            object_pool: Vec::new(),
+        };
+        let (scoped_model, _) = apply_function_scope_filter(&full_model, FunctionScope::App, &[]);
+        assert_eq!(scoped_model.functions.len(), 1);
+
+        let (selected, stats) =
+            apply_target_function_filter(&full_model, &scoped_model, FunctionTarget::EntryVa(0x2000))
+                .expect("target filter");
+
+        assert!(stats.enabled);
+        assert!(stats.scope_overridden);
+        assert_eq!(stats.matched_count, 1);
+        assert_eq!(selected.functions.len(), 1);
+        assert_eq!(selected.functions[0].entry_va, 0x2000);
+    }
+
+    #[test]
+    fn target_filter_rejects_ambiguous_any_selector() {
+        let full_model = ProgramModel {
+            schema_version: 3,
+            adapter_kind: "python".to_string(),
+            dart_version: "unknown".to_string(),
+            snapshot_hash: "deadbeef".to_string(),
+            arch: "arm64".to_string(),
+            libraries: Vec::new(),
+            classes: vec![flutterdec_adapter::ClassInfo {
+                id: 1,
+                name: "Global".to_string(),
+                super_name: "Object".to_string(),
+                library_uri: "package:app/main.dart".to_string(),
+            }],
+            functions: vec![
+                flutterdec_adapter::FunctionInfo {
+                    id: 42,
+                    name: "fnA".to_string(),
+                    owner_class: "Global".to_string(),
+                    entry_va: 0x1000,
+                    size: 4,
+                    code_section_va: 0x1000,
+                    name_kind: Some("heuristic".to_string()),
+                },
+                flutterdec_adapter::FunctionInfo {
+                    id: 7,
+                    name: "fnB".to_string(),
+                    owner_class: "Global".to_string(),
+                    entry_va: 42,
+                    size: 4,
+                    code_section_va: 42,
+                    name_kind: Some("heuristic".to_string()),
+                },
+            ],
+            object_pool: Vec::new(),
+        };
+        let scoped_model = full_model.clone();
+
+        let err = apply_target_function_filter(&full_model, &scoped_model, FunctionTarget::Any(42))
+            .expect_err("ambiguous");
+        assert!(err.to_string().contains("ambiguous"));
+    }
