@@ -130,6 +130,12 @@ Include raw opcode words in asm output:
 flutterdec decompile ./sample.apk -o ./out --emit-asm --emit-asm-opcodes
 ```
 
+Generate a Ghidra import script with recovered symbols:
+
+```bash
+flutterdec decompile ./sample.apk -o ./out --emit-ghidra-script
+```
+
 ## Analysis Engine Profiles
 
 `decompile` profile controls analysis depth vs throughput.
@@ -219,4 +225,5 @@ Written under output directory:
 - `report.json`
 - `asm/*.s` with `--emit-asm`
 - opcode-prefixed asm lines with `--emit-asm --emit-asm-opcodes`
+- `ghidra_apply_symbols.py` with `--emit-ghidra-script`
 - `ir/*.json` with `--emit-ir`
