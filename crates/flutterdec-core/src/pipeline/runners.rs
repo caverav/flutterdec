@@ -466,7 +466,63 @@ fn format_asm_instruction_line(
     line
 }
 
-fn build_ghidra_symbol_script(symbol_names: &HashMap<u64, String>) -> Result<String> {
+#[derive(Debug, Default, Clone, Copy)]
+struct GhidraScriptStats {
+    symbol_count: usize,
+    comment_count: usize,
+}
+
+fn parse_pool_annotation_index(annotation: &str) -> Option<u64> {
+    let raw = annotation.trim();
+    let body = raw.strip_prefix("pool[")?.strip_suffix(']')?;
+    body.parse::<u64>().ok()
+}
+
+fn pool_comment_literal(value: &str) -> String {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+    let mut out = String::new();
+    for ch in trimmed.chars().take(160) {
+        match ch {
+            '\n' | '\r' | '\t' => out.push(' '),
+            _ => out.push(ch),
+        }
+    }
+    out
+}
+
+fn collect_ghidra_pool_comments(
+    disasm: &[FunctionDisassembly],
+    pool_value_hints: &HashMap<u64, String>,
+) -> Vec<(u64, String)> {
+    let mut comments: HashMap<u64, String> = HashMap::new();
+    for func in disasm {
+        for ins in &func.instructions {
+            let Some(pool_idx) = parse_pool_annotation_index(&ins.annotation) else {
+                continue;
+            };
+            let mut text = format!("pool[{pool_idx}]");
+            if let Some(value) = pool_value_hints.get(&pool_idx) {
+                let literal = pool_comment_literal(value);
+                if !literal.is_empty() {
+                    text.push_str(" = ");
+                    text.push_str(&literal);
+                }
+            }
+            comments.entry(ins.va).or_insert(text);
+        }
+    }
+    let mut out = comments.into_iter().collect::<Vec<_>>();
+    out.sort_by_key(|(va, _)| *va);
+    out
+}
+
+fn build_ghidra_symbol_script(
+    symbol_names: &HashMap<u64, String>,
+    pool_comments: &[(u64, String)],
+) -> Result<String> {
     let mut entries = symbol_names
         .iter()
         .map(|(va, name)| (*va, name.clone()))
@@ -491,6 +547,13 @@ fn build_ghidra_symbol_script(symbol_names: &HashMap<u64, String>) -> Result<Str
         writeln!(&mut out, "    (0x{va:x}, {literal}),")
             .context("write ghidra symbol entry")?;
     }
+    out.push_str("]\n");
+    out.push_str("POOL_COMMENTS = [\n");
+    for (va, comment) in pool_comments {
+        let literal = serde_json::to_string(comment).context("encode ghidra comment literal")?;
+        writeln!(&mut out, "    (0x{va:x}, {literal}),")
+            .context("write ghidra comment entry")?;
+    }
     out.push_str("]\n\n");
     out.push_str("for va, raw_name in SYMBOLS:\n");
     out.push_str("    name = _sanitize_name(raw_name)\n");
@@ -509,13 +572,27 @@ fn build_ghidra_symbol_script(symbol_names: &HashMap<u64, String>) -> Result<Str
     out.push_str("        createLabel(addr, name, True)\n");
     out.push_str("    except Exception:\n");
     out.push_str("        pass\n");
+    out.push('\n');
+    out.push_str("for va, text in POOL_COMMENTS:\n");
+    out.push_str("    addr = toAddr(va)\n");
+    out.push_str("    try:\n");
+    out.push_str("        setEOLComment(addr, text)\n");
+    out.push_str("    except Exception:\n");
+    out.push_str("        pass\n");
     Ok(out)
 }
 
-fn write_ghidra_symbol_script(path: &Path, symbol_names: &HashMap<u64, String>) -> Result<usize> {
-    let script = build_ghidra_symbol_script(symbol_names)?;
+fn write_ghidra_symbol_script(
+    path: &Path,
+    symbol_names: &HashMap<u64, String>,
+    pool_comments: &[(u64, String)],
+) -> Result<GhidraScriptStats> {
+    let script = build_ghidra_symbol_script(symbol_names, pool_comments)?;
     fs::write(path, script).with_context(|| format!("write ghidra script: {}", path.display()))?;
-    Ok(symbol_names.len())
+    Ok(GhidraScriptStats {
+        symbol_count: symbol_names.len(),
+        comment_count: pool_comments.len(),
+    })
 }
 
 fn priority_package_from_library_uri(uri: &str) -> String {
@@ -1159,8 +1236,17 @@ pub fn run_decompile(
     } else {
         None
     };
-    let ghidra_script_symbol_count = if let Some(path) = ghidra_script_path.as_ref() {
-        Some(write_ghidra_symbol_script(path, &symbol_names)?)
+    let ghidra_pool_comments = if opt.emit_ghidra_script {
+        collect_ghidra_pool_comments(&disasm, &pool_value_hints)
+    } else {
+        Vec::new()
+    };
+    let ghidra_script_stats = if let Some(path) = ghidra_script_path.as_ref() {
+        Some(write_ghidra_symbol_script(
+            path,
+            &symbol_names,
+            &ghidra_pool_comments,
+        )?)
     } else {
         None
     };
@@ -1505,7 +1591,14 @@ pub fn run_decompile(
             "path": ghidra_script_path
                 .as_ref()
                 .map(|p| p.display().to_string()),
-            "symbol_count": ghidra_script_symbol_count.unwrap_or(0)
+            "symbol_count": ghidra_script_stats
+                .as_ref()
+                .map(|stats| stats.symbol_count)
+                .unwrap_or(0),
+            "pool_comment_count": ghidra_script_stats
+                .as_ref()
+                .map(|stats| stats.comment_count)
+                .unwrap_or(0)
         },
         "name_resolution": {
             "final_quality": {

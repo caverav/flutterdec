@@ -1,5 +1,5 @@
     use super::*;
-    use flutterdec_disasm_arm64::{AsmInstruction, FunctionPriorityComponent};
+    use flutterdec_disasm_arm64::{AsmInstruction, FunctionDisassembly, FunctionPriorityComponent};
     use tempfile::tempdir;
 
     #[test]
@@ -34,12 +34,57 @@
         symbols.insert(0x2000, "sub_2000".to_string());
         symbols.insert(0x1000, "RenderErrorBox.\"main\"".to_string());
 
-        let script = build_ghidra_symbol_script(&symbols).expect("script");
+        let script = build_ghidra_symbol_script(&symbols, &[]).expect("script");
         let first = script.find("(0x1000,").expect("0x1000");
         let second = script.find("(0x2000,").expect("0x2000");
         assert!(first < second, "entries should be sorted by VA");
         assert!(script.contains("RenderErrorBox.\\\"main\\\""));
         assert!(script.contains("createLabel(addr, name, True)"));
+    }
+
+    #[test]
+    fn parses_pool_annotation_indexes() {
+        assert_eq!(parse_pool_annotation_index("pool[4584]"), Some(4584));
+        assert_eq!(parse_pool_annotation_index(" pool[0] "), Some(0));
+        assert_eq!(parse_pool_annotation_index("call"), None);
+    }
+
+    #[test]
+    fn collects_ghidra_pool_comments_from_disassembly() {
+        let disasm = vec![FunctionDisassembly {
+            function_id: 1,
+            function_name: "main".to_string(),
+            owner_class: "Global".to_string(),
+            entry_va: 0x1000,
+            size: 8,
+            instructions: vec![
+                AsmInstruction {
+                    va: 0x1000,
+                    word: 0,
+                    mnemonic: "ldr".to_string(),
+                    op_str: "x1, [x27, #4584]".to_string(),
+                    annotation: "pool[4584]".to_string(),
+                },
+                AsmInstruction {
+                    va: 0x1004,
+                    word: 0,
+                    mnemonic: "ldr".to_string(),
+                    op_str: "x2, [x27, #4592]".to_string(),
+                    annotation: "pool[4592]".to_string(),
+                },
+            ],
+        }];
+        let mut pool_hints = HashMap::new();
+        pool_hints.insert(4584, "surface".to_string());
+
+        let comments = collect_ghidra_pool_comments(&disasm, &pool_hints);
+        assert_eq!(
+            comments,
+            vec![
+                (0x1000, "pool[4584] = surface".to_string()),
+                (0x1004, "pool[4592]".to_string()),
+            ]
+        );
     }
 
     #[test]
