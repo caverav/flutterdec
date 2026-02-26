@@ -29,6 +29,7 @@ pub struct DecompileOptions {
     pub extra_symbol_map_targets: Vec<PathBuf>,
     pub include_nearest_symbol_map: bool,
     pub focus: Option<String>,
+    pub function_target: Option<FunctionTarget>,
     pub max_functions: Option<usize>,
     pub max_placeholder_ifs: usize,
     pub max_unresolved_cf: usize,
@@ -40,6 +41,31 @@ pub struct DecompileOptions {
     pub require_snapshot_hash_match: bool,
     pub analysis_profile: DecompileAnalysisProfile,
     pub engine_options: DecompileEngineOptions,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+pub enum FunctionTarget {
+    FunctionId(u64),
+    EntryVa(u64),
+    Any(u64),
+}
+
+impl FunctionTarget {
+    pub fn kind(self) -> &'static str {
+        match self {
+            Self::FunctionId(_) => "function-id",
+            Self::EntryVa(_) => "entry-va",
+            Self::Any(_) => "any",
+        }
+    }
+
+    pub fn value(self) -> u64 {
+        match self {
+            Self::FunctionId(v) => v,
+            Self::EntryVa(v) => v,
+            Self::Any(v) => v,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

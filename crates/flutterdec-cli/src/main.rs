@@ -5,7 +5,7 @@ use flutterdec_core::{
     available_adapters, run_decompile, run_diff, run_engine_fingerprint, run_info, run_symbol_map,
     AdapterBackend, DecompileAnalysisProfile, DecompileEngineOptionOverrides,
     DecompileEngineOptions, DecompileOptions, DiffOptions, EngineFingerprintOptions, FunctionScope,
-    SymbolMapOptions,
+    FunctionTarget, SymbolMapOptions,
 };
 use std::path::{Path, PathBuf};
 
@@ -57,6 +57,8 @@ struct DecompileCmd {
     include_nearest_symbol_map: bool,
     #[arg(long)]
     focus: Option<String>,
+    #[arg(long = "target")]
+    target: Option<String>,
     #[arg(long)]
     max_functions: Option<usize>,
     #[arg(long, default_value_t = 0)]
@@ -359,6 +361,11 @@ fn build_decompile_options(cmd: DecompileCmd) -> Result<DecompileOptions> {
     if cmd.emit_asm_opcodes && !cmd.emit_asm {
         bail!("--emit-asm-opcodes requires --emit-asm");
     }
+    let function_target = cmd
+        .target
+        .as_deref()
+        .map(parse_function_target)
+        .transpose()?;
     let profile = cmd.analysis_profile.to_core();
     let overrides = resolve_decompile_overrides(&cmd)?;
     let engine_options = DecompileEngineOptions::for_profile(profile).with_overrides(&overrides);
@@ -373,6 +380,7 @@ fn build_decompile_options(cmd: DecompileCmd) -> Result<DecompileOptions> {
         extra_symbol_map_targets: cmd.extra_symbol_map_targets,
         include_nearest_symbol_map: cmd.include_nearest_symbol_map,
         focus: cmd.focus,
+        function_target,
         max_functions: cmd.max_functions,
         max_placeholder_ifs: cmd.max_placeholder_ifs,
         max_unresolved_cf: cmd.max_unresolved_cf,
@@ -385,6 +393,39 @@ fn build_decompile_options(cmd: DecompileCmd) -> Result<DecompileOptions> {
         analysis_profile: profile,
         engine_options,
     })
+}
+
+fn parse_target_value(raw: &str) -> Result<u64> {
+    let value = raw.trim();
+    if value.is_empty() {
+        bail!("target value cannot be empty");
+    }
+    if let Some(hex) = value
+        .strip_prefix("0x")
+        .or_else(|| value.strip_prefix("0X"))
+    {
+        let parsed = u64::from_str_radix(hex, 16)
+            .with_context(|| format!("parse hex target value: {}", value))?;
+        return Ok(parsed);
+    }
+    let parsed = value
+        .parse::<u64>()
+        .with_context(|| format!("parse target value: {}", value))?;
+    Ok(parsed)
+}
+
+fn parse_function_target(raw: &str) -> Result<FunctionTarget> {
+    let value = raw.trim();
+    if let Some(id_value) = value.strip_prefix("id:") {
+        return Ok(FunctionTarget::FunctionId(parse_target_value(id_value)?));
+    }
+    if let Some(va_value) = value.strip_prefix("va:") {
+        return Ok(FunctionTarget::EntryVa(parse_target_value(va_value)?));
+    }
+    if value.starts_with("0x") || value.starts_with("0X") {
+        return Ok(FunctionTarget::EntryVa(parse_target_value(value)?));
+    }
+    Ok(FunctionTarget::Any(parse_target_value(value)?))
 }
 
 fn resolve_decompile_overrides(cmd: &DecompileCmd) -> Result<DecompileEngineOptionOverrides> {
@@ -698,6 +739,50 @@ mod tests {
             panic!("expected decompile command");
         };
         assert!(cmd.require_snapshot_hash_match);
+    }
+
+    #[test]
+    fn decompile_target_accepts_entry_va_hex() {
+        let cli = Cli::try_parse_from([
+            "flutterdec",
+            "decompile",
+            "sample.apk",
+            "-o",
+            "out",
+            "--target",
+            "0x613468",
+        ])
+        .expect("parse");
+        let Command::Decompile(cmd) = cli.command else {
+            panic!("expected decompile command");
+        };
+        let opt = build_decompile_options(cmd).expect("options");
+        assert!(matches!(
+            opt.function_target,
+            Some(FunctionTarget::EntryVa(0x613468))
+        ));
+    }
+
+    #[test]
+    fn decompile_target_accepts_function_id_prefix() {
+        let cli = Cli::try_parse_from([
+            "flutterdec",
+            "decompile",
+            "sample.apk",
+            "-o",
+            "out",
+            "--target",
+            "id:42",
+        ])
+        .expect("parse");
+        let Command::Decompile(cmd) = cli.command else {
+            panic!("expected decompile command");
+        };
+        let opt = build_decompile_options(cmd).expect("options");
+        assert!(matches!(
+            opt.function_target,
+            Some(FunctionTarget::FunctionId(42))
+        ));
     }
 
     #[test]
