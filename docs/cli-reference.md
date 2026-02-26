@@ -43,6 +43,7 @@ General options:
 - `--emit-ida-script` (writes `ida_apply_symbols.py` with function/label symbol application helpers)
 - `--emit-ir`
 - `--focus <FOCUS>`
+- `--target <TARGET>` (decompile/disassemble a specific function by selector: `id:<N>`, `va:0x<ADDR>`, `0x<ADDR>`, or `<N>`; ambiguous `<N>` matches fail and require explicit prefix)
 - `--max-functions <N>`
 - `--function-scope <app-unknown|app|all>` (default `app-unknown`)
 - `--app-package <NAME>` (repeatable; restricts to selected `package:<NAME>/...` libraries)
@@ -80,6 +81,12 @@ Analysis-engine feature toggles:
 Conflict rule:
 
 - each `--with-*` conflicts with its matching `--no-*`
+
+Target selection behavior:
+
+- when `--target` is set, output is narrowed to the matched function
+- if scope filters exclude that function, target mode may override scope to keep the explicit match
+- selection diagnostics are written to `report.json.target_selection`
 
 Adapter backend environment:
 

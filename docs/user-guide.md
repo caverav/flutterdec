@@ -124,6 +124,27 @@ Decompile with extra artifacts:
 flutterdec decompile ./sample.apk -o ./out --emit-asm --emit-ir
 ```
 
+Decompile and disassemble one specific function:
+
+```bash
+flutterdec decompile ./sample.apk -o ./out \
+  --target id:42 \
+  --emit-asm
+```
+
+Target by entry address:
+
+```bash
+flutterdec decompile ./sample.apk -o ./out \
+  --target va:0x613468 \
+  --emit-asm
+```
+
+`--target` accepts `id:<N>`, `va:0x<ADDR>`, `0x<ADDR>`, or `<N>`.
+When `<N>` matches multiple functions (id and entry address), the command fails and asks for explicit `id:` or `va:`.
+Target mode emits only the matched function artifacts and reports selection details in `report.json.target_selection`.
+If the match is outside current scope filters, target mode can override scope automatically for that function.
+
 Compare two builds at recovered-function level:
 
 ```bash
