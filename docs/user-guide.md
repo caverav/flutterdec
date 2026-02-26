@@ -225,5 +225,5 @@ Written under output directory:
 - `report.json`
 - `asm/*.s` with `--emit-asm`
 - opcode-prefixed asm lines with `--emit-asm --emit-asm-opcodes`
-- `ghidra_apply_symbols.py` with `--emit-ghidra-script`
+- `ghidra_apply_symbols.py` with `--emit-ghidra-script` (symbol names + pool load comments)
 - `ir/*.json` with `--emit-ir`
