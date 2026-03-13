@@ -775,6 +775,7 @@ Current project testing style:
 - many behavior tests in `flutterdec-decompiler`
 - golden snapshot tests in `crates/flutterdec-decompiler/testdata/golden/` for readability-sensitive output
 - optional real-binary golden checks via `scripts/real-golden.sh` (single profile) or `scripts/real-golden-matrix.sh` (multi profile) with baselines in `testdata/real-golden/`
+- real-binary baselines now also compare `report_metrics.json`, which extracts startup, bootflow, entrypoint, and engine-symbol-ingestion metrics from `report.json`
 - regular real-binary smoke validation for output quality
 
 Recommended loop when changing internals:
@@ -783,7 +784,7 @@ Recommended loop when changing internals:
 2. run crate-local tests
 3. run workspace tests
 4. run real APK sample with relaxed thresholds
-5. compare `quality.json` and representative pseudocode files
+5. compare `quality.json`, `report_metrics.json`, and representative pseudocode files
 
 When readability output changes intentionally, refresh golden snapshots:
 
