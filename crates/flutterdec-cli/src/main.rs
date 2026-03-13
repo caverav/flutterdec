@@ -99,6 +99,10 @@ struct DecompileCmd {
     with_bootflow_category_seeds: bool,
     #[arg(long)]
     no_bootflow_category_seeds: bool,
+    #[arg(long)]
+    with_apk_startup_analysis: bool,
+    #[arg(long)]
+    no_apk_startup_analysis: bool,
 }
 
 #[derive(Args, Debug)]
@@ -281,6 +285,18 @@ fn handle_info(repo_root: &Path, cmd: InfoCmd) -> Result<()> {
         if let Some(n) = out.function_count {
             println!("functions: {}", n);
         }
+        if let Some(present) = out.android_startup_present {
+            println!("android startup present: {}", present);
+        }
+        if let Some(confidence) = out.android_startup_confidence.as_deref() {
+            println!("android startup confidence: {}", confidence);
+        }
+        if let Some(count) = out.android_startup_entrypoint_count {
+            println!("android startup entrypoints: {}", count);
+        }
+        if let Some(count) = out.android_startup_flutter_activity_count {
+            println!("android startup flutter activities: {}", count);
+        }
         if let Some(total) = out.app_package_count_total {
             println!("app packages: {}", total);
             if let Some(top) = out.app_package_counts_top.as_ref() {
@@ -454,12 +470,18 @@ fn resolve_decompile_overrides(cmd: &DecompileCmd) -> Result<DecompileEngineOpti
         cmd.no_bootflow_category_seeds,
         "--with-bootflow-category-seeds/--no-bootflow-category-seeds",
     )?;
+    let apk_startup_analysis = resolve_toggle(
+        cmd.with_apk_startup_analysis,
+        cmd.no_apk_startup_analysis,
+        "--with-apk-startup-analysis/--no-apk-startup-analysis",
+    )?;
     Ok(DecompileEngineOptionOverrides {
         canonical_model_symbols,
         pool_value_hints,
         pool_semantic_hints,
         semantic_reporting,
         bootflow_category_seeds,
+        apk_startup_analysis,
     })
 }
 
@@ -783,6 +805,24 @@ mod tests {
             opt.function_target,
             Some(FunctionTarget::FunctionId(42))
         ));
+    }
+
+    #[test]
+    fn decompile_accepts_no_apk_startup_analysis() {
+        let cli = Cli::try_parse_from([
+            "flutterdec",
+            "decompile",
+            "sample.apk",
+            "-o",
+            "out",
+            "--no-apk-startup-analysis",
+        ])
+        .expect("parse");
+        let Command::Decompile(cmd) = cli.command else {
+            panic!("expected decompile command");
+        };
+        let opt = build_decompile_options(cmd).expect("options");
+        assert!(!opt.engine_options.apk_startup_analysis);
     }
 
     #[test]

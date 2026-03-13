@@ -807,6 +807,7 @@ fn apply_function_scope_filter(
 pub fn run_info(repo_root: &Path, input_path: &Path) -> Result<InfoOutput> {
     let bundle = load_snapshot_bundle(input_path)?;
     let adapter_installed = resolve_adapter_exec(repo_root, &bundle.snapshot_hash).is_ok();
+    let startup_evidence = analyze_android_startup(input_path);
 
     let mut out = InfoOutput {
         input_path: bundle.input_path.display().to_string(),
@@ -823,6 +824,10 @@ pub fn run_info(repo_root: &Path, input_path: &Path) -> Result<InfoOutput> {
         object_pool_count: None,
         app_package_count_total: None,
         app_package_counts_top: None,
+        android_startup_present: Some(startup_evidence.present),
+        android_startup_confidence: Some(startup_evidence.confidence.clone()),
+        android_startup_entrypoint_count: Some(startup_evidence.dart_entrypoints.len()),
+        android_startup_flutter_activity_count: Some(startup_evidence.flutter_activity_classes.len()),
     };
 
     if adapter_installed {
@@ -998,6 +1003,11 @@ pub fn run_decompile(
     )?;
     let engine_context = try_collect_engine_fingerprint(input_path, &bundle.arch);
     let manifest_inspection = inspect_android_manifest(input_path);
+    let startup_evidence = if opt.engine_options.apk_startup_analysis {
+        analyze_android_startup(input_path)
+    } else {
+        AndroidStartupEvidence::default()
+    };
     let (model, manifest_synthetic_hints) = if manifest_inspection.present {
         enrich_model_with_manifest_bootflow_hints(&loaded_model.model, &manifest_inspection.signals)
     } else {
@@ -1618,6 +1628,23 @@ pub fn run_decompile(
             "deeplink_entry_count": manifest_inspection.signals.deeplink_entries.len(),
             "deeplink_entries": manifest_inspection.signals.deeplink_entries,
             "synthetic_bootflow_hints": manifest_synthetic_hints
+        },
+        "android_startup": {
+            "enabled": opt.engine_options.apk_startup_analysis,
+            "present": startup_evidence.present,
+            "confidence": startup_evidence.confidence,
+            "dex_file_count": startup_evidence.dex_files.len(),
+            "dex_files": startup_evidence.dex_files,
+            "parse_error_count": startup_evidence.parse_errors.len(),
+            "parse_errors": startup_evidence.parse_errors,
+            "flutter_activity_count": startup_evidence.flutter_activity_classes.len(),
+            "flutter_activity_classes": startup_evidence.flutter_activity_classes,
+            "startup_method_count": startup_evidence.startup_methods.len(),
+            "startup_methods": startup_evidence.startup_methods,
+            "dart_entrypoint_count": startup_evidence.dart_entrypoints.len(),
+            "dart_entrypoints": startup_evidence.dart_entrypoints,
+            "jni_bootstrap_count": startup_evidence.jni_bootstrap.len(),
+            "jni_bootstrap": startup_evidence.jni_bootstrap
         },
         "counts": {
             "libraries": model.libraries.len(),

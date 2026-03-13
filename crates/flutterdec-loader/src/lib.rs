@@ -29,8 +29,7 @@ struct SymbolSpan {
 }
 
 fn find_libapp_in_apk(path: &Path) -> Result<(PathBuf, Vec<u8>)> {
-    let f = fs::File::open(path).with_context(|| format!("open apk: {}", path.display()))?;
-    let mut zip = ZipArchive::new(f).context("parse apk zip")?;
+    let mut zip = open_apk_zip(path)?;
 
     let preferred = ["lib/arm64-v8a/libapp.so", "base/lib/arm64-v8a/libapp.so"];
 
@@ -57,6 +56,33 @@ fn find_libapp_in_apk(path: &Path) -> Result<(PathBuf, Vec<u8>)> {
     }
 
     bail!("APK does not contain libapp.so");
+}
+
+fn open_apk_zip(path: &Path) -> Result<ZipArchive<fs::File>> {
+    let file = fs::File::open(path).with_context(|| format!("open apk: {}", path.display()))?;
+    ZipArchive::new(file).context("parse apk zip")
+}
+
+pub fn list_apk_entries(path: &Path) -> Result<Vec<String>> {
+    let mut zip = open_apk_zip(path)?;
+    let mut out = Vec::with_capacity(zip.len());
+    for idx in 0..zip.len() {
+        let entry = zip.by_index(idx)?;
+        out.push(entry.name().to_string());
+    }
+    Ok(out)
+}
+
+pub fn read_apk_entry(path: &Path, entry_name: &str) -> Result<Vec<u8>> {
+    let mut zip = open_apk_zip(path)?;
+    let mut entry = zip
+        .by_name(entry_name)
+        .with_context(|| format!("open apk entry {} in {}", entry_name, path.display()))?;
+    let mut out = Vec::new();
+    entry
+        .read_to_end(&mut out)
+        .with_context(|| format!("read apk entry {} in {}", entry_name, path.display()))?;
+    Ok(out)
 }
 
 fn va_to_offset(elf: &Elf<'_>, va: u64) -> Option<usize> {
@@ -196,4 +222,46 @@ pub fn load_snapshot_bundle(path: &Path) -> Result<SnapshotBundle> {
 
     let bytes = fs::read(path).with_context(|| format!("read input file: {}", path.display()))?;
     from_elf(path, path.to_path_buf(), bytes)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{list_apk_entries, read_apk_entry};
+    use std::fs::File;
+    use std::io::Write;
+    use tempfile::tempdir;
+    use zip::write::SimpleFileOptions;
+    use zip::ZipWriter;
+
+    fn build_test_apk() -> std::path::PathBuf {
+        let temp = tempdir().expect("tempdir");
+        let apk_path = temp.path().join("sample.apk");
+        let file = File::create(&apk_path).expect("create apk");
+        let mut zip = ZipWriter::new(file);
+        let options = SimpleFileOptions::default();
+        zip.start_file("classes.dex", options)
+            .expect("start classes.dex");
+        zip.write_all(b"dex-bytes").expect("write classes.dex");
+        zip.start_file("AndroidManifest.xml", options)
+            .expect("start manifest");
+        zip.write_all(b"<manifest />").expect("write manifest");
+        zip.finish().expect("finish zip");
+        let persisted = temp.path().to_path_buf();
+        std::mem::forget(temp);
+        persisted.join("sample.apk")
+    }
+
+    #[test]
+    fn lists_apk_entries() {
+        let apk = build_test_apk();
+        let entries = list_apk_entries(&apk).expect("list entries");
+        assert_eq!(entries, vec!["classes.dex", "AndroidManifest.xml"]);
+    }
+
+    #[test]
+    fn reads_apk_entry_bytes() {
+        let apk = build_test_apk();
+        let bytes = read_apk_entry(&apk, "classes.dex").expect("read entry");
+        assert_eq!(bytes, b"dex-bytes");
+    }
 }

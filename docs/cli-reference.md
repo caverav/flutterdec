@@ -77,6 +77,10 @@ Analysis-engine feature toggles:
 - `--no-pool-semantic-hints`
 - `--with-semantic-reporting`
 - `--no-semantic-reporting`
+- `--with-bootflow-category-seeds`
+- `--no-bootflow-category-seeds`
+- `--with-apk-startup-analysis`
+- `--no-apk-startup-analysis`
 
 Conflict rule:
 

@@ -1656,18 +1656,21 @@
         assert!(!cfg.pool_semantic_hints);
         assert!(!cfg.semantic_reporting);
         assert!(!cfg.bootflow_category_seeds);
+        assert!(!cfg.apk_startup_analysis);
     }
 
     #[test]
     fn decompile_engine_overrides_can_disable_balanced_defaults() {
         let base = DecompileEngineOptions::for_profile(DecompileAnalysisProfile::Balanced);
         assert!(base.bootflow_category_seeds);
+        assert!(base.apk_startup_analysis);
         let overrides = DecompileEngineOptionOverrides {
             canonical_model_symbols: Some(false),
             pool_value_hints: None,
             pool_semantic_hints: Some(false),
             semantic_reporting: Some(false),
             bootflow_category_seeds: Some(false),
+            apk_startup_analysis: Some(false),
         };
         let cfg = base.with_overrides(&overrides);
         assert!(!cfg.canonical_model_symbols);
@@ -1675,6 +1678,7 @@
         assert!(!cfg.pool_semantic_hints);
         assert!(!cfg.semantic_reporting);
         assert!(!cfg.bootflow_category_seeds);
+        assert!(!cfg.apk_startup_analysis);
     }
 
     #[test]
