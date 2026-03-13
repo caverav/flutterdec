@@ -69,6 +69,26 @@ pub struct JniBootstrapEvidence {
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct BootstrapChainSource {
+    pub source_dex: String,
+    pub class_descriptor: String,
+    pub class_name: String,
+    pub method_name: String,
+    pub owner_kind: String,
+    pub stages: Vec<String>,
+    pub complete: bool,
+    pub missing_steps: Vec<String>,
+    pub confidence: String,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct BootstrapChainEvidence {
+    pub complete: bool,
+    pub missing_steps: Vec<String>,
+    pub sources: Vec<BootstrapChainSource>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct AndroidStartupEvidence {
     pub present: bool,
     pub confidence: String,
@@ -78,6 +98,7 @@ pub struct AndroidStartupEvidence {
     pub startup_methods: Vec<StartupMethodEvidence>,
     pub dart_entrypoints: Vec<DartEntrypointEvidence>,
     pub jni_bootstrap: Vec<JniBootstrapEvidence>,
+    pub bootstrap_chain: BootstrapChainEvidence,
 }
 
 impl Default for AndroidStartupEvidence {
@@ -91,6 +112,11 @@ impl Default for AndroidStartupEvidence {
             startup_methods: Vec::new(),
             dart_entrypoints: Vec::new(),
             jni_bootstrap: Vec::new(),
+            bootstrap_chain: BootstrapChainEvidence {
+                complete: false,
+                missing_steps: Vec::new(),
+                sources: Vec::new(),
+            },
         }
     }
 }
@@ -145,6 +171,25 @@ struct ScannedDartEntrypoint {
     function_name: Option<String>,
     library_uri: Option<String>,
     app_bundle_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Default)]
+struct BootstrapChainSourceBuilder {
+    source_dex: String,
+    class_descriptor: String,
+    class_name: String,
+    method_name: String,
+    owner_kind: String,
+    stages: Vec<String>,
+    seen: std::collections::HashSet<&'static str>,
+}
+
+impl BootstrapChainSourceBuilder {
+    fn push_stage(&mut self, stage: &'static str) {
+        if self.seen.insert(stage) {
+            self.stages.push(stage.to_string());
+        }
+    }
 }
 
 fn is_apk_input(path: &Path) -> bool {
@@ -214,6 +259,143 @@ fn jni_stage_for(target_class: &str, target_method: &str) -> Option<&'static str
         (FLUTTER_JNI_DESC, "attachToNative") => Some("jni_attach_to_native"),
         (FLUTTER_JNI_DESC, "nativeAttach") => Some("jni_native_attach"),
         _ => None,
+    }
+}
+
+const BOOTSTRAP_CHAIN_STAGE_ORDER: [&str; 7] = [
+    "activity_on_create",
+    "delegate_on_attach",
+    "flutter_engine_ctor",
+    "loader_start_initialization",
+    "loader_ensure_initialization_complete",
+    "jni_attach",
+    "dart_entrypoint_execute",
+];
+
+fn bootstrap_chain_stage_for_method(target_class: &str, target_method: &str) -> Option<&'static str> {
+    match (target_class, target_method) {
+        (FLUTTER_ACTIVITY_DELEGATE_DESC, "onAttach") => Some("delegate_on_attach"),
+        (FLUTTER_ENGINE_DESC, "<init>") => Some("flutter_engine_ctor"),
+        (FLUTTER_LOADER_DESC, "startInitialization") => Some("loader_start_initialization"),
+        (FLUTTER_LOADER_DESC, "ensureInitializationComplete") => {
+            Some("loader_ensure_initialization_complete")
+        }
+        (FLUTTER_JNI_DESC, "attachToNative") | (FLUTTER_JNI_DESC, "nativeAttach") => {
+            Some("jni_attach")
+        }
+        (FLUTTER_JNI_DESC, "runBundleAndSnapshotFromLibrary")
+        | (DART_EXECUTOR_DESC, "executeDartEntrypoint") => Some("dart_entrypoint_execute"),
+        _ => None,
+    }
+}
+
+fn startup_owner_kind(class_descriptor: &str) -> &'static str {
+    if class_descriptor.starts_with("Lio/flutter/") {
+        "framework"
+    } else {
+        "app"
+    }
+}
+
+fn bootstrap_chain_source_confidence(stages: &std::collections::HashSet<&'static str>) -> &'static str {
+    if stages.contains("dart_entrypoint_execute")
+        || stages.contains("jni_attach")
+        || stages.len() >= 4
+    {
+        "high"
+    } else if stages.len() >= 2 {
+        "medium"
+    } else {
+        "low"
+    }
+}
+
+fn build_bootstrap_chain_evidence(
+    class_supers: &HashMap<String, Option<String>>,
+    scanned_methods: &[ScannedStartupMethodRef],
+) -> BootstrapChainEvidence {
+    let mut sources: HashMap<String, BootstrapChainSourceBuilder> = HashMap::new();
+
+    for method in scanned_methods {
+        let Some(stage) = bootstrap_chain_stage_for_method(&method.target_class, &method.target_method)
+        else {
+            continue;
+        };
+        let key = format!(
+            "{}|{}|{}",
+            method.source_dex, method.class_descriptor, method.method_name
+        );
+        let builder = sources.entry(key).or_insert_with(|| BootstrapChainSourceBuilder {
+            source_dex: method.source_dex.clone(),
+            class_descriptor: method.class_descriptor.clone(),
+            class_name: method.class_name.clone(),
+            method_name: method.method_name.clone(),
+            owner_kind: startup_owner_kind(&method.class_descriptor).to_string(),
+            stages: Vec::new(),
+            seen: std::collections::HashSet::new(),
+        });
+        if method.method_name.eq_ignore_ascii_case("onCreate")
+            && has_super_class(&method.class_descriptor, FLUTTER_ACTIVITY_DESC, class_supers)
+        {
+            builder.push_stage("activity_on_create");
+        }
+        builder.push_stage(stage);
+    }
+
+    let mut source_entries = sources
+        .into_values()
+        .filter_map(|builder| {
+            if builder.stages.is_empty() {
+                return None;
+            }
+            let confidence = bootstrap_chain_source_confidence(&builder.seen).to_string();
+            let missing_steps = BOOTSTRAP_CHAIN_STAGE_ORDER
+                .iter()
+                .filter(|stage| !builder.seen.contains(**stage))
+                .map(|stage| (*stage).to_string())
+                .collect::<Vec<_>>();
+            Some(BootstrapChainSource {
+                source_dex: builder.source_dex,
+                class_descriptor: builder.class_descriptor,
+                class_name: builder.class_name,
+                method_name: builder.method_name,
+                owner_kind: builder.owner_kind,
+                stages: builder.stages,
+                complete: missing_steps.is_empty(),
+                missing_steps,
+                confidence,
+            })
+        })
+        .collect::<Vec<_>>();
+
+    source_entries.sort_by(|a, b| {
+        b.complete
+            .cmp(&a.complete)
+            .then_with(|| a.missing_steps.len().cmp(&b.missing_steps.len()))
+            .then_with(|| {
+                if a.owner_kind == b.owner_kind {
+                    std::cmp::Ordering::Equal
+                } else if a.owner_kind == "app" {
+                    std::cmp::Ordering::Less
+                } else {
+                    std::cmp::Ordering::Greater
+                }
+            })
+            .then_with(|| b.stages.len().cmp(&a.stages.len()))
+            .then_with(|| a.source_dex.cmp(&b.source_dex))
+            .then_with(|| a.class_name.cmp(&b.class_name))
+            .then_with(|| a.method_name.cmp(&b.method_name))
+    });
+
+    let (complete, missing_steps) = source_entries
+        .first()
+        .map(|source| (source.complete, source.missing_steps.clone()))
+        .unwrap_or_else(|| (false, Vec::new()));
+
+    BootstrapChainEvidence {
+        complete,
+        missing_steps,
+        sources: source_entries,
     }
 }
 
@@ -694,6 +876,7 @@ fn finalize_android_startup_evidence(
     for class in &scanned_classes {
         class_supers.insert(class.class_descriptor.clone(), class.super_descriptor.clone());
     }
+    let bootstrap_chain = build_bootstrap_chain_evidence(&class_supers, &scanned_methods);
 
     let mut flutter_activity_classes = Vec::new();
     let mut class_seen = std::collections::HashSet::new();
@@ -871,7 +1054,8 @@ fn finalize_android_startup_evidence(
     let present = !flutter_activity_classes.is_empty()
         || !startup_methods.is_empty()
         || !dart_entrypoints.is_empty()
-        || !jni_bootstrap.is_empty();
+        || !jni_bootstrap.is_empty()
+        || !bootstrap_chain.sources.is_empty();
     let confidence = if !present {
         "none"
     } else if flutter_activity_classes
@@ -880,6 +1064,7 @@ fn finalize_android_startup_evidence(
         || startup_methods.iter().any(|item| item.confidence == "high")
         || !dart_entrypoints.is_empty()
         || !jni_bootstrap.is_empty()
+        || bootstrap_chain.complete
     {
         "high"
     } else {
@@ -895,6 +1080,7 @@ fn finalize_android_startup_evidence(
         startup_methods,
         dart_entrypoints,
         jni_bootstrap,
+        bootstrap_chain,
     }
 }
 
@@ -1415,6 +1601,18 @@ mod apk_startup_tests {
         assert_eq!(evidence.dart_entrypoints.len(), 2);
         assert_eq!(evidence.jni_bootstrap.len(), 1);
         assert_eq!(evidence.startup_methods.len(), 2);
+        assert_eq!(evidence.bootstrap_chain.sources.len(), 1);
+        assert!(!evidence.bootstrap_chain.complete);
+        assert_eq!(
+            evidence.bootstrap_chain.sources[0].stages,
+            vec![
+                "activity_on_create".to_string(),
+                "loader_start_initialization".to_string(),
+            ]
+        );
+        assert!(evidence.bootstrap_chain.sources[0]
+            .missing_steps
+            .contains(&"dart_entrypoint_execute".to_string()));
         assert!(evidence
             .dart_entrypoints
             .iter()
@@ -1570,6 +1768,30 @@ mod apk_startup_tests {
                 stage: "jni_attach_to_native".to_string(),
                 confidence: "high".to_string(),
             }],
+            bootstrap_chain: super::BootstrapChainEvidence {
+                complete: false,
+                missing_steps: vec!["jni_attach".to_string()],
+                sources: vec![super::BootstrapChainSource {
+                    source_dex: "classes.dex".to_string(),
+                    class_descriptor: "Lcom/example/MainActivity;".to_string(),
+                    class_name: "com.example.MainActivity".to_string(),
+                    method_name: "onCreate".to_string(),
+                    owner_kind: "app".to_string(),
+                    stages: vec![
+                        "activity_on_create".to_string(),
+                        "flutter_engine_ctor".to_string(),
+                    ],
+                    complete: false,
+                    missing_steps: vec![
+                        "delegate_on_attach".to_string(),
+                        "loader_start_initialization".to_string(),
+                        "loader_ensure_initialization_complete".to_string(),
+                        "jni_attach".to_string(),
+                        "dart_entrypoint_execute".to_string(),
+                    ],
+                    confidence: "medium".to_string(),
+                }],
+            },
         };
 
         let (enriched, inserted) = enrich_model_with_apk_startup_bootflow_hints(&model, &startup);

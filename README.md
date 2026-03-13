@@ -237,6 +237,7 @@ Main outputs under `-o <OUT_DIR>`:
 - `android_manifest` for manifest-derived launcher/deeplink/activity signals
 - `android_startup` for APK bytecode startup evidence such as embedding calls, JNI bootstrap stages, and recovered `DartEntrypoint` callsites when present
 - recovered `android_startup.dart_entrypoints` entries can now carry `function_name`, `library_uri`, and `app_bundle_path` when those values are directly recoverable from APK bytecode
+- `android_startup.bootstrap_chain` summarizes observed Android embedder startup stages per source method, including app-vs-framework ownership, ordered stages, completeness, and missing steps
 - `bootflow_discovery` entries tagged by `source` (`adapter`, `manifest`, `apk_startup`); APK-startup-backed entries may appear with `target_va: null` when the startup signal is real but the Dart function is not yet mapped
 
 ## Documentation

@@ -1662,6 +1662,12 @@ pub fn run_decompile(
             "dart_entrypoints": startup_evidence.dart_entrypoints,
             "jni_bootstrap_count": startup_evidence.jni_bootstrap.len(),
             "jni_bootstrap": startup_evidence.jni_bootstrap,
+            "bootstrap_chain": {
+                "complete": startup_evidence.bootstrap_chain.complete,
+                "missing_steps": startup_evidence.bootstrap_chain.missing_steps,
+                "source_count": startup_evidence.bootstrap_chain.sources.len(),
+                "sources": startup_evidence.bootstrap_chain.sources
+            },
             "synthetic_bootflow_hints": startup_synthetic_hints
         },
         "counts": {

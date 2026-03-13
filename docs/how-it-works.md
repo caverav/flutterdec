@@ -662,11 +662,13 @@ File naming convention:
 - `android_manifest` aggregate
 - `android_startup` aggregate (APK bytecode startup evidence from `classes*.dex`, including embedding calls, JNI/bootstrap stages, parse errors, and recovered `DartEntrypoint` callsites when present)
 - recovered `android_startup.dart_entrypoints` records can include literal `function_name`, `library_uri`, and `app_bundle_path` values when constructor/execute arguments are directly backed by `const-string` plus simple register propagation
+- `android_startup.bootstrap_chain` aggregate (best observed startup-chain completeness plus per-source ordered stages, owner kind, and missing-step diagnostics)
 - `function_scope.priority_package_hints` (effective package boosts used by capped prioritization)
 - `prioritization.selected_package_counts_top` and `prioritization.selected_unknown_library_count` (selected top-N ownership mix)
 - `prioritization.selected_scope_mix` and `prioritization.selected_app_like_ratio` (selected top-N scope quality)
 - `prioritization.selected_preferred_app_count`, `selected_other_app_count`, and `selected_preferred_app_ratio` (selected app-package precision against preferred hints)
 - `prioritization.selected_component_totals_top` (which score components dominated capped selection)
+- capped prioritization now applies extra context scoring to startup-frontier functions so app-owned bootstrap-adjacent code outranks framework/bootstrap noise when both are visible
 - `prioritization.selected_bootflow_coverage` (how much discovered main/runApp/deeplink/activity/bootstrap bootflow is represented in selected top-N)
 - `prioritization.selected_bootflow_hits_top` (top selected functions that matched bootflow targets)
 
