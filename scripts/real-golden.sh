@@ -16,10 +16,48 @@ Environment:
 Notes:
   - Baseline directory stores:
       quality.json
+      report_metrics.json
       files.txt
       <tracked output files>
   - `check` compares current outputs against baseline snapshots.
 EOF
+}
+
+extract_report_metrics() {
+  local report_path="$1"
+  local metrics_path="$2"
+  jq '{
+    android_startup: {
+      present: .android_startup.present,
+      confidence: .android_startup.confidence,
+      flutter_activity_count: .android_startup.flutter_activity_count,
+      startup_method_count: .android_startup.startup_method_count,
+      dart_entrypoint_count: .android_startup.dart_entrypoint_count,
+      literal_entrypoint_count: (.android_startup.dart_entrypoints | map(select(.function_name != null or .library_uri != null or .app_bundle_path != null)) | length),
+      bootstrap_chain_complete: .android_startup.bootstrap_chain.complete,
+      bootstrap_chain_source_count: .android_startup.bootstrap_chain.source_count
+    },
+    bootflow: {
+      main_count: .bootflow_discovery.main_count,
+      runapp_count: .bootflow_discovery.runapp_count,
+      deeplink_count: .bootflow_discovery.deeplink_count,
+      activity_count: .bootflow_discovery.activity_count,
+      bootstrap_count: .bootflow_discovery.bootstrap_count,
+      selected_bootflow_coverage: .prioritization.selected_bootflow_coverage
+    },
+    engine_symbols: {
+      enabled: .engine_symbol_ingestion.enabled,
+      match_kind: .engine_symbol_ingestion.match_kind,
+      applied_target_count: .engine_symbol_ingestion.applied_target_count,
+      external_name_count: .name_resolution.final_quality.external,
+      exact_name_count: .name_resolution.final_quality.exact
+    }
+  }' "$report_path" > "$metrics_path"
+}
+
+print_metrics_summary() {
+  local metrics_path="$1"
+  jq -r '"[real-golden] metrics: startup.present=\(.android_startup.present) entrypoints=\(.android_startup.dart_entrypoint_count) literal_entrypoints=\(.android_startup.literal_entrypoint_count) bootstrap_sources=\(.android_startup.bootstrap_chain_source_count) bootflow.any.coverage=\(.bootflow.selected_bootflow_coverage.any.coverage) engine_symbols.match=\(.engine_symbols.match_kind // "-") engine_symbols.applied=\(.engine_symbols.applied_target_count) names.external=\(.engine_symbols.external_name_count) names.exact=\(.engine_symbols.exact_name_count)"' "$metrics_path"
 }
 
 if [[ $# -lt 1 ]]; then
@@ -109,6 +147,13 @@ nix develop -c cargo run -q -p flutterdec-cli -- decompile \
   --max-functions "$max_functions" \
   --min-disassembly-ratio "$min_ratio" >/dev/null
 
+if [[ ! -f "$tmp_out/report.json" ]]; then
+  echo "[real-golden] missing report.json in run output: $tmp_out/report.json" >&2
+  exit 1
+fi
+extract_report_metrics "$tmp_out/report.json" "$tmp_out/report_metrics.json"
+print_metrics_summary "$tmp_out/report_metrics.json"
+
 if [[ "$mode" == "record" ]]; then
   mkdir -p "$baseline"
 
@@ -125,7 +170,10 @@ if [[ "$mode" == "record" ]]; then
   fi
 
   cp "$tmp_out/quality.json" "$baseline/quality.json"
-  cp "$files_list" "$baseline/files.txt"
+  cp "$tmp_out/report_metrics.json" "$baseline/report_metrics.json"
+  if [[ "$files_list" != "$baseline/files.txt" ]]; then
+    cp "$files_list" "$baseline/files.txt"
+  fi
 
   while IFS= read -r rel || [[ -n "$rel" ]]; do
     rel="$(echo "$rel" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
@@ -148,6 +196,10 @@ if [[ ! -f "$baseline/quality.json" ]]; then
   echo "[real-golden] baseline quality file missing: $baseline/quality.json" >&2
   exit 1
 fi
+if [[ ! -f "$baseline/report_metrics.json" ]]; then
+  echo "[real-golden] baseline metrics file missing: $baseline/report_metrics.json" >&2
+  exit 1
+fi
 if [[ ! -f "$files_list" ]]; then
   echo "[real-golden] files list missing: $files_list" >&2
   exit 1
@@ -155,6 +207,9 @@ fi
 
 echo "[real-golden] comparing quality.json"
 diff -u "$baseline/quality.json" "$tmp_out/quality.json"
+
+echo "[real-golden] comparing report_metrics.json"
+diff -u "$baseline/report_metrics.json" "$tmp_out/report_metrics.json"
 
 while IFS= read -r rel || [[ -n "$rel" ]]; do
   rel="$(echo "$rel" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
