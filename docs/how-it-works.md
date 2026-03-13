@@ -89,6 +89,7 @@ sequenceDiagram
 - supports analysis-engine profiles: `balanced` (default) and `light`
 - profile defaults can be overridden with per-feature `--with-*` / `--no-*` engine flags (canonical model symbols, pool hints, semantic reporting, bootflow category seeding)
 - can ingest extra ELF symbol tables and `map-symbols` target JSON to improve direct call naming
+- can also auto-ingest locally cached `map-symbols` target summaries by exact `libflutter.so` build-id match when `symbols/manifest.json` is present
 - external descriptive names replace generic placeholders like `sub_*` and `fn_0x*` when addresses match
 - auto-generated disassembler names such as `FUN_<hex>`, `nullsub_*`, `loc_*`, and `off_*` are also treated as generic placeholders during merge
 - indirect `target_va` symbol rewrites apply the same generic-placeholder filter, so tool placeholders are not emitted as callable names
@@ -759,7 +760,7 @@ Symptom: pseudocode has too many omitted path summaries
 Symptom: function names are too synthetic
 
 - improve adapter metadata extraction first
-- then run `map-symbols` on stripped/unstripped pairs and feed `symbol_target_summary.json` into `decompile --extra-symbol-map-targets ...`
+- then run `map-symbols` on stripped/unstripped pairs and either feed `symbol_target_summary.json` into `decompile --extra-symbol-map-targets ...` or register it into the local cache with `--register-local-cache`
 
 Symptom: control flow is valid but hard to read
 
