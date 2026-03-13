@@ -273,6 +273,7 @@ pub struct DiffReport {
 include!("pipeline/helpers.rs");
 include!("pipeline/model.rs");
 include!("pipeline/quality.rs");
+include!("pipeline/bootflow_hints.rs");
 include!("pipeline/apk_startup.rs");
 include!("pipeline/runners_scripts.rs");
 include!("pipeline/runners_diff.rs");
