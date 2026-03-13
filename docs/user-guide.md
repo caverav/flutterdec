@@ -82,6 +82,7 @@ flutterdec info ./sample.apk --json
 ```
 
 If adapter metadata is available, `info` reports `app_package_counts_top` plus compatibility signals (`adapter_kind`, `manifest_entry_present`, `adapter_snapshot_hash_match`, `compatibility_warnings`).
+For APK inputs, `info` also reports Android startup summary fields: `android_startup_present`, `android_startup_confidence`, `android_startup_entrypoint_count`, and `android_startup_flutter_activity_count`.
 
 Install adapter for Dart hash:
 
@@ -210,6 +211,8 @@ Per-feature toggles (override profile defaults):
 - `--with-pool-value-hints` / `--no-pool-value-hints`
 - `--with-pool-semantic-hints` / `--no-pool-semantic-hints`
 - `--with-semantic-reporting` / `--no-semantic-reporting`
+- `--with-bootflow-category-seeds` / `--no-bootflow-category-seeds`
+- `--with-apk-startup-analysis` / `--no-apk-startup-analysis`
 
 Note: each `--with-*` conflicts with its matching `--no-*` flag.
 
@@ -267,3 +270,7 @@ Written under output directory:
 - `ir/*.json` with `--emit-ir`
 
 `report.json` includes compatibility diagnostics (schema support, manifest-entry presence, and snapshot-hash alignment).
+For APK inputs it also includes:
+
+- `android_manifest` with manifest-derived launcher, deeplink, and activity signals
+- `android_startup` with `classes*.dex` startup evidence, JNI/bootstrap stages, and recovered `DartEntrypoint` callsites when present

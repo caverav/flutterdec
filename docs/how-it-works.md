@@ -77,6 +77,7 @@ sequenceDiagram
 - fast metadata path
 - loader always runs
 - adapter runs only if installed for the detected hash
+- APK inputs also run Android startup evidence extraction from `classes*.dex` and surface summary counts in JSON output
 - no disassembly, no IR, no pseudocode writing
 
 2. `decompile`
@@ -659,6 +660,7 @@ File naming convention:
 - `engine_fingerprint_context` (best-effort `libflutter.so` fingerprint metadata and errors when unavailable)
 - `bootflow_discovery` aggregate
 - `android_manifest` aggregate
+- `android_startup` aggregate (APK bytecode startup evidence from `classes*.dex`, including embedding calls, JNI/bootstrap stages, parse errors, and recovered `DartEntrypoint` callsites when present)
 - `function_scope.priority_package_hints` (effective package boosts used by capped prioritization)
 - `prioritization.selected_package_counts_top` and `prioritization.selected_unknown_library_count` (selected top-N ownership mix)
 - `prioritization.selected_scope_mix` and `prioritization.selected_app_like_ratio` (selected top-N scope quality)

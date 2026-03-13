@@ -99,6 +99,7 @@ flutterdec info ./sample.apk --json
 ```
 
 `info` now includes detected app package candidates (`app_package_counts_top`) when adapter metadata is available.
+For APK inputs it also reports Android startup summary fields: `android_startup_present`, `android_startup_confidence`, `android_startup_entrypoint_count`, and `android_startup_flutter_activity_count`.
 
 2. Install adapter for the detected Dart hash:
 
@@ -214,6 +215,7 @@ You can explicitly enable/disable individual engine toggles:
 - `--with-pool-semantic-hints` / `--no-pool-semantic-hints`
 - `--with-semantic-reporting` / `--no-semantic-reporting`
 - `--with-bootflow-category-seeds` / `--no-bootflow-category-seeds`
+- `--with-apk-startup-analysis` / `--no-apk-startup-analysis`
 
 ## Output
 
@@ -229,7 +231,11 @@ Main outputs under `-o <OUT_DIR>`:
 - `ida_apply_symbols.py` (if `--emit-ida-script`; applies symbol names and pool-load comments in IDA)
 - `ir/*.json` (if `--emit-ir`)
 
-`report.json` also includes a `compatibility` section for schema/hash/manifest alignment diagnostics.
+`report.json` also includes:
+
+- `compatibility` for schema/hash/manifest alignment diagnostics
+- `android_manifest` for manifest-derived launcher/deeplink/activity signals
+- `android_startup` for APK bytecode startup evidence such as embedding calls, JNI bootstrap stages, and recovered `DartEntrypoint` callsites when present
 
 ## Documentation
 
