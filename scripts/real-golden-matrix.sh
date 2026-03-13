@@ -80,7 +80,11 @@ done
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "${script_dir}/.." && pwd)"
-profiles_root_abs="${repo_root}/${profiles_root}"
+if [[ "$profiles_root" = /* ]]; then
+  profiles_root_abs="$profiles_root"
+else
+  profiles_root_abs="${repo_root}/${profiles_root}"
+fi
 real_golden_script="${repo_root}/scripts/real-golden.sh"
 
 if [[ ! -d "$profiles_root_abs" ]]; then
