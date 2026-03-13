@@ -610,6 +610,39 @@ fn normalize_package_filter(raw: &str) -> Option<String> {
     Some(name)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PriorityLibraryKind {
+    App,
+    Framework,
+    Stdlib,
+    Unknown,
+}
+
+fn priority_library_kind(uri: &str) -> PriorityLibraryKind {
+    let trimmed = uri.trim();
+    if trimmed.is_empty() {
+        return PriorityLibraryKind::Unknown;
+    }
+    if trimmed.starts_with("package:flutter/") {
+        return PriorityLibraryKind::Framework;
+    }
+    if trimmed.starts_with("dart:") {
+        return PriorityLibraryKind::Stdlib;
+    }
+    if trimmed.starts_with("package:") || trimmed.ends_with(".dart") {
+        return PriorityLibraryKind::App;
+    }
+    PriorityLibraryKind::Unknown
+}
+
+fn is_bootstrap_like_name(name_lower: &str) -> bool {
+    name_lower.contains("ensureinitialized")
+        || name_lower.contains("nativeensureinitialized")
+        || name_lower.contains("ensureinitializationcomplete")
+        || name_lower.contains("startinitialization")
+        || name_lower.contains("attachtonative")
+}
+
 fn build_app_package_boosts(
     model: &ProgramModel,
     owner_library: &HashMap<String, String>,
@@ -828,6 +861,7 @@ fn function_priority(
     let mut components = Vec::new();
     let name_lower = func.name.to_ascii_lowercase();
     let owner_lower = func.owner_class.to_ascii_lowercase();
+    let mut library_kind = PriorityLibraryKind::Unknown;
 
     if has_no_isolate_marker(&name_lower) || has_no_isolate_marker(&owner_lower) {
         score -= 650;
@@ -895,6 +929,7 @@ fn function_priority(
 
     if let Some(uri) = owner_library.get(&func.owner_class) {
         let uri_lower = uri.to_ascii_lowercase();
+        library_kind = priority_library_kind(&uri_lower);
         if uri_lower.ends_with("/main.dart") || uri_lower.ends_with("main.dart") {
             score += 700;
             push_component(&mut components, "library_main_bonus", 700);
@@ -946,6 +981,23 @@ fn function_priority(
         score += library_deeplink;
         push_component(&mut components, "library_deeplink_signal", library_deeplink);
     }
+    if is_bootstrap_like_name(&name_lower) {
+        match library_kind {
+            PriorityLibraryKind::App => {
+                score += 260;
+                push_component(&mut components, "app_bootstrap_context_bonus", 260);
+            }
+            PriorityLibraryKind::Framework => {
+                score -= 280;
+                push_component(&mut components, "framework_bootstrap_context_penalty", -280);
+            }
+            PriorityLibraryKind::Stdlib => {
+                score -= 360;
+                push_component(&mut components, "stdlib_bootstrap_context_penalty", -360);
+            }
+            PriorityLibraryKind::Unknown => {}
+        }
+    }
     if let Some(extra) = target_va_hints.get(&func.entry_va) {
         score += *extra;
         push_component(&mut components, "pool_target_va_hint", *extra);
@@ -958,6 +1010,21 @@ fn function_priority(
         } else {
             score += *extra;
             push_component(&mut components, "entrypoint_frontier_boost", *extra);
+        }
+        match library_kind {
+            PriorityLibraryKind::App => {
+                score += 220;
+                push_component(&mut components, "app_frontier_context_bonus", 220);
+            }
+            PriorityLibraryKind::Framework => {
+                score -= 180;
+                push_component(&mut components, "framework_frontier_context_penalty", -180);
+            }
+            PriorityLibraryKind::Stdlib => {
+                score -= 240;
+                push_component(&mut components, "stdlib_frontier_context_penalty", -240);
+            }
+            PriorityLibraryKind::Unknown => {}
         }
     }
     if stats.call_out_degree > 0 {
@@ -2794,6 +2861,138 @@ mod tests {
         assert!(
             preferred_score > dep_score,
             "preferred package should outrank dependency package (preferred={preferred_score}, dep={dep_score})"
+        );
+    }
+
+    #[test]
+    fn app_bootstrap_context_outranks_framework_bootstrap_context() {
+        let app_func = FunctionInfo {
+            id: 0,
+            name: "ensureInitialized".to_string(),
+            owner_class: "AppBootstrap".to_string(),
+            entry_va: 0x7300,
+            size: 64,
+            code_section_va: 0x7300,
+            name_kind: None,
+        };
+        let framework_func = FunctionInfo {
+            id: 1,
+            name: "ensureInitialized".to_string(),
+            owner_class: "WidgetsFlutterBinding".to_string(),
+            entry_va: 0x7310,
+            size: 64,
+            code_section_va: 0x7300,
+            name_kind: None,
+        };
+        let mut owner_library = HashMap::new();
+        owner_library.insert(
+            "AppBootstrap".to_string(),
+            "package:app/main.dart".to_string(),
+        );
+        owner_library.insert(
+            "WidgetsFlutterBinding".to_string(),
+            "package:flutter/src/widgets/binding.dart".to_string(),
+        );
+
+        let (app_score, app_components) = function_priority(
+            &app_func,
+            &owner_library,
+            &HashMap::new(),
+            &HashMap::new(),
+            &HashSet::new(),
+            &HashMap::new(),
+            FunctionScoreStats {
+                call_out_degree: 0,
+                name_occurrences: 1,
+            },
+        );
+        let (framework_score, framework_components) = function_priority(
+            &framework_func,
+            &owner_library,
+            &HashMap::new(),
+            &HashMap::new(),
+            &HashSet::new(),
+            &HashMap::new(),
+            FunctionScoreStats {
+                call_out_degree: 0,
+                name_occurrences: 1,
+            },
+        );
+
+        assert!(app_components
+            .iter()
+            .any(|(name, score)| { name == "app_bootstrap_context_bonus" && *score == 260 }));
+        assert!(framework_components.iter().any(|(name, score)| {
+            name == "framework_bootstrap_context_penalty" && *score == -280
+        }));
+        assert!(
+            app_score > framework_score,
+            "app-owned bootstrap function should outrank framework bootstrap helper (app={app_score}, framework={framework_score})"
+        );
+    }
+
+    #[test]
+    fn app_frontier_context_outranks_framework_frontier_context() {
+        let app_func = FunctionInfo {
+            id: 0,
+            name: "sub_7400".to_string(),
+            owner_class: "AppRoot".to_string(),
+            entry_va: 0x7400,
+            size: 64,
+            code_section_va: 0x7400,
+            name_kind: None,
+        };
+        let framework_func = FunctionInfo {
+            id: 1,
+            name: "sub_7410".to_string(),
+            owner_class: "FrameworkRoot".to_string(),
+            entry_va: 0x7410,
+            size: 64,
+            code_section_va: 0x7400,
+            name_kind: None,
+        };
+        let mut owner_library = HashMap::new();
+        owner_library.insert("AppRoot".to_string(), "package:app/main.dart".to_string());
+        owner_library.insert(
+            "FrameworkRoot".to_string(),
+            "package:flutter/src/widgets/app.dart".to_string(),
+        );
+        let frontier_scores = HashMap::from([(0x7400, 900), (0x7410, 900)]);
+
+        let (app_score, app_components) = function_priority(
+            &app_func,
+            &owner_library,
+            &HashMap::new(),
+            &HashMap::new(),
+            &HashSet::new(),
+            &frontier_scores,
+            FunctionScoreStats {
+                call_out_degree: 0,
+                name_occurrences: 1,
+            },
+        );
+        let (framework_score, framework_components) = function_priority(
+            &framework_func,
+            &owner_library,
+            &HashMap::new(),
+            &HashMap::new(),
+            &HashSet::new(),
+            &frontier_scores,
+            FunctionScoreStats {
+                call_out_degree: 0,
+                name_occurrences: 1,
+            },
+        );
+
+        assert!(app_components
+            .iter()
+            .any(|(name, score)| { name == "app_frontier_context_bonus" && *score == 220 }));
+        assert!(framework_components.iter().any(|(name, score)| {
+            name == "framework_frontier_context_penalty" && *score == -180
+        }));
+        assert!(
+            app_score > framework_score,
+            "entrypoint-frontier app code should outrank frontier framework code (app={app_score}, framework={framework_score})"
         );
     }
 
