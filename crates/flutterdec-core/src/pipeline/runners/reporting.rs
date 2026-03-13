@@ -37,8 +37,9 @@ pub(super) struct CallFallbackSummary {
 #[derive(Debug, Clone)]
 pub(super) struct BootflowDiscoveryEntry {
     pub(super) decoded_kind: String,
+    pub(super) source: String,
     pub(super) selector: String,
-    pub(super) target_va: u64,
+    pub(super) target_va: Option<u64>,
     pub(super) owner_class: String,
     pub(super) library_uri: String,
     pub(super) value: String,
@@ -219,8 +220,9 @@ fn is_bootstrap_selector(selector_lower: &str) -> bool {
 
 struct BootflowEntrySeed<'a> {
     decoded_kind: &'a str,
+    source: &'a str,
     selector: &'a str,
-    target_va: u64,
+    target_va: Option<u64>,
     owner_class: &'a str,
     library_uri: &'a str,
     value: &'a str,
@@ -233,10 +235,15 @@ fn push_bootflow_entry(
     seed: &BootflowEntrySeed<'_>,
 ) {
     let key = format!(
-        "{}|0x{:x}|{}",
+        "{}|{}|{}|{}|{}|{}",
         category,
-        seed.target_va,
-        seed.selector.to_ascii_lowercase()
+        seed.target_va
+            .map(|va| format!("0x{va:x}"))
+            .unwrap_or_else(|| "none".to_string()),
+        seed.selector.to_ascii_lowercase(),
+        seed.source.to_ascii_lowercase(),
+        seed.owner_class.to_ascii_lowercase(),
+        seed.library_uri.to_ascii_lowercase()
     );
     if seen.contains(&key) {
         return;
@@ -244,6 +251,7 @@ fn push_bootflow_entry(
     seen.insert(key);
     out.push(BootflowDiscoveryEntry {
         decoded_kind: seed.decoded_kind.to_string(),
+        source: seed.source.to_string(),
         selector: seed.selector.to_string(),
         target_va: seed.target_va,
         owner_class: seed.owner_class.to_string(),
@@ -255,11 +263,33 @@ fn push_bootflow_entry(
 fn normalize_bootflow_entries(entries: &mut Vec<BootflowDiscoveryEntry>) {
     entries.sort_by(|a, b| {
         a.target_va
-            .cmp(&b.target_va)
+            .unwrap_or(0)
+            .cmp(&b.target_va.unwrap_or(0))
             .then_with(|| a.selector.cmp(&b.selector))
+            .then_with(|| a.source.cmp(&b.source))
             .then_with(|| a.decoded_kind.cmp(&b.decoded_kind))
     });
     entries.truncate(20);
+}
+
+fn bootflow_entry_source(
+    entry: &flutterdec_adapter::ObjectPoolEntry,
+    decoded_kind_lower: &str,
+    value_lower: &str,
+) -> &'static str {
+    match entry.source.as_deref().map(str::trim).unwrap_or("") {
+        "manifest" => "manifest",
+        "apk_startup" => "apk_startup",
+        "synthetic" | "internal" | "blutter" => "adapter",
+        explicit if !explicit.is_empty() => "adapter",
+        _ if decoded_kind_lower.starts_with("manifest") || value_lower.starts_with("manifest:") => {
+            "manifest"
+        }
+        _ if decoded_kind_lower.starts_with("startup") || value_lower.ends_with(":apk_startup") => {
+            "apk_startup"
+        }
+        _ => "adapter",
+    }
 }
 
 pub(super) fn collect_bootflow_discovery(model: &ProgramModel) -> BootflowDiscoverySummary {
@@ -267,9 +297,6 @@ pub(super) fn collect_bootflow_discovery(model: &ProgramModel) -> BootflowDiscov
     let mut seen = HashSet::new();
 
     for entry in &model.object_pool {
-        let Some(target_va) = entry.target_va else {
-            continue;
-        };
         let decoded_kind = entry
             .decoded_kind
             .as_deref()
@@ -282,16 +309,19 @@ pub(super) fn collect_bootflow_discovery(model: &ProgramModel) -> BootflowDiscov
         let value_lower = value.to_ascii_lowercase();
         let owner_class = entry.owner_class.as_deref().map(str::trim).unwrap_or("");
         let library_uri = entry.library_uri.as_deref().map(str::trim).unwrap_or("");
+        let source = bootflow_entry_source(entry, &decoded_kind_lower, &value_lower);
         let seed = BootflowEntrySeed {
             decoded_kind,
+            source,
             selector,
-            target_va,
+            target_va: entry.target_va,
             owner_class,
             library_uri,
             value,
         };
 
         if decoded_kind_lower == "bootmaincandidate"
+            || decoded_kind_lower == "startupmaincandidate"
             || decoded_kind_lower == "manifestmaincandidate"
             || value_lower.starts_with("bootflow:main:")
             || value_lower.starts_with("manifest:main")
@@ -306,6 +336,7 @@ pub(super) fn collect_bootflow_discovery(model: &ProgramModel) -> BootflowDiscov
         }
 
         if decoded_kind_lower == "bootrunappcandidate"
+            || decoded_kind_lower == "startuprunappcandidate"
             || decoded_kind_lower == "manifestrunappcandidate"
             || value_lower.starts_with("bootflow:runapp:")
             || value_lower.starts_with("manifest:runapp")
@@ -320,6 +351,7 @@ pub(super) fn collect_bootflow_discovery(model: &ProgramModel) -> BootflowDiscov
         }
 
         if decoded_kind_lower == "deeplinkhandlercandidate"
+            || decoded_kind_lower == "startupdeeplinkcandidate"
             || decoded_kind_lower == "manifestdeeplinkcandidate"
             || value_lower.starts_with("bootflow:deeplink:")
             || value_lower.starts_with("manifest:deeplink")
@@ -334,6 +366,7 @@ pub(super) fn collect_bootflow_discovery(model: &ProgramModel) -> BootflowDiscov
         }
 
         if decoded_kind_lower == "activityhandlercandidate"
+            || decoded_kind_lower == "startupactivitycandidate"
             || decoded_kind_lower == "manifestactivitycandidate"
             || value_lower.starts_with("bootflow:activity:")
             || value_lower.starts_with("manifest:activity")
@@ -348,6 +381,7 @@ pub(super) fn collect_bootflow_discovery(model: &ProgramModel) -> BootflowDiscov
         }
 
         if decoded_kind_lower == "bootstrapinitcandidate"
+            || decoded_kind_lower == "startupbootstrapcandidate"
             || decoded_kind_lower == "manifestbootstrapcandidate"
             || value_lower.starts_with("bootflow:init:")
             || value_lower.starts_with("manifest:bootstrap")

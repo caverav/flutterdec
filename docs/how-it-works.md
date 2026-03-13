@@ -658,7 +658,7 @@ File naming convention:
 - `ghidra_script` output metadata (`enabled`, path, symbol count, and pool-comment count)
 - `ida_script` output metadata (`enabled`, path, symbol count, and pool-comment count)
 - `engine_fingerprint_context` (best-effort `libflutter.so` fingerprint metadata and errors when unavailable)
-- `bootflow_discovery` aggregate
+- `bootflow_discovery` aggregate (source-tagged entries from adapter, manifest, and APK-startup evidence; startup-derived entries can be targetless when no Dart VA is available yet)
 - `android_manifest` aggregate
 - `android_startup` aggregate (APK bytecode startup evidence from `classes*.dex`, including embedding calls, JNI/bootstrap stages, parse errors, and recovered `DartEntrypoint` callsites when present)
 - `function_scope.priority_package_hints` (effective package boosts used by capped prioritization)

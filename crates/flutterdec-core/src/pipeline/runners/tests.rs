@@ -805,16 +805,18 @@
             main: vec![
                 BootflowDiscoveryEntry {
                     decoded_kind: "pool".to_string(),
+                    source: "adapter".to_string(),
                     selector: "main".to_string(),
-                    target_va: 0x1000,
+                    target_va: Some(0x1000),
                     owner_class: "Global".to_string(),
                     library_uri: "package:app/main.dart".to_string(),
                     value: "bootflow:main:main".to_string(),
                 },
                 BootflowDiscoveryEntry {
                     decoded_kind: "pool".to_string(),
+                    source: "adapter".to_string(),
                     selector: "main".to_string(),
-                    target_va: 0x2000,
+                    target_va: Some(0x2000),
                     owner_class: "Global".to_string(),
                     library_uri: "package:app/main.dart".to_string(),
                     value: "bootflow:main:main".to_string(),
@@ -822,16 +824,18 @@
             ],
             runapp: vec![BootflowDiscoveryEntry {
                 decoded_kind: "pool".to_string(),
+                source: "adapter".to_string(),
                 selector: "runApp".to_string(),
-                target_va: 0x1010,
+                target_va: Some(0x1010),
                 owner_class: "Global".to_string(),
                 library_uri: "package:app/main.dart".to_string(),
                 value: "bootflow:runapp:runApp".to_string(),
             }],
             deeplink: vec![BootflowDiscoveryEntry {
                 decoded_kind: "pool".to_string(),
+                source: "adapter".to_string(),
                 selector: "onNewIntent".to_string(),
-                target_va: 0x3000,
+                target_va: Some(0x3000),
                 owner_class: "MainActivity".to_string(),
                 library_uri: "package:app/main.dart".to_string(),
                 value: "bootflow:deeplink:onNewIntent".to_string(),
@@ -839,8 +843,9 @@
             activity: Vec::new(),
             bootstrap: vec![BootflowDiscoveryEntry {
                 decoded_kind: "pool".to_string(),
+                source: "adapter".to_string(),
                 selector: "ensureInitialized".to_string(),
-                target_va: 0x1000,
+                target_va: Some(0x1000),
                 owner_class: "WidgetsFlutterBinding".to_string(),
                 library_uri: "package:flutter/src/widgets/binding.dart".to_string(),
                 value: "bootflow:init:ensureInitialized".to_string(),
@@ -1481,7 +1486,8 @@
         assert_eq!(summary.deeplink.len(), 1);
         assert_eq!(summary.activity.len(), 2);
         assert_eq!(summary.bootstrap.len(), 1);
-        assert_eq!(summary.main[0].target_va, 0x1000);
+        assert_eq!(summary.main[0].target_va, Some(0x1000));
+        assert_eq!(summary.main[0].source, "adapter");
         assert_eq!(summary.deeplink[0].selector, "onNewIntent");
         assert!(
             summary
@@ -1539,8 +1545,53 @@
 
         let summary = collect_bootflow_discovery(&model);
         assert_eq!(summary.main.len(), 1);
-        assert_eq!(summary.main[0].target_va, 0x2000);
+        assert_eq!(summary.main[0].target_va, Some(0x2000));
         assert_eq!(summary.main[0].selector, "main");
+    }
+
+    #[test]
+    fn keeps_bootflow_entries_with_same_target_and_selector_when_source_differs() {
+        let model = ProgramModel {
+            schema_version: 2,
+            adapter_kind: "python".to_string(),
+            dart_version: "3.0.0".to_string(),
+            snapshot_hash: "deadbeef".to_string(),
+            arch: "arm64".to_string(),
+            libraries: Vec::new(),
+            classes: Vec::new(),
+            functions: Vec::new(),
+            object_pool: vec![
+                flutterdec_adapter::ObjectPoolEntry {
+                    index: 1,
+                    kind: "String".to_string(),
+                    value: "manifest:main-launcher".to_string(),
+                    decoded_kind: Some("ManifestMainCandidate".to_string()),
+                    selector: Some("main".to_string()),
+                    target_va: Some(0x2000),
+                    owner_class: Some("Global".to_string()),
+                    library_uri: Some("package:app/main.dart".to_string()),
+                    confidence: None,
+                    source: Some("manifest".to_string()),
+                },
+                flutterdec_adapter::ObjectPoolEntry {
+                    index: 2,
+                    kind: "String".to_string(),
+                    value: "bootflow:main:apk_startup".to_string(),
+                    decoded_kind: Some("StartupMainCandidate".to_string()),
+                    selector: Some("main".to_string()),
+                    target_va: Some(0x2000),
+                    owner_class: Some("Global".to_string()),
+                    library_uri: Some("package:app/main.dart".to_string()),
+                    confidence: None,
+                    source: Some("apk_startup".to_string()),
+                },
+            ],
+        };
+
+        let summary = collect_bootflow_discovery(&model);
+        assert_eq!(summary.main.len(), 2);
+        assert!(summary.main.iter().any(|entry| entry.source == "manifest"));
+        assert!(summary.main.iter().any(|entry| entry.source == "apk_startup"));
     }
 
     #[test]
@@ -1646,6 +1697,10 @@
         assert!(kinds.contains(&"ManifestDeepLinkCandidate"));
         assert!(kinds.contains(&"ManifestActivityCandidate"));
         assert!(!kinds.contains(&"ManifestBootstrapCandidate"));
+        assert!(enriched
+            .object_pool
+            .iter()
+            .all(|entry| entry.source.as_deref() == Some("manifest")));
     }
 
     #[test]

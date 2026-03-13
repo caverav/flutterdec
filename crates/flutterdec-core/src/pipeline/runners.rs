@@ -589,6 +589,7 @@ struct SelectedBootflowStats {
 struct SelectedBootflowHit {
     category: String,
     decoded_kind: String,
+    source: String,
     selector: String,
     target_va: u64,
     function_name: String,
@@ -609,18 +610,22 @@ fn collect_selected_bootflow_category_hits(
     let mut category_selected = HashSet::new();
     let mut seen_hit_keys = HashSet::new();
     for entry in entries {
-        category_discovered.insert(entry.target_va);
-        any_discovered.insert(entry.target_va);
-        let Some(selected) = selected_by_entry_va.get(&entry.target_va) else {
+        let Some(target_va) = entry.target_va else {
             continue;
         };
-        category_selected.insert(entry.target_va);
-        any_selected.insert(entry.target_va);
+        category_discovered.insert(target_va);
+        any_discovered.insert(target_va);
+        let Some(selected) = selected_by_entry_va.get(&target_va) else {
+            continue;
+        };
+        category_selected.insert(target_va);
+        any_selected.insert(target_va);
         let hit_key = format!(
-            "{}|0x{:x}|{}",
+            "{}|0x{:x}|{}|{}",
             category,
-            entry.target_va,
-            entry.selector.to_ascii_lowercase()
+            target_va,
+            entry.selector.to_ascii_lowercase(),
+            entry.source.to_ascii_lowercase()
         );
         if !seen_hit_keys.insert(hit_key) {
             continue;
@@ -628,8 +633,9 @@ fn collect_selected_bootflow_category_hits(
         hits.push(SelectedBootflowHit {
             category: category.to_string(),
             decoded_kind: entry.decoded_kind.clone(),
+            source: entry.source.clone(),
             selector: entry.selector.clone(),
-            target_va: entry.target_va,
+            target_va,
             function_name: selected.function_name.clone(),
             owner_class: selected.owner_class.clone(),
             library_uri: selected.library_uri.clone(),
@@ -1012,6 +1018,11 @@ pub fn run_decompile(
         enrich_model_with_manifest_bootflow_hints(&loaded_model.model, &manifest_inspection.signals)
     } else {
         (loaded_model.model, 0)
+    };
+    let (model, startup_synthetic_hints) = if opt.engine_options.apk_startup_analysis {
+        enrich_model_with_apk_startup_bootflow_hints(&model, &startup_evidence)
+    } else {
+        (model, 0)
     };
     let app_package_counts = collect_app_package_counts(&model);
     let app_package_counts_top = app_package_counts
@@ -1400,6 +1411,7 @@ pub fn run_decompile(
             json!({
                 "category": hit.category,
                 "decoded_kind": hit.decoded_kind,
+                "source": hit.source,
                 "selector": hit.selector,
                 "target_va": hit.target_va,
                 "function_name": hit.function_name,
@@ -1447,6 +1459,7 @@ pub fn run_decompile(
         .map(|entry| {
             json!({
                 "decoded_kind": entry.decoded_kind,
+                "source": entry.source,
                 "selector": entry.selector,
                 "target_va": entry.target_va,
                 "owner_class": entry.owner_class,
@@ -1461,6 +1474,7 @@ pub fn run_decompile(
         .map(|entry| {
             json!({
                 "decoded_kind": entry.decoded_kind,
+                "source": entry.source,
                 "selector": entry.selector,
                 "target_va": entry.target_va,
                 "owner_class": entry.owner_class,
@@ -1475,6 +1489,7 @@ pub fn run_decompile(
         .map(|entry| {
             json!({
                 "decoded_kind": entry.decoded_kind,
+                "source": entry.source,
                 "selector": entry.selector,
                 "target_va": entry.target_va,
                 "owner_class": entry.owner_class,
@@ -1489,6 +1504,7 @@ pub fn run_decompile(
         .map(|entry| {
             json!({
                 "decoded_kind": entry.decoded_kind,
+                "source": entry.source,
                 "selector": entry.selector,
                 "target_va": entry.target_va,
                 "owner_class": entry.owner_class,
@@ -1503,6 +1519,7 @@ pub fn run_decompile(
         .map(|entry| {
             json!({
                 "decoded_kind": entry.decoded_kind,
+                "source": entry.source,
                 "selector": entry.selector,
                 "target_va": entry.target_va,
                 "owner_class": entry.owner_class,
@@ -1644,7 +1661,8 @@ pub fn run_decompile(
             "dart_entrypoint_count": startup_evidence.dart_entrypoints.len(),
             "dart_entrypoints": startup_evidence.dart_entrypoints,
             "jni_bootstrap_count": startup_evidence.jni_bootstrap.len(),
-            "jni_bootstrap": startup_evidence.jni_bootstrap
+            "jni_bootstrap": startup_evidence.jni_bootstrap,
+            "synthetic_bootflow_hints": startup_synthetic_hints
         },
         "counts": {
             "libraries": model.libraries.len(),

@@ -1,4 +1,10 @@
-use flutterdec_adapter::{ObjectPoolEntry, ProgramModel};
+use super::{
+    collect_existing_bootflow_hint_keys, is_activity_handler_selector, is_bootstrap_selector,
+    is_deeplink_selector, is_main_like_selector, is_runapp_selector,
+    library_is_bootstrap_context, normalize_method_selector, owner_is_bootstrap_context,
+    push_synthetic_hint, SyntheticHintInput,
+};
+use flutterdec_adapter::ProgramModel;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fs;
 use std::io::Read;
@@ -60,84 +66,6 @@ impl Default for AndroidManifestInspection {
             signals: AndroidManifestSignals::default(),
         }
     }
-}
-
-fn normalize_method_selector(name: &str) -> String {
-    let tail = name
-        .trim()
-        .rsplit(['.', ':'])
-        .next()
-        .unwrap_or(name)
-        .trim();
-    let cleaned = tail
-        .trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != '_')
-        .to_ascii_lowercase();
-    cleaned
-}
-
-fn is_main_like_selector(selector: &str) -> bool {
-    selector == "main"
-        || selector.ends_with(".main")
-        || selector.ends_with("::main")
-        || selector.ends_with("_main")
-}
-
-fn is_runapp_selector(selector: &str) -> bool {
-    selector == "runapp" || selector.ends_with(".runapp")
-}
-
-fn is_deeplink_selector(selector: &str) -> bool {
-    matches!(
-        selector,
-        "didpushrouteinformation"
-            | "didpushroute"
-            | "didpoproute"
-            | "setnewroutepath"
-            | "parserouteinformation"
-            | "ongenerateroute"
-            | "onunknownroute"
-            | "onnewintent"
-            | "handleintent"
-    )
-}
-
-fn is_activity_handler_selector(selector: &str) -> bool {
-    matches!(
-        selector,
-        "onnewintent"
-            | "handleintent"
-            | "oncreate"
-            | "onstart"
-            | "onresume"
-            | "onpause"
-            | "onstop"
-            | "onactivityresult"
-    )
-}
-
-fn is_bootstrap_selector(selector: &str) -> bool {
-    matches!(
-        selector,
-        "ensureinitialized"
-            | "nativeensureinitialized"
-            | "startinitialization"
-            | "ensureinitializationcomplete"
-    )
-}
-
-fn owner_is_bootstrap_context(owner_lower: &str) -> bool {
-    owner_lower == "global"
-        || owner_lower.contains("binding")
-        || owner_lower.contains("bootstrap")
-        || owner_lower.contains("engine")
-        || owner_lower.contains("jni")
-}
-
-fn library_is_bootstrap_context(library_lower: &str) -> bool {
-    library_lower.starts_with("package:flutter/")
-        || library_lower.ends_with("/main.dart")
-        || library_lower.contains("/bootstrap")
-        || library_lower.contains("/engine")
 }
 
 fn normalize_activity_name(raw: &str) -> Option<String> {
@@ -987,46 +915,6 @@ fn inspect_manifest_bytes(bytes: &[u8]) -> AndroidManifestInspection {
     }
 }
 
-struct SyntheticHintInput<'a> {
-    decoded_kind: &'a str,
-    selector: &'a str,
-    target_va: u64,
-    owner_class: &'a str,
-    library_uri: &'a str,
-    value: &'a str,
-}
-
-fn push_synthetic_hint(
-    model: &mut ProgramModel,
-    seen: &mut HashSet<String>,
-    hint: &SyntheticHintInput<'_>,
-) -> bool {
-    let key = format!(
-        "{}|{}|0x{:x}",
-        hint.decoded_kind.to_ascii_lowercase(),
-        hint.selector.to_ascii_lowercase(),
-        hint.target_va
-    );
-    if seen.contains(&key) {
-        return false;
-    }
-    seen.insert(key);
-    let next_index = model.object_pool.len() as u64;
-    model.object_pool.push(ObjectPoolEntry {
-        index: next_index,
-        kind: "String".to_string(),
-        value: hint.value.to_string(),
-        decoded_kind: Some(hint.decoded_kind.to_string()),
-        selector: Some(hint.selector.to_string()),
-        target_va: Some(hint.target_va),
-        owner_class: Some(hint.owner_class.to_string()),
-        library_uri: Some(hint.library_uri.to_string()),
-        confidence: None,
-        source: None,
-    });
-    true
-}
-
 pub(super) fn enrich_model_with_manifest_bootflow_hints(
     model: &ProgramModel,
     signals: &AndroidManifestSignals,
@@ -1040,18 +928,7 @@ pub(super) fn enrich_model_with_manifest_bootflow_hints(
             .or_insert_with(|| class.library_uri.clone());
     }
 
-    let mut seen = enriched
-        .object_pool
-        .iter()
-        .filter_map(|entry| {
-            Some(format!(
-                "{}|{}|0x{:x}",
-                entry.decoded_kind.as_deref()?.to_ascii_lowercase(),
-                entry.selector.as_deref()?.to_ascii_lowercase(),
-                entry.target_va?
-            ))
-        })
-        .collect::<HashSet<_>>();
+    let mut seen = collect_existing_bootflow_hint_keys(&enriched);
 
     let activity_set = signals
         .activities
@@ -1082,10 +959,12 @@ pub(super) fn enrich_model_with_manifest_bootflow_hints(
                 &SyntheticHintInput {
                     decoded_kind: "ManifestMainCandidate",
                     selector: &selector,
-                    target_va: function.entry_va,
+                    target_va: Some(function.entry_va),
                     owner_class: owner,
                     library_uri: &library_uri,
                     value: "manifest:main-launcher",
+                    confidence: Some(0.95),
+                    source: Some("manifest"),
                 },
             )
         {
@@ -1099,10 +978,12 @@ pub(super) fn enrich_model_with_manifest_bootflow_hints(
                 &SyntheticHintInput {
                     decoded_kind: "ManifestRunAppCandidate",
                     selector: &selector,
-                    target_va: function.entry_va,
+                    target_va: Some(function.entry_va),
                     owner_class: owner,
                     library_uri: &library_uri,
                     value: "manifest:runapp",
+                    confidence: Some(0.95),
+                    source: Some("manifest"),
                 },
             )
         {
@@ -1116,10 +997,12 @@ pub(super) fn enrich_model_with_manifest_bootflow_hints(
                 &SyntheticHintInput {
                     decoded_kind: "ManifestDeepLinkCandidate",
                     selector: &selector,
-                    target_va: function.entry_va,
+                    target_va: Some(function.entry_va),
                     owner_class: owner,
                     library_uri: &library_uri,
                     value: "manifest:deeplink",
+                    confidence: Some(0.9),
+                    source: Some("manifest"),
                 },
             )
         {
@@ -1134,10 +1017,12 @@ pub(super) fn enrich_model_with_manifest_bootflow_hints(
                 &SyntheticHintInput {
                     decoded_kind: "ManifestActivityCandidate",
                     selector: &selector,
-                    target_va: function.entry_va,
+                    target_va: Some(function.entry_va),
                     owner_class: owner,
                     library_uri: &library_uri,
                     value: "manifest:activity",
+                    confidence: Some(0.9),
+                    source: Some("manifest"),
                 },
             )
         {
@@ -1153,10 +1038,12 @@ pub(super) fn enrich_model_with_manifest_bootflow_hints(
                 &SyntheticHintInput {
                     decoded_kind: "ManifestBootstrapCandidate",
                     selector: &selector,
-                    target_va: function.entry_va,
+                    target_va: Some(function.entry_va),
                     owner_class: owner,
                     library_uri: &library_uri,
                     value: "manifest:bootstrap",
+                    confidence: Some(0.9),
+                    source: Some("manifest"),
                 },
             )
         {
