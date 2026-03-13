@@ -275,3 +275,4 @@ For APK inputs it also includes:
 - `android_manifest` with manifest-derived launcher, deeplink, and activity signals
 - `android_startup` with `classes*.dex` startup evidence, JNI/bootstrap stages, and recovered `DartEntrypoint` callsites when present
 - `bootflow_discovery` entries tagged by `source` (`adapter`, `manifest`, `apk_startup`); `apk_startup` entries may carry `target_va: null` when the Android startup path is known but the Dart-side function has not been resolved yet
+- recovered `android_startup.dart_entrypoints` items include `function_name`, `library_uri`, and `app_bundle_path` when those strings are directly visible in APK bytecode

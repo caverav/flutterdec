@@ -661,6 +661,7 @@ File naming convention:
 - `bootflow_discovery` aggregate (source-tagged entries from adapter, manifest, and APK-startup evidence; startup-derived entries can be targetless when no Dart VA is available yet)
 - `android_manifest` aggregate
 - `android_startup` aggregate (APK bytecode startup evidence from `classes*.dex`, including embedding calls, JNI/bootstrap stages, parse errors, and recovered `DartEntrypoint` callsites when present)
+- recovered `android_startup.dart_entrypoints` records can include literal `function_name`, `library_uri`, and `app_bundle_path` values when constructor/execute arguments are directly backed by `const-string` plus simple register propagation
 - `function_scope.priority_package_hints` (effective package boosts used by capped prioritization)
 - `prioritization.selected_package_counts_top` and `prioritization.selected_unknown_library_count` (selected top-N ownership mix)
 - `prioritization.selected_scope_mix` and `prioritization.selected_app_like_ratio` (selected top-N scope quality)

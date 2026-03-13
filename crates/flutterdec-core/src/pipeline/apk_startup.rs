@@ -50,6 +50,10 @@ pub struct DartEntrypointEvidence {
     pub class_name: String,
     pub method_name: String,
     pub target_method: String,
+    pub function_name: Option<String>,
+    pub library_uri: Option<String>,
+    pub initial_route: Option<String>,
+    pub app_bundle_path: Option<String>,
     pub confidence: String,
 }
 
@@ -114,7 +118,33 @@ struct ScannedStartupMethodRef {
 struct StartupScanResult {
     classes: Vec<ScannedStartupClass>,
     method_refs: Vec<ScannedStartupMethodRef>,
+    dart_entrypoints: Vec<ScannedDartEntrypoint>,
     parse_errors: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default)]
+struct TrackedDartEntrypointValue {
+    function_name: Option<String>,
+    library_uri: Option<String>,
+    app_bundle_path: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+enum TrackedRegisterValue {
+    StringLiteral(String),
+    DartEntrypoint(TrackedDartEntrypointValue),
+}
+
+#[derive(Debug, Clone)]
+struct ScannedDartEntrypoint {
+    source_dex: String,
+    class_descriptor: String,
+    class_name: String,
+    method_name: String,
+    target_method: String,
+    function_name: Option<String>,
+    library_uri: Option<String>,
+    app_bundle_path: Option<String>,
 }
 
 fn is_apk_input(path: &Path) -> bool {
@@ -165,6 +195,7 @@ fn classify_startup_method(target_class: &str, target_method: &str) -> (&'static
         (FLUTTER_JNI_DESC, "nativeInit") => ("jni_native_init", "high"),
         (FLUTTER_JNI_DESC, "attachToNative") => ("jni_attach_to_native", "high"),
         (FLUTTER_JNI_DESC, "nativeAttach") => ("jni_native_attach", "high"),
+        (FLUTTER_JNI_DESC, "runBundleAndSnapshotFromLibrary") => ("dart_entrypoint_execute", "high"),
         (DART_ENTRYPOINT_DESC, "<init>") => ("dart_entrypoint_ctor", "high"),
         (DART_EXECUTOR_DESC, "executeDartEntrypoint") => ("dart_entrypoint_execute", "high"),
         _ => ("embedding_call", "medium"),
@@ -217,6 +248,92 @@ fn instruction_method_id(instruction: &Instruction) -> Option<u32> {
     }
 }
 
+fn invoke_arg_registers(instruction: &Instruction) -> Option<Vec<u16>> {
+    match instruction {
+        Instruction::InvokeVirtual { nargs, args, .. }
+        | Instruction::InvokeSuper { nargs, args, .. }
+        | Instruction::InvokeDirect { nargs, args, .. }
+        | Instruction::InvokeStatic { nargs, args, .. }
+        | Instruction::InvokeInterface { nargs, args, .. } => Some(
+            args.iter()
+                .take(usize::from(*nargs))
+                .map(|reg| u16::from(*reg))
+                .collect(),
+        ),
+        Instruction::InvokeVirtualRange { args, .. }
+        | Instruction::InvokeSuperRange { args, .. }
+        | Instruction::InvokeDirectRange { args, .. }
+        | Instruction::InvokeStaticRange { args, .. }
+        | Instruction::InvokeInterfaceRange { args, .. } => Some(args.clone()),
+        _ => None,
+    }
+}
+
+fn tracked_string(
+    tracked: &std::collections::HashMap<u16, TrackedRegisterValue>,
+    reg: u16,
+) -> Option<String> {
+    match tracked.get(&reg) {
+        Some(TrackedRegisterValue::StringLiteral(value)) => Some(value.clone()),
+        _ => None,
+    }
+}
+
+fn build_tracked_dart_entrypoint(
+    args: &[u16],
+    tracked: &std::collections::HashMap<u16, TrackedRegisterValue>,
+) -> TrackedDartEntrypointValue {
+    let mut value = TrackedDartEntrypointValue::default();
+    if args.len() >= 3 {
+        value.app_bundle_path = tracked_string(tracked, args[1]);
+    }
+    if args.len() >= 4 {
+        value.library_uri = tracked_string(tracked, args[2]);
+        value.function_name = tracked_string(tracked, args[3]);
+    } else if args.len() >= 3 {
+        value.function_name = tracked_string(tracked, args[2]);
+    }
+    value
+}
+
+fn push_scanned_dart_entrypoint(
+    out: &mut Vec<ScannedDartEntrypoint>,
+    source_dex: &str,
+    class_descriptor: &str,
+    class_name: &str,
+    method_name: &str,
+    target_method: &str,
+    value: &TrackedDartEntrypointValue,
+) {
+    out.push(ScannedDartEntrypoint {
+        source_dex: source_dex.to_string(),
+        class_descriptor: class_descriptor.to_string(),
+        class_name: class_name.to_string(),
+        method_name: method_name.to_string(),
+        target_method: target_method.to_string(),
+        function_name: value.function_name.clone(),
+        library_uri: value.library_uri.clone(),
+        app_bundle_path: value.app_bundle_path.clone(),
+    });
+}
+
+fn build_flutterjni_entrypoint(
+    args: &[u16],
+    tracked: &std::collections::HashMap<u16, TrackedRegisterValue>,
+) -> TrackedDartEntrypointValue {
+    let mut value = TrackedDartEntrypointValue::default();
+    if args.len() >= 2 {
+        value.app_bundle_path = tracked_string(tracked, args[1]);
+    }
+    if args.len() >= 3 {
+        value.function_name = tracked_string(tracked, args[2]);
+    }
+    if args.len() >= 4 {
+        value.library_uri = tracked_string(tracked, args[3]);
+    }
+    value
+}
+
 fn decode_method_refs<B: AsRef<[u8]>>(
     dex: &dex::Dex<B>,
     source_dex: &str,
@@ -225,13 +342,103 @@ fn decode_method_refs<B: AsRef<[u8]>>(
     method_name: &str,
     insns: &[u16],
     parse_errors: &mut Vec<String>,
-) -> Vec<ScannedStartupMethodRef> {
+) -> (Vec<ScannedStartupMethodRef>, Vec<ScannedDartEntrypoint>) {
     let mut out = Vec::new();
+    let mut dart_entrypoints = Vec::new();
     let mut remaining = insns;
+    let mut tracked = std::collections::HashMap::<u16, TrackedRegisterValue>::new();
+    let mut last_invoke_result: Option<TrackedRegisterValue> = None;
     while !remaining.is_empty() {
         let decoded = decode_one_silently(&mut remaining);
         match decoded {
             Ok(Ok(instruction)) => {
+                let pending_invoke_result = last_invoke_result.take();
+                match &instruction {
+                    Instruction::MoveObject(dst, src) => {
+                        if let Some(value) = tracked.get(&u16::from(*src)).cloned() {
+                            tracked.insert(u16::from(*dst), value);
+                        } else {
+                            tracked.remove(&u16::from(*dst));
+                        }
+                    }
+                    Instruction::MoveObjectFrom16(dst, src) => {
+                        if let Some(value) = tracked.get(src).cloned() {
+                            tracked.insert(u16::from(*dst), value);
+                        } else {
+                            tracked.remove(&u16::from(*dst));
+                        }
+                    }
+                    Instruction::MoveObject16(dst, src) => {
+                        if let Some(value) = tracked.get(src).cloned() {
+                            tracked.insert(*dst, value);
+                        } else {
+                            tracked.remove(dst);
+                        }
+                    }
+                    Instruction::MoveResultObject(dst) => {
+                        if let Some(value) = pending_invoke_result {
+                            tracked.insert(u16::from(*dst), value);
+                        } else {
+                            tracked.remove(&u16::from(*dst));
+                        }
+                    }
+                    Instruction::ConstString(dst, idx) => match dex.get_string((*idx).into()) {
+                        Ok(value) => {
+                            tracked.insert(
+                                u16::from(*dst),
+                                TrackedRegisterValue::StringLiteral(value.to_string()),
+                            );
+                        }
+                        Err(err) => push_parse_error(
+                            parse_errors,
+                            format!(
+                                "{}:{} -> resolve string {}: {}",
+                                class_name, method_name, idx, err
+                            ),
+                        ),
+                    },
+                    Instruction::ConstStringJumbo(dst, idx) => match dex.get_string(*idx) {
+                        Ok(value) => {
+                            tracked.insert(
+                                u16::from(*dst),
+                                TrackedRegisterValue::StringLiteral(value.to_string()),
+                            );
+                        }
+                        Err(err) => push_parse_error(
+                            parse_errors,
+                            format!(
+                                "{}:{} -> resolve jumbo string {}: {}",
+                                class_name, method_name, idx, err
+                            ),
+                        ),
+                    },
+                    Instruction::NewInstance(dst, ty) => match dex.get_type(TypeId::from(u32::from(*ty))) {
+                        Ok(resolved_type) => {
+                            if resolved_type.type_descriptor() == DART_ENTRYPOINT_DESC {
+                                tracked.insert(
+                                    u16::from(*dst),
+                                    TrackedRegisterValue::DartEntrypoint(
+                                        TrackedDartEntrypointValue::default(),
+                                    ),
+                                );
+                            } else {
+                                tracked.remove(&u16::from(*dst));
+                            }
+                        }
+                        Err(err) => push_parse_error(
+                            parse_errors,
+                            format!(
+                                "{}:{} -> resolve new-instance type {}: {}",
+                                class_name, method_name, ty, err
+                            ),
+                        ),
+                    },
+                    Instruction::SGetObject(dst, _) => {
+                        tracked.remove(&u16::from(*dst));
+                    }
+                    _ => {}
+                }
+
                 let Some(method_id) = instruction_method_id(&instruction) else {
                     continue;
                 };
@@ -277,6 +484,13 @@ fn decode_method_refs<B: AsRef<[u8]>>(
                         continue;
                     }
                 };
+                let is_dart_entrypoint_ctor =
+                    target_class == DART_ENTRYPOINT_DESC && target_method == "<init>";
+                let is_execute_dart_entrypoint =
+                    target_class == DART_EXECUTOR_DESC && target_method == "executeDartEntrypoint";
+                let is_flutterjni_entrypoint =
+                    target_class == FLUTTER_JNI_DESC
+                        && target_method == "runBundleAndSnapshotFromLibrary";
                 out.push(ScannedStartupMethodRef {
                     source_dex: source_dex.to_string(),
                     class_descriptor: class_descriptor.to_string(),
@@ -286,6 +500,63 @@ fn decode_method_refs<B: AsRef<[u8]>>(
                     target_class,
                     target_method,
                 });
+
+                if let Some(args) = invoke_arg_registers(&instruction) {
+                    if is_dart_entrypoint_ctor {
+                        if let Some(receiver) = args.first() {
+                            let tracked_value = build_tracked_dart_entrypoint(&args, &tracked);
+                            tracked.insert(
+                                *receiver,
+                                TrackedRegisterValue::DartEntrypoint(tracked_value.clone()),
+                            );
+                            if tracked_value.function_name.is_some()
+                                || tracked_value.library_uri.is_some()
+                                || tracked_value.app_bundle_path.is_some()
+                            {
+                                push_scanned_dart_entrypoint(
+                                    &mut dart_entrypoints,
+                                    source_dex,
+                                    class_descriptor,
+                                    class_name,
+                                    method_name,
+                                    "<init>",
+                                    &tracked_value,
+                                );
+                            }
+                        }
+                    } else if is_execute_dart_entrypoint {
+                        if let Some(value) = args.iter().skip(1).find_map(|reg| match tracked.get(reg) {
+                            Some(TrackedRegisterValue::DartEntrypoint(value)) => Some(value.clone()),
+                            _ => None,
+                        }) {
+                            push_scanned_dart_entrypoint(
+                                &mut dart_entrypoints,
+                                source_dex,
+                                class_descriptor,
+                                class_name,
+                                method_name,
+                                "executeDartEntrypoint",
+                                &value,
+                            );
+                        }
+                    } else if is_flutterjni_entrypoint {
+                        let value = build_flutterjni_entrypoint(&args, &tracked);
+                        if value.function_name.is_some()
+                            || value.library_uri.is_some()
+                            || value.app_bundle_path.is_some()
+                        {
+                            push_scanned_dart_entrypoint(
+                                &mut dart_entrypoints,
+                                source_dex,
+                                class_descriptor,
+                                class_name,
+                                method_name,
+                                "runBundleAndSnapshotFromLibrary",
+                                &value,
+                            );
+                        }
+                    }
+                }
             }
             Ok(Err(decode::Error::Metadata { length })) => {
                 if remaining.len() < length {
@@ -319,7 +590,7 @@ fn decode_method_refs<B: AsRef<[u8]>>(
             }
         }
     }
-    out
+    (out, dart_entrypoints)
 }
 
 fn decode_one_silently(remaining: &mut &[u16]) -> std::thread::Result<Result<Instruction, decode::Error>> {
@@ -338,6 +609,7 @@ fn scan_dex_bytes(source_dex: &str, bytes: Vec<u8>) -> Result<StartupScanResult>
         .map_err(|err| anyhow!("parse {} as dex: {}", source_dex, err))?;
     let mut classes = Vec::new();
     let mut method_refs = Vec::new();
+    let mut dart_entrypoints = Vec::new();
     let mut parse_errors = Vec::new();
 
     for class in dex.classes() {
@@ -361,7 +633,7 @@ fn scan_dex_bytes(source_dex: &str, bytes: Vec<u8>) -> Result<StartupScanResult>
             let Some(code) = method.code() else {
                 continue;
             };
-            let refs = decode_method_refs(
+            let (refs, entrypoints) = decode_method_refs(
                 &dex,
                 source_dex,
                 &class_descriptor,
@@ -371,12 +643,14 @@ fn scan_dex_bytes(source_dex: &str, bytes: Vec<u8>) -> Result<StartupScanResult>
                 &mut parse_errors,
             );
             method_refs.extend(refs);
+            dart_entrypoints.extend(entrypoints);
         }
     }
 
     Ok(StartupScanResult {
         classes,
         method_refs,
+        dart_entrypoints,
         parse_errors,
     })
 }
@@ -408,12 +682,14 @@ fn finalize_android_startup_evidence(
     let mut class_supers = HashMap::new();
     let mut scanned_classes = Vec::new();
     let mut scanned_methods = Vec::new();
+    let mut scanned_entrypoints = Vec::new();
     for result in scan_results {
         for err in result.parse_errors {
             push_parse_error(&mut parse_errors, err);
         }
         scanned_classes.extend(result.classes);
         scanned_methods.extend(result.method_refs);
+        scanned_entrypoints.extend(result.dart_entrypoints);
     }
     for class in &scanned_classes {
         class_supers.insert(class.class_descriptor.clone(), class.super_descriptor.clone());
@@ -447,8 +723,52 @@ fn finalize_android_startup_evidence(
     let mut startup_seen = std::collections::HashSet::new();
     let mut dart_entrypoints = Vec::new();
     let mut entrypoint_seen = std::collections::HashSet::new();
+    let mut entrypoint_method_seen = std::collections::HashSet::new();
     let mut jni_bootstrap = Vec::new();
     let mut jni_seen = std::collections::HashSet::new();
+    for entrypoint in &scanned_entrypoints {
+        let key = format!(
+            "{}|{}|{}|{}|{:?}|{:?}|{:?}",
+            entrypoint.source_dex,
+            entrypoint.class_descriptor,
+            entrypoint.method_name,
+            entrypoint.target_method,
+            entrypoint.function_name,
+            entrypoint.library_uri,
+            entrypoint.app_bundle_path
+        );
+        let method_key = format!(
+            "{}|{}|{}|{}",
+            entrypoint.source_dex,
+            entrypoint.class_descriptor,
+            entrypoint.method_name,
+            entrypoint.target_method
+        );
+        if entrypoint_seen.insert(key) {
+            entrypoint_method_seen.insert(method_key);
+            let confidence = if entrypoint.function_name.is_some()
+                || entrypoint.library_uri.is_some()
+                || entrypoint.app_bundle_path.is_some()
+            {
+                "high"
+            } else {
+                "medium"
+            };
+            dart_entrypoints.push(DartEntrypointEvidence {
+                source_dex: entrypoint.source_dex.clone(),
+                class_descriptor: entrypoint.class_descriptor.clone(),
+                class_name: entrypoint.class_name.clone(),
+                method_name: entrypoint.method_name.clone(),
+                target_method: entrypoint.target_method.clone(),
+                function_name: entrypoint.function_name.clone(),
+                library_uri: entrypoint.library_uri.clone(),
+                initial_route: None,
+                app_bundle_path: entrypoint.app_bundle_path.clone(),
+                confidence: confidence.to_string(),
+            });
+        }
+    }
+
     for method in &scanned_methods {
         let (category, confidence) = classify_startup_method(&method.target_class, &method.target_method);
         let key = format!(
@@ -478,17 +798,21 @@ fn finalize_android_startup_evidence(
             (method.target_class.as_str(), method.target_method.as_str()),
             (DART_ENTRYPOINT_DESC, "<init>") | (DART_EXECUTOR_DESC, "executeDartEntrypoint")
         ) {
-            let key = format!(
+            let method_key = format!(
                 "{}|{}|{}|{}",
                 method.source_dex, method.class_descriptor, method.method_name, method.target_method
             );
-            if entrypoint_seen.insert(key) {
+            if entrypoint_method_seen.insert(method_key) {
                 dart_entrypoints.push(DartEntrypointEvidence {
                     source_dex: method.source_dex.clone(),
                     class_descriptor: method.class_descriptor.clone(),
                     class_name: method.class_name.clone(),
                     method_name: method.method_name.clone(),
                     target_method: method.target_method.clone(),
+                    function_name: None,
+                    library_uri: None,
+                    initial_route: None,
+                    app_bundle_path: None,
                     confidence: confidence.to_string(),
                 });
             }
@@ -532,6 +856,9 @@ fn finalize_android_startup_evidence(
             .then(a.class_name.cmp(&b.class_name))
             .then(a.method_name.cmp(&b.method_name))
             .then(a.target_method.cmp(&b.target_method))
+            .then(a.function_name.cmp(&b.function_name))
+            .then(a.library_uri.cmp(&b.library_uri))
+            .then(a.app_bundle_path.cmp(&b.app_bundle_path))
     });
     jni_bootstrap.sort_by(|a, b| {
         a.source_dex
@@ -970,9 +1297,9 @@ mod apk_startup_tests {
     use super::{
         analyze_android_startup, classify_startup_method, enrich_model_with_apk_startup_bootflow_hints,
         finalize_android_startup_evidence, has_super_class, is_classes_dex_entry,
-        AndroidStartupEvidence, ScannedStartupClass, ScannedStartupMethodRef, StartupScanResult,
-        DART_ENTRYPOINT_DESC, DART_EXECUTOR_DESC, FLUTTER_ACTIVITY_DESC, FLUTTER_ENGINE_DESC,
-        FLUTTER_JNI_DESC, FLUTTER_LOADER_DESC,
+        AndroidStartupEvidence, ScannedDartEntrypoint, ScannedStartupClass,
+        ScannedStartupMethodRef, StartupScanResult, DART_ENTRYPOINT_DESC, DART_EXECUTOR_DESC,
+        FLUTTER_ACTIVITY_DESC, FLUTTER_ENGINE_DESC, FLUTTER_JNI_DESC, FLUTTER_LOADER_DESC,
     };
     use std::collections::HashMap;
     use std::fs::File;
@@ -1063,6 +1390,16 @@ mod apk_startup_tests {
                     target_method: "<init>".to_string(),
                 },
             ],
+            dart_entrypoints: vec![ScannedDartEntrypoint {
+                source_dex: "classes.dex".to_string(),
+                class_descriptor: "Lcom/example/MainActivity;".to_string(),
+                class_name: "com.example.MainActivity".to_string(),
+                method_name: "configureFlutterEngine".to_string(),
+                target_method: "executeDartEntrypoint".to_string(),
+                function_name: Some("main".to_string()),
+                library_uri: Some("package:app/main.dart".to_string()),
+                app_bundle_path: Some("flutter_assets".to_string()),
+            }],
             parse_errors: Vec::new(),
         };
 
@@ -1075,9 +1412,13 @@ mod apk_startup_tests {
         assert!(evidence.present);
         assert_eq!(evidence.confidence, "high");
         assert_eq!(evidence.flutter_activity_classes.len(), 1);
-        assert_eq!(evidence.dart_entrypoints.len(), 1);
+        assert_eq!(evidence.dart_entrypoints.len(), 2);
         assert_eq!(evidence.jni_bootstrap.len(), 1);
         assert_eq!(evidence.startup_methods.len(), 2);
+        assert!(evidence
+            .dart_entrypoints
+            .iter()
+            .any(|entry| entry.function_name.as_deref() == Some("main")));
     }
 
     #[test]
@@ -1214,6 +1555,10 @@ mod apk_startup_tests {
                 class_name: "com.example.MainActivity".to_string(),
                 method_name: "configureFlutterEngine".to_string(),
                 target_method: "executeDartEntrypoint".to_string(),
+                function_name: Some("main".to_string()),
+                library_uri: Some("package:app/main.dart".to_string()),
+                initial_route: None,
+                app_bundle_path: Some("flutter_assets".to_string()),
                 confidence: "high".to_string(),
             }],
             jni_bootstrap: vec![super::JniBootstrapEvidence {
