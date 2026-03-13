@@ -9,3 +9,6 @@ anyhow.workspace = true
 goblin.workspace = true
 regex.workspace = true
 zip.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

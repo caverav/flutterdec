@@ -133,6 +133,7 @@ pub struct DecompileEngineOptionOverrides {
     pub pool_semantic_hints: Option<bool>,
     pub semantic_reporting: Option<bool>,
     pub bootflow_category_seeds: Option<bool>,
+    pub apk_startup_analysis: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -142,6 +143,7 @@ pub struct DecompileEngineOptions {
     pub pool_semantic_hints: bool,
     pub semantic_reporting: bool,
     pub bootflow_category_seeds: bool,
+    pub apk_startup_analysis: bool,
 }
 
 impl DecompileEngineOptions {
@@ -153,6 +155,7 @@ impl DecompileEngineOptions {
                 pool_semantic_hints: false,
                 semantic_reporting: false,
                 bootflow_category_seeds: false,
+                apk_startup_analysis: false,
             },
             DecompileAnalysisProfile::Balanced => Self {
                 canonical_model_symbols: true,
@@ -160,6 +163,7 @@ impl DecompileEngineOptions {
                 pool_semantic_hints: true,
                 semantic_reporting: true,
                 bootflow_category_seeds: true,
+                apk_startup_analysis: true,
             },
         }
     }
@@ -179,6 +183,9 @@ impl DecompileEngineOptions {
         }
         if let Some(v) = overrides.bootflow_category_seeds {
             self.bootflow_category_seeds = v;
+        }
+        if let Some(v) = overrides.apk_startup_analysis {
+            self.apk_startup_analysis = v;
         }
         self
     }
@@ -200,6 +207,10 @@ pub struct InfoOutput {
     pub object_pool_count: Option<usize>,
     pub app_package_count_total: Option<usize>,
     pub app_package_counts_top: Option<Vec<PackageCount>>,
+    pub android_startup_present: Option<bool>,
+    pub android_startup_confidence: Option<String>,
+    pub android_startup_entrypoint_count: Option<usize>,
+    pub android_startup_flutter_activity_count: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -262,6 +273,7 @@ pub struct DiffReport {
 include!("pipeline/helpers.rs");
 include!("pipeline/model.rs");
 include!("pipeline/quality.rs");
+include!("pipeline/apk_startup.rs");
 include!("pipeline/runners_scripts.rs");
 include!("pipeline/runners_diff.rs");
 include!("pipeline/runners.rs");
