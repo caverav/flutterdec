@@ -244,16 +244,18 @@ Generate direct-call target mapping from stripped/unstripped engine pair:
 flutterdec map-symbols \
   --stripped ./libflutter.stripped.so \
   --unstripped ./libflutter.unstripped.so \
-  -o ./out/symbol-map
+  -o ./out/symbol-map \
+  --register-local-cache
 ```
 
-Use mapping in decompile:
+Use the cached mapping in later APK decompile runs:
 
 ```bash
 flutterdec decompile ./sample.apk -o ./out \
-  --extra-symbol-map-targets ./out/symbol-map/symbol_target_summary.json \
   --extra-symbol-elf ./libflutter.unstripped.so
 ```
+
+When the cached build id matches the APK’s embedded `libflutter.so`, `decompile` auto-loads the registered target summary and reports the match under `report.json.engine_symbol_ingestion`.
 
 ## Outputs
 
@@ -277,3 +279,4 @@ For APK inputs it also includes:
 - `bootflow_discovery` entries tagged by `source` (`adapter`, `manifest`, `apk_startup`); `apk_startup` entries may carry `target_va: null` when the Android startup path is known but the Dart-side function has not been resolved yet
 - recovered `android_startup.dart_entrypoints` items include `function_name`, `library_uri`, and `app_bundle_path` when those strings are directly visible in APK bytecode
 - `android_startup.bootstrap_chain` reports ordered startup-stage observations per source method, including whether the chain is complete and which steps are still missing
+- `engine_symbol_ingestion` reports whether a local cached engine symbol target summary was auto-loaded by exact build-id match

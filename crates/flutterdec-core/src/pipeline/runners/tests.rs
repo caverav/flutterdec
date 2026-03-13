@@ -495,6 +495,55 @@
     }
 
     #[test]
+    fn resolves_local_engine_symbol_targets_only_for_apk_inputs() {
+        let td = tempdir().expect("tempdir");
+        let repo_root = td.path();
+        let build_id_path = repo_root.join("symbols/by-build-id/abc123/symbol_target_summary.json");
+        std::fs::create_dir_all(build_id_path.parent().expect("parent")).expect("mkdir cache");
+        std::fs::write(&build_id_path, "[]").expect("write target summary");
+        let manifest = LocalSymbolCacheManifest {
+            entries: vec![LocalSymbolCacheEntry {
+                arch: "arm64".to_string(),
+                build_id: Some("abc123".to_string()),
+                flutter_version: Some("3.24.0".to_string()),
+                dart_version: Some("3.5.0".to_string()),
+                build_id_target_summary_path: Some(
+                    "symbols/by-build-id/abc123/symbol_target_summary.json".to_string(),
+                ),
+                version_target_summary_path: None,
+                report_path: None,
+            }],
+        };
+        write_local_symbol_cache_manifest(&repo_root.join("symbols"), &manifest)
+            .expect("write manifest");
+        let engine_context = EngineFingerprintContext {
+            detected: true,
+            build_id: Some("abc123".to_string()),
+            candidate_flutter_version: Some("3.24.0".to_string()),
+            ..EngineFingerprintContext::default()
+        };
+
+        let apk_resolution = resolve_local_engine_symbol_targets(
+            repo_root,
+            Path::new("sample.apk"),
+            "arm64",
+            &engine_context,
+        );
+        assert!(apk_resolution.enabled);
+        assert_eq!(apk_resolution.match_kind.as_deref(), Some("build_id"));
+        assert_eq!(apk_resolution.loaded_paths, vec![build_id_path]);
+
+        let so_resolution = resolve_local_engine_symbol_targets(
+            repo_root,
+            Path::new("libapp.so"),
+            "arm64",
+            &engine_context,
+        );
+        assert!(!so_resolution.enabled);
+        assert!(so_resolution.loaded_paths.is_empty());
+    }
+
+    #[test]
     fn generic_name_detection_is_strict() {
         assert!(is_generic_symbol_name("sub_1234"));
         assert!(is_generic_symbol_name("fn_0x55"));

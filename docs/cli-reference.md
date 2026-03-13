@@ -154,6 +154,7 @@ Arguments:
 - `--include-branches`
 - `--nearest-max-distance <N>` (default `8192`)
 - `--require-exec-match`
+- `--register-local-cache` (copy the generated target summary into `symbols/` and register it in `symbols/manifest.json` for later auto-ingestion)
 - `--json`
 
 ## `flutterdec adapter`

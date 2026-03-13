@@ -149,12 +149,14 @@ If `<N>` is ambiguous, `flutterdec` asks for explicit `id:` or `va:`. Selection 
 flutterdec map-symbols \
   --stripped ./libflutter.stripped.so \
   --unstripped ./libflutter.unstripped.so \
-  -o ./out/symbol-map
+  -o ./out/symbol-map \
+  --register-local-cache
 
 flutterdec decompile ./sample.apk -o ./out \
-  --extra-symbol-map-targets ./out/symbol-map/symbol_target_summary.json \
   --extra-symbol-elf ./libflutter.unstripped.so
 ```
+
+If the cached engine build id matches the APK’s embedded `libflutter.so`, `decompile` auto-loads the cached `symbol_target_summary.json` and reports it under `report.json.engine_symbol_ingestion`.
 
 5. Optional: compare two builds by recovered function signatures:
 
@@ -238,6 +240,7 @@ Main outputs under `-o <OUT_DIR>`:
 - `android_startup` for APK bytecode startup evidence such as embedding calls, JNI bootstrap stages, and recovered `DartEntrypoint` callsites when present
 - recovered `android_startup.dart_entrypoints` entries can now carry `function_name`, `library_uri`, and `app_bundle_path` when those values are directly recoverable from APK bytecode
 - `android_startup.bootstrap_chain` summarizes observed Android embedder startup stages per source method, including app-vs-framework ownership, ordered stages, completeness, and missing steps
+- `engine_symbol_ingestion` for auto-loaded local engine symbol cache matches keyed by `libflutter.so` build id
 - `bootflow_discovery` entries tagged by `source` (`adapter`, `manifest`, `apk_startup`); APK-startup-backed entries may appear with `target_va: null` when the startup signal is real but the Dart function is not yet mapped
 
 ## Documentation

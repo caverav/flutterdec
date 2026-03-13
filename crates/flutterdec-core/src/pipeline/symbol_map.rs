@@ -9,6 +9,7 @@ use std::collections::BTreeMap;
 
 include!("symbol_map/types.rs");
 include!("symbol_map/run.rs");
+include!("symbol_map/cache.rs");
 include!("symbol_map/elf.rs");
 include!("symbol_map/analysis.rs");
 
