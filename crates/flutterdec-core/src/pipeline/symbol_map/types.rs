@@ -4,6 +4,7 @@ pub struct SymbolMapOptions {
     pub include_branches: bool,
     pub nearest_max_distance: u64,
     pub require_exec_match: bool,
+    pub local_cache_root: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -34,6 +35,43 @@ pub struct SymbolMapReport {
     pub report_path: String,
     pub targets_path: String,
     pub callsites_path: String,
+    pub local_cache_manifest_path: Option<String>,
+    pub local_cache_build_id: Option<String>,
+    pub local_cache_flutter_version: Option<String>,
+    pub local_cache_registered_paths: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+struct LocalSymbolCacheManifest {
+    #[serde(default)]
+    entries: Vec<LocalSymbolCacheEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+struct LocalSymbolCacheEntry {
+    arch: String,
+    build_id: Option<String>,
+    flutter_version: Option<String>,
+    dart_version: Option<String>,
+    build_id_target_summary_path: Option<String>,
+    version_target_summary_path: Option<String>,
+    report_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct LocalSymbolCacheResolution {
+    match_kind: Option<String>,
+    paths: Vec<PathBuf>,
+    manifest_path: Option<PathBuf>,
+    error: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct LocalSymbolCacheRegistration {
+    manifest_path: Option<PathBuf>,
+    build_id: Option<String>,
+    flutter_version: Option<String>,
+    registered_paths: Vec<String>,
 }
 
 #[derive(Debug, Clone)]

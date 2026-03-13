@@ -202,6 +202,8 @@ struct MapSymbolsCmd {
     nearest_max_distance: u64,
     #[arg(long)]
     require_exec_match: bool,
+    #[arg(long = "register-local-cache")]
+    register_local_cache: bool,
     #[arg(long)]
     json: bool,
 }
@@ -248,7 +250,7 @@ fn main() -> Result<()> {
         Command::Decompile(cmd) => handle_decompile(&repo_root, cmd)?,
         Command::Diff(cmd) => handle_diff(&repo_root, cmd)?,
         Command::EngineFingerprint(cmd) => handle_engine_fingerprint(cmd)?,
-        Command::MapSymbols(cmd) => handle_map_symbols(cmd)?,
+        Command::MapSymbols(cmd) => handle_map_symbols(&repo_root, cmd)?,
         Command::Adapter(cmd) => handle_adapter(&repo_root, cmd)?,
     }
 
@@ -518,12 +520,13 @@ fn handle_engine_fingerprint(cmd: EngineFingerprintCmd) -> Result<()> {
     Ok(())
 }
 
-fn handle_map_symbols(cmd: MapSymbolsCmd) -> Result<()> {
+fn handle_map_symbols(repo_root: &Path, cmd: MapSymbolsCmd) -> Result<()> {
     let opt = SymbolMapOptions {
         out_dir: cmd.out_dir,
         include_branches: cmd.include_branches,
         nearest_max_distance: cmd.nearest_max_distance,
         require_exec_match: cmd.require_exec_match,
+        local_cache_root: cmd.register_local_cache.then(|| repo_root.join("symbols")),
     };
     let report = run_symbol_map(&cmd.stripped_path, &cmd.unstripped_path, &opt)?;
     if cmd.json {
@@ -547,6 +550,21 @@ fn handle_map_symbols(cmd: MapSymbolsCmd) -> Result<()> {
         println!("report: {}", report.report_path);
         println!("targets: {}", report.targets_path);
         println!("callsites: {}", report.callsites_path);
+        if let Some(path) = report.local_cache_manifest_path.as_deref() {
+            println!("local cache manifest: {}", path);
+        }
+        if let Some(build_id) = report.local_cache_build_id.as_deref() {
+            println!("local cache build id: {}", build_id);
+        }
+        if let Some(version) = report.local_cache_flutter_version.as_deref() {
+            println!("local cache flutter version: {}", version);
+        }
+        if !report.local_cache_registered_paths.is_empty() {
+            println!("local cache targets:");
+            for path in &report.local_cache_registered_paths {
+                println!("  - {}", path);
+            }
+        }
         if !report.notes.is_empty() {
             println!("notes:");
             for n in &report.notes {
@@ -891,5 +909,25 @@ mod tests {
             panic!("expected diff command");
         };
         assert!(cmd.require_snapshot_hash_match);
+    }
+
+    #[test]
+    fn map_symbols_accepts_register_local_cache() {
+        let cli = Cli::try_parse_from([
+            "flutterdec",
+            "map-symbols",
+            "--stripped",
+            "libflutter.so",
+            "--unstripped",
+            "libflutter-unstripped.so",
+            "-o",
+            "out",
+            "--register-local-cache",
+        ])
+        .expect("parse");
+        let Command::MapSymbols(cmd) = cli.command else {
+            panic!("expected map-symbols command");
+        };
+        assert!(cmd.register_local_cache);
     }
 }

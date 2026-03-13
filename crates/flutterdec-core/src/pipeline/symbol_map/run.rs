@@ -101,6 +101,20 @@ pub fn run_symbol_map(
     fs::write(&targets_path, serde_json::to_vec_pretty(&target_summaries)?)
         .with_context(|| format!("write {}", targets_path.display()))?;
 
+    let local_cache_registration = if let Some(local_cache_root) = &opt.local_cache_root {
+            register_local_symbol_cache(
+                local_cache_root,
+                "arm64",
+                stripped_path,
+                unstripped_path,
+                &targets_path,
+                &report_path,
+                &mut notes,
+            )?
+        } else {
+            LocalSymbolCacheRegistration::default()
+        };
+
     let report = SymbolMapReport {
         stripped_path: stripped_path.display().to_string(),
         unstripped_path: unstripped_path.display().to_string(),
@@ -118,6 +132,13 @@ pub fn run_symbol_map(
         report_path: report_path.display().to_string(),
         targets_path: targets_path.display().to_string(),
         callsites_path: callsites_path.display().to_string(),
+        local_cache_manifest_path: local_cache_registration
+            .manifest_path
+            .as_ref()
+            .map(|path| path.display().to_string()),
+        local_cache_build_id: local_cache_registration.build_id,
+        local_cache_flutter_version: local_cache_registration.flutter_version,
+        local_cache_registered_paths: local_cache_registration.registered_paths,
     };
 
     fs::write(&report_path, serde_json::to_vec_pretty(&report)?)

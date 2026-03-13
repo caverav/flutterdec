@@ -117,6 +117,16 @@ struct EngineFingerprintContext {
     error: Option<String>,
 }
 
+#[derive(Debug, Default, Clone)]
+struct EngineSymbolIngestion {
+    enabled: bool,
+    match_kind: Option<String>,
+    loaded_paths: Vec<PathBuf>,
+    applied_target_count: usize,
+    manifest_path: Option<String>,
+    error: Option<String>,
+}
+
 fn resolved_backend_from_adapter_kind(adapter_kind: &str) -> Option<AdapterBackend> {
     let lowered = adapter_kind.trim().to_ascii_lowercase();
     if lowered.contains("blutter") {
@@ -278,6 +288,48 @@ fn try_collect_engine_fingerprint(input_path: &Path, bundle_arch: &str) -> Engin
         source: None,
         error: Some("libflutter.so not found near input".to_string()),
         ..EngineFingerprintContext::default()
+    }
+}
+
+fn resolve_local_engine_symbol_targets(
+    repo_root: &Path,
+    input_path: &Path,
+    bundle_arch: &str,
+    engine_context: &EngineFingerprintContext,
+) -> EngineSymbolIngestion {
+    let ext = input_path
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    if ext != "apk" || !engine_context.detected {
+        return EngineSymbolIngestion::default();
+    }
+
+    let build_id = engine_context.build_id.as_deref();
+    let flutter_version = if build_id.is_none() {
+        engine_context.candidate_flutter_version.as_deref()
+    } else {
+        None
+    };
+
+    match resolve_local_symbol_cache_paths(repo_root, bundle_arch, build_id, flutter_version) {
+        Ok(resolution) => EngineSymbolIngestion {
+            enabled: true,
+            match_kind: resolution.match_kind,
+            loaded_paths: resolution.paths,
+            applied_target_count: 0,
+            manifest_path: resolution
+                .manifest_path
+                .as_ref()
+                .map(|path| path.display().to_string()),
+            error: resolution.error,
+        },
+        Err(err) => EngineSymbolIngestion {
+            enabled: true,
+            error: Some(err.to_string()),
+            ..EngineSymbolIngestion::default()
+        },
     }
 }
 
@@ -1008,6 +1060,8 @@ pub fn run_decompile(
         &loaded_adapter_snapshot_hash,
     )?;
     let engine_context = try_collect_engine_fingerprint(input_path, &bundle.arch);
+    let mut engine_symbol_ingestion =
+        resolve_local_engine_symbol_targets(repo_root, input_path, &bundle.arch, &engine_context);
     let manifest_inspection = inspect_android_manifest(input_path);
     let startup_evidence = if opt.engine_options.apk_startup_analysis {
         analyze_android_startup(input_path)
@@ -1209,6 +1263,29 @@ pub fn run_decompile(
                     map_path.display()
                 )
             })?;
+        for (va, name) in ext {
+            merge_symbol_name(
+                &mut symbol_names,
+                &mut symbol_quality,
+                va,
+                name,
+                Some(SymbolNameQuality::External),
+                &mut symbol_merge_stats,
+            );
+        }
+    }
+    for map_path in &engine_symbol_ingestion.loaded_paths.clone() {
+        if opt.extra_symbol_map_targets.iter().any(|explicit| explicit == map_path) {
+            continue;
+        }
+        let ext = load_symbol_target_symbols(map_path, opt.include_nearest_symbol_map)
+            .with_context(|| {
+                format!(
+                    "load auto-ingested symbol target map from {}",
+                    map_path.display()
+                )
+            })?;
+        engine_symbol_ingestion.applied_target_count += ext.len();
         for (va, name) in ext {
             merge_symbol_name(
                 &mut symbol_names,
@@ -1690,6 +1767,19 @@ pub fn run_decompile(
             .map(|p| p.display().to_string())
             .collect::<Vec<_>>(),
         "include_nearest_symbol_map": opt.include_nearest_symbol_map,
+        "engine_symbol_ingestion": {
+            "enabled": engine_symbol_ingestion.enabled,
+            "match_kind": engine_symbol_ingestion.match_kind,
+            "manifest_path": engine_symbol_ingestion.manifest_path,
+            "loaded_paths": engine_symbol_ingestion
+                .loaded_paths
+                .iter()
+                .filter(|path| !opt.extra_symbol_map_targets.iter().any(|explicit| explicit == *path))
+                .map(|path| path.display().to_string())
+                .collect::<Vec<_>>(),
+            "applied_target_count": engine_symbol_ingestion.applied_target_count,
+            "error": engine_symbol_ingestion.error
+        },
         "ghidra_script": {
             "enabled": opt.emit_ghidra_script,
             "path": ghidra_script_path

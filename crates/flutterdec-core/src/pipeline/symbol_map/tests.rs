@@ -74,3 +74,57 @@ fn loads_symbol_target_symbols_and_filters_match_kind() {
 
     let _ = fs::remove_file(tmp);
 }
+
+#[test]
+fn resolves_local_symbol_cache_by_build_id_before_version() {
+    let td = tempfile::tempdir().expect("tempdir");
+    let repo_root = td.path();
+    let build_id_path = repo_root.join("symbols/by-build-id/abc123/symbol_target_summary.json");
+    let version_path = repo_root.join("symbols/by-version/3.24.0/symbol_target_summary.json");
+    fs::create_dir_all(build_id_path.parent().expect("build-id dir")).expect("mkdir build-id");
+    fs::create_dir_all(version_path.parent().expect("version dir")).expect("mkdir version");
+    fs::write(&build_id_path, "[]").expect("write build-id target summary");
+    fs::write(&version_path, "[]").expect("write version target summary");
+    let manifest = LocalSymbolCacheManifest {
+        entries: vec![LocalSymbolCacheEntry {
+            arch: "arm64".to_string(),
+            build_id: Some("abc123".to_string()),
+            flutter_version: Some("3.24.0".to_string()),
+            dart_version: Some("3.5.0".to_string()),
+            build_id_target_summary_path: Some(
+                "symbols/by-build-id/abc123/symbol_target_summary.json".to_string(),
+            ),
+            version_target_summary_path: Some(
+                "symbols/by-version/3.24.0/symbol_target_summary.json".to_string(),
+            ),
+            report_path: None,
+        }],
+    };
+    write_local_symbol_cache_manifest(&repo_root.join("symbols"), &manifest).expect("manifest");
+
+    let build_id_resolution = resolve_local_symbol_cache_paths(
+        repo_root,
+        "arm64",
+        Some("ABC123"),
+        Some("3.24.0"),
+    )
+    .expect("resolve build-id");
+    assert_eq!(build_id_resolution.match_kind.as_deref(), Some("build_id"));
+    assert_eq!(build_id_resolution.paths, vec![build_id_path.clone()]);
+
+    let no_fallback_resolution = resolve_local_symbol_cache_paths(
+        repo_root,
+        "arm64",
+        Some("missing-build-id"),
+        Some("3.24.0"),
+    )
+    .expect("resolve missing build-id");
+    assert!(no_fallback_resolution.paths.is_empty());
+    assert!(no_fallback_resolution.match_kind.is_none());
+
+    let version_resolution =
+        resolve_local_symbol_cache_paths(repo_root, "arm64", None, Some("3.24.0"))
+            .expect("resolve version");
+    assert_eq!(version_resolution.match_kind.as_deref(), Some("flutter_version"));
+    assert_eq!(version_resolution.paths, vec![version_path]);
+}
