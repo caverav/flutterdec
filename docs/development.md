@@ -54,7 +54,7 @@ Real-binary regression helpers:
 
 - `scripts/real-golden.sh`
 - `scripts/real-golden-matrix.sh`
-- baselines now also capture `report_metrics.json`, a focused subset of `report.json` covering startup evidence, bootflow coverage, entrypoint recovery, and engine-symbol-ingestion metrics
+- baselines now also capture `report_metrics.json`, a focused subset of `report.json` covering startup evidence, bootflow coverage, bootstrap-chain source/path counts, entrypoint recovery, and engine-symbol-ingestion metrics
 
 ## Quality and Reports
 
