@@ -663,7 +663,7 @@ File naming convention:
 - `android_manifest` aggregate
 - `android_startup` aggregate (APK bytecode startup evidence from `classes*.dex`, including embedding calls, JNI/bootstrap stages, parse errors, and recovered `DartEntrypoint` callsites when present)
 - recovered `android_startup.dart_entrypoints` records can include literal `function_name`, `library_uri`, and `app_bundle_path` values when constructor/execute arguments are directly backed by `const-string` plus simple register propagation
-- `android_startup.bootstrap_chain` aggregate (best observed startup-chain completeness plus per-source ordered stages, owner kind, missing-step diagnostics, and correlated `paths` when APK bytecode exposes app-defined method edges between activity/engine/bootstrap code)
+- `android_startup.bootstrap_chain` aggregate (best observed startup-chain completeness plus per-source ordered stages, owner kind, missing-step diagnostics, and correlated `paths` when APK bytecode exposes app-defined method edges between activity/engine/bootstrap code; each path also records whether it was anchored to a manifest launcher activity, deeplink activity, application class, FlutterActivity subclass, or only a heuristic/stage terminal)
 - `function_scope.priority_package_hints` (effective package boosts used by capped prioritization)
 - `prioritization.selected_package_counts_top` and `prioritization.selected_unknown_library_count` (selected top-N ownership mix)
 - `prioritization.selected_scope_mix` and `prioritization.selected_app_like_ratio` (selected top-N scope quality)
