@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/assets/flutterdec-banner.png" alt="flutterdec banner" width="900">
+</p>
+
 # flutterdec
 
 [![CI](https://github.com/caverav/flutterdec/actions/workflows/ci.yml/badge.svg)](https://github.com/caverav/flutterdec/actions/workflows/ci.yml)
