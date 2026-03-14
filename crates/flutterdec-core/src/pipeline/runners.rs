@@ -8,7 +8,8 @@ use runners_reporting::{
 #[path = "runners/manifest.rs"]
 mod runners_manifest;
 use runners_manifest::{
-    enrich_model_with_manifest_bootflow_hints, inspect_android_manifest, AndroidManifestSignals,
+    enrich_model_with_manifest_bootflow_hints, inspect_android_manifest,
+    inspect_android_manifest_from_apk_session, AndroidManifestSignals,
 };
 #[path = "runners/symbols.rs"]
 mod runners_symbols;
@@ -21,9 +22,7 @@ use runners_symbols::{
 #[cfg(test)]
 use runners_symbols::{is_generic_symbol_name, normalize_external_symbol_name};
 use std::collections::HashSet;
-use std::io::Read;
 use tempfile::NamedTempFile;
-use zip::ZipArchive;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ScopedFunctionKind {
@@ -145,6 +144,30 @@ fn backend_label(value: Option<AdapterBackend>) -> &'static str {
     }
 }
 
+fn is_apk_input_path(input_path: &Path) -> bool {
+    input_path
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("apk"))
+}
+
+fn open_apk_session_if_input_is_apk(input_path: &Path) -> Result<Option<ApkSession>> {
+    if is_apk_input_path(input_path) {
+        return ApkSession::open(input_path).map(Some);
+    }
+    Ok(None)
+}
+
+fn load_snapshot_bundle_with_optional_apk_session(
+    input_path: &Path,
+    apk_session: Option<&ApkSession>,
+) -> Result<SnapshotBundle> {
+    if let Some(apk) = apk_session {
+        return load_snapshot_bundle_from_apk_session(input_path, apk);
+    }
+    load_snapshot_bundle(input_path)
+}
+
 fn bundle_arch_matches_machine_id(bundle_arch: &str, machine_id: u16) -> bool {
     match bundle_arch {
         "arm64" => machine_id == goblin::elf::header::EM_AARCH64,
@@ -185,44 +208,50 @@ fn fingerprint_engine_path(path: &Path, bundle_arch: &str, source: String) -> En
     ctx
 }
 
-fn find_libflutter_in_apk(apk_path: &Path) -> Result<Option<(String, Vec<u8>)>> {
-    let file = fs::File::open(apk_path)
-        .with_context(|| format!("open apk for engine fingerprint: {}", apk_path.display()))?;
-    let mut zip = ZipArchive::new(file).context("parse apk zip for engine fingerprint")?;
-
+fn find_libflutter_in_apk_session(apk: &ApkSession) -> Result<Option<(String, Vec<u8>)>> {
     let preferred = ["lib/arm64-v8a/libflutter.so", "base/lib/arm64-v8a/libflutter.so"];
     for want in preferred {
-        if let Ok(mut entry) = zip.by_name(want) {
-            let mut out = Vec::new();
-            entry.read_to_end(&mut out).context("read preferred libflutter from apk")?;
+        if apk.entry_names().iter().any(|name| name == want) {
+            let out = apk
+                .read_entry(want)
+                .context("read preferred libflutter from apk")?;
             return Ok(Some((want.to_string(), out)));
         }
     }
 
-    for idx in 0..zip.len() {
-        let mut entry = zip.by_index(idx)?;
-        let name = entry.name().to_string();
+    for name in apk.entry_names() {
         if name.ends_with("/libflutter.so") || name == "libflutter.so" {
-            let mut out = Vec::new();
-            entry
-                .read_to_end(&mut out)
+            let out = apk
+                .read_entry(name)
                 .context("read fallback libflutter from apk")?;
-            return Ok(Some((name, out)));
+            return Ok(Some((name.clone(), out)));
         }
     }
 
     Ok(None)
 }
 
-fn try_collect_engine_fingerprint(input_path: &Path, bundle_arch: &str) -> EngineFingerprintContext {
-    let ext = input_path
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("")
-        .to_ascii_lowercase();
-
-    if ext == "apk" {
-        match find_libflutter_in_apk(input_path) {
+fn try_collect_engine_fingerprint_with_apk_session(
+    input_path: &Path,
+    apk_session: Option<&ApkSession>,
+    bundle_arch: &str,
+) -> EngineFingerprintContext {
+    if is_apk_input_path(input_path) {
+        let libflutter = match apk_session {
+            Some(apk) => find_libflutter_in_apk_session(apk),
+            None => match ApkSession::open(input_path) {
+                Ok(apk) => find_libflutter_in_apk_session(&apk),
+                Err(err) => {
+                    return EngineFingerprintContext {
+                        detected: false,
+                        source: None,
+                        error: Some(format!("open apk session for engine fingerprint: {err}")),
+                        ..EngineFingerprintContext::default()
+                    };
+                }
+            },
+        };
+        match libflutter {
             Ok(Some((entry_name, bytes))) => {
                 let tmp = match NamedTempFile::new() {
                     Ok(t) => t,
@@ -287,6 +316,11 @@ fn try_collect_engine_fingerprint(input_path: &Path, bundle_arch: &str) -> Engin
         error: Some("libflutter.so not found near input".to_string()),
         ..EngineFingerprintContext::default()
     }
+}
+
+#[cfg(test)]
+fn try_collect_engine_fingerprint(input_path: &Path, bundle_arch: &str) -> EngineFingerprintContext {
+    try_collect_engine_fingerprint_with_apk_session(input_path, None, bundle_arch)
 }
 
 fn resolve_local_engine_symbol_targets(
@@ -871,11 +905,25 @@ fn apply_function_scope_filter(
 }
 
 pub fn run_info(repo_root: &Path, input_path: &Path) -> Result<InfoOutput> {
-    let bundle = load_snapshot_bundle(input_path)?;
+    let apk_session = open_apk_session_if_input_is_apk(input_path)?;
+    let bundle = load_snapshot_bundle_with_optional_apk_session(input_path, apk_session.as_ref())?;
     let adapter_installed = resolve_adapter_exec(repo_root, &bundle.snapshot_hash).is_ok();
-    let manifest_inspection = inspect_android_manifest(input_path);
-    let startup_evidence =
-        analyze_android_startup_with_manifest(input_path, &build_startup_manifest_context(&manifest_inspection.signals));
+    let manifest_inspection = if let Some(apk) = apk_session.as_ref() {
+        inspect_android_manifest_from_apk_session(apk)
+    } else {
+        inspect_android_manifest(input_path)
+    };
+    let startup_evidence = if let Some(apk) = apk_session.as_ref() {
+        analyze_android_startup_with_manifest_from_apk_session(
+            apk,
+            &build_startup_manifest_context(&manifest_inspection.signals),
+        )
+    } else {
+        analyze_android_startup_with_manifest(
+            input_path,
+            &build_startup_manifest_context(&manifest_inspection.signals),
+        )
+    };
 
     let mut out = InfoOutput {
         input_path: bundle.input_path.display().to_string(),
@@ -1050,7 +1098,8 @@ pub fn run_decompile(
     input_path: &Path,
     opt: &DecompileOptions,
 ) -> Result<QualityReport> {
-    let bundle = load_snapshot_bundle(input_path)?;
+    let apk_session = open_apk_session_if_input_is_apk(input_path)?;
+    let bundle = load_snapshot_bundle_with_optional_apk_session(input_path, apk_session.as_ref())?;
     let loaded_model = load_model(repo_root, &bundle, opt.adapter_backend)?;
     let adapter_exec_path = loaded_model.adapter_exec.display().to_string();
     let manifest_entry_version = loaded_model.manifest_entry_version.clone();
@@ -1069,15 +1118,27 @@ pub fn run_decompile(
         &bundle.snapshot_hash,
         &loaded_adapter_snapshot_hash,
     )?;
-    let engine_context = try_collect_engine_fingerprint(input_path, &bundle.arch);
+    let engine_context =
+        try_collect_engine_fingerprint_with_apk_session(input_path, apk_session.as_ref(), &bundle.arch);
     let mut engine_symbol_ingestion =
         resolve_local_engine_symbol_targets(repo_root, input_path, &bundle.arch, &engine_context);
-    let manifest_inspection = inspect_android_manifest(input_path);
+    let manifest_inspection = if let Some(apk) = apk_session.as_ref() {
+        inspect_android_manifest_from_apk_session(apk)
+    } else {
+        inspect_android_manifest(input_path)
+    };
     let startup_evidence = if opt.engine_options.apk_startup_analysis {
-        analyze_android_startup_with_manifest(
-            input_path,
-            &build_startup_manifest_context(&manifest_inspection.signals),
-        )
+        if let Some(apk) = apk_session.as_ref() {
+            analyze_android_startup_with_manifest_from_apk_session(
+                apk,
+                &build_startup_manifest_context(&manifest_inspection.signals),
+            )
+        } else {
+            analyze_android_startup_with_manifest(
+                input_path,
+                &build_startup_manifest_context(&manifest_inspection.signals),
+            )
+        }
     } else {
         AndroidStartupEvidence::default()
     };

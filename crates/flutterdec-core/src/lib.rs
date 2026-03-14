@@ -10,7 +10,9 @@ use flutterdec_disasm_arm64::{
     FunctionPriorityBreakdown,
 };
 use flutterdec_ir::{build_program_ir, FunctionIr};
-use flutterdec_loader::{load_snapshot_bundle, SnapshotBundle};
+use flutterdec_loader::{
+    load_snapshot_bundle, load_snapshot_bundle_from_apk_session, ApkSession, SnapshotBundle,
+};
 use serde::Serialize;
 use serde_json::json;
 use std::collections::HashMap;

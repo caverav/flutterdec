@@ -34,7 +34,7 @@ The pipeline is:
 
 Current module layout:
 
-- `crates/flutterdec-loader`: APK and ELF loading, snapshot bundle extraction
+- `crates/flutterdec-loader`: APK and ELF loading, snapshot bundle extraction, and shared APK session caching
 - `crates/flutterdec-adapter`: adapter execution and model contract handling
 - `crates/flutterdec-disasm-arm64`: ARM64 disassembly and call or branch tagging
 - `crates/flutterdec-ir`: LLIR plus basic block and CFG construction
@@ -244,6 +244,7 @@ Current scope:
 - disassembly prioritization now dampens framework/stdlib bootflow boosts for deeplink/activity/bootstrap candidate kinds so app-owned handlers dominate capped reverse-engineering output
 - decompile reports include a `bootflow_discovery` section in `report.json` with categorized deterministic targets (`main`, `runapp`, `deeplink`, `activity`, `bootstrap`) and metadata (`decoded_kind`, `selector`, `target_va`, owner and library context); overlapping discoveries for the same category/target/selector are deduplicated
 - decompile now inspects `AndroidManifest.xml` directly from APK inputs and exposes `android_manifest` diagnostics in `report.json` (`parse_mode`, per-signal confidence, `main_launcher`, `view_browsable`, activity names, deeplink entries, parse errors, and synthetic manifest-hint counts); parsing is binary-AXML first with deterministic string-pool decoding and heuristic fallback, and manifest-derived candidate hints are injected into model metadata as `Manifest*Candidate` entries to reinforce deterministic entrypoint/deeplink/activity prioritization when adapter symbols are sparse
+- APK-oriented stages now share a loader-level `ApkSession` that opens the ZIP once per `info` or `decompile` run, indexes entry names, and caches entry bytes on demand; loader snapshot extraction, manifest inspection, APK startup scanning, and engine fingerprint lookup now reuse that session instead of reopening and rescanning the APK independently
 - `info` and `decompile` now also inspect APK `classes*.dex` entries for Android startup evidence and expose `android_startup` diagnostics (presence/confidence, scanned dex files, parse errors, Flutter embedding callsites, JNI/bootstrap stages, and recovered `DartEntrypoint` callsites when present); this is implemented in core as a report-focused APK bytecode pass and is controllable through the engine toggle `apk_startup_analysis`
 - APK startup evidence is now also translated into synthetic bootflow hints (`Startup*Candidate`) and merged back into the in-memory model with `source = "apk_startup"`; when a Dart `target_va` can be matched, those hints feed the existing prioritization path, and when it cannot, they still surface in `report.json.bootflow_discovery` with `target_va = null` so startup context is visible without pretending the mapping is solved
 - APK startup scanning now also performs a narrow same-method register trace for literal strings (`const-string` + `move-object` propagation) around `DartEntrypoint.<init>`, `DartExecutor.executeDartEntrypoint`, and `FlutterJNI.runBundleAndSnapshotFromLibrary`, so `android_startup.dart_entrypoints` can capture `function_name`, `library_uri`, and `app_bundle_path` when those values are statically visible in the APK bytecode
