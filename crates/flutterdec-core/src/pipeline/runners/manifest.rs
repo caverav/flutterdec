@@ -22,9 +22,12 @@ const NO_ENTRY_U32: u32 = 0xffff_ffff;
 #[derive(Debug, Clone, Default)]
 pub(super) struct AndroidManifestSignals {
     pub(super) package_name: Option<String>,
+    pub(super) application_name: Option<String>,
     pub(super) has_main_launcher: bool,
     pub(super) has_view_browsable: bool,
     pub(super) activities: Vec<String>,
+    pub(super) launcher_activities: Vec<String>,
+    pub(super) deeplink_activities: Vec<String>,
     pub(super) deeplink_entries: Vec<String>,
 }
 
@@ -205,6 +208,7 @@ struct ParsedActivity {
 #[derive(Debug, Default, Clone)]
 struct ParsedBinaryManifest {
     package_name: Option<String>,
+    application_name: Option<String>,
     activities: Vec<ParsedActivity>,
 }
 
@@ -305,6 +309,15 @@ fn parse_binary_android_manifest(bytes: &[u8]) -> Result<ParsedBinaryManifest, S
                 "manifest" => {
                     if let Some(pkg) = attrs.get("package") {
                         parsed.package_name = Some(pkg.trim().to_string());
+                    }
+                }
+                "application" => {
+                    if let Some(name) = attrs.get("name") {
+                        let fq =
+                            fully_qualify_component_name(parsed.package_name.as_deref(), name);
+                        if !fq.is_empty() {
+                            parsed.application_name = Some(fq);
+                        }
                     }
                 }
                 "activity" | "activity-alias" => {
@@ -435,6 +448,8 @@ fn signals_from_parsed_binary_manifest(parsed: &ParsedBinaryManifest) -> Android
     let mut has_view_browsable = false;
     let mut deeplink_entries = BTreeSet::new();
     let mut activity_names = BTreeSet::new();
+    let mut launcher_activities = BTreeSet::new();
+    let mut deeplink_activities = BTreeSet::new();
 
     for activity in &parsed.activities {
         if !activity.name.trim().is_empty() {
@@ -445,12 +460,14 @@ fn signals_from_parsed_binary_manifest(parsed: &ParsedBinaryManifest) -> Android
             let has_launcher = filter.categories.contains("android.intent.category.launcher");
             if has_main && has_launcher {
                 has_main_launcher = true;
+                launcher_activities.insert(activity.name.trim().to_string());
             }
 
             let has_view = filter.actions.contains("android.intent.action.view");
             let has_browsable = filter.categories.contains("android.intent.category.browsable");
             if has_view && has_browsable {
                 has_view_browsable = true;
+                deeplink_activities.insert(activity.name.trim().to_string());
             }
             if has_view {
                 deeplink_entries.insert("android.intent.action.VIEW".to_string());
@@ -471,9 +488,17 @@ fn signals_from_parsed_binary_manifest(parsed: &ParsedBinaryManifest) -> Android
             .map(|v| v.trim().to_string())
             .filter(|v| !v.is_empty())
             .filter(|pkg| !looks_non_app_package(pkg)),
+        application_name: parsed
+            .application_name
+            .as_ref()
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty())
+            .filter(|component| !looks_non_app_component(component)),
         has_main_launcher,
         has_view_browsable,
         activities: activity_names.into_iter().take(40).collect(),
+        launcher_activities: launcher_activities.into_iter().take(20).collect(),
+        deeplink_activities: deeplink_activities.into_iter().take(20).collect(),
         deeplink_entries: deeplink_entries.into_iter().take(40).collect(),
     }
 }
@@ -767,6 +792,25 @@ fn infer_activity_names(strings: &BTreeSet<String>) -> Vec<String> {
     out
 }
 
+fn infer_application_name(strings: &BTreeSet<String>, package_name: Option<&str>) -> Option<String> {
+    for s in strings {
+        let extracted = extract_manifest_attr_value(s, "android:name")
+            .or_else(|| extract_manifest_attr_value(s, "name"));
+        let Some(raw_name) = extracted else {
+            continue;
+        };
+        if !s.to_ascii_lowercase().contains("application") {
+            continue;
+        }
+        let fq = fully_qualify_component_name(package_name, &raw_name);
+        if fq.is_empty() || fq.contains(' ') {
+            continue;
+        }
+        return Some(fq);
+    }
+    None
+}
+
 fn infer_deeplink_entries(strings: &BTreeSet<String>) -> Vec<String> {
     let mut out = Vec::new();
     for s in strings {
@@ -800,6 +844,16 @@ fn looks_non_app_package(package: &str) -> bool {
         || lower.starts_with("com.ryanheise.")
 }
 
+fn looks_non_app_component(component: &str) -> bool {
+    let lower = component.to_ascii_lowercase();
+    lower.starts_with("android.")
+        || lower.starts_with("androidx.")
+        || lower.starts_with("java.")
+        || lower.starts_with("kotlin.")
+        || lower.starts_with("io.flutter.")
+        || lower.starts_with("com.google.")
+}
+
 fn analyze_manifest_bytes(bytes: &[u8]) -> AndroidManifestSignals {
     let strings = collect_manifest_strings(bytes);
     let lower = strings
@@ -822,12 +876,32 @@ fn analyze_manifest_bytes(bytes: &[u8]) -> AndroidManifestSignals {
     let activities = infer_activity_names(&strings);
     let package_name = infer_package_name(&strings, &activities)
         .filter(|pkg| !looks_non_app_package(pkg));
+    let qualified_activities = activities
+        .iter()
+        .map(|activity| fully_qualify_component_name(package_name.as_deref(), activity))
+        .filter(|activity| !activity.is_empty())
+        .collect::<Vec<_>>();
+    let application_name = infer_application_name(&strings, package_name.as_deref())
+        .filter(|component| !looks_non_app_component(component));
+    let launcher_activities = if has_main_launcher {
+        qualified_activities.iter().take(1).cloned().collect()
+    } else {
+        Vec::new()
+    };
+    let deeplink_activities = if has_view_browsable {
+        qualified_activities.iter().take(1).cloned().collect()
+    } else {
+        Vec::new()
+    };
 
     AndroidManifestSignals {
         package_name,
+        application_name,
         has_main_launcher,
         has_view_browsable,
-        activities,
+        activities: qualified_activities,
+        launcher_activities,
+        deeplink_activities,
         deeplink_entries,
     }
 }
@@ -1062,9 +1136,12 @@ mod tests {
     fn confidence_scores_reflect_parse_quality() {
         let signals = AndroidManifestSignals {
             package_name: Some("org.localsend.localsend_app".to_string()),
+            application_name: Some("org.localsend.localsend_app.App".to_string()),
             has_main_launcher: true,
             has_view_browsable: true,
             activities: vec![".MainActivity".to_string()],
+            launcher_activities: vec![".MainActivity".to_string()],
+            deeplink_activities: vec![".MainActivity".to_string()],
             deeplink_entries: vec!["localsend://share".to_string()],
         };
 
@@ -1085,7 +1162,7 @@ mod tests {
     fn inspect_manifest_bytes_uses_heuristic_fallback_for_plaintext_xml() {
         let manifest_text = br#"
             <manifest package="org.localsend.localsend_app">
-              <application>
+              <application android:name=".LocalSendApplication">
                 <activity android:name=".MainActivity">
                   <intent-filter>
                     <action android:name="android.intent.action.MAIN" />
@@ -1114,6 +1191,10 @@ mod tests {
             inspection.signals.package_name.as_deref(),
             Some("org.localsend.localsend_app")
         );
+        assert_eq!(
+            inspection.signals.application_name.as_deref(),
+            Some("org.localsend.localsend_app.LocalSendApplication")
+        );
         assert!(inspection.signals.has_main_launcher);
         assert!(inspection.signals.has_view_browsable);
         assert!(
@@ -1122,6 +1203,14 @@ mod tests {
                 .activities
                 .iter()
                 .any(|v| v.contains("MainActivity"))
+        );
+        assert_eq!(
+            inspection.signals.launcher_activities,
+            vec!["org.localsend.localsend_app.MainActivity".to_string()]
+        );
+        assert_eq!(
+            inspection.signals.deeplink_activities,
+            vec!["org.localsend.localsend_app.MainActivity".to_string()]
         );
         assert_eq!(inspection.confidence.package_name, "medium");
     }

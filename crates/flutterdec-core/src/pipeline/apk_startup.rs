@@ -97,6 +97,9 @@ pub struct BootstrapChainPath {
     pub entry_class_name: String,
     pub entry_method_name: String,
     pub owner_kind: String,
+    pub anchor_kind: String,
+    pub anchor_component_name: Option<String>,
+    pub anchor_confidence: String,
     pub call_chain: Vec<BootstrapChainPathStep>,
     pub stages: Vec<String>,
     pub complete: bool,
@@ -123,6 +126,15 @@ pub struct AndroidStartupEvidence {
     pub dart_entrypoints: Vec<DartEntrypointEvidence>,
     pub jni_bootstrap: Vec<JniBootstrapEvidence>,
     pub bootstrap_chain: BootstrapChainEvidence,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct StartupManifestContext {
+    pub package_name: Option<String>,
+    pub application_name: Option<String>,
+    pub activities: Vec<String>,
+    pub launcher_activities: Vec<String>,
+    pub deeplink_activities: Vec<String>,
 }
 
 impl Default for AndroidStartupEvidence {
@@ -237,6 +249,22 @@ struct BootstrapStageCall {
     target_class_name: String,
     target_method: String,
     stage: &'static str,
+}
+
+#[derive(Debug, Clone)]
+struct StartupPathAnchor {
+    kind: &'static str,
+    component_name: Option<String>,
+    confidence: &'static str,
+    rank: usize,
+}
+
+#[derive(Debug, Default, Clone)]
+struct StartupManifestMatcher {
+    application_name: Option<String>,
+    activities: Vec<String>,
+    launcher_activities: Vec<String>,
+    deeplink_activities: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -403,6 +431,17 @@ fn stage_sort_key(stage: &str) -> usize {
         .unwrap_or(BOOTSTRAP_CHAIN_STAGE_ORDER.len())
 }
 
+fn startup_anchor_sort_rank(kind: &str) -> usize {
+    match kind {
+        "manifest_application" => 5,
+        "manifest_launcher_activity" | "manifest_deeplink_activity" => 4,
+        "manifest_activity" => 3,
+        "flutter_activity_subclass" => 2,
+        "heuristic_startup_entry" => 1,
+        _ => 0,
+    }
+}
+
 fn bootstrap_chain_path_confidence(
     stages: &std::collections::HashSet<&'static str>,
     method_chain_len: usize,
@@ -441,6 +480,132 @@ fn is_application_like_class(class_name: &str) -> bool {
         .rsplit('.')
         .next()
         .is_some_and(|short| short.ends_with("Application"))
+}
+
+fn normalize_class_match_token(raw: &str) -> Option<String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    Some(trimmed.trim_start_matches('.').to_ascii_lowercase())
+}
+
+fn class_tail_token(raw: &str) -> Option<String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    Some(
+        trimmed
+            .rsplit(['.', '$'])
+            .next()
+            .unwrap_or(trimmed)
+            .to_ascii_lowercase(),
+    )
+}
+
+impl StartupManifestMatcher {
+    fn from_context(context: &StartupManifestContext) -> Self {
+        Self {
+            application_name: context.application_name.clone(),
+            activities: context.activities.clone(),
+            launcher_activities: context.launcher_activities.clone(),
+            deeplink_activities: context.deeplink_activities.clone(),
+        }
+    }
+}
+
+fn manifest_component_matches_class(component: &str, class_name: &str) -> bool {
+    let Some(component_norm) = normalize_class_match_token(component) else {
+        return false;
+    };
+    let Some(class_norm) = normalize_class_match_token(class_name) else {
+        return false;
+    };
+    if component_norm == class_norm {
+        return true;
+    }
+    let component_tail = class_tail_token(&component_norm);
+    let class_tail = class_tail_token(&class_norm);
+    component_tail.is_some() && component_tail == class_tail
+}
+
+fn first_matching_manifest_component(
+    components: &[String],
+    class_name: &str,
+) -> Option<String> {
+    components
+        .iter()
+        .find(|component| manifest_component_matches_class(component, class_name))
+        .cloned()
+}
+
+fn startup_path_anchor_for_method(
+    method: &ScannedMethodKey,
+    class_supers: &HashMap<String, Option<String>>,
+    matcher: &StartupManifestMatcher,
+    direct_stage: bool,
+) -> Option<StartupPathAnchor> {
+    if let Some(component_name) =
+        matcher
+            .application_name
+            .as_deref()
+            .and_then(|component| {
+                manifest_component_matches_class(component, &method.class_name)
+                    .then(|| component.to_string())
+            })
+    {
+        return Some(StartupPathAnchor {
+            kind: "manifest_application",
+            component_name: Some(component_name),
+            confidence: "high",
+            rank: 5,
+        });
+    }
+    if let Some(component_name) =
+        first_matching_manifest_component(&matcher.launcher_activities, &method.class_name)
+    {
+        return Some(StartupPathAnchor {
+            kind: "manifest_launcher_activity",
+            component_name: Some(component_name),
+            confidence: "high",
+            rank: 4,
+        });
+    }
+    if let Some(component_name) =
+        first_matching_manifest_component(&matcher.deeplink_activities, &method.class_name)
+    {
+        return Some(StartupPathAnchor {
+            kind: "manifest_deeplink_activity",
+            component_name: Some(component_name),
+            confidence: "high",
+            rank: 4,
+        });
+    }
+    if let Some(component_name) =
+        first_matching_manifest_component(&matcher.activities, &method.class_name)
+    {
+        return Some(StartupPathAnchor {
+            kind: "manifest_activity",
+            component_name: Some(component_name),
+            confidence: "medium",
+            rank: 3,
+        });
+    }
+    if has_super_class(&method.class_descriptor, FLUTTER_ACTIVITY_DESC, class_supers) {
+        return Some(StartupPathAnchor {
+            kind: "flutter_activity_subclass",
+            component_name: None,
+            confidence: if direct_stage { "high" } else { "medium" },
+            rank: 2,
+        });
+    }
+    is_startup_entry_method(method, class_supers, direct_stage).then_some(StartupPathAnchor {
+        kind: "heuristic_startup_entry",
+        component_name: None,
+        confidence: if direct_stage { "medium" } else { "low" },
+        rank: 1,
+    })
 }
 
 fn is_startup_entry_method(
@@ -516,10 +681,12 @@ fn collect_bootstrap_chain_paths(
     method_defs: &[ScannedMethodDef],
     app_method_invokes: &[ScannedAppMethodInvoke],
     stage_calls: &HashMap<ScannedMethodKey, Vec<BootstrapStageCall>>,
+    manifest_context: &StartupManifestContext,
 ) -> Vec<BootstrapChainPath> {
     if stage_calls.is_empty() {
         return Vec::new();
     }
+    let manifest_matcher = StartupManifestMatcher::from_context(manifest_context);
 
     let method_catalog = method_defs
         .iter()
@@ -592,22 +759,27 @@ fn collect_bootstrap_chain_paths(
     for terminal in terminals {
         let mut queue = std::collections::VecDeque::from([(terminal.clone(), vec![terminal.clone()])]);
         let mut visited = std::collections::HashSet::from([terminal.clone()]);
-        let mut found = None;
+        let mut best_anchor: Option<(StartupPathAnchor, Vec<ScannedMethodKey>)> = None;
         while let Some((current, path)) = queue.pop_front() {
             if path.len() > MAX_STARTUP_REVERSE_DEPTH {
                 continue;
             }
-            if current != terminal
-                && is_startup_entry_method(
+            let direct_stage = direct_stage_methods.contains(&current);
+            if current != terminal {
+                if let Some(anchor) = startup_path_anchor_for_method(
                     &current,
                     class_supers,
-                    direct_stage_methods.contains(&current),
-                )
-            {
-                let mut forward = path;
-                forward.reverse();
-                found = Some(forward);
-                break;
+                    &manifest_matcher,
+                    direct_stage,
+                ) {
+                    let should_replace = best_anchor.as_ref().is_none_or(|(best, best_path)| {
+                        anchor.rank > best.rank
+                            || (anchor.rank == best.rank && path.len() < best_path.len())
+                    });
+                    if should_replace {
+                        best_anchor = Some((anchor, path.clone()));
+                    }
+                }
             }
             let Some(predecessors) = reverse_edges.get(&current) else {
                 continue;
@@ -621,7 +793,27 @@ fn collect_bootstrap_chain_paths(
                 queue.push_back((predecessor.clone(), next_path));
             }
         }
-        let path_keys = found.unwrap_or_else(|| vec![terminal.clone()]);
+        let (path_anchor, path_keys) = if let Some((anchor, reverse_path)) = best_anchor {
+            let mut forward = reverse_path;
+            forward.reverse();
+            (anchor, forward)
+        } else {
+            (
+                startup_path_anchor_for_method(
+                    &terminal,
+                    class_supers,
+                    &manifest_matcher,
+                    direct_stage_methods.contains(&terminal),
+                )
+                .unwrap_or(StartupPathAnchor {
+                    kind: "stage_terminal",
+                    component_name: None,
+                    confidence: "low",
+                    rank: 0,
+                }),
+                vec![terminal.clone()],
+            )
+        };
 
         let mut seen_stages = std::collections::HashSet::new();
         let mut call_chain = Vec::new();
@@ -679,6 +871,9 @@ fn collect_bootstrap_chain_paths(
             entry_class_name: entry.class_name.clone(),
             entry_method_name: entry.method_name.clone(),
             owner_kind: startup_owner_kind(&entry.class_descriptor).to_string(),
+            anchor_kind: path_anchor.kind.to_string(),
+            anchor_component_name: path_anchor.component_name.clone(),
+            anchor_confidence: path_anchor.confidence.to_string(),
             call_chain,
             stages,
             complete: missing_steps.is_empty(),
@@ -699,6 +894,9 @@ fn collect_bootstrap_chain_paths(
                 } else {
                     std::cmp::Ordering::Greater
                 }
+            })
+            .then_with(|| {
+                startup_anchor_sort_rank(&b.anchor_kind).cmp(&startup_anchor_sort_rank(&a.anchor_kind))
             })
             .then_with(|| b.stages.len().cmp(&a.stages.len()))
             .then_with(|| b.call_chain.len().cmp(&a.call_chain.len()))
@@ -729,6 +927,7 @@ fn build_bootstrap_chain_evidence(
     method_defs: &[ScannedMethodDef],
     scanned_methods: &[ScannedStartupMethodRef],
     app_method_invokes: &[ScannedAppMethodInvoke],
+    manifest_context: &StartupManifestContext,
 ) -> BootstrapChainEvidence {
     let mut sources: HashMap<String, BootstrapChainSourceBuilder> = HashMap::new();
     let stage_calls = collect_bootstrap_stage_calls(scanned_methods);
@@ -805,6 +1004,7 @@ fn build_bootstrap_chain_evidence(
         method_defs,
         app_method_invokes,
         &stage_calls,
+        manifest_context,
     );
     let (complete, missing_steps) = paths
         .first()
@@ -1093,7 +1293,7 @@ fn decode_method_refs<B: AsRef<[u8]>>(
                     }
                 };
                 if app_class_descriptors.contains(&target_class)
-                    && !target_method.starts_with('<')
+                    && target_method != "<clinit>"
                 {
                     app_method_invokes.push(ScannedAppMethodInvoke {
                         source: source_key.clone(),
@@ -1318,6 +1518,7 @@ fn finalize_android_startup_evidence(
     dex_files: Vec<String>,
     mut parse_errors: Vec<String>,
     scan_results: Vec<StartupScanResult>,
+    manifest_context: &StartupManifestContext,
 ) -> AndroidStartupEvidence {
     let mut class_supers = HashMap::new();
     let mut scanned_classes = Vec::new();
@@ -1343,6 +1544,7 @@ fn finalize_android_startup_evidence(
         &scanned_method_defs,
         &scanned_methods,
         &scanned_app_method_invokes,
+        manifest_context,
     );
 
     let mut flutter_activity_classes = Vec::new();
@@ -1551,7 +1753,10 @@ fn finalize_android_startup_evidence(
     }
 }
 
-fn analyze_android_startup(input_path: &Path) -> AndroidStartupEvidence {
+fn analyze_android_startup_with_manifest(
+    input_path: &Path,
+    manifest_context: &StartupManifestContext,
+) -> AndroidStartupEvidence {
     if !is_apk_input(input_path) {
         return AndroidStartupEvidence::default();
     }
@@ -1587,7 +1792,12 @@ fn analyze_android_startup(input_path: &Path) -> AndroidStartupEvidence {
         }
     }
 
-    finalize_android_startup_evidence(dex_files, parse_errors, results)
+    finalize_android_startup_evidence(dex_files, parse_errors, results, manifest_context)
+}
+
+#[cfg(test)]
+fn analyze_android_startup(input_path: &Path) -> AndroidStartupEvidence {
+    analyze_android_startup_with_manifest(input_path, &StartupManifestContext::default())
 }
 
 fn startup_method_names(startup: &AndroidStartupEvidence) -> std::collections::HashSet<String> {
@@ -1951,9 +2161,9 @@ mod apk_startup_tests {
         analyze_android_startup, classify_startup_method, enrich_model_with_apk_startup_bootflow_hints,
         finalize_android_startup_evidence, has_super_class, is_classes_dex_entry,
         AndroidStartupEvidence, ScannedAppMethodInvoke, ScannedDartEntrypoint, ScannedMethodDef,
-        ScannedMethodKey, ScannedStartupClass, ScannedStartupMethodRef, StartupScanResult,
-        DART_ENTRYPOINT_DESC, DART_EXECUTOR_DESC, FLUTTER_ACTIVITY_DESC, FLUTTER_ENGINE_DESC,
-        FLUTTER_JNI_DESC, FLUTTER_LOADER_DESC,
+        ScannedMethodKey, ScannedStartupClass, ScannedStartupMethodRef, StartupManifestContext,
+        StartupScanResult, DART_ENTRYPOINT_DESC, DART_EXECUTOR_DESC, FLUTTER_ACTIVITY_DESC,
+        FLUTTER_ENGINE_DESC, FLUTTER_JNI_DESC, FLUTTER_LOADER_DESC,
     };
     use std::collections::HashMap;
     use std::fs::File;
@@ -2099,6 +2309,13 @@ mod apk_startup_tests {
             vec!["classes.dex".to_string()],
             Vec::new(),
             vec![scan],
+            &StartupManifestContext {
+                package_name: Some("com.example".to_string()),
+                application_name: None,
+                activities: vec!["com.example.MainActivity".to_string()],
+                launcher_activities: vec!["com.example.MainActivity".to_string()],
+                deeplink_activities: Vec::new(),
+            },
         );
 
         assert!(evidence.present);
@@ -2127,6 +2344,11 @@ mod apk_startup_tests {
             .find(|path| path.call_chain.len() >= 3)
             .expect("correlated startup path");
         assert_eq!(correlated.entry_method_name, "onCreate");
+        assert_eq!(correlated.anchor_kind, "manifest_launcher_activity");
+        assert_eq!(
+            correlated.anchor_component_name.as_deref(),
+            Some("com.example.MainActivity")
+        );
         assert!(correlated
             .stages
             .contains(&"dart_entrypoint_execute".to_string()));
@@ -2318,6 +2540,9 @@ mod apk_startup_tests {
                     entry_class_name: "com.example.MainActivity".to_string(),
                     entry_method_name: "onCreate".to_string(),
                     owner_kind: "app".to_string(),
+                    anchor_kind: "manifest_launcher_activity".to_string(),
+                    anchor_component_name: Some("com.example.MainActivity".to_string()),
+                    anchor_confidence: "high".to_string(),
                     call_chain: vec![
                         super::BootstrapChainPathStep {
                             class_descriptor: "Lcom/example/MainActivity;".to_string(),

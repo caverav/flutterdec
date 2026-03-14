@@ -8,10 +8,8 @@ use runners_reporting::{
 #[path = "runners/manifest.rs"]
 mod runners_manifest;
 use runners_manifest::{
-    enrich_model_with_manifest_bootflow_hints, inspect_android_manifest,
+    enrich_model_with_manifest_bootflow_hints, inspect_android_manifest, AndroidManifestSignals,
 };
-#[cfg(test)]
-use runners_manifest::AndroidManifestSignals;
 #[path = "runners/symbols.rs"]
 mod runners_symbols;
 use runners_symbols::{
@@ -463,6 +461,16 @@ fn derive_manifest_package_hints(package_name: Option<&str>) -> Vec<String> {
     out
 }
 
+fn build_startup_manifest_context(signals: &AndroidManifestSignals) -> StartupManifestContext {
+    StartupManifestContext {
+        package_name: signals.package_name.clone(),
+        application_name: signals.application_name.clone(),
+        activities: signals.activities.clone(),
+        launcher_activities: signals.launcher_activities.clone(),
+        deeplink_activities: signals.deeplink_activities.clone(),
+    }
+}
+
 fn collect_app_package_counts(model: &ProgramModel) -> Vec<(String, usize)> {
     let mut class_to_library = HashMap::new();
     for c in &model.classes {
@@ -865,7 +873,9 @@ fn apply_function_scope_filter(
 pub fn run_info(repo_root: &Path, input_path: &Path) -> Result<InfoOutput> {
     let bundle = load_snapshot_bundle(input_path)?;
     let adapter_installed = resolve_adapter_exec(repo_root, &bundle.snapshot_hash).is_ok();
-    let startup_evidence = analyze_android_startup(input_path);
+    let manifest_inspection = inspect_android_manifest(input_path);
+    let startup_evidence =
+        analyze_android_startup_with_manifest(input_path, &build_startup_manifest_context(&manifest_inspection.signals));
 
     let mut out = InfoOutput {
         input_path: bundle.input_path.display().to_string(),
@@ -1064,7 +1074,10 @@ pub fn run_decompile(
         resolve_local_engine_symbol_targets(repo_root, input_path, &bundle.arch, &engine_context);
     let manifest_inspection = inspect_android_manifest(input_path);
     let startup_evidence = if opt.engine_options.apk_startup_analysis {
-        analyze_android_startup(input_path)
+        analyze_android_startup_with_manifest(
+            input_path,
+            &build_startup_manifest_context(&manifest_inspection.signals),
+        )
     } else {
         AndroidStartupEvidence::default()
     };
@@ -1715,10 +1728,15 @@ pub fn run_decompile(
                 "activities": manifest_inspection.confidence.activities
             },
             "package_name": manifest_inspection.signals.package_name,
+            "application_name": manifest_inspection.signals.application_name,
             "main_launcher": manifest_inspection.signals.has_main_launcher,
             "view_browsable": manifest_inspection.signals.has_view_browsable,
             "activity_count": manifest_inspection.signals.activities.len(),
             "activities": manifest_inspection.signals.activities,
+            "launcher_activity_count": manifest_inspection.signals.launcher_activities.len(),
+            "launcher_activities": manifest_inspection.signals.launcher_activities,
+            "deeplink_activity_count": manifest_inspection.signals.deeplink_activities.len(),
+            "deeplink_activities": manifest_inspection.signals.deeplink_activities,
             "deeplink_entry_count": manifest_inspection.signals.deeplink_entries.len(),
             "deeplink_entries": manifest_inspection.signals.deeplink_entries,
             "synthetic_bootflow_hints": manifest_synthetic_hints

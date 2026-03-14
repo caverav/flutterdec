@@ -1727,9 +1727,12 @@
         };
         let signals = AndroidManifestSignals {
             package_name: Some("com.example.app".to_string()),
+            application_name: Some("com.example.app.App".to_string()),
             has_main_launcher: true,
             has_view_browsable: true,
             activities: vec!["com.example.app.MainActivity".to_string()],
+            launcher_activities: vec!["com.example.app.MainActivity".to_string()],
+            deeplink_activities: vec!["com.example.app.MainActivity".to_string()],
             deeplink_entries: vec!["myapp://open".to_string()],
         };
 
