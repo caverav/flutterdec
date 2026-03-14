@@ -27,13 +27,13 @@ From this repository checkout:
 nix run . -- --help
 ```
 
-2. Install from release binary (`v0.1.0-alpha.1`):
+2. Install from release binary (`v0.1.0-alpha.2`):
 
 Linux x64:
 
 ```bash
-curl -fLO https://github.com/caverav/flutterdec/releases/download/v0.1.0-alpha.1/flutterdec-v0.1.0-alpha.1-Linux-X64.tar.gz
-tar -xzf flutterdec-v0.1.0-alpha.1-Linux-X64.tar.gz
+curl -fLO https://github.com/caverav/flutterdec/releases/download/v0.1.0-alpha.2/flutterdec-v0.1.0-alpha.2-Linux-X64.tar.gz
+tar -xzf flutterdec-v0.1.0-alpha.2-Linux-X64.tar.gz
 sudo install -m 0755 flutterdec /usr/local/bin/flutterdec
 flutterdec --help
 ```
@@ -41,8 +41,8 @@ flutterdec --help
 macOS arm64:
 
 ```bash
-curl -fLO https://github.com/caverav/flutterdec/releases/download/v0.1.0-alpha.1/flutterdec-v0.1.0-alpha.1-macOS-ARM64.tar.gz
-tar -xzf flutterdec-v0.1.0-alpha.1-macOS-ARM64.tar.gz
+curl -fLO https://github.com/caverav/flutterdec/releases/download/v0.1.0-alpha.2/flutterdec-v0.1.0-alpha.2-macOS-ARM64.tar.gz
+tar -xzf flutterdec-v0.1.0-alpha.2-macOS-ARM64.tar.gz
 sudo install -m 0755 flutterdec /usr/local/bin/flutterdec
 flutterdec --help
 ```
