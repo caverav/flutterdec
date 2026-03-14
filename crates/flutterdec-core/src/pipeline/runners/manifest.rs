@@ -5,11 +5,9 @@ use super::{
     push_synthetic_hint, SyntheticHintInput,
 };
 use flutterdec_adapter::ProgramModel;
+use flutterdec_loader::ApkSession;
 use std::collections::{BTreeSet, HashMap, HashSet};
-use std::fs;
-use std::io::Read;
 use std::path::Path;
-use zip::ZipArchive;
 
 const RES_STRING_POOL_TYPE: u16 = 0x0001;
 const RES_XML_TYPE: u16 = 0x0003;
@@ -906,46 +904,29 @@ fn analyze_manifest_bytes(bytes: &[u8]) -> AndroidManifestSignals {
     }
 }
 
-fn read_android_manifest_from_apk(input_path: &Path) -> Result<Option<Vec<u8>>, String> {
-    let f = fs::File::open(input_path).map_err(|e| format!("open apk: {e}"))?;
-    let mut zip = ZipArchive::new(f).map_err(|e| format!("parse apk zip: {e}"))?;
+fn read_android_manifest_from_apk_session(apk: &ApkSession) -> Result<Option<Vec<u8>>, String> {
     for path in ["AndroidManifest.xml", "base/AndroidManifest.xml"] {
-        if let Ok(mut entry) = zip.by_name(path) {
-            let mut out = Vec::new();
-            entry
-                .read_to_end(&mut out)
+        if apk.entry_names().iter().any(|name| name == path) {
+            let out = apk
+                .read_entry(path)
                 .map_err(|e| format!("read manifest entry {path}: {e}"))?;
             return Ok(Some(out));
         }
     }
-    for i in 0..zip.len() {
-        let Ok(mut entry) = zip.by_index(i) else {
-            continue;
-        };
-        if !entry.name().ends_with("/AndroidManifest.xml") {
+    for entry_name in apk.entry_names() {
+        if !entry_name.ends_with("/AndroidManifest.xml") {
             continue;
         }
-        let mut out = Vec::new();
-        entry
-            .read_to_end(&mut out)
+        let out = apk
+            .read_entry(entry_name)
             .map_err(|e| format!("read manifest entry by index: {e}"))?;
         return Ok(Some(out));
     }
     Ok(None)
 }
 
-pub(super) fn inspect_android_manifest(input_path: &Path) -> AndroidManifestInspection {
-    let is_apk = input_path
-        .extension()
-        .and_then(|s| s.to_str())
-        .is_some_and(|ext| ext.eq_ignore_ascii_case("apk"));
-    if !is_apk {
-        return AndroidManifestInspection {
-            parse_mode: "not_apk".to_string(),
-            ..AndroidManifestInspection::default()
-        };
-    }
-    match read_android_manifest_from_apk(input_path) {
+pub(super) fn inspect_android_manifest_from_apk_session(apk: &ApkSession) -> AndroidManifestInspection {
+    match read_android_manifest_from_apk_session(apk) {
         Ok(Some(bytes)) => inspect_manifest_bytes(&bytes),
         Ok(None) => AndroidManifestInspection {
             present: false,
@@ -962,6 +943,32 @@ pub(super) fn inspect_android_manifest(input_path: &Path) -> AndroidManifestInsp
             signals: AndroidManifestSignals::default(),
         },
     }
+}
+
+pub(super) fn inspect_android_manifest(input_path: &Path) -> AndroidManifestInspection {
+    let is_apk = input_path
+        .extension()
+        .and_then(|s| s.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("apk"));
+    if !is_apk {
+        return AndroidManifestInspection {
+            parse_mode: "not_apk".to_string(),
+            ..AndroidManifestInspection::default()
+        };
+    }
+    let apk = match ApkSession::open(input_path) {
+        Ok(apk) => apk,
+        Err(err) => {
+            return AndroidManifestInspection {
+                present: false,
+                parse_mode: "read_error".to_string(),
+                parse_error: Some(format!("open apk session: {err}")),
+                confidence: AndroidManifestConfidence::default(),
+                signals: AndroidManifestSignals::default(),
+            };
+        }
+    };
+    inspect_android_manifest_from_apk_session(&apk)
 }
 
 fn inspect_manifest_bytes(bytes: &[u8]) -> AndroidManifestInspection {

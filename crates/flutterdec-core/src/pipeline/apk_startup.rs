@@ -4,7 +4,6 @@ use dalvik::Instruction;
 use dex::jtype::TypeId;
 use dex::method::MethodId;
 use dex::DexReader;
-use flutterdec_loader::{list_apk_entries, read_apk_entry};
 
 const FLUTTER_ACTIVITY_DESC: &str = "Lio/flutter/embedding/android/FlutterActivity;";
 const FLUTTER_ACTIVITY_DELEGATE_DESC: &str =
@@ -1030,13 +1029,15 @@ fn push_parse_error(errors: &mut Vec<String>, message: String) {
     }
 }
 
-fn collect_classes_dex_entries(input_path: &Path) -> Result<Vec<String>> {
-    let mut entries = list_apk_entries(input_path)?
-        .into_iter()
+fn collect_classes_dex_entries(apk: &ApkSession) -> Vec<String> {
+    let mut entries = apk
+        .entry_names()
+        .iter()
         .filter(|name| is_classes_dex_entry(name))
+        .cloned()
         .collect::<Vec<_>>();
     entries.sort();
-    Ok(entries)
+    entries
 }
 
 fn instruction_method_id(instruction: &Instruction) -> Option<u32> {
@@ -1753,23 +1754,11 @@ fn finalize_android_startup_evidence(
     }
 }
 
-fn analyze_android_startup_with_manifest(
-    input_path: &Path,
+pub(crate) fn analyze_android_startup_with_manifest_from_apk_session(
+    apk: &ApkSession,
     manifest_context: &StartupManifestContext,
 ) -> AndroidStartupEvidence {
-    if !is_apk_input(input_path) {
-        return AndroidStartupEvidence::default();
-    }
-
-    let dex_files = match collect_classes_dex_entries(input_path) {
-        Ok(entries) => entries,
-        Err(err) => {
-            return AndroidStartupEvidence {
-                parse_errors: vec![format!("list classes.dex entries: {}", err)],
-                ..AndroidStartupEvidence::default()
-            };
-        }
-    };
+    let dex_files = collect_classes_dex_entries(apk);
 
     if dex_files.is_empty() {
         return AndroidStartupEvidence {
@@ -1781,7 +1770,8 @@ fn analyze_android_startup_with_manifest(
     let mut parse_errors = Vec::new();
     let mut results = Vec::new();
     for dex_file in &dex_files {
-        match read_apk_entry(input_path, dex_file)
+        match apk
+            .read_entry(dex_file)
             .and_then(|bytes| scan_dex_bytes(dex_file, bytes))
         {
             Ok(result) => results.push(result),
@@ -1793,6 +1783,26 @@ fn analyze_android_startup_with_manifest(
     }
 
     finalize_android_startup_evidence(dex_files, parse_errors, results, manifest_context)
+}
+
+fn analyze_android_startup_with_manifest(
+    input_path: &Path,
+    manifest_context: &StartupManifestContext,
+) -> AndroidStartupEvidence {
+    if !is_apk_input(input_path) {
+        return AndroidStartupEvidence::default();
+    }
+
+    let apk = match ApkSession::open(input_path) {
+        Ok(apk) => apk,
+        Err(err) => {
+            return AndroidStartupEvidence {
+                parse_errors: vec![format!("open apk session: {}", err)],
+                ..AndroidStartupEvidence::default()
+            };
+        }
+    };
+    analyze_android_startup_with_manifest_from_apk_session(&apk, manifest_context)
 }
 
 #[cfg(test)]

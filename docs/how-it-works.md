@@ -209,7 +209,7 @@ Important detail:
 
 - `crates/flutterdec-cli`: command parsing and command dispatch
 - `crates/flutterdec-core`: orchestration, file output, quality gates, stripped/unstripped call-target mapping, and ELF engine fingerprinting
-- `crates/flutterdec-loader`: APK and ELF loading, snapshot symbol extraction
+- `crates/flutterdec-loader`: APK and ELF loading, snapshot symbol extraction, and shared APK session caching
 - `crates/flutterdec-adapter`: adapter process management and model contract
 - `crates/flutterdec-disasm-arm64`: instruction decode and annotations
 - `crates/flutterdec-ir`: LLIR construction and CFG recovery
@@ -344,6 +344,7 @@ Main tasks:
 
 Key implementation details:
 
+- APK mode now creates one shared loader session per run, so manifest reads, `classes*.dex` startup scans, `libapp.so` extraction, and `libflutter.so` engine fingerprint lookup reuse one indexed ZIP view instead of reopening the APK for each stage
 - APK mode scans preferred lib paths first, then fallback file names
 - ELF symbol lookup merges dynamic and static symbol tables
 - symbol VA is converted to file offset through program headers

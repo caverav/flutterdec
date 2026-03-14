@@ -1,6 +1,7 @@
 use anyhow::{anyhow, bail, Context, Result};
 use goblin::elf::Elf;
 use regex::bytes::Regex;
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fs;
 use std::io::Read;
@@ -28,29 +29,81 @@ struct SymbolSpan {
     size: usize,
 }
 
-fn find_libapp_in_apk(path: &Path) -> Result<(PathBuf, Vec<u8>)> {
-    let mut zip = open_apk_zip(path)?;
+pub struct ApkSession {
+    path: PathBuf,
+    entry_names: Vec<String>,
+    entry_index: HashMap<String, usize>,
+    zip: RefCell<ZipArchive<fs::File>>,
+    entry_cache: RefCell<HashMap<String, Vec<u8>>>,
+}
 
+impl ApkSession {
+    pub fn open(path: &Path) -> Result<Self> {
+        let mut zip = open_apk_zip(path)?;
+        let mut entry_names = Vec::with_capacity(zip.len());
+        let mut entry_index = HashMap::with_capacity(zip.len());
+        for idx in 0..zip.len() {
+            let entry = zip.by_index(idx)?;
+            let name = entry.name().to_string();
+            entry_index.entry(name.clone()).or_insert(idx);
+            entry_names.push(name);
+        }
+        Ok(Self {
+            path: path.to_path_buf(),
+            entry_names,
+            entry_index,
+            zip: RefCell::new(zip),
+            entry_cache: RefCell::new(HashMap::new()),
+        })
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    pub fn entry_names(&self) -> &[String] {
+        &self.entry_names
+    }
+
+    pub fn read_entry(&self, entry_name: &str) -> Result<Vec<u8>> {
+        if let Some(bytes) = self.entry_cache.borrow().get(entry_name) {
+            return Ok(bytes.clone());
+        }
+
+        let index =
+            self.entry_index.get(entry_name).copied().ok_or_else(|| {
+                anyhow!("entry {} not found in {}", entry_name, self.path.display())
+            })?;
+        let mut out = Vec::new();
+        {
+            let mut zip = self.zip.borrow_mut();
+            let mut entry = zip.by_index(index).with_context(|| {
+                format!("open apk entry {} in {}", entry_name, self.path.display())
+            })?;
+            entry.read_to_end(&mut out).with_context(|| {
+                format!("read apk entry {} in {}", entry_name, self.path.display())
+            })?;
+        }
+        self.entry_cache
+            .borrow_mut()
+            .insert(entry_name.to_string(), out.clone());
+        Ok(out)
+    }
+}
+
+fn find_libapp_in_apk_session(apk: &ApkSession) -> Result<(PathBuf, Vec<u8>)> {
     let preferred = ["lib/arm64-v8a/libapp.so", "base/lib/arm64-v8a/libapp.so"];
 
     for want in preferred {
-        if let Ok(mut entry) = zip.by_name(want) {
-            let mut out = Vec::new();
-            entry
-                .read_to_end(&mut out)
-                .context("read libapp from apk")?;
+        if apk.entry_index.contains_key(want) {
+            let out = apk.read_entry(want).context("read libapp from apk")?;
             return Ok((PathBuf::from(want), out));
         }
     }
 
-    for i in 0..zip.len() {
-        let mut entry = zip.by_index(i)?;
-        let name = entry.name().to_string();
+    for name in apk.entry_names() {
         if name.ends_with("/libapp.so") || name == "libapp.so" {
-            let mut out = Vec::new();
-            entry
-                .read_to_end(&mut out)
-                .context("read fallback libapp")?;
+            let out = apk.read_entry(name).context("read fallback libapp")?;
             return Ok((PathBuf::from(name), out));
         }
     }
@@ -64,25 +117,13 @@ fn open_apk_zip(path: &Path) -> Result<ZipArchive<fs::File>> {
 }
 
 pub fn list_apk_entries(path: &Path) -> Result<Vec<String>> {
-    let mut zip = open_apk_zip(path)?;
-    let mut out = Vec::with_capacity(zip.len());
-    for idx in 0..zip.len() {
-        let entry = zip.by_index(idx)?;
-        out.push(entry.name().to_string());
-    }
-    Ok(out)
+    let session = ApkSession::open(path)?;
+    Ok(session.entry_names().to_vec())
 }
 
 pub fn read_apk_entry(path: &Path, entry_name: &str) -> Result<Vec<u8>> {
-    let mut zip = open_apk_zip(path)?;
-    let mut entry = zip
-        .by_name(entry_name)
-        .with_context(|| format!("open apk entry {} in {}", entry_name, path.display()))?;
-    let mut out = Vec::new();
-    entry
-        .read_to_end(&mut out)
-        .with_context(|| format!("read apk entry {} in {}", entry_name, path.display()))?;
-    Ok(out)
+    let session = ApkSession::open(path)?;
+    session.read_entry(entry_name)
 }
 
 fn va_to_offset(elf: &Elf<'_>, va: u64) -> Option<usize> {
@@ -208,6 +249,14 @@ fn from_elf(path: &Path, libapp_display: PathBuf, bytes: Vec<u8>) -> Result<Snap
     })
 }
 
+pub fn load_snapshot_bundle_from_apk_session(
+    path: &Path,
+    apk: &ApkSession,
+) -> Result<SnapshotBundle> {
+    let (lib_path, lib_bytes) = find_libapp_in_apk_session(apk)?;
+    from_elf(path, lib_path, lib_bytes)
+}
+
 pub fn load_snapshot_bundle(path: &Path) -> Result<SnapshotBundle> {
     let ext = path
         .extension()
@@ -216,8 +265,8 @@ pub fn load_snapshot_bundle(path: &Path) -> Result<SnapshotBundle> {
         .to_ascii_lowercase();
 
     if ext == "apk" {
-        let (lib_path, lib_bytes) = find_libapp_in_apk(path)?;
-        return from_elf(path, lib_path, lib_bytes);
+        let apk = ApkSession::open(path)?;
+        return load_snapshot_bundle_from_apk_session(path, &apk);
     }
 
     let bytes = fs::read(path).with_context(|| format!("read input file: {}", path.display()))?;
@@ -226,7 +275,9 @@ pub fn load_snapshot_bundle(path: &Path) -> Result<SnapshotBundle> {
 
 #[cfg(test)]
 mod tests {
-    use super::{list_apk_entries, read_apk_entry};
+    use super::{
+        list_apk_entries, load_snapshot_bundle_from_apk_session, read_apk_entry, ApkSession,
+    };
     use std::fs::File;
     use std::io::Write;
     use tempfile::tempdir;
@@ -245,6 +296,9 @@ mod tests {
         zip.start_file("AndroidManifest.xml", options)
             .expect("start manifest");
         zip.write_all(b"<manifest />").expect("write manifest");
+        zip.start_file("lib/arm64-v8a/libapp.so", options)
+            .expect("start libapp");
+        zip.write_all(b"not-an-elf").expect("write libapp");
         zip.finish().expect("finish zip");
         let persisted = temp.path().to_path_buf();
         std::mem::forget(temp);
@@ -255,7 +309,14 @@ mod tests {
     fn lists_apk_entries() {
         let apk = build_test_apk();
         let entries = list_apk_entries(&apk).expect("list entries");
-        assert_eq!(entries, vec!["classes.dex", "AndroidManifest.xml"]);
+        assert_eq!(
+            entries,
+            vec![
+                "classes.dex",
+                "AndroidManifest.xml",
+                "lib/arm64-v8a/libapp.so"
+            ]
+        );
     }
 
     #[test]
@@ -263,5 +324,37 @@ mod tests {
         let apk = build_test_apk();
         let bytes = read_apk_entry(&apk, "classes.dex").expect("read entry");
         assert_eq!(bytes, b"dex-bytes");
+    }
+
+    #[test]
+    fn apk_session_lists_and_reads_entries() {
+        let apk = build_test_apk();
+        let session = ApkSession::open(&apk).expect("open session");
+        assert_eq!(
+            session.entry_names(),
+            &[
+                "classes.dex".to_string(),
+                "AndroidManifest.xml".to_string(),
+                "lib/arm64-v8a/libapp.so".to_string()
+            ]
+        );
+        assert_eq!(
+            session.read_entry("classes.dex").expect("read classes.dex"),
+            b"dex-bytes"
+        );
+        assert_eq!(
+            session
+                .read_entry("AndroidManifest.xml")
+                .expect("read manifest"),
+            b"<manifest />"
+        );
+    }
+
+    #[test]
+    fn snapshot_bundle_from_apk_session_requires_real_elf() {
+        let apk = build_test_apk();
+        let session = ApkSession::open(&apk).expect("open session");
+        let err = load_snapshot_bundle_from_apk_session(&apk, &session).expect_err("non-elf fails");
+        assert!(err.to_string().contains("parse ELF libapp"));
     }
 }
