@@ -82,10 +82,34 @@ pub struct BootstrapChainSource {
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct BootstrapChainPathStep {
+    pub class_descriptor: String,
+    pub class_name: String,
+    pub method_name: String,
+    pub owner_kind: String,
+    pub stage: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct BootstrapChainPath {
+    pub source_dex: String,
+    pub entry_class_descriptor: String,
+    pub entry_class_name: String,
+    pub entry_method_name: String,
+    pub owner_kind: String,
+    pub call_chain: Vec<BootstrapChainPathStep>,
+    pub stages: Vec<String>,
+    pub complete: bool,
+    pub missing_steps: Vec<String>,
+    pub confidence: String,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct BootstrapChainEvidence {
     pub complete: bool,
     pub missing_steps: Vec<String>,
     pub sources: Vec<BootstrapChainSource>,
+    pub paths: Vec<BootstrapChainPath>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -116,6 +140,7 @@ impl Default for AndroidStartupEvidence {
                 complete: false,
                 missing_steps: Vec::new(),
                 sources: Vec::new(),
+                paths: Vec::new(),
             },
         }
     }
@@ -143,7 +168,9 @@ struct ScannedStartupMethodRef {
 #[derive(Debug, Clone)]
 struct StartupScanResult {
     classes: Vec<ScannedStartupClass>,
+    method_defs: Vec<ScannedMethodDef>,
     method_refs: Vec<ScannedStartupMethodRef>,
+    app_method_invokes: Vec<ScannedAppMethodInvoke>,
     dart_entrypoints: Vec<ScannedDartEntrypoint>,
     parse_errors: Vec<String>,
 }
@@ -171,6 +198,45 @@ struct ScannedDartEntrypoint {
     function_name: Option<String>,
     library_uri: Option<String>,
     app_bundle_path: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct ScannedMethodKey {
+    source_dex: String,
+    class_descriptor: String,
+    class_name: String,
+    method_name: String,
+}
+
+impl ScannedMethodKey {
+    fn new(source_dex: &str, class_descriptor: &str, class_name: &str, method_name: &str) -> Self {
+        Self {
+            source_dex: source_dex.to_string(),
+            class_descriptor: class_descriptor.to_string(),
+            class_name: class_name.to_string(),
+            method_name: method_name.to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct ScannedMethodDef {
+    key: ScannedMethodKey,
+}
+
+#[derive(Debug, Clone)]
+struct ScannedAppMethodInvoke {
+    source: ScannedMethodKey,
+    target_class: String,
+    target_method: String,
+}
+
+#[derive(Debug, Clone)]
+struct BootstrapStageCall {
+    target_class: String,
+    target_class_name: String,
+    target_method: String,
+    stage: &'static str,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -310,11 +376,362 @@ fn bootstrap_chain_source_confidence(stages: &std::collections::HashSet<&'static
     }
 }
 
+fn ordered_bootstrap_stages(
+    stages: &std::collections::HashSet<&'static str>,
+) -> Vec<String> {
+    BOOTSTRAP_CHAIN_STAGE_ORDER
+        .iter()
+        .filter(|stage| stages.contains(**stage))
+        .map(|stage| (*stage).to_string())
+        .collect()
+}
+
+fn bootstrap_missing_steps(
+    stages: &std::collections::HashSet<&'static str>,
+) -> Vec<String> {
+    BOOTSTRAP_CHAIN_STAGE_ORDER
+        .iter()
+        .filter(|stage| !stages.contains(**stage))
+        .map(|stage| (*stage).to_string())
+        .collect()
+}
+
+fn stage_sort_key(stage: &str) -> usize {
+    BOOTSTRAP_CHAIN_STAGE_ORDER
+        .iter()
+        .position(|candidate| *candidate == stage)
+        .unwrap_or(BOOTSTRAP_CHAIN_STAGE_ORDER.len())
+}
+
+fn bootstrap_chain_path_confidence(
+    stages: &std::collections::HashSet<&'static str>,
+    method_chain_len: usize,
+) -> &'static str {
+    if stages.contains("dart_entrypoint_execute")
+        || (stages.contains("jni_attach") && method_chain_len >= 2)
+        || stages.len() >= 4
+    {
+        "high"
+    } else if method_chain_len >= 2 || stages.len() >= 2 {
+        "medium"
+    } else {
+        "low"
+    }
+}
+
+fn is_startup_entry_selector(method_name: &str) -> bool {
+    matches!(
+        method_name.to_ascii_lowercase().as_str(),
+        "oncreate"
+            | "onnewintent"
+            | "configureflutterengine"
+            | "provideflutterengine"
+            | "getdartentrypointfunctionname"
+            | "getappbundlepath"
+            | "getinitialroute"
+            | "onstart"
+            | "onresume"
+            | "onattach"
+            | "attachbasecontext"
+    )
+}
+
+fn is_application_like_class(class_name: &str) -> bool {
+    class_name
+        .rsplit('.')
+        .next()
+        .is_some_and(|short| short.ends_with("Application"))
+}
+
+fn is_startup_entry_method(
+    method: &ScannedMethodKey,
+    class_supers: &HashMap<String, Option<String>>,
+    direct_stage: bool,
+) -> bool {
+    let selector = method.method_name.to_ascii_lowercase();
+    if !is_startup_entry_selector(&selector) {
+        return direct_stage
+            && has_super_class(&method.class_descriptor, FLUTTER_ACTIVITY_DESC, class_supers);
+    }
+    match selector.as_str() {
+        "oncreate" | "onstart" | "onresume" | "onattach" | "attachbasecontext" => {
+            has_super_class(&method.class_descriptor, FLUTTER_ACTIVITY_DESC, class_supers)
+                || is_application_like_class(&method.class_name)
+                || direct_stage
+        }
+        _ => true,
+    }
+}
+
+fn method_key_from_startup_ref(method: &ScannedStartupMethodRef) -> ScannedMethodKey {
+    ScannedMethodKey::new(
+        &method.source_dex,
+        &method.class_descriptor,
+        &method.class_name,
+        &method.method_name,
+    )
+}
+
+fn collect_bootstrap_stage_calls(
+    scanned_methods: &[ScannedStartupMethodRef],
+) -> HashMap<ScannedMethodKey, Vec<BootstrapStageCall>> {
+    let mut out: HashMap<ScannedMethodKey, Vec<BootstrapStageCall>> = HashMap::new();
+    let mut seen = std::collections::HashSet::new();
+
+    for method in scanned_methods {
+        let Some(stage) = bootstrap_chain_stage_for_method(&method.target_class, &method.target_method)
+        else {
+            continue;
+        };
+        let key = method_key_from_startup_ref(method);
+        let seen_key = format!(
+            "{}|{}|{}|{}|{}",
+            key.source_dex, key.class_descriptor, key.method_name, method.target_class, method.target_method
+        );
+        if !seen.insert(seen_key) {
+            continue;
+        }
+        out.entry(key).or_default().push(BootstrapStageCall {
+            target_class: method.target_class.clone(),
+            target_class_name: method.target_class_name.clone(),
+            target_method: method.target_method.clone(),
+            stage,
+        });
+    }
+
+    for calls in out.values_mut() {
+        calls.sort_by(|a, b| {
+            stage_sort_key(a.stage)
+                .cmp(&stage_sort_key(b.stage))
+                .then_with(|| a.target_class_name.cmp(&b.target_class_name))
+                .then_with(|| a.target_method.cmp(&b.target_method))
+        });
+    }
+
+    out
+}
+
+fn collect_bootstrap_chain_paths(
+    class_supers: &HashMap<String, Option<String>>,
+    method_defs: &[ScannedMethodDef],
+    app_method_invokes: &[ScannedAppMethodInvoke],
+    stage_calls: &HashMap<ScannedMethodKey, Vec<BootstrapStageCall>>,
+) -> Vec<BootstrapChainPath> {
+    if stage_calls.is_empty() {
+        return Vec::new();
+    }
+
+    let method_catalog = method_defs
+        .iter()
+        .map(|method| method.key.clone())
+        .collect::<std::collections::HashSet<_>>();
+    let mut class_lookup = HashMap::new();
+    for method in method_defs {
+        class_lookup
+            .entry(method.key.class_descriptor.clone())
+            .or_insert_with(|| (method.key.source_dex.clone(), method.key.class_name.clone()));
+    }
+
+    let mut reverse_edges: HashMap<ScannedMethodKey, Vec<ScannedMethodKey>> = HashMap::new();
+    let mut edge_seen = std::collections::HashSet::new();
+    for invoke in app_method_invokes {
+        let Some((target_source_dex, target_class_name)) = class_lookup.get(&invoke.target_class) else {
+            continue;
+        };
+        let target_key = ScannedMethodKey::new(
+            target_source_dex,
+            &invoke.target_class,
+            target_class_name,
+            &invoke.target_method,
+        );
+        if !method_catalog.contains(&target_key) {
+            continue;
+        }
+        let edge_key = format!(
+            "{}|{}|{}|{}|{}|{}",
+            invoke.source.source_dex,
+            invoke.source.class_descriptor,
+            invoke.source.method_name,
+            target_key.source_dex,
+            target_key.class_descriptor,
+            target_key.method_name
+        );
+        if !edge_seen.insert(edge_key) {
+            continue;
+        }
+        reverse_edges
+            .entry(target_key)
+            .or_default()
+            .push(invoke.source.clone());
+    }
+    for predecessors in reverse_edges.values_mut() {
+        predecessors.sort_by(|a, b| {
+            a.source_dex
+                .cmp(&b.source_dex)
+                .then_with(|| a.class_name.cmp(&b.class_name))
+                .then_with(|| a.method_name.cmp(&b.method_name))
+        });
+    }
+
+    let direct_stage_methods = stage_calls
+        .keys()
+        .cloned()
+        .collect::<std::collections::HashSet<_>>();
+    let mut terminals = direct_stage_methods.iter().cloned().collect::<Vec<_>>();
+    terminals.sort_by(|a, b| {
+        a.source_dex
+            .cmp(&b.source_dex)
+            .then_with(|| a.class_name.cmp(&b.class_name))
+            .then_with(|| a.method_name.cmp(&b.method_name))
+    });
+
+    let mut paths = Vec::new();
+    let mut path_seen = std::collections::HashSet::new();
+    const MAX_STARTUP_REVERSE_DEPTH: usize = 6;
+
+    for terminal in terminals {
+        let mut queue = std::collections::VecDeque::from([(terminal.clone(), vec![terminal.clone()])]);
+        let mut visited = std::collections::HashSet::from([terminal.clone()]);
+        let mut found = None;
+        while let Some((current, path)) = queue.pop_front() {
+            if path.len() > MAX_STARTUP_REVERSE_DEPTH {
+                continue;
+            }
+            if current != terminal
+                && is_startup_entry_method(
+                    &current,
+                    class_supers,
+                    direct_stage_methods.contains(&current),
+                )
+            {
+                let mut forward = path;
+                forward.reverse();
+                found = Some(forward);
+                break;
+            }
+            let Some(predecessors) = reverse_edges.get(&current) else {
+                continue;
+            };
+            for predecessor in predecessors {
+                if !visited.insert(predecessor.clone()) {
+                    continue;
+                }
+                let mut next_path = path.clone();
+                next_path.push(predecessor.clone());
+                queue.push_back((predecessor.clone(), next_path));
+            }
+        }
+        let path_keys = found.unwrap_or_else(|| vec![terminal.clone()]);
+
+        let mut seen_stages = std::collections::HashSet::new();
+        let mut call_chain = Vec::new();
+        for method in &path_keys {
+            let is_activity_entry = method.method_name.eq_ignore_ascii_case("onCreate")
+                && has_super_class(&method.class_descriptor, FLUTTER_ACTIVITY_DESC, class_supers);
+            if is_activity_entry {
+                seen_stages.insert("activity_on_create");
+            }
+            call_chain.push(BootstrapChainPathStep {
+                class_descriptor: method.class_descriptor.clone(),
+                class_name: method.class_name.clone(),
+                method_name: method.method_name.clone(),
+                owner_kind: startup_owner_kind(&method.class_descriptor).to_string(),
+                stage: is_activity_entry.then_some("activity_on_create".to_string()),
+            });
+
+            let Some(calls) = stage_calls.get(method) else {
+                continue;
+            };
+            for call in calls {
+                seen_stages.insert(call.stage);
+                call_chain.push(BootstrapChainPathStep {
+                    class_descriptor: call.target_class.clone(),
+                    class_name: call.target_class_name.clone(),
+                    method_name: call.target_method.clone(),
+                    owner_kind: startup_owner_kind(&call.target_class).to_string(),
+                    stage: Some(call.stage.to_string()),
+                });
+            }
+        }
+
+        if seen_stages.is_empty() {
+            continue;
+        }
+        let stages = ordered_bootstrap_stages(&seen_stages);
+        let missing_steps = bootstrap_missing_steps(&seen_stages);
+        let entry = path_keys.first().expect("startup path has at least one method");
+        let terminal = path_keys.last().expect("startup path has at least one method");
+        let dedupe_key = format!(
+            "{}|{}|{}|{}|{}|{}",
+            entry.source_dex,
+            entry.class_descriptor,
+            entry.method_name,
+            terminal.class_descriptor,
+            terminal.method_name,
+            stages.join(">")
+        );
+        if !path_seen.insert(dedupe_key) {
+            continue;
+        }
+        paths.push(BootstrapChainPath {
+            source_dex: entry.source_dex.clone(),
+            entry_class_descriptor: entry.class_descriptor.clone(),
+            entry_class_name: entry.class_name.clone(),
+            entry_method_name: entry.method_name.clone(),
+            owner_kind: startup_owner_kind(&entry.class_descriptor).to_string(),
+            call_chain,
+            stages,
+            complete: missing_steps.is_empty(),
+            missing_steps,
+            confidence: bootstrap_chain_path_confidence(&seen_stages, path_keys.len()).to_string(),
+        });
+    }
+
+    paths.sort_by(|a, b| {
+        b.complete
+            .cmp(&a.complete)
+            .then_with(|| a.missing_steps.len().cmp(&b.missing_steps.len()))
+            .then_with(|| {
+                if a.owner_kind == b.owner_kind {
+                    std::cmp::Ordering::Equal
+                } else if a.owner_kind == "app" {
+                    std::cmp::Ordering::Less
+                } else {
+                    std::cmp::Ordering::Greater
+                }
+            })
+            .then_with(|| b.stages.len().cmp(&a.stages.len()))
+            .then_with(|| b.call_chain.len().cmp(&a.call_chain.len()))
+            .then_with(|| a.entry_class_name.cmp(&b.entry_class_name))
+            .then_with(|| a.entry_method_name.cmp(&b.entry_method_name))
+    });
+
+    let app_stage_coverage = paths
+        .iter()
+        .filter(|path| path.owner_kind == "app")
+        .flat_map(|path| path.stages.iter().cloned())
+        .collect::<std::collections::HashSet<_>>();
+    if !app_stage_coverage.is_empty() {
+        paths.retain(|path| {
+            path.owner_kind == "app"
+                || path
+                    .stages
+                    .iter()
+                    .any(|stage| !app_stage_coverage.contains(stage))
+        });
+    }
+
+    paths
+}
+
 fn build_bootstrap_chain_evidence(
     class_supers: &HashMap<String, Option<String>>,
+    method_defs: &[ScannedMethodDef],
     scanned_methods: &[ScannedStartupMethodRef],
+    app_method_invokes: &[ScannedAppMethodInvoke],
 ) -> BootstrapChainEvidence {
     let mut sources: HashMap<String, BootstrapChainSourceBuilder> = HashMap::new();
+    let stage_calls = collect_bootstrap_stage_calls(scanned_methods);
 
     for method in scanned_methods {
         let Some(stage) = bootstrap_chain_stage_for_method(&method.target_class, &method.target_method)
@@ -349,11 +766,7 @@ fn build_bootstrap_chain_evidence(
                 return None;
             }
             let confidence = bootstrap_chain_source_confidence(&builder.seen).to_string();
-            let missing_steps = BOOTSTRAP_CHAIN_STAGE_ORDER
-                .iter()
-                .filter(|stage| !builder.seen.contains(**stage))
-                .map(|stage| (*stage).to_string())
-                .collect::<Vec<_>>();
+            let missing_steps = bootstrap_missing_steps(&builder.seen);
             Some(BootstrapChainSource {
                 source_dex: builder.source_dex,
                 class_descriptor: builder.class_descriptor,
@@ -387,15 +800,27 @@ fn build_bootstrap_chain_evidence(
             .then_with(|| a.method_name.cmp(&b.method_name))
     });
 
-    let (complete, missing_steps) = source_entries
+    let paths = collect_bootstrap_chain_paths(
+        class_supers,
+        method_defs,
+        app_method_invokes,
+        &stage_calls,
+    );
+    let (complete, missing_steps) = paths
         .first()
-        .map(|source| (source.complete, source.missing_steps.clone()))
+        .map(|path| (path.complete, path.missing_steps.clone()))
+        .or_else(|| {
+            source_entries
+                .first()
+                .map(|source| (source.complete, source.missing_steps.clone()))
+        })
         .unwrap_or_else(|| (false, Vec::new()));
 
     BootstrapChainEvidence {
         complete,
         missing_steps,
         sources: source_entries,
+        paths,
     }
 }
 
@@ -518,18 +943,22 @@ fn build_flutterjni_entrypoint(
 
 fn decode_method_refs<B: AsRef<[u8]>>(
     dex: &dex::Dex<B>,
-    source_dex: &str,
-    class_descriptor: &str,
-    class_name: &str,
-    method_name: &str,
+    method: &ScannedMethodKey,
+    app_class_descriptors: &std::collections::HashSet<String>,
     insns: &[u16],
     parse_errors: &mut Vec<String>,
-) -> (Vec<ScannedStartupMethodRef>, Vec<ScannedDartEntrypoint>) {
+) -> (
+    Vec<ScannedStartupMethodRef>,
+    Vec<ScannedDartEntrypoint>,
+    Vec<ScannedAppMethodInvoke>,
+) {
     let mut out = Vec::new();
     let mut dart_entrypoints = Vec::new();
+    let mut app_method_invokes = Vec::new();
     let mut remaining = insns;
     let mut tracked = std::collections::HashMap::<u16, TrackedRegisterValue>::new();
     let mut last_invoke_result: Option<TrackedRegisterValue> = None;
+    let source_key = method.clone();
     while !remaining.is_empty() {
         let decoded = decode_one_silently(&mut remaining);
         match decoded {
@@ -575,7 +1004,7 @@ fn decode_method_refs<B: AsRef<[u8]>>(
                             parse_errors,
                             format!(
                                 "{}:{} -> resolve string {}: {}",
-                                class_name, method_name, idx, err
+                                method.class_name, method.method_name, idx, err
                             ),
                         ),
                     },
@@ -590,7 +1019,7 @@ fn decode_method_refs<B: AsRef<[u8]>>(
                             parse_errors,
                             format!(
                                 "{}:{} -> resolve jumbo string {}: {}",
-                                class_name, method_name, idx, err
+                                method.class_name, method.method_name, idx, err
                             ),
                         ),
                     },
@@ -611,7 +1040,7 @@ fn decode_method_refs<B: AsRef<[u8]>>(
                             parse_errors,
                             format!(
                                 "{}:{} -> resolve new-instance type {}: {}",
-                                class_name, method_name, ty, err
+                                method.class_name, method.method_name, ty, err
                             ),
                         ),
                     },
@@ -631,7 +1060,7 @@ fn decode_method_refs<B: AsRef<[u8]>>(
                             parse_errors,
                             format!(
                                 "{}:{} -> resolve method id {}: {}",
-                                class_name, method_name, method_id, err
+                                method.class_name, method.method_name, method_id, err
                             ),
                         );
                         continue;
@@ -644,15 +1073,12 @@ fn decode_method_refs<B: AsRef<[u8]>>(
                             parse_errors,
                             format!(
                                 "{}:{} -> resolve target class for method id {}: {}",
-                                class_name, method_name, method_id, err
+                                method.class_name, method.method_name, method_id, err
                             ),
                         );
                         continue;
                     }
                 };
-                if !is_relevant_startup_class(&target_class) {
-                    continue;
-                }
                 let target_method = match dex.get_string(method_item.name_idx()) {
                     Ok(name) => name.to_string(),
                     Err(err) => {
@@ -660,12 +1086,21 @@ fn decode_method_refs<B: AsRef<[u8]>>(
                             parse_errors,
                             format!(
                                 "{}:{} -> resolve target method for method id {}: {}",
-                                class_name, method_name, method_id, err
+                                method.class_name, method.method_name, method_id, err
                             ),
                         );
                         continue;
                     }
                 };
+                if app_class_descriptors.contains(&target_class)
+                    && !target_method.starts_with('<')
+                {
+                    app_method_invokes.push(ScannedAppMethodInvoke {
+                        source: source_key.clone(),
+                        target_class: target_class.clone(),
+                        target_method: target_method.clone(),
+                    });
+                }
                 let is_dart_entrypoint_ctor =
                     target_class == DART_ENTRYPOINT_DESC && target_method == "<init>";
                 let is_execute_dart_entrypoint =
@@ -673,11 +1108,14 @@ fn decode_method_refs<B: AsRef<[u8]>>(
                 let is_flutterjni_entrypoint =
                     target_class == FLUTTER_JNI_DESC
                         && target_method == "runBundleAndSnapshotFromLibrary";
+                if !is_relevant_startup_class(&target_class) {
+                    continue;
+                }
                 out.push(ScannedStartupMethodRef {
-                    source_dex: source_dex.to_string(),
-                    class_descriptor: class_descriptor.to_string(),
-                    class_name: class_name.to_string(),
-                    method_name: method_name.to_string(),
+                    source_dex: method.source_dex.clone(),
+                    class_descriptor: method.class_descriptor.clone(),
+                    class_name: method.class_name.clone(),
+                    method_name: method.method_name.clone(),
                     target_class_name: descriptor_to_java_name(&target_class),
                     target_class,
                     target_method,
@@ -697,10 +1135,10 @@ fn decode_method_refs<B: AsRef<[u8]>>(
                             {
                                 push_scanned_dart_entrypoint(
                                     &mut dart_entrypoints,
-                                    source_dex,
-                                    class_descriptor,
-                                    class_name,
-                                    method_name,
+                                    &method.source_dex,
+                                    &method.class_descriptor,
+                                    &method.class_name,
+                                    &method.method_name,
                                     "<init>",
                                     &tracked_value,
                                 );
@@ -713,10 +1151,10 @@ fn decode_method_refs<B: AsRef<[u8]>>(
                         }) {
                             push_scanned_dart_entrypoint(
                                 &mut dart_entrypoints,
-                                source_dex,
-                                class_descriptor,
-                                class_name,
-                                method_name,
+                                &method.source_dex,
+                                &method.class_descriptor,
+                                &method.class_name,
+                                &method.method_name,
                                 "executeDartEntrypoint",
                                 &value,
                             );
@@ -729,10 +1167,10 @@ fn decode_method_refs<B: AsRef<[u8]>>(
                         {
                             push_scanned_dart_entrypoint(
                                 &mut dart_entrypoints,
-                                source_dex,
-                                class_descriptor,
-                                class_name,
-                                method_name,
+                                &method.source_dex,
+                                &method.class_descriptor,
+                                &method.class_name,
+                                &method.method_name,
                                 "runBundleAndSnapshotFromLibrary",
                                 &value,
                             );
@@ -746,7 +1184,7 @@ fn decode_method_refs<B: AsRef<[u8]>>(
                         parse_errors,
                         format!(
                             "{}:{} -> truncated Dalvik metadata payload",
-                            class_name, method_name
+                            method.class_name, method.method_name
                         ),
                     );
                     break;
@@ -756,7 +1194,10 @@ fn decode_method_refs<B: AsRef<[u8]>>(
             Ok(Err(err)) => {
                 push_parse_error(
                     parse_errors,
-                    format!("{}:{} -> Dalvik decode error: {:?}", class_name, method_name, err),
+                    format!(
+                        "{}:{} -> Dalvik decode error: {:?}",
+                        method.class_name, method.method_name, err
+                    ),
                 );
                 break;
             }
@@ -765,14 +1206,14 @@ fn decode_method_refs<B: AsRef<[u8]>>(
                     parse_errors,
                     format!(
                         "{}:{} -> Dalvik decode panic on inline metadata",
-                        class_name, method_name
+                        method.class_name, method.method_name
                     ),
                 );
                 break;
             }
         }
     }
-    (out, dart_entrypoints)
+    (out, dart_entrypoints, app_method_invokes)
 }
 
 fn decode_one_silently(remaining: &mut &[u16]) -> std::thread::Result<Result<Instruction, decode::Error>> {
@@ -790,14 +1231,18 @@ fn scan_dex_bytes(source_dex: &str, bytes: Vec<u8>) -> Result<StartupScanResult>
     let dex = DexReader::from_vec(bytes)
         .map_err(|err| anyhow!("parse {} as dex: {}", source_dex, err))?;
     let mut classes = Vec::new();
+    let mut method_defs = Vec::new();
     let mut method_refs = Vec::new();
+    let mut app_method_invokes = Vec::new();
     let mut dart_entrypoints = Vec::new();
     let mut parse_errors = Vec::new();
+    let mut app_class_descriptors = std::collections::HashSet::new();
 
     for class in dex.classes() {
         let class = class.map_err(|err| anyhow!("parse class in {}: {}", source_dex, err))?;
         let class_descriptor = class.jtype().type_descriptor().to_string();
         let class_name = class.jtype().to_java_type();
+        app_class_descriptors.insert(class_descriptor.clone());
         let super_descriptor = class
             .super_class()
             .map(|id| dex.get_type(id))
@@ -810,28 +1255,41 @@ fn scan_dex_bytes(source_dex: &str, bytes: Vec<u8>) -> Result<StartupScanResult>
             class_name: class_name.clone(),
             super_descriptor,
         });
+    }
+
+    for class in dex.classes() {
+        let class = class.map_err(|err| anyhow!("parse class in {}: {}", source_dex, err))?;
+        let class_descriptor = class.jtype().type_descriptor().to_string();
+        let class_name = class.jtype().to_java_type();
 
         for method in class.methods() {
             let Some(code) = method.code() else {
                 continue;
             };
-            let (refs, entrypoints) = decode_method_refs(
+            let method_name = method.name().to_string();
+            let method_key =
+                ScannedMethodKey::new(source_dex, &class_descriptor, &class_name, &method_name);
+            method_defs.push(ScannedMethodDef {
+                key: method_key.clone(),
+            });
+            let (refs, entrypoints, invokes) = decode_method_refs(
                 &dex,
-                source_dex,
-                &class_descriptor,
-                &class_name,
-                &method.name().to_string(),
+                &method_key,
+                &app_class_descriptors,
                 code.insns(),
                 &mut parse_errors,
             );
             method_refs.extend(refs);
             dart_entrypoints.extend(entrypoints);
+            app_method_invokes.extend(invokes);
         }
     }
 
     Ok(StartupScanResult {
         classes,
+        method_defs,
         method_refs,
+        app_method_invokes,
         dart_entrypoints,
         parse_errors,
     })
@@ -863,20 +1321,29 @@ fn finalize_android_startup_evidence(
 ) -> AndroidStartupEvidence {
     let mut class_supers = HashMap::new();
     let mut scanned_classes = Vec::new();
+    let mut scanned_method_defs = Vec::new();
     let mut scanned_methods = Vec::new();
+    let mut scanned_app_method_invokes = Vec::new();
     let mut scanned_entrypoints = Vec::new();
     for result in scan_results {
         for err in result.parse_errors {
             push_parse_error(&mut parse_errors, err);
         }
         scanned_classes.extend(result.classes);
+        scanned_method_defs.extend(result.method_defs);
         scanned_methods.extend(result.method_refs);
+        scanned_app_method_invokes.extend(result.app_method_invokes);
         scanned_entrypoints.extend(result.dart_entrypoints);
     }
     for class in &scanned_classes {
         class_supers.insert(class.class_descriptor.clone(), class.super_descriptor.clone());
     }
-    let bootstrap_chain = build_bootstrap_chain_evidence(&class_supers, &scanned_methods);
+    let bootstrap_chain = build_bootstrap_chain_evidence(
+        &class_supers,
+        &scanned_method_defs,
+        &scanned_methods,
+        &scanned_app_method_invokes,
+    );
 
     let mut flutter_activity_classes = Vec::new();
     let mut class_seen = std::collections::HashSet::new();
@@ -1483,9 +1950,10 @@ mod apk_startup_tests {
     use super::{
         analyze_android_startup, classify_startup_method, enrich_model_with_apk_startup_bootflow_hints,
         finalize_android_startup_evidence, has_super_class, is_classes_dex_entry,
-        AndroidStartupEvidence, ScannedDartEntrypoint, ScannedStartupClass,
-        ScannedStartupMethodRef, StartupScanResult, DART_ENTRYPOINT_DESC, DART_EXECUTOR_DESC,
-        FLUTTER_ACTIVITY_DESC, FLUTTER_ENGINE_DESC, FLUTTER_JNI_DESC, FLUTTER_LOADER_DESC,
+        AndroidStartupEvidence, ScannedAppMethodInvoke, ScannedDartEntrypoint, ScannedMethodDef,
+        ScannedMethodKey, ScannedStartupClass, ScannedStartupMethodRef, StartupScanResult,
+        DART_ENTRYPOINT_DESC, DART_EXECUTOR_DESC, FLUTTER_ACTIVITY_DESC, FLUTTER_ENGINE_DESC,
+        FLUTTER_JNI_DESC, FLUTTER_LOADER_DESC,
     };
     use std::collections::HashMap;
     use std::fs::File;
@@ -1553,6 +2021,24 @@ mod apk_startup_tests {
                 class_name: "com.example.MainActivity".to_string(),
                 super_descriptor: Some(FLUTTER_ACTIVITY_DESC.to_string()),
             }],
+            method_defs: vec![
+                ScannedMethodDef {
+                    key: ScannedMethodKey::new(
+                        "classes.dex",
+                        "Lcom/example/MainActivity;",
+                        "com.example.MainActivity",
+                        "onCreate",
+                    ),
+                },
+                ScannedMethodDef {
+                    key: ScannedMethodKey::new(
+                        "classes.dex",
+                        "Lcom/example/MainActivity;",
+                        "com.example.MainActivity",
+                        "configureFlutterEngine",
+                    ),
+                },
+            ],
             method_refs: vec![
                 ScannedStartupMethodRef {
                     source_dex: "classes.dex".to_string(),
@@ -1575,7 +2061,27 @@ mod apk_startup_tests {
                             .to_string(),
                     target_method: "<init>".to_string(),
                 },
+                ScannedStartupMethodRef {
+                    source_dex: "classes.dex".to_string(),
+                    class_descriptor: "Lcom/example/MainActivity;".to_string(),
+                    class_name: "com.example.MainActivity".to_string(),
+                    method_name: "configureFlutterEngine".to_string(),
+                    target_class: DART_EXECUTOR_DESC.to_string(),
+                    target_class_name: "io.flutter.embedding.engine.dart.DartExecutor"
+                        .to_string(),
+                    target_method: "executeDartEntrypoint".to_string(),
+                },
             ],
+            app_method_invokes: vec![ScannedAppMethodInvoke {
+                source: ScannedMethodKey::new(
+                    "classes.dex",
+                    "Lcom/example/MainActivity;",
+                    "com.example.MainActivity",
+                    "onCreate",
+                ),
+                target_class: "Lcom/example/MainActivity;".to_string(),
+                target_method: "configureFlutterEngine".to_string(),
+            }],
             dart_entrypoints: vec![ScannedDartEntrypoint {
                 source_dex: "classes.dex".to_string(),
                 class_descriptor: "Lcom/example/MainActivity;".to_string(),
@@ -1600,8 +2106,9 @@ mod apk_startup_tests {
         assert_eq!(evidence.flutter_activity_classes.len(), 1);
         assert_eq!(evidence.dart_entrypoints.len(), 2);
         assert_eq!(evidence.jni_bootstrap.len(), 1);
-        assert_eq!(evidence.startup_methods.len(), 2);
-        assert_eq!(evidence.bootstrap_chain.sources.len(), 1);
+        assert_eq!(evidence.startup_methods.len(), 3);
+        assert_eq!(evidence.bootstrap_chain.sources.len(), 2);
+        assert_eq!(evidence.bootstrap_chain.paths.len(), 2);
         assert!(!evidence.bootstrap_chain.complete);
         assert_eq!(
             evidence.bootstrap_chain.sources[0].stages,
@@ -1613,6 +2120,20 @@ mod apk_startup_tests {
         assert!(evidence.bootstrap_chain.sources[0]
             .missing_steps
             .contains(&"dart_entrypoint_execute".to_string()));
+        let correlated = evidence
+            .bootstrap_chain
+            .paths
+            .iter()
+            .find(|path| path.call_chain.len() >= 3)
+            .expect("correlated startup path");
+        assert_eq!(correlated.entry_method_name, "onCreate");
+        assert!(correlated
+            .stages
+            .contains(&"dart_entrypoint_execute".to_string()));
+        assert!(correlated.call_chain.iter().any(|step| {
+            step.class_name == "io.flutter.embedding.engine.dart.DartExecutor"
+                && step.method_name == "executeDartEntrypoint"
+        }));
         assert!(evidence
             .dart_entrypoints
             .iter()
@@ -1777,6 +2298,42 @@ mod apk_startup_tests {
                     class_name: "com.example.MainActivity".to_string(),
                     method_name: "onCreate".to_string(),
                     owner_kind: "app".to_string(),
+                    stages: vec![
+                        "activity_on_create".to_string(),
+                        "flutter_engine_ctor".to_string(),
+                    ],
+                    complete: false,
+                    missing_steps: vec![
+                        "delegate_on_attach".to_string(),
+                        "loader_start_initialization".to_string(),
+                        "loader_ensure_initialization_complete".to_string(),
+                        "jni_attach".to_string(),
+                        "dart_entrypoint_execute".to_string(),
+                    ],
+                    confidence: "medium".to_string(),
+                }],
+                paths: vec![super::BootstrapChainPath {
+                    source_dex: "classes.dex".to_string(),
+                    entry_class_descriptor: "Lcom/example/MainActivity;".to_string(),
+                    entry_class_name: "com.example.MainActivity".to_string(),
+                    entry_method_name: "onCreate".to_string(),
+                    owner_kind: "app".to_string(),
+                    call_chain: vec![
+                        super::BootstrapChainPathStep {
+                            class_descriptor: "Lcom/example/MainActivity;".to_string(),
+                            class_name: "com.example.MainActivity".to_string(),
+                            method_name: "onCreate".to_string(),
+                            owner_kind: "app".to_string(),
+                            stage: Some("activity_on_create".to_string()),
+                        },
+                        super::BootstrapChainPathStep {
+                            class_descriptor: FLUTTER_ENGINE_DESC.to_string(),
+                            class_name: "io.flutter.embedding.engine.FlutterEngine".to_string(),
+                            method_name: "<init>".to_string(),
+                            owner_kind: "framework".to_string(),
+                            stage: Some("flutter_engine_ctor".to_string()),
+                        },
+                    ],
                     stages: vec![
                         "activity_on_create".to_string(),
                         "flutter_engine_ctor".to_string(),

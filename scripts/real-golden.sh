@@ -35,7 +35,8 @@ extract_report_metrics() {
       dart_entrypoint_count: .android_startup.dart_entrypoint_count,
       literal_entrypoint_count: (.android_startup.dart_entrypoints | map(select(.function_name != null or .library_uri != null or .app_bundle_path != null)) | length),
       bootstrap_chain_complete: .android_startup.bootstrap_chain.complete,
-      bootstrap_chain_source_count: .android_startup.bootstrap_chain.source_count
+      bootstrap_chain_source_count: .android_startup.bootstrap_chain.source_count,
+      bootstrap_chain_path_count: .android_startup.bootstrap_chain.path_count
     },
     bootflow: {
       main_count: .bootflow_discovery.main_count,
@@ -57,7 +58,7 @@ extract_report_metrics() {
 
 print_metrics_summary() {
   local metrics_path="$1"
-  jq -r '"[real-golden] metrics: startup.present=\(.android_startup.present) entrypoints=\(.android_startup.dart_entrypoint_count) literal_entrypoints=\(.android_startup.literal_entrypoint_count) bootstrap_sources=\(.android_startup.bootstrap_chain_source_count) bootflow.any.coverage=\(.bootflow.selected_bootflow_coverage.any.coverage) engine_symbols.match=\(.engine_symbols.match_kind // "-") engine_symbols.applied=\(.engine_symbols.applied_target_count) names.external=\(.engine_symbols.external_name_count) names.exact=\(.engine_symbols.exact_name_count)"' "$metrics_path"
+  jq -r '"[real-golden] metrics: startup.present=\(.android_startup.present) entrypoints=\(.android_startup.dart_entrypoint_count) literal_entrypoints=\(.android_startup.literal_entrypoint_count) bootstrap_sources=\(.android_startup.bootstrap_chain_source_count) bootstrap_paths=\(.android_startup.bootstrap_chain_path_count) bootflow.any.coverage=\(.bootflow.selected_bootflow_coverage.any.coverage) engine_symbols.match=\(.engine_symbols.match_kind // "-") engine_symbols.applied=\(.engine_symbols.applied_target_count) names.external=\(.engine_symbols.external_name_count) names.exact=\(.engine_symbols.exact_name_count)"' "$metrics_path"
 }
 
 if [[ $# -lt 1 ]]; then

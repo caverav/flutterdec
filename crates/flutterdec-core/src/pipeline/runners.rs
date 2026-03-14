@@ -1743,7 +1743,9 @@ pub fn run_decompile(
                 "complete": startup_evidence.bootstrap_chain.complete,
                 "missing_steps": startup_evidence.bootstrap_chain.missing_steps,
                 "source_count": startup_evidence.bootstrap_chain.sources.len(),
-                "sources": startup_evidence.bootstrap_chain.sources
+                "sources": startup_evidence.bootstrap_chain.sources,
+                "path_count": startup_evidence.bootstrap_chain.paths.len(),
+                "paths": startup_evidence.bootstrap_chain.paths
             },
             "synthetic_bootflow_hints": startup_synthetic_hints
         },
