@@ -19,6 +19,10 @@ The goal of these examples is simple: show original public source on one side, t
   <img src="docs/assets/readme/hivpn-mainactivity.svg" alt="hiVPN MainActivity source snippet" width="900">
 </p>
 
+<p align="center">
+  <img src="docs/assets/readme/hivpn-installed-apps.svg" alt="hiVPN Flutter MethodChannel source snippet" width="900">
+</p>
+
 **Case 1: Original Android Entry Surface -> Recovered Startup Path**
 
 Source app: `hiVPN v1.0.0` released on October 29, 2025. `MainActivity` and the manifest launcher are public in the repository:
@@ -27,7 +31,7 @@ Source app: `hiVPN v1.0.0` released on October 29, 2025. `MainActivity` and the 
 
 `Original`
 
-The Android side of the app calls into Flutter from `MainActivity`. This is the source-side entry surface before looking at the APK.
+The app side shows both native Android entrypoints and Flutter-facing code using `package:flutter/services.dart` plus `MethodChannel('com.example.vpn/VpnChannel')`. This is the kind of Flutter integration surface `flutterdec` is meant to help you reason about from a shipped APK.
 
 <p align="center">
   <img src="docs/assets/readme/hivpn-startup-report.svg" alt="hiVPN startup report excerpt recovered by flutterdec" width="900">
