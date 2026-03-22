@@ -47,29 +47,30 @@ The app enters Flutter from `MainActivity.onCreate`. The second source card show
 
 `flutterdec` parsed the APK manifest, recovered `com.example.hivpn.MainActivity` as the launcher, and correlated the startup chain from `MainActivity.onCreate` into Flutter JNI bootstrap calls such as `attachToNative` and `nativeAttach`.
 
-**Compare 2: App / Dart Source Context -> Recovered ARM64 / IR / Pseudocode**
+**Compare 2: App Source Using Flutter APIs -> Recovered Named Selectors**
 
-The second source card is the public app-side Flutter bridge from hiVPN. The recovered stack below shows what `flutterdec` makes inspectable once the same APK has crossed into the AOT Dart payload: raw ARM64, normalized IR, and readable pseudocode.
+Source app: `ZedSecure v1.2.0`
+- Source repo: https://github.com/CluvexStudio/ZedSecure
+- Release APK: https://github.com/CluvexStudio/ZedSecure/releases/tag/v1.2.0
 
-To make the logic match visually instead of just structurally, the concrete function shown below is paired with public Dart source for the same whitespace decision logic:
-- Source file: https://github.com/dart-lang/sdk/blob/main/sdk/lib/_internal/vm/lib/string_patch.dart
+This is the comparison you asked for: public app source that uses Flutter APIs, then recovered APK artifacts where `flutterdec` keeps recognizable Dart/Flutter selector names instead of only anonymous control flow.
 
 <p align="center"><strong>Original Source</strong></p>
 
 <p align="center">
-  <img src="docs/assets/readme/dart-string-whitespace.svg" alt="Original Dart whitespace logic from the Dart SDK" width="900">
+  <img src="docs/assets/readme/zedsecure-theme-source.svg" alt="Original ZedSecure theme source using Flutter theming APIs" width="900">
 </p>
 
-This source checks whitespace code points such as `0x20`, `0x85`, `0xA0`, `0x2028`, `0x3000`, and `0xFEFF`.
+This app code builds `ThemeData` and `ColorScheme.light(...)`. It is ordinary Flutter app code, not a synthetic helper and not a framework implementation detail.
 
-<p align="center"><strong>Recovered 2: From The hiVPN APK With flutterdec</strong></p>
+<p align="center"><strong>Recovered 2: From The ZedSecure APK With flutterdec</strong></p>
 
 <p align="center"><strong>↓ ARM64</strong></p>
 
-From the hiVPN APK, `flutterdec` recovered the same style of compare-and-loop logic in ARM64.
+At the machine-code layer, the APK still looks like indirect selector dispatch through pool-loaded metadata and call targets.
 
 <p align="center">
-  <img src="docs/assets/readme/hivpn-asm-real.svg" alt="Real ARM64 snippet decompiled from hiVPN" width="900">
+  <img src="docs/assets/readme/zedsecure-selector-asm.svg" alt="ARM64 snippet from the recovered ZedSecure function" width="900">
 </p>
 
 <p align="center">
@@ -77,29 +78,29 @@ From the hiVPN APK, `flutterdec` recovered the same style of compare-and-loop lo
 </p>
 
 <p align="center">
-  <img src="docs/assets/readme/hivpn-ir-real.svg" alt="IR summary for the same hiVPN function" width="900">
+  <img src="docs/assets/readme/zedsecure-selector-ir.svg" alt="IR summary for the recovered ZedSecure selector flow" width="900">
 </p>
 
-The control-flow graph is then normalized into blocks and edges before readability passes.
+The IR stage makes the selector-bearing pool values explicit before readability passes.
 
 <p align="center">
   <strong>↓ Pseudocode</strong>
 </p>
 
 <p align="center">
-  <img src="docs/assets/readme/hivpn-pseudocode-real.svg" alt="Recovered pseudocode for the same hiVPN function" width="900">
+  <img src="docs/assets/readme/zedsecure-selector-pseudocode.svg" alt="Recovered pseudocode with named selectors from the ZedSecure APK" width="900">
 </p>
 
-The final pass turns that CFG into readable pseudocode. In this case the output keeps the loop, the compare chain, and a recovered local like `codePoint`, which makes the original intent recognizable even without the original function name.
+The important part is not the anonymous function name. The important part is that `flutterdec` surfaced readable selector names from the APK itself, including `dispatch.primarySwatch(...)`, `dispatch.growable(...)`, and `dispatch.nestedDimensions(...)`.
 
 This gives the README both views the tool is meant to show publicly:
 - Android startup recovery from the APK surface
-- Dart-side logic recovery from the AOT payload
+- app-side Flutter selector recovery from the AOT payload
 
 **What this proves**
 
-- `flutterdec` is recovering Dart runtime behavior, not just opaque machine code
-- comparisons like `0x20`, `0x85`, `0xA0`, `0x2028`, and `0x3000` survive into readable output
+- `flutterdec` can preserve recognizable Flutter/Dart utility selectors inside app-owned recovered code
+- selector-bearing pool metadata survives from asm to IR to pseudocode
 - the pipeline is inspectable at every stage: asm, IR, and pseudocode
 
 <p align="center">
