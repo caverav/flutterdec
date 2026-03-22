@@ -16,10 +16,36 @@ It takes an APK (or `libapp.so`) and emits readable pseudo-Dart plus optional IR
 Built from the checked-in `structured_loop_emit` golden fixture, so each stage stays versioned with the repository.
 
 <p align="center">
-  <img src="docs/assets/readme/pipeline-showcase.svg" alt="Pipeline showcase from equivalent source intent to ARM64, Function IR, and recovered pseudocode" width="100%">
+  <img src="docs/assets/readme/reference-loop-dark.svg" alt="Equivalent Dart source intent for the showcase function" width="900">
 </p>
 
-For a real APK, the workflow is the same: start from `asm/*.s`, verify the control-flow graph in `ir/*.json`, and treat `pseudocode/*.dartpseudo` as the readable layer on top of those earlier artifacts.
+**Equivalent Source Intent**
+
+This is the source-level shape a human would write for the same loop.
+
+<p align="center">
+  <img src="docs/assets/readme/arm64-loop-dark.svg" alt="ARM64 fragment for the showcase function" width="900">
+</p>
+
+**ARM64 Fragment**
+
+The branch pattern is still raw here: one increment, one conditional branch, one back-edge.
+
+<p align="center">
+  <img src="docs/assets/readme/ir-loop-dark.svg" alt="Function IR for the showcase function" width="900">
+</p>
+
+**Function IR**
+
+This is the intermediate control-flow view before final structuring into higher-level pseudocode.
+
+<p align="center">
+  <img src="docs/assets/readme/decompiled-loop-dark.svg" alt="Recovered pseudo-Dart for the showcase function" width="900">
+</p>
+
+**Recovered Pseudocode**
+
+For a real APK, the workflow is the same: start from `asm/*.s`, verify the CFG shape in `ir/*.json`, and treat `pseudocode/*.dartpseudo` as the readable layer on top of those earlier artifacts.
 
 ## What You Inspect
 
