@@ -39,13 +39,22 @@ The Android side of the app calls into Flutter from `MainActivity`. This is the 
   <img src="docs/assets/readme/hivpn-asm-real.svg" alt="Real ARM64 snippet decompiled from hiVPN" width="900">
 </p>
 
-**Case 2: Recovered Code Path Through The Pipeline**
+**Case 2: Original Logic -> Recovered ARM64 / IR / Pseudocode**
 
-Same app, same release APK. This is the low-level recovery path for one function from that binary. The point here is to show how one recovered behavior moves through the pipeline.
+Original source: Dart runtime whitespace handling, bundled into the hiVPN release APK and published in the Dart SDK:
+- Source file: https://github.com/dart-lang/sdk/blob/main/sdk/lib/_internal/vm/lib/string_patch.dart
+
+<p align="center">
+  <img src="docs/assets/readme/dart-string-whitespace.svg" alt="Original Dart whitespace logic from the Dart SDK" width="900">
+</p>
+
+`Original`
+
+This source checks whitespace code points such as `0x20`, `0x85`, `0xA0`, `0x2028`, `0x3000`, and `0xFEFF`.
 
 `Recovered ARM64`
 
-The binary starts as conditional branches, compares, and back-edges.
+From the hiVPN APK, `flutterdec` recovered the same style of compare-and-loop logic in ARM64.
 
 <p align="center">
   <img src="docs/assets/readme/hivpn-ir-real.svg" alt="IR summary for the same hiVPN function" width="900">
@@ -61,9 +70,9 @@ The control-flow graph is then normalized into blocks and edges before readabili
 
 `Recovered Pseudocode`
 
-The final pass turns that CFG into readable pseudocode. In this case the output keeps the loop, the compare chain, and a recovered local like `codePoint`.
+The final pass turns that CFG into readable pseudocode. In this case the output keeps the loop, the compare chain, and a recovered local like `codePoint`, which makes the original intent recognizable even without the original function name.
 
-This is not presented as exact source reconstruction. It is presented as real recovered behavior from a public release APK.
+This is the kind of public example that makes sense to show: the recovered logic is not identical source text, but it clearly points at the same behavior.
 
 <p align="center">
   <img src="docs/assets/readme/localsend-diff.svg" alt="LocalSend diff summary across two public releases" width="900">
