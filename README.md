@@ -17,15 +17,21 @@ It takes an APK (or `libapp.so`) and emits readable pseudo-Dart plus optional IR
   <img src="docs/assets/readme/hivpn-mainactivity.svg" alt="hiVPN MainActivity source snippet" width="900">
 </p>
 
-**Case 1: APK Startup Analysis From Real Android Source**
+**Case 1: Original Android Entry Surface -> Recovered Startup Path**
 
 Source app: `hiVPN v1.0.0` released on October 29, 2025. `MainActivity` and the manifest launcher are public in the repository:
 - Source repo: https://github.com/Mr-Dark-debug/hivpn
 - Release APK: https://github.com/Mr-Dark-debug/hivpn/releases/tag/release
 
+`Original`
+
+The Android side of the app calls into Flutter from `MainActivity`. This is the source-side entry surface before looking at the APK.
+
 <p align="center">
   <img src="docs/assets/readme/hivpn-startup-report.svg" alt="hiVPN startup report excerpt recovered by flutterdec" width="900">
 </p>
+
+`Recovered`
 
 `flutterdec` parsed the APK manifest, recovered `com.example.hivpn.MainActivity` as the launcher, and correlated the startup chain from `MainActivity.onCreate` into Flutter JNI bootstrap calls such as `attachToNative` and `nativeAttach`.
 
@@ -33,30 +39,48 @@ Source app: `hiVPN v1.0.0` released on October 29, 2025. `MainActivity` and the 
   <img src="docs/assets/readme/hivpn-asm-real.svg" alt="Real ARM64 snippet decompiled from hiVPN" width="900">
 </p>
 
-**Case 2: Real ARM64 -> IR -> Pseudocode**
+**Case 2: Recovered Code Path Through The Pipeline**
 
-Same app, same release APK. This function is anonymous in the output, but it still shows the point of the pipeline: branch-heavy ARM64 becomes structured IR, then a readable loop with a recovered local like `codePoint`.
+Same app, same release APK. This is the low-level recovery path for one function from that binary. The point here is to show how one recovered behavior moves through the pipeline.
+
+`Recovered ARM64`
+
+The binary starts as conditional branches, compares, and back-edges.
 
 <p align="center">
   <img src="docs/assets/readme/hivpn-ir-real.svg" alt="IR summary for the same hiVPN function" width="900">
 </p>
 
+`Recovered Function IR`
+
+The control-flow graph is then normalized into blocks and edges before readability passes.
+
 <p align="center">
   <img src="docs/assets/readme/hivpn-pseudocode-real.svg" alt="Recovered pseudocode for the same hiVPN function" width="900">
 </p>
 
-This example is intentionally honest about current limits: the original source name is not recovered, but control flow, loop shape, comparisons, and some variable structure are.
+`Recovered Pseudocode`
+
+The final pass turns that CFG into readable pseudocode. In this case the output keeps the loop, the compare chain, and a recovered local like `codePoint`.
+
+This is not presented as exact source reconstruction. It is presented as real recovered behavior from a public release APK.
 
 <p align="center">
   <img src="docs/assets/readme/localsend-diff.svg" alt="LocalSend diff summary across two public releases" width="900">
 </p>
 
-**Case 3: Cross-Version Diff On Public Releases**
+**Case 3: Original Release A -> Original Release B -> Recovered Diff**
 
 Source app: `LocalSend`
 - `v1.16.1` released on November 5, 2024
 - `v1.17.0` released on February 20, 2025
 - Releases: https://github.com/localsend/localsend/releases
+
+`Original`
+
+Two public release APKs from the same app line.
+
+`Recovered`
 
 `flutterdec diff` compared the two arm64 APKs directly and emitted added/removed/common function summaries plus package-level change counts. This is useful when you care more about what changed between versions than about reconstructing a single function in isolation.
 
