@@ -15,6 +15,7 @@ const DART_EXECUTOR_DESC: &str = "Lio/flutter/embedding/engine/dart/DartExecutor
 const DART_ENTRYPOINT_DESC: &str =
     "Lio/flutter/embedding/engine/dart/DartExecutor$DartEntrypoint;";
 const MAX_STARTUP_PARSE_ERRORS: usize = 20;
+const MAX_RETURN_SUMMARY_PASSES: usize = 16;
 static DALVIK_DECODE_HOOK_LOCK: std::sync::LazyLock<std::sync::Mutex<()>> =
     std::sync::LazyLock::new(|| std::sync::Mutex::new(()));
 
@@ -186,14 +187,14 @@ struct StartupScanResult {
     parse_errors: Vec<String>,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct TrackedDartEntrypointValue {
     function_name: Option<String>,
     library_uri: Option<String>,
     app_bundle_path: Option<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum TrackedRegisterValue {
     StringLiteral(String),
     DartEntrypoint(TrackedDartEntrypointValue),
@@ -234,6 +235,8 @@ impl ScannedMethodKey {
 struct ScannedMethodDef {
     key: ScannedMethodKey,
 }
+
+type MethodReturnSummaries = std::collections::HashMap<ScannedMethodKey, TrackedRegisterValue>;
 
 #[derive(Debug, Clone)]
 struct ScannedAppMethodInvoke {
@@ -1142,11 +1145,227 @@ fn build_flutterjni_entrypoint(
     value
 }
 
-fn decode_method_refs<B: AsRef<[u8]>>(
+fn method_summary_key_for_target(
+    source_dex: &str,
+    target_class: &str,
+    target_method: &str,
+) -> ScannedMethodKey {
+    ScannedMethodKey::new(
+        source_dex,
+        target_class,
+        &descriptor_to_java_name(target_class),
+        target_method,
+    )
+}
+
+fn scan_method_return_summary<B: AsRef<[u8]>>(
     dex: &dex::Dex<B>,
+    source_dex: &str,
     method: &ScannedMethodKey,
     app_class_descriptors: &std::collections::HashSet<String>,
     insns: &[u16],
+    method_return_summaries: &MethodReturnSummaries,
+) -> Option<TrackedRegisterValue> {
+    let mut remaining = insns;
+    let mut tracked = std::collections::HashMap::<u16, TrackedRegisterValue>::new();
+    let mut last_invoke_result: Option<TrackedRegisterValue> = None;
+    let mut returned_value: Option<Option<TrackedRegisterValue>> = None;
+
+    while !remaining.is_empty() {
+        let decoded = decode_one_silently(&mut remaining);
+        match decoded {
+            Ok(Ok(instruction)) => {
+                let pending_invoke_result = last_invoke_result.take();
+                match &instruction {
+                    Instruction::MoveObject(dst, src) => {
+                        if let Some(value) = tracked.get(&u16::from(*src)).cloned() {
+                            tracked.insert(u16::from(*dst), value);
+                        } else {
+                            tracked.remove(&u16::from(*dst));
+                        }
+                    }
+                    Instruction::MoveObjectFrom16(dst, src) => {
+                        if let Some(value) = tracked.get(src).cloned() {
+                            tracked.insert(u16::from(*dst), value);
+                        } else {
+                            tracked.remove(&u16::from(*dst));
+                        }
+                    }
+                    Instruction::MoveObject16(dst, src) => {
+                        if let Some(value) = tracked.get(src).cloned() {
+                            tracked.insert(*dst, value);
+                        } else {
+                            tracked.remove(dst);
+                        }
+                    }
+                    Instruction::MoveResultObject(dst) => {
+                        if let Some(value) = pending_invoke_result {
+                            tracked.insert(u16::from(*dst), value);
+                        } else {
+                            tracked.remove(&u16::from(*dst));
+                        }
+                    }
+                    Instruction::ConstString(dst, idx) => {
+                        if let Ok(value) = dex.get_string((*idx).into()) {
+                            tracked.insert(
+                                u16::from(*dst),
+                                TrackedRegisterValue::StringLiteral(value.to_string()),
+                            );
+                        } else {
+                            tracked.remove(&u16::from(*dst));
+                        }
+                    }
+                    Instruction::ConstStringJumbo(dst, idx) => {
+                        if let Ok(value) = dex.get_string(*idx) {
+                            tracked.insert(
+                                u16::from(*dst),
+                                TrackedRegisterValue::StringLiteral(value.to_string()),
+                            );
+                        } else {
+                            tracked.remove(&u16::from(*dst));
+                        }
+                    }
+                    Instruction::NewInstance(dst, ty) => {
+                        if dex
+                            .get_type(TypeId::from(u32::from(*ty)))
+                            .ok()
+                            .is_some_and(|resolved_type| {
+                                resolved_type.type_descriptor() == DART_ENTRYPOINT_DESC
+                            })
+                        {
+                            tracked.insert(
+                                u16::from(*dst),
+                                TrackedRegisterValue::DartEntrypoint(
+                                    TrackedDartEntrypointValue::default(),
+                                ),
+                            );
+                        } else {
+                            tracked.remove(&u16::from(*dst));
+                        }
+                    }
+                    Instruction::SGetObject(dst, _) => {
+                        tracked.remove(&u16::from(*dst));
+                    }
+                    Instruction::ReturnObject(reg) => {
+                        let value = tracked.get(&u16::from(*reg)).cloned();
+                        match &returned_value {
+                            None => returned_value = Some(value),
+                            Some(existing) if *existing == value => {}
+                            Some(_) => return None,
+                        }
+                    }
+                    _ => {}
+                }
+
+                let Some(method_id) = instruction_method_id(&instruction) else {
+                    continue;
+                };
+                let Ok(method_item) = dex.get_method_item(MethodId::from(u64::from(method_id))) else {
+                    continue;
+                };
+                let Ok(target_type) = dex.get_type(TypeId::from(u32::from(method_item.class_idx()))) else {
+                    continue;
+                };
+                let target_class = target_type.type_descriptor().to_string();
+                let Ok(target_name) = dex.get_string(method_item.name_idx()) else {
+                    continue;
+                };
+                let target_method = target_name.to_string();
+
+                if let Some(args) = invoke_arg_registers(&instruction) {
+                    if target_class == DART_ENTRYPOINT_DESC && target_method == "<init>" {
+                        if let Some(receiver) = args.first() {
+                            let tracked_value = build_tracked_dart_entrypoint(&args, &tracked);
+                            tracked.insert(
+                                *receiver,
+                                TrackedRegisterValue::DartEntrypoint(tracked_value),
+                            );
+                        }
+                        continue;
+                    }
+                    if app_class_descriptors.contains(&target_class)
+                        && !matches!(target_method.as_str(), "<init>" | "<clinit>")
+                    {
+                        let key =
+                            method_summary_key_for_target(source_dex, &target_class, &target_method);
+                        if key != *method {
+                            last_invoke_result = method_return_summaries.get(&key).cloned();
+                        }
+                    }
+                }
+            }
+            Ok(Err(decode::Error::Metadata { length })) => {
+                if remaining.len() < length {
+                    break;
+                }
+                remaining = &remaining[length..];
+            }
+            Ok(Err(_)) | Err(_) => break,
+        }
+    }
+
+    returned_value.flatten()
+}
+
+fn collect_method_return_summaries<B: AsRef<[u8]>>(
+    dex: &dex::Dex<B>,
+    source_dex: &str,
+    app_class_descriptors: &std::collections::HashSet<String>,
+) -> MethodReturnSummaries {
+    let mut method_keys = Vec::new();
+    for class in dex.classes() {
+        let Ok(class) = class else {
+            continue;
+        };
+        let class_descriptor = class.jtype().type_descriptor().to_string();
+        let class_name = class.jtype().to_java_type();
+        for method in class.methods() {
+            if method.code().is_none() {
+                continue;
+            }
+            method_keys.push((
+                ScannedMethodKey::new(source_dex, &class_descriptor, &class_name, method.name()),
+                method.code().map(|code| code.insns().to_vec()).unwrap_or_default(),
+            ));
+        }
+    }
+
+    let max_passes = method_keys.len().clamp(1, MAX_RETURN_SUMMARY_PASSES);
+    let mut summaries = MethodReturnSummaries::new();
+    for _ in 0..max_passes {
+        let mut changed = false;
+        for (method_key, insns) in &method_keys {
+            let summary = scan_method_return_summary(
+                dex,
+                source_dex,
+                method_key,
+                app_class_descriptors,
+                insns,
+                &summaries,
+            );
+            if summaries.get(method_key).cloned() != summary {
+                changed = true;
+                if let Some(summary) = summary {
+                    summaries.insert(method_key.clone(), summary);
+                } else {
+                    summaries.remove(method_key);
+                }
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    summaries
+}
+
+fn decode_method_refs<B: AsRef<[u8]>>(
+    dex: &dex::Dex<B>,
+    source_dex: &str,
+    method: &ScannedMethodKey,
+    app_class_descriptors: &std::collections::HashSet<String>,
+    insns: &[u16],
+    method_return_summaries: &MethodReturnSummaries,
     parse_errors: &mut Vec<String>,
 ) -> (
     Vec<ScannedStartupMethodRef>,
@@ -1293,14 +1512,19 @@ fn decode_method_refs<B: AsRef<[u8]>>(
                         continue;
                     }
                 };
-                if app_class_descriptors.contains(&target_class)
-                    && target_method != "<clinit>"
-                {
+                if app_class_descriptors.contains(&target_class) && target_method != "<clinit>" {
                     app_method_invokes.push(ScannedAppMethodInvoke {
                         source: source_key.clone(),
                         target_class: target_class.clone(),
                         target_method: target_method.clone(),
                     });
+                    if target_method != "<init>" {
+                        let key =
+                            method_summary_key_for_target(source_dex, &target_class, &target_method);
+                        if key != source_key {
+                            last_invoke_result = method_return_summaries.get(&key).cloned();
+                        }
+                    }
                 }
                 let is_dart_entrypoint_ctor =
                     target_class == DART_ENTRYPOINT_DESC && target_method == "<init>";
@@ -1458,6 +1682,9 @@ fn scan_dex_bytes(source_dex: &str, bytes: Vec<u8>) -> Result<StartupScanResult>
         });
     }
 
+    let method_return_summaries =
+        collect_method_return_summaries(&dex, source_dex, &app_class_descriptors);
+
     for class in dex.classes() {
         let class = class.map_err(|err| anyhow!("parse class in {}: {}", source_dex, err))?;
         let class_descriptor = class.jtype().type_descriptor().to_string();
@@ -1475,9 +1702,11 @@ fn scan_dex_bytes(source_dex: &str, bytes: Vec<u8>) -> Result<StartupScanResult>
             });
             let (refs, entrypoints, invokes) = decode_method_refs(
                 &dex,
+                source_dex,
                 &method_key,
                 &app_class_descriptors,
                 code.insns(),
+                &method_return_summaries,
                 &mut parse_errors,
             );
             method_refs.extend(refs);
