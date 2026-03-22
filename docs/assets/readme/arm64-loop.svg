@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.0//EN" "http://www.w3.org/TR/2001/REC-SVG-20010904/DTD/svg10.dtd">
+<svg width="383.29" height="176.59" xmlns="http://www.w3.org/2000/svg">
+<rect width="381.29" height="174.59" fill="#ffffff" rx="14.00" ry="14.00" stroke="#d7d1c7" stroke-width="1.00" x="0.50px" y="0.50px"/>
+<g font-family="monospace" font-size="15.00px" fill="#-00001" clip-path="url(#terminalMask)">
+<rect id="0" x="0ch" y="0.250000em" width="1ch" height="1.2em" fill="#82071e"/>
+<rect id="0" x="0ch" y="1.450000em" width="1ch" height="1.2em" fill="#82071e"/>
+<rect id="0" x="0ch" y="2.650000em" width="1ch" height="1.2em" fill="#82071e"/>
+<rect id="0" x="0ch" y="3.850000em" width="1ch" height="1.2em" fill="#82071e"/>
+<rect id="0" x="0ch" y="5.050000em" width="1ch" height="1.2em" fill="#82071e"/>
+<text x="22.00px" y="57.25px" xml:space="preserve"><tspan fill="#f6f8fa">0</tspan><tspan fill="#6639ba">x000000000000d000</tspan>  <tspan fill="#0550ae">b</tspan>     <tspan fill="#57606a">#0xd004
+</tspan></text><text x="22.00px" y="77.50px" xml:space="preserve"><tspan fill="#57606a"/><tspan fill="#f6f8fa">0</tspan><tspan fill="#6639ba">x000000000000d004</tspan>  <tspan fill="#0550ae">add</tspan>   <tspan fill="#0550ae">x0</tspan><tspan fill="#1f2328">,</tspan> <tspan fill="#0550ae">x0</tspan><tspan fill="#1f2328">,</tspan> <tspan fill="#57606a">#1
+</tspan></text><text x="22.00px" y="97.75px" xml:space="preserve"><tspan fill="#57606a"/><tspan fill="#f6f8fa">0</tspan><tspan fill="#6639ba">x000000000000d008</tspan>  <tspan fill="#0550ae">cbnz</tspan>  <tspan fill="#0550ae">x0</tspan><tspan fill="#1f2328">,</tspan> <tspan fill="#57606a">#0xd010
+</tspan></text><text x="22.00px" y="118.00px" xml:space="preserve"><tspan fill="#57606a"/><tspan fill="#f6f8fa">0</tspan><tspan fill="#6639ba">x000000000000d00c</tspan>  <tspan fill="#0550ae">b</tspan>     <tspan fill="#57606a">#0xd004
+</tspan></text><text x="22.00px" y="138.25px" xml:space="preserve"><tspan fill="#57606a"/><tspan fill="#f6f8fa">0</tspan><tspan fill="#6639ba">x000000000000d010</tspan>  <tspan fill="#0550ae">ret</tspan>
+</text>
+</g>
+<svg x="0.00px" y="0.00px"><circle cx="13.50" cy="12.00" r="5.50" fill="#FF5A54"/><circle cx="32.50" cy="12.00" r="5.50" fill="#E6BF29"/><circle cx="51.50" cy="12.00" r="5.50" fill="#52C12B"/></svg></svg>
