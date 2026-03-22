@@ -13,6 +13,8 @@ It takes an APK (or `libapp.so`) and emits readable pseudo-Dart plus optional IR
 
 ## See The Pipeline
 
+The goal of these examples is simple: show original public source on one side, then show what `flutterdec` recovers from the shipped APK.
+
 <p align="center">
   <img src="docs/assets/readme/hivpn-mainactivity.svg" alt="hiVPN MainActivity source snippet" width="900">
 </p>
@@ -35,44 +37,56 @@ The Android side of the app calls into Flutter from `MainActivity`. This is the 
 
 `flutterdec` parsed the APK manifest, recovered `com.example.hivpn.MainActivity` as the launcher, and correlated the startup chain from `MainActivity.onCreate` into Flutter JNI bootstrap calls such as `attachToNative` and `nativeAttach`.
 
-<p align="center">
-  <img src="docs/assets/readme/hivpn-asm-real.svg" alt="Real ARM64 snippet decompiled from hiVPN" width="900">
-</p>
-
 **Case 2: Original Logic -> Recovered ARM64 / IR / Pseudocode**
 
 Original source: Dart runtime whitespace handling, bundled into the hiVPN release APK and published in the Dart SDK:
 - Source file: https://github.com/dart-lang/sdk/blob/main/sdk/lib/_internal/vm/lib/string_patch.dart
 
+<p align="center"><strong>Original Source</strong></p>
+
 <p align="center">
   <img src="docs/assets/readme/dart-string-whitespace.svg" alt="Original Dart whitespace logic from the Dart SDK" width="900">
 </p>
 
-`Original`
-
 This source checks whitespace code points such as `0x20`, `0x85`, `0xA0`, `0x2028`, `0x3000`, and `0xFEFF`.
 
-`Recovered ARM64`
+<p align="center"><strong>Recovered From The APK With flutterdec</strong></p>
+
+<p align="center"><strong>↓ ARM64</strong></p>
 
 From the hiVPN APK, `flutterdec` recovered the same style of compare-and-loop logic in ARM64.
+
+<p align="center">
+  <img src="docs/assets/readme/hivpn-asm-real.svg" alt="Real ARM64 snippet decompiled from hiVPN" width="900">
+</p>
+
+<p align="center">
+  <strong>↓ Function IR</strong>
+</p>
 
 <p align="center">
   <img src="docs/assets/readme/hivpn-ir-real.svg" alt="IR summary for the same hiVPN function" width="900">
 </p>
 
-`Recovered Function IR`
-
 The control-flow graph is then normalized into blocks and edges before readability passes.
+
+<p align="center">
+  <strong>↓ Pseudocode</strong>
+</p>
 
 <p align="center">
   <img src="docs/assets/readme/hivpn-pseudocode-real.svg" alt="Recovered pseudocode for the same hiVPN function" width="900">
 </p>
 
-`Recovered Pseudocode`
-
 The final pass turns that CFG into readable pseudocode. In this case the output keeps the loop, the compare chain, and a recovered local like `codePoint`, which makes the original intent recognizable even without the original function name.
 
 This is the kind of public example that makes sense to show: the recovered logic is not identical source text, but it clearly points at the same behavior.
+
+**What this proves**
+
+- `flutterdec` is recovering Dart runtime behavior, not just opaque machine code
+- comparisons like `0x20`, `0x85`, `0xA0`, `0x2028`, and `0x3000` survive into readable output
+- the pipeline is inspectable at every stage: asm, IR, and pseudocode
 
 <p align="center">
   <img src="docs/assets/readme/localsend-diff.svg" alt="LocalSend diff summary across two public releases" width="900">
