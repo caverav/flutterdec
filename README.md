@@ -13,8 +13,6 @@ It takes an APK (or `libapp.so`) and emits readable pseudo-Dart plus optional IR
 
 ## See The Pipeline
 
-Built from real public APKs and their public source repositories, not a synthetic test fixture.
-
 <p align="center">
   <img src="docs/assets/readme/hivpn-mainactivity.svg" alt="hiVPN MainActivity source snippet" width="900">
 </p>
