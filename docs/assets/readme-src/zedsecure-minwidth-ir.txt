@@ -1,0 +1,11 @@
+bb2:
+  pool[1576] -> "_messageMap"
+  selector dispatch -> dispatch.messageMap(...)
+
+bb3:
+  pool[1600] -> "_hasDecoration"
+  framework library call -> flutter.foundation.invoke(...)
+
+bb10:
+  pool[1624] -> "minWidth"
+  selector dispatch -> dispatch.minWidth(...)

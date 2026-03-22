@@ -1,0 +1,22 @@
+dynamic sub_3057dc(dynamic receiver, dynamic param1, dynamic param2, int value3, dynamic param4, dynamic param5, dynamic param6, dynamic param7) {
+  final int codePoint = (value3 - 1);
+  bool retryLoop1 = true;
+  while (retryLoop1) {
+    if (((codePoint >> 0x3f) & 1) != 0) {
+      return codePoint;
+    }
+    if ((classId(param1) << 1) == 0xbc) {
+      if (codePoint > 0x20) {
+        if ((codePoint == 0x85) || (codePoint == 0xa0)) {
+          continue;
+        }
+        return codePoint;
+      }
+      if ((codePoint == 0x20) || ((codePoint >= 9) && (codePoint <= 0xd))) {
+        continue;
+      }
+      return codePoint;
+    }
+    retryLoop1 = false;
+  }
+}

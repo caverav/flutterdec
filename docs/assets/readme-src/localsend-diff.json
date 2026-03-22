@@ -1,0 +1,11 @@
+{
+  "old_release": "LocalSend 1.16.1",
+  "new_release": "LocalSend 1.17.0",
+  "snapshot_hash_match": true,
+  "old_function_count": 5581,
+  "new_function_count": 5800,
+  "common_function_count": 19,
+  "added_function_count": 5781,
+  "removed_function_count": 5562,
+  "top_changed_package": "markdown"
+}

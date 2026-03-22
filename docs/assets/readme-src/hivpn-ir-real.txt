@@ -1,0 +1,17 @@
+FunctionIr sub_3057dc @ 0x3057dc
+
+bb1 -> bb2, bb35
+  branch b.ls #0x305920
+
+bb2 -> bb3, bb34
+  branch tbnz x0, #0x3f, #0x30591c
+
+bb6 -> bb7, bb15
+  branch b.ne #0x30586c
+
+bb7 / bb15
+  compare codePoint against 0x20, 0x85, 0xa0
+  loop back to 0x305800 for whitespace-like cases
+
+bb34
+  return ret

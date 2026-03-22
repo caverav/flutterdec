@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.0//EN" "http://www.w3.org/TR/2001/REC-SVG-20010904/DTD/svg10.dtd">
+<svg width="422.40" height="346.92" xmlns="http://www.w3.org/2000/svg">
+<rect width="420.40" height="344.92" fill="#282a36" rx="18.00" ry="18.00" stroke="#26304f" stroke-width="1.00" x="0.50px" y="0.50px"/>
+<g font-family="monospace" font-size="17.00px" fill="#f8f8f2" clip-path="url(#terminalMask)">
+<text x="24.00px" y="62.80px" xml:space="preserve">{
+</text><text x="24.00px" y="86.60px" xml:space="preserve">  <tspan fill="#ff79c6">&quot;old_release&quot;</tspan>: <tspan fill="#f1fa8c">&quot;LocalSend 1.16.1&quot;</tspan>,
+</text><text x="24.00px" y="110.40px" xml:space="preserve">  <tspan fill="#ff79c6">&quot;new_release&quot;</tspan>: <tspan fill="#f1fa8c">&quot;LocalSend 1.17.0&quot;</tspan>,
+</text><text x="24.00px" y="134.20px" xml:space="preserve">  <tspan fill="#ff79c6">&quot;snapshot_hash_match&quot;</tspan>: <tspan fill="#ff79c6">true</tspan>,
+</text><text x="24.00px" y="158.00px" xml:space="preserve">  <tspan fill="#ff79c6">&quot;old_function_count&quot;</tspan>: <tspan fill="#bd93f9">5581</tspan>,
+</text><text x="24.00px" y="181.80px" xml:space="preserve">  <tspan fill="#ff79c6">&quot;new_function_count&quot;</tspan>: <tspan fill="#bd93f9">5800</tspan>,
+</text><text x="24.00px" y="205.60px" xml:space="preserve">  <tspan fill="#ff79c6">&quot;common_function_count&quot;</tspan>: <tspan fill="#bd93f9">19</tspan>,
+</text><text x="24.00px" y="229.40px" xml:space="preserve">  <tspan fill="#ff79c6">&quot;added_function_count&quot;</tspan>: <tspan fill="#bd93f9">5781</tspan>,
+</text><text x="24.00px" y="253.20px" xml:space="preserve">  <tspan fill="#ff79c6">&quot;removed_function_count&quot;</tspan>: <tspan fill="#bd93f9">5562</tspan>,
+</text><text x="24.00px" y="277.00px" xml:space="preserve">  <tspan fill="#ff79c6">&quot;top_changed_package&quot;</tspan>: <tspan fill="#f1fa8c">&quot;markdown&quot;</tspan>
+</text><text x="24.00px" y="300.80px" xml:space="preserve">}
+</text>
+</g>
+<svg x="0.00px" y="0.00px"><circle cx="13.50" cy="12.00" r="5.50" fill="#FF5A54"/><circle cx="32.50" cy="12.00" r="5.50" fill="#E6BF29"/><circle cx="51.50" cy="12.00" r="5.50" fill="#52C12B"/></svg></svg>

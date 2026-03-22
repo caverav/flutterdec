@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.0//EN" "http://www.w3.org/TR/2001/REC-SVG-20010904/DTD/svg10.dtd">
+<svg width="756.33" height="441.83" xmlns="http://www.w3.org/2000/svg">
+<rect width="754.33" height="439.83" fill="#282a36" rx="18.00" ry="18.00" stroke="#26304f" stroke-width="1.00" x="0.50px" y="0.50px"/>
+<g font-family="monospace" font-size="17.00px" fill="#f8f8f2" clip-path="url(#terminalMask)">
+<text x="24.00px" y="62.80px" xml:space="preserve"><tspan fill="#8be9fd" font-style="italic">static</tspan> <tspan fill="#8be9fd">bool</tspan> _isTwoByteWhitespace(<tspan fill="#8be9fd">int</tspan> codeUnit) {
+</text><text x="24.00px" y="86.60px" xml:space="preserve">  <tspan fill="#ff79c6">if</tspan> (codeUnit <tspan fill="#ff79c6">&lt;=</tspan> <tspan fill="#bd93f9">32</tspan>) {
+</text><text x="24.00px" y="110.40px" xml:space="preserve">    <tspan fill="#ff79c6">return</tspan> (codeUnit <tspan fill="#ff79c6">==</tspan> <tspan fill="#bd93f9">32</tspan>) <tspan fill="#ff79c6">||</tspan> ((codeUnit <tspan fill="#ff79c6">&lt;=</tspan> <tspan fill="#bd93f9">13</tspan>) <tspan fill="#ff79c6">&amp;&amp;</tspan> (codeUnit <tspan fill="#ff79c6">&gt;=</tspan> <tspan fill="#bd93f9">9</tspan>));
+</text><text x="24.00px" y="134.20px" xml:space="preserve">  }
+</text><text x="24.00px" y="158.00px" xml:space="preserve">  <tspan fill="#ff79c6">if</tspan> (codeUnit <tspan fill="#ff79c6">&lt;</tspan> <tspan fill="#bd93f9">0x85</tspan>) <tspan fill="#ff79c6">return</tspan> <tspan fill="#ff79c6">false</tspan>;
+</text><text x="24.00px" y="181.80px" xml:space="preserve">  <tspan fill="#ff79c6">if</tspan> ((codeUnit <tspan fill="#ff79c6">==</tspan> <tspan fill="#bd93f9">0x85</tspan>) <tspan fill="#ff79c6">||</tspan> (codeUnit <tspan fill="#ff79c6">==</tspan> <tspan fill="#bd93f9">0xA0</tspan>)) <tspan fill="#ff79c6">return</tspan> <tspan fill="#ff79c6">true</tspan>;
+</text><text x="24.00px" y="205.60px" xml:space="preserve">  <tspan fill="#ff79c6">return</tspan> (codeUnit <tspan fill="#ff79c6">&lt;=</tspan> <tspan fill="#bd93f9">0x200A</tspan>)
+</text><text x="24.00px" y="229.40px" xml:space="preserve">      <tspan fill="#ff79c6">?</tspan> ((codeUnit <tspan fill="#ff79c6">==</tspan> <tspan fill="#bd93f9">0x1680</tspan>) <tspan fill="#ff79c6">||</tspan> (<tspan fill="#bd93f9">0x2000</tspan> <tspan fill="#ff79c6">&lt;=</tspan> codeUnit))
+</text><text x="24.00px" y="253.20px" xml:space="preserve">      <tspan fill="#ff79c6">:</tspan> ((codeUnit <tspan fill="#ff79c6">==</tspan> <tspan fill="#bd93f9">0x2028</tspan>) <tspan fill="#ff79c6">||</tspan>
+</text><text x="24.00px" y="277.00px" xml:space="preserve">            (codeUnit <tspan fill="#ff79c6">==</tspan> <tspan fill="#bd93f9">0x2029</tspan>) <tspan fill="#ff79c6">||</tspan>
+</text><text x="24.00px" y="300.80px" xml:space="preserve">            (codeUnit <tspan fill="#ff79c6">==</tspan> <tspan fill="#bd93f9">0x202F</tspan>) <tspan fill="#ff79c6">||</tspan>
+</text><text x="24.00px" y="324.60px" xml:space="preserve">            (codeUnit <tspan fill="#ff79c6">==</tspan> <tspan fill="#bd93f9">0x205F</tspan>) <tspan fill="#ff79c6">||</tspan>
+</text><text x="24.00px" y="348.40px" xml:space="preserve">            (codeUnit <tspan fill="#ff79c6">==</tspan> <tspan fill="#bd93f9">0x3000</tspan>) <tspan fill="#ff79c6">||</tspan>
+</text><text x="24.00px" y="372.20px" xml:space="preserve">            (codeUnit <tspan fill="#ff79c6">==</tspan> <tspan fill="#bd93f9">0xFEFF</tspan>));
+</text><text x="24.00px" y="396.00px" xml:space="preserve">}
+</text>
+</g>
+<svg x="0.00px" y="0.00px"><circle cx="13.50" cy="12.00" r="5.50" fill="#FF5A54"/><circle cx="32.50" cy="12.00" r="5.50" fill="#E6BF29"/><circle cx="51.50" cy="12.00" r="5.50" fill="#52C12B"/></svg></svg>

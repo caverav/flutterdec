@@ -1,0 +1,14 @@
+{
+  "package_name": "com.example.hivpn",
+  "launcher_activity": "com.example.hivpn.MainActivity",
+  "startup_path": [
+    "MainActivity.onCreate",
+    "R2.d.onCreate",
+    "S2.g.a",
+    "S2.c.<init>",
+    "FlutterJNI.attachToNative",
+    "FlutterJNI.performNativeAttach",
+    "FlutterJNI.nativeAttach"
+  ],
+  "confidence": "high"
+}
