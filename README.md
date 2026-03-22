@@ -58,10 +58,10 @@ This is the comparison you asked for: public app source that uses Flutter APIs, 
 <p align="center"><strong>Original Source</strong></p>
 
 <p align="center">
-  <img src="docs/assets/readme/zedsecure-theme-source.svg" alt="Original ZedSecure theme source using Flutter theming APIs" width="900">
+  <img src="docs/assets/readme/zedsecure-minwidth-source.svg" alt="Original ZedSecure UI source using BoxConstraints(minWidth: 50)" width="900">
 </p>
 
-This app code builds `ThemeData` and `ColorScheme.light(...)`. It is ordinary Flutter app code, not a synthetic helper and not a framework implementation detail.
+This source is ordinary app UI code. It builds a ping badge with `BoxConstraints(minWidth: 50)` and other Flutter widget APIs inside the shipped app.
 
 <p align="center"><strong>Recovered 2: From The ZedSecure APK With flutterdec</strong></p>
 
@@ -70,7 +70,7 @@ This app code builds `ThemeData` and `ColorScheme.light(...)`. It is ordinary Fl
 At the machine-code layer, the APK still looks like indirect selector dispatch through pool-loaded metadata and call targets.
 
 <p align="center">
-  <img src="docs/assets/readme/zedsecure-selector-asm.svg" alt="ARM64 snippet from the recovered ZedSecure function" width="900">
+  <img src="docs/assets/readme/zedsecure-minwidth-asm.svg" alt="ARM64 snippet from the recovered ZedSecure function showing the minWidth selector pool load" width="900">
 </p>
 
 <p align="center">
@@ -78,7 +78,7 @@ At the machine-code layer, the APK still looks like indirect selector dispatch t
 </p>
 
 <p align="center">
-  <img src="docs/assets/readme/zedsecure-selector-ir.svg" alt="IR summary for the recovered ZedSecure selector flow" width="900">
+  <img src="docs/assets/readme/zedsecure-minwidth-ir.svg" alt="IR summary for the recovered ZedSecure minWidth selector flow" width="900">
 </p>
 
 The IR stage makes the selector-bearing pool values explicit before readability passes.
@@ -88,10 +88,10 @@ The IR stage makes the selector-bearing pool values explicit before readability 
 </p>
 
 <p align="center">
-  <img src="docs/assets/readme/zedsecure-selector-pseudocode.svg" alt="Recovered pseudocode with named selectors from the ZedSecure APK" width="900">
+  <img src="docs/assets/readme/zedsecure-minwidth-pseudocode.svg" alt="Recovered pseudocode with named Flutter selectors from the ZedSecure APK" width="900">
 </p>
 
-The important part is not the anonymous function name. The important part is that `flutterdec` surfaced readable selector names from the APK itself, including `dispatch.primarySwatch(...)`, `dispatch.growable(...)`, and `dispatch.nestedDimensions(...)`.
+The important part is not the anonymous function name. The important part is that `flutterdec` surfaced readable Flutter selector names from the APK itself, including `dispatch.minWidth(...)`, `dispatch.messageMap(...)`, and the framework-side `flutter.foundation.invoke(...)`.
 
 This gives the README both views the tool is meant to show publicly:
 - Android startup recovery from the APK surface

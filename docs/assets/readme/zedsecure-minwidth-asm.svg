@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.0//EN" "http://www.w3.org/TR/2001/REC-SVG-20010904/DTD/svg10.dtd">
+<svg width="740" height="392" xmlns="http://www.w3.org/2000/svg">
+<rect width="738" height="390" fill="#282a36" rx="18" ry="18" stroke="#26304f" stroke-width="1" x="0.5" y="0.5"/>
+<g font-family="monospace" font-size="17" fill="#f8f8f2">
+<text x="24" y="63" xml:space="preserve">0x460358: add x16, x3, x2, lsl <tspan fill="#bd93f9">#2</tspan></text>
+<text x="24" y="87" xml:space="preserve">0x46035c: ldur w4, [x16, <tspan fill="#bd93f9">#0xf</tspan>]</text>
+<text x="24" y="111" xml:space="preserve">0x460360: add x4, x4, x28, lsl <tspan fill="#bd93f9">#32</tspan></text>
+<text x="24" y="135" xml:space="preserve">0x460364: mov x0, x4</text>
+<text x="24" y="159" xml:space="preserve">0x460368: ldur x2, [x29, <tspan fill="#bd93f9">#-8</tspan>]</text>
+<text x="24" y="183" xml:space="preserve">0x460374: cmp w2, w22</text>
+<text x="24" y="207" xml:space="preserve">0x460378: b.eq <tspan fill="#50fa7b">#0x460394</tspan></text>
+<text x="24" y="231" xml:space="preserve">0x460384: ldr x8, [x27, <tspan fill="#bd93f9">#0x650</tspan>] ; <tspan fill="#50fa7b">pool[1616]</tspan></text>
+<text x="24" y="255" xml:space="preserve">0x460388: ldur x9, [x4, <tspan fill="#bd93f9">#7</tspan>]</text>
+<text x="24" y="279" xml:space="preserve">0x46038c: ldr x3, [x27, <tspan fill="#bd93f9">#0x658</tspan>] ; <tspan fill="#50fa7b">pool[1624]</tspan> = <tspan fill="#f1fa8c">&quot;minWidth&quot;</tspan></text>
+<text x="24" y="303" xml:space="preserve">0x460390: blr x9</text>
+</g>
+<svg x="0" y="0"><circle cx="13.5" cy="12" r="5.5" fill="#FF5A54"/><circle cx="32.5" cy="12" r="5.5" fill="#E6BF29"/><circle cx="51.5" cy="12" r="5.5" fill="#52C12B"/></svg>
+</svg>

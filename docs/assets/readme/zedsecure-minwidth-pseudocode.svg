@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.0//EN" "http://www.w3.org/TR/2001/REC-SVG-20010904/DTD/svg10.dtd">
+<svg width="740" height="418" xmlns="http://www.w3.org/2000/svg">
+<rect width="738" height="416" fill="#282a36" rx="18" ry="18" stroke="#26304f" stroke-width="1" x="0.5" y="0.5"/>
+<g font-family="monospace" font-size="17" fill="#f8f8f2">
+<text x="24" y="63" xml:space="preserve"><tspan fill="#ff79c6">if</tspan> ((obj1.f7) == <tspan fill="#8be9fd">null</tspan>) {</text>
+<text x="24" y="87" xml:space="preserve">  <tspan fill="#ff79c6">final</tspan> t2 = <tspan fill="#8be9fd">flutter.foundation.invoke</tspan>(</text>
+<text x="24" y="111" xml:space="preserve">    objTmp1, <tspan fill="#8be9fd">null</tspan>, objTmp3, <tspan fill="#f1fa8c">&quot;_hasDecoration&quot;</tspan>,</text>
+<text x="24" y="135" xml:space="preserve">  );</text>
+<text x="24" y="171" xml:space="preserve">  ...</text>
+<text x="24" y="207" xml:space="preserve">  <tspan fill="#ff79c6">final</tspan> t5 = <tspan fill="#8be9fd">dispatch.minWidth</tspan>(</text>
+<text x="24" y="231" xml:space="preserve">    ((((objTmp2.f15) + t4 /* lsl #2 */)).f15),</text>
+<text x="24" y="255" xml:space="preserve">    <tspan fill="#8be9fd">null</tspan>,</text>
+<text x="24" y="279" xml:space="preserve">    objTmp3,</text>
+<text x="24" y="303" xml:space="preserve">    <tspan fill="#f1fa8c">&quot;minWidth&quot;</tspan>,</text>
+<text x="24" y="327" xml:space="preserve">  );</text>
+<text x="24" y="363" xml:space="preserve">} <tspan fill="#ff79c6">else</tspan> {</text>
+<text x="24" y="387" xml:space="preserve">  <tspan fill="#ff79c6">final</tspan> t2 = <tspan fill="#8be9fd">dispatch.messageMap</tspan>(param2, <tspan fill="#8be9fd">null</tspan>, (obj1.f7), <tspan fill="#f1fa8c">&quot;_messageMap&quot;</tspan>);</text>
+</g>
+<svg x="0" y="0"><circle cx="13.5" cy="12" r="5.5" fill="#FF5A54"/><circle cx="32.5" cy="12" r="5.5" fill="#E6BF29"/><circle cx="51.5" cy="12" r="5.5" fill="#52C12B"/></svg>
+</svg>
