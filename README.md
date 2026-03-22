@@ -11,43 +11,15 @@
 
 It takes an APK (or `libapp.so`) and emits readable pseudo-Dart plus optional IR/ASM artifacts.
 
-<p align="center">
-  <strong>APK / libapp.so</strong> -> <strong>ARM64 decode</strong> -> <strong>Function IR</strong> -> <strong>pseudo-Dart + reports</strong>
-</p>
-
 ## See The Pipeline
 
-The example below is built from the checked-in `structured_loop_emit` golden fixture, so each stage is versioned with the repository.
-The first panel shows equivalent source intent for the control-flow shape; the remaining panels show the same function as `flutterdec` sees it while moving from disassembly to IR to recovered pseudocode.
+Built from the checked-in `structured_loop_emit` golden fixture, so each stage stays versioned with the repository.
 
-<table>
-  <tr>
-    <td width="50%" valign="top">
-      <strong>Equivalent Source Intent</strong><br>
-      <sub>What a human would write for the same behavior.</sub><br><br>
-      <img src="docs/assets/readme/reference-loop.svg" alt="Equivalent Dart source intent for a simple loop" width="100%">
-    </td>
-    <td width="50%" valign="top">
-      <strong>ARM64 Fragment</strong><br>
-      <sub>The branch structure still visible in machine code.</sub><br><br>
-      <img src="docs/assets/readme/arm64-loop.svg" alt="ARM64 assembly fragment for the same loop" width="100%">
-    </td>
-  </tr>
-  <tr>
-    <td width="50%" valign="top">
-      <strong>Function IR</strong><br>
-      <sub>Basic blocks and edges before final structuring.</sub><br><br>
-      <img src="docs/assets/readme/ir-loop.svg" alt="Function IR summary for the same loop" width="100%">
-    </td>
-    <td width="50%" valign="top">
-      <strong>Recovered Pseudocode</strong><br>
-      <sub>The readability-oriented output written to <code>pseudocode/*.dartpseudo</code>.</sub><br><br>
-      <img src="docs/assets/readme/decompiled-loop.svg" alt="Recovered pseudo-Dart for the same loop" width="100%">
-    </td>
-  </tr>
-</table>
+<p align="center">
+  <img src="docs/assets/readme/pipeline-showcase.svg" alt="Pipeline showcase from equivalent source intent to ARM64, Function IR, and recovered pseudocode" width="100%">
+</p>
 
-For a real APK, this is the same side-by-side comparison you do when validating a result: inspect `asm/*.s`, confirm the CFG shape in `ir/*.json`, then decide whether `pseudocode/*.dartpseudo` preserved the behavior cleanly enough for reversing work.
+For a real APK, the workflow is the same: start from `asm/*.s`, verify the control-flow graph in `ir/*.json`, and treat `pseudocode/*.dartpseudo` as the readable layer on top of those earlier artifacts.
 
 ## What You Inspect
 
