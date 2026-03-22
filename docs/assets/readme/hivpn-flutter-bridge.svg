@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.0//EN" "http://www.w3.org/TR/2001/REC-SVG-20010904/DTD/svg10.dtd">
+<svg width="847.40" height="441.83" xmlns="http://www.w3.org/2000/svg">
+<rect width="845.40" height="439.83" fill="#282a36" rx="18.00" ry="18.00" stroke="#26304f" stroke-width="1.00" x="0.50px" y="0.50px"/>
+<g font-family="monospace" font-size="17.00px" fill="#f8f8f2" clip-path="url(#terminalMask)">
+<text x="24.00px" y="62.80px" xml:space="preserve"><tspan fill="#ff79c6">override</tspan> <tspan fill="#ff79c6">fun</tspan> <tspan fill="#50fa7b">configureFlutterEngine</tspan>(flutterEngine: FlutterEngine) {
+</text><text x="24.00px" y="86.60px" xml:space="preserve">    <tspan fill="#ff79c6">super</tspan>.configureFlutterEngine(flutterEngine)
+</text><text x="24.00px" y="110.40px" xml:space="preserve">    methodChannel = MethodChannel(
+</text><text x="24.00px" y="134.20px" xml:space="preserve">        flutterEngine.dartExecutor.binaryMessenger,
+</text><text x="24.00px" y="158.00px" xml:space="preserve">        <tspan fill="#f1fa8c">&quot;com.example.vpn/VpnChannel&quot;</tspan>,
+</text><text x="24.00px" y="181.80px" xml:space="preserve">    )
+</text><text x="24.00px" y="205.60px" xml:space="preserve">    methodChannel.setMethodCallHandler { call, result <tspan fill="#ff79c6">-&gt;</tspan>
+</text><text x="24.00px" y="229.40px" xml:space="preserve">        <tspan fill="#ff79c6">when</tspan> (call.method) {
+</text><text x="24.00px" y="253.20px" xml:space="preserve">            <tspan fill="#f1fa8c">&quot;prepare&quot;</tspan> <tspan fill="#ff79c6">-&gt;</tspan> handlePrepare(result)
+</text><text x="24.00px" y="277.00px" xml:space="preserve">            <tspan fill="#f1fa8c">&quot;getInstalledApps&quot;</tspan> <tspan fill="#ff79c6">-&gt;</tspan> result.success(fetchInstalledApps())
+</text><text x="24.00px" y="300.80px" xml:space="preserve">            <tspan fill="#f1fa8c">&quot;elapsedRealtime&quot;</tspan> <tspan fill="#ff79c6">-&gt;</tspan> result.success(<tspan fill="#50fa7b">SystemClock</tspan>.elapsedRealtime())
+</text><text x="24.00px" y="324.60px" xml:space="preserve">            <tspan fill="#ff79c6">else</tspan> <tspan fill="#ff79c6">-&gt;</tspan> result.notImplemented()
+</text><text x="24.00px" y="348.40px" xml:space="preserve">        }
+</text><text x="24.00px" y="372.20px" xml:space="preserve">    }
+</text><text x="24.00px" y="396.00px" xml:space="preserve">}
+</text>
+</g>
+<svg x="0.00px" y="0.00px"><circle cx="13.50" cy="12.00" r="5.50" fill="#FF5A54"/><circle cx="32.50" cy="12.00" r="5.50" fill="#E6BF29"/><circle cx="51.50" cy="12.00" r="5.50" fill="#52C12B"/></svg></svg>

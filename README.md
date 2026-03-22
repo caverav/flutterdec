@@ -13,13 +13,21 @@ It takes an APK (or `libapp.so`) and emits readable pseudo-Dart plus optional IR
 
 ## See The Pipeline
 
-The goal of these examples is simple: show original public source on one side, then show what `flutterdec` recovers from the shipped APK.
+The goal of these examples is simple: show original public source first, then show what `flutterdec` recovers from the shipped APK.
+
+<p align="center"><strong>Original 1: Android Startup Surface</strong></p>
 
 <p align="center">
   <img src="docs/assets/readme/hivpn-mainactivity.svg" alt="hiVPN MainActivity source snippet" width="900">
 </p>
 
-**Case 1: Original Android Entry Surface -> Recovered Startup Path**
+<p align="center"><strong>Original 2: App-Side Flutter / Dart Surface</strong></p>
+
+<p align="center">
+  <img src="docs/assets/readme/hivpn-flutter-bridge.svg" alt="hiVPN Flutter bridge source snippet" width="900">
+</p>
+
+**Compare 1: Startup Source -> Recovered Startup Path**
 
 Source app: `hiVPN v1.0.0` released on October 29, 2025. `MainActivity` and the manifest launcher are public in the repository:
 - Source repo: https://github.com/Mr-Dark-debug/hivpn
@@ -27,7 +35,9 @@ Source app: `hiVPN v1.0.0` released on October 29, 2025. `MainActivity` and the 
 
 `Original`
 
-The Android side of the app enters Flutter from `MainActivity.onCreate`. This is the source-side entry surface before looking at the APK.
+The app enters Flutter from `MainActivity.onCreate`. The second source card shows the app-side Flutter bridge that exposes `MethodChannel('com.example.vpn/VpnChannel')` to Dart code.
+
+<p align="center"><strong>Recovered 1: APK Startup Report</strong></p>
 
 <p align="center">
   <img src="docs/assets/readme/hivpn-startup-report.svg" alt="hiVPN startup report excerpt recovered by flutterdec" width="900">
@@ -37,9 +47,11 @@ The Android side of the app enters Flutter from `MainActivity.onCreate`. This is
 
 `flutterdec` parsed the APK manifest, recovered `com.example.hivpn.MainActivity` as the launcher, and correlated the startup chain from `MainActivity.onCreate` into Flutter JNI bootstrap calls such as `attachToNative` and `nativeAttach`.
 
-**Case 2: Original Logic -> Recovered ARM64 / IR / Pseudocode**
+**Compare 2: App / Dart Source Context -> Recovered ARM64 / IR / Pseudocode**
 
-Original source: Dart runtime whitespace handling, bundled into the hiVPN release APK and published in the Dart SDK:
+The second source card is the public app-side Flutter bridge from hiVPN. The recovered stack below shows what `flutterdec` makes inspectable once the same APK has crossed into the AOT Dart payload: raw ARM64, normalized IR, and readable pseudocode.
+
+To make the logic match visually instead of just structurally, the concrete function shown below is paired with public Dart source for the same whitespace decision logic:
 - Source file: https://github.com/dart-lang/sdk/blob/main/sdk/lib/_internal/vm/lib/string_patch.dart
 
 <p align="center"><strong>Original Source</strong></p>
@@ -50,7 +62,7 @@ Original source: Dart runtime whitespace handling, bundled into the hiVPN releas
 
 This source checks whitespace code points such as `0x20`, `0x85`, `0xA0`, `0x2028`, `0x3000`, and `0xFEFF`.
 
-<p align="center"><strong>Recovered From The APK With flutterdec</strong></p>
+<p align="center"><strong>Recovered 2: From The hiVPN APK With flutterdec</strong></p>
 
 <p align="center"><strong>↓ ARM64</strong></p>
 
@@ -80,7 +92,9 @@ The control-flow graph is then normalized into blocks and edges before readabili
 
 The final pass turns that CFG into readable pseudocode. In this case the output keeps the loop, the compare chain, and a recovered local like `codePoint`, which makes the original intent recognizable even without the original function name.
 
-This is the kind of public example that makes sense to show: the recovered logic is not identical source text, but it clearly points at the same behavior.
+This gives the README both views the tool is meant to show publicly:
+- Android startup recovery from the APK surface
+- Dart-side logic recovery from the AOT payload
 
 **What this proves**
 
