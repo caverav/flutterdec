@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.0//EN" "http://www.w3.org/TR/2001/REC-SVG-20010904/DTD/svg10.dtd">
+<svg width="1535.50" height="609.00" xmlns="http://www.w3.org/2000/svg">
+<rect width="1533.50" height="607.00" fill="#282a36" rx="18.00" ry="18.00" stroke="#26304f" stroke-width="1.00" x="0.50px" y="0.50px"/>
+<g font-family="monospace" font-size="17.00px" fill="#f8f8f2" clip-path="url(#terminalMask)">
+<text x="24.00px" y="62.80px" xml:space="preserve"><tspan fill="#8be9fd">dynamic</tspan> sub_3057dc(<tspan fill="#8be9fd">dynamic</tspan> receiver, <tspan fill="#8be9fd">dynamic</tspan> param1, <tspan fill="#8be9fd">dynamic</tspan> param2, <tspan fill="#8be9fd">int</tspan> value3, <tspan fill="#8be9fd">dynamic</tspan> param4, <tspan fill="#8be9fd">dynamic</tspan> param5, <tspan fill="#8be9fd">dynamic</tspan> param6, <tspan fill="#8be9fd">dynamic</tspan> param7) {
+</text><text x="24.00px" y="86.60px" xml:space="preserve">  <tspan fill="#8be9fd" font-style="italic">final</tspan> <tspan fill="#8be9fd">int</tspan> codePoint <tspan fill="#ff79c6">=</tspan> (value3 <tspan fill="#ff79c6">-</tspan> <tspan fill="#bd93f9">1</tspan>);
+</text><text x="24.00px" y="110.40px" xml:space="preserve">  <tspan fill="#8be9fd">bool</tspan> retryLoop1 <tspan fill="#ff79c6">=</tspan> <tspan fill="#ff79c6">true</tspan>;
+</text><text x="24.00px" y="134.20px" xml:space="preserve">  <tspan fill="#ff79c6">while</tspan> (retryLoop1) {
+</text><text x="24.00px" y="158.00px" xml:space="preserve">    <tspan fill="#ff79c6">if</tspan> (((codePoint <tspan fill="#ff79c6">&gt;&gt;</tspan> <tspan fill="#bd93f9">0x3f</tspan>) <tspan fill="#ff79c6">&amp;</tspan> <tspan fill="#bd93f9">1</tspan>) <tspan fill="#ff79c6">!=</tspan> <tspan fill="#bd93f9">0</tspan>) {
+</text><text x="24.00px" y="181.80px" xml:space="preserve">      <tspan fill="#ff79c6">return</tspan> codePoint;
+</text><text x="24.00px" y="205.60px" xml:space="preserve">    }
+</text><text x="24.00px" y="229.40px" xml:space="preserve">    <tspan fill="#ff79c6">if</tspan> ((classId(param1) <tspan fill="#ff79c6">&lt;&lt;</tspan> <tspan fill="#bd93f9">1</tspan>) <tspan fill="#ff79c6">==</tspan> <tspan fill="#bd93f9">0xbc</tspan>) {
+</text><text x="24.00px" y="253.20px" xml:space="preserve">      <tspan fill="#ff79c6">if</tspan> (codePoint <tspan fill="#ff79c6">&gt;</tspan> <tspan fill="#bd93f9">0x20</tspan>) {
+</text><text x="24.00px" y="277.00px" xml:space="preserve">        <tspan fill="#ff79c6">if</tspan> ((codePoint <tspan fill="#ff79c6">==</tspan> <tspan fill="#bd93f9">0x85</tspan>) <tspan fill="#ff79c6">||</tspan> (codePoint <tspan fill="#ff79c6">==</tspan> <tspan fill="#bd93f9">0xa0</tspan>)) {
+</text><text x="24.00px" y="300.80px" xml:space="preserve">          <tspan fill="#ff79c6">continue</tspan>;
+</text><text x="24.00px" y="324.60px" xml:space="preserve">        }
+</text><text x="24.00px" y="348.40px" xml:space="preserve">        <tspan fill="#ff79c6">return</tspan> codePoint;
+</text><text x="24.00px" y="372.20px" xml:space="preserve">      }
+</text><text x="24.00px" y="396.00px" xml:space="preserve">      <tspan fill="#ff79c6">if</tspan> ((codePoint <tspan fill="#ff79c6">==</tspan> <tspan fill="#bd93f9">0x20</tspan>) <tspan fill="#ff79c6">||</tspan> ((codePoint <tspan fill="#ff79c6">&gt;=</tspan> <tspan fill="#bd93f9">9</tspan>) <tspan fill="#ff79c6">&amp;&amp;</tspan> (codePoint <tspan fill="#ff79c6">&lt;=</tspan> <tspan fill="#bd93f9">0xd</tspan>))) {
+</text><text x="24.00px" y="419.80px" xml:space="preserve">        <tspan fill="#ff79c6">continue</tspan>;
+</text><text x="24.00px" y="443.60px" xml:space="preserve">      }
+</text><text x="24.00px" y="467.40px" xml:space="preserve">      <tspan fill="#ff79c6">return</tspan> codePoint;
+</text><text x="24.00px" y="491.20px" xml:space="preserve">    }
+</text><text x="24.00px" y="515.00px" xml:space="preserve">    retryLoop1 <tspan fill="#ff79c6">=</tspan> <tspan fill="#ff79c6">false</tspan>;
+</text><text x="24.00px" y="538.80px" xml:space="preserve">  }
+</text><text x="24.00px" y="562.60px" xml:space="preserve">}
+</text>
+</g>
+<svg x="0.00px" y="0.00px"><circle cx="13.50" cy="12.00" r="5.50" fill="#FF5A54"/><circle cx="32.50" cy="12.00" r="5.50" fill="#E6BF29"/><circle cx="51.50" cy="12.00" r="5.50" fill="#52C12B"/></svg></svg>

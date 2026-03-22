@@ -13,39 +13,54 @@ It takes an APK (or `libapp.so`) and emits readable pseudo-Dart plus optional IR
 
 ## See The Pipeline
 
-Built from the checked-in `structured_loop_emit` golden fixture, so each stage stays versioned with the repository.
+Built from real public APKs and their public source repositories, not a synthetic test fixture.
 
 <p align="center">
-  <img src="docs/assets/readme/reference-loop-dark.svg" alt="Equivalent Dart source intent for the showcase function" width="900">
+  <img src="docs/assets/readme/hivpn-mainactivity.svg" alt="hiVPN MainActivity source snippet" width="900">
 </p>
 
-**Equivalent Source Intent**
+**Case 1: APK Startup Analysis From Real Android Source**
 
-This is the source-level shape a human would write for the same loop.
+Source app: `hiVPN v1.0.0` released on October 29, 2025. `MainActivity` and the manifest launcher are public in the repository:
+- Source repo: https://github.com/Mr-Dark-debug/hivpn
+- Release APK: https://github.com/Mr-Dark-debug/hivpn/releases/tag/release
 
 <p align="center">
-  <img src="docs/assets/readme/arm64-loop-dark.svg" alt="ARM64 fragment for the showcase function" width="900">
+  <img src="docs/assets/readme/hivpn-startup-report.svg" alt="hiVPN startup report excerpt recovered by flutterdec" width="900">
 </p>
 
-**ARM64 Fragment**
-
-The branch pattern is still raw here: one increment, one conditional branch, one back-edge.
+`flutterdec` parsed the APK manifest, recovered `com.example.hivpn.MainActivity` as the launcher, and correlated the startup chain from `MainActivity.onCreate` into Flutter JNI bootstrap calls such as `attachToNative` and `nativeAttach`.
 
 <p align="center">
-  <img src="docs/assets/readme/ir-loop-dark.svg" alt="Function IR for the showcase function" width="900">
+  <img src="docs/assets/readme/hivpn-asm-real.svg" alt="Real ARM64 snippet decompiled from hiVPN" width="900">
 </p>
 
-**Function IR**
+**Case 2: Real ARM64 -> IR -> Pseudocode**
 
-This is the intermediate control-flow view before final structuring into higher-level pseudocode.
+Same app, same release APK. This function is anonymous in the output, but it still shows the point of the pipeline: branch-heavy ARM64 becomes structured IR, then a readable loop with a recovered local like `codePoint`.
 
 <p align="center">
-  <img src="docs/assets/readme/decompiled-loop-dark.svg" alt="Recovered pseudo-Dart for the showcase function" width="900">
+  <img src="docs/assets/readme/hivpn-ir-real.svg" alt="IR summary for the same hiVPN function" width="900">
 </p>
 
-**Recovered Pseudocode**
+<p align="center">
+  <img src="docs/assets/readme/hivpn-pseudocode-real.svg" alt="Recovered pseudocode for the same hiVPN function" width="900">
+</p>
 
-For a real APK, the workflow is the same: start from `asm/*.s`, verify the CFG shape in `ir/*.json`, and treat `pseudocode/*.dartpseudo` as the readable layer on top of those earlier artifacts.
+This example is intentionally honest about current limits: the original source name is not recovered, but control flow, loop shape, comparisons, and some variable structure are.
+
+<p align="center">
+  <img src="docs/assets/readme/localsend-diff.svg" alt="LocalSend diff summary across two public releases" width="900">
+</p>
+
+**Case 3: Cross-Version Diff On Public Releases**
+
+Source app: `LocalSend`
+- `v1.16.1` released on November 5, 2024
+- `v1.17.0` released on February 20, 2025
+- Releases: https://github.com/localsend/localsend/releases
+
+`flutterdec diff` compared the two arm64 APKs directly and emitted added/removed/common function summaries plus package-level change counts. This is useful when you care more about what changed between versions than about reconstructing a single function in isolation.
 
 ## What You Inspect
 
