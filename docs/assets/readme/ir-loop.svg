@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.0//EN" "http://www.w3.org/TR/2001/REC-SVG-20010904/DTD/svg10.dtd">
+<svg width="374.36" height="359.80" xmlns="http://www.w3.org/2000/svg">
+<rect width="372.36" height="357.80" fill="#ffffff" rx="14.00" ry="14.00" stroke="#d7d1c7" stroke-width="1.00" x="0.50px" y="0.50px"/>
+<g font-family="monospace" font-size="15.00px" fill="#-00001" clip-path="url(#terminalMask)">
+<text x="22.00px" y="57.25px" xml:space="preserve">FunctionIr goldenSimpleLoop @ 0xd000
+</text><text x="22.00px" y="77.50px" xml:space="preserve">
+</text><text x="22.00px" y="97.75px" xml:space="preserve">bb0 -&gt; bb1
+</text><text x="22.00px" y="118.00px" xml:space="preserve">  jump   b #0xd004
+</text><text x="22.00px" y="138.25px" xml:space="preserve">
+</text><text x="22.00px" y="158.50px" xml:space="preserve">bb1 -&gt; bb2, bb3
+</text><text x="22.00px" y="178.75px" xml:space="preserve">  other  add x0, x0, #1
+</text><text x="22.00px" y="199.00px" xml:space="preserve">  branch cbnz x0, #0xd010
+</text><text x="22.00px" y="219.25px" xml:space="preserve">
+</text><text x="22.00px" y="239.50px" xml:space="preserve">bb2 -&gt; bb1
+</text><text x="22.00px" y="259.75px" xml:space="preserve">  jump   b #0xd004
+</text><text x="22.00px" y="280.00px" xml:space="preserve">
+</text><text x="22.00px" y="300.25px" xml:space="preserve">bb3
+</text><text x="22.00px" y="320.50px" xml:space="preserve">  return ret
+</text>
+</g>
+<svg x="0.00px" y="0.00px"><circle cx="13.50" cy="12.00" r="5.50" fill="#FF5A54"/><circle cx="32.50" cy="12.00" r="5.50" fill="#E6BF29"/><circle cx="51.50" cy="12.00" r="5.50" fill="#52C12B"/></svg></svg>

@@ -1,0 +1,14 @@
+FunctionIr goldenSimpleLoop @ 0xd000
+
+bb0 -> bb1
+  jump   b #0xd004
+
+bb1 -> bb2, bb3
+  other  add x0, x0, #1
+  branch cbnz x0, #0xd010
+
+bb2 -> bb1
+  jump   b #0xd004
+
+bb3
+  return ret
