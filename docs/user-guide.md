@@ -12,22 +12,57 @@ Inputs:
 - APK
 - `libapp.so`
 
-## Setup
+## Install And Run
 
-1. Run with `nix run` (recommended):
+If you want the shortest path:
+
+- run without installing: `nix run`
+- install persistently with Nix: `nix profile install`
+- install a release binary
+
+### Run Without Installing
+
+From GitHub:
 
 ```bash
 nix run github:caverav/flutterdec -- --help
 nix run github:caverav/flutterdec -- info ./sample.apk --json
+nix run github:caverav/flutterdec -- decompile ./sample.apk -o ./out
 ```
 
-From this repository checkout:
+From a local checkout:
 
 ```bash
 nix run . -- --help
+nix run . -- info ./sample.apk --json
+nix run . -- decompile ./sample.apk -o ./out
 ```
 
-2. Install from release binary (`v0.1.0-alpha.2`):
+### Install Persistently With Nix
+
+Install from GitHub:
+
+```bash
+nix profile install github:caverav/flutterdec
+flutterdec --help
+```
+
+Install from a local checkout:
+
+```bash
+nix profile install .
+flutterdec --help
+```
+
+Update later:
+
+```bash
+nix profile upgrade flutterdec
+```
+
+### Install From A Release Binary
+
+Current prerelease: [`v0.1.0-alpha.2`](https://github.com/caverav/flutterdec/releases/tag/v0.1.0-alpha.2)
 
 Linux x64:
 
@@ -51,9 +86,9 @@ Other platforms and future tags:
 
 [Releases page](https://github.com/caverav/flutterdec/releases)
 
-3. Other options:
+### Other Ways To Run It
 
-Install to user Cargo bin (requires Nix with flakes enabled):
+Install into the user Cargo bin:
 
 ```bash
 nix develop -c cargo install --path crates/flutterdec-cli
@@ -64,14 +99,60 @@ Run from source without installing:
 
 ```bash
 nix develop -c cargo run -p flutterdec-cli -- --help
+nix develop -c cargo run -p flutterdec-cli -- info ./sample.apk --json
+nix develop -c cargo run -p flutterdec-cli -- decompile ./sample.apk -o ./out
 ```
 
-Build local release binary:
+Build a local release binary:
 
 ```bash
 nix develop -c cargo build -p flutterdec-cli --release
 ./target/release/flutterdec --help
 ```
+
+## First Use
+
+If this is your first run, this is the shortest useful path.
+
+1. Inspect the target:
+
+```bash
+flutterdec info ./sample.apk --json
+```
+
+For APK inputs, `info` also reports Android startup summary fields:
+
+- `android_startup_present`
+- `android_startup_confidence`
+- `android_startup_entrypoint_count`
+- `android_startup_flutter_activity_count`
+
+If adapter metadata is available, `info` also reports:
+
+- `app_package_counts_top`
+- `adapter_kind`
+- `manifest_entry_present`
+- `adapter_snapshot_hash_match`
+- `compatibility_warnings`
+
+2. Install the adapter for the detected Dart hash:
+
+```bash
+flutterdec adapter install --dart-hash <HASH>
+flutterdec adapter list
+```
+
+3. Decompile:
+
+```bash
+flutterdec decompile ./sample.apk -o ./out
+```
+
+4. Start with:
+
+- `out/pseudocode/*.dartpseudo`
+- `out/report.json`
+- `out/quality.json`
 
 ## Basic Commands
 
@@ -81,29 +162,51 @@ Inspect target metadata:
 flutterdec info ./sample.apk --json
 ```
 
-If adapter metadata is available, `info` reports `app_package_counts_top` plus compatibility signals (`adapter_kind`, `manifest_entry_present`, `adapter_snapshot_hash_match`, `compatibility_warnings`).
-For APK inputs, `info` also reports Android startup summary fields: `android_startup_present`, `android_startup_confidence`, `android_startup_entrypoint_count`, and `android_startup_flutter_activity_count`.
-
-Install adapter for Dart hash:
-
-```bash
-flutterdec adapter install --dart-hash <HASH>
-flutterdec adapter list
-```
-
-Decompile:
+Decompile with the default app-focused scope:
 
 ```bash
 flutterdec decompile ./sample.apk -o ./out
 ```
 
+Decompile with extra artifacts:
+
+```bash
+flutterdec decompile ./sample.apk -o ./out --emit-asm --emit-ir
+```
+
+Compare two builds at recovered-function level:
+
+```bash
+flutterdec diff --old ./old.apk --new ./new.apk -o ./out-diff --json
+```
+
+Generate a Ghidra import script with recovered symbols:
+
+```bash
+flutterdec decompile ./sample.apk -o ./out --emit-ghidra-script
+```
+
+Generate an IDA import script with recovered symbols:
+
+```bash
+flutterdec decompile ./sample.apk -o ./out --emit-ida-script
+```
+
+## Function Scope
+
 Default scope is app-focused:
 
-- `app-unknown` (default): app (`package:*`) + unknown ownership functions
+- `app-unknown` (default): app (`package:*`) plus unknown ownership functions
 - `app`: only app (`package:*`) functions
-- `all`: include Flutter/Dart/runtime/framework internals too
+- `all`: include Flutter, Dart runtime, and framework internals too
 
-Limit output to selected app packages (repeat `--app-package` as needed):
+Include everything:
+
+```bash
+flutterdec decompile ./sample.apk -o ./out --function-scope all
+```
+
+Limit output to selected app packages:
 
 ```bash
 flutterdec decompile ./sample.apk -o ./out \
@@ -113,17 +216,7 @@ flutterdec decompile ./sample.apk -o ./out \
 
 Tip: if you are not sure about package names, check `report.json` under `function_scope.app_package_counts_top`.
 
-Include everything:
-
-```bash
-flutterdec decompile ./sample.apk -o ./out --function-scope all
-```
-
-Decompile with extra artifacts:
-
-```bash
-flutterdec decompile ./sample.apk -o ./out --emit-asm --emit-ir
-```
+## Single-Function Targeting
 
 Decompile and disassemble one specific function:
 
@@ -142,35 +235,9 @@ flutterdec decompile ./sample.apk -o ./out \
 ```
 
 `--target` accepts `id:<N>`, `va:0x<ADDR>`, `0x<ADDR>`, or `<N>`.
-When `<N>` matches multiple functions (id and entry address), the command fails and asks for explicit `id:` or `va:`.
+When `<N>` matches multiple functions, the command fails and asks for explicit `id:` or `va:`.
 Target mode emits only the matched function artifacts and reports selection details in `report.json.target_selection`.
 If the match is outside current scope filters, target mode can override scope automatically for that function.
-
-Compare two builds at recovered-function level:
-
-```bash
-flutterdec diff --old ./old.apk --new ./new.apk -o ./out-diff --json
-```
-
-Diff JSON output also includes `added_packages_top` and `removed_packages_top` to quickly see where most churn happened.
-
-Include raw opcode words in asm output:
-
-```bash
-flutterdec decompile ./sample.apk -o ./out --emit-asm --emit-asm-opcodes
-```
-
-Generate a Ghidra import script with recovered symbols:
-
-```bash
-flutterdec decompile ./sample.apk -o ./out --emit-ghidra-script
-```
-
-Generate an IDA import script with recovered symbols:
-
-```bash
-flutterdec decompile ./sample.apk -o ./out --emit-ida-script
-```
 
 ## Analysis Engine Profiles
 
@@ -192,20 +259,20 @@ Adapter backend options:
 
 - `--adapter-backend auto` (default): attempt Blutter bridge backend when configured, otherwise fallback to internal adapter
 - `--adapter-backend internal`: force internal adapter only
-- `--adapter-backend blutter`: require Blutter bridge backend (no fallback)
+- `--adapter-backend blutter`: require Blutter bridge backend with no fallback
 - `--require-snapshot-hash-match`: fail if adapter snapshot hash does not match loader snapshot hash
 
 Blutter bridge environment variables:
 
-- `FLUTTERDEC_BLUTTER_CMD`: full command used to launch Blutter (example: `python3 /opt/blutter/blutter.py`)
-- `FLUTTERDEC_BLUTTER_PY`: direct path to `blutter.py` (uses current Python interpreter)
+- `FLUTTERDEC_BLUTTER_CMD`: full command used to launch Blutter, for example `python3 /opt/blutter/blutter.py`
+- `FLUTTERDEC_BLUTTER_PY`: direct path to `blutter.py`
 
 Nix setup note:
 
-- In `nix develop`, `FLUTTERDEC_BLUTTER_CMD` is exported automatically to a Nix-managed `flutterdec-blutter` wrapper.
-- Direct wrapper invocation is available with `nix run .#blutter-bridge -- --help`.
+- in `nix develop`, `FLUTTERDEC_BLUTTER_CMD` is exported automatically to a Nix-managed `flutterdec-blutter` wrapper
+- direct wrapper invocation is available with `nix run .#blutter-bridge -- --help`
 
-Per-feature toggles (override profile defaults):
+Per-feature toggles:
 
 - `--with-canonical-model-symbols` / `--no-canonical-model-symbols`
 - `--with-pool-value-hints` / `--no-pool-value-hints`
@@ -213,8 +280,6 @@ Per-feature toggles (override profile defaults):
 - `--with-semantic-reporting` / `--no-semantic-reporting`
 - `--with-bootflow-category-seeds` / `--no-bootflow-category-seeds`
 - `--with-apk-startup-analysis` / `--no-apk-startup-analysis`
-
-Note: each `--with-*` conflicts with its matching `--no-*` flag.
 
 ## Quality Gates
 
@@ -236,9 +301,9 @@ flutterdec decompile ./sample.apk -o ./out \
   --min-disassembly-ratio 0.0
 ```
 
-## Name Recovery with Engine Symbols
+## Name Recovery With Engine Symbols
 
-Generate direct-call target mapping from stripped/unstripped engine pair:
+Generate direct-call target mapping from a stripped/unstripped engine pair:
 
 ```bash
 flutterdec map-symbols \
@@ -255,28 +320,23 @@ flutterdec decompile ./sample.apk -o ./out \
   --extra-symbol-elf ./libflutter.unstripped.so
 ```
 
-When the cached build id matches the APK’s embedded `libflutter.so`, `decompile` auto-loads the registered target summary and reports the match under `report.json.engine_symbol_ingestion`.
+When the cached build id matches the APK's embedded `libflutter.so`, `decompile` auto-loads the registered target summary and reports the match under `report.json.engine_symbol_ingestion`.
 
 ## Outputs
 
-Written under output directory:
+Main output artifacts:
 
 - `pseudocode/*.dartpseudo`
-- `quality.json`
 - `report.json`
-- `diff_report.json` with `flutterdec diff`
-- `asm/*.s` with `--emit-asm`
-- opcode-prefixed asm lines with `--emit-asm --emit-asm-opcodes`
-- `ghidra_apply_symbols.py` with `--emit-ghidra-script` (symbol names + pool load comments)
-- `ida_apply_symbols.py` with `--emit-ida-script` (symbol names + pool load comments)
-- `ir/*.json` with `--emit-ir`
+- `quality.json`
+- `asm/*.s` if `--emit-asm`
+- `ir/*.json` if `--emit-ir`
+- `ghidra_apply_symbols.py` if `--emit-ghidra-script`
+- `ida_apply_symbols.py` if `--emit-ida-script`
+- `diff_report.json` if you run `flutterdec diff`
 
-`report.json` includes compatibility diagnostics (schema support, manifest-entry presence, and snapshot-hash alignment).
-For APK inputs it also includes:
+Most users should start by reading:
 
-- `android_manifest` with manifest-derived launcher, deeplink, and activity signals
-- `android_startup` with `classes*.dex` startup evidence, JNI/bootstrap stages, and recovered `DartEntrypoint` callsites when present
-- `bootflow_discovery` entries tagged by `source` (`adapter`, `manifest`, `apk_startup`); `apk_startup` entries may carry `target_va: null` when the Android startup path is known but the Dart-side function has not been resolved yet
-- recovered `android_startup.dart_entrypoints` items include `function_name`, `library_uri`, and `app_bundle_path` when those strings are directly visible in APK bytecode or returned by simple app helper methods
-- `android_startup.bootstrap_chain` reports ordered startup-stage observations per source method and, when app-defined method edges can be correlated, emits `paths` that connect entry methods such as `MainActivity.onCreate` or `configureFlutterEngine` to framework stages like `FlutterEngine.<init>`, `FlutterJNI.attachToNative`, and `DartExecutor.executeDartEntrypoint`; each path also carries `anchor_kind`, `anchor_component_name`, and `anchor_confidence` so you can see whether it is tied back to a manifest launcher/deeplink/application component or only to a heuristic startup fragment
-- `engine_symbol_ingestion` reports whether a local cached engine symbol target summary was auto-loaded by exact build-id match
+- `pseudocode/*.dartpseudo`
+- `report.json.android_startup`
+- `quality.json`
