@@ -647,7 +647,13 @@ def _run_blutter_dump(input_path: Optional[str], libapp_path: Optional[str]) -> 
     lock_file = lock_dir / "blutter-run.lock"
     with lock_file.open("w") as lock_fp:
         fcntl.flock(lock_fp.fileno(), fcntl.LOCK_EX)
-        proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        proc = subprocess.run(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            shell=False,
+        )
         fcntl.flock(lock_fp.fileno(), fcntl.LOCK_UN)
     if proc.returncode != 0:
         raise RuntimeError(
