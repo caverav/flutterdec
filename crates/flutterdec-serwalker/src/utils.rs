@@ -1,9 +1,15 @@
-use std::vec;
 
 struct DataSnapshot
 {
     clusters: Vec<&'static mut dyn Cluster>,
-    
+
+    magic_bytes: u32,
+    size: u64,
+    kind: u64,
+
+    version: String,
+    features: String,
+
     num_base_objects: u64,
     num_objects: u64,
     num_clusters: u64,
@@ -23,7 +29,7 @@ macro_rules! DECLARE_FIXED_LENGTH_CLUSTER
         struct $name
         {
             tags: u32,
-            count: u64
+            count: u64,
         }
 
         impl Cluster for $name 
@@ -63,5 +69,15 @@ macro_rules! DECLARE_VARIABLE_LENGTH_CLUSTER
     };
 }
 
-DECLARE_FIXED_LENGTH_CLUSTER!(OneByteStringCluster, 16);
-DECLARE_FIXED_LENGTH_CLUSTER!(TwoByteStringCluster, 16);
+// These are the objects that call ReadAllocFixedSize during deserialization,
+// whose fill cluster size is uniquely determined by sizeof(Object) * num_of_objects
+// and alloc cluster size is tags (u32) + num_of_objects (ULEB128)
+
+DECLARE_FIXED_LENGTH_CLUSTER!(OneByteStringCluster, 2);
+DECLARE_FIXED_LENGTH_CLUSTER!(TwoByteStringCluster, 8);
+DECLARE_FIXED_LENGTH_CLUSTER!(StringCluster, 8);
+DECLARE_FIXED_LENGTH_CLUSTER!(MintCluster, 16);
+DECLARE_FIXED_LENGTH_CLUSTER!(DoubleCluster, 16);
+DECLARE_FIXED_LENGTH_CLUSTER!(TypeParameterCluster, 32);
+DECLARE_FIXED_LENGTH_CLUSTER!(TypeCluster, 32);
+DECLARE_FIXED_LENGTH_CLUSTER!(TypeArgumentsCluster, 32);
