@@ -18,6 +18,7 @@ use runners_symbols::{
     build_pool_value_hints, canonical_standard_model_name, collect_pool_metadata_stats,
     collect_symbol_quality_counts, infer_symbol_name_quality, merge_symbol_name,
     symbol_name_quality_from_name_kind, SymbolMergeStats, SymbolNameQuality,
+    SymbolQualityCounts,
 };
 #[cfg(test)]
 use runners_symbols::{is_generic_symbol_name, normalize_external_symbol_name};
@@ -142,6 +143,67 @@ fn backend_label(value: Option<AdapterBackend>) -> &'static str {
         Some(AdapterBackend::Blutter) => "blutter",
         None => "unknown",
     }
+}
+
+fn format_quality_gate_failure_message(
+    report: &QualityReport,
+    quality_path: &Path,
+    report_path: &Path,
+    input_path: &Path,
+    resolved_backend: Option<AdapterBackend>,
+    loaded_adapter_kind: &str,
+    symbol_quality_counts: &SymbolQualityCounts,
+) -> String {
+    let mut out = String::new();
+    let _ = writeln!(
+        out,
+        "quality gate failed after artifact generation. see {} and {}",
+        quality_path.display(),
+        report_path.display()
+    );
+    if !report.failures.is_empty() {
+        let _ = writeln!(out, "reasons: {}", report.failures.join("; "));
+    }
+    let _ = writeln!(
+        out,
+        "summary: placeholder_ifs={} unresolved_cf={} indirect_call_ratio={:.3} disassembly_ratio={:.3}",
+        report.placeholder_ifs,
+        report.unresolved_cf,
+        report.indirect_call_ratio,
+        report.disassembly_ratio
+    );
+
+    let mut notes: Vec<String> = Vec::new();
+    if !is_apk_input_path(input_path) {
+        notes.push("input is not an APK, so manifest/startup evidence is unavailable".to_string());
+    }
+    if resolved_backend == Some(AdapterBackend::Internal) {
+        notes.push("resolved backend is internal".to_string());
+    }
+    if loaded_adapter_kind == "dynamic_snapshot_string_model_v1" {
+        notes.push("adapter kind is dynamic_snapshot_string_model_v1".to_string());
+    }
+    if symbol_quality_counts.placeholder > 0
+        && symbol_quality_counts.exact == 0
+        && symbol_quality_counts.external == 0
+        && symbol_quality_counts.heuristic == 0
+    {
+        notes.push("all recovered function names are still placeholders".to_string());
+    }
+    if !notes.is_empty() {
+        let _ = writeln!(out, "context: {}", notes.join("; "));
+    }
+
+    out.push_str(
+        "artifacts were still written. for exploratory runs while flutterdec is still maturing, you can relax the gates, for example:\n",
+    );
+    out.push_str(
+        "  flutterdec decompile <input> -o <out> \\\n    --max-placeholder-ifs 999999 \\\n    --max-unresolved-cf 999999 \\\n    --max-indirect-call-ratio 1.0 \\\n    --min-disassembly-ratio 0.0\n",
+    );
+    out.push_str(
+        "you can also improve recovery by decompiling the APK instead of raw libapp.so, using a stronger backend, or providing matched engine symbols.",
+    );
+    out
 }
 
 fn is_apk_input_path(input_path: &Path) -> bool {
@@ -2001,7 +2063,19 @@ pub fn run_decompile(
     )?;
 
     if !report.passed {
-        bail!("quality gate failed. see {}", quality_path.display());
+        let report_path = opt.out_dir.join("report.json");
+        bail!(
+            "{}",
+            format_quality_gate_failure_message(
+                &report,
+                &quality_path,
+                &report_path,
+                input_path,
+                resolved_backend,
+                &loaded_adapter_kind,
+                &symbol_quality_counts,
+            )
+        );
     }
 
     Ok(report)

@@ -29,6 +29,60 @@
     }
 
     #[test]
+    fn quality_gate_failure_message_explains_strict_placeholder_rejection() {
+        let report = QualityReport {
+            mode: "strict".to_string(),
+            passed: false,
+            failures: vec!["placeholder if-count exceeded threshold".to_string()],
+            function_count: 5394,
+            disassembled_function_count: 5394,
+            disassembly_ratio: 1.0,
+            total_calls: 77037,
+            indirect_calls: 9674,
+            indirect_call_ratio: 0.12557602191154899,
+            placeholder_ifs: 1691,
+            unresolved_cf: 0,
+            raw_register_calls: 9674,
+            semantic_direct_calls: 37,
+            semantic_indirect_calls: 10,
+            dispatch_selector_calls: 1132,
+            target_va_symbol_calls: 0,
+            block_helper_refs: 0,
+            raw_arg_name_refs: 0,
+            raw_register_name_refs: 0,
+            placeholder_cond_markers: 1618,
+            omitted_path_markers: 827,
+            loop_backedge_markers: 1,
+        };
+        let symbol_quality_counts = SymbolQualityCounts {
+            placeholder: 5394,
+            heuristic: 0,
+            external: 0,
+            exact: 0,
+        };
+
+        let msg = format_quality_gate_failure_message(
+            &report,
+            std::path::Path::new("./out/quality.json"),
+            std::path::Path::new("./out/report.json"),
+            std::path::Path::new("libapp.so"),
+            Some(AdapterBackend::Internal),
+            "dynamic_snapshot_string_model_v1",
+            &symbol_quality_counts,
+        );
+
+        assert!(msg.contains("quality gate failed after artifact generation"));
+        assert!(msg.contains("./out/quality.json"));
+        assert!(msg.contains("./out/report.json"));
+        assert!(msg.contains("placeholder if-count exceeded threshold"));
+        assert!(msg.contains("input is not an APK"));
+        assert!(msg.contains("resolved backend is internal"));
+        assert!(msg.contains("all recovered function names are still placeholders"));
+        assert!(msg.contains("--max-placeholder-ifs 999999"));
+        assert!(msg.contains("artifacts were still written"));
+    }
+
+    #[test]
     fn builds_ghidra_symbol_script_with_sorted_entries_and_escaped_names() {
         let mut symbols = HashMap::new();
         symbols.insert(0x2000, "sub_2000".to_string());
