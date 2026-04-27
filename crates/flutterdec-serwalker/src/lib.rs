@@ -1,5 +1,5 @@
-mod utils;
 mod constants;
+mod utils;
 
 mod cluster;
 mod raw_object;
