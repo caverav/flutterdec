@@ -1,83 +1,54 @@
+use paste::paste;
+use crate::cluster::Cluster;
+use crate::stream::Stream;
+use crate::constants::UNSIGNED_M;
 
-struct DataSnapshot
-{
-    clusters: Vec<&'static mut dyn Cluster>,
-
-    magic_bytes: u32,
-    size: u64,
-    kind: u64,
-
-    version: String,
-    features: String,
-
-    num_base_objects: u64,
-    num_objects: u64,
-    num_clusters: u64,
-
-    instr_table_len: u64,
-    instr_table_offset: u64,
-}
-trait Cluster
-{
-    fn is_fixed_len(&self) -> bool;
-    fn get_size(&self) -> usize;
-}
-
+#[macro_export]
 macro_rules! DECLARE_FIXED_LENGTH_CLUSTER
 {
-    ($name:ident, $instance_size:literal) => {
-        struct $name
-        {
-            tags: u32,
-            count: u64,
-        }
-
-        impl Cluster for $name 
-        {
-            fn get_size(&self) -> usize
+    ($name:ident, $fill_impl:block) => {
+        ::paste::paste! { // this is ugly, but the language doesn't support identifier concatenation
+            struct [<$name Cluster>]
             {
-                $instance_size
+                tags: u32,
+                obj_count: u64,
+
+                start_of_fill: usize,
+                start_of_alloc: usize,
+
+                end_of_fill: usize,
+                end_of_alloc: usize,
+
+                objs: Vec<(u64, Box<$name>)> // a pair (ref_id, object)
             }
 
-            fn is_fixed_len(&self) -> bool
+            impl Cluster for [<$name Cluster>] 
             {
-                true
+                fn read_alloc(&mut self, last_ref_id: &mut u64, stream: &mut Stream) -> usize // read tags and count
+                {
+                    let initial_pos = stream.get_current_pos();
+                    self.start_of_alloc = initial_pos;
+
+                    self.obj_count = stream.read_modified_leb128(UNSIGNED_M);
+
+                    for obj_idx in 0..self.obj_count
+                    {
+                        self.objs.push((*last_ref_id + obj_idx, Box::<$name>::default()));
+                    }
+
+                    *last_ref_id = *last_ref_id + self.obj_count;
+
+                    stream.get_current_pos() - initial_pos
+                }
+
+                fn read_fill(&mut self, last_ref_id: &mut u64, stream: &mut Stream) -> usize
+                $fill_impl
+
+                fn is_fixed_len(&self) -> bool
+                {
+                    true
+                }
             }
         }
     };
 }
-
-macro_rules! DECLARE_VARIABLE_LENGTH_CLUSTER
-{
-    ($name:ident, $get_length_impl:block) => {
-        struct $name
-        {
-            tags: u32,
-            count: u64
-        }
-
-        impl Cluster for $name 
-        {
-            fn get_size(&self) -> usize
-                $get_length_impl
-
-            fn is_fixed_len(&self) -> bool
-            {
-                false
-            }
-        }
-    };
-}
-
-// These are the objects that call ReadAllocFixedSize during deserialization,
-// whose fill cluster size is uniquely determined by sizeof(Object) * num_of_objects
-// and alloc cluster size is tags (u32) + num_of_objects (ULEB128)
-
-DECLARE_FIXED_LENGTH_CLUSTER!(OneByteStringCluster, 2);
-DECLARE_FIXED_LENGTH_CLUSTER!(TwoByteStringCluster, 8);
-DECLARE_FIXED_LENGTH_CLUSTER!(StringCluster, 8);
-DECLARE_FIXED_LENGTH_CLUSTER!(MintCluster, 16);
-DECLARE_FIXED_LENGTH_CLUSTER!(DoubleCluster, 16);
-DECLARE_FIXED_LENGTH_CLUSTER!(TypeParameterCluster, 32);
-DECLARE_FIXED_LENGTH_CLUSTER!(TypeCluster, 32);
-DECLARE_FIXED_LENGTH_CLUSTER!(TypeArgumentsCluster, 32);
