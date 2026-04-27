@@ -20,7 +20,7 @@ pub fn read_cluster_fill() {
 }
 
 pub fn read_and_decompress_smi(stream: &mut Stream) -> Smi {
-    let raw_smi = stream.read_modified_leb128(UNSIGNED_M); // smis are always written as signed
+    let raw_smi = stream.read_modified_leb128(SIGNED_M); // smis are always written as signed
 
     (raw_smi as Smi) >> constants::SMI_SHIFT
 }

@@ -10,7 +10,7 @@ pub struct Stream<'a> {
 impl<'a> Stream<'a> {
     fn seek(&mut self, pos: usize) // might be useful?
     {
-        if self.byte_stream.len() > pos && pos > 0 {
+        if self.byte_stream.len() > pos && pos >= 0 {
             self.curr_stream_offset = pos;
         }
     }
@@ -97,14 +97,15 @@ impl<'a> Stream<'a> {
        to have static debug info.
     */
     pub fn read_c_string(&mut self) -> String {
-        let first_nullbyte_pos = self
-            .byte_stream
+        
+        let first_nullbyte_pos = 
+             self.byte_stream[self.curr_stream_offset..]
             .iter()
             .position(|&b| b == 0x00)
-            .unwrap_or(self.byte_stream.len());
+            .expect("Reading a string until the end of the stream? Something definitely went wrong...");
 
-        let raw_str = &self.byte_stream[..=first_nullbyte_pos];
-        self.advance_pos(raw_str.len());
+        let raw_str = &self.byte_stream[self.curr_stream_offset..self.curr_stream_offset + first_nullbyte_pos];
+        self.advance_pos(raw_str.len() + 1);
 
         String::from_utf8(raw_str.to_vec()).unwrap() // it should be horrible if for some reason a string just isn't there
     }
