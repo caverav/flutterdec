@@ -124,7 +124,7 @@ pub struct UnlinkedCall {
 }
 
 #[derive(Default)]
-pub struct String_ {
+pub struct String_ { // added underscore so there's no conflict between this type and rust's String
     pub hash: Smi,   // Smi
     pub length: Smi, // Smi
 }
