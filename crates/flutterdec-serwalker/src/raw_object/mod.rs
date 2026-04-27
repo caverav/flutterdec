@@ -1,4 +1,3 @@
-
 type Smi = i64; // Using i64 for Smi fields to be decompressed
 
 // --- Fixed-Size Objects with defined fields ---
@@ -43,24 +42,24 @@ pub struct TypeParameters<'a> {
 
 #[derive(Default)]
 pub struct PatchClass<'a> {
-    pub wrapped_class: Option<&'a mut Class<'a>>,                   // ClassPtr
-    pub script: Option<&'a mut Script<'a>>,                          // ScriptPtr
+    pub wrapped_class: Option<&'a mut Class<'a>>, // ClassPtr
+    pub script: Option<&'a mut Script<'a>>,       // ScriptPtr
     pub kernel_program_info: Option<&'a mut KernelProgramInfo<'a>>, // KernelProgramInfoPtr
 }
 
 #[derive(Default)]
 pub struct ClosureData<'a> {
-    pub context_scope: Option<&'a mut ContextScope>,   // ContextScopePtr
+    pub context_scope: Option<&'a mut ContextScope>, // ContextScopePtr
     pub parent_function: Option<&'a mut Function<'a>>, // FunctionPtr
-    pub closure: Option<&'a mut Closure<'a>>,          // ClosurePtr
+    pub closure: Option<&'a mut Closure<'a>>,        // ClosurePtr
     pub packed_fields: u32,
 }
 
 #[derive(Default)]
 pub struct FfiTrampolineData<'a> {
-    pub signature_type: Option<&'a mut Type<'a>>,                  // TypePtr
-    pub c_signature: Option<&'a mut FunctionType<'a>>,             // FunctionTypePtr
-    pub callback_target: Option<&'a mut Function<'a>>,             // FunctionPtr
+    pub signature_type: Option<&'a mut Type<'a>>, // TypePtr
+    pub c_signature: Option<&'a mut FunctionType<'a>>, // FunctionTypePtr
+    pub callback_target: Option<&'a mut Function<'a>>, // FunctionPtr
     pub callback_exceptional_return: Option<&'a mut Instance<'a>>, // InstancePtr
     pub ffi_function_kind: u8,
     pub callback_id: i32,
@@ -68,14 +67,14 @@ pub struct FfiTrampolineData<'a> {
 
 #[derive(Default)]
 pub struct Field<'a> {
-    pub name: String,                    // StringPtr -> Raw String
-    pub owner: Option<&'a mut Object<'a>>,            // ObjectPtr
-    pub type_field: Option<&'a mut AbstractType<'a>>, // AbstractTypePtr
+    pub name: String,                                       // StringPtr -> Raw String
+    pub owner: Option<&'a mut Object<'a>>,                  // ObjectPtr
+    pub type_field: Option<&'a mut AbstractType<'a>>,       // AbstractTypePtr
     pub initializer_function: Option<&'a mut Function<'a>>, // FunctionPtr
-    pub host_offset_or_field_id: Smi,                 // Smi
-    pub guarded_list_length: Smi,                     // Smi
-    pub exact_type: Option<&'a mut AbstractType<'a>>, // AbstractTypePtr
-    pub dependent_code: Option<&'a mut WeakArray<'a>>, // WeakArrayPtr
+    pub host_offset_or_field_id: Smi,                       // Smi
+    pub guarded_list_length: Smi,                           // Smi
+    pub exact_type: Option<&'a mut AbstractType<'a>>,       // AbstractTypePtr
+    pub dependent_code: Option<&'a mut WeakArray<'a>>,      // WeakArrayPtr
     pub kernel_offset: i32,
     pub guarded_list_length_in_object_offset: i8,
     pub static_type_exactness_state: i8,
@@ -85,25 +84,25 @@ pub struct Field<'a> {
 
 #[derive(Default)]
 pub struct Namespace<'a> {
-    pub target: Option<&'a mut Library<'a>>,     // LibraryPtr
-    pub show_names: Option<&'a mut Array<'a>>,   // ArrayPtr
-    pub hide_names: Option<&'a mut Array<'a>>,   // ArrayPtr
-    pub owner: Option<&'a mut Library<'a>>,      // LibraryPtr
+    pub target: Option<&'a mut Library<'a>>,   // LibraryPtr
+    pub show_names: Option<&'a mut Array<'a>>, // ArrayPtr
+    pub hide_names: Option<&'a mut Array<'a>>, // ArrayPtr
+    pub owner: Option<&'a mut Library<'a>>,    // LibraryPtr
 }
 
 #[derive(Default)]
 pub struct KernelProgramInfo<'a> {
-    pub kernel_component: Option<&'a mut TypedDataBase<'a>>,  // TypedDataBasePtr
-    pub string_offsets: Option<&'a mut TypedData<'a>>,        // TypedDataPtr
-    pub string_data: Option<&'a mut TypedDataView<'a>>,       // TypedDataViewPtr
-    pub canonical_names: Option<&'a mut TypedData<'a>>,       // TypedDataPtr
+    pub kernel_component: Option<&'a mut TypedDataBase<'a>>, // TypedDataBasePtr
+    pub string_offsets: Option<&'a mut TypedData<'a>>,       // TypedDataPtr
+    pub string_data: Option<&'a mut TypedDataView<'a>>,      // TypedDataViewPtr
+    pub canonical_names: Option<&'a mut TypedData<'a>>,      // TypedDataPtr
     pub metadata_payloads: Option<&'a mut TypedDataView<'a>>, // TypedDataViewPtr
     pub metadata_mappings: Option<&'a mut TypedDataView<'a>>, // TypedDataViewPtr
-    pub scripts: Option<&'a mut Array<'a>>,                   // ArrayPtr
-    pub constants: Option<&'a mut Array<'a>>,                 // ArrayPtr
-    pub constants_table: Option<&'a mut TypedDataView<'a>>,   // TypedDataViewPtr
-    pub libraries_cache: Option<&'a mut Array<'a>>,           // ArrayPtr
-    pub classes_cache: Option<&'a mut Array<'a>>,             // ArrayPtr
+    pub scripts: Option<&'a mut Array<'a>>,                  // ArrayPtr
+    pub constants: Option<&'a mut Array<'a>>,                // ArrayPtr
+    pub constants_table: Option<&'a mut TypedDataView<'a>>,  // TypedDataViewPtr
+    pub libraries_cache: Option<&'a mut Array<'a>>,          // ArrayPtr
+    pub classes_cache: Option<&'a mut Array<'a>>,            // ArrayPtr
 }
 
 #[derive(Default)]
@@ -124,32 +123,33 @@ pub struct UnlinkedCall {
 }
 
 #[derive(Default)]
-pub struct String_ { // added underscore so there's no conflict between this type and rust's String
+pub struct String_ {
+    // added underscore so there's no conflict between this type and rust's String
     pub hash: Smi,   // Smi
     pub length: Smi, // Smi
 }
 
 #[derive(Default)]
 pub struct Class<'a> {
-    pub name: String,                                // StringPtr -> Raw String
-    pub user_name: String,                           // StringPtr -> Raw String
-    pub functions: Option<&'a mut Array<'a>>,                     // ArrayPtr
-    pub functions_hash_table: Option<&'a mut Array<'a>>,          // ArrayPtr
-    pub fields: Option<&'a mut Array<'a>>,                        // ArrayPtr
-    pub offset_in_words_to_field: Option<&'a mut Array<'a>>,      // ArrayPtr
-    pub interfaces: Option<&'a mut Array<'a>>,                    // ArrayPtr
-    pub script: Option<&'a mut Script<'a>>,                       // ScriptPtr
-    pub library: Option<&'a mut Library<'a>>,                     // LibraryPtr
-    pub type_parameters: Option<&'a mut TypeParameters<'a>>,      // TypeParametersPtr
-    pub super_type: Option<&'a mut Type<'a>>,                     // TypePtr
-    pub constants: Option<&'a mut Array<'a>>,                     // ArrayPtr
-    pub declaration_type: Option<&'a mut Type<'a>>,               // TypePtr
-    pub invocation_dispatcher_cache: Option<&'a mut Array<'a>>,   // ArrayPtr
+    pub name: String,                                        // StringPtr -> Raw String
+    pub user_name: String,                                   // StringPtr -> Raw String
+    pub functions: Option<&'a mut Array<'a>>,                // ArrayPtr
+    pub functions_hash_table: Option<&'a mut Array<'a>>,     // ArrayPtr
+    pub fields: Option<&'a mut Array<'a>>,                   // ArrayPtr
+    pub offset_in_words_to_field: Option<&'a mut Array<'a>>, // ArrayPtr
+    pub interfaces: Option<&'a mut Array<'a>>,               // ArrayPtr
+    pub script: Option<&'a mut Script<'a>>,                  // ScriptPtr
+    pub library: Option<&'a mut Library<'a>>,                // LibraryPtr
+    pub type_parameters: Option<&'a mut TypeParameters<'a>>, // TypeParametersPtr
+    pub super_type: Option<&'a mut Type<'a>>,                // TypePtr
+    pub constants: Option<&'a mut Array<'a>>,                // ArrayPtr
+    pub declaration_type: Option<&'a mut Type<'a>>,          // TypePtr
+    pub invocation_dispatcher_cache: Option<&'a mut Array<'a>>, // ArrayPtr
     pub direct_implementors: Option<&'a mut GrowableObjectArray<'a>>, // GrowableObjectArrayPtr
     pub direct_subclasses: Option<&'a mut GrowableObjectArray<'a>>, // GrowableObjectArrayPtr
     pub declaration_instance_type_arguments: Option<&'a mut TypeArguments<'a>>, // TypeArgumentsPtr
-    pub allocation_stub: Option<&'a mut Code<'a>>,                // CodePtr
-    pub dependent_code: Option<&'a mut WeakArray<'a>>,            // WeakArrayPtr
+    pub allocation_stub: Option<&'a mut Code<'a>>,           // CodePtr
+    pub dependent_code: Option<&'a mut WeakArray<'a>>,       // WeakArrayPtr
     pub num_type_arguments: i16,
     pub num_native_fields: u16,
     pub state_bits: u32,
@@ -164,14 +164,14 @@ pub struct Class<'a> {
 
 #[derive(Default)]
 pub struct Function<'a> {
-    pub name: String,                       // StringPtr -> Raw String
-    pub owner: Option<&'a mut Object<'a>>,               // ObjectPtr
-    pub signature: Option<&'a mut FunctionType<'a>>,     // FunctionTypePtr
-    pub data: Option<&'a mut Object<'a>>,                // ObjectPtr
+    pub name: String,                                          // StringPtr -> Raw String
+    pub owner: Option<&'a mut Object<'a>>,                     // ObjectPtr
+    pub signature: Option<&'a mut FunctionType<'a>>,           // FunctionTypePtr
+    pub data: Option<&'a mut Object<'a>>,                      // ObjectPtr
     pub ic_data_array_or_bytecode: Option<&'a mut Object<'a>>, // ObjectPtr
-    pub code: Option<&'a mut Code<'a>>,                  // CodePtr
+    pub code: Option<&'a mut Code<'a>>,                        // CodePtr
     pub positional_parameter_names: Option<&'a mut Array<'a>>, // ArrayPtr
-    pub unoptimized_code: Option<&'a mut Code<'a>>,      // CodePtr
+    pub unoptimized_code: Option<&'a mut Code<'a>>,            // CodePtr
     pub bitmap: u64,
     pub kernel_offset: i32,
     pub kind_tag: u32,
@@ -179,19 +179,19 @@ pub struct Function<'a> {
 
 #[derive(Default)]
 pub struct Library<'a> {
-    pub name: String,                // StringPtr -> Raw String
-    pub url: String,                 // StringPtr -> Raw String
-    pub private_key: String,         // StringPtr -> Raw String
-    pub dictionary: Option<&'a mut Array<'a>>,    // ArrayPtr
-    pub metadata: Option<&'a mut Array<'a>>,      // ArrayPtr
-    pub toplevel_class: Option<&'a mut Class<'a>>, // ClassPtr
+    pub name: String,                                          // StringPtr -> Raw String
+    pub url: String,                                           // StringPtr -> Raw String
+    pub private_key: String,                                   // StringPtr -> Raw String
+    pub dictionary: Option<&'a mut Array<'a>>,                 // ArrayPtr
+    pub metadata: Option<&'a mut Array<'a>>,                   // ArrayPtr
+    pub toplevel_class: Option<&'a mut Class<'a>>,             // ClassPtr
     pub used_scripts: Option<&'a mut GrowableObjectArray<'a>>, // GrowableObjectArrayPtr
-    pub loading_unit: Option<&'a mut LoadingUnit<'a>>, // LoadingUnitPtr
-    pub imports: Option<&'a mut Array<'a>>,       // ArrayPtr
-    pub exports: Option<&'a mut Array<'a>>,       // ArrayPtr
-    pub dependencies: Option<&'a mut Array<'a>>,  // ArrayPtr
+    pub loading_unit: Option<&'a mut LoadingUnit<'a>>,         // LoadingUnitPtr
+    pub imports: Option<&'a mut Array<'a>>,                    // ArrayPtr
+    pub exports: Option<&'a mut Array<'a>>,                    // ArrayPtr
+    pub dependencies: Option<&'a mut Array<'a>>,               // ArrayPtr
     pub kernel_program_info: Option<&'a mut KernelProgramInfo<'a>>, // KernelProgramInfoPtr
-    pub loaded_scripts: Option<&'a mut Array<'a>>, // ArrayPtr
+    pub loaded_scripts: Option<&'a mut Array<'a>>,             // ArrayPtr
     pub num_imports: u16,
     pub load_state: i8,
     pub flags: u8,
@@ -228,17 +228,45 @@ pub struct TwoByteString;
 
 // Placeholder structs for references used above that aren't defined yet
 // it wouldn't compile without this, though for now they remain unimplemented...
-pub struct Array<'a> { _marker: std::marker::PhantomData<&'a ()> }
-pub struct Object<'a> { _marker: std::marker::PhantomData<&'a ()> }
-pub struct AbstractType<'a> { _marker: std::marker::PhantomData<&'a ()> }
-pub struct FunctionType<'a> { _marker: std::marker::PhantomData<&'a ()> }
-pub struct Script<'a> { _marker: std::marker::PhantomData<&'a ()> }
-pub struct Closure<'a> { _marker: std::marker::PhantomData<&'a ()> }
-pub struct Instance<'a> { _marker: std::marker::PhantomData<&'a ()> }
-pub struct WeakArray<'a> { _marker: std::marker::PhantomData<&'a ()> }
-pub struct TypedDataBase<'a> { _marker: std::marker::PhantomData<&'a ()> }
-pub struct TypedData<'a> { _marker: std::marker::PhantomData<&'a ()> }
-pub struct TypedDataView<'a> { _marker: std::marker::PhantomData<&'a ()> }
-pub struct GrowableObjectArray<'a> { _marker: std::marker::PhantomData<&'a ()> }
-pub struct Code<'a> { _marker: std::marker::PhantomData<&'a ()> }
-pub struct LoadingUnit<'a> { _marker: std::marker::PhantomData<&'a ()> }
+pub struct Array<'a> {
+    _marker: std::marker::PhantomData<&'a ()>,
+}
+pub struct Object<'a> {
+    _marker: std::marker::PhantomData<&'a ()>,
+}
+pub struct AbstractType<'a> {
+    _marker: std::marker::PhantomData<&'a ()>,
+}
+pub struct FunctionType<'a> {
+    _marker: std::marker::PhantomData<&'a ()>,
+}
+pub struct Script<'a> {
+    _marker: std::marker::PhantomData<&'a ()>,
+}
+pub struct Closure<'a> {
+    _marker: std::marker::PhantomData<&'a ()>,
+}
+pub struct Instance<'a> {
+    _marker: std::marker::PhantomData<&'a ()>,
+}
+pub struct WeakArray<'a> {
+    _marker: std::marker::PhantomData<&'a ()>,
+}
+pub struct TypedDataBase<'a> {
+    _marker: std::marker::PhantomData<&'a ()>,
+}
+pub struct TypedData<'a> {
+    _marker: std::marker::PhantomData<&'a ()>,
+}
+pub struct TypedDataView<'a> {
+    _marker: std::marker::PhantomData<&'a ()>,
+}
+pub struct GrowableObjectArray<'a> {
+    _marker: std::marker::PhantomData<&'a ()>,
+}
+pub struct Code<'a> {
+    _marker: std::marker::PhantomData<&'a ()>,
+}
+pub struct LoadingUnit<'a> {
+    _marker: std::marker::PhantomData<&'a ()>,
+}

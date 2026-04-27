@@ -1,11 +1,10 @@
-use paste::paste;
 use crate::cluster::Cluster;
-use crate::stream::Stream;
 use crate::constants::UNSIGNED_M;
+use crate::stream::Stream;
+use paste::paste;
 
 #[macro_export]
-macro_rules! DECLARE_FIXED_LENGTH_CLUSTER
-{
+macro_rules! DECLARE_FIXED_LENGTH_CLUSTER {
     ($name:ident, $fill_impl:block) => {
         ::paste::paste! { // this is ugly, but the language doesn't support identifier concatenation
             struct [<$name Cluster>]
@@ -22,7 +21,7 @@ macro_rules! DECLARE_FIXED_LENGTH_CLUSTER
                 objs: Vec<(u64, Box<$name>)> // a pair (ref_id, object)
             }
 
-            impl Cluster for [<$name Cluster>] 
+            impl Cluster for [<$name Cluster>]
             {
                 fn read_alloc(&mut self, last_ref_id: &mut u64, stream: &mut Stream) -> usize // read tags and count
                 {
