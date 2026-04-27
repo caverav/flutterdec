@@ -59,7 +59,7 @@ pub struct FfiTrampolineData<'a> {
 }
 
 pub struct Field<'a> {
-    pub name: std::string::String,                    // StringPtr -> Raw String
+    pub name: String,                    // StringPtr -> Raw String
     pub owner: Option<&'a mut Object<'a>>,            // ObjectPtr
     pub type_field: Option<&'a mut AbstractType<'a>>, // AbstractTypePtr
     pub initializer_function: Option<&'a mut Function<'a>>, // FunctionPtr
@@ -115,8 +115,8 @@ pub struct String {
 }
 
 pub struct Class<'a> {
-    pub name: std::string::String,                                // StringPtr -> Raw String
-    pub user_name: std::string::String,                           // StringPtr -> Raw String
+    pub name: String,                                // StringPtr -> Raw String
+    pub user_name: String,                           // StringPtr -> Raw String
     pub functions: Option<&'a mut Array<'a>>,                     // ArrayPtr
     pub functions_hash_table: Option<&'a mut Array<'a>>,          // ArrayPtr
     pub fields: Option<&'a mut Array<'a>>,                        // ArrayPtr
@@ -147,7 +147,7 @@ pub struct Class<'a> {
 }
 
 pub struct Function<'a> {
-    pub name: std::string::String,                       // StringPtr -> Raw String
+    pub name: String,                       // StringPtr -> Raw String
     pub owner: Option<&'a mut Object<'a>>,               // ObjectPtr
     pub signature: Option<&'a mut FunctionType<'a>>,     // FunctionTypePtr
     pub data: Option<&'a mut Object<'a>>,                // ObjectPtr
@@ -161,9 +161,9 @@ pub struct Function<'a> {
 }
 
 pub struct Library<'a> {
-    pub name: std::string::String,                // StringPtr -> Raw String
-    pub url: std::string::String,                 // StringPtr -> Raw String
-    pub private_key: std::string::String,         // StringPtr -> Raw String
+    pub name: String,                // StringPtr -> Raw String
+    pub url: String,                 // StringPtr -> Raw String
+    pub private_key: String,         // StringPtr -> Raw String
     pub dictionary: Option<&'a mut Array<'a>>,    // ArrayPtr
     pub metadata: Option<&'a mut Array<'a>>,      // ArrayPtr
     pub toplevel_class: Option<&'a mut Class<'a>>, // ClassPtr
