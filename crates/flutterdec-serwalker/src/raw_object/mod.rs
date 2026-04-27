@@ -1,17 +1,19 @@
-// raw_object/mod.rs
 
 type Smi = i64; // Using i64 for Smi fields to be decompressed
 
 // --- Fixed-Size Objects with defined fields ---
 
+#[derive(Default)]
 pub struct Mint {
     pub value: i64,
 }
 
+#[derive(Default)]
 pub struct Double {
     pub value: f64,
 }
 
+#[derive(Default)]
 pub struct TypeArguments<'a> {
     pub instantiations: Option<&'a mut Array<'a>>, // ArrayPtr
     pub length: Smi,                               // Smi
@@ -19,16 +21,19 @@ pub struct TypeArguments<'a> {
     pub nullability: Smi,                          // Smi
 }
 
+#[derive(Default)]
 pub struct TypeParameter<'a> {
     pub owner: Option<&'a mut Object<'a>>, // ObjectPtr
     pub base: i16,
     pub index: i16,
 }
 
+#[derive(Default)]
 pub struct Type<'a> {
     pub arguments: Option<&'a mut TypeArguments<'a>>, // TypeArgumentsPtr
 }
 
+#[derive(Default)]
 pub struct TypeParameters<'a> {
     pub names: Option<&'a mut Array<'a>>,            // ArrayPtr
     pub flags: Option<&'a mut Array<'a>>,            // ArrayPtr
@@ -36,12 +41,14 @@ pub struct TypeParameters<'a> {
     pub defaults: Option<&'a mut TypeArguments<'a>>, // TypeArgumentsPtr
 }
 
+#[derive(Default)]
 pub struct PatchClass<'a> {
     pub wrapped_class: Option<&'a mut Class<'a>>,                   // ClassPtr
     pub script: Option<&'a mut Script<'a>>,                          // ScriptPtr
     pub kernel_program_info: Option<&'a mut KernelProgramInfo<'a>>, // KernelProgramInfoPtr
 }
 
+#[derive(Default)]
 pub struct ClosureData<'a> {
     pub context_scope: Option<&'a mut ContextScope>,   // ContextScopePtr
     pub parent_function: Option<&'a mut Function<'a>>, // FunctionPtr
@@ -49,6 +56,7 @@ pub struct ClosureData<'a> {
     pub packed_fields: u32,
 }
 
+#[derive(Default)]
 pub struct FfiTrampolineData<'a> {
     pub signature_type: Option<&'a mut Type<'a>>,                  // TypePtr
     pub c_signature: Option<&'a mut FunctionType<'a>>,             // FunctionTypePtr
@@ -58,6 +66,7 @@ pub struct FfiTrampolineData<'a> {
     pub callback_id: i32,
 }
 
+#[derive(Default)]
 pub struct Field<'a> {
     pub name: String,                    // StringPtr -> Raw String
     pub owner: Option<&'a mut Object<'a>>,            // ObjectPtr
@@ -74,6 +83,7 @@ pub struct Field<'a> {
     pub kind_bits: u32,
 }
 
+#[derive(Default)]
 pub struct Namespace<'a> {
     pub target: Option<&'a mut Library<'a>>,     // LibraryPtr
     pub show_names: Option<&'a mut Array<'a>>,   // ArrayPtr
@@ -81,6 +91,7 @@ pub struct Namespace<'a> {
     pub owner: Option<&'a mut Library<'a>>,      // LibraryPtr
 }
 
+#[derive(Default)]
 pub struct KernelProgramInfo<'a> {
     pub kernel_component: Option<&'a mut TypedDataBase<'a>>,  // TypedDataBasePtr
     pub string_offsets: Option<&'a mut TypedData<'a>>,        // TypedDataPtr
@@ -95,25 +106,30 @@ pub struct KernelProgramInfo<'a> {
     pub classes_cache: Option<&'a mut Array<'a>>,             // ArrayPtr
 }
 
+#[derive(Default)]
 pub struct ExceptionHandlers<'a> {
     pub handled_types_data: Option<&'a mut Array<'a>>, // ArrayPtr
     pub packed_fields: u32,
 }
 
+#[derive(Default)]
 pub struct Context<'a> {
     pub parent: Option<&'a mut Context<'a>>, // ContextPtr
     pub num_variables: i32,
 }
 
+#[derive(Default)]
 pub struct UnlinkedCall {
     pub can_patch_to_monomorphic: bool,
 }
 
-pub struct String {
+#[derive(Default)]
+pub struct String_ {
     pub hash: Smi,   // Smi
     pub length: Smi, // Smi
 }
 
+#[derive(Default)]
 pub struct Class<'a> {
     pub name: String,                                // StringPtr -> Raw String
     pub user_name: String,                           // StringPtr -> Raw String
@@ -146,6 +162,7 @@ pub struct Class<'a> {
     pub kernel_offset: i32,
 }
 
+#[derive(Default)]
 pub struct Function<'a> {
     pub name: String,                       // StringPtr -> Raw String
     pub owner: Option<&'a mut Object<'a>>,               // ObjectPtr
@@ -160,6 +177,7 @@ pub struct Function<'a> {
     pub kind_tag: u32,
 }
 
+#[derive(Default)]
 pub struct Library<'a> {
     pub name: String,                // StringPtr -> Raw String
     pub url: String,                 // StringPtr -> Raw String
@@ -180,6 +198,7 @@ pub struct Library<'a> {
     pub kernel_library_index: i32,
 }
 
+#[derive(Default)]
 pub struct ContextScope {
     pub num_variables: i32,
     pub is_implicit: bool,
@@ -189,11 +208,22 @@ pub struct ContextScope {
 // These classes either have no additional payload fields beyond the standard
 // instance headers or their payloads are purely variable-length or dynamically read/overlayed on top of a byte stream
 
+#[derive(Default)]
 pub struct CodeSourceMap;
+
+#[derive(Default)]
 pub struct CompressedStackMaps;
+
+#[derive(Default)]
 pub struct PcDescriptors;
+
+#[derive(Default)]
 pub struct ObjectPool;
+
+#[derive(Default)]
 pub struct OneByteString;
+
+#[derive(Default)]
 pub struct TwoByteString;
 
 // Placeholder structs for references used above that aren't defined yet
