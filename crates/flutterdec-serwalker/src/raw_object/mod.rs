@@ -67,7 +67,7 @@ pub struct FfiTrampolineData<'a> {
 
 #[derive(Default)]
 pub struct Field<'a> {
-    pub name: String,                                       // StringPtr -> Raw String
+    pub name: _String,                                       // _StringPtr -> Raw _String
     pub owner: Option<&'a mut Object<'a>>,                  // ObjectPtr
     pub type_field: Option<&'a mut AbstractType<'a>>,       // AbstractTypePtr
     pub initializer_function: Option<&'a mut Function<'a>>, // FunctionPtr
@@ -123,16 +123,17 @@ pub struct UnlinkedCall {
 }
 
 #[derive(Default)]
-pub struct String_ {
-    // added underscore so there's no conflict between this type and rust's String
+pub struct _String {
+    // added underscore so there's no conflict between this type and rust's _String
     pub hash: Smi,   // Smi
     pub length: Smi, // Smi
+    pub inner_string: String
 }
 
 #[derive(Default)]
 pub struct Class<'a> {
-    pub name: String,                                        // StringPtr -> Raw String
-    pub user_name: String,                                   // StringPtr -> Raw String
+    pub name: _String,                                        // _StringPtr -> Raw _String
+    pub user_name: _String,                                   // _StringPtr -> Raw _String
     pub functions: Option<&'a mut Array<'a>>,                // ArrayPtr
     pub functions_hash_table: Option<&'a mut Array<'a>>,     // ArrayPtr
     pub fields: Option<&'a mut Array<'a>>,                   // ArrayPtr
@@ -164,7 +165,7 @@ pub struct Class<'a> {
 
 #[derive(Default)]
 pub struct Function<'a> {
-    pub name: String,                                          // StringPtr -> Raw String
+    pub name: _String,                                          // _StringPtr -> Raw _String
     pub owner: Option<&'a mut Object<'a>>,                     // ObjectPtr
     pub signature: Option<&'a mut FunctionType<'a>>,           // FunctionTypePtr
     pub data: Option<&'a mut Object<'a>>,                      // ObjectPtr
@@ -179,9 +180,9 @@ pub struct Function<'a> {
 
 #[derive(Default)]
 pub struct Library<'a> {
-    pub name: String,                                          // StringPtr -> Raw String
-    pub url: String,                                           // StringPtr -> Raw String
-    pub private_key: String,                                   // StringPtr -> Raw String
+    pub name: _String,                                          // _StringPtr -> Raw _String
+    pub url: _String,                                           // _StringPtr -> Raw _String
+    pub private_key: _String,                                   // _StringPtr -> Raw _String
     pub dictionary: Option<&'a mut Array<'a>>,                 // ArrayPtr
     pub metadata: Option<&'a mut Array<'a>>,                   // ArrayPtr
     pub toplevel_class: Option<&'a mut Class<'a>>,             // ClassPtr
@@ -219,12 +220,6 @@ pub struct PcDescriptors;
 
 #[derive(Default)]
 pub struct ObjectPool;
-
-#[derive(Default)]
-pub struct OneByteString;
-
-#[derive(Default)]
-pub struct TwoByteString;
 
 // Placeholder structs for references used above that aren't defined yet
 // it wouldn't compile without this, though for now they remain unimplemented...

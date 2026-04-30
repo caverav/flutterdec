@@ -22,7 +22,7 @@ pub fn read_cluster_fill() {
 pub fn read_and_decompress_smi(stream: &mut Stream) -> Smi {
     let raw_smi = stream.read_modified_leb128(SIGNED_M); // smis are always written as signed
 
-    (raw_smi as Smi) >> constants::SMI_SHIFT
+    raw_smi as Smi
 }
 
 pub fn decide_cluster(
@@ -39,13 +39,11 @@ pub fn decide_cluster(
 // whose fill cluster size is uniquely determined by sizeof(Object) * num_of_objects
 // and alloc cluster size is tags (MULEB128) + num_of_objects (MULEB128)
 
-DECLARE_FIXED_LENGTH_CLUSTER!(OneByteString, {
+DECLARE_FIXED_LENGTH_CLUSTER!(_String, {
     1
     // to-do
 });
 /*
-DECLARE_FIXED_LENGTH_CLUSTER!(TwoByteString, 8);
-DECLARE_FIXED_LENGTH_CLUSTER!(String, 8);
 DECLARE_FIXED_LENGTH_CLUSTER!(Mint, 16);
 DECLARE_FIXED_LENGTH_CLUSTER!(Double, 16);
 DECLARE_FIXED_LENGTH_CLUSTER!(TypeParameter, 32);

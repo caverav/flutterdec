@@ -107,6 +107,55 @@ impl<'a> Stream<'a> {
         let raw_str = &self.byte_stream[self.curr_stream_offset..self.curr_stream_offset + first_nullbyte_pos];
         self.advance_pos(raw_str.len() + 1);
 
-        String::from_utf8(raw_str.to_vec()).unwrap() // it should be horrible if for some reason a string just isn't there
+        String::from_utf8(raw_str.to_vec()).expect("Couldn't turn null-terminated UTF-8 bytes into a String.") // it should be horrible if for some reason a string just isn't there
+    }
+
+    // read a non null-terminated string given a length
+    pub fn read_string(&mut self, len: usize) -> String
+    {
+        let final_pos = self.curr_stream_offset + len;
+        let raw_str = &self.byte_stream[self.curr_stream_offset..final_pos];
+
+        self.advance_pos(len);
+
+        String::from_utf8(raw_str.to_vec()).expect("Couldn't turn UTF-8 bytes into a String.")
+    }
+
+    /* 
+       Complex object types (i.e, object types that contain other object types)
+       point to other objects through refids, which is essentially the core
+       mechanism of Dart's serialization/deserialization process, allowing the
+       reconstruction of all objects from the snapshot into the heap.
+    */
+    pub fn read_ref_id(&mut self) -> u32
+    {
+        let mut idx: usize = 0;
+        let mut byte: i8 = self.byte_stream[self.curr_stream_offset + idx] as i8;
+        let mut ref_id: i32 = 0; // as far as I know, ref_ids are up to 2^28, so 32 bits is good enough
+
+        if byte < 0
+        {
+            ref_id += byte as i32;
+            self.advance_pos(1);
+            return (ref_id + 128) as u32;
+        }
+        
+        loop
+        {
+            ref_id = ref_id << 7;
+            ref_id += byte as i32;
+            idx += 1;
+
+            if byte < 0
+            {
+                break
+            }
+
+            byte = self.byte_stream[self.curr_stream_offset + idx] as i8;
+        }
+
+        self.advance_pos(idx);
+
+        (ref_id + 128) as u32
     }
 }
