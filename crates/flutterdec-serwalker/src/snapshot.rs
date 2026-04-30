@@ -77,7 +77,6 @@ impl Default for DataSnapshot {
 }
 
 impl DataSnapshot {
-    
     fn parse_version_and_features(&mut self, stream: &mut Stream) {
         let mut version_and_features = stream.read_c_string();
 
@@ -107,14 +106,12 @@ impl DataSnapshot {
         self.start_of_alloc_area = stream.get_current_pos();
     }
 
-    fn read_clusters(&mut self, stream: &mut Stream) {
+    fn parse_clusters(&mut self, stream: &mut Stream) {
         let curr_ref_id: u64 = 0; // all objects are numbered starting from 0
     }
 
-    pub fn parse_snapshot(&mut self, stream: &mut Stream)
-    {
+    pub fn parse_snapshot(&mut self, stream: &mut Stream) {
         println!("Now parsing the snapshot...");
         self.parse_header(stream);
     }
-
 }

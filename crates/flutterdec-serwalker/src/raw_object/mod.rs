@@ -67,7 +67,7 @@ pub struct FfiTrampolineData<'a> {
 
 #[derive(Default)]
 pub struct Field<'a> {
-    pub name: _String,                                       // _StringPtr -> Raw _String
+    pub name: _String,                                      // StringPtr -> Raw String
     pub owner: Option<&'a mut Object<'a>>,                  // ObjectPtr
     pub type_field: Option<&'a mut AbstractType<'a>>,       // AbstractTypePtr
     pub initializer_function: Option<&'a mut Function<'a>>, // FunctionPtr
@@ -127,13 +127,13 @@ pub struct _String {
     // added underscore so there's no conflict between this type and rust's _String
     pub hash: Smi,   // Smi
     pub length: Smi, // Smi
-    pub inner_string: String
+    pub inner_string: String,
 }
 
 #[derive(Default)]
 pub struct Class<'a> {
-    pub name: _String,                                        // _StringPtr -> Raw _String
-    pub user_name: _String,                                   // _StringPtr -> Raw _String
+    pub name: _String,                                       // StringPtr -> Raw String
+    pub user_name: _String,                                  // StringPtr -> Raw String
     pub functions: Option<&'a mut Array<'a>>,                // ArrayPtr
     pub functions_hash_table: Option<&'a mut Array<'a>>,     // ArrayPtr
     pub fields: Option<&'a mut Array<'a>>,                   // ArrayPtr
@@ -165,14 +165,14 @@ pub struct Class<'a> {
 
 #[derive(Default)]
 pub struct Function<'a> {
-    pub name: _String,                                          // _StringPtr -> Raw _String
-    pub owner: Option<&'a mut Object<'a>>,                     // ObjectPtr
-    pub signature: Option<&'a mut FunctionType<'a>>,           // FunctionTypePtr
-    pub data: Option<&'a mut Object<'a>>,                      // ObjectPtr
+    pub name: _String,                               // StringPtr -> Raw String
+    pub owner: Option<&'a mut Object<'a>>,           // ObjectPtr
+    pub signature: Option<&'a mut FunctionType<'a>>, // FunctionTypePtr
+    pub data: Option<&'a mut Object<'a>>,            // ObjectPtr
     pub ic_data_array_or_bytecode: Option<&'a mut Object<'a>>, // ObjectPtr
-    pub code: Option<&'a mut Code<'a>>,                        // CodePtr
+    pub code: Option<&'a mut Code<'a>>,              // CodePtr
     pub positional_parameter_names: Option<&'a mut Array<'a>>, // ArrayPtr
-    pub unoptimized_code: Option<&'a mut Code<'a>>,            // CodePtr
+    pub unoptimized_code: Option<&'a mut Code<'a>>,  // CodePtr
     pub bitmap: u64,
     pub kernel_offset: i32,
     pub kind_tag: u32,
@@ -180,19 +180,19 @@ pub struct Function<'a> {
 
 #[derive(Default)]
 pub struct Library<'a> {
-    pub name: _String,                                          // _StringPtr -> Raw _String
-    pub url: _String,                                           // _StringPtr -> Raw _String
-    pub private_key: _String,                                   // _StringPtr -> Raw _String
-    pub dictionary: Option<&'a mut Array<'a>>,                 // ArrayPtr
-    pub metadata: Option<&'a mut Array<'a>>,                   // ArrayPtr
-    pub toplevel_class: Option<&'a mut Class<'a>>,             // ClassPtr
+    pub name: _String,                             // StringPtr -> Raw String
+    pub url: _String,                              // StringPtr -> Raw String
+    pub private_key: _String,                      // StringPtr -> Raw String
+    pub dictionary: Option<&'a mut Array<'a>>,     // ArrayPtr
+    pub metadata: Option<&'a mut Array<'a>>,       // ArrayPtr
+    pub toplevel_class: Option<&'a mut Class<'a>>, // ClassPtr
     pub used_scripts: Option<&'a mut GrowableObjectArray<'a>>, // GrowableObjectArrayPtr
-    pub loading_unit: Option<&'a mut LoadingUnit<'a>>,         // LoadingUnitPtr
-    pub imports: Option<&'a mut Array<'a>>,                    // ArrayPtr
-    pub exports: Option<&'a mut Array<'a>>,                    // ArrayPtr
-    pub dependencies: Option<&'a mut Array<'a>>,               // ArrayPtr
+    pub loading_unit: Option<&'a mut LoadingUnit<'a>>, // LoadingUnitPtr
+    pub imports: Option<&'a mut Array<'a>>,        // ArrayPtr
+    pub exports: Option<&'a mut Array<'a>>,        // ArrayPtr
+    pub dependencies: Option<&'a mut Array<'a>>,   // ArrayPtr
     pub kernel_program_info: Option<&'a mut KernelProgramInfo<'a>>, // KernelProgramInfoPtr
-    pub loaded_scripts: Option<&'a mut Array<'a>>,             // ArrayPtr
+    pub loaded_scripts: Option<&'a mut Array<'a>>, // ArrayPtr
     pub num_imports: u16,
     pub load_state: i8,
     pub flags: u8,
