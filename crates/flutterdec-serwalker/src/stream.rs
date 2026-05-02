@@ -1,7 +1,4 @@
-use crate::constants::{
-    DATA_BITS_PER_BYTE, SIGNED_END_OF_DATA_BYTE, UNSIGNED_END_OF_DATA_BYTE,
-    UNSIGNED_MAX_DATA_PER_BYTE,
-};
+use crate::constants::{DATA_BITS_PER_BYTE, UNSIGNED_END_OF_DATA_BYTE, UNSIGNED_MAX_DATA_PER_BYTE};
 pub struct Stream<'a> {
     byte_stream: &'a [u8],
     curr_stream_offset: usize,
@@ -153,6 +150,6 @@ impl<'a> Stream<'a> {
 
         self.advance_pos(idx);
 
-        (ref_id + 128) as u32
+        (ref_id + 128) as u32 // ref_ids are always unsigned
     }
 }

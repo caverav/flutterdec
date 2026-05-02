@@ -1,4 +1,4 @@
-type Smi = i64; // Using i64 for Smi fields to be decompressed
+type Smi = i32; // Using i64 for Smi fields to be decompressed
 
 // --- Fixed-Size Objects with defined fields ---
 

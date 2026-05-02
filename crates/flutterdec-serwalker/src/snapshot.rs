@@ -1,6 +1,9 @@
-use crate::cluster::Cluster;
-use crate::constants::{self, MAGIC_BYTES, UNSIGNED_M};
+use std::collections::HashMap;
+
+use crate::cluster::{self, decide_cluster, Cluster};
+use crate::constants::{self, ClassId, MAGIC_BYTES, UNSIGNED_M};
 use crate::stream::Stream;
+use crate::utils::{decode_tags, DecodedTags};
 
 #[derive(Default)]
 enum SnapshotKind
@@ -33,9 +36,11 @@ impl TryFrom<u64> for SnapshotKind {
     }
 }
 
-struct DataSnapshot {
+#[derive(Default)]
+pub struct DataSnapshot {
     // this array will contain mutable references to all clusters, and it will be indexed using the class id
-    clusters: [Option<Box<dyn Cluster>>; constants::MAX_CLUSTER_NUM], // thus each cluster must have its own UNIQUE class id
+    clusters: HashMap<ClassId, Box<dyn Cluster>>, // thus each cluster must have its own UNIQUE class id
+    cluster_order: Vec<ClassId>, // used in the fill step to know which cluster's read_fill function to call
 
     magic_bytes: u32,
     size: u64,
@@ -53,27 +58,6 @@ struct DataSnapshot {
 
     start_of_alloc_area: usize,
     start_of_fill_area: usize,
-}
-
-impl Default for DataSnapshot {
-    fn default() -> Self {
-        const INIT_CLUSTER: Option<Box<dyn Cluster>> = None;
-        Self {
-            clusters: [INIT_CLUSTER; constants::MAX_CLUSTER_NUM],
-            magic_bytes: 0,
-            size: 0,
-            kind: SnapshotKind::default(),
-            version_hash: String::new(),
-            features: String::new(),
-            num_base_objects: 0,
-            num_objects: 0,
-            num_clusters: 0,
-            instr_table_len: 0,
-            instr_table_offset: 0,
-            start_of_alloc_area: 0,
-            start_of_fill_area: 0,
-        }
-    }
 }
 
 impl DataSnapshot {
@@ -107,11 +91,37 @@ impl DataSnapshot {
     }
 
     fn parse_clusters(&mut self, stream: &mut Stream) {
-        let curr_ref_id: u64 = 0; // all objects are numbered starting from 0
-    }
+        let mut curr_ref_id: u64 = 0; // all objects are numbered starting from 0
 
-    pub fn parse_snapshot(&mut self, stream: &mut Stream) {
-        println!("Now parsing the snapshot...");
-        self.parse_header(stream);
+        for _cluster_idx in 0..self.num_clusters {
+            let tags: u32 = stream.read_modified_leb128(UNSIGNED_M) as u32;
+            let decoded_tags: DecodedTags = decode_tags(tags);
+            let cid = decoded_tags.get_cid();
+
+            let mut cluster =
+                decide_cluster(cid).expect("Couldn't find cluster implementation for class {cid}");
+
+            cluster.read_alloc(&mut curr_ref_id, stream);
+            self.clusters.insert(cid, cluster); // hashmap takes ownership of box
+            self.cluster_order.push(cid);
+        }
+
+        for cluster_idx in 0..self.num_clusters {
+            let cid = self.cluster_order[cluster_idx as usize];
+            let cluster_wrapper = self.clusters.get_mut(&cid);
+
+            let cluster = cluster_wrapper.unwrap(); // this should never panic
+            (*cluster).read_fill(&mut curr_ref_id, stream);
+        }
     }
+}
+
+pub fn parse_snapshot(stream: &mut Stream) -> DataSnapshot {
+    let mut snapshot = DataSnapshot::default();
+
+    println!("Now parsing the snapshot...");
+    snapshot.parse_header(stream);
+    snapshot.parse_clusters(stream);
+
+    snapshot
 }

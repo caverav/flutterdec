@@ -1,13 +1,12 @@
-use crate::cluster::Cluster;
-use crate::constants::UNSIGNED_M;
-use crate::stream::Stream;
 use paste::paste;
+
+use crate::constants::ClassId;
 
 #[macro_export]
 macro_rules! DECLARE_FIXED_LENGTH_CLUSTER {
     ($name:ident, $fill_impl:block) => {
         ::paste::paste! { // this is ugly, but the language doesn't support identifier concatenation
-            struct [<$name Cluster>]
+            pub struct [<$name Cluster>]
             {
                 tags: u32,
                 obj_count: u64,
@@ -17,6 +16,8 @@ macro_rules! DECLARE_FIXED_LENGTH_CLUSTER {
 
                 end_of_fill: usize,
                 end_of_alloc: usize,
+
+                first_ref_id: u32,
 
                 objs: Vec<(u64, Box<$name>)> // a pair (ref_id, object)
             }
@@ -50,4 +51,56 @@ macro_rules! DECLARE_FIXED_LENGTH_CLUSTER {
             }
         }
     };
+}
+
+pub struct DecodedTags {
+    class_id: ClassId,
+    is_deeply_immutable: bool, // we don't really care about this for now, at least
+    is_canonical: bool,
+}
+
+impl DecodedTags {
+    pub fn new(cid: ClassId, immut: bool, canonical: bool) -> Self {
+        Self {
+            class_id: cid,
+            is_deeply_immutable: immut,
+            is_canonical: canonical,
+        }
+    }
+
+    pub fn get_cid(&self) -> ClassId {
+        self.class_id
+    }
+
+    pub fn is_deeply_immutable(&self) -> bool {
+        self.is_deeply_immutable
+    }
+
+    pub fn is_canonical(&self) -> bool {
+        self.is_canonical
+    }
+}
+
+macro_rules! DECODE_IS_CID {
+    ($tags:expr) => {
+        ClassId::try_from(($tags >> 12) & 0xFFFFF)
+    };
+}
+macro_rules! DECODE_IS_DEEPLY_IMMUTABLE {
+    ($tags:expr) => {
+        (($tags >> 7) & 0x1) == 1
+    };
+}
+macro_rules! DECODE_IS_CANONICAL {
+    ($tags:expr) => {
+        (($tags >> 1) & 0x1) == 1
+    };
+}
+
+pub fn decode_tags(tags: u32) -> DecodedTags {
+    let class_id: ClassId = DECODE_IS_CID!(tags).unwrap();
+    let is_deeply_immutable: bool = DECODE_IS_DEEPLY_IMMUTABLE!(tags);
+    let is_canonical: bool = DECODE_IS_CANONICAL!(tags);
+
+    DecodedTags::new(class_id, is_deeply_immutable, is_canonical)
 }
