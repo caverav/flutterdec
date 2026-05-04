@@ -223,45 +223,104 @@ pub struct ObjectPool;
 
 // Placeholder structs for references used above that aren't defined yet
 // it wouldn't compile without this, though for now they remain unimplemented...
+#[derive(Default)]
 pub struct Array<'a> {
     _marker: std::marker::PhantomData<&'a ()>,
 }
+#[derive(Default)]
 pub struct Object<'a> {
     _marker: std::marker::PhantomData<&'a ()>,
 }
+#[derive(Default)]
 pub struct AbstractType<'a> {
     _marker: std::marker::PhantomData<&'a ()>,
 }
+#[derive(Default)]
 pub struct FunctionType<'a> {
     _marker: std::marker::PhantomData<&'a ()>,
 }
+#[derive(Default)]
 pub struct Script<'a> {
     _marker: std::marker::PhantomData<&'a ()>,
 }
+#[derive(Default)]
 pub struct Closure<'a> {
     _marker: std::marker::PhantomData<&'a ()>,
 }
+#[derive(Default)]
 pub struct Instance<'a> {
     _marker: std::marker::PhantomData<&'a ()>,
 }
+#[derive(Default)]
 pub struct WeakArray<'a> {
     _marker: std::marker::PhantomData<&'a ()>,
 }
+#[derive(Default)]
 pub struct TypedDataBase<'a> {
     _marker: std::marker::PhantomData<&'a ()>,
 }
+#[derive(Default)]
 pub struct TypedData<'a> {
     _marker: std::marker::PhantomData<&'a ()>,
 }
+#[derive(Default)]
 pub struct TypedDataView<'a> {
     _marker: std::marker::PhantomData<&'a ()>,
 }
+#[derive(Default)]
 pub struct GrowableObjectArray<'a> {
     _marker: std::marker::PhantomData<&'a ()>,
 }
+#[derive(Default)]
 pub struct Code<'a> {
     _marker: std::marker::PhantomData<&'a ()>,
 }
+#[derive(Default)]
 pub struct LoadingUnit<'a> {
     _marker: std::marker::PhantomData<&'a ()>,
 }
+
+#[derive(Default)]
+pub struct ICData;
+#[derive(Default)]
+pub struct MegamorphicCache;
+#[derive(Default)]
+pub struct SubtypeTestCache;
+#[derive(Default)]
+pub struct LanguageError;
+#[derive(Default)]
+pub struct UnhandledException;
+#[derive(Default)]
+pub struct LibraryPrefix;
+#[derive(Default)]
+pub struct RecordType;
+#[derive(Default)]
+pub struct Int32x4;
+#[derive(Default)]
+pub struct ExternalTypedData;
+#[derive(Default)]
+pub struct StackTrace;
+#[derive(Default)]
+pub struct RegExp;
+#[derive(Default)]
+pub struct WeakProperty;
+#[derive(Default)]
+pub struct Map;
+#[derive(Default)]
+pub struct Set;
+#[derive(Default)]
+pub struct Float32x4;
+#[derive(Default)]
+pub struct Float64x2;
+#[derive(Default)]
+pub struct ConstMap;
+#[derive(Default)]
+pub struct ConstSet;
+#[derive(Default)]
+pub struct Record;
+#[derive(Default)]
+pub struct ImmutableArray;
+#[derive(Default)]
+pub struct OneByteString;
+#[derive(Default)]
+pub struct TwoByteString;

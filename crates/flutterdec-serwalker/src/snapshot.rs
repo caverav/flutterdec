@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::cluster::{self, decide_cluster, Cluster};
+use crate::cluster::{decide_cluster, Cluster};
 use crate::constants::{self, ClassId, MAGIC_BYTES, UNSIGNED_M};
 use crate::stream::Stream;
 use crate::utils::{decode_tags, DecodedTags};
@@ -58,6 +58,9 @@ pub struct DataSnapshot {
 
     start_of_alloc_area: usize,
     start_of_fill_area: usize,
+
+    end_of_alloc_area: usize,
+    end_of_fill_area: usize,
 }
 
 impl DataSnapshot {
@@ -76,7 +79,7 @@ impl DataSnapshot {
         }
 
         self.size = stream.read_u64();
-        self.kind = SnapshotKind::try_from(stream.read_u64()).expect("Not a valid snapshot!");
+        self.kind = SnapshotKind::try_from(stream.read_u64()).unwrap();
 
         self.parse_version_and_features(stream);
 
@@ -86,13 +89,12 @@ impl DataSnapshot {
 
         self.instr_table_len = stream.read_modified_leb128(UNSIGNED_M) as usize;
         self.instr_table_offset = stream.read_modified_leb128(UNSIGNED_M) as usize;
-
-        self.start_of_alloc_area = stream.get_current_pos();
     }
 
     fn parse_clusters(&mut self, stream: &mut Stream) {
         let mut curr_ref_id: u64 = 0; // all objects are numbered starting from 0
 
+        self.start_of_alloc_area = stream.get_current_pos();
         for _cluster_idx in 0..self.num_clusters {
             let tags: u32 = stream.read_modified_leb128(UNSIGNED_M) as u32;
             let decoded_tags: DecodedTags = decode_tags(tags);
@@ -105,15 +107,20 @@ impl DataSnapshot {
             self.clusters.insert(cid, cluster); // hashmap takes ownership of box
             self.cluster_order.push(cid);
         }
+        self.end_of_alloc_area = stream.get_current_pos();
 
+        self.start_of_fill_area = stream.get_current_pos();
         for cluster_idx in 0..self.num_clusters {
             let cid = self.cluster_order[cluster_idx as usize];
             let cluster_wrapper = self.clusters.get_mut(&cid);
 
             let cluster = cluster_wrapper.unwrap(); // this should never panic
-            (*cluster).read_fill(&mut curr_ref_id, stream);
+            (*cluster).read_fill(stream);
         }
+        self.end_of_fill_area = stream.get_current_pos();
     }
+
+    fn parse_roots(&mut self, stream: &mut Stream) {}
 }
 
 pub fn parse_snapshot(stream: &mut Stream) -> DataSnapshot {
