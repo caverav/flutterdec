@@ -112,9 +112,9 @@ impl DataSnapshot {
         self.start_of_fill_area = stream.get_current_pos();
         for cluster_idx in 0..self.num_clusters {
             let cid = self.cluster_order[cluster_idx as usize];
-            let cluster_wrapper = self.clusters.get_mut(&cid);
+            let cluster_opt = self.clusters.get_mut(&cid);
 
-            let cluster = cluster_wrapper.unwrap(); // this should never panic
+            let cluster = cluster_opt.unwrap(); // this should never panic
             (*cluster).read_fill(stream);
         }
         self.end_of_fill_area = stream.get_current_pos();

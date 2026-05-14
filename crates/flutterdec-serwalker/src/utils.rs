@@ -4,11 +4,12 @@ use crate::constants::ClassId;
 
 #[macro_export]
 macro_rules! DECLARE_FIXED_LENGTH_CLUSTER {
-    ($name:ident $(<$lt:lifetime>)?, |$_self:ident, $last_ref_id:ident, $stream:ident| $fill_impl:block) => {
-        ::paste::paste! { // this is ugly, but the language doesn't support identifier concatenation
-            pub struct [<$name Cluster>] $(<$lt>)?
+    ($name:ident, |$_self:ident, $last_ref_id:ident, $stream:ident| $fill_impl:block) => {
+        ::paste::paste! {
+            pub struct [<$name Cluster>]
             {
                 tags: u32,
+                cid: ClassId,
                 obj_count: u64,
 
                 start_of_fill: usize,
@@ -19,21 +20,21 @@ macro_rules! DECLARE_FIXED_LENGTH_CLUSTER {
 
                 first_ref_id: u32,
 
-                objs: Vec<Box<$name $(<$lt>)? >> // a pair (ref_id, object)
+                objs: Vec<Box<$name >>
             }
 
-            impl $(<$lt>)? Cluster for [<$name Cluster>] $(<$lt>)? // optional lifetime parameter
+            impl Cluster for [<$name Cluster>]
             {
-                fn read_alloc(&mut self, last_ref_id: &mut u64, stream: &mut Stream) -> usize // read tags and count
+                fn read_alloc(&mut self, last_ref_id: &mut u64, stream: &mut Stream) -> usize
                 {
                     self.start_of_alloc = stream.get_current_pos();
-                    self.first_ref_id = *last_ref_id as u32; // later used to index the objs vector
+                    self.first_ref_id = *last_ref_id as u32;
 
                     self.obj_count = stream.read_modified_leb128(UNSIGNED_M);
 
                     for _obj_idx in 0..self.obj_count
                     {
-                        self.objs.push(Box::<$name $(<$lt>)? >::default());
+                        self.objs.push(Box::<$name >::default());
                     }
 
                     *last_ref_id = *last_ref_id + self.obj_count;
@@ -49,10 +50,11 @@ macro_rules! DECLARE_FIXED_LENGTH_CLUSTER {
                     let $_self = self;
                     let $stream = stream;
 
-                    let fill_size = $fill_impl;
+                    $fill_impl;
 
                     $_self.end_of_fill = $stream.get_current_pos();
-                    fill_size
+                    
+                    $_self.end_of_fill - $_self.start_of_fill
                 }
 
                 fn is_fixed_len(&self) -> bool
@@ -67,11 +69,12 @@ macro_rules! DECLARE_FIXED_LENGTH_CLUSTER {
 
 #[macro_export]
 macro_rules! DECLARE_VARIABLE_LENGTH_CLUSTER {
-    ($name:ident $(<$lt:lifetime>)?) => {
+    ($name:ident) => {
         ::paste::paste! {
-            pub struct [<$name Cluster>] $(<$lt>)?
+            pub struct [<$name Cluster>]
             {
                 tags: u32,
+                cid: ClassId,
                 obj_count: u64,
 
                 start_of_fill: usize,
@@ -82,7 +85,7 @@ macro_rules! DECLARE_VARIABLE_LENGTH_CLUSTER {
 
                 first_ref_id: u32,
 
-                objs: Vec<Box<$name $(<$lt>)? >> // a pair (ref_id, object)
+                objs: Vec<Box<$name >>
             }
         }
     }
@@ -90,7 +93,7 @@ macro_rules! DECLARE_VARIABLE_LENGTH_CLUSTER {
 
 pub struct DecodedTags {
     class_id: ClassId,
-    is_deeply_immutable: bool, // we don't really care about this for now, at least
+    is_deeply_immutable: bool,
     is_canonical: bool,
 }
 
