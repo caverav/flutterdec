@@ -119,7 +119,7 @@ impl DecodedTags {
     }
 }
 
-macro_rules! DECODE_IS_CID {
+macro_rules! DECODE_CID {
     ($tags:expr) => {
         ClassId::try_from(($tags >> 12) & 0xFFFFF)
     };
@@ -136,7 +136,7 @@ macro_rules! DECODE_IS_CANONICAL {
 }
 
 pub fn decode_tags(tags: u32) -> DecodedTags {
-    let class_id: ClassId = DECODE_IS_CID!(tags).unwrap();
+    let class_id: ClassId = DECODE_CID!(tags).unwrap_or_default();
     let is_deeply_immutable: bool = DECODE_IS_DEEPLY_IMMUTABLE!(tags);
     let is_canonical: bool = DECODE_IS_CANONICAL!(tags);
 
