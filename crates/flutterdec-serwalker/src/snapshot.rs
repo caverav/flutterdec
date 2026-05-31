@@ -100,8 +100,9 @@ impl DataSnapshot {
             let decoded_tags: DecodedTags = decode_tags(tags);
             let cid = decoded_tags.get_cid();
 
-            let mut cluster =
-                decide_cluster(cid).unwrap_or_else(|_| panic!("Couldn't find cluster implementation for class {:?}", cid));
+            let mut cluster = decide_cluster(cid).unwrap_or_else(|_| {
+                panic!("Couldn't find cluster implementation for class {:?}", cid)
+            });
 
             cluster.read_alloc(&mut curr_ref_id, stream);
             self.clusters.insert(cid, cluster); // hashmap takes ownership of box
