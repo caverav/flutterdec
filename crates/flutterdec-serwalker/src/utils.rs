@@ -53,7 +53,7 @@ macro_rules! DECLARE_FIXED_LENGTH_CLUSTER {
                     $fill_impl;
 
                     $_self.end_of_fill = $stream.get_current_pos();
-                    
+
                     $_self.end_of_fill - $_self.start_of_fill
                 }
 
@@ -64,7 +64,7 @@ macro_rules! DECLARE_FIXED_LENGTH_CLUSTER {
             }
 
         }
-    }
+    };
 }
 
 #[macro_export]
@@ -88,7 +88,7 @@ macro_rules! DECLARE_VARIABLE_LENGTH_CLUSTER {
                 objs: Vec<Box<$name >>
             }
         }
-    }
+    };
 }
 
 pub struct DecodedTags {

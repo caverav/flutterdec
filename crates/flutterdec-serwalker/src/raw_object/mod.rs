@@ -1,4 +1,6 @@
-type Smi = i64;
+use std::default;
+
+pub type Smi = i32;
 
 #[derive(Default)]
 pub struct Object {
@@ -7,25 +9,25 @@ pub struct Object {
 
 #[derive(Default)]
 pub struct Class {
-    pub name: u32, // StringPtr
-    pub user_name: u32, // StringPtr
-    pub functions: u32, // ArrayPtr
-    pub functions_hash_table: u32, // ArrayPtr
-    pub fields: u32, // ArrayPtr
-    pub offset_in_words_to_field: u32, // ArrayPtr
-    pub interfaces: u32, // ArrayPtr
-    pub script: u32, // ScriptPtr
-    pub library: u32, // LibraryPtr
-    pub type_parameters: u32, // TypeParametersPtr
-    pub super_type: u32, // TypePtr
-    pub constants: u32, // ArrayPtr
-    pub declaration_type: u32, // TypePtr
-    pub invocation_dispatcher_cache: u32, // ArrayPtr
-    pub direct_implementors: u32, // GrowableObjectArrayPtr
-    pub direct_subclasses: u32, // GrowableObjectArrayPtr
+    pub name: u32,                                // StringPtr
+    pub user_name: u32,                           // StringPtr
+    pub functions: u32,                           // ArrayPtr
+    pub functions_hash_table: u32,                // ArrayPtr
+    pub fields: u32,                              // ArrayPtr
+    pub offset_in_words_to_field: u32,            // ArrayPtr
+    pub interfaces: u32,                          // ArrayPtr
+    pub script: u32,                              // ScriptPtr
+    pub library: u32,                             // LibraryPtr
+    pub type_parameters: u32,                     // TypeParametersPtr
+    pub super_type: u32,                          // TypePtr
+    pub constants: u32,                           // ArrayPtr
+    pub declaration_type: u32,                    // TypePtr
+    pub invocation_dispatcher_cache: u32,         // ArrayPtr
+    pub direct_implementors: u32,                 // GrowableObjectArrayPtr
+    pub direct_subclasses: u32,                   // GrowableObjectArrayPtr
     pub declaration_instance_type_arguments: u32, // TypeArgumentsPtr
-    pub allocation_stub: u32, // CodePtr
-    pub dependent_code: u32, // WeakArrayPtr
+    pub allocation_stub: u32,                     // CodePtr
+    pub dependent_code: u32,                      // WeakArrayPtr
     pub num_native_fields: u16,
     pub state_bits: u32,
     pub kernel_offset: u32,
@@ -40,21 +42,21 @@ pub struct Class {
 
 #[derive(Default)]
 pub struct PatchClass {
-    pub wrapped_class: u32, // ClassPtr
-    pub script: u32, // ScriptPtr
+    pub wrapped_class: u32,       // ClassPtr
+    pub script: u32,              // ScriptPtr
     pub kernel_program_info: u32, // KernelProgramInfoPtr
 }
 
 #[derive(Default)]
 pub struct Function {
-    pub name: u32, // StringPtr
-    pub owner: u32, // ObjectPtr
-    pub signature: u32, // FunctionTypePtr
-    pub data: u32, // ObjectPtr
-    pub ic_data_array_or_bytecode: u32, // ObjectPtr
-    pub code: u32, // CodePtr
+    pub name: u32,                       // StringPtr
+    pub owner: u32,                      // ObjectPtr
+    pub signature: u32,                  // FunctionTypePtr
+    pub data: u32,                       // ObjectPtr
+    pub ic_data_array_or_bytecode: u32,  // ObjectPtr
+    pub code: u32,                       // CodePtr
     pub positional_parameter_names: u32, // ArrayPtr
-    pub unoptimized_code: u32, // CodePtr
+    pub unoptimized_code: u32,           // CodePtr
     pub bitmap: u64,
     pub kernel_offset: u32,
     pub kind_tag: u32,
@@ -62,17 +64,17 @@ pub struct Function {
 
 #[derive(Default)]
 pub struct ClosureData {
-    pub context_scope: u32, // ContextScopePtr
+    pub context_scope: u32,   // ContextScopePtr
     pub parent_function: u32, // FunctionPtr
-    pub closure: u32, // ClosurePtr
+    pub closure: u32,         // ClosurePtr
     pub packed_fields: u32,
 }
 
 #[derive(Default)]
 pub struct FfiTrampolineData {
-    pub signature_type: u32, // TypePtr
-    pub c_signature: u32, // FunctionTypePtr
-    pub callback_target: u32, // FunctionPtr
+    pub signature_type: u32,              // TypePtr
+    pub c_signature: u32,                 // FunctionTypePtr
+    pub callback_target: u32,             // FunctionPtr
     pub callback_exceptional_return: u32, // InstancePtr
     pub ffi_function_kind: u8,
     pub callback_id: i32,
@@ -80,14 +82,14 @@ pub struct FfiTrampolineData {
 
 #[derive(Default)]
 pub struct Field {
-    pub name: u32, // StringPtr
-    pub owner: u32, // ObjectPtr
-    pub type_field: u32, // AbstractTypePtr
-    pub initializer_function: u32, // FunctionPtr
+    pub name: u32,                    // StringPtr
+    pub owner: u32,                   // ObjectPtr
+    pub type_field: u32,              // AbstractTypePtr
+    pub initializer_function: u32,    // FunctionPtr
     pub host_offset_or_field_id: u32, // SmiPtr
-    pub guarded_list_length: u32, // SmiPtr
-    pub exact_type: u32, // AbstractTypePtr
-    pub dependent_code: u32, // WeakArrayPtr
+    pub guarded_list_length: u32,     // SmiPtr
+    pub exact_type: u32,              // AbstractTypePtr
+    pub dependent_code: u32,          // WeakArrayPtr
     pub kernel_offset: u32,
     pub guarded_list_length_in_object_offset: i8,
     pub static_type_exactness_state: i8,
@@ -102,19 +104,19 @@ pub struct Script {
 
 #[derive(Default)]
 pub struct Library {
-    pub name: u32, // StringPtr
-    pub url: u32, // StringPtr
-    pub private_key: u32, // StringPtr
-    pub dictionary: u32, // ArrayPtr
-    pub metadata: u32, // ArrayPtr
-    pub toplevel_class: u32, // ClassPtr
-    pub used_scripts: u32, // GrowableObjectArrayPtr
-    pub loading_unit: u32, // LoadingUnitPtr
-    pub imports: u32, // ArrayPtr
-    pub exports: u32, // ArrayPtr
-    pub dependencies: u32, // ArrayPtr
+    pub name: u32,                // StringPtr
+    pub url: u32,                 // StringPtr
+    pub private_key: u32,         // StringPtr
+    pub dictionary: u32,          // ArrayPtr
+    pub metadata: u32,            // ArrayPtr
+    pub toplevel_class: u32,      // ClassPtr
+    pub used_scripts: u32,        // GrowableObjectArrayPtr
+    pub loading_unit: u32,        // LoadingUnitPtr
+    pub imports: u32,             // ArrayPtr
+    pub exports: u32,             // ArrayPtr
+    pub dependencies: u32,        // ArrayPtr
     pub kernel_program_info: u32, // KernelProgramInfoPtr
-    pub loaded_scripts: u32, // ArrayPtr
+    pub loaded_scripts: u32,      // ArrayPtr
     pub num_imports: u16,
     pub flags: u8,
     pub kernel_library_index: u32,
@@ -123,25 +125,25 @@ pub struct Library {
 
 #[derive(Default)]
 pub struct Namespace {
-    pub target: u32, // LibraryPtr
+    pub target: u32,     // LibraryPtr
     pub show_names: u32, // ArrayPtr
     pub hide_names: u32, // ArrayPtr
-    pub owner: u32, // LibraryPtr
+    pub owner: u32,      // LibraryPtr
 }
 
 #[derive(Default)]
 pub struct KernelProgramInfo {
-    pub kernel_component: u32, // TypedDataBasePtr
-    pub string_offsets: u32, // TypedDataPtr
-    pub string_data: u32, // TypedDataViewPtr
-    pub canonical_names: u32, // TypedDataPtr
+    pub kernel_component: u32,  // TypedDataBasePtr
+    pub string_offsets: u32,    // TypedDataPtr
+    pub string_data: u32,       // TypedDataViewPtr
+    pub canonical_names: u32,   // TypedDataPtr
     pub metadata_payloads: u32, // TypedDataViewPtr
     pub metadata_mappings: u32, // TypedDataViewPtr
-    pub scripts: u32, // ArrayPtr
-    pub constants: u32, // ArrayPtr
-    pub constants_table: u32, // TypedDataViewPtr
-    pub libraries_cache: u32, // ArrayPtr
-    pub classes_cache: u32, // ArrayPtr
+    pub scripts: u32,           // ArrayPtr
+    pub constants: u32,         // ArrayPtr
+    pub constants_table: u32,   // TypedDataViewPtr
+    pub libraries_cache: u32,   // ArrayPtr
+    pub classes_cache: u32,     // ArrayPtr
 }
 
 #[derive(Default)]
@@ -200,9 +202,9 @@ pub struct Double {
 #[derive(Default)]
 pub struct TypeArguments {
     pub instantiations: u32, // ArrayPtr
-    pub length: Smi, // SmiPtr
-    pub hash: Smi, // SmiPtr
-    pub nullability: Smi, // SmiPtr
+    pub length: Smi,         // SmiPtr
+    pub hash: Smi,           // SmiPtr
+    pub nullability: Smi,    // SmiPtr
 }
 
 #[derive(Default)]
@@ -219,11 +221,16 @@ pub struct Type {
 
 #[derive(Default)]
 pub struct TypeParameters {
-    pub names: u32, // ArrayPtr
-    pub flags: u32, // ArrayPtr
-    pub bounds: u32, // TypeArgumentsPtr
+    pub names: u32,    // ArrayPtr
+    pub flags: u32,    // ArrayPtr
+    pub bounds: u32,   // TypeArgumentsPtr
     pub defaults: u32, // TypeArgumentsPtr
 }
+
+/*
+    No need to make two separate structs here. Better to just
+    have the _String class and add an enum field to determine
+    the number of bytes "StrType".
 
 #[derive(Default)]
 pub struct OneByteString {
@@ -234,32 +241,42 @@ pub struct OneByteString {
 pub struct TwoByteString {
     // Fieldless class
 }
+*/
+
+#[derive(Default)]
+pub enum StrType {
+    #[default]
+    OneByte, // assume the string is a one byte string.
+    TwoByte,
+}
 
 #[derive(Default)]
 pub struct _String {
-    pub hash: Smi, // SmiPtr
+    pub string_type: StrType,
+    pub hash: Smi,   // SmiPtr
     pub length: Smi, // SmiPtr
+    pub internal_str: String,
 }
 
 #[derive(Default)]
 pub struct Array {
     pub type_arguments: u32, // TypeArgumentsPtr
-    pub length: Smi, // SmiPtr
+    pub length: Smi,         // SmiPtr
 }
 
 #[derive(Default)]
 pub struct AbstractType {
     pub type_test_stub: u32, // CodePtr
-    pub hash: u32, // SmiPtr
+    pub hash: u32,           // SmiPtr
     pub padding: u32,
     pub flags: u32,
 }
 
 #[derive(Default)]
 pub struct FunctionType {
-    pub type_parameters: u32, // TypeParametersPtr
-    pub result_type: u32, // AbstractTypePtr
-    pub parameter_types: u32, // ArrayPtr
+    pub type_parameters: u32,       // TypeParametersPtr
+    pub result_type: u32,           // AbstractTypePtr
+    pub parameter_types: u32,       // ArrayPtr
     pub named_parameter_names: u32, // ArrayPtr
     pub packed_parameter_counts: u32,
     pub packed_type_parameter_counts: u16,
@@ -268,11 +285,11 @@ pub struct FunctionType {
 #[derive(Default)]
 pub struct Closure {
     pub instantiator_type_arguments: u32, // TypeArgumentsPtr
-    pub function_type_arguments: u32, // TypeArgumentsPtr
-    pub delayed_type_arguments: u32, // TypeArgumentsPtr
-    pub function: u32, // FunctionPtr
-    pub context: u32, // ObjectPtr
-    pub hash: u32, // SmiPtr
+    pub function_type_arguments: u32,     // TypeArgumentsPtr
+    pub delayed_type_arguments: u32,      // TypeArgumentsPtr
+    pub function: u32,                    // FunctionPtr
+    pub context: u32,                     // ObjectPtr
+    pub hash: u32,                        // SmiPtr
 }
 
 #[derive(Default)]
@@ -283,7 +300,7 @@ pub struct Instance {
 #[derive(Default)]
 pub struct WeakArray {
     pub next_seen_by_gc: u32, // WeakArrayPtr
-    pub length: Smi, // SmiPtr
+    pub length: Smi,          // SmiPtr
 }
 
 #[derive(Default)]
@@ -299,15 +316,15 @@ pub struct TypedData {
 
 #[derive(Default)]
 pub struct TypedDataView {
-    pub typed_data: u32, // TypedDataBasePtr
+    pub typed_data: u32,      // TypedDataBasePtr
     pub offset_in_bytes: Smi, // SmiPtr
 }
 
 #[derive(Default)]
 pub struct GrowableObjectArray {
     pub type_arguments: u32, // TypeArgumentsPtr
-    pub data: u32, // ArrayPtr
-    pub length: Smi, // SmiPtr
+    pub data: u32,           // ArrayPtr
+    pub length: Smi,         // SmiPtr
 }
 
 #[derive(Default)]
@@ -317,7 +334,7 @@ pub struct Code {
 
 #[derive(Default)]
 pub struct LoadingUnit {
-    pub parent: u32, // LoadingUnitPtr
+    pub parent: u32,       // LoadingUnitPtr
     pub base_objects: u32, // ArrayPtr
     pub packed_fields: i64,
 }
@@ -340,9 +357,9 @@ pub struct SubtypeTestCache {
 
 #[derive(Default)]
 pub struct LanguageError {
-    pub previous_error: u32, // ErrorPtr
-    pub script: u32, // ScriptPtr
-    pub message: u32, // StringPtr
+    pub previous_error: u32,    // ErrorPtr
+    pub script: u32,            // ScriptPtr
+    pub message: u32,           // StringPtr
     pub formatted_message: u32, // StringPtr
     pub kind: i8,
     pub report_after_token: bool,
@@ -350,14 +367,14 @@ pub struct LanguageError {
 
 #[derive(Default)]
 pub struct UnhandledException {
-    pub exception: u32, // InstancePtr
+    pub exception: u32,  // InstancePtr
     pub stacktrace: u32, // InstancePtr
 }
 
 #[derive(Default)]
 pub struct LibraryPrefix {
-    pub name: u32, // StringPtr
-    pub imports: u32, // ArrayPtr
+    pub name: u32,     // StringPtr
+    pub imports: u32,  // ArrayPtr
     pub importer: u32, // LibraryPtr
     pub num_imports: u16,
     pub is_deferred_load: bool,
@@ -366,7 +383,7 @@ pub struct LibraryPrefix {
 #[derive(Default)]
 pub struct RecordType {
     pub field_types: u32, // ArrayPtr
-    pub shape: Smi, // SmiPtr
+    pub shape: Smi,       // SmiPtr
 }
 
 #[derive(Default)]
@@ -381,8 +398,8 @@ pub struct ExternalTypedData {
 
 #[derive(Default)]
 pub struct StackTrace {
-    pub async_link: u32, // StackTracePtr
-    pub code_array: u32, // ArrayPtr
+    pub async_link: u32,      // StackTracePtr
+    pub code_array: u32,      // ArrayPtr
     pub pc_offset_array: u32, // TypedDataPtr
     pub expand_inlined: bool,
 }
@@ -390,18 +407,18 @@ pub struct StackTrace {
 #[derive(Default)]
 pub struct RegExp {
     pub capture_name_map: u32, // ArrayPtr
-    pub pattern: u32, // StringPtr
-    pub one_byte: u32, // TypedDataPtr
-    pub two_byte: u32, // TypedDataPtr
-    pub one_byte_sticky: u32, // TypedDataPtr
-    pub two_byte_sticky: u32, // TypedDataPtr
+    pub pattern: u32,          // StringPtr
+    pub one_byte: u32,         // TypedDataPtr
+    pub two_byte: u32,         // TypedDataPtr
+    pub one_byte_sticky: u32,  // TypedDataPtr
+    pub two_byte_sticky: u32,  // TypedDataPtr
     pub flags: u32,
 }
 
 #[derive(Default)]
 pub struct WeakProperty {
-    pub key: u32, // ObjectPtr
-    pub value: u32, // ObjectPtr
+    pub key: u32,             // ObjectPtr
+    pub value: u32,           // ObjectPtr
     pub next_seen_by_gc: u32, // WeakPropertyPtr
 }
 

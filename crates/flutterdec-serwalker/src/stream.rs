@@ -86,6 +86,17 @@ impl<'a> Stream<'a> {
         u32::from_le_bytes(converted_slice)
     }
 
+    pub fn read_byte(&mut self) -> u8 {
+        let u8_size = std::mem::size_of::<u8>();
+        if self.curr_stream_offset < self.byte_stream.len() {
+            let byte = self.byte_stream[self.curr_stream_offset];
+            self.advance_pos(u8_size);
+            byte
+        } else {
+            panic!("Reading past the end of the snapshot, something went really wrong.");
+        }
+    }
+
     /*
        Panics if it isn't possible to create a stream from the utf-8 representation stored in
        the byte slice. It shouldn't happen, so the best possible outcome is to assume some

@@ -1,11 +1,11 @@
+use std::usize;
+
 use crate::constants::{ClassId, ClassId::*, SIGNED_M, UNSIGNED_M};
 use crate::raw_object::*;
 use crate::stream::Stream;
 use crate::DECLARE_FIXED_LENGTH_CLUSTER;
 use crate::DECLARE_VARIABLE_LENGTH_CLUSTER;
 use crate::FFI_TYPES_LIST;
-
-type Smi = i32;
 
 pub trait Cluster {
     fn is_fixed_len(&self) -> bool;
@@ -241,7 +241,7 @@ DECLARE_FIXED_LENGTH_CLUSTER!(RecordType, |_self, last_ref_id, stream| {
     for obj_idx in 0.._self.obj_count as usize {
         let obj = &mut *_self.objs[obj_idx];
         obj.field_types = stream.read_ref_id();
-        obj.shape = stream.read_ref_id() as i64;
+        obj.shape = stream.read_ref_id() as i32;
     }
 });
 DECLARE_FIXED_LENGTH_CLUSTER!(TypeParameter, |_self, last_ref_id, stream| {
@@ -277,14 +277,14 @@ DECLARE_FIXED_LENGTH_CLUSTER!(GrowableObjectArray, |_self, last_ref_id, stream| 
         let obj = &mut *_self.objs[obj_idx];
         obj.type_arguments = stream.read_ref_id();
         obj.data = stream.read_ref_id();
-        obj.length = stream.read_ref_id() as i64;
+        obj.length = stream.read_ref_id() as i32;
     }
 });
 DECLARE_FIXED_LENGTH_CLUSTER!(TypedDataView, |_self, last_ref_id, stream| {
     for obj_idx in 0.._self.obj_count as usize {
         let obj = &mut *_self.objs[obj_idx];
         obj.typed_data = stream.read_ref_id();
-        obj.offset_in_bytes = stream.read_ref_id() as i64;
+        obj.offset_in_bytes = stream.read_ref_id() as i32;
     }
 });
 DECLARE_FIXED_LENGTH_CLUSTER!(ExternalTypedData, |_self, last_ref_id, stream| {
@@ -343,6 +343,76 @@ DECLARE_VARIABLE_LENGTH_CLUSTER!(ConstSet);
 DECLARE_VARIABLE_LENGTH_CLUSTER!(CodeSourceMap);
 DECLARE_VARIABLE_LENGTH_CLUSTER!(CompressedStackMaps);
 DECLARE_VARIABLE_LENGTH_CLUSTER!(PcDescriptors);
-DECLARE_VARIABLE_LENGTH_CLUSTER!(OneByteString);
-DECLARE_VARIABLE_LENGTH_CLUSTER!(TwoByteString);
+//DECLARE_VARIABLE_LENGTH_CLUSTER!(OneByteString); These only exist when NO COMPRESSED_POINTERS
+//DECLARE_VARIABLE_LENGTH_CLUSTER!(TwoByteString);
 DECLARE_VARIABLE_LENGTH_CLUSTER!(_String);
+
+impl Cluster for _StringCluster {
+    fn is_fixed_len(&self) -> bool {
+        false
+    }
+
+    fn read_alloc(&mut self, last_ref_id: &mut u64, stream: &mut Stream) -> usize {
+        self.start_of_alloc = stream.get_current_pos();
+        self.first_ref_id = *last_ref_id as u32;
+
+        self.obj_count = stream.read_modified_leb128(UNSIGNED_M);
+
+        for _obj_idx in 0..self.obj_count {
+            let mut obj = Box::<_String>::default();
+            let encoded = stream.read_modified_leb128(UNSIGNED_M);
+            obj.string_type = if encoded & 1 == 1 {
+                StrType::TwoByte
+            } else {
+                StrType::OneByte
+            };
+
+            obj.length = (encoded >> 1) as i32;
+            self.objs.push(obj);
+        }
+
+        *last_ref_id = *last_ref_id + self.obj_count;
+        self.end_of_alloc = stream.get_current_pos();
+
+        self.end_of_alloc - self.start_of_alloc
+    }
+
+    fn read_fill(&mut self, stream: &mut Stream) -> usize {
+        self.start_of_fill = stream.get_current_pos();
+
+        for obj_idx in 0..self.obj_count {
+            let encoded = stream.read_modified_leb128(UNSIGNED_M); // why is this here twice? Huh?
+            let obj = self.objs.get_mut(obj_idx as usize);
+
+            let obj =
+                obj.unwrap_or_else(|| panic!("Couldn't unwrap... No string at index {obj_idx}"));
+
+            match obj.string_type {
+                StrType::OneByte => {
+                    obj.internal_str = stream.read_string(
+                        usize::try_from(obj.length).expect("Cannot convert Smi to usize."),
+                    );
+                }
+                StrType::TwoByte => {
+                    // a TwoByteString has exactly `length` 16-bit code units
+                    let mut code_units = Vec::with_capacity(obj.length as usize);
+
+                    for _ in 0..obj.length {
+                        // read 2 bytes (little-endian)
+                        let b1 = stream.read_byte() as u16;
+                        let b2 = stream.read_byte() as u16;
+                        let code_unit = b1 | (b2 << 8);
+
+                        code_units.push(code_unit);
+                    }
+
+                    obj.internal_str = String::from_utf16(&code_units)
+                        .expect("Failed to decode TwoByteString UTF-16 payload");
+                }
+            }
+        }
+
+        self.end_of_fill = stream.get_current_pos();
+        self.end_of_fill - self.start_of_fill
+    }
+}
