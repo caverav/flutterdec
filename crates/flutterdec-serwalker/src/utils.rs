@@ -4,7 +4,7 @@ use crate::constants::ClassId;
 
 #[macro_export]
 macro_rules! DECLARE_FIXED_LENGTH_CLUSTER {
-    ($name:ident, |$_self:ident, $last_ref_id:ident, $stream:ident| $fill_impl:block) => {
+    ($name:ident, |$_self:ident, $stream:ident| $fill_impl:block) => {
         ::paste::paste! {
             pub struct [<$name Cluster>]
             {

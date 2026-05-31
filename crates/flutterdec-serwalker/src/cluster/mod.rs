@@ -38,7 +38,7 @@ pub fn decide_cluster(class_id: ClassId) -> Result<Box<dyn Cluster>, &'static st
 // whose fill cluster size is uniquely determined by sizeof(Object) * num_of_objects
 // and alloc cluster size is tags (MULEB128) + num_of_objects (MULEB128)
 
-DECLARE_FIXED_LENGTH_CLUSTER!(TypeParameters, |_self, last_ref_id, stream| {
+DECLARE_FIXED_LENGTH_CLUSTER!(TypeParameters, |_self, stream| {
     for obj_idx in 0.._self.obj_count as usize {
         let obj = &mut *_self.objs[obj_idx];
         obj.names = stream.read_ref_id();
@@ -47,7 +47,7 @@ DECLARE_FIXED_LENGTH_CLUSTER!(TypeParameters, |_self, last_ref_id, stream| {
         obj.defaults = stream.read_ref_id();
     }
 });
-DECLARE_FIXED_LENGTH_CLUSTER!(PatchClass, |_self, last_ref_id, stream| {
+DECLARE_FIXED_LENGTH_CLUSTER!(PatchClass, |_self, stream| {
     for obj_idx in 0.._self.obj_count as usize {
         let obj = &mut *_self.objs[obj_idx];
         obj.wrapped_class = stream.read_ref_id();
@@ -55,7 +55,7 @@ DECLARE_FIXED_LENGTH_CLUSTER!(PatchClass, |_self, last_ref_id, stream| {
         obj.kernel_program_info = stream.read_ref_id();
     }
 });
-DECLARE_FIXED_LENGTH_CLUSTER!(Function, |_self, last_ref_id, stream| {
+DECLARE_FIXED_LENGTH_CLUSTER!(Function, |_self, stream| {
     for obj_idx in 0.._self.obj_count as usize {
         let obj = &mut *_self.objs[obj_idx];
         obj.name = stream.read_ref_id();
@@ -71,7 +71,7 @@ DECLARE_FIXED_LENGTH_CLUSTER!(Function, |_self, last_ref_id, stream| {
         obj.kind_tag = stream.read_modified_leb128(UNSIGNED_M) as u32;
     }
 });
-DECLARE_FIXED_LENGTH_CLUSTER!(ClosureData, |_self, last_ref_id, stream| {
+DECLARE_FIXED_LENGTH_CLUSTER!(ClosureData, |_self, stream| {
     for obj_idx in 0.._self.obj_count as usize {
         let obj = &mut *_self.objs[obj_idx];
         obj.context_scope = stream.read_ref_id();
@@ -80,7 +80,7 @@ DECLARE_FIXED_LENGTH_CLUSTER!(ClosureData, |_self, last_ref_id, stream| {
         obj.packed_fields = stream.read_modified_leb128(UNSIGNED_M) as u32;
     }
 });
-DECLARE_FIXED_LENGTH_CLUSTER!(FfiTrampolineData, |_self, last_ref_id, stream| {
+DECLARE_FIXED_LENGTH_CLUSTER!(FfiTrampolineData, |_self, stream| {
     for obj_idx in 0.._self.obj_count as usize {
         let obj = &mut *_self.objs[obj_idx];
         obj.signature_type = stream.read_ref_id();
@@ -91,7 +91,7 @@ DECLARE_FIXED_LENGTH_CLUSTER!(FfiTrampolineData, |_self, last_ref_id, stream| {
         obj.callback_id = stream.read_modified_leb128(SIGNED_M) as i32;
     }
 });
-DECLARE_FIXED_LENGTH_CLUSTER!(Field, |_self, last_ref_id, stream| {
+DECLARE_FIXED_LENGTH_CLUSTER!(Field, |_self, stream| {
     for obj_idx in 0.._self.obj_count as usize {
         let obj = &mut *_self.objs[obj_idx];
         obj.name = stream.read_ref_id();
@@ -109,10 +109,10 @@ DECLARE_FIXED_LENGTH_CLUSTER!(Field, |_self, last_ref_id, stream| {
         obj.kind_bits = stream.read_modified_leb128(UNSIGNED_M) as u32;
     }
 });
-DECLARE_FIXED_LENGTH_CLUSTER!(Script, |_self, last_ref_id, stream| {
+DECLARE_FIXED_LENGTH_CLUSTER!(Script, |_self, stream| {
     for _ in 0.._self.obj_count as usize {}
 });
-DECLARE_FIXED_LENGTH_CLUSTER!(Library, |_self, last_ref_id, stream| {
+DECLARE_FIXED_LENGTH_CLUSTER!(Library, |_self, stream| {
     for obj_idx in 0.._self.obj_count as usize {
         let obj = &mut *_self.objs[obj_idx];
         obj.name = stream.read_ref_id();
@@ -134,7 +134,7 @@ DECLARE_FIXED_LENGTH_CLUSTER!(Library, |_self, last_ref_id, stream| {
         obj.load_state = stream.read_modified_leb128(SIGNED_M) as i8;
     }
 });
-DECLARE_FIXED_LENGTH_CLUSTER!(Namespace, |_self, last_ref_id, stream| {
+DECLARE_FIXED_LENGTH_CLUSTER!(Namespace, |_self, stream| {
     for obj_idx in 0.._self.obj_count as usize {
         let obj = &mut *_self.objs[obj_idx];
         obj.target = stream.read_ref_id();
@@ -143,7 +143,7 @@ DECLARE_FIXED_LENGTH_CLUSTER!(Namespace, |_self, last_ref_id, stream| {
         obj.owner = stream.read_ref_id();
     }
 });
-DECLARE_FIXED_LENGTH_CLUSTER!(KernelProgramInfo, |_self, last_ref_id, stream| {
+DECLARE_FIXED_LENGTH_CLUSTER!(KernelProgramInfo, |_self, stream| {
     for obj_idx in 0.._self.obj_count as usize {
         let obj = &mut *_self.objs[obj_idx];
         obj.kernel_component = stream.read_ref_id();
@@ -159,32 +159,32 @@ DECLARE_FIXED_LENGTH_CLUSTER!(KernelProgramInfo, |_self, last_ref_id, stream| {
         obj.classes_cache = stream.read_ref_id();
     }
 });
-DECLARE_FIXED_LENGTH_CLUSTER!(UnlinkedCall, |_self, last_ref_id, stream| {
+DECLARE_FIXED_LENGTH_CLUSTER!(UnlinkedCall, |_self, stream| {
     for obj_idx in 0.._self.obj_count as usize {
         let obj = &mut *_self.objs[obj_idx];
         obj.can_patch_to_monomorphic = stream.read_modified_leb128(UNSIGNED_M) != 0;
     }
 });
-DECLARE_FIXED_LENGTH_CLUSTER!(ICData, |_self, last_ref_id, stream| {
+DECLARE_FIXED_LENGTH_CLUSTER!(ICData, |_self, stream| {
     for obj_idx in 0.._self.obj_count as usize {
         let obj = &mut *_self.objs[obj_idx];
         obj.state_bits = stream.read_modified_leb128(UNSIGNED_M) as u32;
     }
 });
-DECLARE_FIXED_LENGTH_CLUSTER!(MegamorphicCache, |_self, last_ref_id, stream| {
+DECLARE_FIXED_LENGTH_CLUSTER!(MegamorphicCache, |_self, stream| {
     for obj_idx in 0.._self.obj_count as usize {
         let obj = &mut *_self.objs[obj_idx];
         obj.filled_entry_count = stream.read_modified_leb128(SIGNED_M) as i32;
     }
 });
-DECLARE_FIXED_LENGTH_CLUSTER!(SubtypeTestCache, |_self, last_ref_id, stream| {
+DECLARE_FIXED_LENGTH_CLUSTER!(SubtypeTestCache, |_self, stream| {
     for obj_idx in 0.._self.obj_count as usize {
         let obj = &mut *_self.objs[obj_idx];
         obj.num_inputs = stream.read_modified_leb128(UNSIGNED_M) as u32;
         obj.num_occupied = stream.read_modified_leb128(UNSIGNED_M) as u32;
     }
 });
-DECLARE_FIXED_LENGTH_CLUSTER!(LoadingUnit, |_self, last_ref_id, stream| {
+DECLARE_FIXED_LENGTH_CLUSTER!(LoadingUnit, |_self, stream| {
     for obj_idx in 0.._self.obj_count as usize {
         let obj = &mut *_self.objs[obj_idx];
         obj.parent = stream.read_ref_id();
@@ -192,7 +192,7 @@ DECLARE_FIXED_LENGTH_CLUSTER!(LoadingUnit, |_self, last_ref_id, stream| {
         obj.packed_fields = stream.read_modified_leb128(SIGNED_M) as i64;
     }
 });
-DECLARE_FIXED_LENGTH_CLUSTER!(LanguageError, |_self, last_ref_id, stream| {
+DECLARE_FIXED_LENGTH_CLUSTER!(LanguageError, |_self, stream| {
     for obj_idx in 0.._self.obj_count as usize {
         let obj = &mut *_self.objs[obj_idx];
         obj.previous_error = stream.read_ref_id();
@@ -203,14 +203,14 @@ DECLARE_FIXED_LENGTH_CLUSTER!(LanguageError, |_self, last_ref_id, stream| {
         obj.report_after_token = stream.read_modified_leb128(UNSIGNED_M) != 0;
     }
 });
-DECLARE_FIXED_LENGTH_CLUSTER!(UnhandledException, |_self, last_ref_id, stream| {
+DECLARE_FIXED_LENGTH_CLUSTER!(UnhandledException, |_self, stream| {
     for obj_idx in 0.._self.obj_count as usize {
         let obj = &mut *_self.objs[obj_idx];
         obj.exception = stream.read_ref_id();
         obj.stacktrace = stream.read_ref_id();
     }
 });
-DECLARE_FIXED_LENGTH_CLUSTER!(LibraryPrefix, |_self, last_ref_id, stream| {
+DECLARE_FIXED_LENGTH_CLUSTER!(LibraryPrefix, |_self, stream| {
     for obj_idx in 0.._self.obj_count as usize {
         let obj = &mut *_self.objs[obj_idx];
         obj.name = stream.read_ref_id();
@@ -220,13 +220,13 @@ DECLARE_FIXED_LENGTH_CLUSTER!(LibraryPrefix, |_self, last_ref_id, stream| {
         obj.is_deferred_load = stream.read_modified_leb128(UNSIGNED_M) != 0;
     }
 });
-DECLARE_FIXED_LENGTH_CLUSTER!(Type, |_self, last_ref_id, stream| {
+DECLARE_FIXED_LENGTH_CLUSTER!(Type, |_self, stream| {
     for obj_idx in 0.._self.obj_count as usize {
         let obj = &mut *_self.objs[obj_idx];
         obj.arguments = stream.read_ref_id();
     }
 });
-DECLARE_FIXED_LENGTH_CLUSTER!(FunctionType, |_self, last_ref_id, stream| {
+DECLARE_FIXED_LENGTH_CLUSTER!(FunctionType, |_self, stream| {
     for obj_idx in 0.._self.obj_count as usize {
         let obj = &mut *_self.objs[obj_idx];
         obj.type_parameters = stream.read_ref_id();
@@ -237,14 +237,14 @@ DECLARE_FIXED_LENGTH_CLUSTER!(FunctionType, |_self, last_ref_id, stream| {
         obj.packed_type_parameter_counts = stream.read_modified_leb128(UNSIGNED_M) as u16;
     }
 });
-DECLARE_FIXED_LENGTH_CLUSTER!(RecordType, |_self, last_ref_id, stream| {
+DECLARE_FIXED_LENGTH_CLUSTER!(RecordType, |_self, stream| {
     for obj_idx in 0.._self.obj_count as usize {
         let obj = &mut *_self.objs[obj_idx];
         obj.field_types = stream.read_ref_id();
         obj.shape = stream.read_ref_id() as i32;
     }
 });
-DECLARE_FIXED_LENGTH_CLUSTER!(TypeParameter, |_self, last_ref_id, stream| {
+DECLARE_FIXED_LENGTH_CLUSTER!(TypeParameter, |_self, stream| {
     for obj_idx in 0.._self.obj_count as usize {
         let obj = &mut *_self.objs[obj_idx];
         obj.owner = stream.read_ref_id();
@@ -252,7 +252,7 @@ DECLARE_FIXED_LENGTH_CLUSTER!(TypeParameter, |_self, last_ref_id, stream| {
         obj.index = stream.read_modified_leb128(UNSIGNED_M) as u16;
     }
 });
-DECLARE_FIXED_LENGTH_CLUSTER!(Closure, |_self, last_ref_id, stream| {
+DECLARE_FIXED_LENGTH_CLUSTER!(Closure, |_self, stream| {
     for obj_idx in 0.._self.obj_count as usize {
         let obj = &mut *_self.objs[obj_idx];
         obj.instantiator_type_arguments = stream.read_ref_id();
@@ -263,16 +263,16 @@ DECLARE_FIXED_LENGTH_CLUSTER!(Closure, |_self, last_ref_id, stream| {
         obj.hash = stream.read_ref_id();
     }
 });
-DECLARE_FIXED_LENGTH_CLUSTER!(Double, |_self, last_ref_id, stream| {
+DECLARE_FIXED_LENGTH_CLUSTER!(Double, |_self, stream| {
     for obj_idx in 0.._self.obj_count as usize {
         let obj = &mut *_self.objs[obj_idx];
         obj.value = f64::from_bits(stream.read_u64());
     }
 });
-DECLARE_FIXED_LENGTH_CLUSTER!(Int32x4, |_self, last_ref_id, stream| {
+DECLARE_FIXED_LENGTH_CLUSTER!(Int32x4, |_self, stream| {
     for _ in 0.._self.obj_count as usize {}
 });
-DECLARE_FIXED_LENGTH_CLUSTER!(GrowableObjectArray, |_self, last_ref_id, stream| {
+DECLARE_FIXED_LENGTH_CLUSTER!(GrowableObjectArray, |_self, stream| {
     for obj_idx in 0.._self.obj_count as usize {
         let obj = &mut *_self.objs[obj_idx];
         obj.type_arguments = stream.read_ref_id();
@@ -280,17 +280,17 @@ DECLARE_FIXED_LENGTH_CLUSTER!(GrowableObjectArray, |_self, last_ref_id, stream| 
         obj.length = stream.read_ref_id() as i32;
     }
 });
-DECLARE_FIXED_LENGTH_CLUSTER!(TypedDataView, |_self, last_ref_id, stream| {
+DECLARE_FIXED_LENGTH_CLUSTER!(TypedDataView, |_self, stream| {
     for obj_idx in 0.._self.obj_count as usize {
         let obj = &mut *_self.objs[obj_idx];
         obj.typed_data = stream.read_ref_id();
         obj.offset_in_bytes = stream.read_ref_id() as i32;
     }
 });
-DECLARE_FIXED_LENGTH_CLUSTER!(ExternalTypedData, |_self, last_ref_id, stream| {
+DECLARE_FIXED_LENGTH_CLUSTER!(ExternalTypedData, |_self, stream| {
     for _ in 0.._self.obj_count as usize {}
 });
-DECLARE_FIXED_LENGTH_CLUSTER!(StackTrace, |_self, last_ref_id, stream| {
+DECLARE_FIXED_LENGTH_CLUSTER!(StackTrace, |_self, stream| {
     for obj_idx in 0.._self.obj_count as usize {
         let obj = &mut *_self.objs[obj_idx];
         obj.async_link = stream.read_ref_id();
@@ -299,7 +299,7 @@ DECLARE_FIXED_LENGTH_CLUSTER!(StackTrace, |_self, last_ref_id, stream| {
         obj.expand_inlined = stream.read_modified_leb128(UNSIGNED_M) != 0;
     }
 });
-DECLARE_FIXED_LENGTH_CLUSTER!(RegExp, |_self, last_ref_id, stream| {
+DECLARE_FIXED_LENGTH_CLUSTER!(RegExp, |_self, stream| {
     for obj_idx in 0.._self.obj_count as usize {
         let obj = &mut *_self.objs[obj_idx];
         obj.capture_name_map = stream.read_ref_id();
@@ -311,7 +311,7 @@ DECLARE_FIXED_LENGTH_CLUSTER!(RegExp, |_self, last_ref_id, stream| {
         obj.flags = stream.read_modified_leb128(UNSIGNED_M) as u32;
     }
 });
-DECLARE_FIXED_LENGTH_CLUSTER!(WeakProperty, |_self, last_ref_id, stream| {
+DECLARE_FIXED_LENGTH_CLUSTER!(WeakProperty, |_self, stream| {
     for obj_idx in 0.._self.obj_count as usize {
         let obj = &mut *_self.objs[obj_idx];
         obj.key = stream.read_ref_id();
@@ -381,7 +381,7 @@ impl Cluster for _StringCluster {
         self.start_of_fill = stream.get_current_pos();
 
         for obj_idx in 0..self.obj_count {
-            let encoded = stream.read_modified_leb128(UNSIGNED_M); // why is this here twice? Huh?
+            let _encoded = stream.read_modified_leb128(UNSIGNED_M); // why is this here twice? Huh?
             let obj = self.objs.get_mut(obj_idx as usize);
 
             let obj =
