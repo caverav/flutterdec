@@ -10,6 +10,9 @@ impl<'a> Stream<'a> {
         if self.byte_stream.len() > pos && pos >= 0 {
             self.curr_stream_offset = pos;
         }
+        else {
+            panic!("Trying to seek an offset at a position past the end of the bytestream. Position {pos}");
+        }
     }
 
     pub fn advance_pos(&mut self, num_bytes: usize) {

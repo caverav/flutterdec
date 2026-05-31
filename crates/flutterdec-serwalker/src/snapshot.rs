@@ -12,7 +12,7 @@ enum SnapshotKind
     Full,
     FullCore,
     FullJIT,
-    FullAOT, // Full + AOT code, this is the one we care about, as th
+    FullAOT, // Full + AOT code, this is the one we care about, as this is how flutter builds projects
     Module,
     #[default]
     None,
@@ -101,7 +101,7 @@ impl DataSnapshot {
             let cid = decoded_tags.get_cid();
 
             let mut cluster =
-                decide_cluster(cid).expect("Couldn't find cluster implementation for class {cid}");
+                decide_cluster(cid).unwrap_or_else(|_| panic!("Couldn't find cluster implementation for class {:?}", cid));
 
             cluster.read_alloc(&mut curr_ref_id, stream);
             self.clusters.insert(cid, cluster); // hashmap takes ownership of box
