@@ -734,8 +734,13 @@ fn aliases_dispatch_target_slot_callable_calls() {
     );
 }
 
+/// Page-based pool loads that the disassembler's register tracker could not follow
+/// still reach the decompiler as raw `((pool + <page> /* lsl #N */)).f<off>` text.
+/// That text carries a byte displacement, not an entry index, and the decompiler has
+/// no pool geometry to convert it, so it must surface the displacement and decline
+/// to resolve, rather than divide by the stride and land on a neighbouring slot.
 #[test]
-fn resolves_shifted_pool_target_to_symbol_call_name() {
+fn residual_shifted_pool_syntax_reports_displacement_and_does_not_resolve() {
     let ir = FunctionIr {
         function_id: 215,
         name: "shiftedPoolTarget".to_string(),
@@ -780,21 +785,21 @@ fn resolves_shifted_pool_target_to_symbol_call_name() {
     );
 
     let artifact = emit_pseudocode_with_pool_context(&ir, &symbols, &pool, &semantic);
+    // (8 << 12) + 3640 == 36408 bytes from PP.
     assert!(
-        artifact
-            .source
-            .contains("dart.core.print(receiver, param1, param2, param3);"),
-        "shifted pool target should resolve to readable symbol call:\n{}",
+        artifact.source.contains("poolOff[36408]"),
+        "residual shifted pool access should surface its byte displacement:\n{}",
         artifact.source
     );
     assert!(
-        artifact.source.contains("target: pool[4551]"),
-        "shifted pool target should normalize to pool index in comments:\n{}",
+        !artifact.source.contains("pool[4551]"),
+        "displacement 36408 must not be reported as entry index 4551; the real entry \
+         index depends on pool geometry the decompiler does not have:\n{}",
         artifact.source
     );
     assert!(
-        artifact.source.contains("target_va: 0x9100"),
-        "resolved call should report target_va from pool semantic hint:\n{}",
+        !artifact.source.contains("dart.core.print"),
+        "an unresolvable pool displacement must not pick up a semantic hint:\n{}",
         artifact.source
     );
     assert!(

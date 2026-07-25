@@ -314,13 +314,15 @@ mod expr_cleanup_utf8_tests {
     fn clean_expr_normalizes_shifted_pool_field_access() {
         let input = "((pool + 8 /* lsl #12 */)).f3640".to_string();
         let out = FuncEmitter::clean_expr(input);
-        assert_eq!(out, "pool[4551]");
+        // (8 << 12) + 3640 == 36408 bytes from PP. Converting that to an entry index
+        // needs the pool's entries_offset/word_size, which this layer does not have.
+        assert_eq!(out, "poolOff[36408]");
     }
 
     #[test]
     fn clean_expr_normalizes_nested_shifted_pool_field_access() {
         let input = "((((pool + 8 /* lsl #12 */)).f816).f7)".to_string();
         let out = FuncEmitter::clean_expr(input);
-        assert_eq!(out, "(pool[4198].f7)");
+        assert_eq!(out, "(poolOff[33584].f7)");
     }
 }
