@@ -165,6 +165,10 @@ enum AdapterBackendArg {
     Auto,
     Internal,
     Blutter,
+    /// Spelled `r2-flutter` by clap's derive; accept the tool's own spelling too, since
+    /// that is what the docs, `report.json` and the env vars all call it.
+    #[value(alias = "r2flutter")]
+    R2Flutter,
 }
 
 impl AdapterBackendArg {
@@ -173,6 +177,7 @@ impl AdapterBackendArg {
             Self::Auto => AdapterBackend::Auto,
             Self::Internal => AdapterBackend::Internal,
             Self::Blutter => AdapterBackend::Blutter,
+            Self::R2Flutter => AdapterBackend::R2Flutter,
         }
     }
 }
@@ -751,13 +756,12 @@ mod tests {
         };
         assert!(matches!(cmd.adapter_backend, AdapterBackendArg::Auto));
     }
-
     #[test]
     fn decompile_adapter_backend_accepts_blutter() {
         let cli = Cli::try_parse_from([
             "flutterdec",
             "decompile",
-            "sample.apk",
+            "in.apk",
             "-o",
             "out",
             "--adapter-backend",
@@ -768,6 +772,25 @@ mod tests {
             panic!("expected decompile command");
         };
         assert!(matches!(cmd.adapter_backend, AdapterBackendArg::Blutter));
+    }
+
+    #[test]
+    fn decompile_adapter_backend_accepts_r2flutter() {
+        let cli = Cli::try_parse_from([
+            "flutterdec",
+            "decompile",
+            "in.apk",
+            "-o",
+            "out",
+            "--adapter-backend",
+            "r2-flutter",
+        ])
+        .expect("parse");
+        let Command::Decompile(cmd) = cli.command else {
+            panic!("expected decompile command");
+        };
+        assert!(matches!(cmd.adapter_backend, AdapterBackendArg::R2Flutter));
+        assert_eq!(cmd.adapter_backend.to_core().as_str(), "r2flutter");
     }
 
     #[test]

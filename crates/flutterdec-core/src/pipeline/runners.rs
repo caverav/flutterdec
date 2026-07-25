@@ -127,6 +127,9 @@ struct EngineSymbolIngestion {
 
 fn resolved_backend_from_adapter_kind(adapter_kind: &str) -> Option<AdapterBackend> {
     let lowered = adapter_kind.trim().to_ascii_lowercase();
+    if lowered.contains("r2flutter") {
+        return Some(AdapterBackend::R2Flutter);
+    }
     if lowered.contains("blutter") {
         return Some(AdapterBackend::Blutter);
     }
@@ -138,9 +141,7 @@ fn resolved_backend_from_adapter_kind(adapter_kind: &str) -> Option<AdapterBacke
 
 fn backend_label(value: Option<AdapterBackend>) -> &'static str {
     match value {
-        Some(AdapterBackend::Auto) => "auto",
-        Some(AdapterBackend::Internal) => "internal",
-        Some(AdapterBackend::Blutter) => "blutter",
+        Some(backend) => backend.as_str(),
         None => "unknown",
     }
 }

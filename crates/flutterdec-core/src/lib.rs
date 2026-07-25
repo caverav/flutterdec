@@ -113,9 +113,14 @@ impl DecompileAnalysisProfile {
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 pub enum AdapterBackend {
+    /// Try each snapshot-aware backend in turn, then fall back to the internal one.
     Auto,
+    /// String carving plus prologue scanning. No real names, no real ObjectPool.
     Internal,
     Blutter,
+    /// `r2flutter` (MIT, radareorg): deserializes the AOT snapshot, so it is the only
+    /// backend that supplies exact names and an authoritative ObjectPool index space.
+    R2Flutter,
 }
 
 impl AdapterBackend {
@@ -124,6 +129,7 @@ impl AdapterBackend {
             Self::Auto => "auto",
             Self::Internal => "internal",
             Self::Blutter => "blutter",
+            Self::R2Flutter => "r2flutter",
         }
     }
 }
