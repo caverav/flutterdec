@@ -14,11 +14,37 @@ impl<'a> FuncEmitter<'a> {
             })
     }
 
+    /// Length of the string literal starting at `i`, including both quotes.
+    ///
+    /// Recovered pool strings are real program data and frequently contain the same
+    /// punctuation these rewrites look for. `"... collected (nullptr). This is ..."` reads
+    /// as a parenthesised member access to a byte scanner, and simplifying it silently
+    /// edits a string that came out of the binary. Scanners copy literals verbatim.
+    fn string_literal_len(bytes: &[u8], i: usize) -> Option<usize> {
+        if bytes.get(i) != Some(&b'"') {
+            return None;
+        }
+        let mut j = i + 1;
+        while j < bytes.len() {
+            match bytes[j] {
+                b'\\' => j += 2,
+                b'"' => return Some(j + 1 - i),
+                _ => j += 1,
+            }
+        }
+        None
+    }
+
     fn simplify_wrapped_member_access_once(input: &str) -> String {
         let bytes = input.as_bytes();
         let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
         let mut i = 0usize;
         while i < bytes.len() {
+            if let Some(len) = Self::string_literal_len(bytes, i) {
+                out.extend_from_slice(&bytes[i..i + len]);
+                i += len;
+                continue;
+            }
             if i + 3 < bytes.len() && bytes[i] == b'(' && bytes[i + 1] == b'(' {
                 let mut depth = 0i32;
                 let mut j = i;
@@ -62,6 +88,11 @@ impl<'a> FuncEmitter<'a> {
         let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
         let mut i = 0usize;
         while i < bytes.len() {
+            if let Some(len) = Self::string_literal_len(bytes, i) {
+                out.extend_from_slice(&bytes[i..i + len]);
+                i += len;
+                continue;
+            }
             if bytes[i] == b'(' {
                 let mut depth = 0i32;
                 let mut j = i;
