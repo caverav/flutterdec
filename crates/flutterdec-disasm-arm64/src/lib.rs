@@ -1415,6 +1415,7 @@ mod tests {
                 code_section_va: 0x1000,
                 name_kind: None,
             }],
+            pool_geometry: None,
             object_pool: vec![ObjectPoolEntry {
                 index: 0,
                 kind: "String".to_string(),
@@ -1488,6 +1489,7 @@ mod tests {
                     name_kind: None,
                 },
             ],
+            pool_geometry: None,
             object_pool: vec![ObjectPoolEntry {
                 index: 0,
                 kind: "String".to_string(),
@@ -1561,6 +1563,7 @@ mod tests {
                     name_kind: None,
                 },
             ],
+            pool_geometry: None,
             object_pool: vec![ObjectPoolEntry {
                 index: 0,
                 kind: "String".to_string(),
@@ -1619,6 +1622,7 @@ mod tests {
                     name_kind: None,
                 },
             ],
+            pool_geometry: None,
             object_pool: vec![ObjectPoolEntry {
                 index: 0,
                 kind: "String".to_string(),
@@ -1677,6 +1681,7 @@ mod tests {
                     name_kind: None,
                 },
             ],
+            pool_geometry: None,
             object_pool: vec![
                 ObjectPoolEntry {
                     index: 0,
@@ -1749,6 +1754,7 @@ mod tests {
                     name_kind: None,
                 },
             ],
+            pool_geometry: None,
             object_pool: vec![ObjectPoolEntry {
                 index: 0,
                 kind: "String".to_string(),
@@ -1807,6 +1813,7 @@ mod tests {
                     name_kind: None,
                 },
             ],
+            pool_geometry: None,
             object_pool: vec![ObjectPoolEntry {
                 index: 0,
                 kind: "String".to_string(),
@@ -1865,6 +1872,7 @@ mod tests {
                     name_kind: None,
                 },
             ],
+            pool_geometry: None,
             object_pool: vec![ObjectPoolEntry {
                 index: 0,
                 kind: "String".to_string(),
@@ -1923,6 +1931,7 @@ mod tests {
                     name_kind: None,
                 },
             ],
+            pool_geometry: None,
             object_pool: vec![ObjectPoolEntry {
                 index: 0,
                 kind: "String".to_string(),
@@ -1996,6 +2005,7 @@ mod tests {
                     name_kind: None,
                 },
             ],
+            pool_geometry: None,
             object_pool: vec![
                 ObjectPoolEntry {
                     index: 0,
@@ -2077,6 +2087,7 @@ mod tests {
                     name_kind: None,
                 },
             ],
+            pool_geometry: None,
             object_pool: vec![
                 ObjectPoolEntry {
                     index: 0,
@@ -2180,6 +2191,7 @@ mod tests {
                     name_kind: None,
                 },
             ],
+            pool_geometry: None,
             object_pool: vec![
                 ObjectPoolEntry {
                     index: 0,
@@ -2280,6 +2292,7 @@ mod tests {
                     name_kind: None,
                 },
             ],
+            pool_geometry: None,
             object_pool: vec![ObjectPoolEntry {
                 index: 0,
                 kind: "String".to_string(),
@@ -2416,6 +2429,7 @@ mod tests {
                     name_kind: None,
                 },
             ],
+            pool_geometry: None,
             object_pool: vec![ObjectPoolEntry {
                 index: 0,
                 kind: "String".to_string(),
@@ -2474,6 +2488,7 @@ mod tests {
                     name_kind: None,
                 },
             ],
+            pool_geometry: None,
             object_pool: vec![ObjectPoolEntry {
                 index: 0,
                 kind: "String".to_string(),
@@ -2541,6 +2556,7 @@ mod tests {
                     name_kind: None,
                 },
             ],
+            pool_geometry: None,
             object_pool: vec![ObjectPoolEntry {
                 index: 0,
                 kind: "String".to_string(),
@@ -2627,6 +2643,7 @@ mod tests {
                     name_kind: None,
                 },
             ],
+            pool_geometry: None,
             object_pool: vec![ObjectPoolEntry {
                 index: 0,
                 kind: "String".to_string(),
@@ -3031,6 +3048,7 @@ mod tests {
             libraries: Vec::new(),
             classes: Vec::new(),
             functions,
+            pool_geometry: None,
             object_pool: Vec::new(),
         };
         let owner_library = HashMap::from([
@@ -3101,6 +3119,7 @@ mod tests {
                     name_kind: None,
                 },
             ],
+            pool_geometry: None,
             object_pool: vec![ObjectPoolEntry {
                 index: 0,
                 kind: "String".to_string(),
@@ -3173,6 +3192,7 @@ mod tests {
                     name_kind: None,
                 },
             ],
+            pool_geometry: None,
             object_pool: vec![ObjectPoolEntry {
                 index: 0,
                 kind: "String".to_string(),
@@ -3232,6 +3252,7 @@ mod tests {
                     name_kind: None,
                 },
             ],
+            pool_geometry: None,
             object_pool: vec![ObjectPoolEntry {
                 index: 0,
                 kind: "String".to_string(),
