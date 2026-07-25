@@ -389,9 +389,13 @@ impl Cluster for _StringCluster {
 
             match obj.string_type {
                 StrType::OneByte => {
-                    obj.internal_str = stream.read_string(
-                        usize::try_from(obj.length).expect("Cannot convert Smi to usize."),
-                    );
+                    // OneByteString payload is Latin-1, not UTF-8. Bytes 0x80..=0xFF
+                    // are valid and map to U+0080..U+00FF; from_utf8 rejects them.
+                    let mut decoded = String::with_capacity(obj.length as usize);
+                    for _ in 0..obj.length {
+                        decoded.push(stream.read_byte() as char);
+                    }
+                    obj.internal_str = decoded;
                 }
                 StrType::TwoByte => {
                     // a TwoByteString has exactly `length` 16-bit code units
@@ -406,8 +410,8 @@ impl Cluster for _StringCluster {
                         code_units.push(code_unit);
                     }
 
-                    obj.internal_str = String::from_utf16(&code_units)
-                        .expect("Failed to decode TwoByteString UTF-16 payload");
+                    // Dart strings may hold unpaired surrogates; never panic on them.
+                    obj.internal_str = String::from_utf16_lossy(&code_units);
                 }
             }
         }
