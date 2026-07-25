@@ -1293,8 +1293,13 @@ pub fn run_decompile(
     } else {
         HashMap::new()
     };
-    let pool_value_hints = if opt.engine_options.pool_value_hints
-        || opt.engine_options.pool_semantic_hints
+    // `pool[N]` in the disassembly is a real ObjectPool entry index only when the
+    // adapter recovered the pool layout. Without geometry the adapter's own indices
+    // are in some private space (string ordinals, for instance), so joining the two
+    // would attach arbitrary values to unrelated slots. Refuse rather than invent.
+    let pool_index_space_authoritative = model.pool_geometry.is_some();
+    let pool_value_hints = if pool_index_space_authoritative
+        && (opt.engine_options.pool_value_hints || opt.engine_options.pool_semantic_hints)
     {
         build_pool_value_hints(&model)
     } else {
@@ -1317,7 +1322,9 @@ pub fn run_decompile(
                 .is_some_and(|v| !v.is_empty())
         })
         .count();
-    let pool_semantic_hints = if opt.engine_options.pool_semantic_hints {
+    let pool_semantic_hints = if pool_index_space_authoritative
+        && opt.engine_options.pool_semantic_hints
+    {
         build_pool_semantic_hints(&model, &class_to_library)
     } else {
         HashMap::new()
@@ -1983,7 +1990,21 @@ pub fn run_decompile(
             "with_target_va": pool_metadata.with_target_va,
             "with_selector": pool_metadata.with_selector,
             "with_owner_class": pool_metadata.with_owner_class,
-            "with_library_uri": pool_metadata.with_library_uri
+            "with_library_uri": pool_metadata.with_library_uri,
+            "index_space_authoritative": pool_index_space_authoritative,
+            "geometry": model.pool_geometry.map(|g| serde_json::json!({
+                "entries_offset": g.entries_offset,
+                "word_size": g.word_size
+            })),
+            "hints_suppressed_reason": if pool_index_space_authoritative {
+                serde_json::Value::Null
+            } else {
+                serde_json::Value::String(
+                    "adapter reported no pool_geometry; pool entry indices are not in the \
+                     hardware index space, so pool value/semantic hints were not applied"
+                        .to_string(),
+                )
+            }
         },
         "semantic_rewrite": {
             "total": semantic_total,
