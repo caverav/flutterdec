@@ -992,6 +992,14 @@ pub fn run_info(repo_root: &Path, input_path: &Path) -> Result<InfoOutput> {
         libapp_path: bundle.libapp_path.display().to_string(),
         arch: bundle.arch.clone(),
         snapshot_hash: bundle.snapshot_hash.clone(),
+        dart_version: bundle
+            .dart_profile
+            .as_ref()
+            .map(|p| p.dart_version.clone()),
+        dart_tag_style: bundle
+            .dart_profile
+            .as_ref()
+            .map(|p| p.profile.tag_style.as_str().to_string()),
         adapter_installed,
         adapter_kind: None,
         manifest_entry_present: None,
@@ -1767,6 +1775,14 @@ pub fn run_decompile(
         "libapp": bundle.libapp_path,
         "arch": bundle.arch,
         "snapshot_hash": bundle_snapshot_hash.clone(),
+        "dart_profile": bundle.dart_profile.as_ref().map(|p| json!({
+            "dart_version": p.dart_version,
+            "profile_version": p.profile_version,
+            "tag_style": p.profile.tag_style.as_str(),
+            "compressed_word_size": p.profile.compressed_word_size,
+            "header_fields": p.profile.header_fields,
+            "max_alignment": p.profile.max_alignment
+        })),
         "analysis": {
             "profile": opt.analysis_profile.as_str(),
             "engine": &opt.engine_options

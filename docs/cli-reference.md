@@ -13,6 +13,14 @@ Arguments:
 - `<INPUT>`: APK or `libapp.so`
 - `--json`: print JSON output
 
+Resolved from the snapshot hash alone, with or without an adapter, in both JSON and
+plain output:
+
+- `dart_version`
+- `dart_tag_style` (`CID_INT32`, `CID_SHIFT1`, or `OBJECT_HEADER`)
+
+Both are null for snapshot hashes outside `data/dart-profiles.json`.
+
 If adapter metadata is available, JSON output also includes app-package hints:
 
 - `app_package_count_total`

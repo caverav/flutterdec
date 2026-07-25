@@ -266,6 +266,12 @@ fn handle_info(repo_root: &Path, cmd: InfoCmd) -> Result<()> {
         println!("libapp: {}", out.libapp_path);
         println!("arch: {}", out.arch);
         println!("snapshot hash: {}", out.snapshot_hash);
+        if let Some(version) = out.dart_version.as_deref() {
+            println!("dart version: {}", version);
+        }
+        if let Some(tag_style) = out.dart_tag_style.as_deref() {
+            println!("dart tag style: {}", tag_style);
+        }
         println!("adapter installed: {}", out.adapter_installed);
         if let Some(kind) = out.adapter_kind.as_deref() {
             println!("adapter kind: {}", kind);

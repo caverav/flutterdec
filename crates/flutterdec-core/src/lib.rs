@@ -199,6 +199,11 @@ pub struct InfoOutput {
     pub libapp_path: String,
     pub arch: String,
     pub snapshot_hash: String,
+    /// Dart SDK version behind `snapshot_hash`, when the hash is tabulated.
+    pub dart_version: Option<String>,
+    /// Object-header tag encoding for that version (`CID_INT32`, `CID_SHIFT1`,
+    /// `OBJECT_HEADER`); the layout dimension most likely to break a parser.
+    pub dart_tag_style: Option<String>,
     pub adapter_installed: bool,
     pub adapter_kind: Option<String>,
     pub manifest_entry_present: Option<bool>,
