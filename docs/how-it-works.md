@@ -259,6 +259,7 @@ Produced by adapter. Main fields:
 - `classes[]`
 - `functions[]`
 - `object_pool[]`
+- `pool_geometry` (optional; see "Pool index space" below)
 
 Schema compatibility:
 
@@ -287,7 +288,7 @@ Produced by disassembler. Per function:
 
 - function metadata (`id`, `name`, `entry_va`, `size`)
 - decoded instruction list (`AsmInstruction[]`)
-- per instruction annotation (`call`, `branch`, `return`, `pool[...]`, empty)
+- per instruction annotation (`call`, `branch`, `return`, `pool[<index>]`, `poolOff[<displacement>]`, empty)
 
 Example instruction:
 
@@ -374,13 +375,28 @@ The current Python template adapter:
 - guesses libraries from `package:...dart` strings
 - recovers function starts with simple ARM64 heuristics
 - builds object pool from extracted strings
-- can run in `auto|internal|blutter` backend mode (Blutter first in `auto` when configured)
+- can run in `auto|internal|blutter|r2flutter` backend mode (`auto` tries r2flutter, then Blutter, then internal)
 - in Blutter mode, parses `asm/*.dart` and `pp.txt` and synthesizes `EntryPointCandidate` pool metadata for `main`/`runApp`-like functions
-- emits schema version 2 JSON
+- in r2flutter mode, shells out to `r2flutter -jH/-ji/-jc/-jxz/-jzz/-jp` and maps the AOT instruction table, class table, and ObjectPool-referenced strings onto the model
+- emits schema version 3 JSON
+
+### Pool index space
+
+`ObjectPoolEntry.index` must be a real `ObjectPool` entry index, i.e. the value a
+`ldr xN, [x27, #disp]` resolves to. An adapter asserts this by emitting
+`pool_geometry` (`entries_offset`, `word_size`); core then converts displacements with
+`index = (disp - entries_offset) / word_size`.
+
+Adapters that cannot recover the pool layout must omit `pool_geometry`. The internal
+adapter is one: its `object_pool` is carved strings numbered by carve order, which has
+nothing to do with the hardware index space. Core detects the absence and skips pool
+value/semantic hints entirely rather than joining two unrelated index spaces, which
+would attach real-looking strings to the wrong slots. `report.json.pool_metadata`
+records `index_space_authoritative`, the geometry, and `hints_suppressed_reason`.
 
 Validation in Rust enforces:
 
-- schema version equals 2
+- schema version is 2 or 3
 - arch equals `arm64`
 - non-empty function list
 
@@ -416,7 +432,15 @@ Important behavior:
   - jump
   - conditional branch
   - return
-- detects pool loads from `ldr` patterns on `x27` and annotates as `pool[index]`
+- detects pool loads and annotates them with the resolved entry, `pool[index]`
+  - direct form: `ldr xN, [x27, #disp]`
+  - page form: `add xD, x27, #K, lsl #S` followed by `ldr xN, [xD, #off]`, which Dart
+    emits whenever the displacement exceeds the load-immediate range and which is the
+    majority of pool traffic in real binaries
+  - page bases are tracked per function and dropped on any write to the register or on
+    control flow, so a stale base can never invent a slot
+  - without `pool_geometry` the annotation is `poolOff[<byte displacement>]` instead,
+    which is honest about what is known and never matches a value hint
 
 Filtering behavior:
 

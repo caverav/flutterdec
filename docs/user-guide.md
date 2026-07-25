@@ -257,10 +257,29 @@ flutterdec decompile ./sample.apk -o ./out --analysis-profile light
 
 Adapter backend options:
 
-- `--adapter-backend auto` (default): attempt Blutter bridge backend when configured, otherwise fallback to internal adapter
+- `--adapter-backend auto` (default): try r2flutter, then the Blutter bridge, then the internal adapter
 - `--adapter-backend internal`: force internal adapter only
 - `--adapter-backend blutter`: require Blutter bridge backend with no fallback
+- `--adapter-backend r2-flutter`: require the r2flutter backend with no fallback
 - `--require-snapshot-hash-match`: fail if adapter snapshot hash does not match loader snapshot hash
+
+Backend choice decides how much is actually recovered. The internal adapter carves
+strings and scans prologues: every function comes out as `sub_<addr>` and its
+`object_pool` is a list of carved strings, not real pool slots. `r2flutter` and
+`blutter` parse the snapshot, so they return exact Dart names and a real `ObjectPool`.
+
+Only a backend that reports `pool_geometry` lets `flutterdec` turn a `pool[N]`
+reference in the disassembly into a value. Without it, pool references are left
+unresolved on purpose, and `report.json.pool_metadata.hints_suppressed_reason`
+explains why. Check `pool_metadata.index_space_authoritative` if pseudocode has fewer
+string literals than you expected.
+
+r2flutter backend environment variables:
+
+- `FLUTTERDEC_R2FLUTTER_BIN`: path to the `r2flutter` binary
+- `FLUTTERDEC_R2FLUTTER_CMD`: full command to launch it, when a wrapper is needed
+- `FLUTTERDEC_R2FLUTTER_TIMEOUT`: per-invocation timeout in seconds (default 900)
+- otherwise `r2flutter` is resolved from `PATH`
 
 Blutter bridge environment variables:
 

@@ -102,6 +102,9 @@ Target selection behavior:
 
 Adapter backend environment:
 
+- `FLUTTERDEC_R2FLUTTER_BIN`: path to the `r2flutter` binary
+- `FLUTTERDEC_R2FLUTTER_CMD`: full command to execute the r2flutter backend
+- `FLUTTERDEC_R2FLUTTER_TIMEOUT`: per-invocation timeout in seconds (default 900)
 - `FLUTTERDEC_BLUTTER_CMD`: full command to execute Blutter bridge backend
 - `FLUTTERDEC_BLUTTER_PY`: path to `blutter.py` (uses current Python interpreter)
 
