@@ -698,11 +698,262 @@ def _build_blutter_model(
     }
 
 
+def _resolve_r2flutter_runner() -> Optional[List[str]]:
+    env_cmd = os.getenv("FLUTTERDEC_R2FLUTTER_CMD", "").strip()
+    if env_cmd:
+        return shlex.split(env_cmd)
+    env_bin = os.getenv("FLUTTERDEC_R2FLUTTER_BIN", "").strip()
+    if env_bin:
+        return [env_bin]
+    found = shutil.which("r2flutter")
+    if found:
+        return [found]
+    return None
+
+
+def _r2flutter_timeout() -> int:
+    raw = os.getenv("FLUTTERDEC_R2FLUTTER_TIMEOUT", "").strip()
+    try:
+        return max(1, int(raw)) if raw else 900
+    except ValueError:
+        return 900
+
+
+def _r2flutter_json(runner: List[str], target: str, flag: str):
+    """Run one r2flutter action and parse its JSON.
+
+    r2flutter emits one action per invocation and writes radare2 loader warnings to
+    stderr, so stdout is parsed on its own. Six invocations happen per model build and
+    each one loads the whole binary, so a wedged radare2 would otherwise hang the
+    adapter, and the core waiting on it, indefinitely.
+    """
+    try:
+        proc = subprocess.run(
+            [*runner, flag, target],
+            capture_output=True,
+            text=True,
+            shell=False,
+            check=False,
+            timeout=_r2flutter_timeout(),
+        )
+    except OSError as exc:
+        raise RuntimeError(f"could not launch r2flutter ({' '.join(runner)}): {exc}") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(f"r2flutter {flag} timed out after {exc.timeout}s") from exc
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"r2flutter {flag} failed ({proc.returncode}): {proc.stderr.strip()[:400]}"
+        )
+    try:
+        return json.loads(proc.stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"r2flutter {flag} did not emit JSON: {exc}") from exc
+
+
+_R2F_POOL_ENTRY_RE = re.compile(r"\bentry=(\d+)\b")
+_R2F_IT_METHOD_RE = re.compile(r"^method\.(?:(?P<owner>.+)\.)?(?P<name>[^.]+)$")
+
+
+def _r2flutter_functions(instruction_table: dict, isolate_instr_va: int) -> List[dict]:
+    """Map the AOT instruction table onto ProgramModel functions.
+
+    Entry addresses and names come straight out of the snapshot, so every name is
+    `exact`. Sizes are not serialized; the gap to the next entry is the usual
+    approximation and is what the disassembler needs.
+    """
+    entries = sorted(
+        (e for e in instruction_table.get("entries", []) if e.get("address")),
+        key=lambda e: e["address"],
+    )
+    out: List[dict] = []
+    for i, e in enumerate(entries):
+        start = int(e["address"])
+        nxt = int(entries[i + 1]["address"]) if i + 1 < len(entries) else start + 0x40
+        raw_name = (e.get("name") or "").strip() or f"sub_{start:x}"
+        owner = "Global"
+        m = _R2F_IT_METHOD_RE.match(raw_name)
+        if m and m.group("owner"):
+            owner = m.group("owner")
+        out.append(
+            {
+                "id": i,
+                "name": raw_name,
+                "owner_class": owner,
+                "entry_va": start,
+                "size": max(4, min(nxt - start, 0x8000)),
+                "code_section_va": int(isolate_instr_va or 0),
+                "name_kind": "exact",
+            }
+        )
+    return out
+
+
+def _r2flutter_pool(strings: List[dict]) -> List[dict]:
+    """Build ObjectPool entries keyed by the real entry index.
+
+    r2flutter reports, per string, the pool slots that reference it as
+    `pool=<ref> index=<n> entry=<E> pp_off=<disp>`. `entry` is the authoritative
+    index a `ldr xN, [x27, #pp_off]` resolves to, which is exactly the key the
+    decompiler joins on. Nothing here is positional or guessed.
+    """
+    out: List[dict] = []
+    for s in strings:
+        value = s.get("value")
+        if not isinstance(value, str) or not value:
+            continue
+        selector = _selector_from_string(value)
+        library_uri = _normalize_library_uri(value)
+        if library_uri is not None:
+            decoded_kind = "LibraryUri"
+        elif selector is not None:
+            decoded_kind = "SelectorString"
+        else:
+            decoded_kind = "String"
+        for ref in s.get("refs", []):
+            if ref.get("kind") != "object_pool.entry":
+                continue
+            m = _R2F_POOL_ENTRY_RE.search(ref.get("name") or "")
+            if not m:
+                continue
+            out.append(
+                {
+                    "index": int(m.group(1)),
+                    "kind": "TwoByteString" if s.get("two_byte") else "OneByteString",
+                    "value": value,
+                    "decoded_kind": decoded_kind,
+                    "selector": selector,
+                    "target_va": None,
+                    "owner_class": None,
+                    "library_uri": library_uri,
+                    "confidence": 1.0,
+                    "source": "vm",
+                }
+            )
+    out.sort(key=lambda e: e["index"])
+    return out
+
+
+def _r2flutter_classes(classes: List[dict]) -> List[dict]:
+    """Project r2flutter classes onto ProgramModel classes.
+
+    r2flutter does not attribute classes to libraries, so library URIs are recovered
+    from pool strings instead and classes stay library-less rather than being given
+    an invented owner.
+    """
+    out: List[dict] = []
+    for i, c in enumerate(classes):
+        name = (c.get("name") or "").strip()
+        if not name:
+            continue
+        out.append(
+            {
+                "id": i,
+                "name": name,
+                "super": (c.get("super") or "Object"),
+                "lib": "",
+            }
+        )
+    return out
+
+
+def _build_r2flutter_model(default_snapshot_hash: str, default_version: str,
+                           input_path: Optional[str], libapp_path: Optional[str],
+                           isolate_instr_va: int) -> dict:
+    runner = _resolve_r2flutter_runner()
+    if runner is None:
+        raise RuntimeError(
+            "r2flutter not found; set FLUTTERDEC_R2FLUTTER_CMD or FLUTTERDEC_R2FLUTTER_BIN, "
+            "or put r2flutter on PATH"
+        )
+    target = libapp_path or input_path
+    if not target:
+        raise RuntimeError("r2flutter backend needs --libapp-path or --input-path")
+
+    header = _r2flutter_json(runner, target, "-jH")
+    instruction_table = _r2flutter_json(runner, target, "-ji")
+    functions = _r2flutter_functions(instruction_table, isolate_instr_va)
+    if not functions:
+        raise RuntimeError("r2flutter recovered no instruction-table entries")
+
+    # `-jxz` is the reliable pool-referenced string set with its slot back-references;
+    # that is what the pool index space needs.
+    pool_strings = _r2flutter_json(runner, target, "-jxz")
+    object_pool = _r2flutter_pool(pool_strings)
+    classes = _r2flutter_classes(_r2flutter_json(runner, target, "-jc"))
+
+    # Library URIs mostly live in the data image rather than the pool, so the wider
+    # carved set is the only place to find them. They drive `--function-scope` and
+    # package prioritisation, not naming, so the looser extraction is acceptable here.
+    try:
+        all_strings = _r2flutter_json(runner, target, "-jzz")
+    except RuntimeError:
+        all_strings = pool_strings
+    libs = _collect_libraries(
+        [s.get("value", "") for s in all_strings if isinstance(s.get("value"), str)]
+    )
+    libraries = [{"id": i, "uri": lib, "name_display": lib} for i, lib in enumerate(libs)]
+    if not classes:
+        classes = [{"id": 0, "name": "Global", "super": "Object", "lib": libs[0]}]
+
+    # Only claim an authoritative pool index space when the ObjectPool image was
+    # actually reconstructed. r2flutter reports `error` for snapshots whose pool fill
+    # payload it cannot decode, and a guessed geometry there would silently
+    # mis-resolve every pool reference.
+    pool_geometry = None
+    try:
+        pp = _r2flutter_json(runner, target, "-jp")
+        if isinstance(pp, dict) and "entries_offset" in pp and "word_size" in pp:
+            pool_geometry = {
+                "entries_offset": int(pp["entries_offset"]),
+                "word_size": int(pp["word_size"]),
+            }
+    except RuntimeError:
+        pool_geometry = None
+    if pool_geometry is None:
+        object_pool = []
+
+    model = {
+        "schema_version": 3,
+        "adapter_kind": "r2flutter_snapshot_v1",
+        "dart_version": header.get("dart_version") or default_version,
+        "snapshot_hash": header.get("hash") or default_snapshot_hash,
+        "arch": "arm64",
+        "libraries": libraries,
+        "classes": classes,
+        "functions": functions,
+        "object_pool": object_pool,
+    }
+    # The schema types `pool_geometry` as an object, so omit the key rather than
+    # emitting null: absence is how an adapter declines to claim a real index space.
+    if pool_geometry is not None:
+        model["pool_geometry"] = pool_geometry
+    return model
+
+
 def _normalize_backend(raw: str) -> str:
     t = (raw or "auto").strip().lower()
-    if t in ("auto", "internal", "blutter"):
+    if t in ("auto", "internal", "blutter", "r2flutter"):
         return t
     return "auto"
+
+
+def _drop_nulls(value):
+    """Strip keys whose value is null, recursively.
+
+    Optional model fields are typed concretely in schemas/adapter.schema.json, so an
+    explicit null fails validation where an absent key passes. The Rust side treats
+    both as `None`, so omitting is free and makes the schema mean something.
+    """
+    if isinstance(value, dict):
+        return {k: _drop_nulls(v) for k, v in value.items() if v is not None}
+    if isinstance(value, list):
+        return [_drop_nulls(v) for v in value]
+    return value
+
+
+def _write_model(path: str, payload: dict) -> None:
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(_drop_nulls(payload), f, indent=2)
 
 
 def entrypoint(default_snapshot_hash: str = "unknown", default_version: str = "unknown") -> int:
@@ -723,6 +974,27 @@ def entrypoint(default_snapshot_hash: str = "unknown", default_version: str = "u
     iso_instr = _read_bytes(args.isolate_instr)
 
     backend = _normalize_backend(os.getenv("FLUTTERDEC_ADAPTER_BACKEND", "auto"))
+
+    # `auto` prefers r2flutter: it deserializes the snapshot, so it is the only
+    # backend that yields exact names plus a real ObjectPool index space. Each
+    # backend falls through to the next when its tooling is absent.
+    if backend in ("auto", "r2flutter"):
+        try:
+            payload = _build_r2flutter_model(
+                default_snapshot_hash,
+                default_version,
+                args.input_path,
+                args.libapp_path,
+                args.isolate_instr_va,
+            )
+            _write_model(args.out, payload)
+            return 0
+        except Exception as exc:
+            if backend == "r2flutter":
+                print(f"[adapter] r2flutter backend required but failed: {exc}", file=sys.stderr)
+                return 1
+            print(f"[adapter] r2flutter backend unavailable: {exc}", file=sys.stderr)
+
     if backend in ("auto", "blutter"):
         try:
             payload = _build_blutter_model(
@@ -733,8 +1005,7 @@ def entrypoint(default_snapshot_hash: str = "unknown", default_version: str = "u
                 args.input_path,
                 args.libapp_path,
             )
-            with open(args.out, "w", encoding="utf-8") as f:
-                json.dump(payload, f, indent=2)
+            _write_model(args.out, payload)
             return 0
         except Exception as exc:
             if backend == "blutter":
@@ -771,11 +1042,13 @@ def entrypoint(default_snapshot_hash: str = "unknown", default_version: str = "u
         "libraries": [{"id": i, "uri": lib, "name_display": lib} for i, lib in enumerate(libs)],
         "classes": [{"id": 0, "name": "Global", "super": "Object", "lib": libs[0]}],
         "functions": funcs,
+        # Carved strings, indexed by carve order. This is NOT the ObjectPool index
+        # space, which is why `pool_geometry` is omitted entirely: the core then
+        # declines to resolve `pool[N]` rather than attaching an unrelated string.
         "object_pool": _pool_entries(strings),
     }
 
-    with open(args.out, "w", encoding="utf-8") as f:
-        json.dump(payload, f, indent=2)
+    _write_model(args.out, payload)
 
     return 0
 

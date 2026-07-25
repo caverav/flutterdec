@@ -85,7 +85,7 @@
           "confidence": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
           "source": {
             "type": "string",
-            "enum": ["vm", "blutter", "internal", "synthetic", "unknown"]
+            "enum": ["vm", "blutter", "r2flutter", "internal", "synthetic", "unknown"]
           }
         }
       }
