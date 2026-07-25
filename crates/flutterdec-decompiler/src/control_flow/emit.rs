@@ -197,6 +197,13 @@ impl<'a> FuncEmitter<'a> {
     }
 
     fn annotate_pool_refs(&self, expr: &str) -> String {
+        // Pool slots are resolved once, when the load lands in a register. Callers
+        // downstream re-annotate their operands, so bail out on text that already
+        // carries a resolved hint instead of nesting a second comment inside the first.
+        if expr.contains("/* pool[") || expr.contains("/* \"") {
+            return expr.to_string();
+        }
+
         let normalized = normalize_pool_page_field_exprs(expr);
         let exact = self.render_pool_value_hint(&normalized);
         if exact != normalized {
