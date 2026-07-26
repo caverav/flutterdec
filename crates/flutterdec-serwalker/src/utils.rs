@@ -133,10 +133,15 @@ macro_rules! DECODE_IS_CANONICAL {
     };
 }
 
-pub fn decode_tags(tags: u32) -> DecodedTags {
-    let class_id: ClassId = DECODE_CID!(tags).unwrap_or_default();
-    let is_deeply_immutable: bool = DECODE_IS_DEEPLY_IMMUTABLE!(tags);
-    let is_canonical: bool = DECODE_IS_CANONICAL!(tags);
-
-    DecodedTags::new(class_id, is_deeply_immutable, is_canonical)
+/// Bit layout matches UntaggedObject::TagBits in raw_object.h:
+/// ClassIdTag at 12 (20 bits), CanonicalBit at 1, ImmutableBit at 7.
+pub fn decode_tags(tags: u32) -> anyhow::Result<DecodedTags> {
+    let class_id = DECODE_CID!(tags).map_err(|_| {
+        anyhow::anyhow!("unknown class id {} in tags {tags:#x}", (tags >> 12) & 0xFFFFF)
+    })?;
+    Ok(DecodedTags::new(
+        class_id,
+        DECODE_IS_DEEPLY_IMMUTABLE!(tags),
+        DECODE_IS_CANONICAL!(tags),
+    ))
 }

@@ -63,47 +63,49 @@ pub struct DataSnapshot {
 }
 
 impl DataSnapshot {
-    fn parse_version_and_features(&mut self, stream: &mut Stream) {
-        let mut version_and_features = stream.read_c_string().unwrap();
+    fn parse_version_and_features(&mut self, stream: &mut Stream) -> anyhow::Result<()> {
+        let mut version_and_features = stream.read_c_string()?;
 
         self.features = version_and_features.split_off(constants::VERSION_HASH_LENGTH); // returns (str[hash_len..])
         self.version_hash = version_and_features;
+        Ok(())
     }
 
-    fn parse_header(&mut self, stream: &mut Stream) {
-        self.magic_bytes = stream.read_raw_u32().unwrap();
+    fn parse_header(&mut self, stream: &mut Stream) -> anyhow::Result<()> {
+        self.magic_bytes = stream.read_raw_u32()?;
 
         if self.magic_bytes != MAGIC_BYTES {
-            panic!("Not a snapshot...")
+            anyhow::bail!("Not a snapshot...")
         }
 
-        self.size = stream.read_raw_u64().unwrap();
-        self.kind = SnapshotKind::try_from(stream.read_raw_u64().unwrap()).unwrap();
+        self.size = stream.read_raw_u64()?;
+        self.kind = SnapshotKind::try_from(stream.read_raw_u64()?).map_err(|e| anyhow::anyhow!(e))?;
 
-        self.parse_version_and_features(stream);
+        self.parse_version_and_features(stream)?;
 
-        self.num_base_objects = stream.read_unsigned().unwrap();
-        self.num_objects = stream.read_unsigned().unwrap();
-        self.num_clusters = stream.read_unsigned().unwrap();
+        self.num_base_objects = stream.read_unsigned()?;
+        self.num_objects = stream.read_unsigned()?;
+        self.num_clusters = stream.read_unsigned()?;
 
-        self.instr_table_len = stream.read_unsigned().unwrap() as usize;
-        self.instr_table_offset = stream.read_unsigned().unwrap() as usize;
+        self.instr_table_len = stream.read_unsigned()? as usize;
+        self.instr_table_offset = stream.read_unsigned()? as usize;
+        Ok(())
     }
 
-    fn parse_clusters(&mut self, stream: &mut Stream) {
+    fn parse_clusters(&mut self, stream: &mut Stream) -> anyhow::Result<()> {
         let mut curr_ref_id: u64 = 0; // all objects are numbered starting from 0
 
         self.start_of_alloc_area = stream.get_current_pos();
         for _cluster_idx in 0..self.num_clusters {
-            let tags: u32 = stream.read_unsigned().unwrap() as u32;
-            let decoded_tags: DecodedTags = decode_tags(tags);
+            let tags: u32 = stream.read_unsigned()? as u32;
+            let decoded_tags: DecodedTags = decode_tags(tags)?;
             let cid = decoded_tags.get_cid();
 
-            let mut cluster = decide_cluster(cid).unwrap_or_else(|_| {
-                panic!("Couldn't find cluster implementation for class {:?}", cid)
-            });
+            let mut cluster = decide_cluster(cid).map_err(|_| {
+                anyhow::anyhow!("Couldn't find cluster implementation for class {:?}", cid)
+            })?;
 
-            cluster.read_alloc(&mut curr_ref_id, stream).expect("Failed to read alloc for cluster");
+            cluster.read_alloc(&mut curr_ref_id, stream)?;
             
             // Composite key exactly as suggested by PR reviewer
             let key = (cid as u32) << 2 | ((decoded_tags.is_canonical() as u32) << 1) | (decoded_tags.is_deeply_immutable() as u32);
@@ -115,22 +117,25 @@ impl DataSnapshot {
         self.start_of_fill_area = stream.get_current_pos();
         for key in self.cluster_order.iter() {
             let cluster = self.clusters.get_mut(key).unwrap();
-            (*cluster).read_fill(stream).expect("Failed to read fill for cluster");
+            (*cluster).read_fill(stream)?;
         }
         self.end_of_fill_area = stream.get_current_pos();
+        Ok(())
     }
 
-    fn parse_roots(&mut self, _stream: &mut Stream) {}
+    fn parse_roots(&mut self, _stream: &mut Stream) -> anyhow::Result<()> {
+        Ok(())
+    }
 }
 
-pub fn parse_snapshot(stream: &mut Stream) -> DataSnapshot {
+pub fn parse_snapshot(stream: &mut Stream) -> anyhow::Result<DataSnapshot> {
     let mut snapshot = DataSnapshot::default();
 
     println!("Now parsing the snapshot...");
-    snapshot.parse_header(stream);
-    snapshot.parse_clusters(stream);
-    snapshot.parse_roots(stream);
+    snapshot.parse_header(stream)?;
+    snapshot.parse_clusters(stream)?;
+    snapshot.parse_roots(stream)?;
 
-    snapshot
+    Ok(snapshot)
 }
 
