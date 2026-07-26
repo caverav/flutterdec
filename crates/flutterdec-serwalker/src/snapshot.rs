@@ -38,9 +38,8 @@ impl TryFrom<u64> for SnapshotKind {
 
 #[derive(Default)]
 pub struct DataSnapshot {
-    // this array will contain mutable references to all clusters, and it will be indexed using the class id
-    clusters: HashMap<ClassId, Box<dyn Cluster>>, // thus each cluster must have its own UNIQUE class id
-    cluster_order: Vec<ClassId>, // used in the fill step to know which cluster's read_fill function to call
+    clusters: HashMap<u32, Box<dyn Cluster>>,
+    cluster_order: Vec<u32>, // used in the fill step to know which cluster's read_fill function to call
 
     magic_bytes: u32,
     size: u64,
@@ -65,30 +64,30 @@ pub struct DataSnapshot {
 
 impl DataSnapshot {
     fn parse_version_and_features(&mut self, stream: &mut Stream) {
-        let mut version_and_features = stream.read_c_string();
+        let mut version_and_features = stream.read_c_string().unwrap();
 
         self.features = version_and_features.split_off(constants::VERSION_HASH_LENGTH); // returns (str[hash_len..])
         self.version_hash = version_and_features;
     }
 
     fn parse_header(&mut self, stream: &mut Stream) {
-        self.magic_bytes = stream.read_u32();
+        self.magic_bytes = stream.read_raw_u32().unwrap();
 
         if self.magic_bytes != MAGIC_BYTES {
             panic!("Not a snapshot...")
         }
 
-        self.size = stream.read_u64();
-        self.kind = SnapshotKind::try_from(stream.read_u64()).unwrap();
+        self.size = stream.read_raw_u64().unwrap();
+        self.kind = SnapshotKind::try_from(stream.read_raw_u64().unwrap()).unwrap();
 
         self.parse_version_and_features(stream);
 
-        self.num_base_objects = stream.read_modified_leb128(UNSIGNED_M);
-        self.num_objects = stream.read_modified_leb128(UNSIGNED_M);
-        self.num_clusters = stream.read_modified_leb128(UNSIGNED_M);
+        self.num_base_objects = stream.read_unsigned().unwrap();
+        self.num_objects = stream.read_unsigned().unwrap();
+        self.num_clusters = stream.read_unsigned().unwrap();
 
-        self.instr_table_len = stream.read_modified_leb128(UNSIGNED_M) as usize;
-        self.instr_table_offset = stream.read_modified_leb128(UNSIGNED_M) as usize;
+        self.instr_table_len = stream.read_unsigned().unwrap() as usize;
+        self.instr_table_offset = stream.read_unsigned().unwrap() as usize;
     }
 
     fn parse_clusters(&mut self, stream: &mut Stream) {
@@ -96,7 +95,7 @@ impl DataSnapshot {
 
         self.start_of_alloc_area = stream.get_current_pos();
         for _cluster_idx in 0..self.num_clusters {
-            let tags: u32 = stream.read_modified_leb128(UNSIGNED_M) as u32;
+            let tags: u32 = stream.read_unsigned().unwrap() as u32;
             let decoded_tags: DecodedTags = decode_tags(tags);
             let cid = decoded_tags.get_cid();
 
@@ -104,24 +103,24 @@ impl DataSnapshot {
                 panic!("Couldn't find cluster implementation for class {:?}", cid)
             });
 
-            cluster.read_alloc(&mut curr_ref_id, stream);
-            self.clusters.insert(cid, cluster); // hashmap takes ownership of box
-            self.cluster_order.push(cid);
+            cluster.read_alloc(&mut curr_ref_id, stream).expect("Failed to read alloc for cluster");
+            
+            // Composite key exactly as suggested by PR reviewer
+            let key = (cid as u32) << 2 | ((decoded_tags.is_canonical() as u32) << 1) | (decoded_tags.is_deeply_immutable() as u32);
+            self.clusters.insert(key, cluster);
+            self.cluster_order.push(key);
         }
         self.end_of_alloc_area = stream.get_current_pos();
 
         self.start_of_fill_area = stream.get_current_pos();
-        for cluster_idx in 0..self.num_clusters {
-            let cid = self.cluster_order[cluster_idx as usize];
-            let cluster_opt = self.clusters.get_mut(&cid);
-
-            let cluster = cluster_opt.unwrap(); // this should never panic
-            (*cluster).read_fill(stream);
+        for key in self.cluster_order.iter() {
+            let cluster = self.clusters.get_mut(key).unwrap();
+            (*cluster).read_fill(stream).expect("Failed to read fill for cluster");
         }
         self.end_of_fill_area = stream.get_current_pos();
     }
 
-    fn parse_roots(&mut self, stream: &mut Stream) {}
+    fn parse_roots(&mut self, _stream: &mut Stream) {}
 }
 
 pub fn parse_snapshot(stream: &mut Stream) -> DataSnapshot {
@@ -134,3 +133,4 @@ pub fn parse_snapshot(stream: &mut Stream) -> DataSnapshot {
 
     snapshot
 }
+

@@ -1,180 +1,122 @@
-use crate::constants::{DATA_BITS_PER_BYTE, UNSIGNED_END_OF_DATA_BYTE, UNSIGNED_MAX_DATA_PER_BYTE};
+use anyhow::{anyhow, bail, Result};
+
+use crate::constants::{DATA_BITS_PER_BYTE, SIGNED_M, UNSIGNED_M, UNSIGNED_MAX_DATA_PER_BYTE};
+
 pub struct Stream<'a> {
     byte_stream: &'a [u8],
     curr_stream_offset: usize,
 }
 
 impl<'a> Stream<'a> {
-    fn seek(&mut self, pos: usize) // might be useful?
-    {
-        if self.byte_stream.len() > pos {
-            self.curr_stream_offset = pos;
-        } else {
-            panic!("Trying to seek an offset at a position past the end of the bytestream. Position {pos}");
-        }
+    pub fn new(byte_stream: &'a [u8]) -> Self {
+        Self { byte_stream, curr_stream_offset: 0 }
     }
 
-    pub fn advance_pos(&mut self, num_bytes: usize) {
-        self.curr_stream_offset += num_bytes;
+    pub fn seek(&mut self, pos: usize) -> Result<()> {
+        if pos > self.byte_stream.len() {
+            bail!("seek to {pos} past end of snapshot ({})", self.byte_stream.len());
+        }
+        self.curr_stream_offset = pos;
+        Ok(())
+    }
+
+    fn take(&mut self, n: usize) -> Result<&'a [u8]> {
+        let end = self
+            .curr_stream_offset
+            .checked_add(n)
+            .filter(|e| *e <= self.byte_stream.len())
+            .ok_or_else(|| {
+                anyhow!("read of {n} bytes past end of snapshot at offset {}", self.curr_stream_offset)
+            })?;
+        let slice = &self.byte_stream[self.curr_stream_offset..end];
+        self.curr_stream_offset = end;
+        Ok(slice)
     }
 
     pub fn get_current_pos(&self) -> usize {
         self.curr_stream_offset
     }
-    /*
-       Reads a modified uleb from the current stream offset.
 
-       Dart uses a modified LEB128 format. The normal format uses bytes with their MSb set in order
-       to signify that there are more bytes ahead, and the last byte has its MSb unset, whereas Dart's
-       implementation does the opposite. The "continuation" bit on each byte is 0, and the last byte
-       has its MSb set.
-    */
-    pub fn read_modified_leb128(&mut self, sign_marker: u8) -> u64 // 8 bytes should be enough for anything...
-    {
-        let mut idx: u8 = 0;
-
-        let first_byte = self.byte_stream[self.curr_stream_offset];
-        if first_byte > UNSIGNED_MAX_DATA_PER_BYTE
-        // if the first byte has its MSb set
-        {
-            self.advance_pos(1);
-            // wrapping_sub mimics C++ unsigned underflow, giving us perfect sign-extension
-            // for negative numbers, while behaving normally for positive numbers. gotta get used to this :)
-            return (first_byte as u64).wrapping_sub(sign_marker as u64);
-        }
-
-        let mut read_num: u64 = 0;
-        let mut byte: u8;
-
+    /// Dart's modified LEB128: little endian 7 bit groups, continuation bit 0,
+    /// final byte has its MSb set. ReadStream::Read<T>, datastream.h:231
+    fn read_leb128(&mut self, end_byte_marker: u8) -> Result<u64> {
+        let mut value: u64 = 0;
+        let mut shift: usize = 0;
         loop {
-            byte = self.byte_stream[self.curr_stream_offset + idx as usize];
-            if byte & UNSIGNED_END_OF_DATA_BYTE == UNSIGNED_END_OF_DATA_BYTE {
-                break;
-            } // final byte
-            read_num |= (byte as u64) << (idx as usize * DATA_BITS_PER_BYTE);
-            idx += 1;
-        }
-
-        self.advance_pos((idx + 1) as usize); // advance the stream position
-
-        // Same wrapping trick for the final byte
-        let final_chunk = (byte as u64).wrapping_sub(sign_marker as u64);
-        read_num |= final_chunk << (idx as usize * DATA_BITS_PER_BYTE);
-
-        read_num
-    }
-
-    pub fn read_u64(&mut self) -> u64 {
-        let u64_size = std::mem::size_of::<u64>();
-        let num_slice =
-            &self.byte_stream[self.curr_stream_offset..self.curr_stream_offset + u64_size];
-
-        let converted_slice: [u8; 8] = num_slice.try_into().expect("Slice wasn't 8 bytes long...");
-
-        self.advance_pos(u64_size);
-
-        u64::from_le_bytes(converted_slice)
-    }
-
-    pub fn read_u32(&mut self) -> u32 {
-        let u32_size = std::mem::size_of::<u32>();
-        let num_slice =
-            &self.byte_stream[self.curr_stream_offset..self.curr_stream_offset + u32_size];
-
-        let converted_slice: [u8; 4] = num_slice.try_into().expect("Slice wasn't 4 bytes long...");
-
-        self.advance_pos(u32_size);
-
-        u32::from_le_bytes(converted_slice)
-    }
-
-    pub fn read_byte(&mut self) -> u8 {
-        let u8_size = std::mem::size_of::<u8>();
-        if self.curr_stream_offset < self.byte_stream.len() {
-            let byte = self.byte_stream[self.curr_stream_offset];
-            self.advance_pos(u8_size);
-            byte
-        } else {
-            panic!("Reading past the end of the snapshot, something went really wrong.");
-        }
-    }
-
-    /*
-       Panics if it isn't possible to create a stream from the utf-8 representation stored in
-       the byte slice. It shouldn't happen, so the best possible outcome is to assume some
-       logic mistake has been made and end the application. It should be a good thing to change this to an
-       unwrap_or_else so that we can also print the stream offset and cluster where this error occurred, in order
-       to have static debug info.
-    */
-    pub fn read_c_string(&mut self) -> String {
-        let first_nullbyte_pos = self.byte_stream[self.curr_stream_offset..]
-            .iter()
-            .position(|&b| b == 0x00)
-            .expect(
-                "Reading a string until the end of the stream? Something definitely went wrong...",
-            );
-
-        let raw_str = &self.byte_stream
-            [self.curr_stream_offset..self.curr_stream_offset + first_nullbyte_pos];
-        self.advance_pos(raw_str.len() + 1);
-
-        String::from_utf8(raw_str.to_vec())
-            .expect("Couldn't turn null-terminated UTF-8 bytes into a String.") // it should be horrible if for some reason a string just isn't there
-    }
-
-    // read a non null-terminated string given a length
-    pub fn read_string(&mut self, len: usize) -> String {
-        let final_pos = self.curr_stream_offset + len;
-        let raw_str = &self.byte_stream[self.curr_stream_offset..final_pos];
-
-        self.advance_pos(len);
-
-        String::from_utf8(raw_str.to_vec()).expect("Couldn't turn UTF-8 bytes into a String.")
-    }
-
-    /*
-       Complex object types (i.e, object types that contain other object types)
-       point to other objects through refids, which is essentially the core
-       mechanism of Dart's serialization/deserialization process, allowing the
-       reconstruction of all objects from the snapshot into the heap.
-    */
-    pub fn read_ref_id(&mut self) -> u32 {
-        let mut idx: usize = 0;
-        let mut byte: i8 = self.byte_stream[self.curr_stream_offset + idx] as i8;
-        let mut ref_id: i32 = 0; // as far as I know, ref_ids are up to 2^28, so 32 bits is good enough
-
-        if byte < 0 {
-            ref_id += byte as i32;
-            self.advance_pos(1);
-            return (ref_id + 128) as u32; // same as ref_id & 127
-        }
-
-        loop {
-            ref_id = ref_id << 7;
-            ref_id += byte as i32;
-            idx += 1;
-
-            if byte < 0 {
-                break;
+            let byte = self.read_byte()?;
+            if byte > UNSIGNED_MAX_DATA_PER_BYTE {
+                // Final byte. wrapping_sub mimics C++ unsigned underflow, so the
+                // signed variant sign extends and narrowing casts stay congruent.
+                let tail = (byte as u64).wrapping_sub(end_byte_marker as u64);
+                return Ok(value | (tail << shift));
             }
-
-            byte = self.byte_stream[self.curr_stream_offset + idx] as i8;
+            value |= (byte as u64) << shift;
+            shift += DATA_BITS_PER_BYTE;
+            if shift >= 64 {
+                bail!("LEB128 value exceeds 64 bits at offset {}", self.curr_stream_offset);
+            }
         }
-
-        self.advance_pos(idx);
-
-        (ref_id + 128) as u32 // ref_ids are always unsigned
     }
 
-    pub fn read_bytes(&mut self, len: usize) -> Vec<u8> { // copies the data
-        let bytes = &self.byte_stream[self.curr_stream_offset .. self.curr_stream_offset + len];
-        self.advance_pos(len);
-        bytes.to_vec()
+    /// ReadStream::Read<T>(), datastream.h:153. kEndByteMarker == 0xC0.
+    pub fn read(&mut self) -> Result<u64> {
+        self.read_leb128(SIGNED_M)
     }
 
-    pub fn read_bytes_zero_copy(&mut self, len: usize) -> &'a [u8] { // borrows the data
-        let bytes = &self.byte_stream[self.curr_stream_offset .. self.curr_stream_offset + len];
-        self.advance_pos(len);
-        bytes
+    /// ReadStream::ReadUnsigned<T>(), datastream.h:99. kEndUnsignedByteMarker == 0x80.
+    pub fn read_unsigned(&mut self) -> Result<u64> {
+        self.read_leb128(UNSIGNED_M)
+    }
+
+    /// Raw fixed width little endian, header fields only. Everything inside the
+    /// clustered body is LEB128. Renamed so the two can't get mixed up.
+    pub fn read_raw_u64(&mut self) -> Result<u64> {
+        Ok(u64::from_le_bytes(self.take(8)?.try_into().expect("take(8) is 8 bytes")))
+    }
+
+    pub fn read_raw_u32(&mut self) -> Result<u32> {
+        Ok(u32::from_le_bytes(self.take(4)?.try_into().expect("take(4) is 4 bytes")))
+    }
+
+    pub fn read_byte(&mut self) -> Result<u8> {
+        Ok(self.take(1)?[0])
+    }
+
+    pub fn read_c_string(&mut self) -> Result<String> {
+        let nul = self.byte_stream[self.curr_stream_offset..]
+            .iter()
+            .position(|&b| b == 0)
+            .ok_or_else(|| anyhow!("unterminated C string at offset {}", self.curr_stream_offset))?;
+        let raw = self.take(nul + 1)?;
+        Ok(String::from_utf8(raw[..nul].to_vec())?)
+    }
+
+    /// Dart OneByteString payload is Latin-1, not UTF-8. See the string cluster comment.
+    pub fn read_latin1(&mut self, len: usize) -> Result<String> {
+        Ok(self.take(len)?.iter().map(|&b| b as char).collect())
+    }
+
+    /// ReadStream::ReadRefId(), datastream.h:103.
+    /// Big endian VLI, not LEB128. Dart caps it at 5 stages (28 bits).
+    pub fn read_ref_id(&mut self) -> Result<u32> {
+        let mut result: i64 = 0;
+        for _ in 0..5 {
+            let byte = self.read_byte()? as i8;
+            result = (result << 7) + byte as i64;
+            if byte < 0 {
+                return Ok((result + 128) as u32);
+            }
+        }
+        bail!("ref id longer than 5 bytes at offset {}", self.curr_stream_offset)
+    }
+
+    /// Reads a block of bytes and returns a newly allocated Vec<u8> (Creates a copy)
+    pub fn read_bytes(&mut self, len: usize) -> Result<Vec<u8>> {
+        Ok(self.take(len)?.to_vec())
+    }
+
+    /// Reads a block of bytes and returns a reference to the slice (Zero-copy, highly recommended for large payloads)
+    pub fn read_bytes_zero_copy(&mut self, len: usize) -> Result<&'a [u8]> {
+        self.take(len)
     }
 }

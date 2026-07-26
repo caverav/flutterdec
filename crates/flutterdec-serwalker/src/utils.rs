@@ -23,12 +23,12 @@ macro_rules! DECLARE_FIXED_LENGTH_CLUSTER {
 
             impl Cluster for [<$name Cluster>]
             {
-                fn read_alloc(&mut self, last_ref_id: &mut u64, stream: &mut Stream) -> usize
+                fn read_alloc(&mut self, last_ref_id: &mut u64, stream: &mut Stream) -> anyhow::Result<usize>
                 {
                     self.start_of_alloc = stream.get_current_pos();
                     self.first_ref_id = *last_ref_id as u32;
 
-                    self.obj_count = stream.read_modified_leb128(UNSIGNED_M);
+                    self.obj_count = stream.read_unsigned()?;
 
                     for _obj_idx in 0..self.obj_count
                     {
@@ -38,10 +38,10 @@ macro_rules! DECLARE_FIXED_LENGTH_CLUSTER {
                     *last_ref_id += self.obj_count;
                     self.end_of_alloc = stream.get_current_pos();
 
-                    self.end_of_alloc - self.start_of_alloc
+                    Ok(self.end_of_alloc - self.start_of_alloc)
                 }
 
-                fn read_fill(&mut self, stream: &mut Stream) -> usize
+                fn read_fill(&mut self, stream: &mut Stream) -> anyhow::Result<usize>
                 {
                     self.start_of_fill = stream.get_current_pos();
 
@@ -52,7 +52,7 @@ macro_rules! DECLARE_FIXED_LENGTH_CLUSTER {
 
                     $_self.end_of_fill = $stream.get_current_pos();
 
-                    $_self.end_of_fill - $_self.start_of_fill
+                    Ok($_self.end_of_fill - $_self.start_of_fill)
                 }
 
                 fn is_fixed_len(&self) -> bool
