@@ -153,12 +153,15 @@ pub struct CodeSourceMap {
 
 #[derive(Default)]
 pub struct CompressedStackMaps {
-    // Fieldless class
+    pub length: u32,
+    pub flags_and_size: u32,
+    pub data: Vec<u8>
 }
 
 #[derive(Default)]
-pub struct PcDescriptors {
-    // Fieldless class
+pub struct PcDescriptors { // not really
+    pub length: u32,
+    pub data: Vec<u8>
 }
 
 #[derive(Default)]

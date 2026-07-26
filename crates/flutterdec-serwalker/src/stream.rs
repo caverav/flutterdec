@@ -7,7 +7,7 @@ pub struct Stream<'a> {
 impl<'a> Stream<'a> {
     fn seek(&mut self, pos: usize) // might be useful?
     {
-        if self.byte_stream.len() > pos && pos >= 0 {
+        if self.byte_stream.len() > pos {
             self.curr_stream_offset = pos;
         } else {
             panic!("Trying to seek an offset at a position past the end of the bytestream. Position {pos}");
@@ -146,7 +146,7 @@ impl<'a> Stream<'a> {
         if byte < 0 {
             ref_id += byte as i32;
             self.advance_pos(1);
-            return (ref_id + 128) as u32;
+            return (ref_id + 128) as u32; // same as ref_id & 127
         }
 
         loop {
@@ -164,5 +164,17 @@ impl<'a> Stream<'a> {
         self.advance_pos(idx);
 
         (ref_id + 128) as u32 // ref_ids are always unsigned
+    }
+
+    pub fn read_bytes(&mut self, len: usize) -> Vec<u8> { // copies the data
+        let bytes = &self.byte_stream[self.curr_stream_offset .. self.curr_stream_offset + len];
+        self.advance_pos(len);
+        bytes.to_vec()
+    }
+
+    pub fn read_bytes_zero_copy(&mut self, len: usize) -> &'a [u8] { // borrows the data
+        let bytes = &self.byte_stream[self.curr_stream_offset .. self.curr_stream_offset + len];
+        self.advance_pos(len);
+        bytes
     }
 }

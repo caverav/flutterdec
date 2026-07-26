@@ -1,3 +1,4 @@
+use std::env::var;
 use std::usize;
 
 use crate::constants::{ClassId, ClassId::*, SIGNED_M, UNSIGNED_M};
@@ -342,7 +343,93 @@ DECLARE_VARIABLE_LENGTH_CLUSTER!(ConstMap);
 DECLARE_VARIABLE_LENGTH_CLUSTER!(ConstSet);
 DECLARE_VARIABLE_LENGTH_CLUSTER!(CodeSourceMap);
 DECLARE_VARIABLE_LENGTH_CLUSTER!(CompressedStackMaps);
+
+impl Cluster for CompressedStackMapsCluster
+{
+    fn is_fixed_len(&self) -> bool {
+        false
+    }
+
+    fn read_alloc(&mut self, last_ref_id: &mut u64, stream: &mut Stream) -> usize {
+        self.start_of_alloc = stream.get_current_pos();
+        self.first_ref_id = *last_ref_id as u32;
+
+        self.obj_count = stream.read_modified_leb128(UNSIGNED_M);
+        for _obj_idx in 0..self.obj_count
+        {
+            let mut obj = Box::<CompressedStackMaps>::default();
+            obj.length = stream.read_modified_leb128(UNSIGNED_M) as u32;
+
+            self.objs.push(obj);
+        }
+
+        *last_ref_id += self.obj_count;
+        self.end_of_alloc = stream.get_current_pos();
+
+        self.end_of_alloc - self.start_of_alloc
+    }
+
+    fn read_fill(&mut self, stream: &mut Stream) -> usize {
+        self.start_of_fill = stream.get_current_pos();
+        for obj_idx in 0..self.obj_count
+        {
+            let obj = &mut self.objs[obj_idx as usize];
+            obj.flags_and_size = stream.read_modified_leb128(UNSIGNED_M) as u32;
+
+            obj.data = stream.read_bytes(obj.length as usize);
+        }
+
+        self.end_of_fill = stream.get_current_pos();
+
+        self.end_of_fill - self.start_of_fill
+    }
+}
+
 DECLARE_VARIABLE_LENGTH_CLUSTER!(PcDescriptors);
+
+impl Cluster for PcDescriptorsCluster
+{
+    fn is_fixed_len(&self) -> bool {
+        false
+    }
+
+    fn read_alloc(&mut self, last_ref_id: &mut u64, stream: &mut Stream) -> usize {
+        self.start_of_alloc = stream.get_current_pos();
+        self.first_ref_id = *last_ref_id as u32;
+
+        self.obj_count = stream.read_modified_leb128(UNSIGNED_M);
+
+        for _obj_idx in 0..self.obj_count
+        {
+            let mut obj = Box::<PcDescriptors>::default();
+            let length = stream.read_modified_leb128(UNSIGNED_M);
+
+            obj.length = length as u32;
+            self.objs.push(obj);
+        }
+
+        *last_ref_id += self.obj_count;
+
+        self.end_of_alloc = stream.get_current_pos();
+        self.end_of_alloc - self.start_of_alloc
+    }
+
+    fn read_fill(&mut self, stream: &mut Stream) -> usize {
+        self.start_of_fill = stream.get_current_pos();
+
+        for obj_idx in 0..self.obj_count
+        {
+            let length = stream.read_modified_leb128(UNSIGNED_M); // its saved twice
+            let variable_size_data = stream.read_bytes(length as usize);
+
+            let obj = &mut self.objs[obj_idx as usize];
+            obj.data = variable_size_data;
+        }
+
+        self.end_of_fill - self.start_of_fill
+    }
+}
+
 //DECLARE_VARIABLE_LENGTH_CLUSTER!(OneByteString); These only exist when NO COMPRESSED_POINTERS
 //DECLARE_VARIABLE_LENGTH_CLUSTER!(TwoByteString);
 DECLARE_VARIABLE_LENGTH_CLUSTER!(_String);
@@ -371,7 +458,7 @@ impl Cluster for _StringCluster {
             self.objs.push(obj);
         }
 
-        *last_ref_id = *last_ref_id + self.obj_count;
+        *last_ref_id += self.obj_count;
         self.end_of_alloc = stream.get_current_pos();
 
         self.end_of_alloc - self.start_of_alloc

@@ -1,5 +1,3 @@
-use paste::paste;
-
 use crate::constants::ClassId;
 
 #[macro_export]
@@ -37,7 +35,7 @@ macro_rules! DECLARE_FIXED_LENGTH_CLUSTER {
                         self.objs.push(Box::<$name >::default());
                     }
 
-                    *last_ref_id = *last_ref_id + self.obj_count;
+                    *last_ref_id += self.obj_count;
                     self.end_of_alloc = stream.get_current_pos();
 
                     self.end_of_alloc - self.start_of_alloc

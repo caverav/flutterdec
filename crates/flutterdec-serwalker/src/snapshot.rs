@@ -130,6 +130,7 @@ pub fn parse_snapshot(stream: &mut Stream) -> DataSnapshot {
     println!("Now parsing the snapshot...");
     snapshot.parse_header(stream);
     snapshot.parse_clusters(stream);
+    snapshot.parse_roots(stream);
 
     snapshot
 }
