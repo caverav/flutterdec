@@ -7,13 +7,12 @@ use crate::utils::{decode_tags, DecodedTags};
 
 #[derive(Default)]
 enum SnapshotKind
-// pulled straight out of the C++ def
+// Snapshot::Kind, snapshot.h:24. There is no kModule variant.
 {
     Full,
     FullCore,
     FullJIT,
     FullAOT, // Full + AOT code, this is the one we care about, as this is how flutter builds projects
-    Module,
     #[default]
     None,
     Invalid,
@@ -28,10 +27,9 @@ impl TryFrom<u64> for SnapshotKind {
             1 => Ok(SnapshotKind::FullCore),
             2 => Ok(SnapshotKind::FullJIT),
             3 => Ok(SnapshotKind::FullAOT),
-            4 => Ok(SnapshotKind::Module),
-            5 => Ok(SnapshotKind::None),
-            6 => Ok(SnapshotKind::Invalid),
-            _ => Err("Invalid snapshot kind... Either headers are corrupt, or this is not a snapshot at all."), // Handle invalid snapshot kidjns
+            4 => Ok(SnapshotKind::None),
+            5 => Ok(SnapshotKind::Invalid),
+            _ => Err("Invalid snapshot kind: header corrupt, or not a snapshot at all."),
         }
     }
 }
