@@ -53,12 +53,13 @@ pub struct Function {
     pub owner: u32,                      // ObjectPtr
     pub signature: u32,                  // FunctionTypePtr
     pub data: u32,                       // ObjectPtr
-    pub ic_data_array_or_bytecode: u32,  // ObjectPtr
-    pub code: u32,                       // CodePtr
-    pub positional_parameter_names: u32, // ArrayPtr
-    pub unoptimized_code: u32,           // CodePtr
-    pub bitmap: u64,
-    pub kernel_offset: u32,
+    // pub ic_data_array_or_bytecode: u32,  // ObjectPtr [[NOT PRESENT IN FullAOT]]
+    pub code_index: u32,                 // unsigned integer index
+    // pub positional_parameter_names: u32, // ArrayPtr [[NOT PRESENT IN FullAOT]]
+    // pub unoptimized_code: u32,           // CodePtr [[NOT PRESENT IN FullAOT]]
+    // pub bitmap: u64,                     [[NOT PRESENT IN FullAOT]]
+    pub token_pos: i32,
+    // pub kernel_offset: u32,              [[NOT PRESENT IN FullAOT]]
     pub kind_tag: u32,
 }
 
@@ -87,13 +88,17 @@ pub struct Field {
     pub type_field: u32,              // AbstractTypePtr
     pub initializer_function: u32,    // FunctionPtr
     pub host_offset_or_field_id: u32, // SmiPtr
-    pub guarded_list_length: u32,     // SmiPtr
-    pub exact_type: u32,              // AbstractTypePtr
-    pub dependent_code: u32,          // WeakArrayPtr
-    pub kernel_offset: u32,
-    pub guarded_list_length_in_object_offset: i8,
-    pub static_type_exactness_state: i8,
-    pub target_offset: i32,
+    // pub guarded_list_length: u32,     // SmiPtr [[NOT PRESENT IN FullAOT]]
+    // pub exact_type: u32,              // AbstractTypePtr [[NOT PRESENT IN FullAOT]]
+    // pub dependent_code: u32,          // WeakArrayPtr [[NOT PRESENT IN FullAOT]]
+    pub token_pos: i32,
+    pub end_token_pos: i32,
+    pub guarded_cid: u32,
+    pub is_nullable: u32,
+    // pub kernel_offset: u32,           [[NOT PRESENT IN FullAOT]]
+    // pub guarded_list_length_in_object_offset: i8, [[NOT PRESENT IN FullAOT]]
+    // pub static_type_exactness_state: i8, [[NOT PRESENT IN FullAOT]]
+    // pub target_offset: i32,           [[NOT PRESENT IN FullAOT]]
     pub kind_bits: u32,
 }
 
@@ -114,13 +119,14 @@ pub struct Library {
     pub loading_unit: u32,        // LoadingUnitPtr
     pub imports: u32,             // ArrayPtr
     pub exports: u32,             // ArrayPtr
-    pub dependencies: u32,        // ArrayPtr
-    pub kernel_program_info: u32, // KernelProgramInfoPtr
-    pub loaded_scripts: u32,      // ArrayPtr
+    // pub dependencies: u32,        // ArrayPtr [[NOT PRESENT IN FullAOT]]
+    // pub kernel_program_info: u32, // KernelProgramInfoPtr [[NOT PRESENT IN FullAOT]]
+    // pub loaded_scripts: u32,      // ArrayPtr [[NOT PRESENT IN FullAOT]]
+    pub index: i32,
     pub num_imports: u16,
-    pub flags: u8,
-    pub kernel_library_index: u32,
     pub load_state: i8,
+    pub flags: u8,
+    // pub kernel_library_index: u32, [[NOT PRESENT IN FullAOT]]
 }
 
 #[derive(Default)]
@@ -212,14 +218,20 @@ pub struct TypeArguments {
 
 #[derive(Default)]
 pub struct TypeParameter {
+    pub type_test_stub: u32, // CodePtr
+    pub hash: u32,           // SmiPtr
     pub owner: u32, // ObjectPtr
     pub base: u16,
     pub index: u16,
+    pub flags: u8,
 }
 
 #[derive(Default)]
 pub struct Type {
+    pub type_test_stub: u32, // CodePtr
+    pub hash: u32,           // SmiPtr
     pub arguments: u32, // TypeArgumentsPtr
+    pub flags: u8,
 }
 
 #[derive(Default)]
@@ -277,10 +289,13 @@ pub struct AbstractType {
 
 #[derive(Default)]
 pub struct FunctionType {
+    pub type_test_stub: u32, // CodePtr
+    pub hash: u32,           // SmiPtr
     pub type_parameters: u32,       // TypeParametersPtr
     pub result_type: u32,           // AbstractTypePtr
     pub parameter_types: u32,       // ArrayPtr
     pub named_parameter_names: u32, // ArrayPtr
+    pub flags: u8,
     pub packed_parameter_counts: u32,
     pub packed_type_parameter_counts: u16,
 }
@@ -344,16 +359,24 @@ pub struct LoadingUnit {
 
 #[derive(Default)]
 pub struct ICData {
+    pub target_name: u32,
+    pub args_descriptor: u32,
+    pub entries: u32,
     pub state_bits: u32,
 }
 
 #[derive(Default)]
 pub struct MegamorphicCache {
+    pub target_name: u32,
+    pub args_descriptor: u32,
+    pub buckets: u32,
+    pub mask: Smi,
     pub filled_entry_count: i32,
 }
 
 #[derive(Default)]
 pub struct SubtypeTestCache {
+    pub cache: u32,
     pub num_inputs: u32,
     pub num_occupied: u32,
 }
@@ -364,8 +387,9 @@ pub struct LanguageError {
     pub script: u32,            // ScriptPtr
     pub message: u32,           // StringPtr
     pub formatted_message: u32, // StringPtr
-    pub kind: i8,
+    pub token_pos: i32,
     pub report_after_token: bool,
+    pub kind: i8,
 }
 
 #[derive(Default)]
@@ -385,8 +409,11 @@ pub struct LibraryPrefix {
 
 #[derive(Default)]
 pub struct RecordType {
-    pub field_types: u32, // ArrayPtr
+    pub type_test_stub: u32, // CodePtr
+    pub hash: u32,           // SmiPtr
     pub shape: Smi,       // SmiPtr
+    pub field_types: u32, // ArrayPtr
+    pub flags: u8,
 }
 
 #[derive(Default)]
@@ -404,7 +431,7 @@ pub struct StackTrace {
     pub async_link: u32,      // StackTracePtr
     pub code_array: u32,      // ArrayPtr
     pub pc_offset_array: u32, // TypedDataPtr
-    pub expand_inlined: bool,
+    // pub expand_inlined: bool, [[NOT PRESENT IN FullAOT]]
 }
 
 #[derive(Default)]
@@ -415,6 +442,8 @@ pub struct RegExp {
     pub two_byte: u32,         // TypedDataPtr
     pub one_byte_sticky: u32,  // TypedDataPtr
     pub two_byte_sticky: u32,  // TypedDataPtr
+    pub num_one_byte_registers: i32,
+    pub num_two_byte_registers: i32,
     pub flags: u32,
 }
 
@@ -422,7 +451,7 @@ pub struct RegExp {
 pub struct WeakProperty {
     pub key: u32,             // ObjectPtr
     pub value: u32,           // ObjectPtr
-    pub next_seen_by_gc: u32, // WeakPropertyPtr
+    // pub next_seen_by_gc: u32, // WeakPropertyPtr [[NOT PRESENT IN FullAOT]]
 }
 
 #[derive(Default)]

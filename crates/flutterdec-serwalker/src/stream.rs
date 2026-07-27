@@ -68,7 +68,7 @@ impl<'a> Stream<'a> {
         self.read_leb128(UNSIGNED_M)
     }
 
-    /// Raw fixed width little endian, header fields only. Everything inside the
+    /// Raw fixed width little endian, header fields only. Mostly everything else inside the
     /// clustered body is LEB128. Renamed so the two can't get mixed up.
     pub fn read_raw_u64(&mut self) -> Result<u64> {
         Ok(u64::from_le_bytes(self.take(8)?.try_into().expect("take(8) is 8 bytes")))

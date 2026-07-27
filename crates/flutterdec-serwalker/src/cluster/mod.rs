@@ -54,6 +54,7 @@ DECLARE_FIXED_LENGTH_CLUSTER!(PatchClass, |_self, stream| {
         obj.wrapped_class = stream.read_ref_id()?;
         obj.script = stream.read_ref_id()?;
         obj.kernel_program_info = stream.read_ref_id()?;
+        // obj.kernel_library_index = stream.read_unsigned()? as u32; [[NOT PRESENT IN FullAOT]]
     }
 });
 DECLARE_FIXED_LENGTH_CLUSTER!(Function, |_self, stream| {
@@ -63,12 +64,14 @@ DECLARE_FIXED_LENGTH_CLUSTER!(Function, |_self, stream| {
         obj.owner = stream.read_ref_id()?;
         obj.signature = stream.read_ref_id()?;
         obj.data = stream.read_ref_id()?;
-        obj.ic_data_array_or_bytecode = stream.read_ref_id()?;
-        obj.code = stream.read_ref_id()?;
-        obj.positional_parameter_names = stream.read_ref_id()?;
-        obj.unoptimized_code = stream.read_ref_id()?;
-        obj.bitmap = stream.read_unsigned()? as u64;
-        obj.kernel_offset = stream.read_unsigned()? as u32;
+        // obj.ic_data_array_or_bytecode = stream.read_ref_id()?; [[NOT PRESENT IN FullAOT]]
+        // obj.code = stream.read_ref_id()?; [[SKIPPED BY WriteFromTo]]
+        // obj.positional_parameter_names = stream.read_ref_id()?; [[NOT PRESENT IN FullAOT]]
+        // obj.unoptimized_code = stream.read_ref_id()?; [[NOT PRESENT IN FullAOT]]
+        // obj.bitmap = stream.read_unsigned()? as u64; [[NOT PRESENT IN FullAOT]]
+        obj.code_index = stream.read_unsigned()? as u32;
+        obj.token_pos = stream.read()? as i32;
+        // obj.kernel_offset = stream.read_unsigned()? as u32; [[NOT PRESENT IN FullAOT]]
         obj.kind_tag = stream.read_unsigned()? as u32;
     }
 });
@@ -100,13 +103,17 @@ DECLARE_FIXED_LENGTH_CLUSTER!(Field, |_self, stream| {
         obj.type_field = stream.read_ref_id()?;
         obj.initializer_function = stream.read_ref_id()?;
         obj.host_offset_or_field_id = stream.read_ref_id()?;
-        obj.guarded_list_length = stream.read_ref_id()?;
-        obj.exact_type = stream.read_ref_id()?;
-        obj.dependent_code = stream.read_ref_id()?;
-        obj.kernel_offset = stream.read_unsigned()? as u32;
-        obj.guarded_list_length_in_object_offset = stream.read()? as i8;
-        obj.static_type_exactness_state = stream.read()? as i8;
-        obj.target_offset = stream.read()? as i32;
+        // obj.guarded_list_length = stream.read_ref_id()?; [[NOT PRESENT IN FullAOT]]
+        // obj.exact_type = stream.read_ref_id()?; [[NOT PRESENT IN FullAOT]]
+        // obj.dependent_code = stream.read_ref_id()?; [[NOT PRESENT IN FullAOT]]
+        obj.token_pos = stream.read()? as i32;
+        obj.end_token_pos = stream.read()? as i32;
+        obj.guarded_cid = stream.read_unsigned()? as u32;
+        obj.is_nullable = stream.read_unsigned()? as u32;
+        // obj.kernel_offset = stream.read_unsigned()? as u32; [[NOT PRESENT IN FullAOT]]
+        // obj.guarded_list_length_in_object_offset = stream.read()? as i8; [[NOT PRESENT IN FullAOT]]
+        // obj.static_type_exactness_state = stream.read()? as i8; [[NOT PRESENT IN FullAOT]]
+        // obj.target_offset = stream.read()? as i32; [[NOT PRESENT IN FullAOT]]
         obj.kind_bits = stream.read_unsigned()? as u32;
     }
 });
@@ -126,13 +133,14 @@ DECLARE_FIXED_LENGTH_CLUSTER!(Library, |_self, stream| {
         obj.loading_unit = stream.read_ref_id()?;
         obj.imports = stream.read_ref_id()?;
         obj.exports = stream.read_ref_id()?;
-        obj.dependencies = stream.read_ref_id()?;
-        obj.kernel_program_info = stream.read_ref_id()?;
-        obj.loaded_scripts = stream.read_ref_id()?;
-        obj.num_imports = stream.read_unsigned()? as u16;
-        obj.flags = stream.read_unsigned()? as u8;
-        obj.kernel_library_index = stream.read_unsigned()? as u32;
+        // obj.dependencies = stream.read_ref_id()?; [[NOT PRESENT IN FullAOT]]
+        // obj.kernel_program_info = stream.read_ref_id()?; [[NOT PRESENT IN FullAOT]]
+        // obj.loaded_scripts = stream.read_ref_id()?; [[NOT PRESENT IN FullAOT]]
+        obj.index = stream.read()? as i32;
+        obj.num_imports = stream.read()? as u16;
         obj.load_state = stream.read()? as i8;
+        obj.flags = stream.read()? as u8;
+        // obj.kernel_library_index = stream.read_unsigned()? as u32; [[NOT PRESENT IN FullAOT]]
     }
 });
 DECLARE_FIXED_LENGTH_CLUSTER!(Namespace, |_self, stream| {
@@ -169,18 +177,26 @@ DECLARE_FIXED_LENGTH_CLUSTER!(UnlinkedCall, |_self, stream| {
 DECLARE_FIXED_LENGTH_CLUSTER!(ICData, |_self, stream| {
     for obj_idx in 0.._self.obj_count as usize {
         let obj = &mut *_self.objs[obj_idx];
+        obj.target_name = stream.read_ref_id()?;
+        obj.args_descriptor = stream.read_ref_id()?;
+        obj.entries = stream.read_ref_id()?;
         obj.state_bits = stream.read_unsigned()? as u32;
     }
 });
 DECLARE_FIXED_LENGTH_CLUSTER!(MegamorphicCache, |_self, stream| {
     for obj_idx in 0.._self.obj_count as usize {
         let obj = &mut *_self.objs[obj_idx];
+        obj.target_name = stream.read_ref_id()?;
+        obj.args_descriptor = stream.read_ref_id()?;
+        obj.buckets = stream.read_ref_id()?;
+        obj.mask = stream.read_ref_id()? as i32;
         obj.filled_entry_count = stream.read()? as i32;
     }
 });
 DECLARE_FIXED_LENGTH_CLUSTER!(SubtypeTestCache, |_self, stream| {
     for obj_idx in 0.._self.obj_count as usize {
         let obj = &mut *_self.objs[obj_idx];
+        obj.cache = stream.read_ref_id()?;
         obj.num_inputs = stream.read_unsigned()? as u32;
         obj.num_occupied = stream.read_unsigned()? as u32;
     }
@@ -200,8 +216,9 @@ DECLARE_FIXED_LENGTH_CLUSTER!(LanguageError, |_self, stream| {
         obj.script = stream.read_ref_id()?;
         obj.message = stream.read_ref_id()?;
         obj.formatted_message = stream.read_ref_id()?;
+        obj.token_pos = stream.read()? as i32;
+        obj.report_after_token = stream.read()? != 0;
         obj.kind = stream.read()? as i8;
-        obj.report_after_token = stream.read_unsigned()? != 0;
     }
 });
 DECLARE_FIXED_LENGTH_CLUSTER!(UnhandledException, |_self, stream| {
@@ -224,16 +241,22 @@ DECLARE_FIXED_LENGTH_CLUSTER!(LibraryPrefix, |_self, stream| {
 DECLARE_FIXED_LENGTH_CLUSTER!(Type, |_self, stream| {
     for obj_idx in 0.._self.obj_count as usize {
         let obj = &mut *_self.objs[obj_idx];
+        obj.type_test_stub = stream.read_ref_id()?;
+        obj.hash = stream.read_ref_id()?;
         obj.arguments = stream.read_ref_id()?;
+        obj.flags = stream.read_unsigned()? as u8;
     }
 });
 DECLARE_FIXED_LENGTH_CLUSTER!(FunctionType, |_self, stream| {
     for obj_idx in 0.._self.obj_count as usize {
         let obj = &mut *_self.objs[obj_idx];
+        obj.type_test_stub = stream.read_ref_id()?;
+        obj.hash = stream.read_ref_id()?;
         obj.type_parameters = stream.read_ref_id()?;
         obj.result_type = stream.read_ref_id()?;
         obj.parameter_types = stream.read_ref_id()?;
         obj.named_parameter_names = stream.read_ref_id()?;
+        obj.flags = stream.read()? as u8;
         obj.packed_parameter_counts = stream.read_unsigned()? as u32;
         obj.packed_type_parameter_counts = stream.read_unsigned()? as u16;
     }
@@ -241,16 +264,23 @@ DECLARE_FIXED_LENGTH_CLUSTER!(FunctionType, |_self, stream| {
 DECLARE_FIXED_LENGTH_CLUSTER!(RecordType, |_self, stream| {
     for obj_idx in 0.._self.obj_count as usize {
         let obj = &mut *_self.objs[obj_idx];
-        obj.field_types = stream.read_ref_id()?;
+        obj.type_test_stub = stream.read_ref_id()?;
+        obj.hash = stream.read_ref_id()?;
         obj.shape = stream.read_ref_id()? as i32;
+        obj.field_types = stream.read_ref_id()?;
+        obj.flags = stream.read()? as u8;
+        // obj.shape = stream.read_ref_id()?; as i32;
     }
 });
 DECLARE_FIXED_LENGTH_CLUSTER!(TypeParameter, |_self, stream| {
     for obj_idx in 0.._self.obj_count as usize {
         let obj = &mut *_self.objs[obj_idx];
+        obj.type_test_stub = stream.read_ref_id()?;
+        obj.hash = stream.read_ref_id()?;
         obj.owner = stream.read_ref_id()?;
-        obj.base = stream.read_unsigned()? as u16;
-        obj.index = stream.read_unsigned()? as u16;
+        obj.base = stream.read()? as u16;
+        obj.index = stream.read()? as u16;
+        obj.flags = stream.read()? as u8;
     }
 });
 DECLARE_FIXED_LENGTH_CLUSTER!(Closure, |_self, stream| {
@@ -297,7 +327,7 @@ DECLARE_FIXED_LENGTH_CLUSTER!(StackTrace, |_self, stream| {
         obj.async_link = stream.read_ref_id()?;
         obj.code_array = stream.read_ref_id()?;
         obj.pc_offset_array = stream.read_ref_id()?;
-        obj.expand_inlined = stream.read_unsigned()? != 0;
+        // obj.expand_inlined = stream.read_unsigned()? != 0; [[NOT PRESENT IN FullAOT]]
     }
 });
 DECLARE_FIXED_LENGTH_CLUSTER!(RegExp, |_self, stream| {
@@ -309,6 +339,8 @@ DECLARE_FIXED_LENGTH_CLUSTER!(RegExp, |_self, stream| {
         obj.two_byte = stream.read_ref_id()?;
         obj.one_byte_sticky = stream.read_ref_id()?;
         obj.two_byte_sticky = stream.read_ref_id()?;
+        obj.num_one_byte_registers = stream.read()? as i32;
+        obj.num_two_byte_registers = stream.read()? as i32;
         obj.flags = stream.read_unsigned()? as u32;
     }
 });
@@ -317,7 +349,7 @@ DECLARE_FIXED_LENGTH_CLUSTER!(WeakProperty, |_self, stream| {
         let obj = &mut *_self.objs[obj_idx];
         obj.key = stream.read_ref_id()?;
         obj.value = stream.read_ref_id()?;
-        obj.next_seen_by_gc = stream.read_ref_id()?;
+        // obj.next_seen_by_gc = stream.read_ref_id()?; [[NOT PRESENT IN FullAOT]]
     }
 });
 
