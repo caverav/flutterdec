@@ -2,27 +2,26 @@ use crate::constants::ClassId;
 
 #[macro_export]
 macro_rules! DECLARE_FIXED_LENGTH_CLUSTER {
-    ($name:ident, |$_self:ident, $stream:ident| $fill_impl:block) => {
-        ::paste::paste! {
-            pub struct [<$name Cluster>]
-            {
-                tags: u32,
-                cid: ClassId,
-                obj_count: u64,
+    ($name:ident, $cluster_name:ident, |$_self:ident, $stream:ident| $fill_impl:block) => {
+        pub struct $cluster_name
+        {
+            tags: u32,
+            cid: ClassId,
+            obj_count: u64,
 
-                start_of_fill: usize,
-                start_of_alloc: usize,
+            start_of_fill: usize,
+            start_of_alloc: usize,
 
-                end_of_fill: usize,
-                end_of_alloc: usize,
+            end_of_fill: usize,
+            end_of_alloc: usize,
 
-                first_ref_id: u32,
+            first_ref_id: u32,
 
-                objs: Vec<Box<$name >>
-            }
+            objs: Vec<Box<$name>>
+        }
 
-            impl Cluster for [<$name Cluster>]
-            {
+        impl Cluster for $cluster_name
+        {
                 fn read_alloc(&mut self, last_ref_id: &mut u64, stream: &mut Stream) -> anyhow::Result<usize>
                 {
                     self.start_of_alloc = stream.get_current_pos();
@@ -61,16 +60,14 @@ macro_rules! DECLARE_FIXED_LENGTH_CLUSTER {
                 }
             }
 
-        }
     };
 }
 
 #[macro_export]
 macro_rules! DECLARE_VARIABLE_LENGTH_CLUSTER {
-    ($name:ident) => {
-        ::paste::paste! {
-            pub struct [<$name Cluster>]
-            {
+    ($name:ident, $cluster_name:ident) => {
+        pub struct $cluster_name
+        {
                 tags: u32,
                 cid: ClassId,
                 obj_count: u64,
@@ -83,8 +80,7 @@ macro_rules! DECLARE_VARIABLE_LENGTH_CLUSTER {
 
                 first_ref_id: u32,
 
-                objs: Vec<Box<$name >>
-            }
+            objs: Vec<Box<$name>>
         }
     };
 }

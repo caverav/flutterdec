@@ -58,8 +58,6 @@ pub struct DataSnapshot {
 
     end_of_alloc_area: usize,
     end_of_fill_area: usize,
-
-    objects: Vec<u32>,
 }
 
 impl DataSnapshot {

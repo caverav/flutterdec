@@ -7,4 +7,3 @@ license.workspace = true
 [dependencies]
 anyhow.workspace = true
 goblin.workspace = true
-paste = "1.0.15"
