@@ -137,7 +137,10 @@ macro_rules! DECODE_IS_CANONICAL {
 /// ClassIdTag at 12 (20 bits), CanonicalBit at 1, ImmutableBit at 7.
 pub fn decode_tags(tags: u32) -> anyhow::Result<DecodedTags> {
     let class_id = DECODE_CID!(tags).map_err(|_| {
-        anyhow::anyhow!("unknown class id {} in tags {tags:#x}", (tags >> 12) & 0xFFFFF)
+        anyhow::anyhow!(
+            "unknown class id {} in tags {tags:#x}",
+            (tags >> 12) & 0xFFFFF
+        )
     })?;
     Ok(DecodedTags::new(
         class_id,

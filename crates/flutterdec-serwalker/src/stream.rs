@@ -9,12 +9,18 @@ pub struct Stream<'a> {
 
 impl<'a> Stream<'a> {
     pub fn new(byte_stream: &'a [u8]) -> Self {
-        Self { byte_stream, curr_stream_offset: 0 }
+        Self {
+            byte_stream,
+            curr_stream_offset: 0,
+        }
     }
 
     pub fn seek(&mut self, pos: usize) -> Result<()> {
         if pos > self.byte_stream.len() {
-            bail!("seek to {pos} past end of snapshot ({})", self.byte_stream.len());
+            bail!(
+                "seek to {pos} past end of snapshot ({})",
+                self.byte_stream.len()
+            );
         }
         self.curr_stream_offset = pos;
         Ok(())
@@ -26,7 +32,10 @@ impl<'a> Stream<'a> {
             .checked_add(n)
             .filter(|e| *e <= self.byte_stream.len())
             .ok_or_else(|| {
-                anyhow!("read of {n} bytes past end of snapshot at offset {}", self.curr_stream_offset)
+                anyhow!(
+                    "read of {n} bytes past end of snapshot at offset {}",
+                    self.curr_stream_offset
+                )
             })?;
         let slice = &self.byte_stream[self.curr_stream_offset..end];
         self.curr_stream_offset = end;
@@ -53,7 +62,10 @@ impl<'a> Stream<'a> {
             value |= (byte as u64) << shift;
             shift += DATA_BITS_PER_BYTE;
             if shift >= 64 {
-                bail!("LEB128 value exceeds 64 bits at offset {}", self.curr_stream_offset);
+                bail!(
+                    "LEB128 value exceeds 64 bits at offset {}",
+                    self.curr_stream_offset
+                );
             }
         }
     }
@@ -71,11 +83,15 @@ impl<'a> Stream<'a> {
     /// Raw fixed width little endian, header fields only. Mostly everything else inside the
     /// clustered body is LEB128. Renamed so the two can't get mixed up.
     pub fn read_raw_u64(&mut self) -> Result<u64> {
-        Ok(u64::from_le_bytes(self.take(8)?.try_into().expect("take(8) is 8 bytes")))
+        Ok(u64::from_le_bytes(
+            self.take(8)?.try_into().expect("take(8) is 8 bytes"),
+        ))
     }
 
     pub fn read_raw_u32(&mut self) -> Result<u32> {
-        Ok(u32::from_le_bytes(self.take(4)?.try_into().expect("take(4) is 4 bytes")))
+        Ok(u32::from_le_bytes(
+            self.take(4)?.try_into().expect("take(4) is 4 bytes"),
+        ))
     }
 
     pub fn read_byte(&mut self) -> Result<u8> {
@@ -86,7 +102,12 @@ impl<'a> Stream<'a> {
         let nul = self.byte_stream[self.curr_stream_offset..]
             .iter()
             .position(|&b| b == 0)
-            .ok_or_else(|| anyhow!("unterminated C string at offset {}", self.curr_stream_offset))?;
+            .ok_or_else(|| {
+                anyhow!(
+                    "unterminated C string at offset {}",
+                    self.curr_stream_offset
+                )
+            })?;
         let raw = self.take(nul + 1)?;
         Ok(String::from_utf8(raw[..nul].to_vec())?)
     }
@@ -107,7 +128,10 @@ impl<'a> Stream<'a> {
                 return Ok((result + 128) as u32);
             }
         }
-        bail!("ref id longer than 5 bytes at offset {}", self.curr_stream_offset)
+        bail!(
+            "ref id longer than 5 bytes at offset {}",
+            self.curr_stream_offset
+        )
     }
 
     /// Reads a block of bytes and returns a newly allocated Vec<u8> (Creates a copy)

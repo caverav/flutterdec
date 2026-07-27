@@ -49,12 +49,12 @@ pub struct PatchClass {
 
 #[derive(Default)]
 pub struct Function {
-    pub name: u32,                       // StringPtr
-    pub owner: u32,                      // ObjectPtr
-    pub signature: u32,                  // FunctionTypePtr
-    pub data: u32,                       // ObjectPtr
+    pub name: u32,      // StringPtr
+    pub owner: u32,     // ObjectPtr
+    pub signature: u32, // FunctionTypePtr
+    pub data: u32,      // ObjectPtr
     // pub ic_data_array_or_bytecode: u32,  // ObjectPtr [[NOT PRESENT IN FullAOT]]
-    pub code_index: u32,                 // unsigned integer index
+    pub code_index: u32, // unsigned integer index
     // pub positional_parameter_names: u32, // ArrayPtr [[NOT PRESENT IN FullAOT]]
     // pub unoptimized_code: u32,           // CodePtr [[NOT PRESENT IN FullAOT]]
     // pub bitmap: u64,                     [[NOT PRESENT IN FullAOT]]
@@ -109,16 +109,16 @@ pub struct Script {
 
 #[derive(Default)]
 pub struct Library {
-    pub name: u32,                // StringPtr
-    pub url: u32,                 // StringPtr
-    pub private_key: u32,         // StringPtr
-    pub dictionary: u32,          // ArrayPtr
-    pub metadata: u32,            // ArrayPtr
-    pub toplevel_class: u32,      // ClassPtr
-    pub used_scripts: u32,        // GrowableObjectArrayPtr
-    pub loading_unit: u32,        // LoadingUnitPtr
-    pub imports: u32,             // ArrayPtr
-    pub exports: u32,             // ArrayPtr
+    pub name: u32,           // StringPtr
+    pub url: u32,            // StringPtr
+    pub private_key: u32,    // StringPtr
+    pub dictionary: u32,     // ArrayPtr
+    pub metadata: u32,       // ArrayPtr
+    pub toplevel_class: u32, // ClassPtr
+    pub used_scripts: u32,   // GrowableObjectArrayPtr
+    pub loading_unit: u32,   // LoadingUnitPtr
+    pub imports: u32,        // ArrayPtr
+    pub exports: u32,        // ArrayPtr
     // pub dependencies: u32,        // ArrayPtr [[NOT PRESENT IN FullAOT]]
     // pub kernel_program_info: u32, // KernelProgramInfoPtr [[NOT PRESENT IN FullAOT]]
     // pub loaded_scripts: u32,      // ArrayPtr [[NOT PRESENT IN FullAOT]]
@@ -161,13 +161,14 @@ pub struct CodeSourceMap {
 pub struct CompressedStackMaps {
     pub length: u32,
     pub flags_and_size: u32,
-    pub data: Vec<u8>
+    pub data: Vec<u8>,
 }
 
 #[derive(Default)]
-pub struct PcDescriptors { // not really
+pub struct PcDescriptors {
+    // not really
     pub length: u32,
-    pub data: Vec<u8>
+    pub data: Vec<u8>,
 }
 
 #[derive(Default)]
@@ -220,7 +221,7 @@ pub struct TypeArguments {
 pub struct TypeParameter {
     pub type_test_stub: u32, // CodePtr
     pub hash: u32,           // SmiPtr
-    pub owner: u32, // ObjectPtr
+    pub owner: u32,          // ObjectPtr
     pub base: u16,
     pub index: u16,
     pub flags: u8,
@@ -230,7 +231,7 @@ pub struct TypeParameter {
 pub struct Type {
     pub type_test_stub: u32, // CodePtr
     pub hash: u32,           // SmiPtr
-    pub arguments: u32, // TypeArgumentsPtr
+    pub arguments: u32,      // TypeArgumentsPtr
     pub flags: u8,
 }
 
@@ -289,8 +290,8 @@ pub struct AbstractType {
 
 #[derive(Default)]
 pub struct FunctionType {
-    pub type_test_stub: u32, // CodePtr
-    pub hash: u32,           // SmiPtr
+    pub type_test_stub: u32,        // CodePtr
+    pub hash: u32,                  // SmiPtr
     pub type_parameters: u32,       // TypeParametersPtr
     pub result_type: u32,           // AbstractTypePtr
     pub parameter_types: u32,       // ArrayPtr
@@ -411,8 +412,8 @@ pub struct LibraryPrefix {
 pub struct RecordType {
     pub type_test_stub: u32, // CodePtr
     pub hash: u32,           // SmiPtr
-    pub shape: Smi,       // SmiPtr
-    pub field_types: u32, // ArrayPtr
+    pub shape: Smi,          // SmiPtr
+    pub field_types: u32,    // ArrayPtr
     pub flags: u8,
 }
 
@@ -428,10 +429,10 @@ pub struct ExternalTypedData {
 
 #[derive(Default)]
 pub struct StackTrace {
-    pub async_link: u32,      // StackTracePtr
-    pub code_array: u32,      // ArrayPtr
+    pub async_link: u32, // StackTracePtr
+    pub code_array: u32, // ArrayPtr
     pub pc_offset_array: u32, // TypedDataPtr
-    // pub expand_inlined: bool, [[NOT PRESENT IN FullAOT]]
+                         // pub expand_inlined: bool, [[NOT PRESENT IN FullAOT]]
 }
 
 #[derive(Default)]
@@ -449,9 +450,9 @@ pub struct RegExp {
 
 #[derive(Default)]
 pub struct WeakProperty {
-    pub key: u32,             // ObjectPtr
-    pub value: u32,           // ObjectPtr
-    // pub next_seen_by_gc: u32, // WeakPropertyPtr [[NOT PRESENT IN FullAOT]]
+    pub key: u32, // ObjectPtr
+    pub value: u32, // ObjectPtr
+                  // pub next_seen_by_gc: u32, // WeakPropertyPtr [[NOT PRESENT IN FullAOT]]
 }
 
 #[derive(Default)]

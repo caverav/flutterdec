@@ -59,7 +59,7 @@ pub struct DataSnapshot {
     end_of_alloc_area: usize,
     end_of_fill_area: usize,
 
-    objects: Vec<u32>
+    objects: Vec<u32>,
 }
 
 impl DataSnapshot {
@@ -79,7 +79,8 @@ impl DataSnapshot {
         }
 
         self.size = stream.read_raw_u64()?;
-        self.kind = SnapshotKind::try_from(stream.read_raw_u64()?).map_err(|e| anyhow::anyhow!(e))?;
+        self.kind =
+            SnapshotKind::try_from(stream.read_raw_u64()?).map_err(|e| anyhow::anyhow!(e))?;
 
         self.parse_version_and_features(stream)?;
 
@@ -97,7 +98,7 @@ impl DataSnapshot {
 
         self.start_of_alloc_area = stream.get_current_pos();
         for _cluster_idx in 0..self.num_clusters {
-            let tags: u32 = stream.read_unsigned()? as u32;
+            let tags: u32 = stream.read()? as u32;
             let decoded_tags: DecodedTags = decode_tags(tags)?;
             let cid = decoded_tags.get_cid();
 
@@ -106,9 +107,11 @@ impl DataSnapshot {
             })?;
 
             cluster.read_alloc(&mut curr_ref_id, stream)?;
-            
+
             // Composite key exactly as suggested by PR reviewer
-            let key = (cid as u32) << 2 | ((decoded_tags.is_canonical() as u32) << 1) | (decoded_tags.is_deeply_immutable() as u32);
+            let key = (cid as u32) << 2
+                | ((decoded_tags.is_canonical() as u32) << 1)
+                | (decoded_tags.is_deeply_immutable() as u32);
             self.clusters.insert(key, cluster);
             self.cluster_order.push(key);
         }
@@ -138,4 +141,3 @@ pub fn parse_snapshot(stream: &mut Stream) -> anyhow::Result<DataSnapshot> {
 
     Ok(snapshot)
 }
-

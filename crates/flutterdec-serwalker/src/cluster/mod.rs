@@ -376,8 +376,7 @@ DECLARE_VARIABLE_LENGTH_CLUSTER!(ConstSet);
 DECLARE_VARIABLE_LENGTH_CLUSTER!(CodeSourceMap);
 DECLARE_VARIABLE_LENGTH_CLUSTER!(CompressedStackMaps);
 
-impl Cluster for CompressedStackMapsCluster
-{
+impl Cluster for CompressedStackMapsCluster {
     fn is_fixed_len(&self) -> bool {
         false
     }
@@ -387,8 +386,7 @@ impl Cluster for CompressedStackMapsCluster
         self.first_ref_id = *last_ref_id as u32;
 
         self.obj_count = stream.read_unsigned()?;
-        for _obj_idx in 0..self.obj_count
-        {
+        for _obj_idx in 0..self.obj_count {
             let mut obj = Box::<CompressedStackMaps>::default();
             obj.length = stream.read_unsigned()? as u32;
 
@@ -403,8 +401,7 @@ impl Cluster for CompressedStackMapsCluster
 
     fn read_fill(&mut self, stream: &mut Stream) -> anyhow::Result<usize> {
         self.start_of_fill = stream.get_current_pos();
-        for obj_idx in 0..self.obj_count
-        {
+        for obj_idx in 0..self.obj_count {
             let obj = &mut self.objs[obj_idx as usize];
             obj.flags_and_size = stream.read_unsigned()? as u32;
 
@@ -419,8 +416,7 @@ impl Cluster for CompressedStackMapsCluster
 
 DECLARE_VARIABLE_LENGTH_CLUSTER!(PcDescriptors);
 
-impl Cluster for PcDescriptorsCluster
-{
+impl Cluster for PcDescriptorsCluster {
     fn is_fixed_len(&self) -> bool {
         false
     }
@@ -431,8 +427,7 @@ impl Cluster for PcDescriptorsCluster
 
         self.obj_count = stream.read_unsigned()?;
 
-        for _obj_idx in 0..self.obj_count
-        {
+        for _obj_idx in 0..self.obj_count {
             let mut obj = Box::<PcDescriptors>::default();
             let length = stream.read_unsigned()?;
 
@@ -449,8 +444,7 @@ impl Cluster for PcDescriptorsCluster
     fn read_fill(&mut self, stream: &mut Stream) -> anyhow::Result<usize> {
         self.start_of_fill = stream.get_current_pos();
 
-        for obj_idx in 0..self.obj_count
-        {
+        for obj_idx in 0..self.obj_count {
             let length = stream.read_unsigned()?; // its saved twice
             let variable_size_data = stream.read_bytes(length as usize)?;
 
