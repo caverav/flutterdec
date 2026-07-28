@@ -7,3 +7,4 @@ license.workspace = true
 [dependencies]
 anyhow.workspace = true
 goblin.workspace = true
+flutterdec-adapter = { path = "../flutterdec-adapter" }

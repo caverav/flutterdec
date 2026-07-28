@@ -84,17 +84,21 @@ DECLARE_FIXED_LENGTH_CLUSTER!(ClosureData, ClosureDataCluster, |_self, stream| {
         obj.packed_fields = stream.read_unsigned()? as u32;
     }
 });
-DECLARE_FIXED_LENGTH_CLUSTER!(FfiTrampolineData, FfiTrampolineDataCluster, |_self, stream| {
-    for obj_idx in 0.._self.obj_count as usize {
-        let obj = &mut *_self.objs[obj_idx];
-        obj.signature_type = stream.read_ref_id()?;
-        obj.c_signature = stream.read_ref_id()?;
-        obj.callback_target = stream.read_ref_id()?;
-        obj.callback_exceptional_return = stream.read_ref_id()?;
-        obj.ffi_function_kind = stream.read_unsigned()? as u8;
-        obj.callback_id = stream.read()? as i32;
+DECLARE_FIXED_LENGTH_CLUSTER!(
+    FfiTrampolineData,
+    FfiTrampolineDataCluster,
+    |_self, stream| {
+        for obj_idx in 0.._self.obj_count as usize {
+            let obj = &mut *_self.objs[obj_idx];
+            obj.signature_type = stream.read_ref_id()?;
+            obj.c_signature = stream.read_ref_id()?;
+            obj.callback_target = stream.read_ref_id()?;
+            obj.callback_exceptional_return = stream.read_ref_id()?;
+            obj.ffi_function_kind = stream.read_unsigned()? as u8;
+            obj.callback_id = stream.read()? as i32;
+        }
     }
-});
+);
 DECLARE_FIXED_LENGTH_CLUSTER!(Field, FieldCluster, |_self, stream| {
     for obj_idx in 0.._self.obj_count as usize {
         let obj = &mut *_self.objs[obj_idx];
@@ -152,22 +156,26 @@ DECLARE_FIXED_LENGTH_CLUSTER!(Namespace, NamespaceCluster, |_self, stream| {
         obj.owner = stream.read_ref_id()?;
     }
 });
-DECLARE_FIXED_LENGTH_CLUSTER!(KernelProgramInfo, KernelProgramInfoCluster, |_self, stream| {
-    for obj_idx in 0.._self.obj_count as usize {
-        let obj = &mut *_self.objs[obj_idx];
-        obj.kernel_component = stream.read_ref_id()?;
-        obj.string_offsets = stream.read_ref_id()?;
-        obj.string_data = stream.read_ref_id()?;
-        obj.canonical_names = stream.read_ref_id()?;
-        obj.metadata_payloads = stream.read_ref_id()?;
-        obj.metadata_mappings = stream.read_ref_id()?;
-        obj.scripts = stream.read_ref_id()?;
-        obj.constants = stream.read_ref_id()?;
-        obj.constants_table = stream.read_ref_id()?;
-        obj.libraries_cache = stream.read_ref_id()?;
-        obj.classes_cache = stream.read_ref_id()?;
+DECLARE_FIXED_LENGTH_CLUSTER!(
+    KernelProgramInfo,
+    KernelProgramInfoCluster,
+    |_self, stream| {
+        for obj_idx in 0.._self.obj_count as usize {
+            let obj = &mut *_self.objs[obj_idx];
+            obj.kernel_component = stream.read_ref_id()?;
+            obj.string_offsets = stream.read_ref_id()?;
+            obj.string_data = stream.read_ref_id()?;
+            obj.canonical_names = stream.read_ref_id()?;
+            obj.metadata_payloads = stream.read_ref_id()?;
+            obj.metadata_mappings = stream.read_ref_id()?;
+            obj.scripts = stream.read_ref_id()?;
+            obj.constants = stream.read_ref_id()?;
+            obj.constants_table = stream.read_ref_id()?;
+            obj.libraries_cache = stream.read_ref_id()?;
+            obj.classes_cache = stream.read_ref_id()?;
+        }
     }
-});
+);
 DECLARE_FIXED_LENGTH_CLUSTER!(UnlinkedCall, UnlinkedCallCluster, |_self, stream| {
     for obj_idx in 0.._self.obj_count as usize {
         let obj = &mut *_self.objs[obj_idx];
@@ -183,24 +191,32 @@ DECLARE_FIXED_LENGTH_CLUSTER!(ICData, ICDataCluster, |_self, stream| {
         obj.state_bits = stream.read_unsigned()? as u32;
     }
 });
-DECLARE_FIXED_LENGTH_CLUSTER!(MegamorphicCache, MegamorphicCacheCluster, |_self, stream| {
-    for obj_idx in 0.._self.obj_count as usize {
-        let obj = &mut *_self.objs[obj_idx];
-        obj.target_name = stream.read_ref_id()?;
-        obj.args_descriptor = stream.read_ref_id()?;
-        obj.buckets = stream.read_ref_id()?;
-        obj.mask = stream.read_ref_id()? as i32;
-        obj.filled_entry_count = stream.read()? as i32;
+DECLARE_FIXED_LENGTH_CLUSTER!(
+    MegamorphicCache,
+    MegamorphicCacheCluster,
+    |_self, stream| {
+        for obj_idx in 0.._self.obj_count as usize {
+            let obj = &mut *_self.objs[obj_idx];
+            obj.target_name = stream.read_ref_id()?;
+            obj.args_descriptor = stream.read_ref_id()?;
+            obj.buckets = stream.read_ref_id()?;
+            obj.mask = stream.read_ref_id()? as i32;
+            obj.filled_entry_count = stream.read()? as i32;
+        }
     }
-});
-DECLARE_FIXED_LENGTH_CLUSTER!(SubtypeTestCache, SubtypeTestCacheCluster, |_self, stream| {
-    for obj_idx in 0.._self.obj_count as usize {
-        let obj = &mut *_self.objs[obj_idx];
-        obj.cache = stream.read_ref_id()?;
-        obj.num_inputs = stream.read_unsigned()? as u32;
-        obj.num_occupied = stream.read_unsigned()? as u32;
+);
+DECLARE_FIXED_LENGTH_CLUSTER!(
+    SubtypeTestCache,
+    SubtypeTestCacheCluster,
+    |_self, stream| {
+        for obj_idx in 0.._self.obj_count as usize {
+            let obj = &mut *_self.objs[obj_idx];
+            obj.cache = stream.read_ref_id()?;
+            obj.num_inputs = stream.read_unsigned()? as u32;
+            obj.num_occupied = stream.read_unsigned()? as u32;
+        }
     }
-});
+);
 DECLARE_FIXED_LENGTH_CLUSTER!(LoadingUnit, LoadingUnitCluster, |_self, stream| {
     for obj_idx in 0.._self.obj_count as usize {
         let obj = &mut *_self.objs[obj_idx];
@@ -221,13 +237,17 @@ DECLARE_FIXED_LENGTH_CLUSTER!(LanguageError, LanguageErrorCluster, |_self, strea
         obj.kind = stream.read()? as i8;
     }
 });
-DECLARE_FIXED_LENGTH_CLUSTER!(UnhandledException, UnhandledExceptionCluster, |_self, stream| {
-    for obj_idx in 0.._self.obj_count as usize {
-        let obj = &mut *_self.objs[obj_idx];
-        obj.exception = stream.read_ref_id()?;
-        obj.stacktrace = stream.read_ref_id()?;
+DECLARE_FIXED_LENGTH_CLUSTER!(
+    UnhandledException,
+    UnhandledExceptionCluster,
+    |_self, stream| {
+        for obj_idx in 0.._self.obj_count as usize {
+            let obj = &mut *_self.objs[obj_idx];
+            obj.exception = stream.read_ref_id()?;
+            obj.stacktrace = stream.read_ref_id()?;
+        }
     }
-});
+);
 DECLARE_FIXED_LENGTH_CLUSTER!(LibraryPrefix, LibraryPrefixCluster, |_self, stream| {
     for obj_idx in 0.._self.obj_count as usize {
         let obj = &mut *_self.objs[obj_idx];
@@ -303,14 +323,18 @@ DECLARE_FIXED_LENGTH_CLUSTER!(Double, DoubleCluster, |_self, stream| {
 DECLARE_FIXED_LENGTH_CLUSTER!(Int32x4, Int32x4Cluster, |_self, stream| {
     for _ in 0.._self.obj_count as usize {}
 });
-DECLARE_FIXED_LENGTH_CLUSTER!(GrowableObjectArray, GrowableObjectArrayCluster, |_self, stream| {
-    for obj_idx in 0.._self.obj_count as usize {
-        let obj = &mut *_self.objs[obj_idx];
-        obj.type_arguments = stream.read_ref_id()?;
-        obj.data = stream.read_ref_id()?;
-        obj.length = stream.read_ref_id()? as i32;
+DECLARE_FIXED_LENGTH_CLUSTER!(
+    GrowableObjectArray,
+    GrowableObjectArrayCluster,
+    |_self, stream| {
+        for obj_idx in 0.._self.obj_count as usize {
+            let obj = &mut *_self.objs[obj_idx];
+            obj.type_arguments = stream.read_ref_id()?;
+            obj.data = stream.read_ref_id()?;
+            obj.length = stream.read_ref_id()? as i32;
+        }
     }
-});
+);
 DECLARE_FIXED_LENGTH_CLUSTER!(TypedDataView, TypedDataViewCluster, |_self, stream| {
     for obj_idx in 0.._self.obj_count as usize {
         let obj = &mut *_self.objs[obj_idx];
@@ -318,9 +342,11 @@ DECLARE_FIXED_LENGTH_CLUSTER!(TypedDataView, TypedDataViewCluster, |_self, strea
         obj.offset_in_bytes = stream.read_ref_id()? as i32;
     }
 });
-DECLARE_FIXED_LENGTH_CLUSTER!(ExternalTypedData, ExternalTypedDataCluster, |_self, stream| {
-    for _ in 0.._self.obj_count as usize {}
-});
+DECLARE_FIXED_LENGTH_CLUSTER!(
+    ExternalTypedData,
+    ExternalTypedDataCluster,
+    |_self, stream| { for _ in 0.._self.obj_count as usize {} }
+);
 DECLARE_FIXED_LENGTH_CLUSTER!(StackTrace, StackTraceCluster, |_self, stream| {
     for obj_idx in 0.._self.obj_count as usize {
         let obj = &mut *_self.objs[obj_idx];

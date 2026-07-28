@@ -3,8 +3,7 @@ use crate::constants::ClassId;
 #[macro_export]
 macro_rules! DECLARE_FIXED_LENGTH_CLUSTER {
     ($name:ident, $cluster_name:ident, |$_self:ident, $stream:ident| $fill_impl:block) => {
-        pub struct $cluster_name
-        {
+        pub struct $cluster_name {
             tags: u32,
             cid: ClassId,
             obj_count: u64,
@@ -17,70 +16,67 @@ macro_rules! DECLARE_FIXED_LENGTH_CLUSTER {
 
             first_ref_id: u32,
 
-            objs: Vec<Box<$name>>
+            objs: Vec<Box<$name>>,
         }
 
-        impl Cluster for $cluster_name
-        {
-                fn read_alloc(&mut self, last_ref_id: &mut u64, stream: &mut Stream) -> anyhow::Result<usize>
-                {
-                    self.start_of_alloc = stream.get_current_pos();
-                    self.first_ref_id = *last_ref_id as u32;
+        impl Cluster for $cluster_name {
+            fn read_alloc(
+                &mut self,
+                last_ref_id: &mut u64,
+                stream: &mut Stream,
+            ) -> anyhow::Result<usize> {
+                self.start_of_alloc = stream.get_current_pos();
+                self.first_ref_id = *last_ref_id as u32;
 
-                    self.obj_count = stream.read_unsigned()?;
+                self.obj_count = stream.read_unsigned()?;
 
-                    for _obj_idx in 0..self.obj_count
-                    {
-                        self.objs.push(Box::<$name >::default());
-                    }
-
-                    *last_ref_id += self.obj_count;
-                    self.end_of_alloc = stream.get_current_pos();
-
-                    Ok(self.end_of_alloc - self.start_of_alloc)
+                for _obj_idx in 0..self.obj_count {
+                    self.objs.push(Box::<$name>::default());
                 }
 
-                fn read_fill(&mut self, stream: &mut Stream) -> anyhow::Result<usize>
-                {
-                    self.start_of_fill = stream.get_current_pos();
+                *last_ref_id += self.obj_count;
+                self.end_of_alloc = stream.get_current_pos();
 
-                    let $_self = self;
-                    let $stream = stream;
-
-                    $fill_impl;
-
-                    $_self.end_of_fill = $stream.get_current_pos();
-
-                    Ok($_self.end_of_fill - $_self.start_of_fill)
-                }
-
-                fn is_fixed_len(&self) -> bool
-                {
-                    true
-                }
+                Ok(self.end_of_alloc - self.start_of_alloc)
             }
 
+            fn read_fill(&mut self, stream: &mut Stream) -> anyhow::Result<usize> {
+                self.start_of_fill = stream.get_current_pos();
+
+                let $_self = self;
+                let $stream = stream;
+
+                $fill_impl;
+
+                $_self.end_of_fill = $stream.get_current_pos();
+
+                Ok($_self.end_of_fill - $_self.start_of_fill)
+            }
+
+            fn is_fixed_len(&self) -> bool {
+                true
+            }
+        }
     };
 }
 
 #[macro_export]
 macro_rules! DECLARE_VARIABLE_LENGTH_CLUSTER {
     ($name:ident, $cluster_name:ident) => {
-        pub struct $cluster_name
-        {
-                tags: u32,
-                cid: ClassId,
-                obj_count: u64,
+        pub struct $cluster_name {
+            tags: u32,
+            cid: ClassId,
+            obj_count: u64,
 
-                start_of_fill: usize,
-                start_of_alloc: usize,
+            start_of_fill: usize,
+            start_of_alloc: usize,
 
-                end_of_fill: usize,
-                end_of_alloc: usize,
+            end_of_fill: usize,
+            end_of_alloc: usize,
 
-                first_ref_id: u32,
+            first_ref_id: u32,
 
-            objs: Vec<Box<$name>>
+            objs: Vec<Box<$name>>,
         }
     };
 }
