@@ -264,7 +264,7 @@ DECLARE_FIXED_LENGTH_CLUSTER!(Type, TypeCluster, |_self, stream| {
         obj.type_test_stub = stream.read_ref_id()?;
         obj.hash = stream.read_ref_id()?;
         obj.arguments = stream.read_ref_id()?;
-        obj.flags = stream.read_byte()? as u8;
+        obj.flags = stream.read_unsigned()? as u8;
     }
 });
 DECLARE_FIXED_LENGTH_CLUSTER!(FunctionType, FunctionTypeCluster, |_self, stream| {
