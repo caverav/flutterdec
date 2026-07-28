@@ -115,6 +115,16 @@ impl DataSnapshot {
         }
         self.end_of_alloc_area = stream.get_current_pos();
 
+        // ASSERT_EQUAL(next_ref_index_ - kFirstReference, num_objects_)
+        // app_snapshot.cc:9591. Cheapest possible desync detector.
+        let allocated = curr_ref_id - 1;
+        if allocated != self.num_objects {
+            anyhow::bail!(
+                "alloc pass allocated {allocated} refs, header declares {}",
+                self.num_objects
+            );
+        }
+
         self.start_of_fill_area = stream.get_current_pos();
         for key in self.cluster_order.iter() {
             let cluster = self.clusters.get_mut(key).unwrap();
