@@ -38,6 +38,7 @@ impl TryFrom<u64> for SnapshotKind {
 pub struct DataSnapshot {
     clusters: HashMap<u32, Box<dyn Cluster>>,
     cluster_order: Vec<u32>, // used in the fill step to know which cluster's read_fill function to call
+    roots: ProgramRoots,
 
     magic_bytes: u32,
     size: u64,
@@ -92,7 +93,7 @@ impl DataSnapshot {
     }
 
     fn parse_clusters(&mut self, stream: &mut Stream) -> anyhow::Result<()> {
-        let mut curr_ref_id: u64 = self.num_base_objects + 1; // all objects are numbered starting from 0
+        let mut curr_ref_id: u64 = self.num_base_objects + 1; // all objects are numbered starting from num_base_objects + 1
 
         self.start_of_alloc_area = stream.get_current_pos();
         for _cluster_idx in 0..self.num_clusters {
@@ -106,7 +107,7 @@ impl DataSnapshot {
 
             cluster.read_alloc(&mut curr_ref_id, stream)?;
 
-            // Composite key exactly as suggested by PR reviewer
+            // Composite key exactly as suggested to PR reviewer
             let key = (cid as u32) << 2
                 | ((decoded_tags.is_canonical() as u32) << 1)
                 | (decoded_tags.is_deeply_immutable() as u32);
@@ -124,7 +125,8 @@ impl DataSnapshot {
         Ok(())
     }
 
-    fn parse_roots(&mut self, _stream: &mut Stream) -> anyhow::Result<()> {
+    fn parse_roots(&mut self, stream: &mut Stream) -> anyhow::Result<()> {
+        // to-do (parse object store and field tables)
         Ok(())
     }
 }

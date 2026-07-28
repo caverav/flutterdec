@@ -2,13 +2,13 @@ use anyhow::{anyhow, bail, Result};
 
 use crate::constants::{DATA_BITS_PER_BYTE, SIGNED_M, UNSIGNED_M, UNSIGNED_MAX_DATA_PER_BYTE};
 
-pub struct Stream<'a> {
-    byte_stream: &'a [u8],
+pub struct Stream {
+    byte_stream: &[u8],
     curr_stream_offset: usize,
 }
 
-impl<'a> Stream<'a> {
-    pub fn new(byte_stream: &'a [u8]) -> Self {
+impl Stream {
+    pub fn new(byte_stream: &[u8]) -> Self {
         Self {
             byte_stream,
             curr_stream_offset: 0,
