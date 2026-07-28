@@ -92,7 +92,7 @@ impl DataSnapshot {
     }
 
     fn parse_clusters(&mut self, stream: &mut Stream) -> anyhow::Result<()> {
-        let mut curr_ref_id: u64 = 0; // all objects are numbered starting from 0
+        let mut curr_ref_id: u64 = self.num_base_objects + 1; // all objects are numbered starting from 0
 
         self.start_of_alloc_area = stream.get_current_pos();
         for _cluster_idx in 0..self.num_clusters {
