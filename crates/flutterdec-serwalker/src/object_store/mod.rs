@@ -1,3 +1,5 @@
+mod special_resolvers;
+
 struct ObjectStore {
     list_class: u32,                                           // ClassPtr
     map_class: u32,                                            // ClassPtr

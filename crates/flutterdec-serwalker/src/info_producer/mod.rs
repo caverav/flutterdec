@@ -1,3 +1,8 @@
+mod classes_info;
+mod functions_info;
+mod libraries_info;
+mod object_pool_info;
+
 use anyhow::Error;
 use flutterdec_adapter::ProgramModel;
 

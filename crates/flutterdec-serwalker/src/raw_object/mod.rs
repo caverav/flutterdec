@@ -196,7 +196,7 @@ pub struct UnlinkedCall {
 
 #[derive(Default)]
 pub struct ObjectPool {
-    // Fieldless class
+    data: Vec<u32>, // vector holding the array of reference ids making up the object pool
 }
 
 #[derive(Default)]
