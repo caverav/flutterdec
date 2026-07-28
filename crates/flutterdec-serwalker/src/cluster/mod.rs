@@ -559,3 +559,146 @@ impl Cluster for _StringCluster {
         Ok(self.end_of_fill - self.start_of_fill)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::constants::UNSIGNED_M;
+
+    fn leb_unsigned(mut value: u64) -> Vec<u8> {
+        let mut out = Vec::new();
+        loop {
+            let low = (value & 0x7f) as u8;
+            let rest = value >> 7;
+            if rest == 0 && low <= (0xff - UNSIGNED_M) {
+                out.push(low + UNSIGNED_M);
+                return out;
+            }
+            out.push(low);
+            value = rest;
+        }
+    }
+
+    /// StringDeserializationCluster writes `length << 1 | is_two_byte` in the
+    /// alloc section and again in the fill section, then the payload.
+    fn encode_string_cluster(strings: &[(&str, bool)]) -> Vec<u8> {
+        let encoded = |s: &str, two: bool| -> u64 {
+            let len = if two {
+                s.chars().map(|c| c.len_utf16()).sum()
+            } else {
+                s.chars().count()
+            };
+            ((len as u64) << 1) | two as u64
+        };
+        let mut alloc = leb_unsigned(strings.len() as u64);
+        for (s, two) in strings {
+            alloc.extend_from_slice(&leb_unsigned(encoded(s, *two)));
+        }
+        let mut fill = Vec::new();
+        for (s, two) in strings {
+            fill.extend_from_slice(&leb_unsigned(encoded(s, *two)));
+            if *two {
+                for u in s.encode_utf16() {
+                    fill.extend_from_slice(&u.to_le_bytes());
+                }
+            } else {
+                fill.extend(s.chars().map(|c| c as u32 as u8));
+            }
+        }
+        alloc.extend(fill);
+        alloc
+    }
+
+    fn read_strings(bytes: &[u8], count: usize) -> Vec<String> {
+        let mut cluster = _StringCluster::default();
+        let mut stream = Stream::new(bytes);
+        let mut next_ref = 1u64;
+        cluster.read_alloc(&mut next_ref, &mut stream).unwrap();
+        cluster.read_fill(&mut stream).unwrap();
+        assert_eq!(
+            next_ref,
+            1 + count as u64,
+            "alloc must claim one ref per string"
+        );
+        cluster
+            .objs
+            .iter()
+            .map(|o| o.internal_str.clone())
+            .collect()
+    }
+
+    #[test]
+    fn one_byte_strings_round_trip() {
+        let input = [
+            ("main", false),
+            ("package:app/main.dart", false),
+            ("", false),
+        ];
+        let bytes = encode_string_cluster(&input);
+        assert_eq!(
+            read_strings(&bytes, input.len()),
+            vec!["main", "package:app/main.dart", ""]
+        );
+    }
+
+    /// The payload is Latin-1, so bytes above 0x7F are ordinary characters.
+    /// Decoding as UTF-8 used to panic the whole parse here.
+    #[test]
+    fn one_byte_strings_carry_latin1_payloads() {
+        let input = [("caf\u{e9}", false), ("\u{ff}\u{80}", false)];
+        let bytes = encode_string_cluster(&input);
+        assert_eq!(
+            read_strings(&bytes, input.len()),
+            vec!["caf\u{e9}", "\u{ff}\u{80}"]
+        );
+    }
+
+    #[test]
+    fn two_byte_strings_round_trip() {
+        let input = [("\u{4f60}\u{597d}", true), ("mixed \u{2713}", true)];
+        let bytes = encode_string_cluster(&input);
+        assert_eq!(
+            read_strings(&bytes, input.len()),
+            vec!["\u{4f60}\u{597d}", "mixed \u{2713}"]
+        );
+    }
+
+    /// Both widths in one cluster: the per-object type comes from the low bit
+    /// of the encoded word, so mixing them catches a mis-shifted length.
+    #[test]
+    fn mixed_width_cluster_stays_in_sync() {
+        let input = [
+            ("ascii", false),
+            ("\u{4f60}", true),
+            ("caf\u{e9}", false),
+            ("\u{2713}", true),
+        ];
+        let bytes = encode_string_cluster(&input);
+        assert_eq!(
+            read_strings(&bytes, input.len()),
+            vec!["ascii", "\u{4f60}", "caf\u{e9}", "\u{2713}"]
+        );
+    }
+
+    /// Dart strings may hold unpaired surrogates, which are not valid UTF-16.
+    /// Those must decode lossily rather than panic.
+    #[test]
+    fn unpaired_surrogates_do_not_panic() {
+        let mut bytes = leb_unsigned(1);
+        bytes.extend_from_slice(&leb_unsigned((1 << 1) | 1)); // one two-byte unit
+        bytes.extend_from_slice(&leb_unsigned((1 << 1) | 1)); // repeated in the fill section
+        bytes.extend_from_slice(&0xd800u16.to_le_bytes()); // lone high surrogate
+        assert_eq!(read_strings(&bytes, 1), vec!["\u{fffd}"]);
+    }
+
+    #[test]
+    fn a_truncated_payload_errors_instead_of_panicking() {
+        let mut bytes = encode_string_cluster(&[("hello", false)]);
+        bytes.truncate(bytes.len() - 3);
+        let mut cluster = _StringCluster::default();
+        let mut stream = Stream::new(&bytes);
+        let mut next_ref = 1u64;
+        cluster.read_alloc(&mut next_ref, &mut stream).unwrap();
+        assert!(cluster.read_fill(&mut stream).is_err());
+    }
+}

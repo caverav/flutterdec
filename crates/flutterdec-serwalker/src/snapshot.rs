@@ -38,8 +38,7 @@ impl TryFrom<u64> for SnapshotKind {
 pub struct DataSnapshot {
     clusters: HashMap<u32, Box<dyn Cluster>>,
     cluster_order: Vec<u32>, // used in the fill step to know which cluster's read_fill function to call
-    roots: ProgramRoots,
-
+    // roots: ProgramRoots, // TODO: define ProgramRoots in object_store
     magic_bytes: u32,
     size: u64,
     kind: SnapshotKind,
@@ -150,4 +149,175 @@ pub fn parse_snapshot(stream: &mut Stream) -> anyhow::Result<DataSnapshot> {
     snapshot.parse_roots(stream)?;
 
     Ok(snapshot)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::constants::{SIGNED_M, UNSIGNED_M};
+
+    fn leb(mut value: u64, marker: u8) -> Vec<u8> {
+        let mut out = Vec::new();
+        loop {
+            let low = (value & 0x7f) as u8;
+            let rest = value >> 7;
+            if rest == 0 && low <= (0xff - marker) {
+                out.push(low + marker);
+                return out;
+            }
+            out.push(low);
+            value = rest;
+        }
+    }
+
+    /// Snapshot header, snapshot.h:36. magic(u32) + length(i64) + kind(i64) as
+    /// raw little endian, then 32 version chars and a NUL terminated feature
+    /// string, then five LEB128 counts.
+    struct Header {
+        kind: u64,
+        version: String,
+        features: String,
+        num_base_objects: u64,
+        num_objects: u64,
+        num_clusters: u64,
+    }
+
+    impl Default for Header {
+        fn default() -> Self {
+            Self {
+                kind: 3, // kFullAOT
+                version: "b3d0d9d1c1e8b57e9b31f8e0e4a5c7d2".into(),
+                features: "product no-code_comments arm64".into(),
+                num_base_objects: 42,
+                num_objects: 1000,
+                num_clusters: 7,
+            }
+        }
+    }
+
+    impl Header {
+        fn encode(&self, magic: u32) -> Vec<u8> {
+            let mut b = Vec::new();
+            b.extend_from_slice(&magic.to_le_bytes());
+            b.extend_from_slice(&0u64.to_le_bytes()); // length, unused by the parser
+            b.extend_from_slice(&self.kind.to_le_bytes());
+            b.extend_from_slice(self.version.as_bytes());
+            b.extend_from_slice(self.features.as_bytes());
+            b.push(0);
+            for v in [
+                self.num_base_objects,
+                self.num_objects,
+                self.num_clusters,
+                0, // instructions table length
+                0, // instructions table offset
+            ] {
+                b.extend_from_slice(&leb(v, UNSIGNED_M));
+            }
+            b
+        }
+    }
+
+    fn parse(bytes: &[u8]) -> anyhow::Result<DataSnapshot> {
+        let mut snap = DataSnapshot::default();
+        let mut stream = Stream::new(bytes);
+        snap.parse_header(&mut stream)?;
+        Ok(snap)
+    }
+
+    #[test]
+    fn parses_a_well_formed_header() {
+        let h = Header::default();
+        let snap = parse(&h.encode(MAGIC_BYTES)).unwrap();
+        assert_eq!(snap.magic_bytes, MAGIC_BYTES);
+        assert_eq!(snap.num_base_objects, 42);
+        assert_eq!(snap.num_objects, 1000);
+        assert_eq!(snap.num_clusters, 7);
+    }
+
+    /// The version hash is 32 raw chars with no terminator and the features
+    /// string runs to the NUL, so the split is positional. Getting the length
+    /// wrong silently corrupts both fields rather than failing.
+    #[test]
+    fn splits_version_from_features_at_thirty_two_chars() {
+        let h = Header::default();
+        let snap = parse(&h.encode(MAGIC_BYTES)).unwrap();
+        assert_eq!(snap.version_hash, h.version);
+        assert_eq!(
+            snap.version_hash.len(),
+            crate::constants::VERSION_HASH_LENGTH
+        );
+        assert_eq!(snap.features, h.features);
+    }
+
+    #[test]
+    fn rejects_a_bad_magic() {
+        let h = Header::default();
+        assert!(parse(&h.encode(0xdeadbeef)).is_err());
+    }
+
+    #[test]
+    fn rejects_an_out_of_range_snapshot_kind() {
+        let h = Header {
+            kind: 99,
+            ..Default::default()
+        };
+        assert!(parse(&h.encode(MAGIC_BYTES)).is_err());
+    }
+
+    /// kFull=0, kFullCore=1, kFullJIT=2, kFullAOT=3, kNone=4, kInvalid=5.
+    /// There is no kModule, so 5 must be the last valid value.
+    #[test]
+    fn snapshot_kind_numbering_matches_dart() {
+        for k in 0..=5u64 {
+            assert!(
+                SnapshotKind::try_from(k).is_ok(),
+                "kind {k} should be valid"
+            );
+        }
+        assert!(
+            SnapshotKind::try_from(6).is_err(),
+            "there is no seventh kind"
+        );
+        assert!(matches!(
+            SnapshotKind::try_from(3),
+            Ok(SnapshotKind::FullAOT)
+        ));
+        assert!(matches!(SnapshotKind::try_from(4), Ok(SnapshotKind::None)));
+    }
+
+    /// The counts are ReadUnsigned (0x80), not Read (0xC0). Encoding them with
+    /// the other marker must not silently produce plausible numbers.
+    #[test]
+    fn header_counts_use_the_unsigned_marker() {
+        let h = Header {
+            num_objects: 1000,
+            ..Default::default()
+        };
+        let good = parse(&h.encode(MAGIC_BYTES)).unwrap();
+        assert_eq!(good.num_objects, 1000);
+
+        // Re-encode just the counts with the signed marker.
+        let mut b = h.encode(MAGIC_BYTES);
+        let prefix = 20 + h.version.len() + h.features.len() + 1;
+        b.truncate(prefix);
+        for v in [h.num_base_objects, h.num_objects, h.num_clusters, 0, 0] {
+            b.extend_from_slice(&leb(v, SIGNED_M));
+        }
+        let wrong = parse(&b).unwrap();
+        assert_ne!(
+            wrong.num_objects, 1000,
+            "wrong marker must not decode cleanly"
+        );
+    }
+
+    #[test]
+    fn truncated_headers_error_instead_of_panicking() {
+        let full = Header::default().encode(MAGIC_BYTES);
+        for cut in [0, 4, 12, 20, 30, full.len() - 1] {
+            assert!(
+                parse(&full[..cut]).is_err(),
+                "truncation at {cut} should error"
+            );
+        }
+    }
 }

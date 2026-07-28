@@ -3,6 +3,7 @@ use crate::constants::ClassId;
 #[macro_export]
 macro_rules! DECLARE_FIXED_LENGTH_CLUSTER {
     ($name:ident, $cluster_name:ident, |$_self:ident, $stream:ident| $fill_impl:block) => {
+        #[derive(Default)]
         pub struct $cluster_name {
             tags: u32,
             cid: ClassId,
@@ -63,6 +64,7 @@ macro_rules! DECLARE_FIXED_LENGTH_CLUSTER {
 #[macro_export]
 macro_rules! DECLARE_VARIABLE_LENGTH_CLUSTER {
     ($name:ident, $cluster_name:ident) => {
+        #[derive(Default)]
         pub struct $cluster_name {
             tags: u32,
             cid: ClassId,
@@ -139,4 +141,81 @@ pub fn decode_tags(tags: u32) -> anyhow::Result<DecodedTags> {
         DECODE_IS_DEEPLY_IMMUTABLE!(tags),
         DECODE_IS_CANONICAL!(tags),
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::constants::ClassId;
+
+    /// UntaggedObject::TagBits, raw_object.h: ClassIdTag at bit 12 and 20 wide,
+    /// CanonicalBit at 1, ImmutableBit at 7.
+    fn encode_tags(cid: u32, canonical: bool, immutable: bool) -> u32 {
+        (cid << 12) | ((immutable as u32) << 7) | ((canonical as u32) << 1)
+    }
+
+    #[test]
+    fn decodes_the_three_header_fields_independently() {
+        for (cid, canonical, immutable) in [
+            (ClassId::FunctionCid, false, false),
+            (ClassId::LibraryCid, true, false),
+            (ClassId::_StringCid, false, true),
+            (ClassId::ClassCid, true, true),
+        ] {
+            let d = decode_tags(encode_tags(cid as u32, canonical, immutable)).unwrap();
+            assert_eq!(d.get_cid(), cid);
+            assert_eq!(d.is_canonical(), canonical, "canonical bit for {cid:?}");
+            assert_eq!(
+                d.is_deeply_immutable(),
+                immutable,
+                "immutable bit for {cid:?}"
+            );
+        }
+    }
+
+    /// The bits must not bleed into each other. Setting only one at a time
+    /// catches an off-by-one in any of the three shifts.
+    #[test]
+    fn the_flag_bits_do_not_overlap() {
+        let only_canonical =
+            decode_tags(encode_tags(ClassId::FunctionCid as u32, true, false)).unwrap();
+        assert!(only_canonical.is_canonical() && !only_canonical.is_deeply_immutable());
+
+        let only_immutable =
+            decode_tags(encode_tags(ClassId::FunctionCid as u32, false, true)).unwrap();
+        assert!(!only_immutable.is_canonical() && only_immutable.is_deeply_immutable());
+
+        // Neither flag may disturb the class id.
+        for (c, i) in [(false, false), (true, false), (false, true), (true, true)] {
+            let d = decode_tags(encode_tags(ClassId::LibraryCid as u32, c, i)).unwrap();
+            assert_eq!(d.get_cid(), ClassId::LibraryCid);
+        }
+    }
+
+    /// A cid we do not know almost always means the stream desynced upstream,
+    /// so it has to surface rather than defaulting to IllegalCid.
+    #[test]
+    fn an_unknown_class_id_is_an_error() {
+        let bogus = encode_tags(0xfffff, false, false);
+        match decode_tags(bogus) {
+            Ok(_) => panic!("an unknown class id must not decode"),
+            Err(e) => assert!(
+                e.to_string().contains("unknown class id"),
+                "unexpected message: {e}"
+            ),
+        }
+    }
+
+    /// Real headers observed on the wire: the class id occupies bits 12..32, so
+    /// a two-byte cid still round trips.
+    #[test]
+    fn wide_class_ids_survive_the_shift() {
+        let d = decode_tags(encode_tags(
+            ClassId::NumPredefinedCids as u32 - 1,
+            false,
+            false,
+        ))
+        .unwrap();
+        assert_eq!(d.get_cid() as u32, ClassId::NumPredefinedCids as u32 - 1);
+    }
 }
