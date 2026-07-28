@@ -70,9 +70,9 @@ DECLARE_FIXED_LENGTH_CLUSTER!(Function, FunctionCluster, |_self, stream| {
         // obj.unoptimized_code = stream.read_ref_id()?; [[NOT PRESENT IN FullAOT]]
         // obj.bitmap = stream.read_unsigned()? as u64; [[NOT PRESENT IN FullAOT]]
         obj.code_index = stream.read_unsigned()? as u32;
-        obj.token_pos = stream.read()? as i32;
+        // obj.token_pos = stream.read()? as i32; [[NOT PRESENT IN release builds (called prouct in Flutter)]]
         // obj.kernel_offset = stream.read_unsigned()? as u32; [[NOT PRESENT IN FullAOT]]
-        obj.kind_tag = stream.read_unsigned()? as u32;
+        obj.kind_tag = stream.read()? as u32;
     }
 });
 DECLARE_FIXED_LENGTH_CLUSTER!(ClosureData, ClosureDataCluster, |_self, stream| {
