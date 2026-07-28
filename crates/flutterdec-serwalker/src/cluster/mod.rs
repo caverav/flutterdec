@@ -94,7 +94,7 @@ DECLARE_FIXED_LENGTH_CLUSTER!(
             obj.c_signature = stream.read_ref_id()?;
             obj.callback_target = stream.read_ref_id()?;
             obj.callback_exceptional_return = stream.read_ref_id()?;
-            obj.ffi_function_kind = stream.read_unsigned()? as u8;
+            obj.ffi_function_kind = stream.read_byte()? as u8;
             obj.callback_id = stream.read()? as i32;
         }
     }
@@ -142,8 +142,8 @@ DECLARE_FIXED_LENGTH_CLUSTER!(Library, LibraryCluster, |_self, stream| {
         // obj.loaded_scripts = stream.read_ref_id()?; [[NOT PRESENT IN FullAOT]]
         obj.index = stream.read()? as i32;
         obj.num_imports = stream.read()? as u16;
-        obj.load_state = stream.read()? as i8;
-        obj.flags = stream.read()? as u8;
+        obj.load_state = stream.read_byte()? as i8;
+        obj.flags = stream.read_byte()? as u8;
         // obj.kernel_library_index = stream.read_unsigned()? as u32; [[NOT PRESENT IN FullAOT]]
     }
 });
@@ -179,7 +179,7 @@ DECLARE_FIXED_LENGTH_CLUSTER!(
 DECLARE_FIXED_LENGTH_CLUSTER!(UnlinkedCall, UnlinkedCallCluster, |_self, stream| {
     for obj_idx in 0.._self.obj_count as usize {
         let obj = &mut *_self.objs[obj_idx];
-        obj.can_patch_to_monomorphic = stream.read_unsigned()? != 0;
+        obj.can_patch_to_monomorphic = stream.read_byte()? != 0;
     }
 });
 DECLARE_FIXED_LENGTH_CLUSTER!(ICData, ICDataCluster, |_self, stream| {
@@ -233,8 +233,8 @@ DECLARE_FIXED_LENGTH_CLUSTER!(LanguageError, LanguageErrorCluster, |_self, strea
         obj.message = stream.read_ref_id()?;
         obj.formatted_message = stream.read_ref_id()?;
         obj.token_pos = stream.read()? as i32;
-        obj.report_after_token = stream.read()? != 0;
-        obj.kind = stream.read()? as i8;
+        obj.report_after_token = stream.read_byte()? != 0;
+        obj.kind = stream.read_byte()? as i8;
     }
 });
 DECLARE_FIXED_LENGTH_CLUSTER!(
@@ -255,7 +255,7 @@ DECLARE_FIXED_LENGTH_CLUSTER!(LibraryPrefix, LibraryPrefixCluster, |_self, strea
         obj.imports = stream.read_ref_id()?;
         obj.importer = stream.read_ref_id()?;
         obj.num_imports = stream.read_unsigned()? as u16;
-        obj.is_deferred_load = stream.read_unsigned()? != 0;
+        obj.is_deferred_load = stream.read_byte()? != 0;
     }
 });
 DECLARE_FIXED_LENGTH_CLUSTER!(Type, TypeCluster, |_self, stream| {
@@ -264,7 +264,7 @@ DECLARE_FIXED_LENGTH_CLUSTER!(Type, TypeCluster, |_self, stream| {
         obj.type_test_stub = stream.read_ref_id()?;
         obj.hash = stream.read_ref_id()?;
         obj.arguments = stream.read_ref_id()?;
-        obj.flags = stream.read_unsigned()? as u8;
+        obj.flags = stream.read_byte()? as u8;
     }
 });
 DECLARE_FIXED_LENGTH_CLUSTER!(FunctionType, FunctionTypeCluster, |_self, stream| {
@@ -276,7 +276,7 @@ DECLARE_FIXED_LENGTH_CLUSTER!(FunctionType, FunctionTypeCluster, |_self, stream|
         obj.result_type = stream.read_ref_id()?;
         obj.parameter_types = stream.read_ref_id()?;
         obj.named_parameter_names = stream.read_ref_id()?;
-        obj.flags = stream.read()? as u8;
+        obj.flags = stream.read_byte()? as u8;
         obj.packed_parameter_counts = stream.read_unsigned()? as u32;
         obj.packed_type_parameter_counts = stream.read_unsigned()? as u16;
     }
@@ -288,7 +288,7 @@ DECLARE_FIXED_LENGTH_CLUSTER!(RecordType, RecordTypeCluster, |_self, stream| {
         obj.hash = stream.read_ref_id()?;
         obj.shape = stream.read_ref_id()? as i32;
         obj.field_types = stream.read_ref_id()?;
-        obj.flags = stream.read()? as u8;
+        obj.flags = stream.read_byte()? as u8;
         // obj.shape = stream.read_ref_id()?; as i32;
     }
 });
@@ -300,7 +300,7 @@ DECLARE_FIXED_LENGTH_CLUSTER!(TypeParameter, TypeParameterCluster, |_self, strea
         obj.owner = stream.read_ref_id()?;
         obj.base = stream.read()? as u16;
         obj.index = stream.read()? as u16;
-        obj.flags = stream.read()? as u8;
+        obj.flags = stream.read_byte()? as u8;
     }
 });
 DECLARE_FIXED_LENGTH_CLUSTER!(Closure, ClosureCluster, |_self, stream| {
