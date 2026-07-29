@@ -1,5 +1,3 @@
-mod special_resolvers;
-
 struct ObjectStore {
     list_class: u32,                                           // ClassPtr
     map_class: u32,                                            // ClassPtr
@@ -264,7 +262,7 @@ struct ObjectStore {
     ffi_native_type_class: u32,                                // ClassPtr
 }
 
-pub struct IsolateObjectStore
+struct IsolateObjectStore
 // small one, not too important
 {
     dart_args_1: u32,         // ArrayPtr
@@ -274,6 +272,16 @@ pub struct IsolateObjectStore
     error_listeners: u32,     // GrowableObjectArrayPtr
 }
 
-pub fn resolve_object_store() -> anyhow::Result<()> {
-    Ok(())
+struct FieldTable {
+    // to-do
+}
+
+struct DispatchTable {
+    // to-do
+}
+
+pub struct ProgramRoots {
+    object_store: ObjectStore,
+    field_table: FieldTable,
+    dispatch_table: DispatchTable,
 }

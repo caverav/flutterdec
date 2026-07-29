@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use crate::cluster::{decide_cluster, Cluster};
 use crate::constants::{self, ClassId, MAGIC_BYTES, UNSIGNED_M};
+use crate::program_roots::structs::ProgramRoots;
 use crate::stream::Stream;
 use crate::utils::{decode_tags, DecodedTags};
 
