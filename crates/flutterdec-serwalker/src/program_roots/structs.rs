@@ -1,4 +1,5 @@
-struct ObjectStore { // Layout for the 3.12 Dart version.
+struct ObjectStore {
+    // Layout for the 3.12 Dart version.
     list_class: u32,                                           // ClassPtr
     map_class: u32,                                            // ClassPtr
     set_class: u32,                                            // ClassPtr

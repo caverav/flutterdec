@@ -18,7 +18,7 @@ use crate::{
 };
 
 pub fn walk_snapshot_and_produce_model(
-    adapter_input: &AdapterInput
+    adapter_input: &AdapterInput,
 ) -> anyhow::Result<ProgramModel> {
     let program_model: ProgramModel;
 
