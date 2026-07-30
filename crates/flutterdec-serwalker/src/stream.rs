@@ -26,7 +26,7 @@ impl Stream {
         Ok(())
     }
 
-    fn take(&mut self, n: usize) -> Result<&'a [u8]> {
+    fn take(&mut self, n: usize) -> Result<&[u8]> {
         let end = self
             .curr_stream_offset
             .checked_add(n)
@@ -140,7 +140,7 @@ impl Stream {
     }
 
     /// Reads a block of bytes and returns a reference to the slice (Zero-copy, highly recommended for large payloads)
-    pub fn read_bytes_zero_copy(&mut self, len: usize) -> Result<&'a [u8]> {
+    pub fn read_bytes_zero_copy(&mut self, len: usize) -> Result<&[u8]> {
         self.take(len)
     }
 }

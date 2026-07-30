@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use crate::cluster::{decide_cluster, Cluster};
 use crate::constants::{self, ClassId, MAGIC_BYTES, UNSIGNED_M};
 use crate::program_roots::structs::ProgramRoots;
+use crate::program_roots::{parse_dispatch_table, parse_field_table, parse_object_store};
 use crate::stream::Stream;
 use crate::utils::{decode_tags, DecodedTags};
 
@@ -137,7 +138,17 @@ impl DataSnapshot {
     }
 
     fn parse_roots(&mut self, stream: &mut Stream) -> anyhow::Result<()> {
-        // to-do (parse object store and field tables)
+        let object_store = parse_object_store(stream)?;
+        let field_table = parse_field_table(stream)?;
+        let shared_field_table = parse_field_table(stream)?;
+        let dispatch_table = parse_dispatch_table(stream)?;
+
+        self.roots = ProgramRoots::new(
+            object_store,
+            field_table,
+            shared_field_table,
+            dispatch_table,
+        );
         Ok(())
     }
 }
