@@ -2,13 +2,13 @@ use anyhow::{anyhow, bail, Result};
 
 use crate::constants::{DATA_BITS_PER_BYTE, SIGNED_M, UNSIGNED_M, UNSIGNED_MAX_DATA_PER_BYTE};
 
-pub struct Stream {
-    byte_stream: &[u8],
+pub struct Stream<'a> {
+    byte_stream: &'a [u8],
     curr_stream_offset: usize,
 }
 
-impl Stream {
-    pub fn new(byte_stream: &[u8]) -> Self {
+impl<'a> Stream<'a> {
+    pub fn new(byte_stream: &'a [u8]) -> Self {
         Self {
             byte_stream,
             curr_stream_offset: 0,
@@ -24,6 +24,18 @@ impl Stream {
         }
         self.curr_stream_offset = pos;
         Ok(())
+    }
+
+    pub fn align_stream(&mut self, alignment: usize) -> anyhow::Result<()> {
+        let mut next_pos = self.get_current_pos();
+        if next_pos % alignment == 0 {
+            return Ok(());
+        }
+
+        next_pos = next_pos & !(alignment - 1);
+        next_pos += alignment;
+
+        self.seek(next_pos)
     }
 
     fn take(&mut self, n: usize) -> Result<&[u8]> {

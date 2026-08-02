@@ -26,6 +26,8 @@ pub const SMI_SHIFT: usize = 1usize;
 
 pub const VERSION_HASH_LENGTH: usize = 32usize;
 
+pub const HEADER_SIZE: usize = 64;
+
 macro_rules! DEFINE_CLASS_ID {
     ( $( $name:ident = $val:expr ),* ) => {
         #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]

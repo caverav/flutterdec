@@ -1,5 +1,3 @@
-use std::default;
-
 pub type Smi = i32;
 
 #[derive(Default)]
@@ -9,6 +7,8 @@ pub struct Object {
 
 #[derive(Default)]
 pub struct Class {
+    pub id: i32,
+    pub is_predefined: bool,
     pub name: u32,                                // StringPtr
     pub user_name: u32,                           // StringPtr
     pub functions: u32,                           // ArrayPtr
@@ -38,6 +38,7 @@ pub struct Class {
     pub target_instance_size_in_words: i32,
     pub target_type_arguments_field_offset_in_words: i32,
     pub target_next_field_offset_in_words: i32,
+    pub unboxed_fields_bitmap: Option<u64>,
 }
 
 #[derive(Default)]
@@ -154,7 +155,8 @@ pub struct KernelProgramInfo {
 
 #[derive(Default)]
 pub struct CodeSourceMap {
-    // Fieldless class
+    pub length: u32,
+    pub data: Vec<u8>,
 }
 
 #[derive(Default)]
@@ -175,18 +177,33 @@ pub struct PcDescriptors {
 pub struct ExceptionHandlers {
     pub handled_types_data: u32, // ArrayPtr
     pub packed_fields: u32,
+    pub num_entries: usize,
+    pub entries: Vec<ExceptionHandlerInfo>,
+}
+
+#[derive(Default)]
+pub struct ExceptionHandlerInfo {
+    pub handler_pc_offset: u32,
+    pub outer_try_index: i16,
+    pub needs_stacktrace: i8,
+    pub has_catch_all: i8,
+    pub is_generated: i8,
 }
 
 #[derive(Default)]
 pub struct Context {
     pub parent: u32, // ContextPtr
     pub num_variables: i32,
+    pub variables: Vec<u32>,
 }
 
 #[derive(Default)]
 pub struct ContextScope {
     pub num_variables: i32,
     pub is_implicit: bool,
+    /// Flattened `VariableDesc` reference fields. There are ten per variable
+    /// in this SDK revision.
+    pub variables: Vec<u32>,
 }
 
 #[derive(Default)]
@@ -215,6 +232,7 @@ pub struct TypeArguments {
     pub length: Smi,         // SmiPtr
     pub hash: Smi,           // SmiPtr
     pub nullability: Smi,    // SmiPtr
+    pub types: Vec<u32>,     // AbstractTypePtr elements
 }
 
 #[derive(Default)]
@@ -278,6 +296,7 @@ pub struct _String {
 pub struct Array {
     pub type_arguments: u32, // TypeArgumentsPtr
     pub length: Smi,         // SmiPtr
+    pub elements: Vec<u32>,  // ObjectPtr elements
 }
 
 #[derive(Default)]
@@ -313,13 +332,23 @@ pub struct Closure {
 
 #[derive(Default)]
 pub struct Instance {
-    // Fieldless class
+    pub next_field_offset_in_words: i32,
+    pub instance_size_in_words: i32,
+    pub unboxed_fields_bitmap: u64,
+    pub fields: Vec<InstanceField>,
+}
+
+#[derive(Debug)]
+pub enum InstanceField {
+    Reference(u32),
+    Unboxed(u64),
 }
 
 #[derive(Default)]
 pub struct WeakArray {
     pub next_seen_by_gc: u32, // WeakArrayPtr
     pub length: Smi,          // SmiPtr
+    pub elements: Vec<u32>,   // ObjectPtr elements
 }
 
 #[derive(Default)]
@@ -330,7 +359,8 @@ pub struct TypedDataBase {
 
 #[derive(Default)]
 pub struct TypedData {
-    // Fieldless class
+    pub length: usize,
+    pub data: Vec<u8>,
 }
 
 #[derive(Default)]
@@ -457,41 +487,65 @@ pub struct WeakProperty {
 
 #[derive(Default)]
 pub struct Map {
-    // Fieldless class
+    pub type_arguments: u32,
+    pub hash_mask: u32,
+    pub data: u32,
+    pub used_data: u32,
+    pub deleted_keys: u32,
+    pub index: u32,
 }
 
 #[derive(Default)]
 pub struct Set {
-    // Fieldless class
+    pub type_arguments: u32,
+    pub hash_mask: u32,
+    pub data: u32,
+    pub used_data: u32,
+    pub deleted_keys: u32,
+    pub index: u32,
 }
 
 #[derive(Default)]
 pub struct Float32x4 {
-    // Fieldless class
+    pub value: Vec<u8>,
 }
 
 #[derive(Default)]
 pub struct Float64x2 {
-    // Fieldless class
+    pub value: Vec<u8>,
 }
 
 #[derive(Default)]
 pub struct ConstMap {
-    // Fieldless class
+    pub type_arguments: u32,
+    pub hash_mask: u32,
+    pub data: u32,
+    pub used_data: u32,
+    pub deleted_keys: u32,
+    pub index: u32,
 }
 
 #[derive(Default)]
 pub struct ConstSet {
-    // Fieldless class
+    pub type_arguments: u32,
+    pub hash_mask: u32,
+    pub data: u32,
+    pub used_data: u32,
+    pub deleted_keys: u32,
+    pub index: u32,
 }
 
 #[derive(Default)]
 pub struct Record {
     pub shape: Smi, // SmiPtr
     pub padding: u32,
+    pub num_fields: usize,
+    pub fields: Vec<u32>,
 }
 
 #[derive(Default)]
 pub struct ImmutableArray {
-    // Fieldless class
+    pub type_arguments: u32,
+    pub length: Smi,
+    pub elements: Vec<u32>,
 }

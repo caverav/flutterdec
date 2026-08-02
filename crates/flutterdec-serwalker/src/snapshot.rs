@@ -1,7 +1,9 @@
 use std::collections::HashMap;
+use std::mem::size_of;
 
 use crate::cluster::{decide_cluster, Cluster};
-use crate::constants::{self, ClassId, MAGIC_BYTES, UNSIGNED_M};
+use crate::constants::{self, ClassId, HEADER_SIZE, MAGIC_BYTES, UNSIGNED_M};
+use crate::instruction_table::{parse_instr_table_from_rodata, InstructionTable};
 use crate::program_roots::structs::ProgramRoots;
 use crate::program_roots::{parse_dispatch_table, parse_field_table, parse_object_store};
 use crate::stream::Stream;
@@ -41,6 +43,7 @@ pub struct DataSnapshot {
     clusters: HashMap<u32, Box<dyn Cluster>>,
     cluster_order: Vec<u32>, // used in the fill step to know which cluster's read_fill function to call
     roots: ProgramRoots,
+    instruction_table: InstructionTable,
 
     magic_bytes: u32,
     size: u64,
@@ -107,6 +110,12 @@ impl DataSnapshot {
                 anyhow::anyhow!("Couldn't find cluster implementation for class {:?}", cid)
             })?;
 
+            cluster.set_metadata(
+                tags,
+                cid,
+                decoded_tags.is_deeply_immutable(),
+                decoded_tags.is_canonical(),
+            );
             cluster.read_alloc(&mut curr_ref_id, stream)?;
 
             // Composite key exactly as suggested to PR reviewer
@@ -151,6 +160,11 @@ impl DataSnapshot {
         );
         Ok(())
     }
+
+    fn parse_instruction_table(&mut self, stream: &mut Stream) -> anyhow::Result<()> {
+        self.instruction_table = parse_instr_table_from_rodata(stream)?;
+        Ok(())
+    }
 }
 
 pub fn parse_snapshot(stream: &mut Stream) -> anyhow::Result<DataSnapshot> {
@@ -159,7 +173,14 @@ pub fn parse_snapshot(stream: &mut Stream) -> anyhow::Result<DataSnapshot> {
     println!("Now parsing the snapshot...");
     snapshot.parse_header(stream)?;
     snapshot.parse_clusters(stream)?;
-    snapshot.parse_roots(stream)?;
+    snapshot.parse_roots(stream)?; // right after we finish reading the roots we need to align
+
+    stream.align_stream(HEADER_SIZE)?;
+
+    // after that, we land right at the start of the ROData image
+    // where the instruction table is, at an offset we already know
+    stream.seek(stream.get_current_pos() + snapshot.instr_table_offset)?;
+    snapshot.parse_instruction_table(stream)?;
 
     Ok(snapshot)
 }

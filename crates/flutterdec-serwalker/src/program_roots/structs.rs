@@ -3,7 +3,7 @@ use crate::stream::Stream;
 macro_rules! object_store_aot_fields {
     ($emit:ident) => {
         $emit! {
-                // Layout for the 3.12 Dart version, and as early as 3.11 
+                // Layout for the 3.12 Dart version, and as early as 3.11
                 list_class: u32,                                           // ClassPtr
                 map_class: u32,                                            // ClassPtr
                 set_class: u32,                                            // ClassPtr

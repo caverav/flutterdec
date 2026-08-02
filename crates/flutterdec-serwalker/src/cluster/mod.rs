@@ -1,7 +1,4 @@
-use std::env::var;
-use std::usize;
-
-use crate::constants::{ClassId, ClassId::*, SIGNED_M, UNSIGNED_M};
+use crate::constants::{ClassId, ClassId::*};
 use crate::raw_object::*;
 use crate::stream::Stream;
 use crate::DECLARE_FIXED_LENGTH_CLUSTER;
@@ -9,6 +6,13 @@ use crate::DECLARE_VARIABLE_LENGTH_CLUSTER;
 use crate::FFI_TYPES_LIST;
 
 pub trait Cluster {
+    fn set_metadata(
+        &mut self,
+        tags: u32,
+        cid: ClassId,
+        is_deeply_immutable: bool,
+        is_canonical: bool,
+    );
     fn is_fixed_len(&self) -> bool;
     fn read_alloc(&mut self, last_ref_id: &mut u64, stream: &mut Stream) -> anyhow::Result<usize>;
     fn read_fill(&mut self, stream: &mut Stream) -> anyhow::Result<usize>;
@@ -379,153 +383,637 @@ DECLARE_FIXED_LENGTH_CLUSTER!(WeakProperty, WeakPropertyCluster, |_self, stream|
     }
 });
 
-DECLARE_VARIABLE_LENGTH_CLUSTER!(Map, MapCluster);
-DECLARE_VARIABLE_LENGTH_CLUSTER!(Set, SetCluster);
-DECLARE_VARIABLE_LENGTH_CLUSTER!(Instance, InstanceCluster);
-DECLARE_VARIABLE_LENGTH_CLUSTER!(TypedData, TypedDataCluster);
-DECLARE_VARIABLE_LENGTH_CLUSTER!(Class, ClassCluster);
-DECLARE_VARIABLE_LENGTH_CLUSTER!(TypeArguments, TypeArgumentsCluster);
 DECLARE_VARIABLE_LENGTH_CLUSTER!(Code, CodeCluster);
 DECLARE_VARIABLE_LENGTH_CLUSTER!(ObjectPool, ObjectPoolCluster);
-DECLARE_VARIABLE_LENGTH_CLUSTER!(ExceptionHandlers, ExceptionHandlersCluster);
-DECLARE_VARIABLE_LENGTH_CLUSTER!(Context, ContextCluster);
-DECLARE_VARIABLE_LENGTH_CLUSTER!(ContextScope, ContextScopeCluster);
-DECLARE_VARIABLE_LENGTH_CLUSTER!(Mint, MintCluster);
-DECLARE_VARIABLE_LENGTH_CLUSTER!(Float32x4, Float32x4Cluster);
-DECLARE_VARIABLE_LENGTH_CLUSTER!(Float64x2, Float64x2Cluster);
-DECLARE_VARIABLE_LENGTH_CLUSTER!(Record, RecordCluster);
-DECLARE_VARIABLE_LENGTH_CLUSTER!(Array, ArrayCluster);
-DECLARE_VARIABLE_LENGTH_CLUSTER!(WeakArray, WeakArrayCluster);
-DECLARE_VARIABLE_LENGTH_CLUSTER!(ImmutableArray, ImmutableArrayCluster);
-DECLARE_VARIABLE_LENGTH_CLUSTER!(ConstMap, ConstMapCluster);
-DECLARE_VARIABLE_LENGTH_CLUSTER!(ConstSet, ConstSetCluster);
-DECLARE_VARIABLE_LENGTH_CLUSTER!(CodeSourceMap, CodeSourceMapCluster);
-DECLARE_VARIABLE_LENGTH_CLUSTER!(CompressedStackMaps, CompressedStackMapsCluster);
 
-impl Cluster for CompressedStackMapsCluster {
-    fn is_fixed_len(&self) -> bool {
-        false
+macro_rules! IMPLEMENT_VARIABLE_LENGTH_CLUSTER {
+    (
+        $cluster_name:ident,
+        |$alloc_self:ident, $alloc_stream:ident| $alloc_impl:block,
+        |$fill_self:ident, $fill_stream:ident| $fill_impl:block
+    ) => {
+        impl Cluster for $cluster_name {
+            fn set_metadata(
+                &mut self,
+                tags: u32,
+                cid: ClassId,
+                is_deeply_immutable: bool,
+                is_canonical: bool,
+            ) {
+                self.tags = tags;
+                self.cid = cid;
+                self.is_deeply_immutable = is_deeply_immutable;
+                self.is_canonical = is_canonical;
+            }
+
+            fn is_fixed_len(&self) -> bool {
+                false
+            }
+
+            fn read_alloc(
+                &mut self,
+                last_ref_id: &mut u64,
+                stream: &mut Stream,
+            ) -> anyhow::Result<usize> {
+                self.start_of_alloc = stream.get_current_pos();
+                self.first_ref_id = *last_ref_id as u32;
+
+                let $alloc_self = &mut *self;
+                let $alloc_stream = &mut *stream;
+                $alloc_impl
+
+                *last_ref_id += $alloc_self.obj_count;
+                $alloc_self.end_of_alloc = $alloc_stream.get_current_pos();
+                Ok($alloc_self.end_of_alloc - $alloc_self.start_of_alloc)
+            }
+
+            fn read_fill(&mut self, stream: &mut Stream) -> anyhow::Result<usize> {
+                self.start_of_fill = stream.get_current_pos();
+
+                let $fill_self = &mut *self;
+                let $fill_stream = &mut *stream;
+                $fill_impl
+
+                $fill_self.end_of_fill = $fill_stream.get_current_pos();
+                Ok($fill_self.end_of_fill - $fill_self.start_of_fill)
+            }
+        }
+    };
+}
+
+fn typed_data_element_size(cid: ClassId) -> anyhow::Result<usize> {
+    let size = match cid {
+        TypedDataInt8ArrayCid | TypedDataUint8ArrayCid | TypedDataUint8ClampedArrayCid => 1,
+        TypedDataInt16ArrayCid | TypedDataUint16ArrayCid => 2,
+        TypedDataInt32ArrayCid | TypedDataUint32ArrayCid | TypedDataFloat32ArrayCid => 4,
+        TypedDataInt64ArrayCid | TypedDataUint64ArrayCid | TypedDataFloat64ArrayCid => 8,
+        TypedDataFloat32x4ArrayCid | TypedDataInt32x4ArrayCid | TypedDataFloat64x2ArrayCid => 16,
+        _ => anyhow::bail!("class {:?} is not an internal TypedData class", cid),
+    };
+    Ok(size)
+}
+
+DECLARE_VARIABLE_LENGTH_CLUSTER!(Map, MapCluster);
+IMPLEMENT_VARIABLE_LENGTH_CLUSTER!(
+    MapCluster,
+    |cluster, stream| {
+        cluster.obj_count = stream.read_unsigned()?;
+        for _ in 0..cluster.obj_count {
+            cluster.objs.push(Box::<Map>::default());
+        }
+    },
+    |cluster, stream| {
+        for obj in &mut cluster.objs {
+            obj.type_arguments = stream.read_ref_id()?;
+            obj.hash_mask = stream.read_ref_id()?;
+            obj.data = stream.read_ref_id()?;
+            obj.used_data = stream.read_ref_id()?;
+            obj.deleted_keys = stream.read_ref_id()?;
+            // UntaggedLinkedHashBase::to_snapshot excludes the rebuilt index_.
+        }
     }
+);
 
-    fn read_alloc(&mut self, last_ref_id: &mut u64, stream: &mut Stream) -> anyhow::Result<usize> {
-        self.start_of_alloc = stream.get_current_pos();
-        self.first_ref_id = *last_ref_id as u32;
+DECLARE_VARIABLE_LENGTH_CLUSTER!(Set, SetCluster);
+IMPLEMENT_VARIABLE_LENGTH_CLUSTER!(
+    SetCluster,
+    |cluster, stream| {
+        cluster.obj_count = stream.read_unsigned()?;
+        for _ in 0..cluster.obj_count {
+            cluster.objs.push(Box::<Set>::default());
+        }
+    },
+    |cluster, stream| {
+        for obj in &mut cluster.objs {
+            obj.type_arguments = stream.read_ref_id()?;
+            obj.hash_mask = stream.read_ref_id()?;
+            obj.data = stream.read_ref_id()?;
+            obj.used_data = stream.read_ref_id()?;
+            obj.deleted_keys = stream.read_ref_id()?;
+        }
+    }
+);
 
-        self.obj_count = stream.read_unsigned()?;
-        for _obj_idx in 0..self.obj_count {
-            let mut obj = Box::<CompressedStackMaps>::default();
-            obj.length = stream.read_unsigned()? as u32;
+DECLARE_VARIABLE_LENGTH_CLUSTER!(Instance, InstanceCluster);
+IMPLEMENT_VARIABLE_LENGTH_CLUSTER!(
+    InstanceCluster,
+    |cluster, stream| {
+        cluster.obj_count = stream.read_unsigned()?;
+        let next_field_offset_in_words = stream.read()? as i32;
+        let instance_size_in_words = stream.read()? as i32;
+        for _ in 0..cluster.obj_count {
+            cluster.objs.push(Box::new(Instance {
+                next_field_offset_in_words,
+                instance_size_in_words,
+                ..Instance::default()
+            }));
+        }
+    },
+    |cluster, stream| {
+        const FIRST_INSTANCE_FIELD_WORD: i32 = 2;
 
-            self.objs.push(obj);
+        let bitmap = stream.read_unsigned()?;
+        for obj in &mut cluster.objs {
+            obj.unboxed_fields_bitmap = bitmap;
+            if obj.next_field_offset_in_words < FIRST_INSTANCE_FIELD_WORD {
+                anyhow::bail!(
+                    "invalid instance next-field offset {}",
+                    obj.next_field_offset_in_words
+                );
+            }
+
+            for word_index in FIRST_INSTANCE_FIELD_WORD..obj.next_field_offset_in_words {
+                let mask = 1_u64.checked_shl(word_index as u32).unwrap_or(0);
+                if bitmap & mask != 0 {
+                    // ReadWordWith32BitReads reads two encoded 32-bit chunks
+                    // for a 64-bit target word.
+                    let low = stream.read()? as u32 as u64;
+                    let high = stream.read()? as u32 as u64;
+                    obj.fields.push(InstanceField::Unboxed(low | (high << 32)));
+                } else {
+                    obj.fields
+                        .push(InstanceField::Reference(stream.read_ref_id()?));
+                }
+            }
+        }
+    }
+);
+
+DECLARE_VARIABLE_LENGTH_CLUSTER!(TypedData, TypedDataCluster);
+IMPLEMENT_VARIABLE_LENGTH_CLUSTER!(
+    TypedDataCluster,
+    |cluster, stream| {
+        cluster.obj_count = stream.read_unsigned()?;
+        for _ in 0..cluster.obj_count {
+            let length = stream.read_unsigned()? as usize;
+            cluster.objs.push(Box::new(TypedData {
+                length,
+                ..TypedData::default()
+            }));
+        }
+    },
+    |cluster, stream| {
+        let element_size = typed_data_element_size(cluster.cid)?;
+        for obj in &mut cluster.objs {
+            let length = stream.read_unsigned()? as usize;
+            let byte_length = length
+                .checked_mul(element_size)
+                .ok_or_else(|| anyhow::anyhow!("TypedData byte length overflow"))?;
+            obj.length = length;
+            obj.data = stream.read_bytes(byte_length)?;
+        }
+    }
+);
+
+DECLARE_VARIABLE_LENGTH_CLUSTER!(Class, ClassCluster);
+IMPLEMENT_VARIABLE_LENGTH_CLUSTER!(
+    ClassCluster,
+    |cluster, stream| {
+        let predefined_count = stream.read_unsigned()?;
+        for _ in 0..predefined_count {
+            cluster.objs.push(Box::new(Class {
+                id: stream.read()? as i32,
+                is_predefined: true,
+                ..Class::default()
+            }));
         }
 
-        *last_ref_id += self.obj_count;
-        self.end_of_alloc = stream.get_current_pos();
+        let regular_count = stream.read_unsigned()?;
+        for _ in 0..regular_count {
+            cluster.objs.push(Box::<Class>::default());
+        }
+        cluster.obj_count = predefined_count + regular_count;
+    },
+    |cluster, stream| {
+        const TOP_LEVEL_CID_OFFSET: i32 = 1 << 20;
 
-        Ok(self.end_of_alloc - self.start_of_alloc)
+        for obj in &mut cluster.objs {
+            obj.name = stream.read_ref_id()?;
+            obj.functions = stream.read_ref_id()?;
+            obj.functions_hash_table = stream.read_ref_id()?;
+            obj.fields = stream.read_ref_id()?;
+            obj.offset_in_words_to_field = stream.read_ref_id()?;
+            obj.interfaces = stream.read_ref_id()?;
+            obj.script = stream.read_ref_id()?;
+            obj.library = stream.read_ref_id()?;
+            obj.type_parameters = stream.read_ref_id()?;
+            obj.super_type = stream.read_ref_id()?;
+            obj.constants = stream.read_ref_id()?;
+            obj.declaration_type = stream.read_ref_id()?;
+            obj.invocation_dispatcher_cache = stream.read_ref_id()?;
+
+            obj.id = stream.read()? as i32;
+            obj.target_instance_size_in_words = stream.read()? as i32;
+            obj.target_next_field_offset_in_words = stream.read()? as i32;
+            obj.target_type_arguments_field_offset_in_words = stream.read()? as i32;
+            obj.num_type_arguments = stream.read()? as i16;
+            obj.num_native_fields = stream.read()? as u16;
+            obj.state_bits = stream.read()? as u32;
+            if obj.id < TOP_LEVEL_CID_OFFSET {
+                obj.unboxed_fields_bitmap = Some(stream.read_unsigned()?);
+            }
+        }
     }
+);
 
-    fn read_fill(&mut self, stream: &mut Stream) -> anyhow::Result<usize> {
-        self.start_of_fill = stream.get_current_pos();
-        for obj_idx in 0..self.obj_count {
-            let obj = &mut self.objs[obj_idx as usize];
+DECLARE_VARIABLE_LENGTH_CLUSTER!(TypeArguments, TypeArgumentsCluster);
+IMPLEMENT_VARIABLE_LENGTH_CLUSTER!(
+    TypeArgumentsCluster,
+    |cluster, stream| {
+        cluster.obj_count = stream.read_unsigned()?;
+        for _ in 0..cluster.obj_count {
+            let length = stream.read_unsigned()? as i32;
+            cluster.objs.push(Box::new(TypeArguments {
+                length,
+                ..TypeArguments::default()
+            }));
+        }
+
+        // a canonical cluster in the root loading unit carries the canonical
+        // hash-set layout after its ordinary allocation records
+
+        // so this is just for the canonical TypeArguments cluster (if any)
+        if cluster.is_canonical {
+            let _table_length = stream.read_unsigned()?;
+            let first_element = stream.read_unsigned()?;
+            if first_element > cluster.obj_count {
+                anyhow::bail!(
+                    "canonical TypeArguments first element {first_element} exceeds count {}",
+                    cluster.obj_count
+                );
+            }
+            for _ in first_element..cluster.obj_count {
+                let _gap = stream.read_unsigned()?;
+            }
+        }
+    },
+    |cluster, stream| {
+        for obj in &mut cluster.objs {
+            let length = stream.read_unsigned()? as i32;
+            obj.length = length;
+            obj.hash = stream.read()? as i32;
+            obj.nullability = stream.read_unsigned()? as i32;
+            obj.instantiations = stream.read_ref_id()?;
+            for _ in 0..length {
+                obj.types.push(stream.read_ref_id()?);
+            }
+        }
+    }
+);
+
+DECLARE_VARIABLE_LENGTH_CLUSTER!(ExceptionHandlers, ExceptionHandlersCluster);
+IMPLEMENT_VARIABLE_LENGTH_CLUSTER!(
+    ExceptionHandlersCluster,
+    |cluster, stream| {
+        cluster.obj_count = stream.read_unsigned()?;
+        for _ in 0..cluster.obj_count {
+            let num_entries = stream.read_unsigned()? as usize;
+            cluster.objs.push(Box::new(ExceptionHandlers {
+                num_entries,
+                ..ExceptionHandlers::default()
+            }));
+        }
+    },
+    |cluster, stream| {
+        for obj in &mut cluster.objs {
+            obj.packed_fields = stream.read_unsigned()? as u32;
+            obj.handled_types_data = stream.read_ref_id()?;
+            for _ in 0..obj.num_entries {
+                obj.entries.push(ExceptionHandlerInfo {
+                    handler_pc_offset: stream.read()? as u32,
+                    outer_try_index: stream.read()? as i16,
+                    needs_stacktrace: stream.read_byte()? as i8,
+                    has_catch_all: stream.read_byte()? as i8,
+                    is_generated: stream.read_byte()? as i8,
+                });
+            }
+        }
+    }
+);
+
+DECLARE_VARIABLE_LENGTH_CLUSTER!(Context, ContextCluster);
+IMPLEMENT_VARIABLE_LENGTH_CLUSTER!(
+    ContextCluster,
+    |cluster, stream| {
+        cluster.obj_count = stream.read_unsigned()?;
+        for _ in 0..cluster.obj_count {
+            let num_variables = stream.read_unsigned()? as i32;
+            cluster.objs.push(Box::new(Context {
+                num_variables,
+                ..Context::default()
+            }));
+        }
+    },
+    |cluster, stream| {
+        for obj in &mut cluster.objs {
+            let num_variables = stream.read_unsigned()? as i32;
+            obj.num_variables = num_variables;
+            obj.parent = stream.read_ref_id()?;
+            for _ in 0..num_variables {
+                obj.variables.push(stream.read_ref_id()?);
+            }
+        }
+    }
+);
+
+DECLARE_VARIABLE_LENGTH_CLUSTER!(ContextScope, ContextScopeCluster);
+IMPLEMENT_VARIABLE_LENGTH_CLUSTER!(
+    ContextScopeCluster,
+    |cluster, stream| {
+        cluster.obj_count = stream.read_unsigned()?;
+        for _ in 0..cluster.obj_count {
+            let num_variables = stream.read_unsigned()? as i32;
+            cluster.objs.push(Box::new(ContextScope {
+                num_variables,
+                ..ContextScope::default()
+            }));
+        }
+    },
+    |cluster, stream| {
+        const VARIABLE_DESC_REF_COUNT: i32 = 10;
+
+        for obj in &mut cluster.objs {
+            let num_variables = stream.read_unsigned()? as i32;
+            obj.num_variables = num_variables;
+            obj.is_implicit = stream.read_byte()? != 0;
+            for _ in 0..num_variables * VARIABLE_DESC_REF_COUNT {
+                obj.variables.push(stream.read_ref_id()?);
+            }
+        }
+    }
+);
+
+DECLARE_VARIABLE_LENGTH_CLUSTER!(Mint, MintCluster);
+IMPLEMENT_VARIABLE_LENGTH_CLUSTER!(
+    MintCluster,
+    |cluster, stream| {
+        cluster.obj_count = stream.read_unsigned()?;
+        for _ in 0..cluster.obj_count {
+            cluster.objs.push(Box::new(Mint {
+                value: stream.read()? as i64,
+            }));
+        }
+    },
+    |_cluster, _stream| {}
+);
+
+DECLARE_VARIABLE_LENGTH_CLUSTER!(Float32x4, Float32x4Cluster);
+IMPLEMENT_VARIABLE_LENGTH_CLUSTER!(
+    Float32x4Cluster,
+    |cluster, stream| {
+        cluster.obj_count = stream.read_unsigned()?;
+        for _ in 0..cluster.obj_count {
+            cluster.objs.push(Box::<Float32x4>::default());
+        }
+    },
+    |cluster, stream| {
+        for obj in &mut cluster.objs {
+            obj.value = stream.read_bytes(16)?;
+        }
+    }
+);
+
+DECLARE_VARIABLE_LENGTH_CLUSTER!(Float64x2, Float64x2Cluster);
+IMPLEMENT_VARIABLE_LENGTH_CLUSTER!(
+    Float64x2Cluster,
+    |cluster, stream| {
+        cluster.obj_count = stream.read_unsigned()?;
+        for _ in 0..cluster.obj_count {
+            cluster.objs.push(Box::<Float64x2>::default());
+        }
+    },
+    |cluster, stream| {
+        for obj in &mut cluster.objs {
+            obj.value = stream.read_bytes(16)?;
+        }
+    }
+);
+
+DECLARE_VARIABLE_LENGTH_CLUSTER!(Record, RecordCluster);
+IMPLEMENT_VARIABLE_LENGTH_CLUSTER!(
+    RecordCluster,
+    |cluster, stream| {
+        cluster.obj_count = stream.read_unsigned()?;
+        for _ in 0..cluster.obj_count {
+            let num_fields = stream.read_unsigned()? as usize;
+            cluster.objs.push(Box::new(Record {
+                num_fields,
+                ..Record::default()
+            }));
+        }
+    },
+    |cluster, stream| {
+        for obj in &mut cluster.objs {
+            obj.shape = stream.read_unsigned()? as i32;
+            for _ in 0..obj.num_fields {
+                obj.fields.push(stream.read_ref_id()?);
+            }
+        }
+    }
+);
+
+DECLARE_VARIABLE_LENGTH_CLUSTER!(Array, ArrayCluster);
+IMPLEMENT_VARIABLE_LENGTH_CLUSTER!(
+    ArrayCluster,
+    |cluster, stream| {
+        cluster.obj_count = stream.read_unsigned()?;
+        for _ in 0..cluster.obj_count {
+            let length = stream.read_unsigned()? as i32;
+            cluster.objs.push(Box::new(Array {
+                length,
+                ..Array::default()
+            }));
+        }
+    },
+    |cluster, stream| {
+        for obj in &mut cluster.objs {
+            let length = stream.read_unsigned()? as i32;
+            obj.length = length;
+            obj.type_arguments = stream.read_ref_id()?;
+            for _ in 0..length {
+                obj.elements.push(stream.read_ref_id()?);
+            }
+        }
+    }
+);
+
+DECLARE_VARIABLE_LENGTH_CLUSTER!(WeakArray, WeakArrayCluster);
+IMPLEMENT_VARIABLE_LENGTH_CLUSTER!(
+    WeakArrayCluster,
+    |cluster, stream| {
+        cluster.obj_count = stream.read_unsigned()?;
+        for _ in 0..cluster.obj_count {
+            let length = stream.read_unsigned()? as i32;
+            cluster.objs.push(Box::new(WeakArray {
+                length,
+                ..WeakArray::default()
+            }));
+        }
+    },
+    |cluster, stream| {
+        for obj in &mut cluster.objs {
+            let length = stream.read_unsigned()? as i32;
+            obj.length = length;
+            for _ in 0..length {
+                obj.elements.push(stream.read_ref_id()?);
+            }
+        }
+    }
+);
+
+DECLARE_VARIABLE_LENGTH_CLUSTER!(ImmutableArray, ImmutableArrayCluster);
+IMPLEMENT_VARIABLE_LENGTH_CLUSTER!(
+    ImmutableArrayCluster,
+    |cluster, stream| {
+        cluster.obj_count = stream.read_unsigned()?;
+        for _ in 0..cluster.obj_count {
+            let length = stream.read_unsigned()? as i32;
+            cluster.objs.push(Box::new(ImmutableArray {
+                length,
+                ..ImmutableArray::default()
+            }));
+        }
+    },
+    |cluster, stream| {
+        for obj in &mut cluster.objs {
+            let length = stream.read_unsigned()? as i32;
+            obj.length = length;
+            obj.type_arguments = stream.read_ref_id()?;
+            for _ in 0..length {
+                obj.elements.push(stream.read_ref_id()?);
+            }
+        }
+    }
+);
+
+DECLARE_VARIABLE_LENGTH_CLUSTER!(ConstMap, ConstMapCluster);
+IMPLEMENT_VARIABLE_LENGTH_CLUSTER!(
+    ConstMapCluster,
+    |cluster, stream| {
+        cluster.obj_count = stream.read_unsigned()?;
+        for _ in 0..cluster.obj_count {
+            cluster.objs.push(Box::<ConstMap>::default());
+        }
+    },
+    |cluster, stream| {
+        for obj in &mut cluster.objs {
+            obj.type_arguments = stream.read_ref_id()?;
+            obj.hash_mask = stream.read_ref_id()?;
+            obj.data = stream.read_ref_id()?;
+            obj.used_data = stream.read_ref_id()?;
+            obj.deleted_keys = stream.read_ref_id()?;
+        }
+    }
+);
+
+DECLARE_VARIABLE_LENGTH_CLUSTER!(ConstSet, ConstSetCluster);
+IMPLEMENT_VARIABLE_LENGTH_CLUSTER!(
+    ConstSetCluster,
+    |cluster, stream| {
+        cluster.obj_count = stream.read_unsigned()?;
+        for _ in 0..cluster.obj_count {
+            cluster.objs.push(Box::<ConstSet>::default());
+        }
+    },
+    |cluster, stream| {
+        for obj in &mut cluster.objs {
+            obj.type_arguments = stream.read_ref_id()?;
+            obj.hash_mask = stream.read_ref_id()?;
+            obj.data = stream.read_ref_id()?;
+            obj.used_data = stream.read_ref_id()?;
+            obj.deleted_keys = stream.read_ref_id()?;
+        }
+    }
+);
+
+DECLARE_VARIABLE_LENGTH_CLUSTER!(CodeSourceMap, CodeSourceMapCluster);
+IMPLEMENT_VARIABLE_LENGTH_CLUSTER!(
+    CodeSourceMapCluster,
+    |cluster, stream| {
+        cluster.obj_count = stream.read_unsigned()?;
+        for _ in 0..cluster.obj_count {
+            let length = stream.read_unsigned()? as u32;
+            cluster.objs.push(Box::new(CodeSourceMap {
+                length,
+                ..CodeSourceMap::default()
+            }));
+        }
+    },
+    |cluster, stream| {
+        for obj in &mut cluster.objs {
+            let length = stream.read_unsigned()? as u32;
+            obj.length = length;
+            obj.data = stream.read_bytes(length as usize)?;
+        }
+    }
+);
+
+DECLARE_VARIABLE_LENGTH_CLUSTER!(CompressedStackMaps, CompressedStackMapsCluster);
+IMPLEMENT_VARIABLE_LENGTH_CLUSTER!(
+    CompressedStackMapsCluster,
+    |cluster, stream| {
+        cluster.obj_count = stream.read_unsigned()?;
+        for _ in 0..cluster.obj_count {
+            let length = stream.read_unsigned()? as u32;
+            cluster.objs.push(Box::new(CompressedStackMaps {
+                length,
+                ..CompressedStackMaps::default()
+            }));
+        }
+    },
+    |cluster, stream| {
+        for obj in &mut cluster.objs {
             obj.flags_and_size = stream.read_unsigned()? as u32;
-
             obj.data = stream.read_bytes(obj.length as usize)?;
         }
-
-        self.end_of_fill = stream.get_current_pos();
-
-        Ok(self.end_of_fill - self.start_of_fill)
     }
-}
+);
 
 DECLARE_VARIABLE_LENGTH_CLUSTER!(PcDescriptors, PcDescriptorsCluster);
-
-impl Cluster for PcDescriptorsCluster {
-    fn is_fixed_len(&self) -> bool {
-        false
-    }
-
-    fn read_alloc(&mut self, last_ref_id: &mut u64, stream: &mut Stream) -> anyhow::Result<usize> {
-        self.start_of_alloc = stream.get_current_pos();
-        self.first_ref_id = *last_ref_id as u32;
-
-        self.obj_count = stream.read_unsigned()?;
-
-        for _obj_idx in 0..self.obj_count {
-            let mut obj = Box::<PcDescriptors>::default();
-            let length = stream.read_unsigned()?;
-
-            obj.length = length as u32;
-            self.objs.push(obj);
+IMPLEMENT_VARIABLE_LENGTH_CLUSTER!(
+    PcDescriptorsCluster,
+    |cluster, stream| {
+        cluster.obj_count = stream.read_unsigned()?;
+        for _ in 0..cluster.obj_count {
+            let length = stream.read_unsigned()? as u32;
+            cluster.objs.push(Box::new(PcDescriptors {
+                length,
+                ..PcDescriptors::default()
+            }));
         }
-
-        *last_ref_id += self.obj_count;
-
-        self.end_of_alloc = stream.get_current_pos();
-        Ok(self.end_of_alloc - self.start_of_alloc)
-    }
-
-    fn read_fill(&mut self, stream: &mut Stream) -> anyhow::Result<usize> {
-        self.start_of_fill = stream.get_current_pos();
-
-        for obj_idx in 0..self.obj_count {
+    },
+    |cluster, stream| {
+        for obj in &mut cluster.objs {
             let length = stream.read_unsigned()?; // its saved twice
-            let variable_size_data = stream.read_bytes(length as usize)?;
-
-            let obj = &mut self.objs[obj_idx as usize];
-            obj.data = variable_size_data;
+            obj.data = stream.read_bytes(length as usize)?;
         }
-
-        Ok(self.end_of_fill - self.start_of_fill)
     }
-}
+);
 
 //DECLARE_VARIABLE_LENGTH_CLUSTER!(OneByteString, OneByteStringCluster); These only exist when NO COMPRESSED_POINTERS
 //DECLARE_VARIABLE_LENGTH_CLUSTER!(TwoByteString, TwoByteStringCluster);
 DECLARE_VARIABLE_LENGTH_CLUSTER!(_String, _StringCluster);
-
-impl Cluster for _StringCluster {
-    fn is_fixed_len(&self) -> bool {
-        false
-    }
-
-    fn read_alloc(&mut self, last_ref_id: &mut u64, stream: &mut Stream) -> anyhow::Result<usize> {
-        self.start_of_alloc = stream.get_current_pos();
-        self.first_ref_id = *last_ref_id as u32;
-
-        self.obj_count = stream.read_unsigned()?;
-
-        for _obj_idx in 0..self.obj_count {
-            let mut obj = Box::<_String>::default();
+IMPLEMENT_VARIABLE_LENGTH_CLUSTER!(
+    _StringCluster,
+    |cluster, stream| {
+        cluster.obj_count = stream.read_unsigned()?;
+        for _ in 0..cluster.obj_count {
             let encoded = stream.read_unsigned()?;
-            obj.string_type = if encoded & 1 == 1 {
+            let string_type = if encoded & 1 == 1 {
                 StrType::TwoByte
             } else {
                 StrType::OneByte
             };
-
-            obj.length = (encoded >> 1) as i32;
-            self.objs.push(obj);
+            cluster.objs.push(Box::new(_String {
+                string_type,
+                length: (encoded >> 1) as i32,
+                .._String::default()
+            }));
         }
-
-        *last_ref_id += self.obj_count;
-        self.end_of_alloc = stream.get_current_pos();
-
-        Ok(self.end_of_alloc - self.start_of_alloc)
-    }
-
-    fn read_fill(&mut self, stream: &mut Stream) -> anyhow::Result<usize> {
-        self.start_of_fill = stream.get_current_pos();
-
-        for obj_idx in 0..self.obj_count {
+    },
+    |cluster, stream| {
+        for obj in &mut cluster.objs {
             let _encoded = stream.read_unsigned()?; // why is this here twice? Huh?
-            let obj = self.objs.get_mut(obj_idx as usize);
-
-            let obj =
-                obj.unwrap_or_else(|| panic!("Couldn't unwrap... No string at index {obj_idx}"));
-
             match obj.string_type {
                 StrType::OneByte => {
                     // OneByteString payload is Latin-1, not UTF-8. Bytes 0x80..=0xFF
@@ -554,8 +1042,5 @@ impl Cluster for _StringCluster {
                 }
             }
         }
-
-        self.end_of_fill = stream.get_current_pos();
-        Ok(self.end_of_fill - self.start_of_fill)
     }
-}
+);

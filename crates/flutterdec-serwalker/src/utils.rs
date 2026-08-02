@@ -6,6 +6,8 @@ macro_rules! DECLARE_FIXED_LENGTH_CLUSTER {
         pub struct $cluster_name {
             tags: u32,
             cid: ClassId,
+            is_deeply_immutable: bool,
+            is_canonical: bool,
             obj_count: u64,
 
             start_of_fill: usize,
@@ -20,6 +22,19 @@ macro_rules! DECLARE_FIXED_LENGTH_CLUSTER {
         }
 
         impl Cluster for $cluster_name {
+            fn set_metadata(
+                &mut self,
+                tags: u32,
+                cid: ClassId,
+                is_deeply_immutable: bool,
+                is_canonical: bool,
+            ) {
+                self.tags = tags;
+                self.cid = cid;
+                self.is_deeply_immutable = is_deeply_immutable;
+                self.is_canonical = is_canonical;
+            }
+
             fn read_alloc(
                 &mut self,
                 last_ref_id: &mut u64,
@@ -66,6 +81,8 @@ macro_rules! DECLARE_VARIABLE_LENGTH_CLUSTER {
         pub struct $cluster_name {
             tags: u32,
             cid: ClassId,
+            is_deeply_immutable: bool,
+            is_canonical: bool,
             obj_count: u64,
 
             start_of_fill: usize,
@@ -125,8 +142,6 @@ macro_rules! DECODE_IS_CANONICAL {
     };
 }
 
-/// Bit layout matches UntaggedObject::TagBits in raw_object.h:
-/// ClassIdTag at 12 (20 bits), CanonicalBit at 1, ImmutableBit at 7.
 pub fn decode_tags(tags: u32) -> anyhow::Result<DecodedTags> {
     let class_id = DECODE_CID!(tags).map_err(|_| {
         anyhow::anyhow!(

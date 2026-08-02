@@ -12,7 +12,7 @@ pub fn parse_field_table(stream: &mut Stream) -> anyhow::Result<FieldTable> {
     let table_length = stream.read_unsigned()?;
 
     // extremely unlikely but one never knows
-    field_table.length = table_length.try_into().map_err(|table_length: u64| {
+    field_table.length = table_length.try_into().map_err(|_| {
         anyhow::anyhow!(
             "field table of length {} does not fit in usize",
             table_length
@@ -20,7 +20,7 @@ pub fn parse_field_table(stream: &mut Stream) -> anyhow::Result<FieldTable> {
     })?;
 
     // field_table.field_refs = Vec::with_capacity(table_length as usize); // passed the try_into above, safe to raw cast
-    
+
     for _ in 0..table_length {
         let refid = stream.read_ref_id()?;
         field_table.field_refs.push(refid);
@@ -36,8 +36,9 @@ pub fn parse_dispatch_table(stream: &mut Stream) -> anyhow::Result<DispatchTable
     const RECENT_MIN: i64 = -MAX_REPEAT;
     const INDEX_BASE: i64 = MAX_REPEAT + 1;
 
-    let length: usize = stream.read_unsigned()?.try_into().map_err(|length: u64| {
-        anyhow::anyhow!("dispatch table of length {length} does not fit in usize")
+    let encoded_length = stream.read_unsigned()?;
+    let length: usize = encoded_length.try_into().map_err(|_| {
+        anyhow::anyhow!("dispatch table of length {encoded_length} does not fit in usize")
     })?;
 
     // for an empty table, the serializer writes only its length.
@@ -45,12 +46,10 @@ pub fn parse_dispatch_table(stream: &mut Stream) -> anyhow::Result<DispatchTable
         return Ok(DispatchTable::default());
     }
 
-    let first_code_ref = stream
-        .read_unsigned()?
-        .try_into()
-        .map_err(|reference: u64| {
-            anyhow::anyhow!("first Code-cluster reference {reference} does not fit in u32")
-        })?;
+    let reference = stream.read_unsigned()?;
+    let first_code_ref = reference.try_into().map_err(|_| {
+        anyhow::anyhow!("first Code-cluster reference {reference} does not fit in u32")
+    })?;
 
     let mut table = DispatchTable {
         first_code_ref: Some(first_code_ref),

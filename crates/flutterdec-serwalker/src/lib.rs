@@ -2,7 +2,9 @@ mod constants;
 mod utils;
 
 mod cluster;
+mod instruction_table;
 mod program_roots;
+
 mod raw_object;
 mod snapshot;
 
