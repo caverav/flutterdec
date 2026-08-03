@@ -2,7 +2,9 @@ use std::collections::HashMap;
 use std::mem::size_of;
 
 use crate::cluster::{decide_cluster, Cluster};
-use crate::constants::{self, ClassId, HEADER_SIZE, MAGIC_BYTES, UNSIGNED_M};
+use crate::constants::{
+    self, ClassId, DART_3_11_1_SNAPSHOT_HASH, HEADER_SIZE, MAGIC_BYTES, UNSIGNED_M,
+};
 use crate::instruction_table::{parse_instr_table_from_rodata, InstructionTable};
 use crate::program_roots::structs::ProgramRoots;
 use crate::program_roots::{parse_dispatch_table, parse_field_table, parse_object_store};
@@ -86,7 +88,27 @@ impl DataSnapshot {
         self.kind =
             SnapshotKind::try_from(stream.read_raw_u64()?).map_err(|e| anyhow::anyhow!(e))?;
 
+        if !matches!(&self.kind, SnapshotKind::FullAOT) {
+            anyhow::bail!("Serwalker currently supports FullAOT snapshots only");
+        }
+
         self.parse_version_and_features(stream)?;
+
+        if self.version_hash != DART_3_11_1_SNAPSHOT_HASH {
+            anyhow::bail!(
+                "unsupported Dart snapshot hash {}; expected {} (Dart 3.11.1)",
+                self.version_hash,
+                DART_3_11_1_SNAPSHOT_HASH
+            );
+        }
+
+        if !self
+            .features
+            .split_ascii_whitespace()
+            .any(|feature| feature == "compressed-pointers")
+        {
+            anyhow::bail!("Serwalker currently requires a compressed-pointers snapshot");
+        }
 
         self.num_base_objects = stream.read_unsigned()?;
         self.num_objects = stream.read_unsigned()?;
@@ -113,7 +135,7 @@ impl DataSnapshot {
             cluster.set_metadata(
                 tags,
                 cid,
-                decoded_tags.is_deeply_immutable(),
+                decoded_tags.is_immutable(),
                 decoded_tags.is_canonical(),
             );
             cluster.read_alloc(&mut curr_ref_id, stream)?;
@@ -121,7 +143,7 @@ impl DataSnapshot {
             // Composite key exactly as suggested to PR reviewer
             let key = (cid as u32) << 2
                 | ((decoded_tags.is_canonical() as u32) << 1)
-                | (decoded_tags.is_deeply_immutable() as u32);
+                | (decoded_tags.is_immutable() as u32);
             self.clusters.insert(key, cluster);
             self.cluster_order.push(key);
         }

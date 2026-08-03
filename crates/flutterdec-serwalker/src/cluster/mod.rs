@@ -6,13 +6,7 @@ use crate::DECLARE_VARIABLE_LENGTH_CLUSTER;
 use crate::FFI_TYPES_LIST;
 
 pub trait Cluster {
-    fn set_metadata(
-        &mut self,
-        tags: u32,
-        cid: ClassId,
-        is_deeply_immutable: bool,
-        is_canonical: bool,
-    );
+    fn set_metadata(&mut self, tags: u32, cid: ClassId, is_immutable: bool, is_canonical: bool);
     fn is_fixed_len(&self) -> bool;
     fn read_alloc(&mut self, last_ref_id: &mut u64, stream: &mut Stream) -> anyhow::Result<usize>;
     fn read_fill(&mut self, stream: &mut Stream) -> anyhow::Result<usize>;
@@ -371,7 +365,8 @@ DECLARE_FIXED_LENGTH_CLUSTER!(RegExp, RegExpCluster, |_self, stream| {
         obj.two_byte_sticky = stream.read_ref_id()?;
         obj.num_one_byte_registers = stream.read()? as i32;
         obj.num_two_byte_registers = stream.read()? as i32;
-        obj.flags = stream.read_unsigned()? as u32;
+        // Deserializer::Read<int8_t>() dispatches to ReadStream::Raw<1, T>.
+        obj.type_flags = stream.read_byte()? as i8;
     }
 });
 DECLARE_FIXED_LENGTH_CLUSTER!(WeakProperty, WeakPropertyCluster, |_self, stream| {
@@ -397,12 +392,12 @@ macro_rules! IMPLEMENT_VARIABLE_LENGTH_CLUSTER {
                 &mut self,
                 tags: u32,
                 cid: ClassId,
-                is_deeply_immutable: bool,
+                is_immutable: bool,
                 is_canonical: bool,
             ) {
                 self.tags = tags;
                 self.cid = cid;
-                self.is_deeply_immutable = is_deeply_immutable;
+                self.is_immutable = is_immutable;
                 self.is_canonical = is_canonical;
             }
 

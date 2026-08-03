@@ -1,4 +1,4 @@
-use crate::{instruction_table, stream::Stream};
+use crate::stream::Stream;
 
 #[derive(Default)]
 pub struct InstructionTable
@@ -20,8 +20,8 @@ struct DataEntry {
 
 pub fn parse_instr_table_from_rodata(stream: &mut Stream) -> anyhow::Result<InstructionTable> {
     // ROData objects are wrapped inside OneByteString objects, so we need to read the syntetic fields first.
-    let mut tags = stream.read_raw_u64()?;
-    let mut data_byte_size = stream.read_raw_u64()?;
+    let _tags = stream.read_raw_u64()?;
+    let _data_byte_size = stream.read_raw_u64()?;
     // i wont do anything with them for now, for a normal snapshot, the tags should be a OneByteString cid
     // and data_byte_size should be the size of the contained InstructionsTable::Data
     // i.e 4 * sizeof(u32) + (2*sizeof(u32)) * length
@@ -48,4 +48,19 @@ pub fn parse_instr_table_from_rodata(stream: &mut Stream) -> anyhow::Result<Inst
     }
 
     Ok(instruction_table)
+}
+
+pub fn resolve_entry_points(
+    code_index: u32,
+    instr_table: &InstructionTable,
+) -> anyhow::Result<usize> {
+    let abs_index = instr_table.first_entry_with_code + code_index as usize;
+    let entry = instr_table.data.get(abs_index).ok_or_else(|| {
+        anyhow::anyhow!(
+            "instruction-table index {abs_index} is out of bounds for length {}",
+            instr_table.data.len()
+        )
+    })?;
+
+    Ok(entry.pc_offset)
 }

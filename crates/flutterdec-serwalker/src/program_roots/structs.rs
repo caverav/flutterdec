@@ -3,7 +3,7 @@ use crate::stream::Stream;
 macro_rules! object_store_aot_fields {
     ($emit:ident) => {
         $emit! {
-                // Layout for the 3.12 Dart version, and as early as 3.11
+                // Layout for the 3.11.X Dart version, and as early as 3.11.0
                 list_class: u32,                                           // ClassPtr
                 map_class: u32,                                            // ClassPtr
                 set_class: u32,                                            // ClassPtr
@@ -254,7 +254,7 @@ macro_rules! define_object_store {
     ($( $field:ident: u32,)*) => {
         #[derive(Default)]
         #[repr(C)]
-        pub(super) struct ObjectStore {
+        pub(crate) struct ObjectStore {
             $( $field: u32, )*
         }
 
@@ -282,7 +282,7 @@ pub(super) struct IsolateObjectStore
     error_listeners: u32,     // GrowableObjectArrayPtr
 }
 #[derive(Default)]
-pub(super) struct FieldTable {
+pub(crate) struct FieldTable {
     pub(super) length: usize,
     pub(super) field_refs: Vec<u32>,
 }
@@ -294,7 +294,7 @@ pub(super) enum DispatchTableEntry {
 }
 
 #[derive(Debug, Default)]
-pub(super) struct DispatchTable {
+pub(crate) struct DispatchTable {
     pub(super) first_code_ref: Option<u32>,
     pub(super) entries: Vec<DispatchTableEntry>,
 }

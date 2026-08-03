@@ -6,7 +6,7 @@ macro_rules! DECLARE_FIXED_LENGTH_CLUSTER {
         pub struct $cluster_name {
             tags: u32,
             cid: ClassId,
-            is_deeply_immutable: bool,
+            is_immutable: bool,
             is_canonical: bool,
             obj_count: u64,
 
@@ -26,12 +26,12 @@ macro_rules! DECLARE_FIXED_LENGTH_CLUSTER {
                 &mut self,
                 tags: u32,
                 cid: ClassId,
-                is_deeply_immutable: bool,
+                is_immutable: bool,
                 is_canonical: bool,
             ) {
                 self.tags = tags;
                 self.cid = cid;
-                self.is_deeply_immutable = is_deeply_immutable;
+                self.is_immutable = is_immutable;
                 self.is_canonical = is_canonical;
             }
 
@@ -81,7 +81,7 @@ macro_rules! DECLARE_VARIABLE_LENGTH_CLUSTER {
         pub struct $cluster_name {
             tags: u32,
             cid: ClassId,
-            is_deeply_immutable: bool,
+            is_immutable: bool,
             is_canonical: bool,
             obj_count: u64,
 
@@ -100,7 +100,7 @@ macro_rules! DECLARE_VARIABLE_LENGTH_CLUSTER {
 
 pub struct DecodedTags {
     class_id: ClassId,
-    is_deeply_immutable: bool,
+    is_immutable: bool,
     is_canonical: bool,
 }
 
@@ -108,7 +108,7 @@ impl DecodedTags {
     pub fn new(cid: ClassId, immut: bool, canonical: bool) -> Self {
         Self {
             class_id: cid,
-            is_deeply_immutable: immut,
+            is_immutable: immut,
             is_canonical: canonical,
         }
     }
@@ -117,8 +117,8 @@ impl DecodedTags {
         self.class_id
     }
 
-    pub fn is_deeply_immutable(&self) -> bool {
-        self.is_deeply_immutable
+    pub fn is_immutable(&self) -> bool {
+        self.is_immutable
     }
 
     pub fn is_canonical(&self) -> bool {
@@ -131,9 +131,11 @@ macro_rules! DECODE_CID {
         ClassId::try_from(($tags >> 12) & 0xFFFFF)
     };
 }
-macro_rules! DECODE_IS_DEEPLY_IMMUTABLE {
+macro_rules! DECODE_IS_IMMUTABLE {
     ($tags:expr) => {
-        (($tags >> 7) & 0x1) == 1
+        // Dart 3.11.1 UntaggedObject::ImmutableBit is bit 6. Mainline later
+        // split this into ShallowImmutableBit (6) and DeeplyImmutableBit (7).
+        (($tags >> 6) & 0x1) == 1
     };
 }
 macro_rules! DECODE_IS_CANONICAL {
@@ -151,7 +153,7 @@ pub fn decode_tags(tags: u32) -> anyhow::Result<DecodedTags> {
     })?;
     Ok(DecodedTags::new(
         class_id,
-        DECODE_IS_DEEPLY_IMMUTABLE!(tags),
+        DECODE_IS_IMMUTABLE!(tags),
         DECODE_IS_CANONICAL!(tags),
     ))
 }
