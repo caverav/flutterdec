@@ -271,36 +271,82 @@ fn does_not_reissue_a_temporary_name_across_arms() {
 /// A shared continuation that is not the branch's follow node cannot be named in
 /// Dart, which has no `goto`. A small one is repeated, which is bounded, rather
 /// than sending the function to the DFS emitter, whose duplication is not.
+///
+/// Here one arm can reach an exit without passing through the shared block, so
+/// the shared block is nobody's post-dominator and the follow-node rule cannot
+/// place it. It is also not terminal, so only the region budget can allow it.
 #[test]
-fn repeats_a_small_shared_continuation_instead_of_giving_up() {
+fn repeats_a_small_shared_region_that_is_not_a_follow_node() {
     let ir = FunctionIr {
         function_id: 1006,
         name: "sharedTail".to_string(),
         entry_va: 0x1000,
         blocks: vec![
             blk(0, 0x1000, vec![cbz(0x1000, "x1", 0x2000)], vec![1, 2]),
-            // Fall-through arm reaches the shared tail, then returns.
             blk(1, 0x1004, vec![stmt(0x1004, "stur x1, [x29, #-0x10]")], vec![3]),
-            // Taken arm reaches the same tail through another block.
-            blk(2, 0x2000, vec![stmt(0x2000, "stur x2, [x29, #-0x18]")], vec![3]),
-            // Shared tail: reached from both, and it is the follow node here.
-            blk(
-                3,
-                0x3000,
-                vec![stmt(0x3000, "stur x0, [x29, #-0x20]"), ret(0x3004)],
-                Vec::new(),
-            ),
+            // This arm can leave through block 5 without reaching the tail.
+            blk(2, 0x2000, vec![cbz(0x2000, "x2", 0x5000)], vec![3, 5]),
+            // Shared, two blocks long, and not terminal.
+            blk(3, 0x3000, vec![stmt(0x3000, "stur x3, [x29, #-0x18]")], vec![4]),
+            blk(4, 0x3004, vec![ret(0x3004)], Vec::new()),
+            blk(5, 0x5000, vec![ret(0x5000)], Vec::new()),
         ],
     };
     let artifact = emit_pseudocode(&ir, &HashMap::new());
     assert!(
-        !artifact.source.contains("_block_"),
-        "a small shared tail should not become a helper:\n{}",
+        artifact.repeated_blocks > 0,
+        "the shared region should be repeated under budget:\n{}",
         artifact.source
     );
     assert_eq!(
+        artifact
+            .source
+            .lines()
+            .filter(|l| l.contains("= param3;") || l.contains("= receiver;"))
+            .count(),
+        2,
+        "the shared block is emitted on both paths:\n{}",
+        artifact.source
+    );
+    assert!(
+        !artifact.source.contains("_block_"),
+        "and not deferred to a helper:\n{}",
+        artifact.source
+    );
+}
+
+/// The budget is a real limit: a shared region longer than it falls back rather
+/// than duplicating an arbitrary amount of code.
+#[test]
+fn declines_to_repeat_a_shared_region_over_budget() {
+    // Chain of 10 blocks, above the 8-block budget.
+    let mut blocks = vec![
+        blk(0, 0x1000, vec![cbz(0x1000, "x1", 0x2000)], vec![1, 2]),
+        blk(1, 0x1004, vec![stmt(0x1004, "stur x1, [x29, #-0x10]")], vec![3]),
+        blk(2, 0x2000, vec![cbz(0x2000, "x2", 0x5000)], vec![3, 13]),
+    ];
+    for i in 0..10 {
+        let id = 3 + i;
+        let va = 0x3000 + (i as u64) * 8;
+        blocks.push(blk(
+            id,
+            va,
+            vec![stmt(va, &format!("stur x{}, [x29, #-0x{:x}]", i % 4, 0x20 + i * 8))],
+            vec![id + 1],
+        ));
+    }
+    blocks.push(blk(13, 0x5000, vec![ret(0x5000)], Vec::new()));
+
+    let ir = FunctionIr {
+        function_id: 1008,
+        name: "longTail".to_string(),
+        entry_va: 0x1000,
+        blocks,
+    };
+    let artifact = emit_pseudocode(&ir, &HashMap::new());
+    assert_eq!(
         artifact.repeated_blocks, 0,
-        "this tail is the follow node, so nothing needs repeating:\n{}",
+        "a region over budget must not be repeated:\n{}",
         artifact.source
     );
 }
