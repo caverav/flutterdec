@@ -419,10 +419,22 @@ register class, shift kind and amount, condition codes and flag effects:
   `classId(obj)`, recognised, then never *used*. 18,816 extractions, 1,545 class-id
   equality checks and 1,227 interval checks (`ubfx; sub; cmp #k`, i.e. Dart's
   `obj is T` over a cid range) are all available and none becomes an `is` test.
-- Field offsets render as raw byte displacements (`obj.f7`, `obj.f15`, `obj.f23`),
-  hiding that they are all `8k - 1`: tag-adjusted word slots 0, 1, 2. Dividing
-  through makes them readable now and directly joinable to a class field table
-  later.
+- Field offsets rendered as raw tagged displacements (`obj.f7`, `obj.f15`), one
+  less than the offset any field table is keyed by, because object pointers carry
+  `kHeapObjectTag`. **Fixed.** The displacement identifies itself: field offsets
+  are 4-aligned, so 3 mod 4 is exactly a tag-adjusted one, and untagged bases
+  cannot match. Measured on sample B, 262,439 of 272,805 object-base
+  displacements are 3 or 7 mod 8, while every `THR` displacement is 0 mod 8.
+- Register-offset operands, which is how Dart reaches list and array elements,
+  were folded to displacement zero by `parse_mem_operand` and rendered `base.f0`,
+  indistinguishable from a real field-zero read. 2,094 sites on sample B once
+  dispatch-table loads and frame accesses are excluded. **Fixed**, they render as
+  `base[index]`.
+- `x21` is `DISPATCH_TABLE_REG` and was the one reserved register `init_state` did
+  not name, so the dispatch calls whose selector offset is not statically
+  recoverable rendered as `reg21[reg0](...)`. **Fixed**, they read
+  `dispatchTable[cid](...)`, which states what the call is. That also made the
+  `dispatchTargetFn` alias pass redundant, so it is gone.
 - `(x >> 0x3f) & 1) != 0` is a sign test (`tbnz xN, #0x3f`), i.e. `x < 0`.
 - `cond_from_cmp` handles 10 conditions and only from `cmp`; `tst`, `cmn`,
   `ands`, `subs`, `ccmp` and `fcmp` set no condition, which is where the
