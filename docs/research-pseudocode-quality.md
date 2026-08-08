@@ -523,7 +523,7 @@ Result, against this branch before the change:
 
 | | before R1 | with R1 |
 |---|---|---|
-| pseudocode lines | 628,929 | **485,455** |
+| pseudocode lines | 628,929 | **396,581** |
 | emitted call statements | 109,729 | **83,245** |
 | inflation | 3.03x | **2.28x** |
 | duplicate-line fraction | 67.9% | 62.0% |
@@ -577,6 +577,20 @@ Structuring also made empty `if` bodies common: when both successors are the
 join, neither arm emits a statement. 4,117 of them on sample A against 321 on
 `main`. Arms are now rendered into buffers and emptiness is decided on emitted
 content, which drops the branch or inverts the condition. 4,117 to 234.
+
+That change surfaced a defect worth its own note, because it is the same class
+of silent loss the targeted prune in `build_function_ir` exists to avoid.
+"Emitted nothing" does not mean "does nothing": `apply_other_lift` discards any
+mnemonic it does not model, with no statement, no state change and no counter,
+so floating point, vector work and load/store pairs vanish. Eliding those arms
+deleted real computation invisibly. An empty arm carrying unmodelled work now
+reports how many instructions it holds, and `quality.json` reports
+`unlifted_instructions`: 1,430 across 1,292 sites on sample A and 1,535 across
+1,363 on sample B, every one of which the ungated version dropped.
+
+That count is also the first measurement of the lifting gap itself, which is R3
+in this list, and it is small: about 0.08% of decoded instructions on either
+sample sit on a branch arm the lifter cannot express.
 
 ### Negative result: naive phi materialisation
 
