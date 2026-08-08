@@ -34,7 +34,6 @@ struct LiftState {
     reg_values: HashMap<String, String>,
     selector_hints: HashMap<String, String>,
     last_cmp: Option<(String, String)>,
-    call_index: usize,
 }
 
 struct FuncEmitter<'a> {
@@ -47,6 +46,9 @@ struct FuncEmitter<'a> {
     va_to_id: HashMap<u64, usize>,
     dispatch_calls: HashMap<u64, DispatchCall>,
     regions: Option<Regions>,
+    /// Monotonic across the whole function. Kept off `LiftState` so restoring a
+    /// saved state cannot re-issue a name that already denotes another value.
+    call_index: usize,
     structured_emitted: HashSet<usize>,
     loop_stack: Vec<(usize, Option<usize>)>,
 
@@ -128,6 +130,7 @@ impl<'a> FuncEmitter<'a> {
             va_to_id,
             dispatch_calls: dispatch_table_calls(ir),
             regions: None,
+            call_index: 0,
             structured_emitted: HashSet::new(),
             loop_stack: Vec::new(),
             emitted: HashSet::new(),

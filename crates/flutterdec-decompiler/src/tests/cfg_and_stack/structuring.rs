@@ -226,3 +226,44 @@ fn an_arm_that_returns_does_not_leak_its_values() {
         }
     }
 }
+
+/// Per-arm state isolation must not rewind the temporary counter: two different
+/// values may never share a name, even in sibling scopes where Dart would allow
+/// it, because the later text passes substitute on those names.
+#[test]
+fn does_not_reissue_a_temporary_name_across_arms() {
+    let call = |va: u64, target: u64| LlirInstr {
+        va,
+        op: IROp::Call,
+        src: format!("bl #0x{target:x}"),
+        target: format!("#0x{target:x}"),
+    };
+    let ir = FunctionIr {
+        function_id: 1005,
+        name: "twoArms".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![
+            blk(0, 0x1000, vec![cbz(0x1000, "x1", 0x2000)], vec![1, 2]),
+            blk(1, 0x2000, vec![call(0x2000, 0x9000), ret(0x2004)], Vec::new()),
+            blk(2, 0x1004, vec![call(0x1004, 0x9100), ret(0x1008)], Vec::new()),
+        ],
+    };
+
+    let artifact = emit_pseudocode(&ir, &HashMap::new());
+    let declared: Vec<&str> = artifact
+        .source
+        .lines()
+        .filter_map(|l| l.trim().strip_prefix("final "))
+        .filter_map(|l| l.split(' ').next())
+        .collect();
+    let mut unique = declared.clone();
+    unique.sort_unstable();
+    unique.dedup();
+    assert_eq!(
+        declared.len(),
+        unique.len(),
+        "each temporary is declared once:\n{}",
+        artifact.source
+    );
+    assert_eq!(declared.len(), 2, "both arms call:\n{}", artifact.source);
+}

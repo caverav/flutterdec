@@ -55,7 +55,14 @@ impl<'a> FuncEmitter<'a> {
             }
 
             let mut helper = FuncEmitter::new(self.ir, self.symbol_names);
+            // Helper bodies are copied verbatim into the caller by
+            // `inline_helper_calls`, so their temporaries share the caller's
+            // namespace and the counter has to continue rather than restart.
+            helper.call_index = self.call_index;
+            helper.pool_value_hints = self.pool_value_hints.clone();
+            helper.pool_semantic_hints = self.pool_semantic_hints.clone();
             helper.emit_block(id, 1, 0);
+            self.call_index = helper.call_index;
             let has_terminator = helper.lines.iter().any(|line| {
                 let t = line.trim_start();
                 t.starts_with("return ") || t == "continue;"

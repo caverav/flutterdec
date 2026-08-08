@@ -317,9 +317,9 @@ impl<'a> FuncEmitter<'a> {
 
     pub(super) fn emit_call(&mut self, ins_target: &str, va: u64, indent: usize) {
         self.total_calls += 1;
-        self.state.call_index += 1;
+        self.call_index += 1;
 
-        let tname = format!("t{}", self.state.call_index);
+        let tname = format!("t{}", self.call_index);
         let raw_arg_values = (0..4)
             .map(|r| {
                 self.state
