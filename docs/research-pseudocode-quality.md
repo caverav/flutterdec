@@ -54,8 +54,8 @@ flutterdec decompile LocalSend-1.17.0-android-arm64v8.apk -o out \
   --max-indirect-call-ratio 1.0 --min-disassembly-ratio 0.0
 ```
 
-ABI claims are checked against the Dart SDK source, never inferred from output
-alone. Every constant used here was re-verified against tag `3.11.0`
+Figures are from the merged branch tip, rebuilt in a clean clone. ABI claims are
+checked against the Dart SDK source, never inferred from output alone. Every constant used here was re-verified against tag `3.11.0`
 (`runtime/vm/constants_arm64.h`, `dispatch_table.h`, `raw_object.h`,
 `stack_frame_arm64.h`, `compiler/runtime_offsets_extracted.h`,
 `compiler/backend/flow_graph_compiler_arm64.cc`,
@@ -483,7 +483,7 @@ Result, against this branch before the change:
 
 | | before R1 | with R1 |
 |---|---|---|
-| pseudocode lines | 628,929 | **486,136** |
+| pseudocode lines | 628,929 | **485,455** |
 | emitted call statements | 109,729 | **83,245** |
 | inflation | 3.03x | **2.28x** |
 | duplicate-line fraction | 67.9% | 62.0% |
