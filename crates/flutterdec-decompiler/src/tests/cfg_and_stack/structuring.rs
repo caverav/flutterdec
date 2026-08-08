@@ -980,3 +980,35 @@ fn reserved_registers_keep_their_meaning_but_the_stack_pointer_moves() {
         "a frame allocation must not leave the slot address unadjusted:\n{out}"
     );
 }
+/// Dart's `>>` is arithmetic, so a logical shift right needs `>>>`. The two
+/// differ on a negative value, and rendering `lsr` as `>>` claims a result the
+/// machine never produced.
+#[test]
+fn logical_and_arithmetic_right_shifts_render_differently() {
+    let ir = FunctionIr {
+        function_id: 930,
+        name: "shifts".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![blk(
+            0,
+            0x1000,
+            vec![
+                stmt(0x1000, "lsr x9, x1, #4"),
+                stmt(0x1004, "asr x10, x1, #4"),
+                stmt(0x1008, "stur x9, [x3, #7]"),
+                stmt(0x100c, "stur x10, [x3, #0xf]"),
+                ret(0x1010),
+            ],
+            vec![],
+        )],
+    };
+    let out = emit_pseudocode(&ir, &HashMap::new()).source;
+    assert!(
+        out.contains("(receiver >>> 4)"),
+        "a logical shift right is Dart's unsigned shift:\n{out}"
+    );
+    assert!(
+        out.contains("(receiver >> 4)"),
+        "an arithmetic shift right is Dart's signed shift:\n{out}"
+    );
+}

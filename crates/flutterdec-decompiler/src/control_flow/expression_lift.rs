@@ -314,9 +314,13 @@ impl<'a> FuncEmitter<'a> {
                 if let Some(dst) = canonical_reg(&ops[0]) {
                     let lhs = self.operand_expr(&ops[1]);
                     let rhs = self.operand_expr(&ops[2]);
+                    // Dart's `>>` is arithmetic, so `lsr` needs `>>>`: on a
+                    // negative value the two differ, and rendering a logical
+                    // shift as an arithmetic one claims a result the machine
+                    // never produced.
                     let op = match mnemonic.as_str() {
                         "lsl" => "<<",
-                        "lsr" => ">>",
+                        "lsr" => ">>>",
                         "asr" => ">>",
                         _ => "?",
                     };
