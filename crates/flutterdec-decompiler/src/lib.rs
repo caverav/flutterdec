@@ -42,6 +42,7 @@ struct FuncEmitter<'a> {
     locals: BTreeMap<i64, String>,
     block_by_id: HashMap<usize, &'a BasicBlock>,
     va_to_id: HashMap<u64, usize>,
+    dispatch_calls: HashMap<u64, DispatchCall>,
 
     emitted: HashSet<usize>,
     active_stack: Vec<usize>,
@@ -117,6 +118,7 @@ impl<'a> FuncEmitter<'a> {
             locals,
             block_by_id,
             va_to_id,
+            dispatch_calls: dispatch_table_calls(ir),
             emitted: HashSet::new(),
             active_stack: Vec::new(),
             inline_visits: HashMap::new(),

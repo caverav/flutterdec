@@ -304,7 +304,7 @@ impl<'a> FuncEmitter<'a> {
         None
     }
 
-    pub(super) fn emit_call(&mut self, ins_target: &str, indent: usize) {
+    pub(super) fn emit_call(&mut self, ins_target: &str, va: u64, indent: usize) {
         self.total_calls += 1;
         self.state.call_index += 1;
 
@@ -349,6 +349,44 @@ impl<'a> FuncEmitter<'a> {
             self.indirect_calls += 1;
             self.raw_register_calls += 1;
 
+            // A dispatch-table call names its selector in the instruction
+            // stream. That is recovered, not guessed, so it takes precedence
+            // over every heuristic below.
+            if let Some(dispatch) = self.dispatch_calls.get(&va) {
+                let selector = dispatch_selector_name(dispatch.selector_offset);
+                let receiver = dispatch
+                    .receiver
+                    .as_ref()
+                    .map(|reg| self.lookup_reg(reg))
+                    .unwrap_or_else(|| "dispatch".to_string());
+                // Only argument registers the call site actually defined, in
+                // `DartCallingConvention` order. A lower bound on the real
+                // argument list: stack-passed arguments are not modelled, and a
+                // pass-through parameter defined in an earlier block is missed.
+                let dispatch_args = dispatch
+                    .argument_registers
+                    .iter()
+                    .map(|reg| self.annotate_pool_refs(&self.lookup_reg(reg)))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                self.dispatch_selector_calls += 1;
+                // The argument list is never claimed to be complete, so an
+                // empty one is not read as a recovered zero-arity method.
+                let arity = if dispatch.argument_registers.is_empty() {
+                    "args: unknown"
+                } else {
+                    "args: lower bound"
+                };
+                self.push_line(
+                    indent,
+                    &format!(
+                        "final {} = {}.{}({}); // dispatch table, selector_offset: {}, {}",
+                        tname, receiver, selector, dispatch_args, dispatch.selector_offset, arity
+                    ),
+                );
+                self.state.reg_values.insert("x0".to_string(), tname);
+                return;
+            }
             let named_target = named_indirect_target(&target);
             let target_value = self
                 .state
@@ -639,7 +677,7 @@ impl<'a> FuncEmitter<'a> {
         for ins in &block.instrs {
             match ins.op {
                 IROp::Call => {
-                    self.emit_call(&ins.target, indent);
+                    self.emit_call(&ins.target, ins.va, indent);
                 }
                 IROp::LoadPool => {
                     let ops = split_operands(&ins.src);
