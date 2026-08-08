@@ -1133,6 +1133,16 @@ marker on LocalSend, 12.5% of the count but 58% of the emitted lines, and their
 unresolved-register density goes from 0.133 to 0.293 per line. That is the honest
 price of emitting a shared block once without knowing which path reached it.
 
+Worth being precise about what the tightening bought, since it is easy to assume
+it was the point. Dropping every register the function writes, rather than only
+those written by blocks that can reach the join, gives 96,839 against 95,659: the
+backward-reachable set saves 1,180 references, 1.2%. In a CFG complex enough to
+reach the fallback, nearly every block can reach nearly every join, so the
+narrower set is structural insurance rather than a measured saving. It is still
+the right rule, because the looser one would wipe state at joins in a small
+fallback function where it is not warranted, but it did not buy the readability
+back.
+
 ### Shifted operands changed the value
 
 ARM64 lets the last source operand carry a shift or an extend, and both were
