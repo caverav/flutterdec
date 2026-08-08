@@ -417,6 +417,7 @@ impl<'a> FuncEmitter<'a> {
                         tname, receiver, selector, dispatch_args, dispatch.selector_offset, arity
                     ),
                 );
+                self.clobber_call_registers();
                 self.state.reg_values.insert("x0".to_string(), tname);
                 return;
             }
@@ -679,7 +680,31 @@ impl<'a> FuncEmitter<'a> {
                 ),
             );
         }
+        self.clobber_call_registers();
         self.state.reg_values.insert("x0".to_string(), tname);
+    }
+
+    /// Drop the bindings a call does not preserve.
+    ///
+    /// Called after the arguments, selector context and callee target have all
+    /// been resolved, because `blr x16`/`x17`/`x30` read registers in this set.
+    ///
+    /// Without it a value set before a call still read as that value after it.
+    /// `mov x0, x22` followed by a call left x0 bound to `null`, so a later
+    /// `[x0, #-1]` rendered `null._tag`: a header read off null, which cannot
+    /// happen and reads as resolved fact rather than as a gap. 2,497 such reads
+    /// on one sample, against a single genuine load off NULL_REG in the whole
+    /// binary.
+    fn clobber_call_registers(&mut self) {
+        for reg in CALL_CLOBBERED_REGISTERS {
+            self.state.reg_values.remove(*reg);
+        }
+        // NZCV is caller-saved, so a call does not preserve the comparison
+        // either. Left set, `cmp` then a call then `b.eq` rendered the pre-call
+        // comparison as the condition, which is the same stale-flag class as an
+        // unmodelled flag writer and feeds the structurer.
+        self.state.last_cmp = None;
+        self.state.selector_hints.clear();
     }
 
     pub(super) fn emit_block(&mut self, id: usize, indent: usize, depth: usize) {

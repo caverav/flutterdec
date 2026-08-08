@@ -718,14 +718,14 @@ fn residual_shifted_pool_syntax_reports_displacement_and_does_not_resolve() {
                 LlirInstr {
                     va: 0xf640,
                     op: IROp::Other,
-                    src: "mov x21, ((pool + 8 /* lsl #12 */)).f3640".to_string(),
+                    src: "mov x9, ((pool + 8 /* lsl #12 */)).f3640".to_string(),
                     target: String::new(),
                 },
                 LlirInstr {
                     va: 0xf644,
                     op: IROp::Call,
-                    src: "blr x21".to_string(),
-                    target: "x21".to_string(),
+                    src: "blr x9".to_string(),
+                    target: "x9".to_string(),
                 },
                 LlirInstr {
                     va: 0xf648,

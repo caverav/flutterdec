@@ -177,6 +177,27 @@ impl<'a> FuncEmitter<'a> {
                     self.state.reg_values.insert(dst, rhs);
                 }
             }
+            // Compressed-pointer decompression. These binaries use compressed
+            // pointers: a reference field is a 32-bit offset from the heap base,
+            // loaded with `ldur w`, and `x28` is HEAP_BITS, whose high half is
+            // `heap_base >> 32` (`runtime/vm/constants_arm64.h`), so
+            // `add rD, rS, x28, lsl #32` reconstructs the full pointer.
+            //
+            // The Dart-level value does not change, so the add is transparent
+            // and the destination reads as whatever the compressed load read.
+            // 65,759 and 103,731 sites, and 87% of every 32-bit load feeds one,
+            // so rendering it as arithmetic put `+ (reg28 << 0x20)` inside a
+            // quarter of all field reads.
+            "add"
+                if ops.len() == 4
+                    && canonical_reg(&ops[2]).as_deref() == Some("x28")
+                    && ops[3].trim().eq_ignore_ascii_case("lsl #32") =>
+            {
+                if let Some(dst) = canonical_reg(&ops[0]) {
+                    let value = self.operand_expr(&ops[1]);
+                    self.state.reg_values.insert(dst, value);
+                }
+            }
             // `kTrueOffsetFromNull` and `kFalseOffsetFromNull`
             // (`runtime/vm/pointer_tagging.h`): the two canonical bools sit at
             // fixed offsets from null, so Dart materialises them by adding to
@@ -226,45 +247,44 @@ impl<'a> FuncEmitter<'a> {
             // both bools materialised into the arms, which is Dart turning a
             // comparison into a value.
             "csel" | "cset" | "csetm" if ops.len() >= 2 => {
-                let Some(dst) = canonical_reg(&ops[0]) else {
-                    return;
-                };
-                let cond = ops[ops.len() - 1].trim().to_ascii_lowercase();
-                // Without a comparison in hand the condition cannot be named,
-                // and naming it wrongly is worse than reporting the gap.
-                let Some(cmp) = self.state.last_cmp.clone() else {
-                    self.state.reg_values.remove(&dst);
-                    return;
-                };
-                let Some(taken) = cond_from_cmp(&format!("b.{cond}"), &cmp) else {
-                    self.state.reg_values.remove(&dst);
-                    return;
-                };
-                let value = match mnemonic.as_str() {
-                    "cset" => format!("({taken}) ? 1 : 0"),
-                    "csetm" => format!("({taken}) ? -1 : 0"),
-                    _ if ops.len() < 4 => {
-                        self.state.reg_values.remove(&dst);
-                        return;
-                    }
-                    _ => {
-                        let lhs = self.operand_expr(&ops[1]);
-                        let rhs = self.operand_expr(&ops[2]);
-                        // Operand order carries the polarity, so read which arm
-                        // holds which bool rather than assuming a fixed one.
-                        match (lhs.as_str(), rhs.as_str()) {
-                            ("true", "false") => format!("({taken})"),
-                            ("false", "true") => match invert_cond(&cond)
-                                .and_then(|inv| cond_from_cmp(&format!("b.{inv}"), &cmp))
-                            {
-                                Some(not_taken) => format!("({not_taken})"),
-                                None => format!("({taken}) ? false : true"),
-                            },
-                            _ => format!("({taken}) ? {lhs} : {rhs}"),
-                        }
-                    }
-                };
-                self.state.reg_values.insert(dst, value);
+                if let Some(dst) = canonical_reg(&ops[0]) {
+                    let cond = ops[ops.len() - 1].trim().to_ascii_lowercase();
+                    // Without a comparison in hand the condition cannot be
+                    // named, and naming it wrongly is worse than the gap.
+                    let named = self
+                        .state
+                        .last_cmp
+                        .clone()
+                        .and_then(|cmp| {
+                            cond_from_cmp(&format!("b.{cond}"), &cmp).map(|taken| (cmp, taken))
+                        })
+                        .and_then(|(cmp, taken)| match mnemonic.as_str() {
+                            "cset" => Some(format!("({taken}) ? 1 : 0")),
+                            "csetm" => Some(format!("({taken}) ? -1 : 0")),
+                            _ if ops.len() < 4 => None,
+                            _ => {
+                                let lhs = self.operand_expr(&ops[1]);
+                                let rhs = self.operand_expr(&ops[2]);
+                                // Operand order carries the polarity, so read
+                                // which arm holds which bool rather than
+                                // assuming a fixed one.
+                                Some(match (lhs.as_str(), rhs.as_str()) {
+                                    ("true", "false") => format!("({taken})"),
+                                    ("false", "true") => match invert_cond(&cond)
+                                        .and_then(|inv| cond_from_cmp(&format!("b.{inv}"), &cmp))
+                                    {
+                                        Some(not_taken) => format!("({not_taken})"),
+                                        None => format!("({taken}) ? false : true"),
+                                    },
+                                    _ => format!("({taken}) ? {lhs} : {rhs}"),
+                                })
+                            }
+                        });
+                    match named {
+                        Some(value) => self.state.reg_values.insert(dst, value),
+                        None => self.state.reg_values.remove(&dst),
+                    };
+                }
             }
             "add" | "sub" | "mul" | "and" | "orr" | "eor" if ops.len() >= 3 => {
                 if let Some(dst) = canonical_reg(&ops[0]) {
@@ -310,29 +330,46 @@ impl<'a> FuncEmitter<'a> {
                     let src = self.operand_expr(&ops[1]);
                     let lsb = self.operand_expr(&ops[2]);
                     let width = self.operand_expr(&ops[3]);
-                    self.state
-                        .reg_values
-                        .insert(dst, format!("bitField({}, {}, {})", src, lsb, width));
+                    // A full-width extract from bit zero is a zero extension,
+                    // which reads better as the mask it is. 6,289 sites.
+                    let value = if parse_int(&lsb) == Some(0) && parse_int(&width) == Some(32) {
+                        format!("({src} & 0xffffffff)")
+                    } else {
+                        format!("bitField({src}, {lsb}, {width})")
+                    };
+                    self.state.reg_values.insert(dst, value);
                 }
             }
-            // Signed field extract and its insert form. Named rather than
-            // expanded into shifts: `sbfiz rd, rs, #l, #w` sign-extends from
-            // bit `l + w`, not from `w`, and an arithmetic rendering that gets
-            // that wrong reads as resolved. 34,161 sites across both samples,
-            // every one of which used to leave a stale value behind.
+            // Signed field extract and its insert form.
+            //
+            // `SmiUntag` is `sbfm(dst, src, kSmiTagSize, kSmiBits + kSmiTagSize)`
+            // (`compiler/assembler/assembler_arm64.h`), so it is the only
+            // producer of a signed extract at bit 1 whose width is `kSmiBits+1`:
+            // 31 under compressed pointers, 63 without. Both are accepted rather
+            // than the 31 these two binaries happen to use, so the rule does not
+            // encode a build configuration. 25,899 sites across both samples.
+            //
+            // The insert form at the same position is the tag: `BoxInteger32`
+            // and `BoxInt64` (`compiler/backend/il_arm64.cc`) emit it and then
+            // compare the input against the result shifted back, which is why
+            // every one of the 8,262 sites is followed by exactly that compare.
+            // Anything else keeps the generic name, because `sbfiz rd, rs, #l,
+            // #w` sign-extends from bit `l + w`, not from `w`, and an arithmetic
+            // rendering that gets that wrong reads as resolved.
             "sbfx" | "sbfiz" if ops.len() >= 4 => {
                 if let Some(dst) = canonical_reg(&ops[0]) {
                     let src = self.operand_expr(&ops[1]);
                     let lsb = self.operand_expr(&ops[2]);
                     let width = self.operand_expr(&ops[3]);
-                    let name = if mnemonic == "sbfx" {
-                        "signedBitField"
-                    } else {
-                        "signedBitFieldInsert"
+                    let smi_position =
+                        parse_int(&lsb) == Some(1) && matches!(parse_int(&width), Some(31) | Some(63));
+                    let value = match (mnemonic.as_str(), smi_position) {
+                        ("sbfx", true) => format!("smiUntag({src})"),
+                        ("sbfx", false) => format!("signedBitField({src}, {lsb}, {width})"),
+                        (_, true) => format!("smiTag({src})"),
+                        _ => format!("signedBitFieldInsert({src}, {lsb}, {width})"),
                     };
-                    self.state
-                        .reg_values
-                        .insert(dst, format!("{name}({src}, {lsb}, {width})"));
+                    self.state.reg_values.insert(dst, value);
                 }
             }
             // Byte and half-word loads read the same field as `ldr`; the width
@@ -479,6 +516,16 @@ impl<'a> FuncEmitter<'a> {
                 if writes_flags(&mnemonic) {
                     self.state.last_cmp = None;
                 }
+            }
+        }
+
+        // A reserved register keeps its meaning even where AOT re-derives it.
+        // HEAP_BITS is reloaded from THR inside 157 functions on one sample,
+        // which would otherwise rebind `heapBits` to the reload expression and
+        // lose the one thing known about the register.
+        for reg in written_registers(&mnemonic, &ops) {
+            if let Some(value) = pinned_value(&reg) {
+                self.state.reg_values.insert(reg, value.to_string());
             }
         }
     }

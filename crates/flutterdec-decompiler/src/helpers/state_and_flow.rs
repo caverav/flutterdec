@@ -36,6 +36,50 @@ pub(super) fn collect_stack_offsets(ir: &FunctionIr) -> BTreeSet<i64> {
     out
 }
 
+/// Registers Dart AOT reserves whose value is the same at every point in a
+/// function, and the value each holds.
+///
+/// `kReservedCpuRegisters` (`runtime/vm/constants_arm64.h`) excludes these from
+/// `kDartAvailableCpuRegs`, so no Dart value is ever allocated to one. TMP,
+/// TMP2, LR and CODE_REG are reserved too but hold no fixed value, so they are
+/// deliberately absent: naming them would be a claim where `regN` is the truth.
+///
+/// SPREG is reserved but *not* invariant, so it is absent as well. 47,412
+/// instructions across 5,149 functions on one sample write it, `sub x15, x15,
+/// #N` to open a frame and `mov x15, x29` to close one. Pinning it rendered
+/// `[x15, #8]` after a frame allocation as `sp[8]` when the address is
+/// `sp - frame + 8`, which is a wrong address rather than a missing one.
+///
+/// AOT does re-derive HEAP_BITS inside a body, 639 instructions across 157
+/// functions on one sample, restoring the same constant from THR. A write must
+/// therefore not rebind these, which is why `apply_other_lift` re-asserts them.
+pub(super) const PINNED_REGISTERS: &[(&str, &str)] = &[
+    ("x21", "dispatchTable"),
+    ("x22", "null"),
+    ("x26", "thread"),
+    ("x27", "pool"),
+    ("x28", "heapBits"),
+];
+
+/// The fixed value a reserved register holds, if it is one.
+pub(super) fn pinned_value(reg: &str) -> Option<&'static str> {
+    PINNED_REGISTERS
+        .iter()
+        .find(|(name, _)| *name == reg)
+        .map(|(_, value)| *value)
+}
+
+/// Registers a Dart call does not preserve.
+///
+/// `kDartVolatileCpuRegs` (`runtime/vm/constants_arm64.h`) is R0 through R14;
+/// the assembler uses TMP and TMP2 at will, R18 is volatile off Fuchsia, and
+/// the call itself writes LR. R19 through R28 are `kAbiPreservedCpuRegs` and
+/// SPREG is preserved, so a binding for one of those survives a call.
+pub(super) const CALL_CLOBBERED_REGISTERS: &[&str] = &[
+    "x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7", "x8", "x9", "x10", "x11", "x12", "x13", "x14",
+    "x16", "x17", "x18", "x30",
+];
+
 pub(super) fn init_state() -> LiftState {
     let mut s = LiftState::default();
     // Incoming arguments, in `DartCallingConvention` order. x0 is the return
@@ -46,12 +90,13 @@ pub(super) fn init_state() -> LiftState {
     for (i, reg) in DART_ARGUMENT_REGISTERS.iter().enumerate() {
         s.reg_values.insert((*reg).to_string(), format!("arg{i}"));
     }
-    // Registers Dart AOT reserves, so their value is the same everywhere.
+    for (reg, value) in PINNED_REGISTERS {
+        s.reg_values.insert((*reg).to_string(), (*value).to_string());
+    }
+    // SPREG on entry. Seeded but not pinned: the prologue's `sub x15, x15, #N`
+    // must rebind it so slot addresses account for the frame, while the entry
+    // value is what makes an unadjusted `[x15, #N]` read as `sp[N]`.
     s.reg_values.insert("x15".to_string(), "sp".to_string());
-    s.reg_values.insert("x21".to_string(), "dispatchTable".to_string());
-    s.reg_values.insert("x22".to_string(), "null".to_string());
-    s.reg_values.insert("x26".to_string(), "thread".to_string());
-    s.reg_values.insert("x27".to_string(), "pool".to_string());
     s
 }
 

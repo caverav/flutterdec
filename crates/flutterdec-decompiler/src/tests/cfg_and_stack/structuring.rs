@@ -829,3 +829,154 @@ fn load_pair_frame_slots_are_declared() {
         );
     }
 }
+
+/// A register that is `true` on one path into a join and `false` on the other is
+/// a phi. No single value describes it after the join, so the binding must not
+/// survive: Dart AOT only emits a bit-4 bool test on a value it could not fold,
+/// so a literal reaching such a test means the emitter invented the operand.
+#[test]
+fn a_bool_phi_does_not_survive_its_join() {
+    let ir = FunctionIr {
+        function_id: 1010,
+        name: "boolPhi".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![
+            blk(0, 0x1000, vec![cbz(0x1000, "x1", 0x3000)], vec![1, 2]),
+            // Two arms materialise opposite bools into the same register.
+            blk(1, 0x2000, vec![stmt(0x2000, "add x9, x22, #0x20")], vec![3]),
+            blk(2, 0x3000, vec![stmt(0x3000, "add x9, x22, #0x30")], vec![3]),
+            // The join, then a single-predecessor chain to the test.
+            blk(3, 0x4000, vec![stmt(0x4000, "mov x10, x2")], vec![4]),
+            blk(
+                4,
+                0x5000,
+                vec![LlirInstr {
+                    va: 0x5000,
+                    op: IROp::Branch,
+                    src: "tbnz w9, #4, #0x7000".to_string(),
+                    target: "#0x7000".to_string(),
+                }],
+                vec![5, 6],
+            ),
+            blk(5, 0x6000, vec![stmt(0x6000, "stur x10, [x3, #7]"), ret(0x6004)], vec![]),
+            blk(6, 0x7000, vec![ret(0x7000)], vec![]),
+        ],
+    };
+    let out = emit_pseudocode(&ir, &HashMap::new()).source;
+    let leaked = out.contains("(true >> 4)") || out.contains("(false >> 4)");
+    assert!(
+        !leaked,
+        "a bool phi must not reach the test as a literal:\n{out}"
+    );
+}
+/// `SmiUntag` is `sbfm(dst, src, kSmiTagSize, kSmiBits + kSmiTagSize)`, so the
+/// width is `kSmiBits + 1`: 31 under compressed pointers and 63 without. Both
+/// are named, so the rule does not encode which build produced the binary. Any
+/// other position keeps the generic name, because the arithmetic differs.
+#[test]
+fn signed_extract_at_the_smi_position_is_named_untag() {
+    let extract = |lsb: &str, width: &str| {
+        let ir = FunctionIr {
+            function_id: 920,
+            name: "smiForms".to_string(),
+            entry_va: 0x1000,
+            blocks: vec![blk(
+                0,
+                0x1000,
+                vec![
+                    stmt(0x1000, &format!("sbfx x9, x1, #{lsb}, #{width}")),
+                    stmt(0x1004, "stur x9, [x3, #7]"),
+                    ret(0x1008),
+                ],
+                vec![],
+            )],
+        };
+        emit_pseudocode(&ir, &HashMap::new()).source
+    };
+    let compressed = extract("1", "0x1f");
+    assert!(
+        compressed.contains("smiUntag(receiver)"),
+        "width 31 at bit 1 is a Smi untag:\n{compressed}"
+    );
+    let uncompressed = extract("1", "0x3f");
+    assert!(
+        uncompressed.contains("smiUntag(receiver)"),
+        "width 63 at bit 1 is the same untag without compressed pointers:\n{uncompressed}"
+    );
+    let other = extract("0xc", "0x14");
+    assert!(
+        other.contains("signedBitField(receiver, 0xc, 0x14)"),
+        "any other position keeps the arithmetic rendering:\n{other}"
+    );
+}
+
+/// Under compressed pointers a reference field is a 32-bit offset from the heap
+/// base and `x28` holds `heap_base >> 32`, so `add rD, rS, x28, lsl #32` only
+/// reconstructs the pointer. The Dart-level value is the field itself.
+#[test]
+fn pointer_decompression_is_transparent() {
+    let ir = FunctionIr {
+        function_id: 921,
+        name: "decompress".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![blk(
+            0,
+            0x1000,
+            vec![
+                stmt(0x1000, "ldur w9, [x1, #7]"),
+                stmt(0x1004, "add x9, x9, x28, lsl #32"),
+                stmt(0x1008, "stur x9, [x3, #7]"),
+                ret(0x100c),
+            ],
+            vec![],
+        )],
+    };
+    let out = emit_pseudocode(&ir, &HashMap::new()).source;
+    assert!(
+        out.contains("= (receiver.f8);") || out.contains("= receiver.f8;"),
+        "decompression should leave the field read alone:\n{out}"
+    );
+    assert!(
+        !out.contains("<< 0x20"),
+        "the decompression must not appear as arithmetic:\n{out}"
+    );
+}
+
+/// HEAP_BITS is reserved and re-derived from THR inside function bodies, so a
+/// write must not rebind it. SPREG is reserved too but genuinely changes, so it
+/// must stay rebindable or slot addresses lose the frame offset.
+#[test]
+fn reserved_registers_keep_their_meaning_but_the_stack_pointer_moves() {
+    let ir = FunctionIr {
+        function_id: 922,
+        name: "reserved".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![blk(
+            0,
+            0x1000,
+            vec![
+                stmt(0x1000, "ldr x28, [x26, #0x50]"),
+                stmt(0x1004, "orr x28, x28, x16, lsr #32"),
+                stmt(0x1008, "sub x15, x15, #0x40"),
+                stmt(0x100c, "stur x28, [x3, #7]"),
+                stmt(0x1010, "ldur x9, [x15, #8]"),
+                stmt(0x1014, "stur x9, [x3, #0xf]"),
+                ret(0x1018),
+            ],
+            vec![],
+        )],
+    };
+    let out = emit_pseudocode(&ir, &HashMap::new()).source;
+    assert!(
+        out.contains("heapBits"),
+        "a reload of HEAP_BITS must not rebind it:\n{out}"
+    );
+    assert!(
+        !out.contains("thread.f80"),
+        "the reload expression must not replace the pinned meaning:\n{out}"
+    );
+    assert!(
+        !out.contains("sp[8]"),
+        "a frame allocation must not leave the slot address unadjusted:\n{out}"
+    );
+}

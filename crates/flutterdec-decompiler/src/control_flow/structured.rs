@@ -536,12 +536,20 @@ impl<'a> FuncEmitter<'a> {
         written
     }
 
-    /// Drop register bindings that a merge cannot attribute to one path. The ABI
-    /// registers hold the same value everywhere, and a register no path in the
-    /// merged region writes still holds whatever it held on entry.
+    /// Drop register bindings that a merge cannot attribute to one path. A
+    /// register no path in the merged region writes still holds whatever it held
+    /// on entry, and a reserved register holds the same value everywhere.
+    ///
+    /// SPREG is exempt for a different reason, and the distinction matters. It
+    /// is not pinned, because the prologue's `sub x15, x15, #N` genuinely
+    /// changes it and the frame offset has to be tracked or slot addresses come
+    /// out wrong. But frames are balanced, so every path into a join leaves the
+    /// same stack pointer: the write that changes it is in the prologue, which
+    /// dominates. Dropping it here instead costs 11,717 stack slot references,
+    /// which degrade to `reg15` for no correctness gain.
     fn merge_state_at_join(&mut self, written: &HashSet<String>) {
         self.state.reg_values.retain(|reg, _| {
-            matches!(reg.as_str(), "x15" | "x21" | "x22" | "x26" | "x27") || !written.contains(reg)
+            pinned_value(reg).is_some() || reg == "x15" || !written.contains(reg)
         });
         self.state.last_cmp = None;
         self.state.selector_hints.clear();
