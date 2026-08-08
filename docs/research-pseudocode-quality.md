@@ -1220,3 +1220,61 @@ reachability is the blocker: of 95,964 and 135,995 field loads, the fraction who
 receiver class is identifiable from a nearby class-id check is 0% and 0.0007% on an
 exact adjacent triple, and 0.6% and 1.6% under a deliberately loose upper bound
 that overcounts. The dominant `obj.fN` noise waits on the snapshot field tables.
+
+## R10. Multi-instruction idioms, measured
+
+Single instructions are largely modelled now, so the remaining readability is in
+sequences. Each candidate below was located in the SDK and then counted in the
+disassembly of both samples, so the ranking is by evidence rather than by how
+appealing the rendering would be. Counts are IR instruction or window counts, not
+emitted lines.
+
+| idiom | LocalSend | Immich | status |
+|---|---|---|---|
+| write barrier check | 8,846 | 12,355 | **named** |
+| null check shared stub calls | 7,378 | 10,777 | gated on stub identity |
+| bounds check shared stub calls | 5,729 | 3,477 | gated on stub identity |
+| inline allocation fast path | 1,989 | 2,401 | gated on cid recovery |
+| type test stub calls | 967 | 1,605 | type not recoverable |
+| one-byte code unit read | 462 | 352 | below the bar |
+| two-byte code unit read | 0 | 0 | absent |
+
+### What landed
+
+The write barrier. `StoreBarrier` ends with `tst(scratch, HEAP_BITS LSR #32)`,
+whose high half is the barrier mask, and HEAP_BITS is reserved, so the recognition
+is exact by construction. See R9 for the two limits taken deliberately: only the
+comparison's left side is named, so the branch keeps its own polarity, and the
+argument is not reconstructed into `(object, value)`.
+
+### What is gated, and on what
+
+- **Null and bounds checks** are the largest remaining group, 13,107 and 14,254
+  calls between them. They are *direct calls to a handful of shared stub
+  addresses*, which is what makes them countable, and also what blocks naming
+  them: the mapping from address to stub kind was inferred from context and call
+  frequency, not derived. Naming `sub_d521f4` as a null-check throw on that
+  evidence would be a per-binary guess. What would make it sound is deriving the
+  address from the snapshot's stub table rather than recognising it by shape.
+- **Inline allocation** is `ldp result, end, [THR, top_offset]`, then add size,
+  compare, branch to the slow path, initialise the header. The sequence is exact
+  and spans a branch, so recognising it means matching across blocks. `allocate(n)`
+  is honest; `new <cid>()` needs the class id, which is in the tags word being
+  stored and would have to be tracked to the store.
+- **Type tests** call `slow_type_test_entry_point` through THR with the instance
+  in R0 and the destination type in R8 (`TypeTestABI`). The checked type is *not*
+  in that call: the two pool entries it reserves are the subtype cache and the
+  destination name. So the honest rendering names the operation and not the type,
+  and naming the operation at all needs the THR stub table, which is gated in R9.
+- **Element reads** distinguish width but not class. `Array` data sits at logical
+  `0x18` and both string kinds at `0x10`, so machine displacement `0xf` is shared
+  by one-byte and two-byte strings and only the load width separates them. A
+  displacement alone cannot name the class.
+
+### The shape of what is left
+
+Every remaining item is blocked on the same two things, and neither is a pattern
+problem. Naming a runtime entry point needs the (hash, mode) stub table. Naming a
+field or a class needs the snapshot's own tables. Both are data the binary
+contains and the decompiler does not yet read, which is why the answer to the
+dominant `obj.fN` noise is not a better heuristic.
