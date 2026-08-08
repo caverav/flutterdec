@@ -444,6 +444,78 @@ mod tests {
         );
     }
 
+    /// `Thread::stack_limit_offset` moves between SDK releases: 0x38 through Dart
+    /// 3.5, 0x48 by 3.12, both observed in real binaries. The scratch register is
+    /// TMP or TMP2. Recognition keys on the shape, so none of that matters, and
+    /// this pins it: an offset-keyed matcher would silently recover nothing after
+    /// a version bump.
+    #[test]
+    fn recognises_the_guard_across_sdk_offsets_and_scratch_registers() {
+        for scratch in ["x16", "x17"] {
+            for offset in ["0x38", "0x48", "0x60"] {
+                let d = FunctionDisassembly {
+                    function_id: 9,
+                    function_name: "guarded".to_string(),
+                    owner_class: "Global".to_string(),
+                    entry_va: 0x1000,
+                    size: 20,
+                    instructions: vec![
+                        ins(0x1000, "ldr", &format!("{scratch}, [x26, #{offset}]")),
+                        ins(0x1004, "cmp", &format!("x15, {scratch}")),
+                        ins(0x1008, "b.ls", "#0x1014"),
+                        ins(0x100c, "mov", "x0, x1"),
+                        ins(0x1010, "ret", ""),
+                        ins(0x1014, "bl", "#0x9000"),
+                        ins(0x1018, "b", "#0x100c"),
+                    ],
+                };
+                let ir = build_function_ir(&d);
+                let ops: Vec<&IROp> = ir
+                    .blocks
+                    .iter()
+                    .flat_map(|b| b.instrs.iter().map(|i| &i.op))
+                    .collect();
+                assert_eq!(
+                    ops.iter().filter(|op| ***op == IROp::RuntimeCheck).count(),
+                    3,
+                    "guard with {scratch} and offset {offset} should be recognised"
+                );
+                assert!(
+                    !ops.contains(&&IROp::Call),
+                    "slow path should be elided for {scratch} at {offset}"
+                );
+            }
+        }
+    }
+
+    /// A compare of the Dart stack pointer against something that is not a THR
+    /// field is not the guard.
+    #[test]
+    fn does_not_treat_an_unrelated_stack_compare_as_the_guard() {
+        let d = FunctionDisassembly {
+            function_id: 10,
+            function_name: "notGuarded".to_string(),
+            owner_class: "Global".to_string(),
+            entry_va: 0x1000,
+            size: 12,
+            instructions: vec![
+                // Loaded from the object pool, not from THR.
+                ins(0x1000, "ldr", "x16, [x27, #0x38]"),
+                ins(0x1004, "cmp", "x15, x16"),
+                ins(0x1008, "b.ls", "#0x1010"),
+                ins(0x100c, "ret", ""),
+                ins(0x1010, "ret", ""),
+            ],
+        };
+        let ir = build_function_ir(&d);
+        assert!(
+            !ir.blocks
+                .iter()
+                .any(|b| b.instrs.iter().any(|i| i.op == IROp::RuntimeCheck)),
+            "only a THR field load is the guard"
+        );
+    }
+
     /// A `ret` ends a basic block. Without that, a trailing slow path is glued
     /// onto the returning block and its jump becomes that block's terminator.
     #[test]

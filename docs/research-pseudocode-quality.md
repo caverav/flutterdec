@@ -40,7 +40,7 @@ All figures come from one real target, measured end to end:
 | | |
 |---|---|
 | target | LocalSend 1.17.0, `lib/arm64-v8a/libapp.so` (14 MB) |
-| snapshot hash | `80a49c7111088100a233b2ae788e1f48` |
+| snapshot hash | `80a49c7111088100a233b2ae788e1f48`, Dart 3.5.0 |
 | backend | internal (`dynamic_snapshot_string_model_v1`), no blutter, no r2flutter |
 | function records | 5,800 |
 | decoded instructions | 1,720,627 |
@@ -63,12 +63,45 @@ checked against the Dart SDK source, never inferred from output alone. Every con
 dispatch-table codegen and `kOriginElement` are unchanged from 3.9.
 
 One constant is not stable, and it matters. `Thread::stack_limit_offset` is
-`0x38` in 3.9 and `0x48` in 3.11 (AOT, ARM64, compressed pointers); `top` moves
-`0x50` to `0x60`, `end` `0x58` to `0x68`, `dispatch_table_array` `0x60` to
-`0x70`. The sampled binary uses the 3.9 values. Any recogniser keyed on a
-literal `THR` displacement therefore silently stops working on a version bump,
-which is why the guard recogniser below matches on instruction shape and leaves
-the displacement free.
+`0x38` up to Dart 3.5 and `0x48` by 3.11 (AOT, ARM64, compressed pointers);
+`top` moves `0x50` to `0x60`, `end` `0x58` to `0x68`, `dispatch_table_array`
+`0x60` to `0x70`. Any recogniser keyed on a literal `THR` displacement therefore
+silently stops working on a version bump, which is why the guard recogniser below
+matches on instruction shape and leaves the displacement free.
+
+### Cross-version check
+
+Every claim here was re-measured on a second, independent binary from a different
+SDK generation. Versions are resolved from the vendored snapshot-hash table added
+by #85.
+
+| | sample A | sample B |
+|---|---|---|
+| app | LocalSend 1.17.0 | Immich 3.1.0 |
+| snapshot hash | `80a49c7111088100a233b2ae788e1f48` | `ace654289f5abc240509fc941453ebc5` |
+| Dart | 3.5.0 | 3.12.1 |
+| function records | 5,800 | 8,329 |
+| decoded instructions | 1,720,627 | 2,458,430 |
+| `Thread::stack_limit_offset` | `0x38` | `0x48` |
+| guard occurrences, shape variants | 20,941, one | 30,557, one |
+| class-id `ubfx` (pos, width) | `(0xc, 0x14)` | `(0xc, 0x14)` |
+| dispatch sites with a recovered offset | 10,244 | 16,353 |
+| distinct selectors, negative offsets | 1,279, zero | 1,015, zero |
+| receiver resolved | 63.5% | 68.8% |
+| two-way branches, case analysis exhaustive | 40,154, yes | 49,709, yes |
+| structured without fallback | 73.2% | 74.6% |
+| out-of-scope value references | 0 | 0 |
+
+The guard offset differs between the two samples and the recogniser is unaffected,
+because it matches `ldr TMP, [THR, #any]` then `cmp SP, TMP` then `b.ls`, and that
+shape is the only thing in either corpus that compares the Dart stack pointer
+against a register. An offset-keyed matcher would have recovered nothing on sample
+B. The class-id bitfield has not moved between these two releases, but recognition
+does not depend on it either.
+
+Zero negative selector offsets on two binaries built by different SDKs, 2,294
+independently derived values in total, is the strongest available check on the
+offset arithmetic without a ground-truth selector table.
 
 ### The counters in `quality.json` cannot measure this
 
