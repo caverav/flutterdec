@@ -143,9 +143,8 @@ written to report.json under target_selection."
         long_help = "\
 Which functions to include.
 
-  app-unknown  app (package:*) plus functions of unknown ownership [default]
-  app          only app (package:*) functions
-  all          also include Flutter, Dart runtime, and framework internals"
+Scope filters apply to every emitted artifact. Use --app-package to narrow
+further within a scope."
     )]
     function_scope: FunctionScopeArg,
     /// Restrict to this Dart package, as in package:<NAME>/... (repeatable)
@@ -166,12 +165,9 @@ Which functions to include.
         long_help = "\
 Which snapshot adapter backend to use.
 
-  auto      try the Blutter bridge when configured, else the internal adapter
-  internal  force the internal adapter
-  blutter   require the Blutter bridge, with no fallback
-
-The Blutter bridge is located via FLUTTERDEC_BLUTTER_CMD (a full command) or
-FLUTTERDEC_BLUTTER_PY (a path to blutter.py)."
+Backends are located through the environment: FLUTTERDEC_R2FLUTTER_BIN or
+FLUTTERDEC_R2FLUTTER_CMD for r2flutter, and FLUTTERDEC_BLUTTER_CMD or
+FLUTTERDEC_BLUTTER_PY for the Blutter bridge."
     )]
     adapter_backend: AdapterBackendArg,
     /// Fail if the adapter and loader disagree on the snapshot hash
@@ -186,9 +182,6 @@ FLUTTERDEC_BLUTTER_PY (a path to blutter.py)."
         help_heading = "Analysis engine",
         long_help = "\
 Analysis depth versus throughput.
-
-  balanced  best readability and semantic recovery [default]
-  light     reduced analysis, for faster large-scale runs
 
 Individual passes can be forced on or off with the --with-*/--no-* flags,
 which override whichever profile is selected."
@@ -320,7 +313,9 @@ struct DiffCmd {
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
 enum AnalysisProfileArg {
+    /// Reduced analysis, for faster large-scale runs
     Light,
+    /// Best readability and semantic recovery
     Balanced,
 }
 
@@ -335,10 +330,13 @@ impl AnalysisProfileArg {
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
 enum FunctionScopeArg {
+    /// App (package:*) plus functions of unknown ownership
     #[value(name = "app-unknown")]
     AppUnknown,
+    /// Only app (package:*) functions
     #[value(name = "app")]
     App,
+    /// Also include Flutter, Dart runtime, and framework internals
     #[value(name = "all")]
     All,
 }
@@ -355,11 +353,15 @@ impl FunctionScopeArg {
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
 enum AdapterBackendArg {
+    /// Try r2flutter, then the Blutter bridge, then the internal adapter
     Auto,
+    /// Force the internal adapter
     Internal,
+    /// Require the Blutter bridge, with no fallback
     Blutter,
-    /// Spelled `r2-flutter` by clap's derive; accept the tool's own spelling too, since
-    /// that is what the docs, `report.json` and the env vars all call it.
+    // Clap's derive spells this value `r2-flutter`; the alias accepts the tool's own
+    // spelling, which is what the docs, `report.json` and the env vars all use.
+    /// Require the r2flutter backend, with no fallback
     #[value(alias = "r2flutter")]
     R2Flutter,
 }
