@@ -293,8 +293,11 @@ impl<'a> FuncEmitter<'a> {
                     let src = self.shifted_operand_expr(&ops, 1);
                     let value = match mnemonic.as_str() {
                         "sxtw" => format!("signExtend({src}, 32)"),
-                        "neg" => format!("-{src}"),
-                        _ => format!("~{src}"),
+                        // Bracketed for the same reason as the conditionals: a
+                        // bare `-a + b` composed into a larger expression negates
+                        // only the first term.
+                        "neg" => format!("(-{src})"),
+                        _ => format!("(~{src})"),
                     };
                     self.state.reg_values.insert(dst, value);
                 }
@@ -415,8 +418,15 @@ impl<'a> FuncEmitter<'a> {
                             cond_from_cmp(&format!("b.{cond}"), &cmp).map(|taken| (cmp, taken))
                         })
                         .and_then(|(cmp, taken)| match mnemonic.as_str() {
-                            "cset" => Some(format!("({taken}) ? 1 : 0")),
-                            "csetm" => Some(format!("({taken}) ? -1 : 0")),
+                            // Every conditional value is bracketed. A bare
+                            // ternary composes wrongly: `?:` binds looser than
+                            // arithmetic, so `(c) ? 1 : 0 - 1` inside a mask read
+                            // as `c ? 1 : ((0 - 1) & mask)`. 195 of 282 ternaries
+                            // on one sample were composed into a larger
+                            // expression, so most of them rendered a value the
+                            // machine never computed.
+                            "cset" => Some(format!("(({taken}) ? 1 : 0)")),
+                            "csetm" => Some(format!("(({taken}) ? -1 : 0)")),
                             _ if ops.len() < 4 => None,
                             _ => {
                                 let lhs = self.operand_expr(&ops[1]);
@@ -430,9 +440,9 @@ impl<'a> FuncEmitter<'a> {
                                         .and_then(|inv| cond_from_cmp(&format!("b.{inv}"), &cmp))
                                     {
                                         Some(not_taken) => format!("({not_taken})"),
-                                        None => format!("({taken}) ? false : true"),
+                                        None => format!("(({taken}) ? false : true)"),
                                     },
-                                    _ => format!("({taken}) ? {lhs} : {rhs}"),
+                                    _ => format!("(({taken}) ? {lhs} : {rhs})"),
                                 })
                             }
                         });

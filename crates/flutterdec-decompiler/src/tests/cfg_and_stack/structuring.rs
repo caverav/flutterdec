@@ -1343,8 +1343,8 @@ fn computed_instruction_renderings_use_the_right_operands() {
     // x1, x2 and x3 are the first three Dart argument registers, so they read as
     // `receiver`, `param1` and `param2`.
     for (instruction, expected) in [
-        ("neg x9, x1", "-receiver"),
-        ("mvn x9, x1", "~receiver"),
+        ("neg x9, x1", "(-receiver)"),
+        ("mvn x9, x1", "(~receiver)"),
         ("sxtw x9, w1", "signExtend(receiver, 32)"),
         // Xd = Xa - Xn * Xm, with Xa the *last* operand.
         ("msub x9, x1, x2, x3", "(param2 - (receiver * param1))"),
@@ -1359,4 +1359,45 @@ fn computed_instruction_renderings_use_the_right_operands() {
             "`{instruction}` should render `{expected}`:\n{out}"
         );
     }
+}
+/// A conditional value has to be bracketed, because `?:` binds looser than
+/// arithmetic. Unbracketed, `(c) ? 1 : 0 - 1` inside a mask reads as
+/// `c ? 1 : ((0 - 1) & mask)`, which is a value the machine never computes, and
+/// on one sample 195 of 282 ternaries were composed into a larger expression.
+#[test]
+fn a_conditional_value_composes_without_rebinding() {
+    let ir = FunctionIr {
+        function_id: 971,
+        name: "composedSelect".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![blk(
+            0,
+            0x1000,
+            vec![
+                stmt(0x1000, "cmp x1, x2"),
+                stmt(0x1004, "cset x9, ne"),
+                // The conditional value is then consumed by arithmetic.
+                stmt(0x1008, "sub x9, x9, #1"),
+                stmt(0x100c, "and x9, x9, #0x7ce"),
+                stmt(0x1010, "stur x9, [x4, #7]"),
+                ret(0x1014),
+            ],
+            vec![],
+        )],
+    };
+    let out = emit_pseudocode(&ir, &HashMap::new()).source;
+    let line = out
+        .lines()
+        .find(|l| l.contains(" ? "))
+        .unwrap_or_default()
+        .to_string();
+    assert!(
+        line.contains("((receiver != param1) ? 1 : 0)"),
+        "the conditional must be bracketed before composing:\n{out}"
+    );
+    // The subtraction has to apply to the whole conditional, not to its false arm.
+    assert!(
+        !line.contains("? 1 : 0 -"),
+        "arithmetic must not bind into the false arm:\n{out}"
+    );
 }
