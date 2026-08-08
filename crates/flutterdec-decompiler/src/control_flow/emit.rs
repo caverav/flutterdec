@@ -85,7 +85,9 @@ impl<'a> FuncEmitter<'a> {
             &direct,
             &self.pool_value_hints,
             &self.pool_semantic_hints,
-        ) {
+        )
+        .or_else(|| infer_selector_candidate_from_context(&direct, &self.pool_value_hints))
+        {
             return Some(sel);
         }
 
@@ -111,7 +113,9 @@ impl<'a> FuncEmitter<'a> {
                 &nested,
                 &self.pool_value_hints,
                 &self.pool_semantic_hints,
-            ) {
+            )
+            .or_else(|| infer_selector_candidate_from_context(&nested, &self.pool_value_hints))
+            {
                 return Some(sel);
             }
             if let Some(key) = Self::selector_binding_key(cur) {
@@ -504,6 +508,12 @@ impl<'a> FuncEmitter<'a> {
                 );
             } else {
                 let mut comments = Vec::new();
+                if let Some(candidate) = infer_selector_candidate_from_context(
+                    &selector_context_values,
+                    &self.pool_value_hints,
+                ) {
+                    comments.push(format!("selector candidate, unverified: {candidate}"));
+                }
                 if named_target != "dispatchTarget" && target_value != named_target {
                     comments.push(format!(
                         "target: {}",

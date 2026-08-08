@@ -1019,8 +1019,8 @@ fn keeps_dispatch_fallback_for_plain_current_selector_name() {
     pool.insert(95u64, "current".to_string());
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
-        artifact.source.contains("dispatch.current(1, \"current\" /* pool[95] */, param2, param3); // selector: current, indirect via: indirectTarget9"),
-        "plain current selector should stay dispatch fallback to avoid false positives:\n{}",
+        artifact.source.contains("indirectTarget9(1, \"current\" /* pool[95] */, param2, param3); // selector candidate, unverified: current, indirect via: indirectTarget9"),
+        "plain current pool string must be reported as an unverified candidate rather than used as a method name:\n{}",
         artifact.source
     );
     assert!(
@@ -1133,8 +1133,8 @@ fn keeps_dispatch_fallback_for_plain_equivalent_year_selector_name() {
     pool.insert(97u64, "equivalentYear".to_string());
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
-        artifact.source.contains("dispatch.equivalentYear(1, \"equivalentYear\" /* pool[97] */, param2, param3); // selector: equivalentYear, indirect via: indirectTarget9"),
-        "plain equivalentYear selector should stay dispatch fallback to avoid false positives:\n{}",
+        artifact.source.contains("indirectTarget9(1, \"equivalentYear\" /* pool[97] */, param2, param3); // selector candidate, unverified: equivalentYear, indirect via: indirectTarget9"),
+        "plain equivalentYear pool string must be reported as an unverified candidate rather than used as a method name:\n{}",
         artifact.source
     );
     assert!(
@@ -1755,7 +1755,7 @@ fn annotates_pool_mapping_in_indirect_target_comment() {
 }
 
 #[test]
-fn rewrites_indirect_call_to_dispatch_selector_when_nonstandard() {
+fn reports_nonstandard_pool_string_as_unverified_candidate() {
     let ir = FunctionIr {
         function_id: 48,
         name: "indirectDispatchSelector".to_string(),
@@ -1794,9 +1794,9 @@ fn rewrites_indirect_call_to_dispatch_selector_when_nonstandard() {
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
         artifact.source.contains(
-            "dispatch.customAction(receiver, \"customAction@12345\" /* pool[12] */, param2, param3); // selector: customAction, indirect via: indirectTarget9"
+            "indirectTarget9(receiver, \"customAction@12345\" /* pool[12] */, param2, param3); // selector candidate, unverified: customAction, indirect via: indirectTarget9"
         ),
-        "nonstandard selector should still rewrite indirect call into dispatch.<selector> form:\n{}",
+        "nonstandard pool string must be reported as an unverified candidate rather than used as a method name:\n{}",
         artifact.source
     );
     assert!(
@@ -1807,7 +1807,7 @@ fn rewrites_indirect_call_to_dispatch_selector_when_nonstandard() {
 }
 
 #[test]
-fn rewrites_constructor_like_nonstandard_selector_to_new_call() {
+fn reports_constructor_like_pool_string_as_unverified_candidate() {
     let ir = FunctionIr {
         function_id: 481,
         name: "indirectCtorLikeSelector".to_string(),
@@ -1846,9 +1846,14 @@ fn rewrites_constructor_like_nonstandard_selector_to_new_call() {
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
         artifact.source.contains(
-            "AndroidPermission.new(receiver, \"AndroidPermission\" /* pool[13] */, param2, param3); // selector: AndroidPermission, heuristic: constructor-like selector, indirect via: indirectTarget9"
+            "indirectTarget9(receiver, \"AndroidPermission\" /* pool[13] */, param2, param3); // selector candidate, unverified: AndroidPermission, indirect via: indirectTarget9"
         ),
-        "constructor-like selector should render as .new fallback call:\n{}",
+        "constructor-like pool string must be reported as an unverified candidate rather than used as a method name:\n{}",
+        artifact.source
+    );
+    assert!(
+        !artifact.source.contains("AndroidPermission.new("),
+        "constructor-like pool string should not be rewritten as a constructor call:\n{}",
         artifact.source
     );
 }
@@ -1893,9 +1898,9 @@ fn keeps_dispatch_fallback_for_single_word_titlecase_selector() {
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
         artifact.source.contains(
-            "dispatch.Omiljeno(receiver, \"Omiljeno\" /* pool[19] */, param2, param3); // selector: Omiljeno, indirect via: indirectTarget9"
+            "indirectTarget9(receiver, \"Omiljeno\" /* pool[19] */, param2, param3); // selector candidate, unverified: Omiljeno, indirect via: indirectTarget9"
         ),
-        "single-word titlecase selectors should keep dispatch fallback:\n{}",
+        "single-word titlecase pool string must be reported as an unverified candidate rather than used as a method name:\n{}",
         artifact.source
     );
     assert!(
@@ -1945,9 +1950,9 @@ fn keeps_dispatch_fallback_for_acronym_like_selector_names() {
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
         artifact.source.contains(
-            "dispatch.TORRENT(receiver, \"TORRENT\" /* pool[14] */, param2, param3); // selector: TORRENT, indirect via: indirectTarget9"
+            "indirectTarget9(receiver, \"TORRENT\" /* pool[14] */, param2, param3); // selector candidate, unverified: TORRENT, indirect via: indirectTarget9"
         ),
-        "acronym-like selectors should keep dispatch fallback form:\n{}",
+        "acronym-like pool string must be reported as an unverified candidate rather than used as a method name:\n{}",
         artifact.source
     );
     assert!(
@@ -1997,9 +2002,9 @@ fn keeps_dispatch_fallback_for_builtin_type_selector_names() {
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
         artifact.source.contains(
-            "dispatch.Function(receiver, \"Function\" /* pool[15] */, param2, param3); // selector: Function, indirect via: indirectTarget9"
+            "indirectTarget9(receiver, \"Function\" /* pool[15] */, param2, param3); // selector candidate, unverified: Function, indirect via: indirectTarget9"
         ),
-        "builtin type selectors should keep dispatch fallback form:\n{}",
+        "builtin type pool string must be reported as an unverified candidate rather than used as a method name:\n{}",
         artifact.source
     );
     assert!(
@@ -2049,9 +2054,9 @@ fn resolves_dispatch_selector_from_string_prefixed_pool_value() {
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
         artifact.source.contains(
-            "dispatch.icon(receiver, \"String: \\\"icon\\\"\" /* pool[16] */, param2, param3); // selector: icon, indirect via: indirectTarget9"
+            "indirectTarget9(receiver, \"String: \\\"icon\\\"\" /* pool[16] */, param2, param3); // selector candidate, unverified: icon, indirect via: indirectTarget9"
         ),
-        "string-prefixed selector should resolve to dispatch.icon fallback:\n{}",
+        "string-prefixed pool string must be reported as an unverified candidate rather than used as a method name:\n{}",
         artifact.source
     );
 }
@@ -2211,12 +2216,14 @@ fn propagates_selector_hint_through_local_slot_assignment() {
     pool.insert(16u64, "String: \"icon\"".to_string());
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
-        artifact.source.contains("dispatch.icon("),
+        artifact.source.contains("selector candidate, unverified: icon"),
         "selector should survive local-slot temp traffic:\n{}",
         artifact.source
     );
     assert!(
-        artifact.source.contains("// selector: icon, indirect via: indirectTarget9"),
+        artifact
+            .source
+            .contains("// selector candidate, unverified: icon, indirect via: indirectTarget9"),
         "selector annotation should remain after local-slot load:\n{}",
         artifact.source
     );
@@ -2273,14 +2280,14 @@ fn propagates_selector_hint_through_stack_slot_assignment() {
     pool.insert(16u64, "String: \"icon\"".to_string());
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
-        artifact.source.contains("dispatch.icon("),
+        artifact.source.contains("selector candidate, unverified: icon"),
         "selector should survive stack-slot temp traffic:\n{}",
         artifact.source
     );
     assert!(
         artifact
             .source
-            .contains("// selector: icon, indirect via: indirectTarget9"),
+            .contains("// selector candidate, unverified: icon, indirect via: indirectTarget9"),
         "selector annotation should remain after stack-slot load:\n{}",
         artifact.source
     );
@@ -2343,15 +2350,20 @@ fn propagates_selector_hint_through_object_field_assignment() {
     pool.insert(16u64, "String: \"icon\"".to_string());
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
-        artifact.source.contains("dispatch.icon("),
+        artifact.source.contains("selector candidate, unverified: icon"),
         "selector should survive object-field temp traffic:\n{}",
         artifact.source
     );
     assert!(
         artifact
             .source
-            .contains("// selector: icon, indirect via: indirectTarget9"),
+            .contains("// selector candidate, unverified: icon, indirect via: indirectTarget9"),
         "selector annotation should remain after object-field load:\n{}",
+        artifact.source
+    );
+    assert!(
+        !artifact.source.contains("dispatch.icon("),
+        "object-field pool string should not be used as a method name:\n{}",
         artifact.source
     );
 }
@@ -2413,14 +2425,14 @@ fn propagates_selector_hint_through_object_base_alias() {
     pool.insert(16u64, "String: \"icon\"".to_string());
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
-        artifact.source.contains("dispatch.icon("),
+        artifact.source.contains("selector candidate, unverified: icon"),
         "selector should survive object base aliasing:\n{}",
         artifact.source
     );
     assert!(
         artifact
             .source
-            .contains("// selector: icon, indirect via: indirectTarget9"),
+            .contains("// selector candidate, unverified: icon, indirect via: indirectTarget9"),
         "selector annotation should remain after object base aliasing:\n{}",
         artifact.source
     );
