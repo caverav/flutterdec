@@ -35,7 +35,7 @@ jobs:
         uses: cachix/install-nix-action@v31
 
       - name: Enable Nix cache
-        uses: DeterminateSystems/magic-nix-cache-action@v13
+        uses: DeterminateSystems/magic-nix-cache-action@v14
 
       - name: Run full test suite
         run: ./scripts/test-suite.sh
