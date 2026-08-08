@@ -4,6 +4,10 @@
 # symbol from the product ARM64 DART_COMPRESSED_POINTERS block of
 # runtime/vm/compiler/runtime_offsets_extracted.h in the Dart SDK at tag 3.12.
 #
+# The block is guarded by lines 21304-21305 (its #if) through 22136-22138 (its
+# #endif) in that file. Cite the whole guard range: a narrower range
+# covers most Thread constants but not all of them.
+#
 # Counts are IR instruction counts, from every direct load or store off x26 in
 # the disassembly of one sample binary. LocalSend for 3.5 (snapshot hash
 # 80a49c7111088100a233b2ae788e1f48), Immich for 3.12
