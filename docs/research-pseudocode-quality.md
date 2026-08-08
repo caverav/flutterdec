@@ -942,3 +942,129 @@ into one entry.
   Pre-existing, and reduced from 292 by this cycle.
 - Bit-4 and bit-63 tests stay raw, for the reasons above. Resolving them needs a
   value-type model, not a better pattern.
+
+## R8. Values do not survive a call, and these binaries are compressed
+
+### The call boundary
+
+`emit_call` bound x0 to the call's temporary and left every other volatile
+register holding its pre-call value. `kDartVolatileCpuRegs`
+(`runtime/vm/constants_arm64.h`) is R0 through R14; the assembler uses TMP and
+TMP2 freely, R18 is volatile off Fuchsia, and the call writes LR. Only R19
+through R28 and SPREG survive.
+
+The proof is not statistical. Instrumenting the base expression of every field
+read found 2,497 reads whose base rendered as `null` on one sample, against
+exactly **one** genuine load off NULL_REG in the entire binary. The shape is
+`mov x0, x22`, then a call, then `[x0, #-1]`: a read of the object header off
+null, which cannot happen. It rendered as `null._tag`, and the same mechanism
+produced `null.f24 == thread.f160` and `if (null == null)`.
+
+This matters more than an unresolved register would, because `regN` reads as a
+gap and `null.f24` reads as a fact.
+
+NZCV is caller-saved as well, so the comparison is dropped at a call for the
+same reason an unmodelled flag writer drops it.
+
+The cost is real and worth stating: `raw_register_name_refs` rises 37,240 to
+55,735 and 41,991 to 66,199, and `smiUntag` occurrences fall by about 7,000 per
+sample. Both are one effect seen twice: an expression is no longer inlined across
+a call boundary. Inlining it there *was* the claim that the value survived.
+
+### Compressed pointers, established rather than assumed
+
+| evidence | LocalSend | Immich |
+|---|---|---|
+| `add rD, rS, x28, lsl #32` | 65,759 | 103,731 |
+| 32-bit load displacements 3 or 7 mod 8 | 74,982 | 115,682 |
+| `sbfx #1, #0x1f` | 12,314 | 13,585 |
+
+x28 is HEAP_BITS, whose low half is `heap_base >> 32`, so that add reconstructs a
+pointer and an uncompressed build emits none. The displacements are 4-byte-spaced
+reference fields with the `kHeapObjectTag` adjustment; 87% of every 32-bit load
+feeds a decompression. Flutter's `tools/gn` sets
+`dart_use_compressed_pointers = True` for Android arm64, which is why, given the
+Dart default is false. A first reading of the Thread offset tables suggested
+Immich was uncompressed; the instruction stream settled it, and an offset that
+appears in both the compressed and uncompressed blocks is not evidence either
+way.
+
+Decompression changes no Dart-level value, so it is transparent now. That removed
+`+ (reg28 << 0x20)` from a quarter of all field reads.
+
+### Reserved is not the same as invariant
+
+`kReservedCpuRegisters` excludes x21, x22, x26, x27 and x28 from
+`kDartAvailableCpuRegs`. HEAP_BITS was unseeded and read as `reg28` 5,334 and
+7,012 times, always in the write-barrier idiom. It is pinned now, because AOT
+re-derives it in-body, 639 instructions across 157 functions, restoring the same
+constant from THR.
+
+SPREG is reserved and deliberately **not** pinned. 47,412 instructions across
+5,149 functions write it. Pinning rendered `[x15, #8]` after a frame allocation as
+`sp[8]` when the address is `sp - frame + 8`, and collapsed three distinct frames
+in one function onto one name. It keeps its merge exemption for an unrelated
+reason: frames are balanced, so every path into a join leaves the same stack
+pointer, and dropping the exemption cost 11,717 slot references for no
+correctness gain. The two ideas are separate in the code now.
+
+TMP, TMP2, LR and CODE_REG are reserved but hold no fixed value, and stay
+unnamed. `CODE_REG` is explicitly "not passed in AOT".
+
+### Named idioms
+
+`SmiUntag` is `sbfm(dst, src, kSmiTagSize, kSmiBits + kSmiTagSize)`, so it is the
+only producer of a signed extract at bit 1 of width `kSmiBits + 1`: 31 compressed,
+63 not. Both are accepted, so the rule encodes no build configuration. 25,899
+sites read `smiUntag(x)` rather than `signedBitField(x, 1, 0x1f)`. The insert form
+at the same position is the tag, emitted by `BoxInteger32` and `BoxInt64`, which
+is why all 8,262 sites are followed by the round-trip compare.
+
+Measured operand pairs, from the IR of both samples:
+
+| `ubfx`/`sbfx` pair | LocalSend | Immich | meaning |
+|---|---|---|---|
+| `ubfx #0xc, #0x14` | 18,816 | 31,953 | class id, position stable 3.5 to 3.12 |
+| `sbfx #1, #0x1f` | 12,314 | 13,585 | Smi untag |
+| `sbfiz #1, #0x1f` | 3,789 | 4,473 | Smi tag, all followed by the overflow compare |
+| `ubfx #0, #0x20` | 3,679 | 2,610 | zero extension |
+| `ubfx #8, #4` | 2 | 2 | size tag |
+
+### The remaining leak, narrowed
+
+165 and 277 `null.fN` references survive, with 701 and 1,611 bit tests on a
+literal operand and 930 and 1,809 fully-constant `if` conditions. These are one
+bug with three faces, and they are deliberately **not** constant-folded: Dart AOT
+does not emit a bit test on a value it can fold, so a literal reaching one means
+the binding is wrong, and folding would upgrade a false claim to a confident one.
+They serve as canaries instead.
+
+Two things are ruled out by experiment rather than argument. It is not a missing
+merge: forcing `merge_state_at_join` at every block, not only at joins, moved the
+count from 165 to 161. It is not the DFS fallback: the worst offender is
+structured-emitted.
+
+What does correlate is the omitted-path mechanism. Of 95 leaking functions on one
+sample, 77.9% carry an `omitted complex paths` marker against 10.3% of the 5,705
+clean ones, a 7.6-fold enrichment. That is the next place to look.
+
+### Ready for the next cycle
+
+Two tables were derived and verified but not yet used, both requiring a key on
+(Dart version, pointer mode) because an offset table alone would mislabel one of
+the two samples:
+
+- **Thread offsets.** 8,930 and 22,216 direct THR loads. The top 18 data offsets
+  cover 56.9% and 81.8%; the top 10 stub entry points cover 99.7%. Between 3.5
+  and 3.12, 110 of 111 common offsets moved, and only 3 offsets agree between the
+  compressed and uncompressed blocks, so version alone is not a sufficient key.
+  Static AOT must read the `AOT_Thread_*` block, per `runtime_offsets_list.h`.
+- **Fixed class field offsets.** Exact per-class tables exist and did not drift
+  between 3.5 and 3.12 for the core classes. But naming a field needs the
+  receiver's class, and no offset means the same thing across classes: `length` is
+  0xc on `Array`, 0x8 on `String`, 0x14 on `TypedDataBase`. Measured reachability
+  is the blocker: of 95,964 and 135,995 field loads, the fraction whose receiver
+  class is identifiable from a nearby class-id check is 0% and 0.0007% on an exact
+  match, and 0.6% and 1.6% under a deliberately loose upper bound. Class-directed
+  field naming is therefore **not** viable without the snapshot field tables, and
+  the dominant `obj.fN` noise stays until that work lands.
