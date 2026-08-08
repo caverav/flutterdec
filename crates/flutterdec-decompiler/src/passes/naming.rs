@@ -323,7 +323,12 @@ impl<'a> FuncEmitter<'a> {
             return;
         }
 
-        let arg_ids: Vec<String> = (0..8).map(|i| format!("arg{i}")).collect();
+        // One identifier per register the Dart convention passes an argument
+        // in. This rewrites `lines[0]`, so a wider range here silently widens
+        // every signature regardless of what the emitter wrote.
+        let arg_ids: Vec<String> = (0..DART_ARGUMENT_REGISTERS.len())
+            .map(|i| format!("arg{i}"))
+            .collect();
         let local_ids: Vec<String> = self.locals.values().cloned().collect();
         let mut used = HashSet::new();
         used.insert("thread".to_string());

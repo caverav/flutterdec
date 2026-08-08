@@ -27,7 +27,7 @@ const DISPATCH_TABLE_ORIGIN_ELEMENT: i64 = 4096;
 /// `DartCallingConvention::kCpuRegistersForArgs` for ARM64
 /// (`runtime/vm/constants_arm64.h`). x0 is the return register and x4 is
 /// `ARGS_DESC_REG`, so neither appears; further arguments go on the stack.
-const DART_ARGUMENT_REGISTERS: [&str; 6] = ["x1", "x2", "x3", "x5", "x6", "x7"];
+pub(super) const DART_ARGUMENT_REGISTERS: [&str; 6] = ["x1", "x2", "x3", "x5", "x6", "x7"];
 
 /// What an instruction contributes to dispatch-call recognition. Computed from
 /// the pre-instruction state, then applied after the destination registers are

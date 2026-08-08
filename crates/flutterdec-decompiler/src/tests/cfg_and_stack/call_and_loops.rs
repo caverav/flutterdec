@@ -30,7 +30,7 @@ fn emits_callable_style_for_generic_indirect_targets() {
     assert!(
         artifact
             .source
-            .contains("indirectTarget9(receiver, param1, param2, param3); // indirect via: indirectTarget9"),
+            .contains("indirectTarget9(); // indirect via: indirectTarget9"),
         "generic indirect calls should render callable style:\n{}",
         artifact.source
     );
@@ -362,7 +362,7 @@ fn emits_callable_style_for_noncanonical_indirect_targets() {
     assert!(
         artifact
             .source
-            .contains("xzr(receiver, param1, param2, param3); // indirect via: xzr"),
+            .contains("xzr(); // indirect via: xzr"),
         "noncanonical indirect targets should still prefer callable fallback style:\n{}",
         artifact.source
     );
@@ -405,7 +405,7 @@ fn rewrites_dispatch_target_fallback_to_dispatch_invoke() {
     assert!(
         artifact
             .source
-            .contains("dispatch.invoke(receiver, param1, param2, param3); // indirect via: dispatchTarget"),
+            .contains("dispatch.invoke(); // indirect via: dispatchTarget"),
         "dispatchTarget fallback should use dispatch.invoke form:\n{}",
         artifact.source
     );
@@ -454,14 +454,14 @@ fn rewrites_dispatch_target_fallback_to_resolved_target_invoke() {
     assert!(
         artifact
             .source
-            .contains("param1(receiver, param1, param2, param3); // indirect via: dispatchTarget"),
+            .contains("receiver(); // indirect via: dispatchTarget"),
         "resolved dispatch target should render as target(...) fallback:\n{}",
         artifact.source
     );
     assert!(
         !artifact
             .source
-            .contains("dispatch.invoke(receiver, param1, param2, param3)"),
+            .contains("dispatch.invoke("),
         "resolved dispatch target should avoid plain dispatch.invoke fallback:\n{}",
         artifact.source
     );
@@ -506,7 +506,7 @@ fn rewrites_dispatch_target_fallback_to_library_invoke_when_uri_is_known() {
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
         artifact.source.contains(
-            "flutter.widgets.invoke(receiver, param1, \"package:flutter/src/widgets/heroes.dart\" /* pool[44] */, param3); // framework:flutter.widgets.invoke [library], indirect via: dispatchTarget"
+            "flutter.widgets.invoke(receiver, \"package:flutter/src/widgets/heroes.dart\" /* pool[44] */); // framework:flutter.widgets.invoke [library], indirect via: dispatchTarget"
         ),
         "known library URI should rewrite dispatch fallback to semantic library invoke:\n{}",
         artifact.source
@@ -567,7 +567,7 @@ fn rewrites_generic_direct_call_to_owner_invoke_when_library_and_owner_markers_e
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
         artifact.source.contains(
-            "flutter.widgets.RenderErrorBox.invoke(receiver, param1, \"package:flutter/src/widgets/heroes.dart\" /* pool[44] */, \"RenderErrorBox.\" /* pool[45] */); // framework:flutter.widgets.RenderErrorBox.invoke, was: sub_6141f8"
+            "flutter.widgets.RenderErrorBox.invoke(receiver, \"package:flutter/src/widgets/heroes.dart\" /* pool[44] */, \"RenderErrorBox.\" /* pool[45] */); // framework:flutter.widgets.RenderErrorBox.invoke, was: sub_6141f8"
         ),
         "generic direct calls with owner/library markers should rewrite to semantic owner invoke:\n{}",
         artifact.source
@@ -619,7 +619,7 @@ fn rewrites_generic_direct_call_to_library_invoke_when_only_library_marker_exist
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
         artifact.source.contains(
-            "dart.core_patch.bool_patch.invoke(receiver, \"dart:core-patch/bool_patch.dart\" /* pool[4656] */, param2, param3); // stdlib:dart.core_patch.bool_patch.invoke [library], was: sub_9002"
+            "dart.core_patch.bool_patch.invoke(\"dart:core-patch/bool_patch.dart\" /* pool[4656] */); // stdlib:dart.core_patch.bool_patch.invoke [library], was: sub_9002"
         ),
         "generic direct calls with only library marker should rewrite to semantic library invoke:\n{}",
         artifact.source
@@ -733,7 +733,7 @@ fn rewrites_dispatch_target_fallback_to_package_invoke_when_uri_is_known() {
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
         artifact.source.contains(
-            "spotube.models.connect.load.invoke(receiver, param1, \"package:spotube/models/connect/load.dart\" /* pool[45] */, param3); // package:spotube.models.connect.load.invoke [library], indirect via: dispatchTarget"
+            "spotube.models.connect.load.invoke(receiver, \"package:spotube/models/connect/load.dart\" /* pool[45] */); // package:spotube.models.connect.load.invoke [library], indirect via: dispatchTarget"
         ),
         "package URI should rewrite dispatch fallback to semantic package invoke:\n{}",
         artifact.source
@@ -793,7 +793,7 @@ fn rewrites_indirect_call_to_semantic_name_when_selector_is_known() {
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
         artifact.source.contains(
-            "flutter.widgets.State.setState(1, \"setState\" /* pool[42] */, param2, param3); // framework:flutter.widgets.State.setState [selector], indirect via: indirectTarget9"
+            "flutter.widgets.State.setState(\"setState\" /* pool[42] */); // framework:flutter.widgets.State.setState [selector], indirect via: indirectTarget9"
         ),
         "indirect selector call should be rewritten to semantic direct form:\n{}",
         artifact.source
@@ -851,7 +851,7 @@ fn rewrites_indirect_call_to_stdlib_list_removeat_when_selector_is_known() {
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
         artifact.source.contains(
-            "dart.core.List.removeAt(1, \"removeAt\" /* pool[52] */, param2, param3); // stdlib:dart.core.List.removeAt [selector], indirect via: indirectTarget9"
+            "dart.core.List.removeAt(\"removeAt\" /* pool[52] */); // stdlib:dart.core.List.removeAt [selector], indirect via: indirectTarget9"
         ),
         "known removeAt selector should rewrite to stdlib List.removeAt call:\n{}",
         artifact.source
@@ -904,7 +904,7 @@ fn rewrites_indirect_call_to_stdlib_match_end_when_selector_is_known() {
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
         artifact.source.contains(
-            "dart.core.Match.end(1, \"match_end_index\" /* pool[93] */, param2, param3); // stdlib:dart.core.Match.end [selector], indirect via: indirectTarget9"
+            "dart.core.Match.end(\"match_end_index\" /* pool[93] */); // stdlib:dart.core.Match.end [selector], indirect via: indirectTarget9"
         ),
         "known match_end_index selector should rewrite to stdlib Match.end call:\n{}",
         artifact.source
@@ -962,7 +962,7 @@ fn rewrites_indirect_call_to_stdlib_iterator_current_when_internal_selector_is_k
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
         artifact.source.contains(
-            "dart.core.Iterator.current(1, \"_current\" /* pool[94] */, param2, param3); // stdlib:dart.core.Iterator.current [selector], indirect via: indirectTarget9"
+            "dart.core.Iterator.current(\"_current\" /* pool[94] */); // stdlib:dart.core.Iterator.current [selector], indirect via: indirectTarget9"
         ),
         "known internal _current selector should rewrite to stdlib Iterator.current call:\n{}",
         artifact.source
@@ -1019,7 +1019,7 @@ fn keeps_dispatch_fallback_for_plain_current_selector_name() {
     pool.insert(95u64, "current".to_string());
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
-        artifact.source.contains("indirectTarget9(1, \"current\" /* pool[95] */, param2, param3); // selector candidate, unverified: current, indirect via: indirectTarget9"),
+        artifact.source.contains("indirectTarget9(\"current\" /* pool[95] */); // selector candidate, unverified: current, indirect via: indirectTarget9"),
         "plain current pool string must be reported as an unverified candidate rather than used as a method name:\n{}",
         artifact.source
     );
@@ -1076,7 +1076,7 @@ fn rewrites_indirect_call_to_stdlib_datetime_equivalent_year_when_internal_selec
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
         artifact.source.contains(
-            "dart.core.DateTime.equivalentYear(1, \"_equivalentYear\" /* pool[96] */, param2, param3); // stdlib:dart.core.DateTime.equivalentYear [selector], indirect via: indirectTarget9"
+            "dart.core.DateTime.equivalentYear(\"_equivalentYear\" /* pool[96] */); // stdlib:dart.core.DateTime.equivalentYear [selector], indirect via: indirectTarget9"
         ),
         "known internal _equivalentYear selector should rewrite to stdlib DateTime.equivalentYear call:\n{}",
         artifact.source
@@ -1133,7 +1133,7 @@ fn keeps_dispatch_fallback_for_plain_equivalent_year_selector_name() {
     pool.insert(97u64, "equivalentYear".to_string());
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
-        artifact.source.contains("indirectTarget9(1, \"equivalentYear\" /* pool[97] */, param2, param3); // selector candidate, unverified: equivalentYear, indirect via: indirectTarget9"),
+        artifact.source.contains("indirectTarget9(\"equivalentYear\" /* pool[97] */); // selector candidate, unverified: equivalentYear, indirect via: indirectTarget9"),
         "plain equivalentYear pool string must be reported as an unverified candidate rather than used as a method name:\n{}",
         artifact.source
     );
@@ -1190,7 +1190,7 @@ fn rewrites_indirect_call_to_framework_navigator_pushnamed_when_selector_is_know
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
         artifact.source.contains(
-            "flutter.widgets.Navigator.pushNamed(1, \"pushNamed\" /* pool[53] */, param2, param3); // framework:flutter.widgets.Navigator.pushNamed [selector], indirect via: indirectTarget9"
+            "flutter.widgets.Navigator.pushNamed(\"pushNamed\" /* pool[53] */); // framework:flutter.widgets.Navigator.pushNamed [selector], indirect via: indirectTarget9"
         ),
         "known pushNamed selector should rewrite to framework Navigator.pushNamed call:\n{}",
         artifact.source
@@ -1243,7 +1243,7 @@ fn rewrites_indirect_call_to_framework_constructor_when_selector_is_class_name()
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
         artifact.source.contains(
-            "flutter.widgets.KeyedSubtree.new(1, \"KeyedSubtree\" /* pool[60] */, param2, param3); // framework:flutter.widgets.KeyedSubtree.new [selector], indirect via: indirectTarget9"
+            "flutter.widgets.KeyedSubtree.new(\"KeyedSubtree\" /* pool[60] */); // framework:flutter.widgets.KeyedSubtree.new [selector], indirect via: indirectTarget9"
         ),
         "class selector should rewrite to framework constructor-style semantic path:\n{}",
         artifact.source
@@ -1307,7 +1307,7 @@ fn rewrites_indirect_call_from_pool_metadata_semantic_owner() {
     let artifact = emit_pseudocode_with_pool_context(&ir, &symbols, &pool, &metadata);
     assert!(
         artifact.source.contains(
-            "flutter.widgets.WidgetsBindingObserver.didChangeMetrics(1, \"opaqueSelector\" /* pool[88] */, param2, param3); // framework:flutter.widgets.WidgetsBindingObserver.didChangeMetrics [selector], indirect via: indirectTarget9"
+            "flutter.widgets.WidgetsBindingObserver.didChangeMetrics(\"opaqueSelector\" /* pool[88] */); // framework:flutter.widgets.WidgetsBindingObserver.didChangeMetrics [selector], indirect via: indirectTarget9"
         ),
         "pool metadata should drive deterministic semantic owner path rewrite:\n{}",
         artifact.source
@@ -1364,7 +1364,7 @@ fn rewrites_indirect_call_to_dispatch_selector_from_metadata_without_pool_string
     let artifact = emit_pseudocode_with_pool_context(&ir, &symbols, &pool, &metadata);
     assert!(
         artifact.source.contains(
-            "dispatch.customDispatch42(receiver, pool[89], param2, param3); // selector: customDispatch42, indirect via: indirectTarget9"
+            "dispatch.customDispatch42(pool[89]); // selector: customDispatch42, indirect via: indirectTarget9"
         ),
         "selector metadata should provide dispatch fallback names without string pool hint:\n{}",
         artifact.source
@@ -1422,7 +1422,7 @@ fn rewrites_indirect_call_to_owner_selector_when_library_uri_missing() {
     let artifact = emit_pseudocode_with_pool_context(&ir, &symbols, &pool, &metadata);
     assert!(
         artifact.source.contains(
-            "WidgetsBindingObserver.didChangeMetrics(receiver, \"opaqueSelector\" /* pool[99] */, param2, param3); // owner:WidgetsBindingObserver.didChangeMetrics [selector], indirect via: indirectTarget9"
+            "WidgetsBindingObserver.didChangeMetrics(\"opaqueSelector\" /* pool[99] */); // owner:WidgetsBindingObserver.didChangeMetrics [selector], indirect via: indirectTarget9"
         ),
         "owner metadata should rewrite selector fallback even when library URI is missing:\n{}",
         artifact.source
@@ -1553,7 +1553,7 @@ fn rewrites_indirect_call_from_target_va_metadata_using_symbol_name() {
     let artifact = emit_pseudocode_with_pool_context(&ir, &symbols, &pool, &metadata);
     assert!(
         artifact.source.contains(
-            "dart.core.print(receiver, param1, param2, param3); // stdlib:dart.core.print, indirect via: indirectTarget9, target: pool[90], target_va: 0x5000, was: dart_core_print"
+            "dart.core.print(); // stdlib:dart.core.print, indirect via: indirectTarget9, target: pool[90], target_va: 0x5000, was: dart_core_print"
         ),
         "target_va metadata should rewrite indirect call using resolved symbol name:\n{}",
         artifact.source
@@ -1617,7 +1617,7 @@ fn does_not_rewrite_indirect_call_from_target_va_when_symbol_is_generic() {
     assert!(
         artifact
             .source
-            .contains("indirectTarget9(receiver, param1, param2, param3)"),
+            .contains("indirectTarget9()"),
         "generic target symbols should not force semantic rewrite:\n{}",
         artifact.source
     );
@@ -1685,7 +1685,7 @@ fn does_not_rewrite_indirect_call_from_target_va_when_symbol_is_tool_placeholder
     assert!(
         artifact
             .source
-            .contains("indirectTarget9(receiver, param1, param2, param3)"),
+            .contains("indirectTarget9()"),
         "tool placeholder target symbols should not force semantic rewrite:\n{}",
         artifact.source
     );
@@ -1748,7 +1748,7 @@ fn annotates_pool_mapping_in_indirect_target_comment() {
     assert!(
         artifact
             .source
-            .contains("dart.typed_data.TypedData.offsetInBytes(receiver, param1, param2, param3); // stdlib:dart.typed_data.TypedData.offsetInBytes [selector], indirect via: indirectTarget9, target: pool[40 /* \"_offsetInBytes\" */].f8"),
+            .contains("dart.typed_data.TypedData.offsetInBytes(); // stdlib:dart.typed_data.TypedData.offsetInBytes [selector], indirect via: indirectTarget9, target: pool[40 /* \"_offsetInBytes\" */].f8"),
         "pool mapping should drive typed_data semantic selector rewrite:\n{}",
         artifact.source
     );
@@ -1794,7 +1794,7 @@ fn reports_nonstandard_pool_string_as_unverified_candidate() {
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
         artifact.source.contains(
-            "indirectTarget9(receiver, \"customAction@12345\" /* pool[12] */, param2, param3); // selector candidate, unverified: customAction, indirect via: indirectTarget9"
+            "indirectTarget9(\"customAction@12345\" /* pool[12] */); // selector candidate, unverified: customAction, indirect via: indirectTarget9"
         ),
         "nonstandard pool string must be reported as an unverified candidate rather than used as a method name:\n{}",
         artifact.source
@@ -1846,7 +1846,7 @@ fn reports_constructor_like_pool_string_as_unverified_candidate() {
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
         artifact.source.contains(
-            "indirectTarget9(receiver, \"AndroidPermission\" /* pool[13] */, param2, param3); // selector candidate, unverified: AndroidPermission, indirect via: indirectTarget9"
+            "indirectTarget9(\"AndroidPermission\" /* pool[13] */); // selector candidate, unverified: AndroidPermission, indirect via: indirectTarget9"
         ),
         "constructor-like pool string must be reported as an unverified candidate rather than used as a method name:\n{}",
         artifact.source
@@ -1898,7 +1898,7 @@ fn keeps_dispatch_fallback_for_single_word_titlecase_selector() {
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
         artifact.source.contains(
-            "indirectTarget9(receiver, \"Omiljeno\" /* pool[19] */, param2, param3); // selector candidate, unverified: Omiljeno, indirect via: indirectTarget9"
+            "indirectTarget9(\"Omiljeno\" /* pool[19] */); // selector candidate, unverified: Omiljeno, indirect via: indirectTarget9"
         ),
         "single-word titlecase pool string must be reported as an unverified candidate rather than used as a method name:\n{}",
         artifact.source
@@ -1950,7 +1950,7 @@ fn keeps_dispatch_fallback_for_acronym_like_selector_names() {
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
         artifact.source.contains(
-            "indirectTarget9(receiver, \"TORRENT\" /* pool[14] */, param2, param3); // selector candidate, unverified: TORRENT, indirect via: indirectTarget9"
+            "indirectTarget9(\"TORRENT\" /* pool[14] */); // selector candidate, unverified: TORRENT, indirect via: indirectTarget9"
         ),
         "acronym-like pool string must be reported as an unverified candidate rather than used as a method name:\n{}",
         artifact.source
@@ -2002,7 +2002,7 @@ fn keeps_dispatch_fallback_for_builtin_type_selector_names() {
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
         artifact.source.contains(
-            "indirectTarget9(receiver, \"Function\" /* pool[15] */, param2, param3); // selector candidate, unverified: Function, indirect via: indirectTarget9"
+            "indirectTarget9(\"Function\" /* pool[15] */); // selector candidate, unverified: Function, indirect via: indirectTarget9"
         ),
         "builtin type pool string must be reported as an unverified candidate rather than used as a method name:\n{}",
         artifact.source
@@ -2054,7 +2054,7 @@ fn resolves_dispatch_selector_from_string_prefixed_pool_value() {
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
         artifact.source.contains(
-            "indirectTarget9(receiver, \"String: \\\"icon\\\"\" /* pool[16] */, param2, param3); // selector candidate, unverified: icon, indirect via: indirectTarget9"
+            "indirectTarget9(\"String: \\\"icon\\\"\" /* pool[16] */); // selector candidate, unverified: icon, indirect via: indirectTarget9"
         ),
         "string-prefixed pool string must be reported as an unverified candidate rather than used as a method name:\n{}",
         artifact.source
@@ -2101,7 +2101,7 @@ fn keeps_callable_fallback_for_type_prefixed_pool_value() {
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
         artifact.source.contains(
-            "indirectTarget9(receiver, \"Type: CloseMenuIntent\" /* pool[17] */, param2, param3); // indirect via: indirectTarget9"
+            "indirectTarget9(\"Type: CloseMenuIntent\" /* pool[17] */); // indirect via: indirectTarget9"
         ),
         "type-prefixed values should not be promoted to selector fallbacks:\n{}",
         artifact.source
@@ -2153,7 +2153,7 @@ fn keeps_callable_fallback_for_null_pool_marker() {
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
         artifact.source.contains(
-            "indirectTarget9(receiver, \"Null\" /* pool[18] */, param2, param3); // indirect via: indirectTarget9"
+            "indirectTarget9(\"Null\" /* pool[18] */); // indirect via: indirectTarget9"
         ),
         "null marker should avoid selector-based dispatch rewrites:\n{}",
         artifact.source

@@ -107,13 +107,64 @@ impl<'a> FuncEmitter<'a> {
                 | "lsr"
                 | "asr"
                 | "ubfx"
+                | "sbfx"
+                | "sbfiz"
                 | "ldur"
                 | "ldr"
+                | "ldrb"
+                | "ldurb"
+                | "ldrh"
+                | "ldurh"
+                | "ldrsb"
+                | "ldursb"
+                | "ldrsh"
+                | "ldursh"
+                | "ldrsw"
+                | "ldursw"
+                | "ldp"
+                | "ldnp"
                 | "stur"
                 | "str"
+                | "strb"
+                | "sturb"
+                | "strh"
+                | "sturh"
+                | "csel"
+                | "cset"
+                | "csetm"
                 | "cmp"
+                | "fcmp"
+                | "subs"
+                | "adds"
+                | "ands"
+                | "tst"
+                | "cmn"
                 | "ret"
         )
+    }
+
+    /// Pre- and post-index addressing writes the base register back, so the
+    /// base no longer holds what it held before the access. The new value is
+    /// the old base plus the displacement, which this lifter does not track,
+    /// so the binding is dropped rather than left describing the old address.
+    fn invalidate_index_writeback(&mut self, ops: &[String]) {
+        let Some(mem) = ops.iter().find(|o| o.trim_start().starts_with('[')) else {
+            return;
+        };
+        // `[x1, #8]!` is pre-index; a displacement operand after the closing
+        // bracket, as in `[x1], #8`, is post-index. Both write the base.
+        let writes_back = mem.trim_end().ends_with('!')
+            || ops
+                .last()
+                .is_some_and(|o| o.trim_start().starts_with('#') && !o.contains('['));
+        if !writes_back {
+            return;
+        }
+        let inside = mem.trim_start().trim_start_matches('[');
+        let base = inside.split([',', ']']).next().unwrap_or_default().trim();
+        if let Some(reg) = canonical_reg(base) {
+            self.state.reg_values.remove(&reg);
+        }
     }
 
     pub(super) fn apply_other_lift(&mut self, ins_src: &str, indent: usize) {
@@ -125,6 +176,95 @@ impl<'a> FuncEmitter<'a> {
                     let rhs = self.operand_expr(&ops[1]);
                     self.state.reg_values.insert(dst, rhs);
                 }
+            }
+            // `kTrueOffsetFromNull` and `kFalseOffsetFromNull`
+            // (`runtime/vm/pointer_tagging.h`): the two canonical bools sit at
+            // fixed offsets from null, so Dart materialises them by adding to
+            // NULL_REG. 11,736 and 21,165 sites on the two samples, and every
+            // one of them used to render as `null + 0x20`.
+            // Only these two offsets are defined bools. Any other displacement
+            // off NULL_REG falls through to the arithmetic arm, where
+            // `null + N` is a true statement about a canonical object near
+            // null; dropping it would lose information rather than remove a
+            // false claim.
+            "add"
+                if ops.len() == 3
+                    && canonical_reg(&ops[1]).as_deref() == Some("x22")
+                    && matches!(
+                        ops[2].trim().trim_start_matches('#'),
+                        "0x20" | "32" | "0x30" | "48"
+                    ) =>
+            {
+                if let Some(dst) = canonical_reg(&ops[0]) {
+                    let value = match ops[2].trim().trim_start_matches('#') {
+                        "0x20" | "32" => "true",
+                        _ => "false",
+                    };
+                    self.state.reg_values.insert(dst, value.to_string());
+                }
+            }
+            // `BooleanNegateInstr` (`il_arm64.cc`) flips `kBoolValueMask`, so
+            // this is `!x` whenever the operand is a bool. Only folded when the
+            // operand is provably one: `TestIntInstr` on a tagged value can
+            // also land on bit 4, so an arbitrary register is not enough.
+            "eor"
+                if ops.len() == 3
+                    && matches!(ops[2].trim().trim_start_matches('#'), "0x10" | "16") =>
+            {
+                if let Some(dst) = canonical_reg(&ops[0]) {
+                    let src = self.operand_expr(&ops[1]);
+                    match src.as_str() {
+                        "true" => self.state.reg_values.insert(dst, "false".to_string()),
+                        "false" => self.state.reg_values.insert(dst, "true".to_string()),
+                        _ => self.state.reg_values.remove(&dst),
+                    };
+                }
+            }
+            // `csel`/`cset`/`csetm`. Unmodelled before, so the destination kept
+            // a stale value and a function returning `cond ? true : false`
+            // emitted `return receiver;`. 2,708 csel sites, 85% of them with
+            // both bools materialised into the arms, which is Dart turning a
+            // comparison into a value.
+            "csel" | "cset" | "csetm" if ops.len() >= 2 => {
+                let Some(dst) = canonical_reg(&ops[0]) else {
+                    return;
+                };
+                let cond = ops[ops.len() - 1].trim().to_ascii_lowercase();
+                // Without a comparison in hand the condition cannot be named,
+                // and naming it wrongly is worse than reporting the gap.
+                let Some(cmp) = self.state.last_cmp.clone() else {
+                    self.state.reg_values.remove(&dst);
+                    return;
+                };
+                let Some(taken) = cond_from_cmp(&format!("b.{cond}"), &cmp) else {
+                    self.state.reg_values.remove(&dst);
+                    return;
+                };
+                let value = match mnemonic.as_str() {
+                    "cset" => format!("({taken}) ? 1 : 0"),
+                    "csetm" => format!("({taken}) ? -1 : 0"),
+                    _ if ops.len() < 4 => {
+                        self.state.reg_values.remove(&dst);
+                        return;
+                    }
+                    _ => {
+                        let lhs = self.operand_expr(&ops[1]);
+                        let rhs = self.operand_expr(&ops[2]);
+                        // Operand order carries the polarity, so read which arm
+                        // holds which bool rather than assuming a fixed one.
+                        match (lhs.as_str(), rhs.as_str()) {
+                            ("true", "false") => format!("({taken})"),
+                            ("false", "true") => match invert_cond(&cond)
+                                .and_then(|inv| cond_from_cmp(&format!("b.{inv}"), &cmp))
+                            {
+                                Some(not_taken) => format!("({not_taken})"),
+                                None => format!("({taken}) ? false : true"),
+                            },
+                            _ => format!("({taken}) ? {lhs} : {rhs}"),
+                        }
+                    }
+                };
+                self.state.reg_values.insert(dst, value);
             }
             "add" | "sub" | "mul" | "and" | "orr" | "eor" if ops.len() >= 3 => {
                 if let Some(dst) = canonical_reg(&ops[0]) {
@@ -175,13 +315,75 @@ impl<'a> FuncEmitter<'a> {
                         .insert(dst, format!("bitField({}, {}, {})", src, lsb, width));
                 }
             }
-            "ldur" | "ldr" if ops.len() >= 2 => {
+            // Signed field extract and its insert form. Named rather than
+            // expanded into shifts: `sbfiz rd, rs, #l, #w` sign-extends from
+            // bit `l + w`, not from `w`, and an arithmetic rendering that gets
+            // that wrong reads as resolved. 34,161 sites across both samples,
+            // every one of which used to leave a stale value behind.
+            "sbfx" | "sbfiz" if ops.len() >= 4 => {
                 if let Some(dst) = canonical_reg(&ops[0]) {
-                    let rhs = self.operand_expr(&ops[1]);
-                    self.state.reg_values.insert(dst, rhs);
+                    let src = self.operand_expr(&ops[1]);
+                    let lsb = self.operand_expr(&ops[2]);
+                    let width = self.operand_expr(&ops[3]);
+                    let name = if mnemonic == "sbfx" {
+                        "signedBitField"
+                    } else {
+                        "signedBitFieldInsert"
+                    };
+                    self.state
+                        .reg_values
+                        .insert(dst, format!("{name}({src}, {lsb}, {width})"));
                 }
             }
-            "stur" | "str" if ops.len() >= 2 => {
+            // Byte and half-word loads read the same field as `ldr`; the width
+            // is part of the field's type, not of the address. The `s` forms
+            // sign-extend, which changes the value, so they say so.
+            "ldur" | "ldr" | "ldrb" | "ldurb" | "ldrh" | "ldurh" | "ldrsb" | "ldursb"
+            | "ldrsh" | "ldursh" | "ldrsw" | "ldursw"
+                if ops.len() >= 2 =>
+            {
+                if let Some(dst) = canonical_reg(&ops[0]) {
+                    let rhs = self.operand_expr(&ops[1]);
+                    let value = match mnemonic.as_str() {
+                        "ldrsb" | "ldursb" => format!("signExtend({rhs}, 8)"),
+                        "ldrsh" | "ldursh" => format!("signExtend({rhs}, 16)"),
+                        "ldrsw" | "ldursw" => format!("signExtend({rhs}, 32)"),
+                        _ => rhs,
+                    };
+                    self.state.reg_values.insert(dst, value);
+                }
+                self.invalidate_index_writeback(&ops);
+            }
+            // Load-pair reads two consecutive registers' worth, so the second
+            // destination is one register width further along: 8 bytes for an
+            // `x` pair, 4 for a `w` pair. The largest single unmodelled
+            // mnemonic, 79,645 sites across both samples.
+            "ldp" | "ldnp" if ops.len() >= 3 => {
+                let stride = if ops[0].trim().starts_with('w') { 4 } else { 8 };
+                let first = self.operand_expr(&ops[2]);
+                if let Some(dst) = canonical_reg(&ops[0]) {
+                    self.state.reg_values.insert(dst, first);
+                }
+                let second = parse_mem_operand(&ops[2]).map(|(base, off)| {
+                    if base == "x29" {
+                        self.locals
+                            .get(&(off + stride))
+                            .cloned()
+                            .unwrap_or_else(|| local_name(off + stride))
+                    } else {
+                        let base_expr = self.state.reg_values.get(&base).cloned().unwrap_or(base);
+                        Self::clean_expr(Self::field_expr(&base_expr, off + stride))
+                    }
+                });
+                if let Some(dst) = canonical_reg(&ops[1]) {
+                    match second {
+                        Some(value) => self.state.reg_values.insert(dst, value),
+                        None => self.state.reg_values.remove(&dst),
+                    };
+                }
+                self.invalidate_index_writeback(&ops);
+            }
+            "stur" | "str" | "strb" | "sturb" | "strh" | "sturh" if ops.len() >= 2 => {
                 if let Some(target) = self.indexed_expr(&ops[1]) {
                     let rhs = self.operand_expr(&ops[0]);
                     self.update_selector_binding_from_assignment(&target, &rhs);
@@ -203,14 +405,81 @@ impl<'a> FuncEmitter<'a> {
                         self.push_line(indent, &format!("{} = {};", lhs, rhs));
                     }
                 }
+                self.invalidate_index_writeback(&ops);
             }
-            "cmp" if ops.len() >= 2 => {
+            // Every instruction that sets NZCV has to land here. `last_cmp` was
+            // written only by `cmp` and cleared only at joins, so a `b.<cc>` or
+            // `csel` after any other flag writer rendered the *previous*
+            // comparison as its condition. 33,705 conditions across the two
+            // samples take their flags from something other than `cmp`, `tst`
+            // alone accounting for 22,141, and conditions are what the
+            // structurer branches on.
+            // `fcmp` shares this arm, with one imprecision worth naming: a NaN
+            // operand leaves the comparison unordered, so `b.gt` and `b.le`
+            // after it are not exact negations of each other. Everything else
+            // in this arm is exact.
+            "cmp" | "fcmp" if ops.len() >= 2 => {
                 let lhs = self.operand_expr(&ops[0]);
                 let rhs = self.operand_expr(&ops[1]);
                 self.state.last_cmp = Some((lhs, rhs));
             }
+            // `subs` sets the same flags as `cmp` on the same operands, and
+            // also keeps the difference.
+            "subs" if ops.len() >= 3 => {
+                let lhs = self.operand_expr(&ops[1]);
+                let rhs = self.operand_expr(&ops[2]);
+                if let Some(dst) = canonical_reg(&ops[0]) {
+                    let value = simplify_bin_expr(lhs.clone(), "-", rhs.clone());
+                    self.state.reg_values.insert(dst, value);
+                }
+                self.state.last_cmp = Some((lhs, rhs));
+            }
+            // Mask tests. `tst` discards the result, `ands` keeps it, and both
+            // compare it against zero: `tst x0, #1` is the Smi tag check. The
+            // three-operand forms write a destination as well, so they must not
+            // be flags-only: that would leave the stale value the fallback arm
+            // exists to drop.
+            "tst" | "cmn" if ops.len() >= 2 => {
+                let a = self.operand_expr(&ops[0]);
+                let b = self.operand_expr(&ops[1]);
+                let op = if mnemonic == "tst" { "&" } else { "+" };
+                self.state.last_cmp = Some((format!("({a} {op} {b})"), "0".to_string()));
+            }
+            "ands" | "adds" if ops.len() >= 3 => {
+                let a = self.operand_expr(&ops[1]);
+                let b = self.operand_expr(&ops[2]);
+                // Same rendering as the non-flag form of each: the computation
+                // does not change because flags were set.
+                let combined = if mnemonic == "ands" {
+                    format!("({a} & {b})")
+                } else {
+                    simplify_bin_expr(a, "+", b)
+                };
+                if let Some(dst) = canonical_reg(&ops[0]) {
+                    self.state.reg_values.insert(dst, combined.clone());
+                }
+                self.state.last_cmp = Some((combined, "0".to_string()));
+            }
             "ret" => {}
-            _ => {}
+            _ => {
+                // An unmodelled instruction still writes its destination, and
+                // whatever the last modelled instruction left in `reg_values`
+                // would be rendered as that register's value at every later
+                // read. `csel x0, x16, x17, ne` used to leave x0 holding the
+                // entry value, so a function returning `cond ? true : false`
+                // emitted `return receiver;`. Dropping the binding degrades the
+                // read to a named register, which is the honest rendering for a
+                // value this lifter cannot follow.
+                for reg in written_registers(&mnemonic, &ops) {
+                    self.state.reg_values.remove(&reg);
+                }
+                // Same for the flags: an unmodelled flag writer leaves
+                // `last_cmp` describing an older comparison, which every
+                // following condition would then claim as its own.
+                if writes_flags(&mnemonic) {
+                    self.state.last_cmp = None;
+                }
+            }
         }
     }
 }

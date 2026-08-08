@@ -167,10 +167,14 @@ impl<'a> FuncEmitter<'a> {
     fn emit(mut self) -> PseudocodeArtifact {
         let fn_name = sanitize_name(&self.ir.name);
 
-        self.lines.push(format!(
-            "dynamic {}(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {{",
-            fn_name
-        ));
+        // One parameter per register the Dart convention passes an argument in.
+        // A lower bound, not a signature: arguments past the sixth are
+        // stack-passed and not modelled.
+        let params = (0..DART_ARGUMENT_REGISTERS.len())
+            .map(|i| format!("dynamic arg{i}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        self.lines.push(format!("dynamic {fn_name}({params}) {{"));
         for name in self.locals.values() {
             self.lines.push(format!("  var {};", name));
         }

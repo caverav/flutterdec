@@ -908,7 +908,7 @@ fn annotates_stdlib_call_intent_when_symbol_is_named() {
     assert!(
         artifact
             .source
-            .contains("final t1 = dart.core.print(receiver, param1, param2, param3); // stdlib:dart.core.print, was: dart_core_print"),
+            .contains("dart.core.print(); // stdlib:dart.core.print, was: dart_core_print"),
         "missing stdlib call intent annotation:\n{}",
         artifact.source
     );
@@ -947,7 +947,7 @@ fn preserves_dart_patch_library_segments_in_call_intent() {
     let artifact = emit_pseudocode(&ir, &symbols);
     assert!(
         artifact.source.contains(
-            "final t1 = dart.core_patch.bool_patch.fromEnvironment(receiver, param1, param2, param3); // stdlib:dart.core_patch.bool_patch.fromEnvironment, was: dart_core_patch_bool_patch_fromEnvironment"
+            "dart.core_patch.bool_patch.fromEnvironment(); // stdlib:dart.core_patch.bool_patch.fromEnvironment, was: dart_core_patch_bool_patch_fromEnvironment"
         ),
         "dart patch library segment should be preserved in semantic direct-call rewrite:\n{}",
         artifact.source
@@ -987,7 +987,7 @@ fn preserves_dart_owner_segment_in_call_intent() {
     let artifact = emit_pseudocode(&ir, &symbols);
     assert!(
         artifact.source.contains(
-            "final t1 = dart.typed_data.TypedData.offsetInBytes(receiver, param1, param2, param3); // stdlib:dart.typed_data.TypedData.offsetInBytes, was: dart_typed_data_TypedData_offsetInBytes"
+            "dart.typed_data.TypedData.offsetInBytes(); // stdlib:dart.typed_data.TypedData.offsetInBytes, was: dart_typed_data_TypedData_offsetInBytes"
         ),
         "dart owner segment should be preserved in semantic direct-call rewrite:\n{}",
         artifact.source
@@ -1035,14 +1035,14 @@ fn annotates_runtime_and_native_call_intents() {
     assert!(
         artifact
             .source
-            .contains("dart_vm.invoke(receiver, param1, param2, param3); // runtime:dart_vm.invoke, was: vm_runtime_Invoke"),
+            .contains("dart_vm.invoke(); // runtime:dart_vm.invoke, was: vm_runtime_Invoke"),
         "missing runtime call intent annotation:\n{}",
         artifact.source
     );
     assert!(
         artifact
             .source
-            .contains("libc.memcpy(t1, param1, param2, param3); // native:libc.memcpy, was: native_libc_memcpy"),
+            .contains("libc.memcpy(); // native:libc.memcpy, was: native_libc_memcpy"),
         "missing native call intent annotation:\n{}",
         artifact.source
     );
@@ -1089,14 +1089,14 @@ fn annotates_flutter_framework_call_intents() {
     assert!(
         artifact
             .source
-            .contains("flutter.widgets.State.setState(receiver, param1, param2, param3); // framework:flutter.widgets.State.setState, was: flutter_widgets_State_setState"),
+            .contains("flutter.widgets.State.setState(); // framework:flutter.widgets.State.setState, was: flutter_widgets_State_setState"),
         "missing flutter setState intent annotation:\n{}",
         artifact.source
     );
     assert!(
         artifact
             .source
-            .contains("flutter.widgets.StatefulWidget.createState(t1, param1, param2, param3); // framework:flutter.widgets.StatefulWidget.createState, was: flutter_widgets_StatefulWidget_createState"),
+            .contains("flutter.widgets.StatefulWidget.createState(); // framework:flutter.widgets.StatefulWidget.createState, was: flutter_widgets_StatefulWidget_createState"),
         "missing flutter createState intent annotation:\n{}",
         artifact.source
     );
@@ -1135,7 +1135,7 @@ fn preserves_flutter_class_and_method_tokens_with_underscores() {
     let artifact = emit_pseudocode(&ir, &symbols);
     assert!(
         artifact.source.contains(
-            "flutter.widgets.Render_Flex.perform_layout(receiver, param1, param2, param3); // framework:flutter.widgets.Render_Flex.perform_layout, was: flutter_widgets_Render_Flex_perform_layout"
+            "flutter.widgets.Render_Flex.perform_layout(); // framework:flutter.widgets.Render_Flex.perform_layout, was: flutter_widgets_Render_Flex_perform_layout"
         ),
         "flutter intent parsing should preserve underscore-heavy class/method splits:\n{}",
         artifact.source
@@ -1196,7 +1196,7 @@ fn annotates_framework_from_pool_selector_when_call_name_is_generic() {
     assert!(
         artifact
             .source
-            .contains("flutter.widgets.State.setState(1, 2, \"setState\" /* pool[42] */, param3); // framework:flutter.widgets.State.setState [selector], was: sub_6100"),
+            .contains("flutter.widgets.State.setState(2, \"setState\" /* pool[42] */); // framework:flutter.widgets.State.setState [selector], was: sub_6100"),
         "missing selector-based framework annotation:\n{}",
         artifact.source
     );
@@ -1366,7 +1366,7 @@ fn annotates_package_call_intents_from_machine_symbol_names() {
     assert!(
         artifact
             .source
-            .contains("spotube.ConnectService.executeCommandAsync(receiver, param1, param2, param3); // package:spotube.ConnectService.executeCommandAsync, was: package_spotube_ConnectService_executeCommandAsync"),
+            .contains("spotube.ConnectService.executeCommandAsync(); // package:spotube.ConnectService.executeCommandAsync, was: package_spotube_ConnectService_executeCommandAsync"),
         "missing package call intent annotation:\n{}",
         artifact.source
     );
@@ -1408,7 +1408,7 @@ fn preserves_package_owner_and_method_tokens_with_underscores() {
     let artifact = emit_pseudocode(&ir, &symbols);
     assert!(
         artifact.source.contains(
-            "spotube.Foo_Bar.internal_init(receiver, param1, param2, param3); // package:spotube.Foo_Bar.internal_init, was: package_spotube_Foo_Bar_internal_init"
+            "spotube.Foo_Bar.internal_init(); // package:spotube.Foo_Bar.internal_init, was: package_spotube_Foo_Bar_internal_init"
         ),
         "package intent parsing should preserve underscore-heavy owner/method splits:\n{}",
         artifact.source
@@ -1462,7 +1462,7 @@ fn annotates_flutter_scheduler_selector_from_pool_string() {
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
         artifact.source.contains(
-            "flutter.scheduler.SchedulerBinding.addPostFrameCallback(1, \"addPostFrameCallback\" /* pool[7] */, param2, param3); // framework:flutter.scheduler.SchedulerBinding.addPostFrameCallback [selector], was: sub_7000"
+            "flutter.scheduler.SchedulerBinding.addPostFrameCallback(\"addPostFrameCallback\" /* pool[7] */); // framework:flutter.scheduler.SchedulerBinding.addPostFrameCallback [selector], was: sub_7000"
         ),
         "missing scheduler selector annotation:\n{}",
         artifact.source
@@ -1516,7 +1516,7 @@ fn annotates_dart_async_selector_from_pool_string() {
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
         artifact.source.contains(
-            "dart.async.Future.catchError(1, \"catchError\" /* pool[9] */, param2, param3); // stdlib:dart.async.Future.catchError [selector], was: sub_7100"
+            "dart.async.Future.catchError(\"catchError\" /* pool[9] */); // stdlib:dart.async.Future.catchError [selector], was: sub_7100"
         ),
         "missing dart async selector annotation:\n{}",
         artifact.source
@@ -1570,7 +1570,7 @@ fn annotates_dart_typed_data_selector_from_pool_string() {
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
         artifact.source.contains(
-            "dart.typed_data.TypedData.offsetInBytes(1, \"offsetInBytes\" /* pool[13] */, param2, param3); // stdlib:dart.typed_data.TypedData.offsetInBytes [selector], was: sub_7200"
+            "dart.typed_data.TypedData.offsetInBytes(\"offsetInBytes\" /* pool[13] */); // stdlib:dart.typed_data.TypedData.offsetInBytes [selector], was: sub_7200"
         ),
         "missing typed_data selector annotation:\n{}",
         artifact.source
@@ -1624,7 +1624,7 @@ fn annotates_dart_typed_data_native_set_float32x4_internal_selector_from_pool_st
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
         artifact.source.contains(
-            "dart.typed_data.ByteData.setFloat32x4(1, \"_nativeSetFloat32x4\" /* pool[28] */, param2, param3); // stdlib:dart.typed_data.ByteData.setFloat32x4 [selector], was: sub_7240"
+            "dart.typed_data.ByteData.setFloat32x4(\"_nativeSetFloat32x4\" /* pool[28] */); // stdlib:dart.typed_data.ByteData.setFloat32x4 [selector], was: sub_7240"
         ),
         "missing typed_data native setFloat32x4 selector annotation:\n{}",
         artifact.source
@@ -1678,7 +1678,7 @@ fn annotates_dart_typed_data_unmodifiable_uint8_array_view_internal_selector_fro
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
         artifact.source.contains(
-            "dart.typed_data._UnmodifiableUint8ArrayView.new(1, \"_UnmodifiableUint8ArrayView\" /* pool[29] */, param2, param3); // stdlib:dart.typed_data._UnmodifiableUint8ArrayView.new [selector], was: sub_7250"
+            "dart.typed_data._UnmodifiableUint8ArrayView.new(\"_UnmodifiableUint8ArrayView\" /* pool[29] */); // stdlib:dart.typed_data._UnmodifiableUint8ArrayView.new [selector], was: sub_7250"
         ),
         "missing typed_data unmodifiable uint8 array view selector annotation:\n{}",
         artifact.source
@@ -1732,7 +1732,7 @@ fn annotates_dart_typed_data_int32_array_view_internal_selector_from_pool_string
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
         artifact.source.contains(
-            "dart.typed_data._Int32ArrayView.new(1, \"_Int32ArrayView\" /* pool[30] */, param2, param3); // stdlib:dart.typed_data._Int32ArrayView.new [selector], was: sub_7260"
+            "dart.typed_data._Int32ArrayView.new(\"_Int32ArrayView\" /* pool[30] */); // stdlib:dart.typed_data._Int32ArrayView.new [selector], was: sub_7260"
         ),
         "missing typed_data int32 array view selector annotation:\n{}",
         artifact.source
@@ -1786,7 +1786,7 @@ fn annotates_dart_core_match_end_selector_from_pool_string() {
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
         artifact.source.contains(
-            "dart.core.Match.end(1, \"match_end_index\" /* pool[21] */, param2, param3); // stdlib:dart.core.Match.end [selector], was: sub_7280"
+            "dart.core.Match.end(\"match_end_index\" /* pool[21] */); // stdlib:dart.core.Match.end [selector], was: sub_7280"
         ),
         "missing dart core match end selector annotation:\n{}",
         artifact.source
@@ -1840,7 +1840,7 @@ fn annotates_dart_io_selector_from_pool_string() {
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
         artifact.source.contains(
-            "dart.io.Stdout.supportsAnsiEscapes(1, \"supportsAnsiEscapes\" /* pool[14] */, param2, param3); // stdlib:dart.io.Stdout.supportsAnsiEscapes [selector], was: sub_7300"
+            "dart.io.Stdout.supportsAnsiEscapes(\"supportsAnsiEscapes\" /* pool[14] */); // stdlib:dart.io.Stdout.supportsAnsiEscapes [selector], was: sub_7300"
         ),
         "missing dart:io selector annotation:\n{}",
         artifact.source
@@ -1894,7 +1894,7 @@ fn annotates_native_prefixed_typed_data_selector_from_pool_string() {
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
         artifact.source.contains(
-            "dart.typed_data.ByteData.setFloat32(1, \"nativeSetFloat32\" /* pool[15] */, param2, param3); // stdlib:dart.typed_data.ByteData.setFloat32 [selector], was: sub_7400"
+            "dart.typed_data.ByteData.setFloat32(\"nativeSetFloat32\" /* pool[15] */); // stdlib:dart.typed_data.ByteData.setFloat32 [selector], was: sub_7400"
         ),
         "missing native-prefixed typed_data selector annotation:\n{}",
         artifact.source
@@ -1948,7 +1948,7 @@ fn annotates_runtime_selector_from_pool_string() {
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
         artifact.source.contains(
-            "dart_vm.yieldStarIterable(1, \"yieldStarIterable\" /* pool[16] */, param2, param3); // runtime:dart_vm.yieldStarIterable [selector], was: sub_7500"
+            "dart_vm.yieldStarIterable(\"yieldStarIterable\" /* pool[16] */); // runtime:dart_vm.yieldStarIterable [selector], was: sub_7500"
         ),
         "missing runtime selector annotation:\n{}",
         artifact.source
@@ -2002,7 +2002,7 @@ fn annotates_flutter_internal_list_equals_selector_from_pool_string() {
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
         artifact.source.contains(
-            "flutter.foundation.listEquals(1, \"_listEquals\" /* pool[24] */, param2, param3); // framework:flutter.foundation.listEquals [selector], was: sub_7900"
+            "flutter.foundation.listEquals(\"_listEquals\" /* pool[24] */); // framework:flutter.foundation.listEquals [selector], was: sub_7900"
         ),
         "missing flutter internal listEquals selector annotation:\n{}",
         artifact.source
@@ -2056,7 +2056,7 @@ fn annotates_runtime_internal_prepend_type_arguments_selector_from_pool_string()
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
         artifact.source.contains(
-            "dart_vm.prependTypeArguments(1, \"_prependTypeArguments\" /* pool[25] */, param2, param3); // runtime:dart_vm.prependTypeArguments [selector], was: sub_7910"
+            "dart_vm.prependTypeArguments(\"_prependTypeArguments\" /* pool[25] */); // runtime:dart_vm.prependTypeArguments [selector], was: sub_7910"
         ),
         "missing runtime internal prependTypeArguments selector annotation:\n{}",
         artifact.source
@@ -2110,7 +2110,7 @@ fn annotates_dart_async_stream_controller_internal_selector_from_pool_string() {
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
         artifact.source.contains(
-            "dart.async.StreamController.new(1, \"_StreamController\" /* pool[26] */, param2, param3); // stdlib:dart.async.StreamController.new [selector], was: sub_7920"
+            "dart.async.StreamController.new(\"_StreamController\" /* pool[26] */); // stdlib:dart.async.StreamController.new [selector], was: sub_7920"
         ),
         "missing internal StreamController selector annotation:\n{}",
         artifact.source
@@ -2164,7 +2164,7 @@ fn annotates_dart_io_raw_datagram_socket_internal_selector_from_pool_string() {
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
         artifact.source.contains(
-            "dart.io.RawDatagramSocket.new(1, \"_RawDatagramSocket\" /* pool[27] */, param2, param3); // stdlib:dart.io.RawDatagramSocket.new [selector], was: sub_7930"
+            "dart.io.RawDatagramSocket.new(\"_RawDatagramSocket\" /* pool[27] */); // stdlib:dart.io.RawDatagramSocket.new [selector], was: sub_7930"
         ),
         "missing internal RawDatagramSocket selector annotation:\n{}",
         artifact.source
@@ -2218,7 +2218,7 @@ fn annotates_dart_core_compile_time_error_selector_from_pool_string() {
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
         artifact.source.contains(
-            "dart.core._CompileTimeError.new(1, \"_CompileTimeError\" /* pool[17] */, param2, param3); // stdlib:dart.core._CompileTimeError.new [selector], was: sub_7600"
+            "dart.core._CompileTimeError.new(\"_CompileTimeError\" /* pool[17] */); // stdlib:dart.core._CompileTimeError.new [selector], was: sub_7600"
         ),
         "missing compile-time-error selector annotation:\n{}",
         artifact.source
@@ -2272,7 +2272,7 @@ fn annotates_dart_io_native_socket_selector_from_pool_string() {
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
         artifact.source.contains(
-            "dart.io._NativeSocket.new(1, \"_NativeSocket\" /* pool[18] */, param2, param3); // stdlib:dart.io._NativeSocket.new [selector], was: sub_7700"
+            "dart.io._NativeSocket.new(\"_NativeSocket\" /* pool[18] */); // stdlib:dart.io._NativeSocket.new [selector], was: sub_7700"
         ),
         "missing native-socket selector annotation:\n{}",
         artifact.source
@@ -2326,7 +2326,7 @@ fn annotates_runtime_closure_selector_from_pool_string() {
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
         artifact.source.contains(
-            "dart_vm.Closure.new(1, \"_Closure\" /* pool[19] */, param2, param3); // runtime:dart_vm.Closure.new [selector], was: sub_7800"
+            "dart_vm.Closure.new(\"_Closure\" /* pool[19] */); // runtime:dart_vm.Closure.new [selector], was: sub_7800"
         ),
         "missing closure runtime selector annotation:\n{}",
         artifact.source
@@ -2380,7 +2380,7 @@ fn annotates_runtime_type_parameter_selector_from_pool_string() {
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
         artifact.source.contains(
-            "dart_vm.TypeParameter.new(1, \"_TypeParameter\" /* pool[20] */, param2, param3); // runtime:dart_vm.TypeParameter.new [selector], was: sub_7900"
+            "dart_vm.TypeParameter.new(\"_TypeParameter\" /* pool[20] */); // runtime:dart_vm.TypeParameter.new [selector], was: sub_7900"
         ),
         "missing type-parameter runtime selector annotation:\n{}",
         artifact.source

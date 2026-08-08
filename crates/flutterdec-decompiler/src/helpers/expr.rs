@@ -200,11 +200,15 @@ fn parse_non_negative_i64_token(token: &str) -> Option<u64> {
 /// tracker could not follow. It has no pool geometry, so it can only report the
 /// displacement, never an entry index.
 fn try_parse_shifted_pool_field(bytes: &[u8], start: usize) -> Option<(usize, u64)> {
-    if start + 2 >= bytes.len() || bytes[start] != b'(' || bytes[start + 1] != b'(' {
+    let mut i = start;
+    let mut opens = 0usize;
+    while i < bytes.len() && bytes[i] == b'(' {
+        opens += 1;
+        i += 1;
+    }
+    if opens < 2 {
         return None;
     }
-
-    let mut i = start + 2;
     i = skip_ascii_ws(bytes, i);
     if i + 4 > bytes.len() || &bytes[i..i + 4] != b"pool" {
         return None;
@@ -270,10 +274,38 @@ fn try_parse_shifted_pool_field(bytes: &[u8], start: usize) -> Option<(usize, u6
     i += 2;
     i = skip_ascii_ws(bytes, i);
 
-    if i + 2 > bytes.len() || bytes[i] != b')' || bytes[i + 1] != b')' {
+    // Close the shifted page term.
+    if i >= bytes.len() || bytes[i] != b')' {
         return None;
     }
-    i += 2;
+    i += 1;
+    i = skip_ascii_ws(bytes, i);
+
+    // A second displacement can sit between the page and the field, as in
+    // `((pool + 0x2c /* lsl #12 */) + 0xdc8)).f0`, when one instruction builds
+    // the page address and the next reads through it with its own offset. Both
+    // displacements are known, so the entry is still exact.
+    let mut inner = 0u64;
+    if i < bytes.len() && bytes[i] == b'+' {
+        i += 1;
+        i = skip_ascii_ws(bytes, i);
+        let disp_start = i;
+        while i < bytes.len() && !bytes[i].is_ascii_whitespace() && bytes[i] != b')' {
+            i += 1;
+        }
+        let disp_token = std::str::from_utf8(&bytes[disp_start..i]).ok()?;
+        inner = parse_non_negative_i64_token(disp_token)?;
+        i = skip_ascii_ws(bytes, i);
+    }
+
+    // Close every parenthesis this match opened, so replacing the span cannot
+    // leave an unbalanced one behind.
+    for _ in 1..opens {
+        if i >= bytes.len() || bytes[i] != b')' {
+            return None;
+        }
+        i += 1;
+    }
     if i + 2 > bytes.len() || bytes[i] != b'.' || bytes[i + 1] != b'f' {
         return None;
     }
@@ -289,7 +321,7 @@ fn try_parse_shifted_pool_field(bytes: &[u8], start: usize) -> Option<(usize, u6
     let offset = std::str::from_utf8(&bytes[off_start..i]).ok()?.parse::<u64>().ok()?;
 
     let page_bytes = page.checked_shl(shift as u32)?;
-    let total = page_bytes.checked_add(offset)?;
+    let total = page_bytes.checked_add(inner)?.checked_add(offset)?;
     if !total.is_multiple_of(8) {
         return None;
     }

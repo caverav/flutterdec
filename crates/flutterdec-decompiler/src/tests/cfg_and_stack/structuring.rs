@@ -302,7 +302,7 @@ fn repeats_a_small_shared_region_that_is_not_a_follow_node() {
         artifact
             .source
             .lines()
-            .filter(|l| l.contains("= param3;") || l.contains("= receiver;"))
+            .filter(|l| l.contains("= param2;"))
             .count(),
         2,
         "the shared block is emitted on both paths:\n{}",
@@ -463,4 +463,369 @@ fn both_emitters_render_a_tail_call_identically() {
         "a tail call is rendered as a call:\n{}",
         out.source
     );
+}
+
+/// `ldp` reads two consecutive registers' worth, so the second destination is
+/// one register width past the first: 8 bytes for an `x` pair, 4 for a `w`
+/// pair. Both were unmodelled before, which left stale values in both
+/// destinations at 79,645 sites across the two sample binaries.
+#[test]
+fn load_pair_reads_consecutive_slots() {
+    let ir = FunctionIr {
+        function_id: 900,
+        name: "loadPair".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![blk(
+            0,
+            0x1000,
+            vec![
+                stmt(0x1000, "ldp x9, x10, [x2, #0x10]"),
+                stmt(0x1004, "stur x9, [x3, #7]"),
+                stmt(0x1008, "stur x10, [x3, #0xf]"),
+                ret(0x100c),
+            ],
+            vec![],
+        )],
+    };
+    let out = emit_pseudocode(&ir, &HashMap::new()).source;
+    assert!(
+        out.contains(".f16;"),
+        "first destination should read the addressed field:\n{out}"
+    );
+    assert!(
+        out.contains(".f24;"),
+        "second destination should read one word further, not the same field:\n{out}"
+    );
+}
+
+/// A `w` pair strides by 4, not 8. No sample binary contains one, so this is
+/// the only thing exercising that branch: an uncompressed-pointer build never
+/// emits a 32-bit pair, but the encoding is real and the stride is not 8.
+#[test]
+fn load_pair_of_word_registers_strides_by_four() {
+    let ir = FunctionIr {
+        function_id: 901,
+        name: "loadPairWord".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![blk(
+            0,
+            0x1000,
+            vec![
+                stmt(0x1000, "ldp w9, w10, [x2, #0x10]"),
+                stmt(0x1004, "stur x10, [x3, #7]"),
+                ret(0x1008),
+            ],
+            vec![],
+        )],
+    };
+    let out = emit_pseudocode(&ir, &HashMap::new()).source;
+    assert!(
+        out.contains(".f20;"),
+        "a word pair should stride by four:\n{out}"
+    );
+}
+
+/// Pre- and post-index addressing writes the base register back, so the base no
+/// longer describes the address it held before the access.
+#[test]
+fn post_index_addressing_drops_the_base_binding() {
+    let ir = FunctionIr {
+        function_id: 902,
+        name: "postIndex".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![blk(
+            0,
+            0x1000,
+            vec![
+                stmt(0x1000, "mov x2, x1"),
+                stmt(0x1004, "ldr x9, [x2], #0x10"),
+                stmt(0x1008, "stur x2, [x3, #7]"),
+                ret(0x100c),
+            ],
+            vec![],
+        )],
+    };
+    let out = emit_pseudocode(&ir, &HashMap::new()).source;
+    assert!(
+        !out.contains("= receiver;"),
+        "the written-back base must not still read as its pre-access value:\n{out}"
+    );
+}
+
+/// Dart materialises the canonical bools by adding `kTrueOffsetFromNull` and
+/// `kFalseOffsetFromNull` to NULL_REG, and `csel` between them turns a
+/// comparison into a value. Unmodelled, the destination kept a stale binding,
+/// so a function returning `cond ? true : false` emitted `return receiver;`.
+#[test]
+fn conditional_select_between_bools_recovers_the_comparison() {
+    let ir = FunctionIr {
+        function_id: 903,
+        name: "boolSelect".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![blk(
+            0,
+            0x1000,
+            vec![
+                stmt(0x1000, "cmp x1, x2"),
+                stmt(0x1004, "add x16, x22, #0x20"),
+                stmt(0x1008, "add x17, x22, #0x30"),
+                stmt(0x100c, "csel x9, x16, x17, ne"),
+                stmt(0x1010, "stur x9, [x3, #7]"),
+                ret(0x1014),
+            ],
+            vec![],
+        )],
+    };
+    let out = emit_pseudocode(&ir, &HashMap::new()).source;
+    assert!(
+        out.contains("(receiver != param1)"),
+        "true-then-false arms should render as the comparison itself:\n{out}"
+    );
+}
+
+/// Operand order carries the polarity: with the arms reversed the value is the
+/// inverse condition, not the same one.
+#[test]
+fn conditional_select_reads_the_arm_order() {
+    let ir = FunctionIr {
+        function_id: 904,
+        name: "boolSelectReversed".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![blk(
+            0,
+            0x1000,
+            vec![
+                stmt(0x1000, "cmp x1, x2"),
+                stmt(0x1004, "add x16, x22, #0x30"),
+                stmt(0x1008, "add x17, x22, #0x20"),
+                stmt(0x100c, "csel x9, x16, x17, ne"),
+                stmt(0x1010, "stur x9, [x3, #7]"),
+                ret(0x1014),
+            ],
+            vec![],
+        )],
+    };
+    let out = emit_pseudocode(&ir, &HashMap::new()).source;
+    assert!(
+        out.contains("(receiver == param1)"),
+        "false-then-true arms should render as the inverse condition:\n{out}"
+    );
+}
+
+/// `tst` sets the flags from a mask test, so a following branch describes that
+/// mask and not whatever the previous `cmp` compared. 22,141 conditions across
+/// the two samples take their flags from `tst`.
+#[test]
+fn mask_test_supplies_the_following_condition() {
+    let ir = FunctionIr {
+        function_id: 905,
+        name: "maskTest".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![
+            blk(
+                0,
+                0x1000,
+                vec![
+                    stmt(0x1000, "cmp x5, x6"),
+                    stmt(0x1004, "tst x1, #1"),
+                    LlirInstr {
+                        va: 0x1008,
+                        op: IROp::Branch,
+                        src: "b.ne #0x1010".to_string(),
+                        target: "#0x1010".to_string(),
+                    },
+                ],
+                vec![1, 2],
+            ),
+            blk(
+                1,
+                0x100c,
+                vec![stmt(0x100c, "stur x1, [x3, #7]"), ret(0x1014)],
+                vec![],
+            ),
+            blk(2, 0x1010, vec![ret(0x1010)], vec![]),
+        ],
+    };
+    let out = emit_pseudocode(&ir, &HashMap::new()).source;
+    assert!(
+        out.contains("(receiver & 1)"),
+        "the condition should describe the mask test, not an earlier compare:\n{out}"
+    );
+}
+
+/// An unmodelled flag writer leaves `last_cmp` describing an older comparison.
+/// Naming that as the condition is a confident false claim, so it degrades to
+/// the raw flag instead.
+#[test]
+fn unmodelled_flag_writer_does_not_inherit_an_older_compare() {
+    let ir = FunctionIr {
+        function_id: 906,
+        name: "staleFlags".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![
+            blk(
+                0,
+                0x1000,
+                vec![
+                    stmt(0x1000, "cmp x5, x6"),
+                    stmt(0x1004, "ccmp x1, #0, #4, ne"),
+                    LlirInstr {
+                        va: 0x1008,
+                        op: IROp::Branch,
+                        src: "b.ge #0x1010".to_string(),
+                        target: "#0x1010".to_string(),
+                    },
+                ],
+                vec![1, 2],
+            ),
+            blk(1, 0x100c, vec![ret(0x100c)], vec![]),
+            blk(2, 0x1010, vec![ret(0x1010)], vec![]),
+        ],
+    };
+    let out = emit_pseudocode(&ir, &HashMap::new()).source;
+    assert!(
+        out.contains("flags.b_ge"),
+        "an unmodelled flag writer should not leave the previous compare readable:\n{out}"
+    );
+}
+
+/// An unmodelled instruction still writes its destination. Leaving the previous
+/// binding in place rendered it as that register's value at every later read.
+#[test]
+fn unmodelled_instruction_drops_its_destination_binding() {
+    let ir = FunctionIr {
+        function_id: 907,
+        name: "staleValue".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![blk(
+            0,
+            0x1000,
+            vec![
+                stmt(0x1000, "mov x9, x1"),
+                stmt(0x1004, "frintn d0, d1"),
+                stmt(0x1008, "clz x9, x2"),
+                stmt(0x100c, "stur x9, [x3, #7]"),
+                ret(0x1010),
+            ],
+            vec![],
+        )],
+    };
+    let out = emit_pseudocode(&ir, &HashMap::new()).source;
+    assert!(
+        !out.contains("= receiver;"),
+        "a register overwritten by an unmodelled instruction must not keep its old value:\n{out}"
+    );
+}
+/// `kTrueOffsetFromNull` is 0x20 and `kFalseOffsetFromNull` is 0x30
+/// (`runtime/vm/pointer_tagging.h`), so an add of either off NULL_REG
+/// materialises a canonical bool, not an integer. Any other displacement is
+/// still plain arithmetic against null, which is a true statement about a
+/// canonical object and must not be dropped.
+#[test]
+fn null_relative_adds_name_the_canonical_bools_only() {
+    let materialise = |imm: &str| {
+        let ir = FunctionIr {
+            function_id: 908,
+            name: "boolMaterialise".to_string(),
+            entry_va: 0x1000,
+            blocks: vec![blk(
+                0,
+                0x1000,
+                vec![
+                    stmt(0x1000, &format!("add x9, x22, #{imm}")),
+                    stmt(0x1004, "stur x9, [x3, #7]"),
+                    ret(0x1008),
+                ],
+                vec![],
+            )],
+        };
+        emit_pseudocode(&ir, &HashMap::new()).source
+    };
+    let t = materialise("0x20");
+    assert!(t.contains("= true;"), "0x20 off null is `true`:\n{t}");
+    let f = materialise("0x30");
+    assert!(f.contains("= false;"), "0x30 off null is `false`:\n{f}");
+    let other = materialise("0x40");
+    assert!(
+        !other.contains("true") && !other.contains("false"),
+        "an undefined offset must not be named as a bool:\n{other}"
+    );
+}
+/// A pool address built by one instruction and read through by the next carries
+/// two displacements, and both are known, so the entry is exact. The normaliser
+/// only accepted the single-displacement shape, so widening the load arms left
+/// 834 references rendering as raw `(pool + page) + off` arithmetic.
+#[test]
+fn pool_page_with_a_second_displacement_resolves_to_an_entry() {
+    let ir = FunctionIr {
+        function_id: 909,
+        name: "poolPage".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![blk(
+            0,
+            0x1000,
+            vec![
+                stmt(0x1000, "add x9, x27, #0x2c, lsl #12"),
+                stmt(0x1004, "ldr x9, [x9, #0xdc8]"),
+                stmt(0x1008, "stur x9, [x3, #7]"),
+                ret(0x100c),
+            ],
+            vec![],
+        )],
+    };
+    let out = emit_pseudocode(&ir, &HashMap::new()).source;
+    // 0x2c << 12 == 0x2c000, plus 0xdc8.
+    assert!(
+        out.contains(&format!("poolOff[{}]", 0x2c000 + 0xdc8)),
+        "both displacements should fold into one pool entry:\n{out}"
+    );
+    assert_eq!(
+        out.matches('(').count(),
+        out.matches(')').count(),
+        "folding must not leave an unbalanced parenthesis:\n{out}"
+    );
+}
+
+/// Every frame slot the lifter can name needs a declaration, and `ldp` names
+/// two of them from its third operand. Missing either yields an identifier with
+/// no declaration, since only collected slots are declared.
+#[test]
+fn load_pair_frame_slots_are_declared() {
+    let ir = FunctionIr {
+        function_id: 910,
+        name: "framePair".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![blk(
+            0,
+            0x1000,
+            vec![
+                stmt(0x1000, "ldp x9, x10, [x29, #-0x20]"),
+                stmt(0x1004, "stur x9, [x3, #7]"),
+                stmt(0x1008, "stur x10, [x3, #0xf]"),
+                ret(0x100c),
+            ],
+            vec![],
+        )],
+    };
+    let out = emit_pseudocode(&ir, &HashMap::new()).source;
+    // The two stores must read two different slot names, and each of those
+    // names must have a declaration.
+    let read: Vec<String> = out
+        .lines()
+        .filter_map(|l| l.trim().strip_suffix(';'))
+        .filter_map(|l| l.split_once(" = "))
+        .map(|(_, rhs)| rhs.to_string())
+        .collect();
+    assert_eq!(read.len(), 2, "both slots should be stored:\n{out}");
+    assert_ne!(
+        read[0], read[1],
+        "the two slots must not resolve to one name:\n{out}"
+    );
+    for name in &read {
+        assert!(
+            out.lines()
+                .any(|l| l.trim() == format!("dynamic {name};") || l.trim() == format!("var {name};")),
+            "slot {name} is referenced without a declaration:\n{out}"
+        );
+    }
 }

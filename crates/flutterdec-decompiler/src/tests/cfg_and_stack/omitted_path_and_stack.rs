@@ -72,52 +72,6 @@ fn summarizes_duplicate_omitted_blocks_once() {
     );
 }
 
-#[test]
-fn simplifies_null_base_add_immediate() {
-    let ir = FunctionIr {
-        function_id: 17,
-        name: "nullAdd".to_string(),
-        entry_va: 0xf200,
-        blocks: vec![BasicBlock {
-            id: 0,
-            start_va: 0xf200,
-            instrs: vec![
-                LlirInstr {
-                    va: 0xf200,
-                    op: IROp::Other,
-                    src: "add x1, x22, #0x20".to_string(),
-                    target: String::new(),
-                },
-                LlirInstr {
-                    va: 0xf204,
-                    op: IROp::Other,
-                    src: "stur x1, [x29, #-8]".to_string(),
-                    target: String::new(),
-                },
-                LlirInstr {
-                    va: 0xf208,
-                    op: IROp::Return,
-                    src: "ret".to_string(),
-                    target: String::new(),
-                },
-            ],
-            succs: Vec::new(),
-            preds: Vec::new(),
-        }],
-    };
-
-    let artifact = emit_pseudocode(&ir, &HashMap::new());
-    assert!(
-        artifact.source.contains("= 0x20;"),
-        "null-based add should collapse to literal:\n{}",
-        artifact.source
-    );
-    assert!(
-        !artifact.source.contains("(null + 0x20)"),
-        "legacy null arithmetic should be removed:\n{}",
-        artifact.source
-    );
-}
 
 #[test]
 fn folds_nested_stack_offset_arithmetic() {
