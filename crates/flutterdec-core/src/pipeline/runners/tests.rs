@@ -48,6 +48,7 @@
             dispatch_selector_calls: 1132,
             dispatch_table_calls: 1132,
             repeated_blocks: 0,
+            unlifted_instructions: 0,
             target_va_symbol_calls: 0,
             block_helper_refs: 0,
             raw_arg_name_refs: 0,
@@ -1406,6 +1407,7 @@
                 dispatch_selector_calls: 0,
                 dispatch_table_calls: 0,
                 repeated_blocks: 0,
+                unlifted_instructions: 0,
                 target_va_symbol_calls: 0,
             },
             PseudocodeArtifact {
@@ -1426,6 +1428,7 @@
                 dispatch_selector_calls: 0,
                 dispatch_table_calls: 0,
                 repeated_blocks: 0,
+                unlifted_instructions: 0,
                 target_va_symbol_calls: 0,
             },
         ];
@@ -1461,6 +1464,7 @@
                 dispatch_selector_calls: 2,
                 dispatch_table_calls: 2,
                 repeated_blocks: 0,
+                unlifted_instructions: 0,
                 target_va_symbol_calls: 0,
             },
             PseudocodeArtifact {
@@ -1481,6 +1485,7 @@
                 dispatch_selector_calls: 1,
                 dispatch_table_calls: 1,
                 repeated_blocks: 0,
+                unlifted_instructions: 0,
                 target_va_symbol_calls: 0,
             },
         ];
@@ -1528,6 +1533,7 @@
             dispatch_selector_calls: 0,
             dispatch_table_calls: 0,
             repeated_blocks: 0,
+            unlifted_instructions: 0,
             target_va_symbol_calls: 0,
         }];
 

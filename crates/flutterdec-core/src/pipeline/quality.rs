@@ -17,6 +17,7 @@ fn quality_from_artifacts(
     let mut dispatch_selector_calls = 0usize;
     let mut dispatch_table_calls = 0usize;
     let mut repeated_blocks = 0usize;
+    let mut unlifted_instructions = 0usize;
     let mut target_va_symbol_calls = 0usize;
     let mut block_helper_refs = 0usize;
     let mut raw_arg_name_refs = 0usize;
@@ -36,6 +37,7 @@ fn quality_from_artifacts(
         dispatch_selector_calls += p.dispatch_selector_calls;
         dispatch_table_calls += p.dispatch_table_calls;
         repeated_blocks += p.repeated_blocks;
+        unlifted_instructions += p.unlifted_instructions;
         target_va_symbol_calls += p.target_va_symbol_calls;
         block_helper_refs += p.source.matches("_block_").count();
         placeholder_cond_markers += p.source.matches("/* cond */").count();
@@ -92,6 +94,7 @@ fn quality_from_artifacts(
         dispatch_selector_calls,
         dispatch_table_calls,
         repeated_blocks,
+        unlifted_instructions,
         target_va_symbol_calls,
         block_helper_refs,
         raw_arg_name_refs,

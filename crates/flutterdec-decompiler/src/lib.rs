@@ -21,6 +21,9 @@ pub struct PseudocodeArtifact {
     /// Blocks emitted more than once because a shared continuation could not be
     /// named. Bounded by budget; the DFS fallback's duplication is not.
     pub repeated_blocks: usize,
+    /// Instructions on a branch arm that the lifter does not model, counted where
+    /// that would otherwise have let the branch be elided as having no effect.
+    pub unlifted_instructions: usize,
     pub target_va_symbol_calls: usize,
 }
 
@@ -74,6 +77,7 @@ struct FuncEmitter<'a> {
     dispatch_selector_calls: usize,
     dispatch_table_calls: usize,
     repeated_blocks: usize,
+    unlifted_instructions: usize,
     target_va_symbol_calls: usize,
 }
 
@@ -155,6 +159,7 @@ impl<'a> FuncEmitter<'a> {
             dispatch_selector_calls: 0,
             dispatch_table_calls: 0,
             repeated_blocks: 0,
+            unlifted_instructions: 0,
             target_va_symbol_calls: 0,
         }
     }
@@ -224,6 +229,7 @@ impl<'a> FuncEmitter<'a> {
             dispatch_selector_calls: self.dispatch_selector_calls,
             dispatch_table_calls: self.dispatch_table_calls,
             repeated_blocks: self.repeated_blocks,
+            unlifted_instructions: self.unlifted_instructions,
             target_va_symbol_calls: self.target_va_symbol_calls,
         }
     }

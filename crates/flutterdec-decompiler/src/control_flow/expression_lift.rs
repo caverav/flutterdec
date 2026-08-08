@@ -46,6 +46,36 @@ impl<'a> FuncEmitter<'a> {
         Self::clean_expr(token.trim().trim_start_matches('#').to_string())
     }
 
+    /// Whether the lifter models this instruction at all.
+    ///
+    /// Anything else reaches `apply_other_lift`'s fallthrough and is silently
+    /// discarded: no statement, no state change, no counter. Floating point,
+    /// vector work and load/store pairs all land here. Knowing this matters for
+    /// any pass that reads "emitted nothing" as "does nothing", which would
+    /// otherwise delete real computation.
+    pub(super) fn lifts_mnemonic(mnemonic: &str) -> bool {
+        matches!(
+            mnemonic,
+            "mov"
+                | "add"
+                | "sub"
+                | "mul"
+                | "and"
+                | "orr"
+                | "eor"
+                | "lsl"
+                | "lsr"
+                | "asr"
+                | "ubfx"
+                | "ldur"
+                | "ldr"
+                | "stur"
+                | "str"
+                | "cmp"
+                | "ret"
+        )
+    }
+
     pub(super) fn apply_other_lift(&mut self, ins_src: &str, indent: usize) {
         let (mnemonic, ops) = split_instruction(ins_src);
 

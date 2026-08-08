@@ -57,7 +57,7 @@ impl<'a> FuncEmitter<'a> {
         false
     }
 
-    fn counter_snapshot(&self) -> [usize; 11] {
+    fn counter_snapshot(&self) -> [usize; 12] {
         [
             self.placeholder_ifs,
             self.unresolved_cf,
@@ -69,11 +69,12 @@ impl<'a> FuncEmitter<'a> {
             self.dispatch_selector_calls,
             self.dispatch_table_calls,
             self.repeated_blocks,
+            self.unlifted_instructions,
             self.target_va_symbol_calls,
         ]
     }
 
-    fn restore_counters(&mut self, c: [usize; 11]) {
+    fn restore_counters(&mut self, c: [usize; 12]) {
         self.placeholder_ifs = c[0];
         self.unresolved_cf = c[1];
         self.raw_register_calls = c[2];
@@ -84,6 +85,7 @@ impl<'a> FuncEmitter<'a> {
         self.dispatch_selector_calls = c[7];
         self.dispatch_table_calls = c[9];
         self.repeated_blocks = c[10];
+        self.unlifted_instructions = c[11];
         self.target_va_symbol_calls = c[8];
     }
 
@@ -214,6 +216,26 @@ impl<'a> FuncEmitter<'a> {
                     }
                     let else_lines: Vec<String> = self.lines.split_off(buffer_start);
 
+                    // An arm can also be empty because the lifter does not model
+                    // its instructions. Eliding then deletes real computation, so
+                    // an empty arm carrying unmodelled work says so instead.
+                    let mut taken_lines = taken_lines;
+                    let mut else_lines = else_lines;
+                    for (lines, arm) in [(&mut taken_lines, taken), (&mut else_lines, not_taken)] {
+                        if !lines.is_empty() {
+                            continue;
+                        }
+                        let unlifted = self.unlifted_on_arm(arm, region_follow);
+                        if unlifted > 0 {
+                            self.unlifted_instructions += unlifted;
+                            lines.push(format!(
+                                "{}// {} instructions not lifted",
+                                "  ".repeat(indent + 1),
+                                unlifted
+                            ));
+                        }
+                    }
+
                     match (taken_lines.is_empty(), else_lines.is_empty()) {
                         // Both arms only reach the join, so the test decides
                         // nothing that the output records.
@@ -226,6 +248,11 @@ impl<'a> FuncEmitter<'a> {
                             self.push_line(indent, "}");
                         }
                         (false, true) => {
+                            self.push_line(indent, &format!("if ({}) {{", condition));
+                            self.lines.extend(taken_lines);
+                            self.push_line(indent, "}");
+                        }
+                        (false, false) if else_lines.is_empty() => {
                             self.push_line(indent, &format!("if ({}) {{", condition));
                             self.lines.extend(taken_lines);
                             self.push_line(indent, "}");
@@ -403,6 +430,43 @@ impl<'a> FuncEmitter<'a> {
             stack.extend(regions.successors(block).iter().copied());
         }
         true
+    }
+
+    /// How many instructions on an arm the lifter does not model.
+    ///
+    /// An arm that emits nothing may simply have no effect, or may be full of
+    /// work the lifter cannot express. Treating the two alike would delete real
+    /// computation, so the count decides, and it is reported at the site rather
+    /// than only in aggregate.
+    fn unlifted_on_arm(&self, arm: Option<usize>, stop: Option<usize>) -> usize {
+        let Some(arm) = arm else { return 0 };
+        if Some(arm) == stop {
+            return 0;
+        }
+        let Some(regions) = self.regions.as_ref() else {
+            return usize::MAX;
+        };
+        let mut unmodelled = 0usize;
+        let mut seen: HashSet<usize> = HashSet::new();
+        let mut stack = vec![arm];
+        while let Some(id) = stack.pop() {
+            if Some(id) == stop || !seen.insert(id) {
+                continue;
+            }
+            if let Some(block) = self.block_by_id.get(&id) {
+                for ins in &block.instrs {
+                    if !matches!(ins.op, IROp::Other) {
+                        continue;
+                    }
+                    let (mnemonic, _) = split_instruction(&ins.src);
+                    if !Self::lifts_mnemonic(&mnemonic) {
+                        unmodelled += 1;
+                    }
+                }
+            }
+            stack.extend(regions.successors(id).iter().copied());
+        }
+        unmodelled
     }
 
     /// Registers written by any block reachable from `roots` before `stop`.
