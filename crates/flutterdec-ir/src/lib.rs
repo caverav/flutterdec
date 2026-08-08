@@ -1,4 +1,4 @@
-use flutterdec_disasm_arm64::FunctionDisassembly;
+use flutterdec_disasm_arm64::{AsmInstruction, FunctionDisassembly};
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -9,7 +9,52 @@ pub enum IROp {
     Jump,
     Return,
     LoadPool,
+    /// Dart AOT runtime bookkeeping the source program never expressed:
+    /// recognised instruction groups that carry no user-level semantics and
+    /// must not contribute control-flow edges.
+    RuntimeCheck,
     Other,
+}
+
+/// Dart AOT ARM64 emits a stack-overflow check as a fixed three-instruction
+/// group before the body of any function that can recurse or loop:
+///
+/// ```text
+///   ldr x16, [x26, #stack_limit]   ; TMP = THR->stack_limit_
+///   cmp x15, x16                   ; Dart SP vs limit
+///   b.ls <slow>                    ; call StackOverflowStub, then jump back
+/// ```
+///
+/// The taken edge is a runtime guard, not program control flow, and its slow
+/// path re-enters the body. Left in the CFG it manufactures a spurious
+/// conditional, a spurious call and a spurious back edge in every affected
+/// function. Returns the indices of the three instructions when the group
+/// starts at `cmp`.
+fn stack_overflow_check_at(instrs: &[AsmInstruction], cmp_idx: usize) -> Option<[usize; 3]> {
+    let cmp = instrs.get(cmp_idx)?;
+    if cmp.mnemonic != "cmp" {
+        return None;
+    }
+    // Dart SP (R15) compared against a scratch register.
+    let tmp = cmp.op_str.strip_prefix("x15, ")?.trim();
+    if !matches!(tmp, "x16" | "x17") {
+        return None;
+    }
+    let ldr = instrs.get(cmp_idx.checked_sub(1)?)?;
+    if ldr.mnemonic != "ldr" {
+        return None;
+    }
+    // THR (R26) field load into that same scratch register.
+    let rest = ldr.op_str.strip_prefix(tmp)?.strip_prefix(", [x26,")?;
+    if !rest.trim_end().ends_with(']') {
+        return None;
+    }
+    let br = instrs.get(cmp_idx + 1)?;
+    // Unsigned lower-or-same: SP has crossed the limit.
+    if br.mnemonic != "b.ls" {
+        return None;
+    }
+    Some([cmp_idx - 1, cmp_idx, cmp_idx + 1])
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -57,9 +102,19 @@ fn parse_target_hex(s: &str) -> Option<u64> {
 }
 
 fn llir_from_disasm(d: &FunctionDisassembly) -> Vec<LlirInstr> {
+    let mut runtime_check = vec![false; d.instructions.len()];
+    for idx in 0..d.instructions.len() {
+        if let Some(group) = stack_overflow_check_at(&d.instructions, idx) {
+            for i in group {
+                runtime_check[i] = true;
+            }
+        }
+    }
+
     d.instructions
         .iter()
-        .map(|ins| {
+        .enumerate()
+        .map(|(idx, ins)| {
             let mut op = IROp::Other;
             let mut src = if ins.op_str.is_empty() {
                 ins.mnemonic.clone()
@@ -67,6 +122,19 @@ fn llir_from_disasm(d: &FunctionDisassembly) -> Vec<LlirInstr> {
                 format!("{} {}", ins.mnemonic, ins.op_str)
             };
             let mut target = String::new();
+
+            if runtime_check[idx] {
+                return LlirInstr {
+                    va: ins.va,
+                    op: IROp::RuntimeCheck,
+                    src: format!("{src} /* dart stack-overflow check */"),
+                    // Retained so the slow path it used to reach can be
+                    // identified and dropped without a blanket reachability
+                    // prune, which would also delete code the adapter merged
+                    // in from neighbouring functions.
+                    target: ins.op_str.clone(),
+                };
+            }
 
             match ins.mnemonic.as_str() {
                 "bl" => {
@@ -125,15 +193,22 @@ pub fn build_function_ir(d: &FunctionDisassembly) -> FunctionIr {
 
     for (idx, ins) in llir.iter().enumerate() {
         by_va.insert(ins.va, idx);
+        // Code after any terminator starts a new block. Without this, a
+        // trailing runtime-check slow path is absorbed into the returning
+        // block and its jump back becomes that block's terminator,
+        // resurrecting the edge the check elision removed.
         match ins.op {
             IROp::Branch | IROp::Jump => {
                 if let Some(t) = parse_target_hex(&ins.target) {
                     leaders.insert(t);
                 }
-                if ins.op == IROp::Branch {
-                    if let Some(next) = llir.get(idx + 1) {
-                        leaders.insert(next.va);
-                    }
+                if let Some(next) = llir.get(idx + 1) {
+                    leaders.insert(next.va);
+                }
+            }
+            IROp::Return => {
+                if let Some(next) = llir.get(idx + 1) {
+                    leaders.insert(next.va);
                 }
             }
             _ => {}
@@ -210,6 +285,69 @@ pub fn build_function_ir(d: &FunctionDisassembly) -> FunctionIr {
         blocks[i].succs = succs;
     }
 
+    // Drop only what the runtime-check elision stranded: the guard's slow path,
+    // which calls a stub and jumps back into the body. Left in place its jump
+    // registers as a predecessor of a body block, fabricating a join and a back
+    // edge, so the elision has no effect until it is removed.
+    //
+    // Deliberately not a blanket reachability prune. Blocks unreachable for
+    // other reasons are code the adapter merged in from neighbouring functions
+    // (broken function-boundary recovery); deleting those would silently lose
+    // real program text. They are reported instead.
+    let reach = |blocks: &[BasicBlock], extra: bool| {
+        let mut seen = vec![false; blocks.len()];
+        let mut stack = Vec::new();
+        if !blocks.is_empty() {
+            seen[0] = true;
+            stack.push(0usize);
+        }
+        while let Some(i) = stack.pop() {
+            let mut targets = blocks[i].succs.clone();
+            if extra {
+                // The guard edge as it was before elision.
+                for ins in &blocks[i].instrs {
+                    if ins.op == IROp::RuntimeCheck {
+                        if let Some(t) = parse_target_hex(&ins.target) {
+                            if let Some(id) = start_to_id.get(&t) {
+                                targets.push(*id);
+                            }
+                        }
+                    }
+                }
+            }
+            for s in targets {
+                if let Some(next) = blocks.iter().position(|b| b.id == s) {
+                    if !seen[next] {
+                        seen[next] = true;
+                        stack.push(next);
+                    }
+                }
+            }
+        }
+        seen
+    };
+    let with_guard = reach(&blocks, true);
+    let without_guard = reach(&blocks, false);
+
+    let mut remap = BTreeMap::new();
+    let mut kept = Vec::with_capacity(blocks.len());
+    for (i, b) in blocks.into_iter().enumerate() {
+        if with_guard[i] && !without_guard[i] {
+            continue;
+        }
+        remap.insert(b.id, kept.len());
+        kept.push(b);
+    }
+    let mut blocks = kept;
+    for (i, b) in blocks.iter_mut().enumerate() {
+        b.id = i;
+        b.succs = b
+            .succs
+            .iter()
+            .filter_map(|s| remap.get(s).copied())
+            .collect();
+    }
+
     for i in 0..blocks.len() {
         let succs = blocks[i].succs.clone();
         let pred_id = blocks[i].id;
@@ -241,6 +379,89 @@ pub fn build_program_ir(disasm: &[FunctionDisassembly]) -> Vec<FunctionIr> {
 mod tests {
     use super::*;
     use flutterdec_disasm_arm64::AsmInstruction;
+
+    fn ins(va: u64, mnemonic: &str, op_str: &str) -> AsmInstruction {
+        AsmInstruction {
+            va,
+            word: 0,
+            mnemonic: mnemonic.to_string(),
+            op_str: op_str.to_string(),
+            annotation: String::new(),
+        }
+    }
+
+    /// The Dart stack-overflow guard must not reach the CFG: its taken edge is
+    /// runtime bookkeeping, and its slow path jumps back into the body, so an
+    /// edge for it fabricates a conditional, a call and a back edge.
+    #[test]
+    fn elides_the_dart_stack_overflow_check_and_its_slow_path() {
+        let d = FunctionDisassembly {
+            function_id: 7,
+            function_name: "guarded".to_string(),
+            owner_class: "Global".to_string(),
+            entry_va: 0x1000,
+            size: 24,
+            instructions: vec![
+                ins(0x1000, "ldr", "x16, [x26, #0x38]"),
+                ins(0x1004, "cmp", "x15, x16"),
+                ins(0x1008, "b.ls", "#0x1014"),
+                ins(0x100c, "mov", "x0, x1"),
+                ins(0x1010, "ret", ""),
+                // Slow path: call the stub, then re-enter the body.
+                ins(0x1014, "bl", "#0x9000"),
+                ins(0x1018, "b", "#0x100c"),
+            ],
+        };
+
+        let ir = build_function_ir(&d);
+
+        let ops: Vec<&IROp> = ir
+            .blocks
+            .iter()
+            .flat_map(|b| b.instrs.iter().map(|i| &i.op))
+            .collect();
+        assert_eq!(
+            ops.iter().filter(|op| ***op == IROp::RuntimeCheck).count(),
+            3,
+            "the whole three-instruction group is the guard"
+        );
+        assert!(
+            !ops.contains(&&IROp::Call),
+            "the stub call is on the elided slow path: {ops:?}"
+        );
+        assert!(
+            ir.blocks.iter().all(|b| b.succs.len() <= 1),
+            "no block should branch two ways: {:?}",
+            ir.blocks.iter().map(|b| &b.succs).collect::<Vec<_>>()
+        );
+        assert!(
+            ir.blocks.iter().all(|b| b.preds.len() <= 1),
+            "the slow path's jump back must not survive as a predecessor: {:?}",
+            ir.blocks.iter().map(|b| &b.preds).collect::<Vec<_>>()
+        );
+    }
+
+    /// A `ret` ends a basic block. Without that, a trailing slow path is glued
+    /// onto the returning block and its jump becomes that block's terminator.
+    #[test]
+    fn code_after_a_return_starts_a_new_block() {
+        let d = FunctionDisassembly {
+            function_id: 8,
+            function_name: "two_exits".to_string(),
+            owner_class: "Global".to_string(),
+            entry_va: 0x2000,
+            size: 12,
+            instructions: vec![
+                ins(0x2000, "ret", ""),
+                ins(0x2004, "mov", "x0, x1"),
+                ins(0x2008, "ret", ""),
+            ],
+        };
+
+        let ir = build_function_ir(&d);
+        assert_eq!(ir.blocks.len(), 2);
+        assert_eq!(ir.blocks[0].instrs.len(), 1);
+    }
 
     #[test]
     fn builds_cfg_with_branch_and_fallthrough() {

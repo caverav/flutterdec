@@ -81,9 +81,11 @@ impl<'a> FuncEmitter<'a> {
         }
 
         let direct = [cur.to_string()];
-        if let Some(sel) =
-            infer_selector_name_from_context(&direct, &self.pool_value_hints, &self.pool_semantic_hints)
-        {
+        if let Some(sel) = infer_selector_name_from_context(
+            &direct,
+            &self.pool_value_hints,
+            &self.pool_semantic_hints,
+        ) {
             return Some(sel);
         }
 
@@ -105,9 +107,11 @@ impl<'a> FuncEmitter<'a> {
                 break;
             }
             let nested = [cur.to_string()];
-            if let Some(sel) =
-                infer_selector_name_from_context(&nested, &self.pool_value_hints, &self.pool_semantic_hints)
-            {
+            if let Some(sel) = infer_selector_name_from_context(
+                &nested,
+                &self.pool_value_hints,
+                &self.pool_semantic_hints,
+            ) {
                 return Some(sel);
             }
             if let Some(key) = Self::selector_binding_key(cur) {
@@ -344,6 +348,7 @@ impl<'a> FuncEmitter<'a> {
         if target.starts_with('x') {
             self.indirect_calls += 1;
             self.raw_register_calls += 1;
+
             let named_target = named_indirect_target(&target);
             let target_value = self
                 .state
@@ -744,8 +749,30 @@ impl<'a> FuncEmitter<'a> {
                     self.active_stack.pop();
                     return;
                 }
+                // Runtime bookkeeping: no user-level statement, and the
+                // comparison must not leak into a later branch condition.
+                IROp::RuntimeCheck => {}
                 IROp::Other => {
                     self.apply_other_lift(&ins.src, indent);
+                }
+            }
+        }
+
+        // A block whose last instruction is not a terminator falls through.
+        // The arms above only recurse on Branch/Jump/Return, so without this
+        // the remainder of the function is silently dropped.
+        if let Some(&next) = block.succs.first() {
+            if block.succs.len() == 1 {
+                if self.can_inline(next, depth + 1) {
+                    self.emit_block(next, indent, depth + 1);
+                } else if self.active_stack.contains(&next) {
+                    if self.loop_context.contains(&next) {
+                        self.push_line(indent, "continue;");
+                    } else {
+                        self.loop_back_edges.insert(next);
+                    }
+                } else if !self.emitted.contains(&next) {
+                    self.emit_omitted_path(indent, Some(next));
                 }
             }
         }
