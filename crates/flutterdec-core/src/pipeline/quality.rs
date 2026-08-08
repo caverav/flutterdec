@@ -47,7 +47,12 @@ fn quality_from_artifacts(
             raw_arg_name_refs += count_ident_token(&p.source, &format!("arg{n}"));
         }
         for n in 0..=30 {
+            // `xN` is the disassembly spelling; the emitter renders an
+            // unresolved register through `named_register_alias`, which yields
+            // `regN`. Counting only `xN` reported zero on every real binary
+            // while thousands of `regN` were being emitted.
             raw_register_name_refs += count_ident_token(&p.source, &format!("x{n}"));
+            raw_register_name_refs += count_ident_token(&p.source, &format!("reg{n}"));
         }
     }
 

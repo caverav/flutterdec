@@ -69,28 +69,58 @@ pub(super) fn parse_mem_operand(op: &str) -> Option<(String, i64)> {
 /// a real read of field 0. That is the addressing mode Dart uses for list and
 /// array elements: 2094 sites on the sampled 3.12.1 binary once dispatch-table
 /// loads and frame accesses are excluded.
-pub(super) fn parse_indexed_operand(op: &str) -> Option<(String, String, u32)> {
+///
+/// Returns the index scale and whether the index was extended from 32 bits,
+/// which changes what the index means and so must not be dropped. The shift is
+/// optional in an extended form (`[x1, w2, sxtw]`), and treating that as
+/// unparseable would fall back to the `base.f0` rendering this exists to avoid.
+pub(super) fn parse_indexed_operand(op: &str) -> Option<IndexedOperand> {
     let s = op.trim();
     let lb = s.find('[')?;
     let rb = s[lb..].find(']')? + lb;
     let mut parts = s[lb + 1..rb].split(',').map(str::trim);
     let base = canonical_reg(parts.next()?)?;
     let index = canonical_reg(parts.next()?)?;
-    let shift = match parts.next() {
-        None => 0,
-        Some(extend) => {
-            let (kind, amount) = extend.split_once('#')?;
-            // Only a left shift scales the index; the extends widen it.
-            if !matches!(
-                kind.trim().to_ascii_lowercase().as_str(),
-                "lsl" | "uxtw" | "sxtw" | "sxtx"
-            ) {
-                return None;
-            }
-            amount.trim().parse().ok()?
+    let (extend, shift) = match parts.next() {
+        None => (IndexExtend::None, 0),
+        Some(modifier) => {
+            let (kind, amount) = match modifier.split_once('#') {
+                Some((kind, amount)) => (kind, amount.trim().parse().ok()?),
+                // An extended index may carry no shift at all.
+                None => (modifier, 0),
+            };
+            let extend = match kind.trim().to_ascii_lowercase().as_str() {
+                "lsl" | "uxtx" | "sxtx" => IndexExtend::None,
+                "uxtw" => IndexExtend::Unsigned32,
+                "sxtw" => IndexExtend::Signed32,
+                _ => return None,
+            };
+            (extend, amount)
         }
     };
-    Some((base, index, shift))
+    Some(IndexedOperand {
+        base,
+        index,
+        shift,
+        extend,
+    })
+}
+
+/// A register-offset memory operand.
+pub(super) struct IndexedOperand {
+    pub(super) base: String,
+    pub(super) index: String,
+    pub(super) shift: u32,
+    pub(super) extend: IndexExtend,
+}
+
+/// How the index register is widened before scaling.
+#[derive(PartialEq, Eq)]
+pub(super) enum IndexExtend {
+    /// Already the full register width.
+    None,
+    Unsigned32,
+    Signed32,
 }
 
 pub(super) fn normalize_target(target: &str) -> String {

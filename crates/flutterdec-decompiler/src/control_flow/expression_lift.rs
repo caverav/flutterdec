@@ -63,20 +63,30 @@ impl<'a> FuncEmitter<'a> {
     /// list or array, so the index register holds an element index. Any other
     /// scale is stated arithmetically rather than implied.
     pub(super) fn indexed_expr(&self, token: &str) -> Option<String> {
-        let (base, index, shift) = parse_indexed_operand(token)?;
+        let operand = parse_indexed_operand(token)?;
         let base_expr = self
             .state
             .reg_values
-            .get(&base)
+            .get(&operand.base)
             .cloned()
-            .unwrap_or_else(|| base.clone());
+            .unwrap_or_else(|| operand.base.clone());
         let index_expr = self
             .state
             .reg_values
-            .get(&index)
+            .get(&operand.index)
             .cloned()
-            .unwrap_or_else(|| index.clone());
-        let subscript = match shift {
+            .unwrap_or_else(|| operand.index.clone());
+        // A 32-bit extended index is the low half of the register, so saying so
+        // is the difference between an index and a claim about one.
+        let index_expr = match operand.extend {
+            IndexExtend::None => index_expr,
+            IndexExtend::Unsigned32 => format!("({index_expr} & 0xffffffff)"),
+            IndexExtend::Signed32 => format!("signExtend32({index_expr})"),
+        };
+        // A shift of 3 scales by the machine word, which is the element size of
+        // a list or array, so the index register holds an element index. Any
+        // other scale is stated arithmetically rather than implied.
+        let subscript = match operand.shift {
             0 | 3 => index_expr,
             n => format!("({} * {})", index_expr, 1u64 << n),
         };

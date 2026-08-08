@@ -249,11 +249,19 @@ fn immediate_post_dominators(succs: &[Vec<usize>], reachable: &[bool]) -> Vec<Op
             if !reachable[u] {
                 return None;
             }
+            // Largest post-dominator set is the nearest, and the block index
+            // breaks ties. `pdom[u]` is a `HashSet`, whose iteration order is
+            // seeded per process, and `max_by_key` returns the last maximum, so
+            // without the tie-break an equal-sized pair would pick a different
+            // follow node between runs and the emitted structure would not be
+            // reproducible. Ties are reachable because every block without a
+            // successor is treated as an exit, so post-dominance is a forest
+            // rather than a chain.
             pdom[u]
                 .iter()
                 .copied()
                 .filter(|p| *p != u)
-                .max_by_key(|p| pdom[*p].len())
+                .max_by_key(|p| (pdom[*p].len(), std::cmp::Reverse(*p)))
         })
         .collect()
 }

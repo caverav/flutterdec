@@ -6,6 +6,22 @@
 // its exit, is a structural failure. The whole function then falls back to the
 // DFS emitter, so this pass can only improve output, never truncate it.
 
+/// Quality counters, saved and restored around a structuring attempt.
+pub(super) struct Counters {
+    placeholder_ifs: usize,
+    unresolved_cf: usize,
+    raw_register_calls: usize,
+    total_calls: usize,
+    indirect_calls: usize,
+    semantic_direct_calls: usize,
+    semantic_indirect_calls: usize,
+    dispatch_selector_calls: usize,
+    dispatch_table_calls: usize,
+    repeated_blocks: usize,
+    unlifted_instructions: usize,
+    target_va_symbol_calls: usize,
+}
+
 /// What a block's terminator does, once its body has been emitted.
 enum Flow {
     /// Control leaves the function.
@@ -57,36 +73,54 @@ impl<'a> FuncEmitter<'a> {
         false
     }
 
-    fn counter_snapshot(&self) -> [usize; 12] {
-        [
-            self.placeholder_ifs,
-            self.unresolved_cf,
-            self.raw_register_calls,
-            self.total_calls,
-            self.indirect_calls,
-            self.semantic_direct_calls,
-            self.semantic_indirect_calls,
-            self.dispatch_selector_calls,
-            self.dispatch_table_calls,
-            self.repeated_blocks,
-            self.unlifted_instructions,
-            self.target_va_symbol_calls,
-        ]
+    /// Counters saved before a structuring attempt, so a rollback to the DFS
+    /// emitter does not double count. Named rather than positional: the first
+    /// version was an array, and inserting three fields silently rotated four of
+    /// them onto each other's values.
+    pub(super) fn counter_snapshot(&self) -> Counters {
+        Counters {
+            placeholder_ifs: self.placeholder_ifs,
+            unresolved_cf: self.unresolved_cf,
+            raw_register_calls: self.raw_register_calls,
+            total_calls: self.total_calls,
+            indirect_calls: self.indirect_calls,
+            semantic_direct_calls: self.semantic_direct_calls,
+            semantic_indirect_calls: self.semantic_indirect_calls,
+            dispatch_selector_calls: self.dispatch_selector_calls,
+            dispatch_table_calls: self.dispatch_table_calls,
+            repeated_blocks: self.repeated_blocks,
+            unlifted_instructions: self.unlifted_instructions,
+            target_va_symbol_calls: self.target_va_symbol_calls,
+        }
     }
 
-    fn restore_counters(&mut self, c: [usize; 12]) {
-        self.placeholder_ifs = c[0];
-        self.unresolved_cf = c[1];
-        self.raw_register_calls = c[2];
-        self.total_calls = c[3];
-        self.indirect_calls = c[4];
-        self.semantic_direct_calls = c[5];
-        self.semantic_indirect_calls = c[6];
-        self.dispatch_selector_calls = c[7];
-        self.dispatch_table_calls = c[9];
-        self.repeated_blocks = c[10];
-        self.unlifted_instructions = c[11];
-        self.target_va_symbol_calls = c[8];
+    pub(super) fn restore_counters(&mut self, c: Counters) {
+        let Counters {
+            placeholder_ifs,
+            unresolved_cf,
+            raw_register_calls,
+            total_calls,
+            indirect_calls,
+            semantic_direct_calls,
+            semantic_indirect_calls,
+            dispatch_selector_calls,
+            dispatch_table_calls,
+            repeated_blocks,
+            unlifted_instructions,
+            target_va_symbol_calls,
+        } = c;
+        self.placeholder_ifs = placeholder_ifs;
+        self.unresolved_cf = unresolved_cf;
+        self.raw_register_calls = raw_register_calls;
+        self.total_calls = total_calls;
+        self.indirect_calls = indirect_calls;
+        self.semantic_direct_calls = semantic_direct_calls;
+        self.semantic_indirect_calls = semantic_indirect_calls;
+        self.dispatch_selector_calls = dispatch_selector_calls;
+        self.dispatch_table_calls = dispatch_table_calls;
+        self.repeated_blocks = repeated_blocks;
+        self.unlifted_instructions = unlifted_instructions;
+        self.target_va_symbol_calls = target_va_symbol_calls;
     }
 
     /// Emit blocks from `start` up to but excluding `follow`, which is the
@@ -343,7 +377,7 @@ impl<'a> FuncEmitter<'a> {
                         None => {
                             let normalized = normalize_target(&ins.target);
                             if normalized.starts_with("0x") {
-                                self.push_line(indent, &format!("return tailCall_{};", normalized));
+                                self.push_line(indent, &format!("return tailCall_{}();", normalized));
                             } else {
                                 self.unresolved_cf += 1;
                                 self.push_line(indent, "// unresolved jump");
@@ -444,7 +478,9 @@ impl<'a> FuncEmitter<'a> {
             return 0;
         }
         let Some(regions) = self.regions.as_ref() else {
-            return usize::MAX;
+            // The caller adds this to a counter and prints it, so a sentinel
+            // would overflow and render as a nonsense instruction count.
+            return 0;
         };
         let mut unmodelled = 0usize;
         let mut seen: HashSet<usize> = HashSet::new();

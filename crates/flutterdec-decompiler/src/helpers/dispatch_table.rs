@@ -88,11 +88,20 @@ pub(super) fn dispatch_table_calls(ir: &FunctionIr) -> HashMap<u64, DispatchCall
                     if let Some(dispatch) = canonical_reg(ops.first().map_or("", String::as_str))
                         .and_then(|target| entries.get(&target))
                     {
+                        let selector_offset = dispatch.0 + DISPATCH_TABLE_ORIGIN_ELEMENT;
+                        // A real selector offset indexes the dispatch table, so it
+                        // cannot be negative. A wide shifted `sub` can drive the
+                        // sum below zero, which means the arithmetic was not a
+                        // selector calculation: a failed recovery, not a selector
+                        // named `sel-16773119`.
+                        if selector_offset < 0 {
+                            continue;
+                        }
                         let receiver = dispatch.1.clone();
                         out.insert(
                             ins.va,
                             DispatchCall {
-                                selector_offset: dispatch.0 + DISPATCH_TABLE_ORIGIN_ELEMENT,
+                                selector_offset,
                                 argument_registers: DART_ARGUMENT_REGISTERS
                                     .iter()
                                     .filter(|reg| defined_args.contains(**reg))
@@ -116,6 +125,7 @@ pub(super) fn dispatch_table_calls(ir: &FunctionIr) -> HashMap<u64, DispatchCall
 
             let binding = dispatch_binding(&mnemonic, &ops, &constants, &class_id_of, &indices);
 
+            let mut overwritten: Vec<String> = Vec::new();
             for reg in written_registers(&mnemonic, &ops) {
                 constants.remove(&reg);
                 class_id_of.remove(&reg);
@@ -138,20 +148,28 @@ pub(super) fn dispatch_table_calls(ir: &FunctionIr) -> HashMap<u64, DispatchCall
                 if DART_ARGUMENT_REGISTERS.contains(&reg.as_str()) {
                     defined_args.insert(reg.clone());
                 }
+                overwritten.push(reg);
             }
 
+            // The binding was computed from the pre-instruction state, so its
+            // receiver can name a register this same instruction just
+            // overwrote. Keeping it would render a receiver that no longer
+            // holds the receiver value.
+            let live = |receiver: Option<String>| {
+                receiver.filter(|name| !overwritten.iter().any(|reg| reg == name))
+            };
             match binding {
                 Some(DispatchBinding::Constant(reg, value)) => {
                     constants.insert(reg, value);
                 }
                 Some(DispatchBinding::ClassId(reg, receiver)) => {
-                    class_id_of.insert(reg, receiver);
+                    class_id_of.insert(reg, live(receiver));
                 }
                 Some(DispatchBinding::TableIndex(reg, offset, receiver)) => {
-                    indices.insert(reg, (offset, receiver));
+                    indices.insert(reg, (offset, live(receiver)));
                 }
                 Some(DispatchBinding::TableEntry(reg, offset, receiver)) => {
-                    entries.insert(reg, (offset, receiver));
+                    entries.insert(reg, (offset, live(receiver)));
                 }
                 None => {}
             }
@@ -189,8 +207,12 @@ fn dispatch_binding(
                 .and_then(|s| s.split('#').nth(1))
                 .and_then(|s| s.trim().parse::<u32>().ok())
                 .unwrap_or(0);
-            let kept = constants.get(&dst).copied().unwrap_or(0) & !(0xffffi64 << shift);
-            Some(DispatchBinding::Constant(dst, kept | (half << shift)))
+            // `movk` shifts are 0, 16, 32 or 48. The value is parsed from
+            // disassembly text, so anything wider is a misparse and would panic
+            // the shift in a debug build.
+            let mask = 0xffffi64.checked_shl(shift)?;
+            let kept = constants.get(&dst).copied().unwrap_or(0) & !mask;
+            Some(DispatchBinding::Constant(dst, kept | half.checked_shl(shift)?))
         }
         // The dispatch table load is a scaled register-offset form, which no
         // other Dart idiom uses off x21.

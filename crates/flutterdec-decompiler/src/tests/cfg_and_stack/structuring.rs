@@ -376,3 +376,91 @@ fn never_repeats_a_region_containing_a_loop() {
         artifact.source
     );
 }
+
+/// Every counter must round-trip through snapshot and restore into its own
+/// field. The first version used a positional array, and inserting three fields
+/// rotated four of them onto each other's values.
+///
+/// This is a latent defect rather than an observed one: `FuncEmitter::new` zeroes
+/// every counter and nothing increments one before `try_emit_structured` takes
+/// the snapshot, so in practice zero was restored over zero and no reported
+/// figure was ever wrong. Only a direct round-trip can catch it, which is exactly
+/// why it survived.
+#[test]
+fn every_counter_round_trips_into_its_own_field() {
+    let ir = FunctionIr {
+        function_id: 1009,
+        name: "counters".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![blk(0, 0x1000, vec![ret(0x1000)], Vec::new())],
+    };
+    let symbols = HashMap::new();
+    let mut emitter = FuncEmitter::new(&ir, &symbols);
+
+    // Distinct values, so any two fields swapping is visible.
+    emitter.placeholder_ifs = 1;
+    emitter.unresolved_cf = 2;
+    emitter.raw_register_calls = 3;
+    emitter.total_calls = 4;
+    emitter.indirect_calls = 5;
+    emitter.semantic_direct_calls = 6;
+    emitter.semantic_indirect_calls = 7;
+    emitter.dispatch_selector_calls = 8;
+    emitter.dispatch_table_calls = 9;
+    emitter.repeated_blocks = 10;
+    emitter.unlifted_instructions = 11;
+    emitter.target_va_symbol_calls = 12;
+
+    let saved = emitter.counter_snapshot();
+    emitter.placeholder_ifs = 0;
+    emitter.unresolved_cf = 0;
+    emitter.raw_register_calls = 0;
+    emitter.total_calls = 0;
+    emitter.indirect_calls = 0;
+    emitter.semantic_direct_calls = 0;
+    emitter.semantic_indirect_calls = 0;
+    emitter.dispatch_selector_calls = 0;
+    emitter.dispatch_table_calls = 0;
+    emitter.repeated_blocks = 0;
+    emitter.unlifted_instructions = 0;
+    emitter.target_va_symbol_calls = 0;
+    emitter.restore_counters(saved);
+
+    assert_eq!(emitter.placeholder_ifs, 1);
+    assert_eq!(emitter.unresolved_cf, 2);
+    assert_eq!(emitter.raw_register_calls, 3);
+    assert_eq!(emitter.total_calls, 4);
+    assert_eq!(emitter.indirect_calls, 5);
+    assert_eq!(emitter.semantic_direct_calls, 6);
+    assert_eq!(emitter.semantic_indirect_calls, 7);
+    assert_eq!(emitter.dispatch_selector_calls, 8);
+    assert_eq!(emitter.dispatch_table_calls, 9);
+    assert_eq!(emitter.repeated_blocks, 10);
+    assert_eq!(emitter.unlifted_instructions, 11);
+    assert_eq!(emitter.target_va_symbol_calls, 12);
+}
+
+/// Both emitters render a tail call the same way. They diverged once, so the
+/// same jump read differently depending on which path ran.
+#[test]
+fn both_emitters_render_a_tail_call_identically() {
+    let jump_out = |va: u64| LlirInstr {
+        va,
+        op: IROp::Jump,
+        // Outside the function, so it cannot resolve to a block.
+        src: "b #0x99000".to_string(),
+        target: "#0x99000".to_string(),
+    };
+    let structured = FunctionIr {
+        function_id: 1010,
+        name: "tailStructured".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![blk(0, 0x1000, vec![jump_out(0x1000)], Vec::new())],
+    };
+    let out = emit_pseudocode(&structured, &HashMap::new());
+    assert!(
+        out.source.contains("return tailCall_0x99000();"),
+        "a tail call is rendered as a call:\n{}",
+        out.source
+    );
+}

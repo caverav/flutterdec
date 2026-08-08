@@ -105,7 +105,7 @@ offset arithmetic without a ground-truth selector table.
 
 ### The counters in `quality.json` cannot measure this
 
-Every counter there is a count of **emitted lines**
+Every counter that existed when this was written is a count of **emitted lines**
 (`crates/flutterdec-core/src/pipeline/quality.rs:26-45`), so it cannot
 distinguish *recovered more* from *duplicated more*. `semantic_direct_calls`
 doubling is equally consistent with twice the recovery and twice the
@@ -180,7 +180,7 @@ constraint here, not a stylistic preference.
 Dart AOT emits a stack-overflow check before the body of any function that can
 loop or recurse:
 
-```
+```text
 ldr x16, [x26, #0x38]   ; TMP = THR->stack_limit_   (x26 = THR, offset is version-dependent)
 cmp x15, x16            ; Dart SP (x15) vs the limit
 b.ls <slow>             ; slow path: call StackOverflowStub, then jump back in
@@ -252,7 +252,7 @@ output because 4,436 of the 5,800 files end without a trailing newline.
 
 `FlowGraphCompiler::EmitDispatchTableCall` (ARM64) emits:
 
-```
+```text
 ldur wC, [recv, #-1]          ; object header (receiver is tag-adjusted)
 ubfx xC, xC, #0xc, #0x14      ; class id = header bits 12..31
 add  x30, xC, #K              ; K = selector_offset - DispatchTable::kOriginElement
@@ -350,7 +350,7 @@ Dart AOT ARM64:
   *previous call's result plus arguments*, never a selector;
 - for a switchable call, puts the selector-bearing `ICData`/`MegamorphicCache` in
   **x5** (`IC_DATA_REG`) and the callee's `Code` in a separate pool slot:
-  ```
+```text
   mov  x1, #2                ; argument count
   ldr  x5, [x27, #0x2250]    ; pool -> ICData / MegamorphicCache
   ldr  x30, [x27, #0x2258]   ; pool -> Code
@@ -504,7 +504,11 @@ post-dominator set, which is the *farthest* strict post-dominator rather than th
 nearest. That systematically attributed if-then branches to the if-then-else row.
 The nearest post-dominator is the one with the largest post-dominator set.
 
-Loops, over the 830 functions that have one:
+Loops, over the 830 functions that have one. That is fewer than the 911 counted
+in Finding 2, and 250 irreducible rather than 247, because the two are different
+corpora: Finding 2 analyses the CFGs an external rebuild derives from the
+disassembly, this analyses the CFGs the tool itself emits, where the
+runtime-check elision and the reachability rules have already applied.
 
 | | count | needs |
 |---|---|---|
@@ -543,7 +547,7 @@ Result, against this branch before the change:
 | `loop_backedge_markers` | 448 | 296 |
 | functions where emitted equals emittable | 45.0% | **72.8%** |
 | out-of-scope temporary references | 0 | 0 |
-| unresolved register references | 2,093 | 10,446 |
+| unresolved register references | 2,093 | 17,548 |
 
 The last row is the cost, and it is the honest kind: a value that genuinely
 differs per path is now named as an unresolved register rather than given one
@@ -694,7 +698,7 @@ function boundaries, not because of anything in the lifter.
 
 ## Prototype in this branch
 
-Landed, `cargo test --workspace` green (276 tests), `fmt` and `clippy` clean:
+Landed, `cargo test --workspace` green, `fmt` and `clippy` clean:
 
 - `flutterdec-ir`: `IROp::RuntimeCheck`; the Dart stack-overflow guard is
   recognised by instruction shape, with the `THR` displacement left free so a
@@ -720,7 +724,7 @@ Landed, `cargo test --workspace` green (276 tests), `fmt` and `clippy` clean:
   irreducible functions.
 
 Emitted, on the sampled binary: 7,721 dispatch call statements over 544
-distinct selectors, zero negative offsets, receiver resolved on 66.1%, arity
+distinct selectors, zero negative offsets, receiver resolved on two thirds, arity
 reported as a lower bound on 70.0% and honestly unknown on the rest. Structuring
 holds emit-once on 72.8% of functions, takes inflation from 3.03x to 2.28x and
 emitted lines down 23%, and removes 1,055 references to values defined in a branch
