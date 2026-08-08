@@ -193,6 +193,12 @@ fn parse_non_negative_i64_token(token: &str) -> Option<u64> {
     (parsed >= 0).then_some(parsed as u64)
 }
 
+/// Recognise `((pool + <page> /* lsl #<shift> */)).f<offset>` and return the
+/// PP-relative byte displacement it reads.
+///
+/// This is the residual path for page-based pool loads the disassembler's register
+/// tracker could not follow. It has no pool geometry, so it can only report the
+/// displacement, never an entry index.
 fn try_parse_shifted_pool_field(bytes: &[u8], start: usize) -> Option<(usize, u64)> {
     if start + 2 >= bytes.len() || bytes[start] != b'(' || bytes[start + 1] != b'(' {
         return None;
@@ -284,11 +290,11 @@ fn try_parse_shifted_pool_field(bytes: &[u8], start: usize) -> Option<(usize, u6
 
     let page_bytes = page.checked_shl(shift as u32)?;
     let total = page_bytes.checked_add(offset)?;
-    if total % 8 != 0 {
+    if !total.is_multiple_of(8) {
         return None;
     }
 
-    Some((i, total / 8))
+    Some((i, total))
 }
 
 pub(super) fn normalize_pool_page_field_exprs(input: &str) -> String {
@@ -296,8 +302,8 @@ pub(super) fn normalize_pool_page_field_exprs(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
     let mut i = 0usize;
     while i < bytes.len() {
-        if let Some((end, idx)) = try_parse_shifted_pool_field(bytes, i) {
-            out.push_str(&format!("pool[{idx}]"));
+        if let Some((end, displacement)) = try_parse_shifted_pool_field(bytes, i) {
+            out.push_str(&format!("poolOff[{displacement}]"));
             i = end;
             continue;
         }

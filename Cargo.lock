@@ -357,6 +357,8 @@ dependencies = [
  "anyhow",
  "goblin",
  "regex",
+ "serde",
+ "serde_json",
  "tempfile",
  "zip",
 ]

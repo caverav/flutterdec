@@ -1,9 +1,10 @@
 use capstone::arch::arm64::ArchMode;
 use capstone::prelude::*;
-use flutterdec_adapter::{FunctionInfo, ProgramModel};
+use flutterdec_adapter::{FunctionInfo, PoolGeometry, ProgramModel};
 use regex::Regex;
 use serde::Serialize;
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::sync::LazyLock;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct AsmInstruction {
@@ -50,33 +51,149 @@ fn build_capstone() -> Option<Capstone> {
         .ok()
 }
 
-fn maybe_pool_annotation(mnemonic: &str, op_str: &str) -> Option<String> {
-    if mnemonic != "ldr" {
-        return None;
+/// `ldr xN, [x27, #imm]`: a pool load off the object-pool register directly.
+static POOL_DIRECT_LOAD_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^[wx]\d+,\s*\[(x\d+)(?:,\s*#?(0x[0-9a-fA-F]+|[0-9]+))?\]$").unwrap()
+});
+
+/// `add xD, x27, #K` / `add xD, x27, #K, lsl #S`: materialise a pool "page" base.
+/// Dart emits this pair whenever the entry displacement exceeds the `ldr` immediate range.
+static POOL_PAGE_BASE_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^(x\d+),\s*x27,\s*#?(0x[0-9a-fA-F]+|[0-9]+)(?:,\s*lsl\s*#?(\d+))?$").unwrap()
+});
+
+/// Leading register operands, used to invalidate stale pool bases on redefinition.
+/// Two are matched because load-pair forms write two destinations.
+static FIRST_OPERAND_REG_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^[wx](\d+)\s*,\s*(?:[wx](\d+)\s*,)?").unwrap());
+
+fn parse_u64_literal(raw: &str) -> Option<u64> {
+    match raw.strip_prefix("0x") {
+        Some(hex) => u64::from_str_radix(hex, 16).ok(),
+        None => raw.parse::<u64>().ok(),
     }
-    let lower = op_str.to_ascii_lowercase();
-    if !lower.contains("[x27") {
-        return None;
-    }
-    let re = Regex::new(r"\[x27,\s*#?(0x[0-9a-fA-F]+|[0-9]+)\]").ok()?;
-    let caps = re.captures(op_str)?;
-    let raw = caps.get(1)?.as_str();
-    let imm = if let Some(hex) = raw.strip_prefix("0x") {
-        u64::from_str_radix(hex, 16).ok()?
-    } else {
-        raw.parse::<u64>().ok()?
-    };
-    Some(format!("pool[{imm}]"))
 }
 
-fn annotation_for(mnemonic: &str, op_str: &str) -> String {
+/// Resolves object-pool references while walking one function's instructions.
+///
+/// Two forms reach the same slot, and both must be recognised: the direct
+/// `ldr xN, [x27, #disp]`, and the page pair `add xD, x27, #K, lsl #S` followed by
+/// `ldr xN, [xD, #off]` for displacements past the load-immediate range. On real
+/// binaries the page form is the *majority* of pool traffic, so ignoring it loses
+/// most of the pool.
+///
+/// Bases are tracked conservatively: any write to a register drops its base, and
+/// control flow drops all of them, so a stale base can never fabricate a slot.
+struct PoolRefResolver {
+    geometry: Option<PoolGeometry>,
+    bases: HashMap<u32, u64>,
+}
+
+impl PoolRefResolver {
+    fn new(geometry: Option<PoolGeometry>) -> Self {
+        Self {
+            geometry,
+            bases: HashMap::new(),
+        }
+    }
+
+    fn reset(&mut self) {
+        self.bases.clear();
+    }
+
+    /// Render a PP-relative displacement.
+    ///
+    /// With geometry we can name the actual entry, so callers get `pool[<index>]` in
+    /// the pool's own index space. Without it the displacement is all we honestly
+    /// know, and it is emitted as `poolOff[...]` so it cannot be mistaken for an
+    /// index, or looked up as one.
+    fn render(&self, displacement: u64) -> String {
+        match self
+            .geometry
+            .and_then(|g| g.index_for_displacement(displacement))
+        {
+            Some(index) => format!("pool[{index}]"),
+            None => format!("poolOff[{displacement}]"),
+        }
+    }
+
+    /// Feed one instruction; returns the pool annotation when it is a pool load.
+    ///
+    /// A pool load reads its base register and writes its destination, and for
+    /// `ldr x0, [x0, ...]` those are the same register, so the base must be
+    /// resolved before the destination is invalidated.
+    fn observe(&mut self, mnemonic: &str, op_str: &str) -> Option<String> {
+        if mnemonic == "add" {
+            if let Some(caps) = POOL_PAGE_BASE_RE.captures(op_str) {
+                let dst = caps[1][1..].parse::<u32>().ok()?;
+                let imm = parse_u64_literal(&caps[2])?;
+                let shift = caps
+                    .get(3)
+                    .map(|m| m.as_str().parse::<u32>().unwrap_or(0))
+                    .unwrap_or(0);
+                match imm.checked_shl(shift) {
+                    Some(base) => self.bases.insert(dst, base),
+                    None => self.bases.remove(&dst),
+                };
+                return None;
+            }
+            self.invalidate_written_registers(op_str);
+            return None;
+        }
+
+        if mnemonic != "ldr" {
+            self.invalidate_written_registers(op_str);
+            return None;
+        }
+
+        let Some(caps) = POOL_DIRECT_LOAD_RE.captures(op_str) else {
+            self.invalidate_written_registers(op_str);
+            return None;
+        };
+        let base_reg = caps[1][1..].parse::<u32>().ok();
+        let off = caps
+            .get(2)
+            .and_then(|m| parse_u64_literal(m.as_str()))
+            .unwrap_or(0);
+        let displacement = match base_reg {
+            Some(27) => Some(off),
+            Some(reg) => self.bases.get(&reg).and_then(|b| b.checked_add(off)),
+            None => None,
+        };
+
+        self.invalidate_written_registers(op_str);
+        displacement.map(|d| self.render(d))
+    }
+
+    /// Drop the pool bases of the registers an instruction writes.
+    ///
+    /// Load-pair forms write two: `ldp x0, x1, [sp, #16]` must clear both, or a later
+    /// `ldr xN, [x1, #off]` resolves against a base `x1` no longer holds. Store-pair
+    /// forms name sources rather than destinations, so clearing there is merely
+    /// conservative.
+    fn invalidate_written_registers(&mut self, op_str: &str) {
+        let Some(caps) = FIRST_OPERAND_REG_RE.captures(op_str) else {
+            return;
+        };
+        for group in [1, 2] {
+            if let Some(reg) = caps.get(group).and_then(|m| m.as_str().parse::<u32>().ok()) {
+                self.bases.remove(&reg);
+            }
+        }
+    }
+}
+
+fn annotation_for(mnemonic: &str, op_str: &str, pool: &mut PoolRefResolver) -> String {
     if mnemonic == "bl" || mnemonic == "blr" {
+        pool.reset();
         return "call".to_string();
     }
     if mnemonic == "ret" {
+        pool.reset();
         return "return".to_string();
     }
     if mnemonic == "b" {
+        pool.reset();
         return "jump".to_string();
     }
     if mnemonic.starts_with("b.")
@@ -85,9 +202,10 @@ fn annotation_for(mnemonic: &str, op_str: &str) -> String {
         || mnemonic == "tbz"
         || mnemonic == "tbnz"
     {
+        pool.reset();
         return "branch".to_string();
     }
-    if let Some(pp) = maybe_pool_annotation(mnemonic, op_str) {
+    if let Some(pp) = pool.observe(mnemonic, op_str) {
         return pp;
     }
     String::new()
@@ -98,6 +216,7 @@ fn decode_function(
     iso_instr: &[u8],
     iso_base_va: u64,
     cs: Option<&Capstone>,
+    pool_geometry: Option<PoolGeometry>,
 ) -> Option<FunctionDisassembly> {
     if func.entry_va < iso_base_va {
         return None;
@@ -115,6 +234,7 @@ fn decode_function(
 
     let code = &iso_instr[rel..rel + size];
     let mut instructions = Vec::new();
+    let mut pool = PoolRefResolver::new(pool_geometry);
 
     if let Some(cs) = cs {
         if let Ok(insns) = cs.disasm_all(code, func.entry_va) {
@@ -127,7 +247,7 @@ fn decode_function(
                 };
                 let mnemonic = ins.mnemonic().unwrap_or("word").to_string();
                 let op_str = ins.op_str().unwrap_or("").to_string();
-                let annotation = annotation_for(&mnemonic, &op_str);
+                let annotation = annotation_for(&mnemonic, &op_str, &mut pool);
                 instructions.push(AsmInstruction {
                     va: ins.address(),
                     word,
@@ -1252,6 +1372,7 @@ pub fn disassemble_program_with_priorities_and_package_hints(
     let mut out = Vec::new();
     let mut priorities = Vec::new();
     let cs = build_capstone();
+    let pool_geometry = model.pool_geometry;
     let ranked = rank_candidates(
         model,
         iso_instr,
@@ -1287,7 +1408,13 @@ pub fn disassemble_program_with_priorities_and_package_hints(
             else {
                 continue;
             };
-            if let Some(d) = decode_function(candidate.func, iso_instr, iso_base_va, cs.as_ref()) {
+            if let Some(d) = decode_function(
+                candidate.func,
+                iso_instr,
+                iso_base_va,
+                cs.as_ref(),
+                pool_geometry,
+            ) {
                 out.push(d);
                 priorities.push(to_breakdown(candidate));
                 selected_entry_vas.insert(seed_entry_va);
@@ -1328,7 +1455,13 @@ pub fn disassemble_program_with_priorities_and_package_hints(
                 deferred.push(candidate);
                 continue;
             }
-            if let Some(d) = decode_function(candidate.func, iso_instr, iso_base_va, cs.as_ref()) {
+            if let Some(d) = decode_function(
+                candidate.func,
+                iso_instr,
+                iso_base_va,
+                cs.as_ref(),
+                pool_geometry,
+            ) {
                 out.push(d);
                 priorities.push(to_breakdown(&candidate));
                 selected_entry_vas.insert(candidate.func.entry_va);
@@ -1346,7 +1479,13 @@ pub fn disassemble_program_with_priorities_and_package_hints(
             if selected_entry_vas.contains(&candidate.func.entry_va) {
                 continue;
             }
-            if let Some(d) = decode_function(candidate.func, iso_instr, iso_base_va, cs.as_ref()) {
+            if let Some(d) = decode_function(
+                candidate.func,
+                iso_instr,
+                iso_base_va,
+                cs.as_ref(),
+                pool_geometry,
+            ) {
                 out.push(d);
                 priorities.push(to_breakdown(&candidate));
                 selected_entry_vas.insert(candidate.func.entry_va);
@@ -1354,7 +1493,13 @@ pub fn disassemble_program_with_priorities_and_package_hints(
         }
     } else {
         for candidate in ranked {
-            if let Some(d) = decode_function(candidate.func, iso_instr, iso_base_va, cs.as_ref()) {
+            if let Some(d) = decode_function(
+                candidate.func,
+                iso_instr,
+                iso_base_va,
+                cs.as_ref(),
+                pool_geometry,
+            ) {
                 out.push(d);
                 priorities.push(to_breakdown(&candidate));
             }
@@ -1387,6 +1532,200 @@ mod tests {
     use super::*;
     use flutterdec_adapter::{ClassInfo, LibraryInfo, ObjectPoolEntry};
 
+    /// Word encodings lifted from a real Dart 3.9.2 `libapp.so`; ground-truth pool
+    /// indices were cross-checked against an independent ObjectPool decoder.
+    mod pool_words {
+        /// `ldr x1, [x27, #0xef8]`: direct load, PP displacement 0xef8.
+        pub const LDR_X1_PP_0XEF8: u32 = 0xF947_7F61;
+        /// `add x0, x27, #0x23, lsl #12`: page base at PP + 0x23000.
+        pub const ADD_X0_PP_PAGE_0X23: u32 = 0x9140_8F60;
+        /// `ldr x0, [x0, #0xa90]`: completes the page pair, displacement 0x23a90.
+        pub const LDR_X0_X0_0XA90: u32 = 0xF945_4800;
+        pub const RET: u32 = 0xD65F_03C0;
+    }
+
+    fn pool_probe_model(pool_geometry: Option<PoolGeometry>) -> ProgramModel {
+        ProgramModel {
+            schema_version: 3,
+            adapter_kind: "test".to_string(),
+            dart_version: "3.9.2".to_string(),
+            snapshot_hash: "h".to_string(),
+            arch: "arm64".to_string(),
+            libraries: vec![LibraryInfo {
+                id: 0,
+                uri: "package:app/main.dart".to_string(),
+                name_display: "package:app/main.dart".to_string(),
+            }],
+            classes: vec![ClassInfo {
+                id: 0,
+                name: "Global".to_string(),
+                super_name: "Object".to_string(),
+                library_uri: "package:app/main.dart".to_string(),
+            }],
+            functions: vec![FunctionInfo {
+                id: 0,
+                name: "poolProbe".to_string(),
+                owner_class: "Global".to_string(),
+                entry_va: 0x1000,
+                size: 16,
+                code_section_va: 0x1000,
+                name_kind: None,
+            }],
+            object_pool: Vec::new(),
+            pool_geometry,
+        }
+    }
+
+    fn annotations_for_words(
+        words: &[u32],
+        geometry: Option<PoolGeometry>,
+    ) -> Vec<(String, String)> {
+        let mut model = pool_probe_model(geometry);
+        model.functions[0].size = (words.len() * 4) as u64;
+        let bytes: Vec<u8> = words.iter().flat_map(|w| w.to_le_bytes()).collect();
+        let d = disassemble_program(&model, &bytes, 0x1000, None, None);
+        d.first()
+            .map(|f| {
+                f.instructions
+                    .iter()
+                    .map(|i| (format!("{} {}", i.mnemonic, i.op_str), i.annotation.clone()))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    const ARM64_POOL_GEOMETRY: PoolGeometry = PoolGeometry {
+        entries_offset: 0x10,
+        word_size: 8,
+    };
+
+    #[test]
+    fn direct_pool_load_resolves_displacement_to_entry_index() {
+        let out = annotations_for_words(
+            &[pool_words::LDR_X1_PP_0XEF8, pool_words::RET],
+            Some(ARM64_POOL_GEOMETRY),
+        );
+        assert_eq!(
+            out[0].0, "ldr x1, [x27, #0xef8]",
+            "encoding drifted: {out:?}"
+        );
+        // 0xef8 is a byte displacement, not an index: (0xef8 - 0x10) / 8 == 477.
+        assert_eq!(out[0].1, "pool[477]");
+    }
+
+    #[test]
+    fn paged_pool_load_resolves_across_the_add_ldr_pair() {
+        let out = annotations_for_words(
+            &[
+                pool_words::ADD_X0_PP_PAGE_0X23,
+                pool_words::LDR_X0_X0_0XA90,
+                pool_words::RET,
+            ],
+            Some(ARM64_POOL_GEOMETRY),
+        );
+        assert_eq!(
+            out[0].0, "add x0, x27, #0x23, lsl #12",
+            "encoding drifted: {out:?}"
+        );
+        assert_eq!(
+            out[1].0, "ldr x0, [x0, #0xa90]",
+            "encoding drifted: {out:?}"
+        );
+        // (0x23 << 12) + 0xa90 == 0x23a90; (0x23a90 - 0x10) / 8 == 18256.
+        assert_eq!(out[1].1, "pool[18256]");
+    }
+
+    #[test]
+    fn pool_loads_report_raw_displacement_without_geometry() {
+        let out = annotations_for_words(
+            &[
+                pool_words::LDR_X1_PP_0XEF8,
+                pool_words::ADD_X0_PP_PAGE_0X23,
+                pool_words::LDR_X0_X0_0XA90,
+                pool_words::RET,
+            ],
+            None,
+        );
+        // No geometry means no index space; emitting `pool[N]` here would invite the
+        // hint layer to join on an index that does not exist.
+        assert_eq!(out[0].1, "poolOff[3832]");
+        assert_eq!(out[2].1, "poolOff[146064]"); // 0x23a90
+    }
+
+    #[test]
+    fn control_flow_invalidates_a_pending_pool_page_base() {
+        let out = annotations_for_words(
+            &[
+                pool_words::ADD_X0_PP_PAGE_0X23,
+                pool_words::RET,
+                pool_words::LDR_X0_X0_0XA90,
+            ],
+            Some(ARM64_POOL_GEOMETRY),
+        );
+        assert_eq!(
+            out[2].1, "",
+            "a base that did not survive control flow must not annotate a slot"
+        );
+    }
+
+    #[test]
+    fn redefining_the_base_register_invalidates_it() {
+        // `add x0, x27, #0x23, lsl #12` then `add x0, x27, #1, lsl #12` must use the
+        // second base, not the first.
+        let second_page = 0x9140_0760u32; // add x0, x27, #1, lsl #12
+        let out = annotations_for_words(
+            &[
+                pool_words::ADD_X0_PP_PAGE_0X23,
+                second_page,
+                pool_words::LDR_X0_X0_0XA90,
+                pool_words::RET,
+            ],
+            Some(ARM64_POOL_GEOMETRY),
+        );
+        assert_eq!(
+            out[1].0, "add x0, x27, #1, lsl #12",
+            "encoding drifted: {out:?}"
+        );
+        // (1 << 12) + 0xa90 == 0x1a90; (0x1a90 - 0x10) / 8 == 848.
+        assert_eq!(out[2].1, "pool[848]");
+    }
+    /// `ldp` writes two registers. Clearing only the first leaves the second holding a
+    /// base it no longer has, which a later load would turn into a fabricated slot.
+    #[test]
+    fn load_pair_invalidates_both_destination_registers() {
+        // add x1, x27, #0x23, lsl #12   (x1 gets a page base)
+        // ldp x0, x1, [sp, #16]         (x1 is overwritten)
+        // ldr x0, [x1, #0xa90]          (must not resolve)
+        let add_x1_page = 0x9140_8F61u32;
+        let ldp_x0_x1_sp16 = 0xA941_07E0u32;
+        let ldr_x0_x1_0xa90 = 0xF945_4820u32;
+        let out = annotations_for_words(
+            &[
+                add_x1_page,
+                ldp_x0_x1_sp16,
+                ldr_x0_x1_0xa90,
+                pool_words::RET,
+            ],
+            Some(ARM64_POOL_GEOMETRY),
+        );
+        assert_eq!(
+            out[0].0, "add x1, x27, #0x23, lsl #12",
+            "encoding drifted: {out:?}"
+        );
+        assert_eq!(
+            out[1].0, "ldp x0, x1, [sp, #0x10]",
+            "encoding drifted: {out:?}"
+        );
+        assert_eq!(
+            out[2].0, "ldr x0, [x1, #0xa90]",
+            "encoding drifted: {out:?}"
+        );
+        assert_eq!(
+            out[2].1, "",
+            "x1 was overwritten by the load pair, so its stale base must not resolve"
+        );
+    }
+
     #[test]
     fn disassembles_simple_function() {
         let model = ProgramModel {
@@ -1415,6 +1754,7 @@ mod tests {
                 code_section_va: 0x1000,
                 name_kind: None,
             }],
+            pool_geometry: None,
             object_pool: vec![ObjectPoolEntry {
                 index: 0,
                 kind: "String".to_string(),
@@ -1488,6 +1828,7 @@ mod tests {
                     name_kind: None,
                 },
             ],
+            pool_geometry: None,
             object_pool: vec![ObjectPoolEntry {
                 index: 0,
                 kind: "String".to_string(),
@@ -1561,6 +1902,7 @@ mod tests {
                     name_kind: None,
                 },
             ],
+            pool_geometry: None,
             object_pool: vec![ObjectPoolEntry {
                 index: 0,
                 kind: "String".to_string(),
@@ -1619,6 +1961,7 @@ mod tests {
                     name_kind: None,
                 },
             ],
+            pool_geometry: None,
             object_pool: vec![ObjectPoolEntry {
                 index: 0,
                 kind: "String".to_string(),
@@ -1677,6 +2020,7 @@ mod tests {
                     name_kind: None,
                 },
             ],
+            pool_geometry: None,
             object_pool: vec![
                 ObjectPoolEntry {
                     index: 0,
@@ -1749,6 +2093,7 @@ mod tests {
                     name_kind: None,
                 },
             ],
+            pool_geometry: None,
             object_pool: vec![ObjectPoolEntry {
                 index: 0,
                 kind: "String".to_string(),
@@ -1807,6 +2152,7 @@ mod tests {
                     name_kind: None,
                 },
             ],
+            pool_geometry: None,
             object_pool: vec![ObjectPoolEntry {
                 index: 0,
                 kind: "String".to_string(),
@@ -1865,6 +2211,7 @@ mod tests {
                     name_kind: None,
                 },
             ],
+            pool_geometry: None,
             object_pool: vec![ObjectPoolEntry {
                 index: 0,
                 kind: "String".to_string(),
@@ -1923,6 +2270,7 @@ mod tests {
                     name_kind: None,
                 },
             ],
+            pool_geometry: None,
             object_pool: vec![ObjectPoolEntry {
                 index: 0,
                 kind: "String".to_string(),
@@ -1996,6 +2344,7 @@ mod tests {
                     name_kind: None,
                 },
             ],
+            pool_geometry: None,
             object_pool: vec![
                 ObjectPoolEntry {
                     index: 0,
@@ -2077,6 +2426,7 @@ mod tests {
                     name_kind: None,
                 },
             ],
+            pool_geometry: None,
             object_pool: vec![
                 ObjectPoolEntry {
                     index: 0,
@@ -2180,6 +2530,7 @@ mod tests {
                     name_kind: None,
                 },
             ],
+            pool_geometry: None,
             object_pool: vec![
                 ObjectPoolEntry {
                     index: 0,
@@ -2280,6 +2631,7 @@ mod tests {
                     name_kind: None,
                 },
             ],
+            pool_geometry: None,
             object_pool: vec![ObjectPoolEntry {
                 index: 0,
                 kind: "String".to_string(),
@@ -2416,6 +2768,7 @@ mod tests {
                     name_kind: None,
                 },
             ],
+            pool_geometry: None,
             object_pool: vec![ObjectPoolEntry {
                 index: 0,
                 kind: "String".to_string(),
@@ -2474,6 +2827,7 @@ mod tests {
                     name_kind: None,
                 },
             ],
+            pool_geometry: None,
             object_pool: vec![ObjectPoolEntry {
                 index: 0,
                 kind: "String".to_string(),
@@ -2541,6 +2895,7 @@ mod tests {
                     name_kind: None,
                 },
             ],
+            pool_geometry: None,
             object_pool: vec![ObjectPoolEntry {
                 index: 0,
                 kind: "String".to_string(),
@@ -2627,6 +2982,7 @@ mod tests {
                     name_kind: None,
                 },
             ],
+            pool_geometry: None,
             object_pool: vec![ObjectPoolEntry {
                 index: 0,
                 kind: "String".to_string(),
@@ -3031,6 +3387,7 @@ mod tests {
             libraries: Vec::new(),
             classes: Vec::new(),
             functions,
+            pool_geometry: None,
             object_pool: Vec::new(),
         };
         let owner_library = HashMap::from([
@@ -3101,6 +3458,7 @@ mod tests {
                     name_kind: None,
                 },
             ],
+            pool_geometry: None,
             object_pool: vec![ObjectPoolEntry {
                 index: 0,
                 kind: "String".to_string(),
@@ -3173,6 +3531,7 @@ mod tests {
                     name_kind: None,
                 },
             ],
+            pool_geometry: None,
             object_pool: vec![ObjectPoolEntry {
                 index: 0,
                 kind: "String".to_string(),
@@ -3232,6 +3591,7 @@ mod tests {
                     name_kind: None,
                 },
             ],
+            pool_geometry: None,
             object_pool: vec![ObjectPoolEntry {
                 index: 0,
                 kind: "String".to_string(),

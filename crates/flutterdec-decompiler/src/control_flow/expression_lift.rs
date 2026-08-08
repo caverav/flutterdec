@@ -1,12 +1,24 @@
 use super::*;
 
 impl<'a> FuncEmitter<'a> {
+    /// Resolve a register read that is consumed as a whole value.
+    ///
+    /// A register holding a pool slot becomes the slot's string here, so assignments,
+    /// comparisons and returns read like Dart instead of like a pool index. The
+    /// dereference paths below deliberately do not call this: `pool[40].f7` is a field
+    /// read on the pooled object, and rendering the literal there would claim a field
+    /// access on a string. Those keep `pool[<index> /* "value" */]` instead.
+    fn resolved_reg_value(&self, reg: &str) -> String {
+        let raw = Self::clean_expr(self.state.reg_values.get(reg).cloned().unwrap_or_else(|| reg.to_string()));
+        self.annotate_pool_refs(&raw)
+    }
+
     pub(super) fn lookup_reg(&self, token: &str) -> String {
         if is_zero_reg(token) {
             return "0".to_string();
         }
         if let Some(reg) = canonical_reg(token) {
-            return Self::clean_expr(self.state.reg_values.get(&reg).cloned().unwrap_or(reg));
+            return self.resolved_reg_value(&reg);
         }
         Self::clean_expr(token.trim().trim_start_matches('#').to_string())
     }
@@ -16,15 +28,15 @@ impl<'a> FuncEmitter<'a> {
             return "0".to_string();
         }
         if let Some(reg) = canonical_reg(token) {
-            return Self::clean_expr(self.state.reg_values.get(&reg).cloned().unwrap_or(reg));
+            return self.resolved_reg_value(&reg);
         }
 
         if let Some((base, off)) = parse_mem_operand(token) {
             if base == "x29" {
                 if let Some(name) = self.locals.get(&off) {
-                    return Self::clean_expr(name.clone());
+                    return name.clone();
                 }
-                return Self::clean_expr(local_name(off));
+                return local_name(off);
             }
 
             let base_expr = self.state.reg_values.get(&base).cloned().unwrap_or(base);

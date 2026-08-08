@@ -96,7 +96,10 @@ fn llir_from_disasm(d: &FunctionDisassembly) -> Vec<LlirInstr> {
                 "ret" => {
                     op = IROp::Return;
                 }
-                "ldr" if ins.annotation.starts_with("pool[") => {
+                "ldr"
+                    if ins.annotation.starts_with("pool[")
+                        || ins.annotation.starts_with("poolOff[") =>
+                {
                     op = IROp::LoadPool;
                     src = ins.op_str.clone();
                     target = ins.annotation.clone();

@@ -139,3 +139,27 @@ fn keeps_parentheses_for_non_member_field_base() {
     let got = FuncEmitter::clean_expr(line);
     assert_eq!(got, "((arg0 + 1)).f7");
 }
+/// Recovered pool strings are program data and routinely contain the punctuation the
+/// expression rewrites look for. A real one from a Flutter engine build reads
+/// "... has been collected (nullptr). This is ...", which the member-access
+/// simplifier used to shorten to "collected nullptr." inside the quotes.
+#[test]
+fn clean_expr_does_not_rewrite_inside_string_literals() {
+    let line =
+        "\"a native peer has been collected (nullptr). This is usually a bug\"".to_string();
+    assert_eq!(FuncEmitter::clean_expr(line.clone()), line);
+}
+
+#[test]
+fn clean_expr_still_simplifies_around_a_string_literal() {
+    let line = "f(\"(x).y\", ((arg0)).f7)".to_string();
+    let got = FuncEmitter::clean_expr(line);
+    assert!(
+        got.contains("\"(x).y\""),
+        "literal must survive verbatim: {got}"
+    );
+    assert!(
+        got.contains("arg0.f7"),
+        "code outside the literal should still simplify: {got}"
+    );
+}

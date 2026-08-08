@@ -734,8 +734,13 @@ fn aliases_dispatch_target_slot_callable_calls() {
     );
 }
 
+/// Page-based pool loads that the disassembler's register tracker could not follow
+/// still reach the decompiler as raw `((pool + <page> /* lsl #N */)).f<off>` text.
+/// That text carries a byte displacement, not an entry index, and the decompiler has
+/// no pool geometry to convert it, so it must surface the displacement and decline
+/// to resolve, rather than divide by the stride and land on a neighbouring slot.
 #[test]
-fn resolves_shifted_pool_target_to_symbol_call_name() {
+fn residual_shifted_pool_syntax_reports_displacement_and_does_not_resolve() {
     let ir = FunctionIr {
         function_id: 215,
         name: "shiftedPoolTarget".to_string(),
@@ -780,21 +785,21 @@ fn resolves_shifted_pool_target_to_symbol_call_name() {
     );
 
     let artifact = emit_pseudocode_with_pool_context(&ir, &symbols, &pool, &semantic);
+    // (8 << 12) + 3640 == 36408 bytes from PP.
     assert!(
-        artifact
-            .source
-            .contains("dart.core.print(receiver, param1, param2, param3);"),
-        "shifted pool target should resolve to readable symbol call:\n{}",
+        artifact.source.contains("poolOff[36408]"),
+        "residual shifted pool access should surface its byte displacement:\n{}",
         artifact.source
     );
     assert!(
-        artifact.source.contains("target: pool[4551]"),
-        "shifted pool target should normalize to pool index in comments:\n{}",
+        !artifact.source.contains("pool[4551]"),
+        "displacement 36408 must not be reported as entry index 4551; the real entry \
+         index depends on pool geometry the decompiler does not have:\n{}",
         artifact.source
     );
     assert!(
-        artifact.source.contains("target_va: 0x9100"),
-        "resolved call should report target_va from pool semantic hint:\n{}",
+        !artifact.source.contains("dart.core.print"),
+        "an unresolvable pool displacement must not pick up a semantic hint:\n{}",
         artifact.source
     );
     assert!(
@@ -1228,6 +1233,133 @@ fn annotates_framework_from_pool_selector_when_call_name_is_generic() {
             .contains("flutter.widgets.State.setState(1, 2, \"setState\" /* pool[42] */, param3); // framework:flutter.widgets.State.setState [selector], was: sub_6100"),
         "missing selector-based framework annotation:\n{}",
         artifact.source
+    );
+}
+/// A resolved pool slot is a known string wherever it is used, not only where it
+/// happens to land in a call argument. Assignments, comparisons and returns used to
+/// print the bare `pool[N]` even with the value in hand.
+#[test]
+fn pool_values_render_as_literals_outside_call_arguments() {
+    let ir = FunctionIr {
+        function_id: 900,
+        name: "poolValueUses".to_string(),
+        entry_va: 0x11000,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0x11000,
+            instrs: vec![
+                LlirInstr {
+                    va: 0x11000,
+                    op: IROp::LoadPool,
+                    src: "x1".to_string(),
+                    target: "pool[40]".to_string(),
+                },
+                // store to a frame local
+                LlirInstr {
+                    va: 0x11004,
+                    op: IROp::Other,
+                    src: "stur x1, [x29, #-8]".to_string(),
+                    target: String::new(),
+                },
+                // compare against another register
+                LlirInstr {
+                    va: 0x11008,
+                    op: IROp::Other,
+                    src: "cmp x2, x1".to_string(),
+                    target: String::new(),
+                },
+                LlirInstr {
+                    va: 0x1100c,
+                    op: IROp::Other,
+                    src: "mov x0, x1".to_string(),
+                    target: String::new(),
+                },
+                LlirInstr {
+                    va: 0x11010,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+
+    let symbols = HashMap::new();
+    let mut pool = HashMap::new();
+    pool.insert(40u64, "onError".to_string());
+    let out = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool).source;
+
+    assert!(
+        out.contains("= \"onError\" /* pool[40] */;"),
+        "pool value assigned to a local should read as the string:\n{out}"
+    );
+    assert!(
+        out.contains("return \"onError\" /* pool[40] */;"),
+        "returned pool value should read as the string:\n{out}"
+    );
+    assert!(
+        !out.contains("= pool[40];"),
+        "no use should be left as a bare slot when the value is known:\n{out}"
+    );
+}
+
+/// Dereferencing a pooled object is not the same as using its value. `pool[40].f7`
+/// reads a field of the object in slot 40, so rendering the string there would claim a
+/// field access on a literal; the slot keeps its inline mapping instead.
+#[test]
+fn pool_field_access_keeps_the_slot_rather_than_the_literal() {
+    let ir = FunctionIr {
+        function_id: 901,
+        name: "poolFieldUse".to_string(),
+        entry_va: 0x12000,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0x12000,
+            instrs: vec![
+                LlirInstr {
+                    va: 0x12000,
+                    op: IROp::LoadPool,
+                    src: "x1".to_string(),
+                    target: "pool[40]".to_string(),
+                },
+                LlirInstr {
+                    va: 0x12004,
+                    op: IROp::Other,
+                    src: "ldur x2, [x1, #7]".to_string(),
+                    target: String::new(),
+                },
+                LlirInstr {
+                    va: 0x12008,
+                    op: IROp::Other,
+                    src: "stur x2, [x29, #-8]".to_string(),
+                    target: String::new(),
+                },
+                LlirInstr {
+                    va: 0x1200c,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+
+    let symbols = HashMap::new();
+    let mut pool = HashMap::new();
+    pool.insert(40u64, "onError".to_string());
+    let out = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool).source;
+
+    assert!(
+        !out.contains("\"onError\" /* pool[40] */.f"),
+        "a field read must not be rendered as a field of a string literal:\n{out}"
+    );
+    assert!(
+        out.contains("pool[40 /* \"onError\" */].f7"),
+        "the field base should stay a slot and carry its inline mapping:\n{out}"
     );
 }
 

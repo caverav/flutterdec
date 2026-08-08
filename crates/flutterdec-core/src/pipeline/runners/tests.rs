@@ -426,6 +426,7 @@
                     name_kind: Some("placeholder".to_string()),
                 },
             ],
+            pool_geometry: None,
             object_pool: Vec::new(),
         };
 
@@ -466,6 +467,7 @@
                 code_section_va: 0x3000,
                 name_kind: Some("heuristic".to_string()),
             }],
+            pool_geometry: None,
             object_pool: Vec::new(),
         };
 
@@ -1050,6 +1052,7 @@
                 name_kind: None,
                 },
             ],
+            pool_geometry: None,
             object_pool: Vec::new(),
         };
 
@@ -1100,6 +1103,7 @@
                 name_kind: None,
                 },
             ],
+            pool_geometry: None,
             object_pool: Vec::new(),
         };
 
@@ -1178,6 +1182,7 @@
                 name_kind: None,
                 },
             ],
+            pool_geometry: None,
             object_pool: Vec::new(),
         };
 
@@ -1259,6 +1264,7 @@
                 name_kind: None,
                 },
             ],
+            pool_geometry: None,
             object_pool: Vec::new(),
         };
 
@@ -1531,6 +1537,7 @@
             libraries: Vec::new(),
             classes: Vec::new(),
             functions: Vec::new(),
+            pool_geometry: None,
             object_pool: vec![
                 flutterdec_adapter::ObjectPoolEntry {
                     index: 1,
@@ -1618,6 +1625,7 @@
             libraries: Vec::new(),
             classes: Vec::new(),
             functions: Vec::new(),
+            pool_geometry: None,
             object_pool: vec![
                 flutterdec_adapter::ObjectPoolEntry {
                     index: 1,
@@ -1663,6 +1671,7 @@
             libraries: Vec::new(),
             classes: Vec::new(),
             functions: Vec::new(),
+            pool_geometry: None,
             object_pool: vec![
                 flutterdec_adapter::ObjectPoolEntry {
                     index: 1,
@@ -1777,6 +1786,7 @@
                 name_kind: None,
                 },
             ],
+            pool_geometry: None,
             object_pool: Vec::new(),
         };
         let signals = AndroidManifestSignals {
@@ -1853,6 +1863,7 @@
             libraries: Vec::new(),
             classes: Vec::new(),
             functions: Vec::new(),
+            pool_geometry: None,
             object_pool: vec![
                 flutterdec_adapter::ObjectPoolEntry {
                     index: 7,
@@ -1905,6 +1916,7 @@
             libraries: Vec::new(),
             classes: Vec::new(),
             functions: Vec::new(),
+            pool_geometry: None,
             object_pool: vec![
                 flutterdec_adapter::ObjectPoolEntry {
                     index: 1,
@@ -1952,6 +1964,7 @@
             libraries: Vec::new(),
             classes: Vec::new(),
             functions: Vec::new(),
+            pool_geometry: None,
             object_pool: vec![
                 flutterdec_adapter::ObjectPoolEntry {
                     index: 7,
@@ -2034,6 +2047,7 @@
                 code_section_va: 0x4000,
             name_kind: None,
             }],
+            pool_geometry: None,
             object_pool: vec![flutterdec_adapter::ObjectPoolEntry {
                 index: 21,
                 kind: "Closure".to_string(),
@@ -2084,6 +2098,7 @@
                 code_section_va: 0x1000,
                 name_kind: Some("heuristic".to_string()),
             }],
+            pool_geometry: None,
             object_pool: Vec::new(),
         };
         let scoped_model = full_model.clone();
@@ -2144,6 +2159,7 @@
                     name_kind: Some("heuristic".to_string()),
                 },
             ],
+            pool_geometry: None,
             object_pool: Vec::new(),
         };
         let (scoped_model, _) = apply_function_scope_filter(&full_model, FunctionScope::App, &[]);
@@ -2195,6 +2211,7 @@
                     name_kind: Some("heuristic".to_string()),
                 },
             ],
+            pool_geometry: None,
             object_pool: Vec::new(),
         };
         let scoped_model = full_model.clone();
