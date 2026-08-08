@@ -219,6 +219,14 @@ fn parse_snapshot_header(bytes: &[u8]) -> Option<(String, String)> {
     const HASH_LEN: usize = 32;
 
     let start = bytes.windows(MAGIC.len()).position(|w| w == MAGIC)?;
+    // `length` counts the bytes after it, so a real header's payload fits inside
+    // the span. Checking it rejects a run of bytes that merely contains the
+    // magic, which would otherwise yield a fabricated hash.
+    let length = i64::from_le_bytes(bytes.get(start + 4..start + 12)?.try_into().ok()?);
+    let remaining = i64::try_from(bytes.len().checked_sub(start)?).ok()?;
+    if length <= 0 || length > remaining {
+        return None;
+    }
     let hash_at = start.checked_add(HEADER_SIZE)?;
     let features_at = hash_at.checked_add(HASH_LEN)?;
     let hash = bytes.get(hash_at..features_at)?;
@@ -451,14 +459,35 @@ mod tests {
     }
 
     fn snapshot_blob(hash: &str, features: &str) -> Vec<u8> {
-        let mut out = vec![0u8; 8];
+        // Eight bytes of padding before the header, so the parser has to find the
+        // magic rather than assume offset zero.
+        let lead = 8usize;
+        let payload_len = 20 + hash.len() + features.len() + 1;
+        let mut out = vec![0u8; lead];
         out.extend_from_slice(&[0xf5, 0xf5, 0xdc, 0xdc]);
-        out.extend_from_slice(&1234i64.to_le_bytes());
+        // `length` has to describe a payload that fits inside the span, which is
+        // what makes the check able to reject a stray magic.
+        out.extend_from_slice(&(payload_len as i64).to_le_bytes());
         out.extend_from_slice(&3i64.to_le_bytes());
         out.extend_from_slice(hash.as_bytes());
         out.extend_from_slice(features.as_bytes());
         out.push(0);
         out
+    }
+
+    /// A header whose length does not fit the span is not a header. This is the
+    /// check that makes a stray magic in a run of data rejectable, so it needs
+    /// its own case rather than resting on the hash and features checks.
+    #[test]
+    fn rejects_a_header_whose_length_exceeds_the_span() {
+        let mut blob = snapshot_blob(
+            "80a49c7111088100a233b2ae788e1f48",
+            "product arm64 compressed-pointers",
+        );
+        assert!(parse_snapshot_header(&blob).is_some(), "baseline parses");
+        // Only the length field changes.
+        blob[12..20].copy_from_slice(&i64::MAX.to_le_bytes());
+        assert!(parse_snapshot_header(&blob).is_none());
     }
 
     /// The header fixes the layout, so the hash and features come from it rather
