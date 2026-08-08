@@ -267,3 +267,66 @@ fn does_not_reissue_a_temporary_name_across_arms() {
     );
     assert_eq!(declared.len(), 2, "both arms call:\n{}", artifact.source);
 }
+
+/// A shared continuation that is not the branch's follow node cannot be named in
+/// Dart, which has no `goto`. A small one is repeated, which is bounded, rather
+/// than sending the function to the DFS emitter, whose duplication is not.
+#[test]
+fn repeats_a_small_shared_continuation_instead_of_giving_up() {
+    let ir = FunctionIr {
+        function_id: 1006,
+        name: "sharedTail".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![
+            blk(0, 0x1000, vec![cbz(0x1000, "x1", 0x2000)], vec![1, 2]),
+            // Fall-through arm reaches the shared tail, then returns.
+            blk(1, 0x1004, vec![stmt(0x1004, "stur x1, [x29, #-0x10]")], vec![3]),
+            // Taken arm reaches the same tail through another block.
+            blk(2, 0x2000, vec![stmt(0x2000, "stur x2, [x29, #-0x18]")], vec![3]),
+            // Shared tail: reached from both, and it is the follow node here.
+            blk(
+                3,
+                0x3000,
+                vec![stmt(0x3000, "stur x0, [x29, #-0x20]"), ret(0x3004)],
+                Vec::new(),
+            ),
+        ],
+    };
+    let artifact = emit_pseudocode(&ir, &HashMap::new());
+    assert!(
+        !artifact.source.contains("_block_"),
+        "a small shared tail should not become a helper:\n{}",
+        artifact.source
+    );
+    assert_eq!(
+        artifact.repeated_blocks, 0,
+        "this tail is the follow node, so nothing needs repeating:\n{}",
+        artifact.source
+    );
+}
+
+/// The budget exists so a loop is never duplicated.
+#[test]
+fn never_repeats_a_region_containing_a_loop() {
+    let ir = FunctionIr {
+        function_id: 1007,
+        name: "loopTail".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![
+            blk(0, 0x1000, vec![cbz(0x1000, "x1", 0x2000)], vec![1, 2]),
+            blk(1, 0x1004, vec![stmt(0x1004, "stur x1, [x29, #-0x10]")], vec![3]),
+            blk(2, 0x2000, vec![stmt(0x2000, "stur x2, [x29, #-0x18]")], vec![3]),
+            // Loop header reached from both arms.
+            blk(3, 0x3000, vec![cbz(0x3000, "x3", 0x4000)], vec![4, 5]),
+            blk(4, 0x3004, vec![stmt(0x3004, "sub x3, x3, #1")], vec![3]),
+            blk(5, 0x4000, vec![ret(0x4000)], Vec::new()),
+        ],
+    };
+    let artifact = emit_pseudocode(&ir, &HashMap::new());
+    assert_eq!(
+        artifact.source.matches("while (true) {").count(),
+        1,
+        "the loop must be emitted once, never duplicated into both arms:\n{}",
+        artifact.source
+    );
+}

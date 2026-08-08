@@ -18,6 +18,9 @@ pub struct PseudocodeArtifact {
     /// Calls named from a recovered dispatch-table selector offset, as opposed to
     /// from pool metadata. Provable from the instruction stream alone.
     pub dispatch_table_calls: usize,
+    /// Blocks emitted more than once because a shared continuation could not be
+    /// named. Bounded by budget; the DFS fallback's duplication is not.
+    pub repeated_blocks: usize,
     pub target_va_symbol_calls: usize,
 }
 
@@ -70,6 +73,7 @@ struct FuncEmitter<'a> {
     semantic_indirect_calls: usize,
     dispatch_selector_calls: usize,
     dispatch_table_calls: usize,
+    repeated_blocks: usize,
     target_va_symbol_calls: usize,
 }
 
@@ -150,6 +154,7 @@ impl<'a> FuncEmitter<'a> {
             semantic_indirect_calls: 0,
             dispatch_selector_calls: 0,
             dispatch_table_calls: 0,
+            repeated_blocks: 0,
             target_va_symbol_calls: 0,
         }
     }
@@ -218,6 +223,7 @@ impl<'a> FuncEmitter<'a> {
             semantic_indirect_calls: self.semantic_indirect_calls,
             dispatch_selector_calls: self.dispatch_selector_calls,
             dispatch_table_calls: self.dispatch_table_calls,
+            repeated_blocks: self.repeated_blocks,
             target_va_symbol_calls: self.target_va_symbol_calls,
         }
     }
