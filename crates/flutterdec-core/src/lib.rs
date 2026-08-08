@@ -210,6 +210,14 @@ pub struct InfoOutput {
     /// Object-header tag encoding for that version (`CID_INT32`, `CID_SHIFT1`,
     /// `OBJECT_HEADER`); the layout dimension most likely to break a parser.
     pub dart_tag_style: Option<String>,
+    /// Whether the snapshot was built with compressed pointers, read from the
+    /// features string in its header rather than inferred from the code. It
+    /// decides the width of a reference field and the value of `kSmiBits`, so it
+    /// selects which offset tables apply. `None` means the header did not parse
+    /// and nothing may be assumed.
+    pub compressed_pointers: Option<bool>,
+    /// The snapshot's features string verbatim, when the header parsed.
+    pub snapshot_features: Option<String>,
     pub adapter_installed: bool,
     pub adapter_kind: Option<String>,
     pub manifest_entry_present: Option<bool>,

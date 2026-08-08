@@ -1001,6 +1001,8 @@ pub fn run_info(repo_root: &Path, input_path: &Path) -> Result<InfoOutput> {
             .dart_profile
             .as_ref()
             .map(|p| p.profile.tag_style.as_str().to_string()),
+        compressed_pointers: bundle.compressed_pointers,
+        snapshot_features: bundle.snapshot_features.clone(),
         adapter_installed,
         adapter_kind: None,
         manifest_entry_present: None,

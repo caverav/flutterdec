@@ -488,6 +488,9 @@ fn handle_info(repo_root: &Path, cmd: InfoCmd) -> Result<()> {
         if let Some(tag_style) = out.dart_tag_style.as_deref() {
             println!("dart tag style: {}", tag_style);
         }
+        if let Some(compressed) = out.compressed_pointers {
+            println!("compressed pointers: {}", compressed);
+        }
         println!("adapter installed: {}", out.adapter_installed);
         if let Some(kind) = out.adapter_kind.as_deref() {
             println!("adapter kind: {}", kind);
