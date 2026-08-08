@@ -22,7 +22,10 @@ pub(super) fn parse_expr_int(expr: &str) -> Option<i64> {
 
 pub(super) fn fmt_int(v: i64) -> String {
     if v < 0 {
-        let mag = -v;
+        // `-v` overflows for `i64::MIN`, which is reachable: a `movk` into the
+        // top lane produces exactly that value, and a panic in a formatter is a
+        // worse failure than a wide literal.
+        let mag = v.unsigned_abs();
         if mag >= 10 {
             format!("-0x{mag:x}")
         } else {
@@ -133,23 +136,27 @@ pub(super) fn simplify_bin_expr(lhs: String, op: &str, rhs: String) -> String {
             if r_int == Some(0) {
                 return lt.to_string();
             }
+            // ARM64 arithmetic wraps, so folding wraps too. Plain `+` panics in
+            // debug on overflow, which `movk` made reachable by binding full
+            // 64-bit constants, and a checked fold that bailed would silently
+            // drop a constant that is genuinely known.
             if let (Some(a), Some(b)) = (l_int, r_int) {
-                return fmt_int(a + b);
+                return fmt_int(a.wrapping_add(b));
             }
             if let (Some((stack_base, stack_off)), Some(delta)) =
                 (parse_stack_base_offset(lt), r_int)
             {
-                return format!("{stack_base}[{}]", fmt_int(stack_off + delta));
+                return format!("{stack_base}[{}]", fmt_int(stack_off.wrapping_add(delta)));
             }
             if let (Some((base, off)), Some(delta)) = (parse_base_offset_expr(lt), r_int) {
-                let sum = off + delta;
+                let sum = off.wrapping_add(delta);
                 if sum == 0 {
                     return base;
                 }
                 if sum > 0 {
                     return format!("({base} + {})", fmt_int(sum));
                 }
-                return format!("({base} - {})", fmt_int(-sum));
+                return format!("({base} - {})", fmt_int(sum.wrapping_neg()));
             }
         }
         "-" => {
@@ -157,22 +164,22 @@ pub(super) fn simplify_bin_expr(lhs: String, op: &str, rhs: String) -> String {
                 return lt.to_string();
             }
             if let (Some(a), Some(b)) = (l_int, r_int) {
-                return fmt_int(a - b);
+                return fmt_int(a.wrapping_sub(b));
             }
             if let (Some((stack_base, stack_off)), Some(delta)) =
                 (parse_stack_base_offset(lt), r_int)
             {
-                return format!("{stack_base}[{}]", fmt_int(stack_off - delta));
+                return format!("{stack_base}[{}]", fmt_int(stack_off.wrapping_sub(delta)));
             }
             if let (Some((base, off)), Some(delta)) = (parse_base_offset_expr(lt), r_int) {
-                let sum = off - delta;
+                let sum = off.wrapping_sub(delta);
                 if sum == 0 {
                     return base;
                 }
                 if sum > 0 {
                     return format!("({base} + {})", fmt_int(sum));
                 }
-                return format!("({base} - {})", fmt_int(-sum));
+                return format!("({base} - {})", fmt_int(sum.wrapping_neg()));
             }
         }
         _ => {}

@@ -139,6 +139,17 @@ impl<'a> FuncEmitter<'a> {
                 | "ands"
                 | "tst"
                 | "cmn"
+                | "movk"
+                | "sxtw"
+                | "neg"
+                | "mvn"
+                | "sdiv"
+                | "udiv"
+                | "umulh"
+                | "smulh"
+                | "msub"
+                | "madd"
+                | "ubfiz"
                 | "ret"
         )
     }
@@ -223,6 +234,103 @@ impl<'a> FuncEmitter<'a> {
                 if let Some(dst) = canonical_reg(&ops[0]) {
                     let rhs = self.operand_expr(&ops[1]);
                     self.state.reg_values.insert(dst, rhs);
+                }
+            }
+            // `movk` replaces one 16-bit lane and leaves the rest, which is why
+            // this masks rather than ORs: `prior | (imm << s)` is only right when
+            // the lane is already zero, and after `mov rd, #-1` it is not. A
+            // wrong constant renders as a resolved literal.
+            //
+            // Every one of the 21,649 sites across both samples follows a
+            // `mov rd, #literal`, and 21,621 shift by 16, so this is the second
+            // half of a constant materialisation and the merge is exact. The
+            // largest remaining unmodelled mnemonic before this.
+            "movk" if ops.len() >= 2 => {
+                if let Some(dst) = canonical_reg(&ops[0]) {
+                    let shift = match ops.get(2) {
+                        None => Some(0u32),
+                        Some(op) => op
+                            .trim()
+                            .strip_prefix("lsl")
+                            .and_then(|rest| rest.trim().strip_prefix('#'))
+                            .and_then(|n| n.trim().parse::<u32>().ok())
+                            // Only these four lanes exist; anything else is a
+                            // misparse, and shifting by it would be nonsense.
+                            .filter(|s| matches!(s, 0 | 16 | 32 | 48)),
+                    };
+                    let imm = parse_int(ops[1].trim().trim_start_matches('#'));
+                    let prior = self
+                        .state
+                        .reg_values
+                        .get(&dst)
+                        .and_then(|v| parse_int(v))
+                        .map(|v| v as u64);
+                    match (prior, imm, shift) {
+                        (Some(prior), Some(imm), Some(shift)) => {
+                            let lane = 0xffffu64 << shift;
+                            let mut merged = (prior & !lane) | (((imm as u64) & 0xffff) << shift);
+                            // A write to a `w` register zero-extends.
+                            if ops[0].trim().starts_with('w') {
+                                merged &= 0xffff_ffff;
+                            }
+                            self.state.reg_values.insert(dst, fmt_int(merged as i64));
+                        }
+                        // An expression cannot have a lane replaced, so the
+                        // binding is dropped rather than guessed at.
+                        _ => {
+                            self.state.reg_values.remove(&dst);
+                        }
+                    }
+                }
+            }
+            // Exact single-instruction forms, each named for what it computes
+            // rather than translated into Dart operators that would imply
+            // semantics ARM64 does not have. `sdiv` truncates toward zero and
+            // divides by zero to zero; `umulh` is the high half of an unsigned
+            // product; `msub` is a fused multiply-subtract.
+            "sxtw" | "neg" | "mvn" if ops.len() >= 2 => {
+                if let Some(dst) = canonical_reg(&ops[0]) {
+                    let src = self.shifted_operand_expr(&ops, 1);
+                    let value = match mnemonic.as_str() {
+                        "sxtw" => format!("signExtend({src}, 32)"),
+                        "neg" => format!("-{src}"),
+                        _ => format!("~{src}"),
+                    };
+                    self.state.reg_values.insert(dst, value);
+                }
+            }
+            "sdiv" | "udiv" | "umulh" | "smulh" if ops.len() >= 3 => {
+                if let Some(dst) = canonical_reg(&ops[0]) {
+                    let a = self.operand_expr(&ops[1]);
+                    let b = self.operand_expr(&ops[2]);
+                    let name = match mnemonic.as_str() {
+                        "sdiv" => "signedDivide",
+                        "udiv" => "unsignedDivide",
+                        "umulh" => "unsignedHighMultiply",
+                        _ => "signedHighMultiply",
+                    };
+                    self.state.reg_values.insert(dst, format!("{name}({a}, {b})"));
+                }
+            }
+            "msub" | "madd" if ops.len() >= 4 => {
+                if let Some(dst) = canonical_reg(&ops[0]) {
+                    let a = self.operand_expr(&ops[1]);
+                    let b = self.operand_expr(&ops[2]);
+                    let c = self.operand_expr(&ops[3]);
+                    let op = if mnemonic == "msub" { "-" } else { "+" };
+                    self.state
+                        .reg_values
+                        .insert(dst, format!("({c} {op} ({a} * {b}))"));
+                }
+            }
+            "ubfiz" if ops.len() >= 4 => {
+                if let Some(dst) = canonical_reg(&ops[0]) {
+                    let src = self.operand_expr(&ops[1]);
+                    let lsb = self.operand_expr(&ops[2]);
+                    let width = self.operand_expr(&ops[3]);
+                    self.state
+                        .reg_values
+                        .insert(dst, format!("unsignedBitFieldInsert({src}, {lsb}, {width})"));
                 }
             }
             // Compressed-pointer decompression. These binaries use compressed

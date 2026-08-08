@@ -1160,3 +1160,70 @@ fn a_shifted_compare_operand_keeps_its_shift() {
         "an extend must keep its shift amount:\n{scaled}"
     );
 }
+/// `movk` replaces one 16-bit lane and leaves the rest. `prior | (imm << s)` is
+/// only right when that lane is already zero, which it is in the usual
+/// `mov`+`movk` constant materialisation and is not after `mov rd, #-1`. The
+/// merged value renders as a resolved literal, so getting it wrong is a
+/// confident false claim rather than a missing one.
+#[test]
+fn movk_replaces_a_lane_rather_than_setting_bits() {
+    let materialise = |first: &str, second: &str| {
+        let ir = FunctionIr {
+            function_id: 950,
+            name: "constant".to_string(),
+            entry_va: 0x1000,
+            blocks: vec![blk(
+                0,
+                0x1000,
+                vec![
+                    stmt(0x1000, first),
+                    stmt(0x1004, second),
+                    stmt(0x1008, "stur x9, [x3, #7]"),
+                    ret(0x100c),
+                ],
+                vec![],
+            )],
+        };
+        emit_pseudocode(&ir, &HashMap::new()).source
+    };
+    // The ordinary pair: 0xfe with 1 in the second lane is 0x1_00fe.
+    let plain = materialise("mov x9, #0xfe", "movk x9, #1, lsl #16");
+    assert!(
+        plain.contains("= 0x100fe;"),
+        "the two halves should merge into one constant:\n{plain}"
+    );
+    // A lane that is not already zero has to be cleared, so the result keeps the
+    // low half of -1 and takes zero in the second lane. An OR would leave it -1.
+    let over = materialise("mov x9, #-1", "movk x9, #0, lsl #16");
+    assert!(
+        !over.contains("= -1;") && !over.contains("= 0xffffffffffffffff;"),
+        "the replaced lane must be cleared, not merely ored:\n{over}"
+    );
+}
+/// A `movk` into the top lane produces `i64::MIN`, whose negation overflows.
+/// Formatting is reached with that value, and a panic in a formatter is a worse
+/// failure than a wide literal.
+#[test]
+fn a_constant_at_the_signed_minimum_formats_rather_than_panicking() {
+    let ir = FunctionIr {
+        function_id: 951,
+        name: "extremeConstant".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![blk(
+            0,
+            0x1000,
+            vec![
+                stmt(0x1000, "mov x9, #0"),
+                stmt(0x1004, "movk x9, #0x8000, lsl #48"),
+                stmt(0x1008, "stur x9, [x3, #7]"),
+                ret(0x100c),
+            ],
+            vec![],
+        )],
+    };
+    let out = emit_pseudocode(&ir, &HashMap::new()).source;
+    assert!(
+        out.contains("0x8000000000000000"),
+        "the top lane should render as its magnitude:\n{out}"
+    );
+}
