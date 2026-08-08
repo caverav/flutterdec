@@ -775,3 +775,170 @@ Existing Flutter AOT tooling consulted for comparison:
 Sample: LocalSend 1.17.0 `android-arm64v8` release APK
 (`github.com/localsend/localsend`, AGPL-3.0), used read-only as a measurement
 target.
+
+## R7. The lifter was asserting values it did not have
+
+Everything above concerns structure. This concerns the expressions inside it,
+and it is the largest single source of wrong output found so far.
+
+`apply_other_lift` matched a list of sixteen mnemonics and ended in `_ => {}`.
+An unmodelled instruction wrote its destination register, but the emitter's
+`reg_values` still held whatever the last modelled instruction had put there, so
+every later read rendered the stale value as that register's value. There was no
+counter, no marker, and nothing in the output to distinguish it from a recovered
+expression.
+
+The instruction that made this visible is `csel`. Dart materialises a comparison
+into a value by loading both canonical bools and selecting between them:
+
+```text
+add  x16, x22, #0x20      ; kTrueOffsetFromNull
+add  x17, x22, #0x30      ; kFalseOffsetFromNull
+csel x0,  x16, x17, ne
+ret
+```
+
+`csel` was unmodelled, so x0 kept its entry value and the function emitted
+`return receiver;`. The truth is `return (a != b);`. 174 and 270 functions on the
+two samples return a value produced this way.
+
+Scale of the class: 459,250 instructions across both binaries write a register
+and reach the fallback. Ranked, the top are `ldp` (79,645), `ldurb` (42,542),
+`sbfx` (25,899), `movk` (21,649), `sbfiz` (8,262) and the conditional-select
+family (2,993).
+
+Invalidating unmodelled destinations changes 28,064 emitted lines on LocalSend,
+7.08% of 396,381, across 1,402 of 5,800 files; 30,907 on Immich across 1,849.
+Those are changed lines, positionally diffed. The register-reference counters
+move much further, but invalidation changes expression *shape* as well as leaf
+spelling, so that delta is a proxy with unknown multiplicity rather than a count
+of wrong reads. One example, from a Smi overflow check:
+
+```text
+before   if (objTmp2.f8 == objTmp1)
+after    if (objTmp2.f8 == signedBitFieldInsert(objTmp2.f8, 1, 0x1f))
+```
+
+`sbfiz x0, x2, #1, #0x1f` was unmodelled, so x0 held a value from two
+instructions earlier and the comparison read as two unrelated fields.
+
+### Flags were worse than registers
+
+`last_cmp` held the operands of the most recent `cmp`, and was cleared only when
+state merged at a join. Every `b.<cc>` rendered its condition from it. Nothing
+else that writes NZCV touched it: `tst`, `cmn`, `ccmp`, `fcmp`, `adds`, `subs`,
+`ands` and `bics` all set flags and all fell through to `_ => {}`.
+
+So `tst x0, #1; b.ne L`, the Smi tag test and one of the most common shapes in
+Dart AOT output, rendered as whatever the previous `cmp` compared. Measured over
+247,555 condition consumers, 33,705 (13.6%) take their flags from something
+other than `cmp`:
+
+| flag source | conditions | share |
+|---|---|---|
+| `cmp` | 213,850 | 86.4% |
+| `tst` | 22,141 | 8.9% |
+| `fcmp` | 9,721 | 3.9% |
+| none in block | 714 | 0.3% |
+| `subs`, `ands`, `cmn`, `adds` | 1,129 | 0.5% |
+
+Conditions are what the structurer branches on, so this fed the region analysis
+as well as the text. `tst`, `cmn`, `ands`, `adds`, `subs` and `fcmp` are now
+modelled, and any unmodelled flag writer clears `last_cmp` so the condition
+degrades to `flags.b_<cc>`. `placeholder_ifs` therefore rises, 278 to 612 and
+297 to 442: a plausible fabrication became an honest placeholder. `fcmp` carries
+one imprecision worth naming, since everything else here is exact: a NaN operand
+leaves the comparison unordered, so `b.gt` and `b.le` after it are not exact
+negations.
+
+### What the bools are
+
+`kTrueOffsetFromNull` is `kObjectAlignment * 2` and `kFalseOffsetFromNull` is
+`* 3`, so 0x20 and 0x30 on a 64-bit target (`runtime/vm/pointer_tagging.h`). An
+add of either off NULL_REG materialises a canonical bool. 32,901 sites across
+both samples, and every one of them uses one of those two offsets: zero other
+displacements exist, so the `null + N` collapse that existed for the general
+case was unreachable on real input. Only the two defined offsets are
+intercepted; anything else stays plain arithmetic, which is a true statement
+about a canonical object rather than a claim about an integer.
+
+The same encoding gives a bool *test*: `kBoolValueBitPosition` is
+`kObjectAlignmentLog2`, so bit 4, and `object.cc` asserts
+`(true_ & kBoolValueMask) == 0`, `(false_ & kBoolValueMask) != 0` and
+`false_ == (true_ | kBoolValueMask)`. `kObjectStartAlignment` is 64, with
+`COMPILE_ASSERT(kObjectStartAlignment >= 2 * kBoolValueMask)`, so bits 4 and 5 of
+null's address are structurally zero rather than incidentally so. Bit 4 clear is
+`true`, set is `false`; bit 5 distinguishes bool from null and is a different
+predicate.
+
+That accounts for 9,337 and 15,988 bit-4 tests, and **it is deliberately not
+folded**. `TestIntInstr::IsSupported(kTagged)` is true, and the tagged path does
+`bit_index = min(kSmiBits, bit_index) + kSmiTagShift`, so a Dart-level test of
+bit 3 on a tagged Smi lands on machine bit 4 as well. The two readings are
+indistinguishable by bit index. Provenance does not settle it either: 54% of
+tested registers are call returns, and a call can return a Smi. Rendering `if
+(x)` where the truth is `if (x & 8)` is exactly the class of error this document
+is about, so the raw shape stays. The same clamp means machine bit 63 is
+ambiguous for the sign test, and lossy on top, since every Dart bit index at or
+above 62 clamps there. Machine bit 0 is the one unambiguous case: the clamp
+guarantees a tagged `TestInt` lands at bit 1 or higher, so bit 0 can only be the
+Smi tag test.
+
+### The argument registers were wrong on both ends
+
+`DartCallingConvention::kCpuRegistersForArgs` is `{R1, R2, R3, R5, R6, R7}` and
+`kReturnReg` is `R0` (`runtime/vm/constants_arm64.h`). x4 is `ARGS_DESC_REG`.
+Four places independently encoded something else: the state seeding, the direct
+call argument list, the emitted signature, and a naming pass that rewrote line 0
+and so silently overrode the emitter.
+
+The consequence is that x0, the return register, was emitted as argument 0 of
+every direct call and named `receiver` in every signature. Confirmed without
+reference to the SDK, on 14,129 functions, by asking which registers an entry
+block reads before writing:
+
+| register | functions | role |
+|---|---|---|
+| x1 | 55.0% | first argument |
+| x2 | 29.5% | second |
+| x3 | 9.5% | third |
+| x4 | 10.3% | `ARGS_DESC_REG`, live-in but not an argument |
+| x5 | 3.7% | fourth |
+| x6 | 1.6% | fifth |
+| x7 | 0.8% | sixth |
+| x0 | 3.4% | return register |
+
+The monotone decline through x1, x2, x3, x5, x6, x7 is the convention's order.
+Prologues corroborate it: they spill x1 and x2 and never read x0.
+
+Arity is now a lower bound rather than a fixed count, matching what
+`DispatchCall::argument_registers` already reported. A trailing position whose
+register still holds its entry seed was never written, and one that was
+invalidated says nothing either, because x5-x7 are general scratch in
+`kDartAvailableCpuRegs`. Over 325,376 direct calls, 44.7% define no argument
+register at all and 96% define at most three. Emitted arity was a flat 4 for
+88.2% of calls; it is now 0 for 22.9%, 1 for 12.7%, 2 for 17.4%, 3 for 31.1%.
+
+`emit_call` separately fell back to `arg{r}` when a register had no binding,
+which rendered as `receiver` or `paramN` and claimed the caller's value had
+survived to the call site. It falls back to the register name now.
+
+### Cost
+
+Two numbers moved the wrong way for the right reason, and one is unexplained.
+`placeholder_ifs` rises, as above. `poolOff` references fall 5.7% and 2.5%; the
+loss is not attributable to a single mechanism, being spread across statements
+that changed shape, and the unnormalised-pool-page count is zero, so no pool
+reference renders wrongly. Widening the load arms did briefly produce a shape
+the normaliser rejected, `((pool + page /* lsl #n */) + disp)).fN`, leaving 834
+references as raw arithmetic; both displacements are known, so they now fold
+into one entry.
+
+### Still open
+
+- The Smi untag idiom `sbfx rd, rs, #1, #0x1f` renders as
+  `signedBitField(x, 1, 0x1f)`. Exact, but verbose at this frequency.
+- 160 sp-relative references are renamed to `stackSlotN` without a declaration.
+  Pre-existing, and reduced from 292 by this cycle.
+- Bit-4 and bit-63 tests stay raw, for the reasons above. Resolving them needs a
+  value-type model, not a better pattern.
