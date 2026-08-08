@@ -24,7 +24,9 @@ pub(super) fn init_state() -> LiftState {
     for i in 0..8 {
         s.reg_values.insert(format!("x{i}"), format!("arg{i}"));
     }
+    // Registers Dart AOT reserves, so their value is the same everywhere.
     s.reg_values.insert("x15".to_string(), "sp".to_string());
+    s.reg_values.insert("x21".to_string(), "dispatchTable".to_string());
     s.reg_values.insert("x22".to_string(), "null".to_string());
     s.reg_values.insert("x26".to_string(), "thread".to_string());
     s.reg_values.insert("x27".to_string(), "pool".to_string());

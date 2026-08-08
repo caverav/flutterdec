@@ -31,6 +31,10 @@ impl<'a> FuncEmitter<'a> {
             return self.resolved_reg_value(&reg);
         }
 
+        if let Some(indexed) = self.indexed_expr(token) {
+            return indexed;
+        }
+
         if let Some((base, off)) = parse_mem_operand(token) {
             if base == "x29" {
                 if let Some(name) = self.locals.get(&off) {
@@ -53,6 +57,32 @@ impl<'a> FuncEmitter<'a> {
     /// vector work and load/store pairs all land here. Knowing this matters for
     /// any pass that reads "emitted nothing" as "does nothing", which would
     /// otherwise delete real computation.
+    /// Indexed access rendered as an element read rather than as field zero.
+    ///
+    /// A shift of 3 scales by the machine word, which is the element size of a
+    /// list or array, so the index register holds an element index. Any other
+    /// scale is stated arithmetically rather than implied.
+    pub(super) fn indexed_expr(&self, token: &str) -> Option<String> {
+        let (base, index, shift) = parse_indexed_operand(token)?;
+        let base_expr = self
+            .state
+            .reg_values
+            .get(&base)
+            .cloned()
+            .unwrap_or_else(|| base.clone());
+        let index_expr = self
+            .state
+            .reg_values
+            .get(&index)
+            .cloned()
+            .unwrap_or_else(|| index.clone());
+        let subscript = match shift {
+            0 | 3 => index_expr,
+            n => format!("({} * {})", index_expr, 1u64 << n),
+        };
+        Some(Self::clean_expr(format!("{base_expr}[{subscript}]")))
+    }
+
     pub(super) fn lifts_mnemonic(mnemonic: &str) -> bool {
         matches!(
             mnemonic,
@@ -142,7 +172,11 @@ impl<'a> FuncEmitter<'a> {
                 }
             }
             "stur" | "str" if ops.len() >= 2 => {
-                if let Some((base, off)) = parse_mem_operand(&ops[1]) {
+                if let Some(target) = self.indexed_expr(&ops[1]) {
+                    let rhs = self.operand_expr(&ops[0]);
+                    self.update_selector_binding_from_assignment(&target, &rhs);
+                    self.push_line(indent, &format!("{} = {};", target, rhs));
+                } else if let Some((base, off)) = parse_mem_operand(&ops[1]) {
                     let rhs = self.operand_expr(&ops[0]);
                     if base == "x29" {
                         let local = self

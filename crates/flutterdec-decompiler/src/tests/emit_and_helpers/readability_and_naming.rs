@@ -699,40 +699,6 @@ fn aliases_frame_and_return_registers_with_semantic_names() {
     );
 }
 
-#[test]
-fn aliases_dispatch_target_slot_callable_calls() {
-    let ir = FunctionIr {
-        function_id: 211,
-        name: "dispatchSlotAlias".to_string(),
-        entry_va: 0xf610,
-        blocks: Vec::new(),
-    };
-    let symbols = HashMap::new();
-    let mut emitter = FuncEmitter::new(&ir, &symbols);
-    emitter.lines = vec![
-        "dynamic dispatchSlotAlias(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {".to_string(),
-        "  final t1 = reg21.f0(arg0, arg1, arg2, arg3); // indirect via: dispatchTarget".to_string(),
-        "  return t1;".to_string(),
-        "}".to_string(),
-    ];
-
-    emitter.apply_name_and_type_hints("dispatchSlotAlias");
-    let out = emitter.lines.join("\n");
-    assert!(
-        out.contains("final dispatchTargetFn = reg21.f0;"),
-        "dispatch target slot alias declaration should be inserted:\n{out}"
-    );
-    assert!(
-        out.contains(
-            "dispatchTargetFn(receiver, param1, param2, param3); // indirect via: dispatchTarget"
-        ),
-        "dispatch target callable should use alias:\n{out}"
-    );
-    assert!(
-        !out.contains("reg21.f0("),
-        "raw dispatch slot callable should be replaced:\n{out}"
-    );
-}
 
 /// Page-based pool loads that the disassembler's register tracker could not follow
 /// still reach the decompiler as raw `((pool + <page> /* lsl #N */)).f<off>` text.

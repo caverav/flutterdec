@@ -505,7 +505,7 @@ impl<'a> FuncEmitter<'a> {
     /// merged region writes still holds whatever it held on entry.
     fn merge_state_at_join(&mut self, written: &HashSet<String>) {
         self.state.reg_values.retain(|reg, _| {
-            matches!(reg.as_str(), "x15" | "x22" | "x26" | "x27") || !written.contains(reg)
+            matches!(reg.as_str(), "x15" | "x21" | "x22" | "x26" | "x27") || !written.contains(reg)
         });
         self.state.last_cmp = None;
         self.state.selector_hints.clear();

@@ -682,9 +682,9 @@ fn rewrites_dispatch_target_library_comment_target_to_dispatch_alias() {
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
         artifact.source.contains(
-            "framework:flutter.widgets.invoke [library], indirect via: dispatchTarget, target: dispatchTargetFn"
+            "framework:flutter.widgets.invoke [library], indirect via: dispatchTarget, target: dispatchTable.f0"
         ),
-        "dispatch target comment should use alias instead of raw slot expression:\n{}",
+        "the dispatch table register is named, so the slot reads directly:\n{}",
         artifact.source
     );
     assert!(

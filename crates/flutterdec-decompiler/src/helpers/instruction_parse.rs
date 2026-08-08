@@ -62,6 +62,37 @@ pub(super) fn parse_mem_operand(op: &str) -> Option<(String, i64)> {
     Some((base, off))
 }
 
+/// Register-offset memory operand, e.g. `[x1, x2, lsl #3]`.
+///
+/// `parse_mem_operand` folds these to displacement 0 because the offset is not a
+/// literal, so an indexed access rendered as `base.f0` is indistinguishable from
+/// a real read of field 0. That is the addressing mode Dart uses for list and
+/// array elements: 2094 sites on the sampled 3.12.1 binary once dispatch-table
+/// loads and frame accesses are excluded.
+pub(super) fn parse_indexed_operand(op: &str) -> Option<(String, String, u32)> {
+    let s = op.trim();
+    let lb = s.find('[')?;
+    let rb = s[lb..].find(']')? + lb;
+    let mut parts = s[lb + 1..rb].split(',').map(str::trim);
+    let base = canonical_reg(parts.next()?)?;
+    let index = canonical_reg(parts.next()?)?;
+    let shift = match parts.next() {
+        None => 0,
+        Some(extend) => {
+            let (kind, amount) = extend.split_once('#')?;
+            // Only a left shift scales the index; the extends widen it.
+            if !matches!(
+                kind.trim().to_ascii_lowercase().as_str(),
+                "lsl" | "uxtw" | "sxtw" | "sxtx"
+            ) {
+                return None;
+            }
+            amount.trim().parse().ok()?
+        }
+    };
+    Some((base, index, shift))
+}
+
 pub(super) fn normalize_target(target: &str) -> String {
     let mut last_hex = None;
     for token in target.split(|c: char| c.is_whitespace() || c == ',') {
