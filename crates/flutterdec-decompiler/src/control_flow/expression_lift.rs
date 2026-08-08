@@ -143,6 +143,54 @@ impl<'a> FuncEmitter<'a> {
         )
     }
 
+    /// An operand with its trailing shift or extend modifier applied.
+    ///
+    /// ARM64 lets the last source operand carry `lsl`/`lsr`/`asr`/`ror` or an
+    /// extend, and an extend may carry a shift amount of its own. Rendering the
+    /// operand alone with the modifier as a trailing comment reads as an
+    /// unmodified value: `cmp x3, x0, asr #1` became `a == b` where the truth is
+    /// `a == (b >> 1)`, and that is a condition, so the structurer sees it too.
+    /// `lsr` is Dart's `>>>`, because `>>` is arithmetic.
+    fn shifted_operand_expr(&self, ops: &[String], index: usize) -> String {
+        let base = self.operand_expr(&ops[index]);
+        let Some(modifier) = ops.get(index + 1) else {
+            return base;
+        };
+        let modifier = modifier.trim().to_ascii_lowercase();
+        let (kind, amount) = match modifier.split_once('#') {
+            Some((kind, amount)) => (kind.trim(), Some(amount.trim().to_string())),
+            None => (modifier.as_str(), None),
+        };
+        // An extend narrows first, then shifts. Dropping the shift amount would
+        // render a scaled index as unscaled, which is a wrong value rather than
+        // a missing one: `sxtw #3` scales by the machine word.
+        let extended = match kind {
+            "sxtb" => Some(format!("signExtend({base}, 8)")),
+            "sxth" => Some(format!("signExtend({base}, 16)")),
+            "sxtw" => Some(format!("signExtend({base}, 32)")),
+            "sxtx" | "uxtx" => Some(base.clone()),
+            "uxtb" => Some(format!("({base} & 0xff)")),
+            "uxth" => Some(format!("({base} & 0xffff)")),
+            "uxtw" => Some(format!("({base} & 0xffffffff)")),
+            _ => None,
+        };
+        if let Some(extended) = extended {
+            return match amount.as_deref() {
+                Some(shift) if shift != "0" => format!("({extended} << {shift})"),
+                _ => extended,
+            };
+        }
+        match (kind, amount) {
+            ("lsl", Some(n)) => format!("({base} << {n})"),
+            ("lsr", Some(n)) => format!("({base} >>> {n})"),
+            ("asr", Some(n)) => format!("({base} >> {n})"),
+            ("ror", Some(n)) => format!("rotateRight({base}, {n})"),
+            // Not a modifier this understands. Returning the bare operand would
+            // claim it does nothing, so report what was seen.
+            _ => format!("{base} /* {modifier} */"),
+        }
+    }
+
     /// Pre- and post-index addressing writes the base register back, so the
     /// base no longer holds what it held before the access. The new value is
     /// the old base plus the displacement, which this lifter does not track,
@@ -461,14 +509,14 @@ impl<'a> FuncEmitter<'a> {
             // in this arm is exact.
             "cmp" | "fcmp" if ops.len() >= 2 => {
                 let lhs = self.operand_expr(&ops[0]);
-                let rhs = self.operand_expr(&ops[1]);
+                let rhs = self.shifted_operand_expr(&ops, 1);
                 self.state.last_cmp = Some((lhs, rhs));
             }
             // `subs` sets the same flags as `cmp` on the same operands, and
             // also keeps the difference.
             "subs" if ops.len() >= 3 => {
                 let lhs = self.operand_expr(&ops[1]);
-                let rhs = self.operand_expr(&ops[2]);
+                let rhs = self.shifted_operand_expr(&ops, 2);
                 if let Some(dst) = canonical_reg(&ops[0]) {
                     let value = simplify_bin_expr(lhs.clone(), "-", rhs.clone());
                     self.state.reg_values.insert(dst, value);
@@ -482,13 +530,13 @@ impl<'a> FuncEmitter<'a> {
             // exists to drop.
             "tst" | "cmn" if ops.len() >= 2 => {
                 let a = self.operand_expr(&ops[0]);
-                let b = self.operand_expr(&ops[1]);
+                let b = self.shifted_operand_expr(&ops, 1);
                 let op = if mnemonic == "tst" { "&" } else { "+" };
                 self.state.last_cmp = Some((format!("({a} {op} {b})"), "0".to_string()));
             }
             "ands" | "adds" if ops.len() >= 3 => {
                 let a = self.operand_expr(&ops[1]);
-                let b = self.operand_expr(&ops[2]);
+                let b = self.shifted_operand_expr(&ops, 2);
                 // Same rendering as the non-flag form of each: the computation
                 // does not change because flags were set.
                 let combined = if mnemonic == "ands" {

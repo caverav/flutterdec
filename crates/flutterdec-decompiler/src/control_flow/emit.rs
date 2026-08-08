@@ -707,6 +707,76 @@ impl<'a> FuncEmitter<'a> {
         self.state.selector_hints.clear();
     }
 
+    /// Predecessor map and per-block written registers, built once.
+    ///
+    /// Computed from `ir.blocks` rather than from `Regions`, because the DFS
+    /// emitter runs precisely when region recovery was unavailable or
+    /// structuring failed, and `Regions::build` returns `None` for an
+    /// irreducible CFG.
+    fn ensure_dfs_maps(&mut self) {
+        if self.dfs_preds.is_some() {
+            return;
+        }
+        let mut preds: HashMap<usize, Vec<usize>> = HashMap::new();
+        for block in &self.ir.blocks {
+            let mut written = HashSet::new();
+            for ins in &block.instrs {
+                let (mnemonic, ops) = split_instruction(&ins.src);
+                written.extend(written_registers(&mnemonic, &ops));
+                if matches!(ins.op, IROp::Call) {
+                    written.extend(CALL_CLOBBERED_REGISTERS.iter().map(|r| (*r).to_string()));
+                }
+            }
+            self.dfs_block_writes.insert(block.id, written);
+            // One edge per distinct predecessor: a branch whose two targets are
+            // the same block has one predecessor, not two, and would otherwise
+            // trigger a merge on a block only one path reaches.
+            for succ in &block.succs {
+                let entry = preds.entry(*succ).or_default();
+                if !entry.contains(&block.id) {
+                    entry.push(block.id);
+                }
+            }
+        }
+        self.dfs_preds = Some(preds);
+    }
+
+    /// Registers written by any block that can reach `id`.
+    ///
+    /// Returns `None` when only one path reaches `id`, because then that path
+    /// does describe the state and nothing needs dropping.
+    ///
+    /// Backward reachability rather than the whole function: everything strictly
+    /// downstream of `id` cannot have run yet, and in a large function that is
+    /// most of it. A back edge puts a loop body back in the set, which is
+    /// correct, since a second iteration reaches the block again.
+    fn registers_written_before(&mut self, id: usize) -> Option<HashSet<String>> {
+        self.ensure_dfs_maps();
+        let preds = self.dfs_preds.as_ref().expect("dfs preds");
+        if preds.get(&id).map(Vec::len).unwrap_or(0) < 2 {
+            return None;
+        }
+        let mut seen: HashSet<usize> = HashSet::new();
+        let mut stack: Vec<usize> = preds.get(&id).cloned().unwrap_or_default();
+        let mut written = HashSet::new();
+        while let Some(block) = stack.pop() {
+            // `id` itself is reached only when it is backward-reachable from its
+            // own predecessors, that is when it sits in a cycle. Its writes are
+            // then live at re-entry on the second iteration, so they belong in
+            // the set: excluding them lost everything a loop header writes.
+            if !seen.insert(block) {
+                continue;
+            }
+            if let Some(w) = self.dfs_block_writes.get(&block) {
+                written.extend(w.iter().cloned());
+            }
+            if let Some(ps) = preds.get(&block) {
+                stack.extend(ps.iter().copied());
+            }
+        }
+        Some(written)
+    }
+
     pub(super) fn emit_block(&mut self, id: usize, indent: usize, depth: usize) {
         if self.should_wrap_loop_header(id, depth) {
             self.emit_wrapped_loop(id, indent, depth);
@@ -727,6 +797,23 @@ impl<'a> FuncEmitter<'a> {
         if self.inline_visits.get(&id).copied().unwrap_or(0) >= self.visit_limit(id) {
             self.emit_omitted_path(indent, Some(id));
             return;
+        }
+
+        // The DFS emitter has no join merge. It emits a block once, guarded by
+        // `emitted`, under whichever path reached it first, so a register set on
+        // that path reads as its value on every other path too. `mov x0, x22`
+        // before a branch left x0 bound to `null`, and a shared successor then
+        // rendered `null._tag`: a header read off the null object. 1,922 such
+        // reads across 71 functions.
+        //
+        // A block with one predecessor is fine, because only one path reaches
+        // it. For the rest, nothing here describes the state, so the bindings a
+        // predecessor could have written are dropped. Arm isolation already
+        // restores the pre-branch state around each arm, which is why this is
+        // needed as well: restoring is not merging, it asserts the pre-branch
+        // state still holds.
+        if let Some(written) = self.registers_written_before(id) {
+            self.merge_state_at_join(&written);
         }
 
         let block = match self.block_by_id.get(&id) {

@@ -525,9 +525,10 @@ impl<'a> FuncEmitter<'a> {
                     let (mnemonic, ops) = split_instruction(&ins.src);
                     written.extend(written_registers(&mnemonic, &ops));
                     if matches!(ins.op, IROp::Call) {
-                        // A call clobbers the volatile registers.
-                        written.extend((0..18).map(|r| format!("x{r}")));
-                        written.insert("x30".to_string());
+                        // The same set the lifter drops at a call, so the two
+                        // cannot disagree: `(0..18)` swept in SPREG, which a call
+                        // preserves, and omitted x18, which it does not.
+                        written.extend(CALL_CLOBBERED_REGISTERS.iter().map(|r| (*r).to_string()));
                     }
                 }
             }

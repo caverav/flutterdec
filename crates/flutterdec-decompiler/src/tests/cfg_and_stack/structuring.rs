@@ -1012,3 +1012,151 @@ fn logical_and_arithmetic_right_shifts_render_differently() {
         "an arithmetic shift right is Dart's signed shift:\n{out}"
     );
 }
+/// A binding written part-way along an arm, rather than in the block that feeds
+/// the join directly, still must not survive the join.
+///
+/// `registers_written_between` roots its forward walk at the join's immediate
+/// predecessors, so a write in an earlier block of the same arm is an ancestor
+/// of a root rather than a successor, and was never visited. The arm here is two
+/// blocks long and writes the register in the first of them, which is the
+/// shortest shape that distinguishes the two.
+#[test]
+fn a_binding_written_early_in_an_arm_does_not_survive_the_join() {
+    let ir = FunctionIr {
+        function_id: 1011,
+        name: "deepArm".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![
+            blk(0, 0x1000, vec![cbz(0x1000, "x1", 0x4000)], vec![1, 3]),
+            // Taken arm, two blocks: the write is in the first.
+            blk(1, 0x2000, vec![stmt(0x2000, "add x9, x22, #0x20")], vec![2]),
+            blk(2, 0x3000, vec![stmt(0x3000, "mov x10, x2")], vec![4]),
+            // The other arm reaches the join directly.
+            blk(3, 0x4000, vec![stmt(0x4000, "mov x10, x3")], vec![4]),
+            // Join, then the test.
+            blk(
+                4,
+                0x5000,
+                vec![LlirInstr {
+                    va: 0x5000,
+                    op: IROp::Branch,
+                    src: "tbnz w9, #4, #0x7000".to_string(),
+                    target: "#0x7000".to_string(),
+                }],
+                vec![5, 6],
+            ),
+            blk(
+                5,
+                0x6000,
+                vec![stmt(0x6000, "stur x10, [x3, #7]"), ret(0x6004)],
+                vec![],
+            ),
+            blk(6, 0x7000, vec![ret(0x7000)], vec![]),
+        ],
+    };
+    let out = emit_pseudocode(&ir, &HashMap::new()).source;
+    let leaked = out.contains("(true >> 4)") || out.contains("(false >> 4)");
+    assert!(
+        !leaked,
+        "a write earlier in the arm must still be dropped at the join:\n{out}"
+    );
+}
+/// The DFS emitter emits a block once, guarded by `emitted`, under whichever
+/// path reached it first. Without a merge there, a register set on that path
+/// reads as its value on every other path: `mov x0, x22` before a branch left
+/// x0 bound to `null`, and a shared successor rendered `null._tag`, a header
+/// read off the null object.
+///
+/// The CFG here is irreducible, two entries into the 3-4 cycle, so `Regions`
+/// declines to build and emission must take the DFS route. That is what makes
+/// this test cover the fallback rather than the structurer.
+#[test]
+fn the_fallback_emitter_merges_state_where_paths_converge() {
+    let ir = FunctionIr {
+        function_id: 1012,
+        name: "irreducibleShared".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![
+            blk(0, 0x1000, vec![cbz(0x1000, "x1", 0x3000)], vec![1, 2]),
+            // One path binds a canonical bool into x9.
+            blk(1, 0x2000, vec![stmt(0x2000, "add x9, x22, #0x20")], vec![3]),
+            blk(2, 0x3000, vec![stmt(0x3000, "mov x10, x2")], vec![4]),
+            // Shared, and reached from both the branch and the back edge.
+            blk(
+                3,
+                0x4000,
+                vec![LlirInstr {
+                    va: 0x4000,
+                    op: IROp::Branch,
+                    src: "tbnz w9, #4, #0x6000".to_string(),
+                    target: "#0x6000".to_string(),
+                }],
+                vec![4, 5],
+            ),
+            blk(4, 0x5000, vec![stmt(0x5000, "mov x11, x3")], vec![3]),
+            blk(5, 0x6000, vec![ret(0x6000)], vec![]),
+        ],
+    };
+    let out = emit_pseudocode(&ir, &HashMap::new()).source;
+    let leaked = out.contains("(true >> 4)") || out.contains("(false >> 4)");
+    assert!(
+        !leaked,
+        "a binding from one path must not describe a shared block:\n{out}"
+    );
+}
+/// A shifted register operand changes the value compared. Rendering the operand
+/// alone with the modifier as a trailing comment claimed an unshifted compare:
+/// `cmp x3, x0, asr #1` read `a == b` where the truth is `a == (b >> 1)`. This
+/// is the Smi round-trip check Dart emits after tagging, so it appears wherever
+/// an integer is boxed, and it is a condition, so the structurer reads it too.
+#[test]
+fn a_shifted_compare_operand_keeps_its_shift() {
+    let compare = |modifier: &str| {
+        let ir = FunctionIr {
+            function_id: 940,
+            name: "shiftedCompare".to_string(),
+            entry_va: 0x1000,
+            blocks: vec![
+                blk(
+                    0,
+                    0x1000,
+                    vec![
+                        stmt(0x1000, &format!("cmp x1, x2, {modifier}")),
+                        LlirInstr {
+                            va: 0x1004,
+                            op: IROp::Branch,
+                            src: "b.eq #0x2000".to_string(),
+                            target: "#0x2000".to_string(),
+                        },
+                    ],
+                    vec![1, 2],
+                ),
+                blk(
+                    1,
+                    0x1008,
+                    vec![stmt(0x1008, "stur x1, [x3, #7]"), ret(0x100c)],
+                    vec![],
+                ),
+                blk(2, 0x2000, vec![ret(0x2000)], vec![]),
+            ],
+        };
+        emit_pseudocode(&ir, &HashMap::new()).source
+    };
+    let arithmetic = compare("asr #1");
+    assert!(
+        arithmetic.contains("(param1 >> 1)"),
+        "an arithmetic shift belongs in the comparison:\n{arithmetic}"
+    );
+    let logical = compare("lsr #32");
+    assert!(
+        logical.contains("(param1 >>> 32)"),
+        "a logical shift is Dart's unsigned shift:\n{logical}"
+    );
+    // An extend narrows and then scales; dropping the scale would render a
+    // scaled index as unscaled, which is a wrong value rather than a missing one.
+    let scaled = compare("sxtw #3");
+    assert!(
+        scaled.contains("(signExtend(param1, 32) << 3)"),
+        "an extend must keep its shift amount:\n{scaled}"
+    );
+}

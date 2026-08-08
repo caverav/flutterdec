@@ -64,6 +64,11 @@ struct FuncEmitter<'a> {
     omitted_blocks: BTreeSet<usize>,
     loop_back_edges: BTreeSet<usize>,
     loop_context: Vec<usize>,
+    /// Built once on first use by the DFS emitter, which has no `Regions` to ask.
+    /// Predecessors, per-block written registers, and which blocks have more
+    /// than one predecessor, for merging state where paths converge.
+    dfs_preds: Option<HashMap<usize, Vec<usize>>>,
+    dfs_block_writes: HashMap<usize, HashSet<String>>,
     lines: Vec<String>,
 
     state: LiftState,
@@ -147,6 +152,8 @@ impl<'a> FuncEmitter<'a> {
             omitted_blocks: BTreeSet::new(),
             loop_back_edges: BTreeSet::new(),
             loop_context: Vec::new(),
+            dfs_preds: None,
+            dfs_block_writes: HashMap::new(),
             lines: Vec::new(),
             state: init_state(),
             placeholder_ifs: 0,
