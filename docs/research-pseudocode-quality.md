@@ -441,9 +441,16 @@ follow-node rule covers, with no fourth case:
 
 | branch shape | count | share | structure |
 |---|---|---|---|
-| immediate post-dominator is a join block | 22,564 | 56.2% | `if/else`, then the follow node once |
+| immediate post-dominator is one of the successors | 16,407 | 40.9% | `if`, then the continuation |
 | no post-dominator, the arms never rejoin | 12,416 | 30.9% | `if/else`, no continuation |
-| immediate post-dominator is one of the successors | 5,174 | 12.9% | `if`, then the continuation |
+| immediate post-dominator is a join block | 11,331 | 28.2% | `if/else`, then the follow node once |
+
+The three are exhaustive by construction and sum to 40,154. An earlier draft of
+this table reported 56.2 / 30.9 / 12.9, because both the analysis and the first
+implementation selected the immediate post-dominator with the smallest
+post-dominator set, which is the *farthest* strict post-dominator rather than the
+nearest. That systematically attributed if-then branches to the if-then-else row.
+The nearest post-dominator is the one with the largest post-dominator set.
 
 Loops, over the 830 functions that have one:
 
