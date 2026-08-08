@@ -1358,8 +1358,8 @@ fn pool_field_access_keeps_the_slot_rather_than_the_literal() {
         "a field read must not be rendered as a field of a string literal:\n{out}"
     );
     assert!(
-        out.contains("pool[40 /* \"onError\" */].f7"),
-        "the field base should stay a slot and carry its inline mapping:\n{out}"
+        out.contains("pool[40 /* \"onError\" */].f8"),
+        "the field base stays a slot, and the offset is reported untagged:\n{out}"
     );
 }
 

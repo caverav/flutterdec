@@ -1748,7 +1748,7 @@ fn annotates_pool_mapping_in_indirect_target_comment() {
     assert!(
         artifact
             .source
-            .contains("dart.typed_data.TypedData.offsetInBytes(receiver, param1, param2, param3); // stdlib:dart.typed_data.TypedData.offsetInBytes [selector], indirect via: indirectTarget9, target: pool[40 /* \"_offsetInBytes\" */].f7"),
+            .contains("dart.typed_data.TypedData.offsetInBytes(receiver, param1, param2, param3); // stdlib:dart.typed_data.TypedData.offsetInBytes [selector], indirect via: indirectTarget9, target: pool[40 /* \"_offsetInBytes\" */].f8"),
         "pool mapping should drive typed_data semantic selector rewrite:\n{}",
         artifact.source
     );
