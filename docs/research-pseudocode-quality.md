@@ -1068,3 +1068,145 @@ the two samples:
   match, and 0.6% and 1.6% under a deliberately loose upper bound. Class-directed
   field naming is therefore **not** viable without the snapshot field tables, and
   the dominant `obj.fN` noise stays until that work lands.
+
+## R9. The fallback emitter had no join merge
+
+### What was wrong
+
+`emit_block` emits a block once, guarded by `emitted`, under whichever path
+reached it first. Every other path then reads that path's register state. Arm
+isolation was already present and is a different thing: restoring the pre-branch
+state around an arm asserts that state still holds afterwards.
+
+The output was therefore not merely unresolved but impossible. `mov x0, x22`
+before a branch left x0 bound to `null`, and a shared successor rendered
+`null._tag`, a read of the object header off null. Instrumenting the base
+expression of every field read found 1,922 such reads across 71 functions.
+
+Three symptoms, one cause, all visible in `sub_619e18`:
+
+| symptom | mechanism |
+|---|---|
+| `if (null == null)` | block 3 sets x0 from NULL_REG, block 10 compares x7 against it |
+| `null.f24` | block 6 sets x4 from NULL_REG, block 13 reads a field off it |
+| `((true >> 4) & 1)` | block 24 materialises `true`, block 25 tests bit 4 of it |
+
+### Two hypotheses killed by experiment
+
+Both were plausible and both were wrong, which is why they were tested rather
+than argued.
+
+- **A missing structured merge.** Forcing `merge_state_at_join` at every
+  structured block rather than only at joins moved the count from 165 to 161. The
+  leaking functions are on the fallback path, so the structured merge never runs
+  for them at all.
+- **An under-computed write set.** `registers_written_between` roots its forward
+  walk at a join's immediate predecessors, so a write in an earlier block of the
+  same arm is an ancestor of a root rather than a successor. Extending the set to
+  every ancestor changed nothing, 165 to 165. The branch-level merge already roots
+  at the arms and covers the whole arm subgraph.
+
+The `omitted complex paths` marker, which correlated at 77.9% against 10.3% of
+clean functions, is a confounder rather than a cause: it marks the complex
+functions that land on the fallback, and omission emits a `return`, so no
+same-path read follows it.
+
+### The fix and its price
+
+The merge drops registers written by any block that can reach the join, by
+backward reachability over `ir.blocks[..].succs`. Not the whole function, which
+would wipe state at every join. Not `Regions`, which is absent precisely here,
+because `Regions::build` returns `None` for an irreducible CFG. The join's own
+writes count when it sits in a cycle, since they are live on re-entry, and
+predecessor lists are deduplicated so a branch whose two targets are the same
+block still has one predecessor.
+
+| measure | LocalSend | Immich |
+|---|---|---|
+| `null.fN` / `null._tag` | 165 -> 8 | 277 -> 7 |
+| bit test on a literal operand | 701 -> 7 | 1,611 -> 2 |
+| fully-constant `if` conditions | 930 -> 164 | 1,809 -> 241 |
+| `raw_register_name_refs` | 55,735 -> 95,659 | 66,199 -> 114,348 |
+
+The cost is concentrated where the defect was. 723 functions carry a fallback
+marker on LocalSend, 12.5% of the count but 58% of the emitted lines, and their
+unresolved-register density goes from 0.133 to 0.293 per line. That is the honest
+price of emitting a shared block once without knowing which path reached it.
+
+### Shifted operands changed the value
+
+ARM64 lets the last source operand carry a shift or an extend, and both were
+rendered as a trailing comment. So `cmp x3, x0, asr #1` read `a == b` where the
+truth is `a == (b >> 1)`. That is the Smi round-trip check Dart emits after
+tagging, so it appears wherever an integer is boxed, and it is a condition, so the
+structurer read it too.
+
+Every flag-setting arm now applies the modifier. An extend narrows and then
+shifts, and the shift amount is kept: `sxtw #3` scales by the machine word, and
+dropping the `#3` would render a scaled index as unscaled, a wrong value rather
+than a missing one. `lsr` is `>>>` because Dart's `>>` is arithmetic, and a
+modifier the lifter does not model reports itself rather than vanishing.
+
+Still deferred and still coupled: the non-flag arithmetic arms keep the comment
+form, 5,938 and 8,055 sites, because `try_parse_shifted_pool_field` parses that
+exact form to fold a pool page into an entry index.
+
+### Pointer mode is a fact, not an inference
+
+Compression decides the width of a reference field and the value of `kSmiBits`,
+so it selects which offset table describes the runtime. It had been inferred from
+instruction shape, which is sound where evidence exists but unbounded where it
+does not: a binary with no compressed reference loads produces no evidence either
+way.
+
+It does not need inferring. `runtime/vm/snapshot.h` fixes the header as magic
+`0xdcdcf5f5`, an `int64` length, an `int64` kind, 20 bytes.
+`WriteVersionAndFeatures` then writes `Version::SnapshotString()`, the
+32-character snapshot hash with no separator, followed by the NUL-terminated
+features string, and `Dart::FeaturesString` appends exactly one of
+`compressed-pointers` or `no-compressed-pointers`.
+
+Both samples read as compressed, which confirms the instruction stream
+independently and matches Flutter's `tools/gn` forcing it for Android arm64.
+Reported as `compressed_pointers` in `info`. The negative spelling has to be
+tested first, since `compressed-pointers` is a substring of it.
+
+### Why Thread offsets are still not named
+
+The research is complete and the tables are derived, but the gate is not met.
+Every observed offset was mapped for both versions: 108 rows for 3.5, 117 for
+3.12, from the AOT ARM64 compressed blocks. Direct THR loads number 8,930 and
+22,216, and ten stub entry points cover 99.7% of the 3,187 and 3,456 THR-indirect
+calls.
+
+What blocks it is that the same raw offset means different things across blocks:
+
+| offset | Dart 3.5 | Dart 3.12 |
+|---|---|---|
+| `0x68` | `field_table_values` | `end` |
+| `0x78` | `object_null` | `field_table_values` |
+| `0x90` | `empty_array` | `object_sentinel` |
+| `0x208` | `call_to_runtime_entry_point` | `array_write_barrier_entry_point` |
+| `0x238` | `stack_overflow_shared_without_fpu_regs` | `allocate_object_slow_entry_point` |
+
+110 of 111 common offsets moved between the two versions, and only 3 agree between
+the compressed and uncompressed blocks of a single version. So no partial match is
+safe: naming from the nearest table would produce `thread.stackLimit` pointing at
+the wrong field, which is a claim where `thread.f56` is a gap. The rule has to be
+an exact (hash, mode) match against a vendored table, and an unknown hash keeps
+the numeric form.
+
+### Why field naming is still not viable
+
+Exact per-class offset tables exist and did not drift between 3.5 and 3.12 for the
+core classes, and the tag adjustment is confirmed exact: logical offset N is
+emitted as displacement N-1, from `FieldAddress(base, disp - kHeapObjectTag)`.
+
+But no offset means the same thing across classes. `length` is `0xc` on `Array`
+and `GrowableObjectArray`, `0x8` on `String`, `0x14` on `TypedDataBase`; `0x8`
+alone is `type_arguments`, `parent`, `first_field` or `data` depending on the
+class. So naming a field requires the receiver's class, and the measured
+reachability is the blocker: of 95,964 and 135,995 field loads, the fraction whose
+receiver class is identifiable from a nearby class-id check is 0% and 0.0007% on an
+exact adjacent triple, and 0.6% and 1.6% under a deliberately loose upper bound
+that overcounts. The dominant `obj.fN` noise waits on the snapshot field tables.
