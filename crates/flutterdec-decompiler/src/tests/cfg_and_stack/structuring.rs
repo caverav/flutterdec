@@ -1227,3 +1227,92 @@ fn a_constant_at_the_signed_minimum_formats_rather_than_panicking() {
         "the top lane should render as its magnitude:\n{out}"
     );
 }
+/// `StoreBarrier` ends its check with `tst(scratch, HEAP_BITS LSR #32)`, whose
+/// high half is the write-barrier mask. HEAP_BITS is reserved, so a test against
+/// that half is the barrier check by construction.
+///
+/// Only the left side of the comparison is named. The branch mnemonic still
+/// supplies `==` or `!=` against zero, so the polarity is whatever the code says:
+/// naming the whole condition would mean inverting one of the two forms, and
+/// getting that wrong would flip a condition the structurer branches on.
+#[test]
+fn the_write_barrier_check_is_named_without_changing_its_polarity() {
+    let check = |branch: &str| {
+        let ir = FunctionIr {
+            function_id: 960,
+            name: "barrier".to_string(),
+            entry_va: 0x1000,
+            blocks: vec![
+                blk(
+                    0,
+                    0x1000,
+                    vec![
+                        stmt(0x1000, "and x16, x17, x16, lsr #2"),
+                        stmt(0x1004, "tst x16, x28, lsr #32"),
+                        LlirInstr {
+                            va: 0x1008,
+                            op: IROp::Branch,
+                            src: format!("{branch} #0x2000"),
+                            target: "#0x2000".to_string(),
+                        },
+                    ],
+                    vec![1, 2],
+                ),
+                blk(
+                    1,
+                    0x100c,
+                    vec![stmt(0x100c, "stur x1, [x3, #7]"), ret(0x1010)],
+                    vec![],
+                ),
+                blk(2, 0x2000, vec![ret(0x2000)], vec![]),
+            ],
+        };
+        emit_pseudocode(&ir, &HashMap::new()).source
+    };
+    let zero = check("b.eq");
+    assert!(
+        zero.contains("needsWriteBarrier(") && zero.contains("== 0"),
+        "a test against the barrier mask should name the predicate:\n{zero}"
+    );
+    let nonzero = check("b.ne");
+    assert!(
+        nonzero.contains("needsWriteBarrier(") && nonzero.contains("!= 0"),
+        "the other branch keeps the other polarity:\n{nonzero}"
+    );
+    // A mask test that is not against HEAP_BITS is not the barrier check.
+    let other = {
+        let ir = FunctionIr {
+            function_id: 961,
+            name: "plainMask".to_string(),
+            entry_va: 0x1000,
+            blocks: vec![
+                blk(
+                    0,
+                    0x1000,
+                    vec![
+                        stmt(0x1000, "tst x1, #1"),
+                        LlirInstr {
+                            va: 0x1004,
+                            op: IROp::Branch,
+                            src: "b.eq #0x2000".to_string(),
+                            target: "#0x2000".to_string(),
+                        },
+                    ],
+                    vec![1, 2],
+                ),
+                blk(
+                    1,
+                    0x1008,
+                    vec![stmt(0x1008, "stur x1, [x3, #7]"), ret(0x100c)],
+                    vec![],
+                ),
+                blk(2, 0x2000, vec![ret(0x2000)], vec![]),
+            ],
+        };
+        emit_pseudocode(&ir, &HashMap::new()).source
+    };
+    assert!(
+        !other.contains("needsWriteBarrier"),
+        "an ordinary mask test must not be named as the barrier:\n{other}"
+    );
+}

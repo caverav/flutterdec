@@ -638,9 +638,27 @@ impl<'a> FuncEmitter<'a> {
             // exists to drop.
             "tst" | "cmn" if ops.len() >= 2 => {
                 let a = self.operand_expr(&ops[0]);
-                let b = self.shifted_operand_expr(&ops, 1);
-                let op = if mnemonic == "tst" { "&" } else { "+" };
-                self.state.last_cmp = Some((format!("({a} {op} {b})"), "0".to_string()));
+                // `StoreBarrier` (`compiler/assembler/assembler_arm64.cc`) ends
+                // its check with `tst(scratch, HEAP_BITS LSR #32)`, whose high
+                // half is the write-barrier mask. HEAP_BITS is reserved, so a
+                // test against that half is the barrier check by construction
+                // and nothing else produces it. Naming the predicate leaves the
+                // operand visible while saying what the condition decides:
+                // 8,846 and 12,355 sites, previously reading as tag arithmetic
+                // against an unnamed register.
+                let barrier = mnemonic == "tst"
+                    && canonical_reg(&ops[1]).as_deref() == Some("x28")
+                    && ops
+                        .get(2)
+                        .is_some_and(|m| m.trim().eq_ignore_ascii_case("lsr #32"));
+                if barrier {
+                    self.state.last_cmp =
+                        Some((format!("needsWriteBarrier({a})"), "0".to_string()));
+                } else {
+                    let b = self.shifted_operand_expr(&ops, 1);
+                    let op = if mnemonic == "tst" { "&" } else { "+" };
+                    self.state.last_cmp = Some((format!("({a} {op} {b})"), "0".to_string()));
+                }
             }
             "ands" | "adds" if ops.len() >= 3 => {
                 let a = self.operand_expr(&ops[1]);
