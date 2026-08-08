@@ -277,8 +277,8 @@ Measured in the reachable CFG, where duplication cannot inflate the count:
 | of which dispatch-table calls | 4,168 (66.1%) |
 | **named** | 3,767 (**90.4%** of those visible) |
 | distinct selectors, reachable | 643 |
-| distinct selectors in emitted output | 528 |
-| emitted dispatch call statements | 10,925, inflation **2.90x** (Finding 1) |
+| distinct selectors in emitted output | 544 |
+| emitted dispatch call statements | 7,721, inflation **2.05x** (Finding 1) |
 | dispatch sites the IR covers, reachable vs total | 3,767 / 10,133, only **37.2%** reachable |
 
 `sel<N>` is a placeholder, but a *sound* one: identical at every call site of the
@@ -592,9 +592,9 @@ Landed, `cargo test --workspace` green (276 tests), `fmt` and `clippy` clean:
   checked emit-once invariant, and the DFS emitter retained as the fallback for
   irreducible functions.
 
-Emitted, on the sampled binary: 10,925 dispatch call statements over 528
-distinct selectors, zero negative offsets, receiver resolved on 66.7%, arity
-reported as a lower bound on 73.4% and honestly unknown on the rest. Structuring
+Emitted, on the sampled binary: 7,721 dispatch call statements over 544
+distinct selectors, zero negative offsets, receiver resolved on 66.1%, arity
+reported as a lower bound on 70.0% and honestly unknown on the rest. Structuring
 holds emit-once on 72.8% of functions, takes inflation from 3.03x to 2.28x and
 emitted lines down 23%, and removes 1,055 references to values defined in a branch
 that returned, verified as zero across all 5,800 functions.
