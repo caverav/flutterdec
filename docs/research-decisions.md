@@ -12,6 +12,32 @@
 - Naming: a fabricated name is worse than an honest placeholder. Names come from
   metadata or from an encoding that provably identifies the callee; guesses are
   reported as comments, never emitted as identifiers.
+- Snapshot metadata: prefer an external snapshot-aware backend at the adapter boundary
+  over reimplementing Dart's clustered deserializer in core.
+- Version tables: vendor as data, never as code.
+
+## Third-party data: `data/dart-profiles.json`
+
+Maps 61 Dart AOT snapshot hashes to 19 layout profiles (Dart version, object-header
+tag style, compressed word size, class-id table). Imported from
+[radareorg/r2flutter](https://github.com/radareorg/r2flutter) (MIT), `offsets.json`.
+
+Why vendor rather than derive: the snapshot hash is an MD5 over Dart VM serializer
+sources, so the hash-to-version mapping cannot be computed from a binary. It has to be
+tabulated by building every SDK release, which is exactly the kind of maintenance work
+worth sharing instead of duplicating.
+
+Why data and not code: it costs nothing to keep current, has no build or runtime
+dependency, and stays useful no matter which backend parses the snapshot. `flutterdec`
+uses it for identification only (`info.dart_version`, `report.json.dart_profile`); it
+does not deserialize snapshots with it.
+
+Two facts from that table constrain any future in-tree parser, including a native one:
+
+- there are three object-header tag encodings, not one (`CID_INT32` for Dart 2.10-2.13,
+  `CID_SHIFT1` for 2.14-3.3, `OBJECT_HEADER` for 3.4.3+ and the 2.18.2 outlier)
+- class ids move between releases, so a `#[repr(u32)]` enum of class ids can only ever
+  be correct for one profile; the mapping has to be a runtime table
 
 ## North Star
 

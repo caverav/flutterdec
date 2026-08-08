@@ -97,9 +97,24 @@ The decompiler expects a normalized model from the adapter layer. That model inc
 - functions and entry addresses
 - classes and library metadata when available
 - object pool entries
+- `pool_geometry`, when the adapter recovered the real `ObjectPool` layout
 - architecture and snapshot metadata
 
 This keeps the rest of the system independent from any single parser implementation.
+
+### The pool index space is part of the contract
+
+`object_pool[].index` means one thing: the entry index a `ldr xN, [x27, #disp]`
+resolves to. An adapter claims that meaning by emitting `pool_geometry`
+(`entries_offset`, `word_size`), and core converts displacements with
+`index = (disp - entries_offset) / word_size`.
+
+An adapter that cannot recover the real pool must omit `pool_geometry`, and core then
+refuses to resolve pool references at all. This is deliberate: the failure mode of
+joining two unrelated index spaces is not a missing value, it is a *plausible wrong*
+value: a real string from the binary, attached to a slot that never referenced it,
+rendered in pseudocode with no marker distinguishing it from a correct one. For a
+reverse-engineering tool that is worse than saying nothing.
 
 ## Output philosophy
 
@@ -162,6 +177,30 @@ Current scope:
 - IR and pseudo Dart generation with iterative readability passes
 - readability passes now prune dead statements after terminal control flow and unwrap non-retry `while (true)` wrappers when the body already terminates
 - optional stripped vs unstripped ELF symbol mapping to recover readable direct-call targets
+- object-pool references are now resolved in the pool's own index space: the disassembler
+  converts a PP-relative displacement with `(disp - entries_offset) / word_size` and emits
+  `pool[<index>]`, and it now also recognises the page form (`add xD, x27, #K, lsl #S`
+  followed by `ldr xN, [xD, #off]`), which on a real Dart 3.9.2 sample is 13903 of the
+  19604 pool loads in the sampled functions and was previously not annotated at all
+- before this, the direct form was annotated with the raw displacement and the page form
+  was reconstructed textually as `displacement / 8`; both were joined against adapter pool
+  indices, so pool-backed string literals in pseudocode could be silently wrong. Measured
+  example: `ldr x1, [x27, #0xef8]` was rendered as `"_workoutWorkoutDeserialize"` when slot
+  477 actually holds a `type_arguments` object, and `pp+0x23a90` resolved two slots late to
+  `...WebChromeClient.onShowFileChooser` instead of `...onProgressChanged`
+- pool value/semantic hints are now gated on `pool_geometry`, so an adapter without a real
+  pool (the internal one) produces no pool literals instead of plausible wrong ones;
+  `report.json.pool_metadata` reports `index_space_authoritative`, the geometry, and
+  `hints_suppressed_reason`
+- known follow-up: the README pipeline showcase assets (`docs/assets/readme/zedsecure-*`)
+  were produced before this fix and show pool mappings from the old index space; they need
+  regenerating against the ZedSecure APK before they can be trusted as evidence
+- artifact file names cap the sanitized function-name stem at 160 bytes; recovered Dart
+  names reach 305 bytes on real binaries and previously aborted the whole run with
+  `File name too long (os error 36)` as soon as an adapter returned real names
+- `info` and `report.json` now name the Dart SDK version and object-header tag style
+  straight from the snapshot hash, with no adapter installed, using the vendored
+  `data/dart-profiles.json` (61 hashes, 19 layout profiles, imported from r2flutter, MIT)
 - decompile can now ingest `map-symbols` target JSON directly to inject mapped call names into pseudocode
 - external symbol names are normalized (including C++ demangle and runtime/native prefixes) before pseudocode emission
 - pseudocode call sites now include semantic intent comments for recognized stdlib/runtime/native targets
@@ -185,8 +224,9 @@ Current scope:
 - repeated pool-mapped selector literals now hoist into local `String` aliases (for example `poolStr42`) so repeated callsites stay compact and readable
 - adapter object-pool metadata fields (`decoded_kind`, `selector`, `target_va`, `owner_class`, `library_uri`) are now consumed by decompile for deterministic owner-qualified selector rewrites
 - adapter model contract now accepts schema versions `2` and `3`; v3 adds optional per-function `name_kind` and optional object-pool provenance fields (`confidence`, `source`) while preserving v2 compatibility defaults
-- adapter execution now supports backend selection (`auto`, `internal`, `blutter`) so deterministic parser backends can be introduced without changing decompiler core contracts
-- default adapter backend mode is `auto`: it attempts Blutter bridge parsing when configured (`FLUTTERDEC_BLUTTER_CMD` or `FLUTTERDEC_BLUTTER_PY`) and falls back to internal parsing for resilience
+- adapter execution now supports backend selection (`auto`, `internal`, `blutter`, `r2flutter`) so deterministic parser backends can be introduced without changing decompiler core contracts
+- default adapter backend mode is `auto`: it tries r2flutter, then the Blutter bridge when configured (`FLUTTERDEC_BLUTTER_CMD` or `FLUTTERDEC_BLUTTER_PY`), and falls back to internal parsing for resilience
+- r2flutter backend (`--adapter-backend r2-flutter`, `FLUTTERDEC_R2FLUTTER_BIN`/`FLUTTERDEC_R2FLUTTER_CMD`) shells out to the MIT tool [radareorg/r2flutter](https://github.com/radareorg/r2flutter) and maps `-ji` (AOT instruction table), `-jc` (classes), `-jxz` (pool-referenced strings with their slot indices), `-jzz` (library URIs), and `-jp` (pool geometry) onto `ProgramModel`; on a Dart 3.9.2 sample it returns 37258 exactly-named functions and 8986 classes where the internal adapter returns 7458 `sub_*` placeholders and 1 synthetic class
 - Blutter bridge parsing currently normalizes `asm/*.dart` and `pp.txt` output into `ProgramModel` (`libraries`, `classes`, `functions`, and best-effort `object_pool` target metadata), synthesizes deterministic `EntryPointCandidate` pool entries for `main`/`runApp`-like functions when present, and serializes blutter invocations with a cache lock to avoid concurrent runner races
 - owner-only metadata (selector + owner_class without library URI) can still rewrite indirect selector calls to deterministic owner-qualified call paths
 - if pool entries miss selector/owner/library metadata, core now backfills semantic hints from function ownership metadata keyed by `target_va`
@@ -293,7 +333,7 @@ Python remains useful at the adapter boundary for faster version specific parser
 - refresh decompiler golden snapshots with `FLUTTERDEC_UPDATE_GOLDEN=1 cargo test -p flutterdec-decompiler golden_` when output changes intentionally
 - for end-to-end real binary regression checks, use `scripts/real-golden.sh record|check` for single profiles, or `scripts/real-golden-matrix.sh check` for multi-profile runs; those baselines now include `report_metrics.json` so startup, bootflow, entrypoint, and engine-symbol-ingestion deltas are diffed directly
 - keep profile configs in `testdata/real-golden/profiles/*/profile.env`
-- for naming improvements on direct call targets, use `map-symbols` on stripped/unstripped ELF pairs, then pass `decompile --extra-symbol-map-targets /path/to/symbol_target_summary.json`
+- for naming improvements on direct call targets, use `map-symbols` on stripped/unstripped ELF pairs, then pass `decompile --extra-symbol-map-target /path/to/symbol_target_summary.json`
 - `decompile` prefers external descriptive names over generic internal names (`sub_*`, `fn_0x*`) when addresses match
 - test against real Flutter binaries, not only synthetic fixtures
 - prioritize output readability improvements that are backed by concrete sample evidence

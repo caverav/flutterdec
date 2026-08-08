@@ -11,7 +11,28 @@ use std::path::{Path, PathBuf};
 
 #[derive(Parser, Debug)]
 #[command(name = "flutterdec")]
-#[command(about = "Static Flutter AOT decompiler research CLI", long_about = None)]
+#[command(version)]
+#[command(propagate_version = true)]
+#[command(arg_required_else_help = true)]
+#[command(about = "Static Flutter AOT decompiler research CLI")]
+#[command(long_about = "\
+Static analysis and decompilation of Flutter AOT Android ARM64 binaries.
+
+Accepts an APK or a bare libapp.so. All analysis is static; the target is
+never executed.
+
+Typical flow:
+  1. flutterdec info <APK>                    inspect the target
+  2. flutterdec adapter install --dart-hash <HASH>  install the matching adapter
+  3. flutterdec decompile <APK> -o <DIR>      recover pseudocode")]
+#[command(after_help = "\
+Examples:
+  flutterdec info ./sample.apk --json
+  flutterdec decompile ./sample.apk -o ./out
+  flutterdec decompile ./sample.apk -o ./out --emit-asm --emit-ir
+  flutterdec diff --old ./old.apk --new ./new.apk -o ./out-diff --json
+
+Full reference: https://github.com/caverav/flutterdec/blob/main/docs/cli-reference.md")]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -19,115 +40,282 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Command {
+    /// Inspect a target and report snapshot, arch, and adapter status
     Info(InfoCmd),
+    /// Recover Dart pseudocode from a Flutter AOT snapshot
     Decompile(DecompileCmd),
+    /// Compare two builds at recovered-function level
     Diff(DiffCmd),
+    /// Identify the Flutter engine build from an ELF
     EngineFingerprint(EngineFingerprintCmd),
+    /// Derive engine symbol names from a stripped/unstripped pair
     MapSymbols(MapSymbolsCmd),
+    /// Manage Dart snapshot adapters
     Adapter(AdapterCmd),
 }
 
 #[derive(Args, Debug)]
 struct InfoCmd {
+    /// APK or libapp.so to inspect
+    #[arg(value_name = "INPUT")]
     input: PathBuf,
+    /// Print the full report as JSON instead of plain text
     #[arg(long)]
     json: bool,
 }
 
 #[derive(Args, Debug)]
 struct DecompileCmd {
+    /// APK or libapp.so to decompile
+    #[arg(value_name = "INPUT")]
     input: PathBuf,
-    #[arg(short = 'o', long = "out")]
+    /// Directory to write pseudocode, reports, and artifacts into
+    #[arg(short = 'o', long = "out", value_name = "DIR")]
     out_dir: PathBuf,
-    #[arg(long)]
+
+    /// Write per-function ARM64 disassembly to asm/*.s
+    #[arg(long, help_heading = "Emitted artifacts")]
     emit_asm: bool,
-    #[arg(long)]
+    /// Prefix asm lines with raw 32-bit opcode words (requires --emit-asm)
+    #[arg(long, help_heading = "Emitted artifacts")]
     emit_asm_opcodes: bool,
-    #[arg(long)]
+    /// Write ghidra_apply_symbols.py to apply recovered symbols in Ghidra
+    #[arg(long, help_heading = "Emitted artifacts")]
     emit_ghidra_script: bool,
-    #[arg(long)]
+    /// Write ida_apply_symbols.py to apply recovered symbols in IDA
+    #[arg(long, help_heading = "Emitted artifacts")]
     emit_ida_script: bool,
-    #[arg(long)]
+    /// Write the intermediate representation to ir/*.json
+    #[arg(long, help_heading = "Emitted artifacts")]
     emit_ir: bool,
-    #[arg(long = "extra-symbol-elf")]
+
+    /// Unstripped engine ELF to harvest symbol names from (repeatable)
+    #[arg(
+        long = "extra-symbol-elf",
+        value_name = "PATH",
+        help_heading = "Symbol ingestion"
+    )]
     extra_symbol_elfs: Vec<PathBuf>,
-    #[arg(long = "extra-symbol-map-targets")]
+    /// Target summary produced by `map-symbols` to ingest (repeatable)
+    #[arg(
+        long = "extra-symbol-map-target",
+        alias = "extra-symbol-map-targets",
+        value_name = "PATH",
+        help_heading = "Symbol ingestion"
+    )]
     extra_symbol_map_targets: Vec<PathBuf>,
-    #[arg(long = "include-nearest-symbol-map")]
+    /// Fall back to the nearest preceding symbol when no exact match exists
+    #[arg(long, help_heading = "Symbol ingestion")]
     include_nearest_symbol_map: bool,
-    #[arg(long)]
+
+    /// Only process functions whose name contains this substring
+    #[arg(long, value_name = "SUBSTRING", help_heading = "Function selection")]
     focus: Option<String>,
-    #[arg(long = "target")]
+    /// Select one function: id:<N>, va:0x<ADDR>, 0x<ADDR>, or <N>
+    #[arg(
+        long,
+        value_name = "SELECTOR",
+        help_heading = "Function selection",
+        long_help = "\
+Restrict output to a single function.
+
+Accepted selectors:
+  id:<N>        function id, e.g. id:42
+  va:0x<ADDR>   entry virtual address, e.g. va:0x613468
+  0x<ADDR>      bare hex address
+  <N>           bare number; fails if it matches both an id and an address
+
+If the match falls outside the current --function-scope filter, target mode
+overrides the scope to keep the explicit match. Selection diagnostics are
+written to report.json under target_selection."
+    )]
     target: Option<String>,
-    #[arg(long)]
+    /// Stop after this many functions
+    #[arg(long, value_name = "N", help_heading = "Function selection")]
     max_functions: Option<usize>,
-    #[arg(long, default_value_t = 0)]
-    max_placeholder_ifs: usize,
-    #[arg(long, default_value_t = 0)]
-    max_unresolved_cf: usize,
-    #[arg(long, default_value_t = 0.30)]
-    max_indirect_call_ratio: f64,
-    #[arg(long, default_value_t = 0.80)]
-    min_disassembly_ratio: f64,
-    #[arg(long, value_enum, default_value_t = FunctionScopeArg::AppUnknown)]
+    /// Which functions to include
+    #[arg(
+        long,
+        value_enum,
+        default_value_t = FunctionScopeArg::AppUnknown,
+        value_name = "SCOPE",
+        help_heading = "Function selection",
+        long_help = "\
+Which functions to include.
+
+Scope filters apply to every emitted artifact. Use --app-package to narrow
+further within a scope."
+    )]
     function_scope: FunctionScopeArg,
-    #[arg(long = "app-package")]
+    /// Restrict to this Dart package, as in package:<NAME>/... (repeatable)
+    #[arg(
+        long = "app-package",
+        value_name = "NAME",
+        help_heading = "Function selection"
+    )]
     app_packages: Vec<String>,
-    #[arg(long, value_enum, default_value_t = AdapterBackendArg::Auto)]
+
+    /// Which snapshot adapter backend to use
+    #[arg(
+        long,
+        value_enum,
+        default_value_t = AdapterBackendArg::Auto,
+        value_name = "BACKEND",
+        help_heading = "Analysis engine",
+        long_help = "\
+Which snapshot adapter backend to use.
+
+Backends are located through the environment: FLUTTERDEC_R2FLUTTER_BIN or
+FLUTTERDEC_R2FLUTTER_CMD for r2flutter, and FLUTTERDEC_BLUTTER_CMD or
+FLUTTERDEC_BLUTTER_PY for the Blutter bridge."
+    )]
     adapter_backend: AdapterBackendArg,
-    #[arg(long)]
+    /// Fail if the adapter and loader disagree on the snapshot hash
+    #[arg(long, help_heading = "Analysis engine")]
     require_snapshot_hash_match: bool,
-    #[arg(long, value_enum, default_value_t = AnalysisProfileArg::Balanced)]
+    /// Analysis depth versus throughput
+    #[arg(
+        long,
+        value_enum,
+        default_value_t = AnalysisProfileArg::Balanced,
+        value_name = "PROFILE",
+        help_heading = "Analysis engine",
+        long_help = "\
+Analysis depth versus throughput.
+
+Individual passes can be forced on or off with the --with-*/--no-* flags,
+which override whichever profile is selected."
+    )]
     analysis_profile: AnalysisProfileArg,
-    #[arg(long)]
+
+    /// Fail if more than N placeholder `if` statements are emitted
+    #[arg(
+        long,
+        default_value_t = 0,
+        value_name = "N",
+        help_heading = "Quality gates"
+    )]
+    max_placeholder_ifs: usize,
+    /// Fail if more than N control-flow edges stay unresolved
+    #[arg(
+        long,
+        default_value_t = 0,
+        value_name = "N",
+        help_heading = "Quality gates"
+    )]
+    max_unresolved_cf: usize,
+    /// Fail if the indirect-call ratio exceeds this fraction
+    #[arg(
+        long,
+        default_value_t = 0.30,
+        value_name = "RATIO",
+        help_heading = "Quality gates"
+    )]
+    max_indirect_call_ratio: f64,
+    /// Fail if the successfully disassembled fraction falls below this
+    #[arg(
+        long,
+        default_value_t = 0.80,
+        value_name = "RATIO",
+        help_heading = "Quality gates"
+    )]
+    min_disassembly_ratio: f64,
+
+    /// Force canonical model symbol naming on
+    #[arg(
+        long,
+        conflicts_with = "no_canonical_model_symbols",
+        help_heading = "Analysis passes"
+    )]
     with_canonical_model_symbols: bool,
-    #[arg(long)]
+    /// Force canonical model symbol naming off
+    #[arg(long, help_heading = "Analysis passes")]
     no_canonical_model_symbols: bool,
-    #[arg(long)]
+    /// Force object-pool value hints on
+    #[arg(
+        long,
+        conflicts_with = "no_pool_value_hints",
+        help_heading = "Analysis passes"
+    )]
     with_pool_value_hints: bool,
-    #[arg(long)]
+    /// Force object-pool value hints off
+    #[arg(long, help_heading = "Analysis passes")]
     no_pool_value_hints: bool,
-    #[arg(long)]
+    /// Force object-pool semantic hints on
+    #[arg(
+        long,
+        conflicts_with = "no_pool_semantic_hints",
+        help_heading = "Analysis passes"
+    )]
     with_pool_semantic_hints: bool,
-    #[arg(long)]
+    /// Force object-pool semantic hints off
+    #[arg(long, help_heading = "Analysis passes")]
     no_pool_semantic_hints: bool,
-    #[arg(long)]
+    /// Force semantic reporting on
+    #[arg(
+        long,
+        conflicts_with = "no_semantic_reporting",
+        help_heading = "Analysis passes"
+    )]
     with_semantic_reporting: bool,
-    #[arg(long)]
+    /// Force semantic reporting off
+    #[arg(long, help_heading = "Analysis passes")]
     no_semantic_reporting: bool,
-    #[arg(long)]
+    /// Force boot-flow category seeding on
+    #[arg(
+        long,
+        conflicts_with = "no_bootflow_category_seeds",
+        help_heading = "Analysis passes"
+    )]
     with_bootflow_category_seeds: bool,
-    #[arg(long)]
+    /// Force boot-flow category seeding off
+    #[arg(long, help_heading = "Analysis passes")]
     no_bootflow_category_seeds: bool,
-    #[arg(long)]
+    /// Force APK startup analysis on
+    #[arg(
+        long,
+        conflicts_with = "no_apk_startup_analysis",
+        help_heading = "Analysis passes"
+    )]
     with_apk_startup_analysis: bool,
-    #[arg(long)]
+    /// Force APK startup analysis off
+    #[arg(long, help_heading = "Analysis passes")]
     no_apk_startup_analysis: bool,
 }
 
 #[derive(Args, Debug)]
 struct DiffCmd {
-    #[arg(long = "old")]
+    /// Baseline APK or libapp.so
+    #[arg(long = "old", value_name = "INPUT")]
     old_input: PathBuf,
-    #[arg(long = "new")]
+    /// Candidate APK or libapp.so to compare against the baseline
+    #[arg(long = "new", value_name = "INPUT")]
     new_input: PathBuf,
-    #[arg(short = 'o', long = "out")]
+    /// Directory to write diff_report.json into
+    #[arg(short = 'o', long = "out", value_name = "DIR")]
     out_dir: PathBuf,
-    #[arg(long, value_enum, default_value_t = FunctionScopeArg::AppUnknown)]
+    /// Which functions to compare [app-unknown, app, all]
+    #[arg(long, value_enum, default_value_t = FunctionScopeArg::AppUnknown, value_name = "SCOPE")]
     function_scope: FunctionScopeArg,
-    #[arg(long = "app-package")]
+    /// Restrict the compare set to this Dart package (repeatable)
+    #[arg(long = "app-package", value_name = "NAME")]
     app_packages: Vec<String>,
-    #[arg(long, value_enum, default_value_t = AdapterBackendArg::Auto)]
+    /// Which snapshot adapter backend to use
+    #[arg(long, value_enum, default_value_t = AdapterBackendArg::Auto, value_name = "BACKEND")]
     adapter_backend: AdapterBackendArg,
+    /// Fail if either side has an adapter/loader snapshot hash mismatch
     #[arg(long)]
     require_snapshot_hash_match: bool,
+    /// Print the diff summary as JSON on stdout
     #[arg(long)]
     json: bool,
 }
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
 enum AnalysisProfileArg {
+    /// Reduced analysis, for faster large-scale runs
     Light,
+    /// Best readability and semantic recovery
     Balanced,
 }
 
@@ -142,10 +330,13 @@ impl AnalysisProfileArg {
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
 enum FunctionScopeArg {
+    /// App (package:*) plus functions of unknown ownership
     #[value(name = "app-unknown")]
     AppUnknown,
+    /// Only app (package:*) functions
     #[value(name = "app")]
     App,
+    /// Also include Flutter, Dart runtime, and framework internals
     #[value(name = "all")]
     All,
 }
@@ -162,9 +353,17 @@ impl FunctionScopeArg {
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
 enum AdapterBackendArg {
+    /// Try r2flutter, then the Blutter bridge, then the internal adapter
     Auto,
+    /// Force the internal adapter
     Internal,
+    /// Require the Blutter bridge, with no fallback
     Blutter,
+    // Clap's derive spells this value `r2-flutter`; the alias accepts the tool's own
+    // spelling, which is what the docs, `report.json` and the env vars all use.
+    /// Require the r2flutter backend, with no fallback
+    #[value(alias = "r2flutter")]
+    R2Flutter,
 }
 
 impl AdapterBackendArg {
@@ -173,50 +372,67 @@ impl AdapterBackendArg {
             Self::Auto => AdapterBackend::Auto,
             Self::Internal => AdapterBackend::Internal,
             Self::Blutter => AdapterBackend::Blutter,
+            Self::R2Flutter => AdapterBackend::R2Flutter,
         }
     }
 }
 
 #[derive(Args, Debug)]
 struct EngineFingerprintCmd {
+    /// Engine ELF to fingerprint, usually libflutter.so
+    #[arg(value_name = "INPUT")]
     input: PathBuf,
-    #[arg(short = 'o', long = "out")]
+    /// Directory to write the fingerprint report into
+    #[arg(short = 'o', long = "out", value_name = "DIR")]
     out_dir: Option<PathBuf>,
-    #[arg(long, default_value_t = 24)]
+    /// Maximum number of version markers to report
+    #[arg(long, default_value_t = 24, value_name = "N")]
     max_markers: usize,
+    /// Print the fingerprint as JSON on stdout
     #[arg(long)]
     json: bool,
 }
 
 #[derive(Args, Debug)]
 struct MapSymbolsCmd {
-    #[arg(long = "stripped")]
+    /// Stripped engine ELF, matching the one shipped in the APK
+    #[arg(long = "stripped", value_name = "PATH")]
     stripped_path: PathBuf,
-    #[arg(long = "unstripped")]
+    /// Unstripped build of the same engine, carrying the symbol names
+    #[arg(long = "unstripped", value_name = "PATH")]
     unstripped_path: PathBuf,
-    #[arg(short = 'o', long = "out")]
+    /// Directory to write the symbol map into
+    #[arg(short = 'o', long = "out", value_name = "DIR")]
     out_dir: PathBuf,
+    /// Also map branch targets, not just call targets
     #[arg(long)]
     include_branches: bool,
-    #[arg(long, default_value_t = 8192)]
+    /// Maximum byte distance when falling back to the nearest symbol
+    #[arg(long, default_value_t = 8192, value_name = "BYTES")]
     nearest_max_distance: u64,
+    /// Require executable-section layout to match between the two ELFs
     #[arg(long)]
     require_exec_match: bool,
+    /// Register the result in symbols/manifest.json for later auto-ingestion
     #[arg(long = "register-local-cache")]
     register_local_cache: bool,
+    /// Print the mapping summary as JSON on stdout
     #[arg(long)]
     json: bool,
 }
 
 #[derive(Subcommand, Debug)]
 enum AdapterSubcommand {
+    /// Build and install the adapter for a given Dart snapshot hash
     Install(AdapterInstallCmd),
+    /// List known adapters and whether each is installed
     List,
 }
 
 #[derive(Args, Debug)]
 struct AdapterInstallCmd {
-    #[arg(long = "dart-hash")]
+    /// Dart snapshot hash, as reported by `flutterdec info`
+    #[arg(long = "dart-hash", value_name = "HASH")]
     dart_hash: String,
 }
 
@@ -266,6 +482,12 @@ fn handle_info(repo_root: &Path, cmd: InfoCmd) -> Result<()> {
         println!("libapp: {}", out.libapp_path);
         println!("arch: {}", out.arch);
         println!("snapshot hash: {}", out.snapshot_hash);
+        if let Some(version) = out.dart_version.as_deref() {
+            println!("dart version: {}", version);
+        }
+        if let Some(tag_style) = out.dart_tag_style.as_deref() {
+            println!("dart tag style: {}", tag_style);
+        }
         println!("adapter installed: {}", out.adapter_installed);
         if let Some(kind) = out.adapter_kind.as_deref() {
             println!("adapter kind: {}", kind);
@@ -745,13 +967,12 @@ mod tests {
         };
         assert!(matches!(cmd.adapter_backend, AdapterBackendArg::Auto));
     }
-
     #[test]
     fn decompile_adapter_backend_accepts_blutter() {
         let cli = Cli::try_parse_from([
             "flutterdec",
             "decompile",
-            "sample.apk",
+            "in.apk",
             "-o",
             "out",
             "--adapter-backend",
@@ -762,6 +983,25 @@ mod tests {
             panic!("expected decompile command");
         };
         assert!(matches!(cmd.adapter_backend, AdapterBackendArg::Blutter));
+    }
+
+    #[test]
+    fn decompile_adapter_backend_accepts_r2flutter() {
+        let cli = Cli::try_parse_from([
+            "flutterdec",
+            "decompile",
+            "in.apk",
+            "-o",
+            "out",
+            "--adapter-backend",
+            "r2-flutter",
+        ])
+        .expect("parse");
+        let Command::Decompile(cmd) = cli.command else {
+            panic!("expected decompile command");
+        };
+        assert!(matches!(cmd.adapter_backend, AdapterBackendArg::R2Flutter));
+        assert_eq!(cmd.adapter_backend.to_core().as_str(), "r2flutter");
     }
 
     #[test]

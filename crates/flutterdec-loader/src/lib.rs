@@ -8,6 +8,10 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use zip::ZipArchive;
 
+pub mod dart_profile;
+
+use dart_profile::ResolvedDartProfile;
+
 #[derive(Debug, Clone)]
 pub struct SnapshotBundle {
     pub input_path: PathBuf,
@@ -20,6 +24,8 @@ pub struct SnapshotBundle {
     pub isolate_instr: Vec<u8>,
     pub vm_instr_va: u64,
     pub isolate_instr_va: u64,
+    /// Dart version and layout profile for `snapshot_hash`, when the hash is known.
+    pub dart_profile: Option<ResolvedDartProfile>,
 }
 
 #[derive(Debug, Clone)]
@@ -234,6 +240,7 @@ fn from_elf(path: &Path, libapp_display: PathBuf, bytes: Vec<u8>) -> Result<Snap
         bytes[isolate_instr.file_offset..isolate_instr.file_offset + isolate_instr.size].to_vec();
 
     let hash = detect_snapshot_hash(&vm_data_bytes, &isolate_data_bytes);
+    let dart_profile = dart_profile::profile_for_hash(&hash);
 
     Ok(SnapshotBundle {
         input_path: path.to_path_buf(),
@@ -246,6 +253,7 @@ fn from_elf(path: &Path, libapp_display: PathBuf, bytes: Vec<u8>) -> Result<Snap
         isolate_instr: isolate_instr_bytes,
         vm_instr_va: vm_instr.va,
         isolate_instr_va: isolate_instr.va,
+        dart_profile,
     })
 }
 

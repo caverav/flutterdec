@@ -1,5 +1,9 @@
 # CLI Reference
 
+This reference describes the CLI at the current commit. `flutterdec --help` is
+the quickest overview, `flutterdec <COMMAND> --help` covers a single command,
+and `flutterdec --version` reports the build you are running.
+
 ## `flutterdec info`
 
 Usage:
@@ -12,6 +16,14 @@ Arguments:
 
 - `<INPUT>`: APK or `libapp.so`
 - `--json`: print JSON output
+
+Resolved from the snapshot hash alone, with or without an adapter, in both JSON and
+plain output:
+
+- `dart_version`
+- `dart_tag_style` (`CID_INT32`, `CID_SHIFT1`, or `OBJECT_HEADER`)
+
+Both are null for snapshot hashes outside `data/dart-profiles.json`.
 
 If adapter metadata is available, JSON output also includes app-package hints:
 
@@ -47,13 +59,12 @@ General options:
 - `--max-functions <N>`
 - `--function-scope <app-unknown|app|all>` (default `app-unknown`)
 - `--app-package <NAME>` (repeatable; restricts to selected `package:<NAME>/...` libraries)
-- `--adapter-backend <auto|internal|blutter>` (default `auto`)
+- `--adapter-backend <auto|internal|blutter|r2-flutter>` (default `auto`; `auto` tries r2flutter, then blutter, then internal)
 - `--require-snapshot-hash-match` (fail if adapter-reported snapshot hash differs from loader hash)
 
 Symbol ingestion:
-
+- `--extra-symbol-map-target <PATH>` (repeatable; `--extra-symbol-map-targets` remains accepted as an alias)
 - `--extra-symbol-elf <PATH>` (repeatable)
-- `--extra-symbol-map-targets <PATH>` (repeatable)
 - `--include-nearest-symbol-map`
 
 Quality-gate options:
@@ -94,6 +105,9 @@ Target selection behavior:
 
 Adapter backend environment:
 
+- `FLUTTERDEC_R2FLUTTER_BIN`: path to the `r2flutter` binary
+- `FLUTTERDEC_R2FLUTTER_CMD`: full command to execute the r2flutter backend
+- `FLUTTERDEC_R2FLUTTER_TIMEOUT`: per-invocation timeout in seconds (default 900)
 - `FLUTTERDEC_BLUTTER_CMD`: full command to execute Blutter bridge backend
 - `FLUTTERDEC_BLUTTER_PY`: path to `blutter.py` (uses current Python interpreter)
 
@@ -115,7 +129,7 @@ Options:
 
 - `--function-scope <app-unknown|app|all>` (default `app-unknown`)
 - `--app-package <NAME>` (repeatable; limit compare set to selected app packages)
-- `--adapter-backend <auto|internal|blutter>` (default `auto`)
+- `--adapter-backend <auto|internal|blutter|r2-flutter>` (default `auto`)
 - `--require-snapshot-hash-match` (fail if either side has adapter/loader snapshot hash mismatch)
 - `--json`
 
