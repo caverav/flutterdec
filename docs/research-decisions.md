@@ -5,6 +5,13 @@
 - Adapter language: Python for fast per-hash parser updates.
 - Scope baseline: Android ARM64 AOT static-first, correctness prioritized over breadth.
 - Quality gates: strict defaults to prevent low-confidence pseudocode output.
+- Pseudocode quality: instruction-stream semantics (Dart ABI idioms, dispatch-table
+  selectors, single-emission structuring) are recovered independently of snapshot
+  metadata, and joined to it by integer keys rather than reimplemented. See
+  `docs/research-pseudocode-quality.md`.
+- Naming: a fabricated name is worse than an honest placeholder. Names come from
+  metadata or from an encoding that provably identifies the callee; guesses are
+  reported as comments, never emitted as identifiers.
 
 ## North Star
 
