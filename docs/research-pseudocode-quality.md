@@ -1256,6 +1256,13 @@ argument is not reconstructed into `(object, value)`.
   frequency, not derived. Naming `sub_d521f4` as a null-check throw on that
   evidence would be a per-binary guess. What would make it sound is deriving the
   address from the snapshot's stub table rather than recognising it by shape.
+
+  Two denominators, and they differ slightly, so the basis matters. Counting
+  direct calls to the six null-family stub addresses gives 7,378 and 10,777.
+  Counting the guards instead, `b.eq` blocks whose successor is one of those call
+  blocks, gives 7,376 and 10,775. The two disagree by two on each sample because
+  some stub blocks are shared or reached through a different entry layout, so
+  neither number is the count of "null checks" without saying which it is.
 - **Inline allocation** is `ldp result, end, [THR, top_offset]`, then add size,
   compare, branch to the slow path, initialise the header. The sequence is exact
   and spans a branch, so recognising it means matching across blocks. `allocate(n)`

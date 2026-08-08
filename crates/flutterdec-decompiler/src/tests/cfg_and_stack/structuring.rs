@@ -1316,3 +1316,47 @@ fn the_write_barrier_check_is_named_without_changing_its_polarity() {
         "an ordinary mask test must not be named as the barrier:\n{other}"
     );
 }
+/// The renderings that compute rather than name. A named form like
+/// `signedDivide(a, b)` cannot be subtly wrong, but these can: `msub` subtracts
+/// the product from the third operand, not from the first, and getting the order
+/// backwards emits a confident wrong expression.
+#[test]
+fn computed_instruction_renderings_use_the_right_operands() {
+    let render = |instruction: &str| {
+        let ir = FunctionIr {
+            function_id: 970,
+            name: "computed".to_string(),
+            entry_va: 0x1000,
+            blocks: vec![blk(
+                0,
+                0x1000,
+                vec![
+                    stmt(0x1000, instruction),
+                    stmt(0x1004, "stur x9, [x4, #7]"),
+                    ret(0x1008),
+                ],
+                vec![],
+            )],
+        };
+        emit_pseudocode(&ir, &HashMap::new()).source
+    };
+    // x1, x2 and x3 are the first three Dart argument registers, so they read as
+    // `receiver`, `param1` and `param2`.
+    for (instruction, expected) in [
+        ("neg x9, x1", "-receiver"),
+        ("mvn x9, x1", "~receiver"),
+        ("sxtw x9, w1", "signExtend(receiver, 32)"),
+        // Xd = Xa - Xn * Xm, with Xa the *last* operand.
+        ("msub x9, x1, x2, x3", "(param2 - (receiver * param1))"),
+        ("madd x9, x1, x2, x3", "(param2 + (receiver * param1))"),
+        ("sdiv x9, x1, x2", "signedDivide(receiver, param1)"),
+        ("umulh x9, x1, x2", "unsignedHighMultiply(receiver, param1)"),
+        ("ubfiz x9, x1, #1, #0x1e", "unsignedBitFieldInsert(receiver, 1, 0x1e)"),
+    ] {
+        let out = render(instruction);
+        assert!(
+            out.contains(expected),
+            "`{instruction}` should render `{expected}`:\n{out}"
+        );
+    }
+}
