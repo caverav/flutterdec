@@ -333,7 +333,7 @@ Python remains useful at the adapter boundary for faster version specific parser
 - refresh decompiler golden snapshots with `FLUTTERDEC_UPDATE_GOLDEN=1 cargo test -p flutterdec-decompiler golden_` when output changes intentionally
 - for end-to-end real binary regression checks, use `scripts/real-golden.sh record|check` for single profiles, or `scripts/real-golden-matrix.sh check` for multi-profile runs; those baselines now include `report_metrics.json` so startup, bootflow, entrypoint, and engine-symbol-ingestion deltas are diffed directly
 - keep profile configs in `testdata/real-golden/profiles/*/profile.env`
-- for naming improvements on direct call targets, use `map-symbols` on stripped/unstripped ELF pairs, then pass `decompile --extra-symbol-map-targets /path/to/symbol_target_summary.json`
+- for naming improvements on direct call targets, use `map-symbols` on stripped/unstripped ELF pairs, then pass `decompile --extra-symbol-map-target /path/to/symbol_target_summary.json`
 - `decompile` prefers external descriptive names over generic internal names (`sub_*`, `fn_0x*`) when addresses match
 - test against real Flutter binaries, not only synthetic fixtures
 - prioritize output readability improvements that are backed by concrete sample evidence
