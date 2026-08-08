@@ -539,15 +539,76 @@ path's expression. The old golden for `goldenSimpleLoop` asserted
 `return (receiver + 1);` inside a loop that increments `receiver`, which was
 wrong on every iteration after the first.
 
-1,448 functions still duplicate, all of them on the DFS fallback. Remaining work,
-in order: labelled `break`/`continue` so a back edge or exit to a non-innermost
-loop does not force a fallback; then partial structuring, where an edge the region
-tree does not describe becomes a marked, singly-emitted tail rather than
-discarding the whole function's structure. Both would let the DFS emitter be
-deleted rather than maintained alongside. Rendering the header test as
-`while (cond)` rather than `while (true)` plus `break` is only sound when the
-header writes no register the condition reads, which excludes the common
-increment-in-header shape, so it is not a general simplification.
+### What forced the remaining fallbacks
+
+Measured rather than assumed, by replaying the region walk over every recovered
+CFG and recording the first edge it could not place:
+
+| cause | LocalSend | share |
+|---|---|---|
+| structured | 4,244 | 73.2% |
+| shared continuation that is not the follow node | 1,236 | 21.3% |
+| irreducible | 250 | 4.3% |
+| back edge or exit to a non-innermost loop | 70 | 1.2% |
+
+Labelled `break`/`continue`, the obvious next feature, would have addressed 1.2%.
+The real cause is a shared continuation that the follow-node rule cannot place,
+and Dart has no `goto`, so such a block cannot be named at all. The choices are
+to repeat it, hoist it into a helper, or give up on structuring the function.
+Giving up means the DFS emitter, whose duplication is unbounded, so repeating a
+bounded region is strictly the smaller cost. A region containing a loop is never
+repeated.
+
+The budget comes from the measured distribution. Sweeping it:
+
+| blocks | instructions | structured | duplication inside structured functions |
+|---|---|---|---|
+| 1 | 16 | 74.8% | 1.02x |
+| 4 | 24 | 80.5% | 1.04x |
+| 8 | 48 | **85.0%** | **1.09x** |
+| 16 | 96 | 88.7% | 1.20x |
+| 32 | 256 | 91.7% | 1.45x |
+
+8 blocks and 48 instructions is the knee. `quality.json` reports
+`repeated_blocks` so budgeted repetition stays visible rather than being absorbed
+into the structuring rate.
+
+Structuring also made empty `if` bodies common: when both successors are the
+join, neither arm emits a statement. 4,117 of them on sample A against 321 on
+`main`. Arms are now rendered into buffers and emptiness is decided on emitted
+content, which drops the branch or inverts the condition. 4,117 to 234.
+
+### Negative result: naive phi materialisation
+
+The one measure that moved the wrong way under structuring is unresolved register
+references, because a value that genuinely differs per path is dropped rather than
+given one path's expression. The obvious fix is to name it: assign it to a merge
+variable at the end of each arm and read that at the join.
+
+Implemented and reverted. Lines went from 400,073 to 520,559 and unresolved
+register references rose from 18,589 to 31,184 rather than falling, because 30,736
+of 40,186 generated variables were never read and the assignments themselves
+reference registers that are still unbound. The read set came from an
+over-approximating scan of up to 64 successor blocks, which marks almost
+everything live.
+
+The lesson is specific: this needs real liveness at the join, and candidates
+ranked by how often the continuation reads them, not a reachability scan. Sorting
+candidate registers by name also silently spends the budget on the wrong ones,
+since `x10` sorts before `x2` and the Dart argument registers are x1, x2, x3, x5,
+x6, x7.
+
+### Remaining, in order
+
+Real liveness for the merge variables above; partial structuring, where an edge
+the region tree cannot describe becomes a marked, singly-emitted tail rather than
+discarding the whole function's structure; then labelled `break`/`continue` for
+the 1.2%. The first two would let the DFS emitter be deleted rather than kept.
+
+Rendering the header test as `while (cond)` rather than `while (true)` plus
+`break` is only sound when the header writes no register the condition reads,
+which excludes the common increment-in-header shape, so it is not a general
+simplification.
 
 Prior art, in order of fit: Yakdan et al., *No More Gotos* (NDSS 2015) for
 provably goto-free structuring; Relooper (Emscripten) for a simpler
