@@ -285,6 +285,13 @@ Measured in the reachable CFG, where duplication cannot inflate the count:
 same method binary-wide, so it is greppable now and becomes a pure rename when
 the snapshot work lands a selector table. Nothing in the lifter changes then.
 
+`quality.json` reports these separately from metadata-named calls, as
+`dispatch_table_calls` rather than `dispatch_selector_calls`, because the two have
+different warrants: one is provable from the instruction stream, the other depends
+on pool metadata being both present and correct. On the sampled binary with the
+internal backend the split is 6,832 and 0, which is the honest picture: no
+selector name here comes from metadata.
+
 ## Finding 4: invented names, and why they cannot be right
 
 Observed in shipped output on a real APK:

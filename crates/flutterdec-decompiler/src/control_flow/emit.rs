@@ -380,7 +380,7 @@ impl<'a> FuncEmitter<'a> {
                     .map(|reg| self.annotate_pool_refs(&self.lookup_reg(reg)))
                     .collect::<Vec<_>>()
                     .join(", ");
-                self.dispatch_selector_calls += 1;
+                self.dispatch_table_calls += 1;
                 // The argument list is never claimed to be complete, so an
                 // empty one is not read as a recovered zero-arity method.
                 let arity = if dispatch.argument_registers.is_empty() {

@@ -57,7 +57,7 @@ impl<'a> FuncEmitter<'a> {
         false
     }
 
-    fn counter_snapshot(&self) -> [usize; 9] {
+    fn counter_snapshot(&self) -> [usize; 10] {
         [
             self.placeholder_ifs,
             self.unresolved_cf,
@@ -67,11 +67,12 @@ impl<'a> FuncEmitter<'a> {
             self.semantic_direct_calls,
             self.semantic_indirect_calls,
             self.dispatch_selector_calls,
+            self.dispatch_table_calls,
             self.target_va_symbol_calls,
         ]
     }
 
-    fn restore_counters(&mut self, c: [usize; 9]) {
+    fn restore_counters(&mut self, c: [usize; 10]) {
         self.placeholder_ifs = c[0];
         self.unresolved_cf = c[1];
         self.raw_register_calls = c[2];
@@ -80,6 +81,7 @@ impl<'a> FuncEmitter<'a> {
         self.semantic_direct_calls = c[5];
         self.semantic_indirect_calls = c[6];
         self.dispatch_selector_calls = c[7];
+        self.dispatch_table_calls = c[9];
         self.target_va_symbol_calls = c[8];
     }
 

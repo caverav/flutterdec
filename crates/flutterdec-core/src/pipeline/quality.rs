@@ -15,6 +15,7 @@ fn quality_from_artifacts(
     let mut semantic_direct_calls = 0usize;
     let mut semantic_indirect_calls = 0usize;
     let mut dispatch_selector_calls = 0usize;
+    let mut dispatch_table_calls = 0usize;
     let mut target_va_symbol_calls = 0usize;
     let mut block_helper_refs = 0usize;
     let mut raw_arg_name_refs = 0usize;
@@ -32,6 +33,7 @@ fn quality_from_artifacts(
         semantic_direct_calls += p.semantic_direct_calls;
         semantic_indirect_calls += p.semantic_indirect_calls;
         dispatch_selector_calls += p.dispatch_selector_calls;
+        dispatch_table_calls += p.dispatch_table_calls;
         target_va_symbol_calls += p.target_va_symbol_calls;
         block_helper_refs += p.source.matches("_block_").count();
         placeholder_cond_markers += p.source.matches("/* cond */").count();
@@ -86,6 +88,7 @@ fn quality_from_artifacts(
         semantic_direct_calls,
         semantic_indirect_calls,
         dispatch_selector_calls,
+        dispatch_table_calls,
         target_va_symbol_calls,
         block_helper_refs,
         raw_arg_name_refs,

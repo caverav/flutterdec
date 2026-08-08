@@ -53,7 +53,7 @@ fn names_dispatch_table_calls_from_the_sub_encoding() {
         artifact.source
     );
     assert_eq!(
-        artifact.dispatch_selector_calls, 1,
+        artifact.dispatch_table_calls, 1,
         "recovered selector should be counted as a dispatch call"
     );
 }
@@ -166,7 +166,7 @@ fn does_not_name_an_unrelated_indirect_call() {
         "a redefined target must not inherit the dispatch selector:\n{}",
         artifact.source
     );
-    assert_eq!(artifact.dispatch_selector_calls, 0);
+    assert_eq!(artifact.dispatch_table_calls, 0);
 }
 
 /// The class-id bitfield position has moved between SDK versions, so recovery
