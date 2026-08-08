@@ -181,8 +181,11 @@ impl<'a> FuncEmitter<'a> {
                     // is how the DFS emitter avoided the problem: by duplicating
                     // the continuation per path instead of merging.
                     let state_at_branch = self.state.clone();
+                    let arms: Vec<usize> = [taken, not_taken].into_iter().flatten().collect();
 
-                    self.push_line(indent, &format!("if ({}) {{", condition));
+                    // Arms are rendered into buffers so emptiness is decided on
+                    // what they actually emit, which includes merge assignments.
+                    let buffer_start = self.lines.len();
                     match taken {
                         Some(t) if Some(t) != region_follow => {
                             if !self.render_sequence(t, region_follow, indent + 1, depth + 1) {
@@ -199,15 +202,40 @@ impl<'a> FuncEmitter<'a> {
                             }
                         }
                     }
-                    self.push_line(indent, "}");
+                    let taken_lines: Vec<String> = self.lines.split_off(buffer_start);
 
+                    self.state = state_at_branch.clone();
                     if let Some(f) = not_taken {
-                        if Some(f) != region_follow {
-                            self.state = state_at_branch.clone();
+                        if Some(f) != region_follow
+                            && !self.render_sequence(f, region_follow, indent + 1, depth + 1)
+                        {
+                            return false;
+                        }
+                    }
+                    let else_lines: Vec<String> = self.lines.split_off(buffer_start);
+
+                    match (taken_lines.is_empty(), else_lines.is_empty()) {
+                        // Both arms only reach the join, so the test decides
+                        // nothing that the output records.
+                        (true, true) => {}
+                        // Only the other arm has content: state it directly
+                        // rather than as an empty `if` with an `else`.
+                        (true, false) => {
+                            self.push_line(indent, &format!("if (!({})) {{", condition));
+                            self.lines.extend(else_lines);
+                            self.push_line(indent, "}");
+                        }
+                        (false, true) => {
+                            self.push_line(indent, &format!("if ({}) {{", condition));
+                            self.lines.extend(taken_lines);
+                            self.push_line(indent, "}");
+                        }
+                        (false, false) => {
+                            self.push_line(indent, &format!("if ({}) {{", condition));
+                            self.lines.extend(taken_lines);
+                            self.push_line(indent, "}");
                             self.push_line(indent, "else {");
-                            if !self.render_sequence(f, region_follow, indent + 1, depth + 1) {
-                                return false;
-                            }
+                            self.lines.extend(else_lines);
                             self.push_line(indent, "}");
                         }
                     }
@@ -217,7 +245,6 @@ impl<'a> FuncEmitter<'a> {
                     if let Some(join) = cursor {
                         // Reached from both arms, so a binding survives only if
                         // neither arm redefined it.
-                        let arms: Vec<usize> = [taken, not_taken].into_iter().flatten().collect();
                         let written = self.registers_written_between(&arms, Some(join));
                         self.merge_state_at_join(&written);
                     }
