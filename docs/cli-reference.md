@@ -1,7 +1,8 @@
 # CLI Reference
 
-`flutterdec --help` is the quickest overview. Use `flutterdec <COMMAND> --help`
-for command-specific options. The current release is `0.1.0-alpha.2`.
+This reference describes the CLI at the current commit. `flutterdec --help` is
+the quickest overview, `flutterdec <COMMAND> --help` covers a single command,
+and `flutterdec --version` reports the build you are running.
 
 ## `flutterdec info`
 
