@@ -1,5 +1,8 @@
 # CLI Reference
 
+`flutterdec --help` is the quickest overview. Use `flutterdec <COMMAND> --help`
+for command-specific options. The current release is `0.1.0-alpha.2`.
+
 ## `flutterdec info`
 
 Usage:
@@ -59,9 +62,8 @@ General options:
 - `--require-snapshot-hash-match` (fail if adapter-reported snapshot hash differs from loader hash)
 
 Symbol ingestion:
-
+- `--extra-symbol-map-target <PATH>` (repeatable; `--extra-symbol-map-targets` remains accepted as an alias)
 - `--extra-symbol-elf <PATH>` (repeatable)
-- `--extra-symbol-map-targets <PATH>` (repeatable)
 - `--include-nearest-symbol-map`
 
 Quality-gate options:

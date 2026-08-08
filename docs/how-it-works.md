@@ -785,7 +785,7 @@ Symptom: pseudocode has too many omitted path summaries
 Symptom: function names are too synthetic
 
 - improve adapter metadata extraction first
-- then run `map-symbols` on stripped/unstripped pairs and either feed `symbol_target_summary.json` into `decompile --extra-symbol-map-targets ...` or register it into the local cache with `--register-local-cache`
+- then run `map-symbols` on stripped/unstripped pairs and either feed `symbol_target_summary.json` into `decompile --extra-symbol-map-target ...` or register it into the local cache with `--register-local-cache`
 
 Symptom: control flow is valid but hard to read
 
