@@ -252,7 +252,7 @@ fn shift_amount(operand: &str) -> Option<u32> {
 
 /// Registers an instruction overwrites. Anything not recognised as a pure read
 /// is treated as writing its first operands, so stale state cannot survive.
-fn written_registers(mnemonic: &str, ops: &[String]) -> Vec<String> {
+pub(super) fn written_registers(mnemonic: &str, ops: &[String]) -> Vec<String> {
     let reads_only = matches!(
         mnemonic,
         "cmp" | "cmn" | "tst" | "ccmp" | "fcmp" | "ret" | "b" | "br" | "str" | "stur" | "strb"

@@ -1,8 +1,9 @@
-dynamic goldenSimpleLoop(int receiver, dynamic param1, dynamic param2, dynamic param3, dynamic param4, dynamic param5, dynamic param6, dynamic param7) {
+dynamic goldenSimpleLoop(dynamic receiver, dynamic param1, dynamic param2, dynamic param3, dynamic param4, dynamic param5, dynamic param6, dynamic param7) {
   while (true) {
-    if ((receiver + 1) != 0) {
-      return (receiver + 1);
+    if ((reg0 + 1) != 0) {
+      break;
     }
     continue;
   }
+  return null;
 }

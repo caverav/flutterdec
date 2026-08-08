@@ -43,6 +43,9 @@ struct FuncEmitter<'a> {
     block_by_id: HashMap<usize, &'a BasicBlock>,
     va_to_id: HashMap<u64, usize>,
     dispatch_calls: HashMap<u64, DispatchCall>,
+    regions: Option<Regions>,
+    structured_emitted: HashSet<usize>,
+    loop_stack: Vec<(usize, Option<usize>)>,
 
     emitted: HashSet<usize>,
     active_stack: Vec<usize>,
@@ -93,6 +96,7 @@ mod helper_flow;
 mod helpers;
 mod passes;
 
+use control_flow::Regions;
 use helpers::*;
 
 impl<'a> FuncEmitter<'a> {
@@ -119,6 +123,9 @@ impl<'a> FuncEmitter<'a> {
             block_by_id,
             va_to_id,
             dispatch_calls: dispatch_table_calls(ir),
+            regions: None,
+            structured_emitted: HashSet::new(),
+            loop_stack: Vec::new(),
             emitted: HashSet::new(),
             active_stack: Vec::new(),
             inline_visits: HashMap::new(),
@@ -154,8 +161,14 @@ impl<'a> FuncEmitter<'a> {
         }
 
         let body_start = self.lines.len();
-        if let Some(entry) = self.ir.blocks.first() {
-            self.emit_block(entry.id, 1, 0);
+        // Structured emission first: it emits every reachable block exactly
+        // once. It declines on irreducible control flow, and verifies the
+        // emit-once invariant rather than assuming it, so a failure rolls back
+        // and the DFS emitter runs instead.
+        if !self.try_emit_structured() {
+            if let Some(entry) = self.ir.blocks.first() {
+                self.emit_block(entry.id, 1, 0);
+            }
         }
 
         let body_lines = self.lines.len().saturating_sub(body_start);
