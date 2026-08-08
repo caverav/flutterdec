@@ -435,19 +435,71 @@ operation the pseudocode currently prints as `thread.fN`.
 Ordered by measured payoff per unit of risk.
 
 **R1, Single-emission structuring. Prerequisite for everything else.**
-Emit every reachable basic block exactly once, driven by the dominator tree,
-using each region's immediate post-dominator as the follow node rather than
-inlining successors. At 95.7% reducible and with labelled `break`/`continue`
-available, goto-free output is reachable; Dart has no `goto`, so it is also
-mandatory. Expected effect at inflation 3.03  ->  1.0: **two thirds of emitted
-lines disappear as duplicates**, and the `_block_N` / `omitted complex paths` /
-`depth-limited` machinery becomes dead code. Prior art, in order of fit: Yakdan
-et al., *No More Gotos* (NDSS 2015) for provably goto-free structuring; Relooper
-(Emscripten) for a simpler node-splitting baseline; Muchnick's interval analysis
-for the classic hammock formulation; LLVM's `WebAssemblyCFGStackify` for a
-production implementation. **Not attempted here**, it is a substantial change
-that requires updating a large body of exact-output tests, and a partial
-structurer would be worse than none.
+Emit every reachable basic block exactly once. Expected effect at inflation
+3.03 -> 1.0: emitted call statements drop from 109,729 to 42,073, **62% of them
+are duplicates**, and the `_block_N`, `omitted complex paths` and
+`depth-limited` machinery becomes dead code by construction.
+
+The shapes the real CFGs actually require were measured before designing this,
+over the 40,154 two-way branches in the sampled binary:
+
+| branch shape | count | share | structure |
+|---|---|---|---|
+| immediate post-dominator is a join block | 22,564 | 56.2% | `if/else` then the follow node, emitted once after |
+| no post-dominator, the arms never rejoin | 12,416 | 30.9% | `if/else` with no continuation, both arms end in a terminator |
+| immediate post-dominator is one of the successors | 5,174 | 12.9% | `if` then the continuation |
+
+There is no fourth case. Every conditional in this binary is covered by the
+follow-node rule, which is the result that makes R1 tractable rather than
+open-ended.
+
+Loops, over the 830 functions that have one:
+
+| | count | needs |
+|---|---|---|
+| loop nests with a single exit block | 500 | `while` plus `break` |
+| loop nests with more than one exit block | 805 | `break`, labelled where nested |
+| functions with more than one loop head | 272 | labelled `break`/`continue` |
+| loops with more than one latch | 15 | latch merge or duplication |
+| irreducible functions | 250 (4.3%) | node splitting, or fall back |
+
+Dart has labelled `break`/`continue`, so multi-level exits are expressible
+without duplicating blocks, and Dart has no `goto`, so goto-free output is a
+hard language constraint rather than a preference.
+
+Design, given those measurements:
+
+- A separate pass builds a region tree (sequence, if-then, if-then-else, loop,
+  labelled block) from the dominator and post-dominator trees. Rendering is then
+  a straight walk of that tree.
+- Do not thread a stop condition through `emit_block`. Its `active_stack`,
+  `loop_context` and visit budget all assume re-entry is legal, which is exactly
+  what single emission forbids. The DFS emitter stays as the fallback for the
+  4.3% irreducible functions, which keeps the change bounded and makes the
+  new path ablatable against the old one on the same binary.
+- The register-state model has to change with it. `emit_block` currently
+  saves and restores `LiftState` around each arm, which is what makes
+  duplication necessary in the first place: a block emitted once needs a merged
+  value at the join, not a per-path one. That is an SSA-style phi at each join,
+  or a conservative drop to an opaque name.
+
+Acceptance criteria that can fail, rather than trend in the right direction:
+
+- `omitted_path_markers == 0` and `loop_backedge_markers == 0`. Both are
+  structurally impossible under single emission, so anything else means the
+  region tree is incomplete.
+- emitted call statements divided by emittable calls on the reachable CFG
+  `== 1.0` exactly.
+- no `/* depth-limited block */` and no `return _block_N();` in any output.
+
+Prior art, in order of fit: Yakdan et al., *No More Gotos* (NDSS 2015) for
+provably goto-free structuring; Relooper (Emscripten) for a simpler
+node-splitting baseline; Muchnick's interval analysis for the classic hammock
+formulation; LLVM's `WebAssemblyCFGStackify` for a production implementation.
+
+**Not attempted here.** It is a substantial change that also requires migrating a
+large body of exact-output tests, and a partial structurer would be worse than
+none.
 
 **R2, Structured operands from the disassembler, once.**
 `build_capstone` sets `detail(false)`, so capstone's structured operands are
