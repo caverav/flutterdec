@@ -585,12 +585,23 @@ Landed, `cargo test --workspace` green (276 tests), `fmt` and `clippy` clean:
   Pool-string selector guesses are demoted from identifiers to
   `selector candidate, unverified` comments and still propagate through spills
   and field round-trips, so the evidence survives without the false claim.
+- `flutterdec-decompiler`: `control_flow/regions.rs` computes dominators,
+  post-dominators, follow nodes and natural loops on the reachable CFG;
+  `control_flow/structured.rs` walks that structure and emits every block once,
+  with per-arm state isolation, bounded repetition of small shared slow paths, a
+  checked emit-once invariant, and the DFS emitter retained as the fallback for
+  irreducible functions.
 
 Emitted, on the sampled binary: 10,925 dispatch call statements over 528
 distinct selectors, zero negative offsets, receiver resolved on 66.7%, arity
-reported as a lower bound on 73.4% and honestly unknown on the rest.
+reported as a lower bound on 73.4% and honestly unknown on the rest. Structuring
+holds emit-once on 72.8% of functions, takes inflation from 3.03x to 2.28x and
+emitted lines down 23%, and removes 1,055 references to values defined in a branch
+that returned, verified as zero across all 5,800 functions.
 
-Not attempted: R1, and R2-R6.
+Not attempted: R2 to R6, and the two remaining structuring steps (labelled
+`break`/`continue`, then partial structuring) that would let the DFS emitter be
+deleted rather than kept as a fallback.
 
 ## Sources
 
