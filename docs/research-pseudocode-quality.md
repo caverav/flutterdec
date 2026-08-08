@@ -434,24 +434,16 @@ operation the pseudocode currently prints as `thread.fN`.
 
 Ordered by measured payoff per unit of risk.
 
-**R1, Single-emission structuring. Prerequisite for everything else.**
-Emit every reachable basic block exactly once. Expected effect at inflation
-3.03 -> 1.0: emitted call statements drop from 109,729 to 42,073, **62% of them
-are duplicates**, and the `_block_N`, `omitted complex paths` and
-`depth-limited` machinery becomes dead code by construction.
-
-The shapes the real CFGs actually require were measured before designing this,
-over the 40,154 two-way branches in the sampled binary:
+**R1, Single-emission structuring. Implemented, partially.** Emission is now
+driven by the dominator and post-dominator trees rather than by inlining
+successors. Every conditional in this binary falls into one of three shapes the
+follow-node rule covers, with no fourth case:
 
 | branch shape | count | share | structure |
 |---|---|---|---|
-| immediate post-dominator is a join block | 22,564 | 56.2% | `if/else` then the follow node, emitted once after |
-| no post-dominator, the arms never rejoin | 12,416 | 30.9% | `if/else` with no continuation, both arms end in a terminator |
-| immediate post-dominator is one of the successors | 5,174 | 12.9% | `if` then the continuation |
-
-There is no fourth case. Every conditional in this binary is covered by the
-follow-node rule, which is the result that makes R1 tractable rather than
-open-ended.
+| immediate post-dominator is a join block | 22,564 | 56.2% | `if/else`, then the follow node once |
+| no post-dominator, the arms never rejoin | 12,416 | 30.9% | `if/else`, no continuation |
+| immediate post-dominator is one of the successors | 5,174 | 12.9% | `if`, then the continuation |
 
 Loops, over the 830 functions that have one:
 
@@ -461,45 +453,59 @@ Loops, over the 830 functions that have one:
 | loop nests with more than one exit block | 805 | `break`, labelled where nested |
 | functions with more than one loop head | 272 | labelled `break`/`continue` |
 | loops with more than one latch | 15 | latch merge or duplication |
-| irreducible functions | 250 (4.3%) | node splitting, or fall back |
+| irreducible functions | 250 (4.3%) | declined, DFS fallback |
 
-Dart has labelled `break`/`continue`, so multi-level exits are expressible
-without duplicating blocks, and Dart has no `goto`, so goto-free output is a
-hard language constraint rather than a preference.
+Two findings came out of implementing it.
 
-Design, given those measurements:
+Dart AOT shares one non-returning slow path per function for null checks, bounds
+checks and type checks: a handful of instructions ending in a throw or deopt stub,
+with many predecessors and no successors. It post-dominates nothing, so it is
+never a follow node, and refusing to repeat it forced **84% of the structuring
+fallbacks**. Small terminal blocks are therefore allowed to repeat, which also
+reads better: Dart cannot express a shared tail without hoisting it into a label.
 
-- A separate pass builds a region tree (sequence, if-then, if-then-else, loop,
-  labelled block) from the dominator and post-dominator trees. Rendering is then
-  a straight walk of that tree.
-- Do not thread a stop condition through `emit_block`. Its `active_stack`,
-  `loop_context` and visit budget all assume re-entry is legal, which is exactly
-  what single emission forbids. The DFS emitter stays as the fallback for the
-  4.3% irreducible functions, which keeps the change bounded and makes the
-  new path ablatable against the old one on the same binary.
-- The register-state model has to change with it. `emit_block` currently
-  saves and restores `LiftState` around each arm, which is what makes
-  duplication necessary in the first place: a block emitted once needs a merged
-  value at the join, not a per-path one. That is an SSA-style phi at each join,
-  or a conservative drop to an opaque name.
+A block emitted once cannot carry a per-path register state, and getting that
+wrong is silent. The first cut let a value defined in an arm that returns be
+referenced afterwards: **1,055 out-of-scope temporary references** across the
+corpus, where both the baseline and the pre-structuring branch had zero. Each arm
+now starts from the state at its branch, and at a merge a binding survives only
+if no path into it redefines that register. Verified by scanning every emitted
+function for a temporary referenced before any declaration: zero.
 
-Acceptance criteria that can fail, rather than trend in the right direction:
+Result, against this branch before the change:
 
-- `omitted_path_markers == 0` and `loop_backedge_markers == 0`. Both are
-  structurally impossible under single emission, so anything else means the
-  region tree is incomplete.
-- emitted call statements divided by emittable calls on the reachable CFG
-  `== 1.0` exactly.
-- no `/* depth-limited block */` and no `return _block_N();` in any output.
+| | before R1 | with R1 |
+|---|---|---|
+| pseudocode lines | 628,929 | **486,136** |
+| emitted call statements | 109,729 | **83,245** |
+| inflation | 3.03x | **2.28x** |
+| duplicate-line fraction | 67.9% | 62.0% |
+| `omitted_path_markers` | 1,026 | 804 |
+| `loop_backedge_markers` | 448 | 296 |
+| functions where emitted equals emittable | 45.0% | **72.8%** |
+| out-of-scope temporary references | 0 | 0 |
+| unresolved register references | 2,093 | 10,446 |
+
+The last row is the cost, and it is the honest kind: a value that genuinely
+differs per path is now named as an unresolved register rather than given one
+path's expression. The old golden for `goldenSimpleLoop` asserted
+`return (receiver + 1);` inside a loop that increments `receiver`, which was
+wrong on every iteration after the first.
+
+1,448 functions still duplicate, all of them on the DFS fallback. Remaining work,
+in order: labelled `break`/`continue` so a back edge or exit to a non-innermost
+loop does not force a fallback; then partial structuring, where an edge the region
+tree does not describe becomes a marked, singly-emitted tail rather than
+discarding the whole function's structure. Both would let the DFS emitter be
+deleted rather than maintained alongside. Rendering the header test as
+`while (cond)` rather than `while (true)` plus `break` is only sound when the
+header writes no register the condition reads, which excludes the common
+increment-in-header shape, so it is not a general simplification.
 
 Prior art, in order of fit: Yakdan et al., *No More Gotos* (NDSS 2015) for
 provably goto-free structuring; Relooper (Emscripten) for a simpler
 node-splitting baseline; Muchnick's interval analysis for the classic hammock
 formulation; LLVM's `WebAssemblyCFGStackify` for a production implementation.
-
-**Not attempted here.** It is a substantial change that also requires migrating a
-large body of exact-output tests, and a partial structurer would be worse than
-none.
 
 **R2, Structured operands from the disassembler, once.**
 `build_capstone` sets `detail(false)`, so capstone's structured operands are
