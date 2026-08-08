@@ -62,13 +62,13 @@ nix profile upgrade flutterdec
 
 ### Install From A Release Binary
 
-Current prerelease: [`v0.1.0-alpha.2`](https://github.com/caverav/flutterdec/releases/tag/v0.1.0-alpha.2)
+Current prerelease: [`v0.1.0-alpha.3`](https://github.com/caverav/flutterdec/releases/tag/v0.1.0-alpha.3)
 
 Linux x64:
 
 ```bash
-curl -fLO https://github.com/caverav/flutterdec/releases/download/v0.1.0-alpha.2/flutterdec-v0.1.0-alpha.2-Linux-X64.tar.gz
-tar -xzf flutterdec-v0.1.0-alpha.2-Linux-X64.tar.gz
+curl -fLO https://github.com/caverav/flutterdec/releases/download/v0.1.0-alpha.3/flutterdec-v0.1.0-alpha.3-Linux-X64.tar.gz
+tar -xzf flutterdec-v0.1.0-alpha.3-Linux-X64.tar.gz
 sudo install -m 0755 flutterdec /usr/local/bin/flutterdec
 flutterdec --help
 ```
@@ -76,8 +76,8 @@ flutterdec --help
 macOS arm64:
 
 ```bash
-curl -fLO https://github.com/caverav/flutterdec/releases/download/v0.1.0-alpha.2/flutterdec-v0.1.0-alpha.2-macOS-ARM64.tar.gz
-tar -xzf flutterdec-v0.1.0-alpha.2-macOS-ARM64.tar.gz
+curl -fLO https://github.com/caverav/flutterdec/releases/download/v0.1.0-alpha.3/flutterdec-v0.1.0-alpha.3-macOS-ARM64.tar.gz
+tar -xzf flutterdec-v0.1.0-alpha.3-macOS-ARM64.tar.gz
 sudo install -m 0755 flutterdec /usr/local/bin/flutterdec
 flutterdec --help
 ```
