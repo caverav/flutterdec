@@ -54,11 +54,13 @@ const THREAD_REGISTER: &str = "x26";
 
 /// How far into a function the self-load may appear. `GenerateSharedStubGeneric`
 /// emits it directly after the canonical register pushes
-/// (`stub_code_compiler_arm64.cc:287-337`), measured at instruction 11 for the
-/// without-FPU variants and 27 for the with-FPU ones. The window keeps an
-/// ordinary function that happens to load a stub slot deep in its body from
-/// being named after it.
-const PROLOGUE_WINDOW: usize = 32;
+/// (`stub_code_compiler_arm64.cc:287-337`). Measured across both samples the
+/// self-load sits at instruction 11 for the without-FPU variants, 21 or 22 and
+/// 37 or 38 for the mint allocators, and 27 for the with-FPU ones, so a window
+/// of 32 silently dropped `allocateMintWithFpuRegs` on every binary. The window
+/// keeps an ordinary function that happens to load a stub slot deep in its body
+/// from being named after it.
+const PROLOGUE_WINDOW: usize = 48;
 
 /// Names the shared stubs a binary calls, from each stub's own prologue.
 ///
@@ -178,22 +180,51 @@ fn stub_slots(
 }
 
 /// The stub slot this function loads from `THR` in its prologue, if any.
+///
+/// The load alone is not enough. A thunk that tail-calls a stub reads the same
+/// slot -- `ldr x24, [x26, #0x1d8]; ldur x16, [x24, #7]; br x16` -- and naming
+/// that thunk after the stub names a function after the one it calls. Two per
+/// sample, and one of them guards the tail call with `cmp w0, w22`, so the name
+/// would have hidden a null check. `GenerateSharedStubGeneric` always saves the
+/// register set first, so the self-load must follow at least one push onto the
+/// Dart stack. The thunks push nothing.
 fn prologue_stub_name(
     f: &FunctionDisassembly,
     slots: &'static [(u64, &'static str)],
 ) -> Option<&'static str> {
+    let mut saw_push = false;
     for ins in f.instructions.iter().take(PROLOGUE_WINDOW) {
+        if is_dart_stack_push(ins) {
+            saw_push = true;
+            continue;
+        }
         if !ins.mnemonic.eq_ignore_ascii_case("ldr") {
             continue;
         }
         let Some(offset) = thread_slot_offset(&ins.op_str) else {
             continue;
         };
-        if let Some((_, name)) = slots.iter().find(|(slot, _)| *slot == offset) {
-            return Some(name);
+        if !slots.iter().any(|(slot, _)| *slot == offset) {
+            continue;
         }
+        if !saw_push {
+            return None;
+        }
+        return slots
+            .iter()
+            .find(|(slot, _)| *slot == offset)
+            .map(|(_, name)| *name);
     }
     None
+}
+
+/// A push onto the Dart stack: `str`/`stp` through the stack pointer with
+/// writeback, as in `str x30, [x15, #-8]!`.
+fn is_dart_stack_push(ins: &flutterdec_disasm_arm64::AsmInstruction) -> bool {
+    if !ins.mnemonic.eq_ignore_ascii_case("str") && !ins.mnemonic.eq_ignore_ascii_case("stp") {
+        return false;
+    }
+    ins.op_str.contains("[x15,") && ins.op_str.trim_end().ends_with("]!")
 }
 
 /// The displacement of a `ldr rD, [THR, #imm]`, or `None` for any other shape.
@@ -218,7 +249,7 @@ mod tests {
     use super::*;
     use flutterdec_disasm_arm64::AsmInstruction;
 
-    fn ins(va: u64, mnemonic: &str, op_str: &str) -> AsmInstruction {
+    pub(super) fn ins(va: u64, mnemonic: &str, op_str: &str) -> AsmInstruction {
         AsmInstruction {
             va,
             word: 0,
@@ -229,7 +260,7 @@ mod tests {
     }
 
     /// A stub whose prologue pushes, then loads its own `Code` from `slot`.
-    fn stub(entry_va: u64, slot: u64) -> FunctionDisassembly {
+    pub(super) fn stub(entry_va: u64, slot: u64) -> FunctionDisassembly {
         let mut instructions = vec![ins(entry_va, "str", "x30, [x15, #-8]!")];
         for i in 1..11 {
             instructions.push(ins(entry_va + i * 4, "stp", "x2, x3, [x15, #-0x10]!"));
@@ -360,5 +391,110 @@ mod tests {
             );
             assert_eq!(named.status, "unknown_key");
         }
+    }
+}
+#[cfg(test)]
+mod thunk_tests {
+    use super::tests::{ins, stub};
+    use super::*;
+
+    /// A thunk that tail-calls a stub reads the same `Thread` slot the stub reads
+    /// from itself. Naming the thunk after the stub names a function after the
+    /// one it calls, and the guarded variant would hide its `cmp w0, w22` null
+    /// check behind the stub's name. The shape that distinguishes them is the
+    /// register save: the stub pushes first, the thunk pushes nothing.
+    #[test]
+    fn a_thunk_that_tail_calls_a_stub_is_not_that_stub() {
+        let thunk = FunctionDisassembly {
+            function_id: 0x4000,
+            function_name: "sub_4000".to_string(),
+            owner_class: String::new(),
+            entry_va: 0x4000,
+            size: 16,
+            instructions: vec![
+                ins(0x4000, "cmp", "w0, w22"),
+                ins(0x4004, "b.eq", "#0x4014"),
+                ins(0x4008, "ldr", "x24, [x26, #0x118]"),
+                ins(0x400c, "ldur", "x16, [x24, #7]"),
+                ins(0x4010, "br", "x16"),
+            ],
+        };
+        // Enough real stubs alongside it to confirm the 3.12 table, so a refusal
+        // here is about the thunk and not about the version guard.
+        let disasm = vec![
+            thunk,
+            stub(0x2100, 0x148),
+            stub(0x2200, 0x190),
+            stub(0x2300, 0x1d8),
+        ];
+        let named = shared_stub_names(&disasm, Some("3.12.1"), Some(true));
+        assert_eq!(named.status, "named", "control failed: nothing was named");
+        assert!(
+            named.names.contains_key(&0x2200),
+            "control failed: a real stub went unnamed: {:?}",
+            named.names
+        );
+        assert!(
+            !named.names.contains_key(&0x4000),
+            "a thunk must not take the name of the stub it calls: {:?}",
+            named.names
+        );
+    }
+}
+#[cfg(test)]
+mod window_tests {
+    use super::tests::{ins, stub};
+    use super::*;
+
+    /// A stub whose self-load sits `depth` instructions in, after that many
+    /// pushes.
+    fn deep_stub(entry_va: u64, slot: u64, depth: usize) -> FunctionDisassembly {
+        let mut instructions = Vec::with_capacity(depth + 1);
+        for i in 0..depth {
+            instructions.push(ins(
+                entry_va + (i as u64) * 4,
+                "stp",
+                "x2, x3, [x15, #-0x10]!",
+            ));
+        }
+        instructions.push(ins(
+            entry_va + (depth as u64) * 4,
+            "ldr",
+            &format!("x16, [x26, #{slot:#x}]"),
+        ));
+        FunctionDisassembly {
+            function_id: entry_va,
+            function_name: format!("sub_{entry_va:x}"),
+            owner_class: String::new(),
+            entry_va,
+            size: (depth as u64 + 1) * 4,
+            instructions,
+        }
+    }
+
+    /// The mint allocators save the FPU set as well, which puts their self-load
+    /// at instruction 37 on 3.5 and 38 on 3.12. A 32-instruction window dropped
+    /// them from every binary and said nothing, because a stub that goes unnamed
+    /// is indistinguishable from a stub that is not there.
+    #[test]
+    fn a_deep_prologue_is_still_inside_the_window() {
+        let disasm = vec![
+            deep_stub(0x5000, 0x158, 38),
+            stub(0x2100, 0x148),
+            stub(0x2200, 0x190),
+            stub(0x2300, 0x1d8),
+        ];
+        let named = shared_stub_names(&disasm, Some("3.12.1"), Some(true));
+        assert!(
+            named.names.contains_key(&0x2200),
+            "control failed: a shallow stub went unnamed: {:?}",
+            named.names
+        );
+        assert_eq!(
+            named.names.get(&0x5000).map(String::as_str),
+            Some("allocateMintWithFpuRegs"),
+            "the deepest measured self-load must be reachable: {:?}",
+            named.names
+        );
     }
 }

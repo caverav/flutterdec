@@ -1392,17 +1392,31 @@ frequency, not address hardcoding.
 `shared_stub_names` scans each function's prologue for `ldr rD, [x26, #imm]` --
 `THR` is `R26`, confirmed in the stream where `x26` is the base of 2,971 of the
 sampled loads -- and accepts the displacement only if it is a member of the
-vendored stub-slot set for the binary's SDK. Ordinary functions are not at risk:
-their prologue loads the stack limit (`0x48` on 3.12, 1,537 sampled loads), a
-thread field that is not in the set.
+vendored stub-slot set for the binary's SDK **and** at least one push onto the
+Dart stack precedes it. Ordinary functions are not at risk: their prologue loads
+the stack limit (`0x48` on 3.12, 1,537 sampled loads), a thread field that is not
+in the set.
+
+Two shapes cost coverage before the push requirement and the window were
+measured rather than assumed:
+
+- A **thunk that tail-calls a stub** reads the same slot the stub reads from
+  itself: `ldr x24, [x26, #0x1d8]; ldur x16, [x24, #7]; br x16`. Two per sample
+  matched, and one guards its tail call with `cmp w0, w22`, so the stub's name
+  would have hidden a null check. `GenerateSharedStubGeneric` saves the register
+  set first and the thunks push nothing, which separates them exactly.
+- The **mint allocators** save the FPU set too, putting their self-load at
+  instruction 37 on 3.5 and 38 on 3.12. A 32-instruction window dropped one stub
+  from every binary silently, because a stub that goes unnamed looks identical to
+  a stub that is not there. The window is 48.
 
 Result, with the derived names fed through the existing `symbol_names` channel at
 `Exact` quality:
 
 | sample | SDK | stubs named | call sites named |
 |---|---|---|---|
-| LocalSend | 3.5.0 | 13 | 21,889 |
-| Immich | 3.12.1 | 13 | 26,649 |
+| LocalSend | 3.5.0 | 12 | 21,369 |
+| Immich | 3.12.1 | 12 | 25,967 |
 
 The output corroborates itself. `if (reg0 == null) { nullCastErrorSharedWithoutFpuRegs(); }`
 and `if (index >= smiUntag(reg2.f28.f20)) { rangeErrorSharedWithoutFpuRegs(index, ...); }`
