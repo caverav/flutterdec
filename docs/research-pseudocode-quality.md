@@ -1942,6 +1942,19 @@ function that works today, which is a regression on the part of the output that 
 already correct. Taking the highest address reached from the record's entry and
 requiring the candidate to lie above it rejects 95 and 78 candidates.
 
+The containment clause has to be applied **sequentially**, not once against the record's
+entry. Reachability from block 0 says nothing about a swallowed function: with two
+candidates K1 below K2, cutting at K2 can still amputate the function whose entry is K1,
+if that function branches forward past K2. Validating each candidate against the reach
+of the *previous piece* rather than the record entry rejects 157 and 155 candidates, of
+which 62 and 77 are visible only that way. The recursion is not free.
+
+Two weaker forms of the check were measured and rejected. Requiring simply that no
+branch below K targets at or above K over-rejects badly, accepting only 8,338 and 12,764,
+because a branch inside a swallowed neighbour routinely crosses a later candidate without
+saying anything about containment; and it still misses 90 and 73 real amputations that
+the reach-based form catches. Reachability is the right relation, applied per piece.
+
 Final predicate, four clauses, all evaluable from the instruction list plus intra-record
 reachability:
 
@@ -1949,10 +1962,39 @@ reachability:
 |---|---|---|
 | terminator predecessor and frame push | 17,988 | 22,553 |
 | minus branch targets | 16,258 | 20,233 |
-| minus below reachable code | **16,163** | **20,155** |
+| minus not contained in the preceding piece | **16,101** | **20,078** |
 
 That lands within 1% of the CFG-derived count from R16, from the other direction, which
 is the corroboration worth having: two independent derivations of the same set.
+
+### There is no other evidence for an entry point today
+
+Shape is all there is, which is why the predicate has to carry its own precision. Over
+the current artifacts, with controls of 1,677,866 and 2,406,966 instructions:
+
+| evidence source | LocalSend | Immich |
+|---|---|---|
+| `LoadPool` instructions | 96,790 | 140,657 |
+| distinct `LoadPool` target forms | **1** (`poolOff[N]`) | **1** (`poolOff[N]`) |
+| pool entries that are addresses | 0 | 0 |
+| dispatch-table loads | 11,536 | 18,716 |
+| dispatch-table code addresses readable | 0 | 0 |
+| indirect register calls | 23,967 | 27,888 |
+| indirect targets resolved to a constant | 0 | 0 |
+| unreachable roots corroborated by any of the above | **0 of 39,633** | **0 of 47,444** |
+
+Not one pool load in either binary resolves to an address: every one of 96,790 and
+140,657 renders as a byte displacement, which follows from the geometry being unset. The
+evidence exists in the snapshot -- a dispatch-table slot is a `uword` entry point
+(`dispatch_table.h:16-31`, filled by `GetEntryPointByCodeIndex` in
+`app_snapshot.cc:9390-9464`), and the object pool holds `Code` and `Function` references
+that `TracePool` treats as indirect call targets (`app_snapshot.cc:2723-2740`) -- but the
+model has no dispatch-table field at all and the adapter sets every pool entry's
+`target_va` to `None`.
+
+The zeros above are floors rather than proofs. The indirect-call scan resolves only
+`mov`/`movz`/`movk` chains within a block and invalidates on any other write, so a
+constant built across a block boundary would be missed.
 
 ### What the output is made of now
 
