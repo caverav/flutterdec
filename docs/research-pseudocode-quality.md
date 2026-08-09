@@ -1430,6 +1430,30 @@ The output corroborates itself. `if (reg0 == null) { nullCastErrorSharedWithoutF
 and `if (index >= smiUntag(reg2.f28.f20)) { rangeErrorSharedWithoutFpuRegs(index, ...); }`
 -- the recovered guard independently matches the stub the name claims.
 
+### What the coverage depends on
+
+The stub code has to be in the disassembled function set, which comes from the
+model's function table. That is not automatic:
+
+| model | functions | stubs in range | named |
+|---|---|---|---|
+| `dynamic_snapshot_string_model_v1` (LocalSend, Immich) | 5,800 / 8,329 | yes | 14 |
+| `blutter_bridge_model_v1` (LocalSend) | 39,343 | no | 0 |
+
+More functions and fewer names: the blutter table lists far more app functions but
+does not cover the runtime stub range, so `0xd51c4c` and its siblings are never
+disassembled and there is no prologue to read. The figures above are from the
+string model on both samples.
+
+This is the third model-gated subsystem in this document, after the selector
+annotations and `dispatch.<name>`. Unlike those two it fails loudly:
+`report.json.shared_stub_naming.status` reads `no_stub_prologues` with the version
+and pointer mode still populated, which distinguishes "the table was selected and
+matched nothing" from "the SDK is unknown". Naming shared stubs arguably should
+not depend on the app-function table at all, since they are runtime code reached
+by `bl`; closing that means disassembling call targets outside the model's list,
+which is a loader change rather than a naming one.
+
 ### The version hazard, and two guards
 
 **All eleven slots present in both vendored tables disagree on the name.** `0x118`
