@@ -718,7 +718,7 @@ fn residual_shifted_pool_syntax_reports_displacement_and_does_not_resolve() {
                 LlirInstr {
                     va: 0xf640,
                     op: IROp::Other,
-                    src: "mov x9, ((pool + 8 /* lsl #12 */)).f3640".to_string(),
+                    src: "mov x9, ((pool + 0x8000)).f3640".to_string(),
                     target: String::new(),
                 },
                 LlirInstr {
@@ -769,7 +769,7 @@ fn residual_shifted_pool_syntax_reports_displacement_and_does_not_resolve() {
         artifact.source
     );
     assert!(
-        !artifact.source.contains("pool + 8 /* lsl #12 */"),
+        !artifact.source.contains("pool + 0x8000"),
         "normalized output should not leak shifted-pool raw syntax:\n{}",
         artifact.source
     );

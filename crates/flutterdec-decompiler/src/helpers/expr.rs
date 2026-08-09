@@ -182,6 +182,21 @@ pub(super) fn simplify_bin_expr(lhs: String, op: &str, rhs: String) -> String {
                 return format!("({base} - {})", fmt_int(sum.wrapping_neg()));
             }
         }
+        // A shift of a literal by a literal is a literal. Folding it here lets a
+        // shifted-immediate address like `add rd, pool, #0x2c, lsl #12` become
+        // `(pool + 0x2c000)` through the `+` arm above, which is the same shape
+        // an unshifted pool address already takes. Without this the shifted form
+        // needs its own recogniser downstream.
+        "<<" => {
+            if let (Some(a), Some(b)) = (l_int, r_int) {
+                if let Some(v) = u32::try_from(b).ok().filter(|b| *b < 64).and_then(|b| {
+                    // Shifting out of range is not a fold, it is a misparse.
+                    a.checked_shl(b)
+                }) {
+                    return fmt_int(v);
+                }
+            }
+        }
         _ => {}
     }
 
@@ -200,13 +215,18 @@ fn parse_non_negative_i64_token(token: &str) -> Option<u64> {
     (parsed >= 0).then_some(parsed as u64)
 }
 
-/// Recognise `((pool + <page> /* lsl #<shift> */)).f<offset>` and return the
-/// PP-relative byte displacement it reads.
+/// Recognise `((pool + <displacement>)).f<offset>` and return the PP-relative
+/// byte displacement it reads.
 ///
-/// This is the residual path for page-based pool loads the disassembler's register
-/// tracker could not follow. It has no pool geometry, so it can only report the
+/// This is the residual path for pool loads the disassembler's register tracker
+/// could not follow. It has no pool geometry, so it can only report the
 /// displacement, never an entry index.
-fn try_parse_shifted_pool_field(bytes: &[u8], start: usize) -> Option<(usize, u64)> {
+///
+/// A shifted-immediate page address used to reach here as
+/// `((pool + <page> /* lsl #<shift> */)).f<offset>`, needing the shift parsed out
+/// of a comment. `simplify_bin_expr` folds a literal shift now, so the page
+/// arrives already added in and there is one shape rather than three.
+fn try_parse_pool_page_field(bytes: &[u8], start: usize) -> Option<(usize, u64)> {
     let mut i = start;
     let mut opens = 0usize;
     while i < bytes.len() && bytes[i] == b'(' {
@@ -228,86 +248,20 @@ fn try_parse_shifted_pool_field(bytes: &[u8], start: usize) -> Option<(usize, u6
     i += 1;
     i = skip_ascii_ws(bytes, i);
 
-    let page_start = i;
-    while i < bytes.len()
-        && !bytes[i].is_ascii_whitespace()
-        && bytes[i] != b'/'
-        && bytes[i] != b')'
-    {
+    let disp_start = i;
+    while i < bytes.len() && !bytes[i].is_ascii_whitespace() && bytes[i] != b')' {
         i += 1;
     }
-    if i == page_start {
+    if i == disp_start {
         return None;
     }
-    let page_token = std::str::from_utf8(&bytes[page_start..i]).ok()?;
-    let page = parse_non_negative_i64_token(page_token)?;
-
+    let displacement =
+        parse_non_negative_i64_token(std::str::from_utf8(&bytes[disp_start..i]).ok()?)?;
     i = skip_ascii_ws(bytes, i);
-    if i + 2 > bytes.len() || &bytes[i..i + 2] != b"/*" {
-        return None;
-    }
-    i += 2;
-    i = skip_ascii_ws(bytes, i);
-    if i + 3 > bytes.len() || &bytes[i..i + 3] != b"lsl" {
-        return None;
-    }
-    i += 3;
-    i = skip_ascii_ws(bytes, i);
-    if i < bytes.len() && bytes[i] == b'#' {
-        i += 1;
-    }
-
-    let shift_start = i;
-    while i < bytes.len()
-        && !bytes[i].is_ascii_whitespace()
-        && bytes[i] != b'*'
-        && bytes[i] != b'/'
-    {
-        i += 1;
-    }
-    if i == shift_start {
-        return None;
-    }
-    let shift_token = std::str::from_utf8(&bytes[shift_start..i]).ok()?;
-    let shift = parse_non_negative_i64_token(shift_token)?;
-    if shift > 63 {
-        return None;
-    }
-
-    i = skip_ascii_ws(bytes, i);
-    if i + 2 > bytes.len() || &bytes[i..i + 2] != b"*/" {
-        return None;
-    }
-    i += 2;
-    i = skip_ascii_ws(bytes, i);
-
-    // Close the shifted page term.
-    if i >= bytes.len() || bytes[i] != b')' {
-        return None;
-    }
-    i += 1;
-    i = skip_ascii_ws(bytes, i);
-
-    // A second displacement can sit between the page and the field, as in
-    // `((pool + 0x2c /* lsl #12 */) + 0xdc8)).f0`, when one instruction builds
-    // the page address and the next reads through it with its own offset. Both
-    // displacements are known, so the entry is still exact.
-    let mut inner = 0u64;
-    if i < bytes.len() && bytes[i] == b'+' {
-        i += 1;
-        i = skip_ascii_ws(bytes, i);
-        let disp_start = i;
-        while i < bytes.len() && !bytes[i].is_ascii_whitespace() && bytes[i] != b')' {
-            i += 1;
-        }
-        let disp_token = std::str::from_utf8(&bytes[disp_start..i]).ok()?;
-        inner = parse_non_negative_i64_token(disp_token)?;
-        i = skip_ascii_ws(bytes, i);
-    }
 
     // Close every parenthesis this match opened, so replacing the span cannot
     // leave an unbalanced one behind.
-    for _ in 1..opens {
+    for _ in 0..opens {
         if i >= bytes.len() || bytes[i] != b')' {
             return None;
         }
@@ -325,10 +279,12 @@ fn try_parse_shifted_pool_field(bytes: &[u8], start: usize) -> Option<(usize, u6
     if i == off_start {
         return None;
     }
-    let offset = std::str::from_utf8(&bytes[off_start..i]).ok()?.parse::<u64>().ok()?;
+    let offset = std::str::from_utf8(&bytes[off_start..i])
+        .ok()?
+        .parse::<u64>()
+        .ok()?;
 
-    let page_bytes = page.checked_shl(shift as u32)?;
-    let total = page_bytes.checked_add(inner)?.checked_add(offset)?;
+    let total = displacement.checked_add(offset)?;
     if !total.is_multiple_of(8) {
         return None;
     }
@@ -341,7 +297,7 @@ pub(super) fn normalize_pool_page_field_exprs(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
     let mut i = 0usize;
     while i < bytes.len() {
-        if let Some((end, displacement)) = try_parse_shifted_pool_field(bytes, i) {
+        if let Some((end, displacement)) = try_parse_pool_page_field(bytes, i) {
             out.push_str(&format!("poolOff[{displacement}]"));
             i = end;
             continue;

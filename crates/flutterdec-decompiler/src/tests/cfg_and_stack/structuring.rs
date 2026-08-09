@@ -1401,3 +1401,51 @@ fn a_conditional_value_composes_without_rebinding() {
         "arithmetic must not bind into the false arm:\n{out}"
     );
 }
+/// A shifted register operand in plain arithmetic changes the address or value,
+/// exactly as it does in a comparison. Rendered as a trailing comment it asserted
+/// the unmodified operand: `((sp + (x - 4) /* sxtw #2 */)).f24` claims an address
+/// four times closer than the truth. 7,860 and 10,887 sites carried such a
+/// comment.
+#[test]
+fn a_shifted_arithmetic_operand_is_applied_not_commented() {
+    let compute = |instruction: &str| {
+        let ir = FunctionIr {
+            function_id: 972,
+            name: "shiftedArith".to_string(),
+            entry_va: 0x1000,
+            blocks: vec![blk(
+                0,
+                0x1000,
+                vec![
+                    stmt(0x1000, instruction),
+                    stmt(0x1004, "stur x9, [x4, #7]"),
+                    ret(0x1008),
+                ],
+                vec![],
+            )],
+        };
+        emit_pseudocode(&ir, &HashMap::new()).source
+    };
+    let scaled = compute("add x9, x1, w2, sxtw #2");
+    assert!(
+        scaled.contains("(signExtend(param1, 32) << 2)"),
+        "an extend with a scale must keep both:\n{scaled}"
+    );
+    let logical = compute("orr x9, x1, x2, lsr #32");
+    assert!(
+        logical.contains("(param1 >>> 0x20)") || logical.contains("(param1 >>> 32)"),
+        "a logical shift belongs in the expression:\n{logical}"
+    );
+    assert!(
+        !logical.contains("/* lsr"),
+        "the modifier must not survive as a comment:\n{logical}"
+    );
+    // A literal shifted by a literal folds, which is what keeps a shifted pool
+    // page in the same shape as an unshifted one and lets the pool recogniser
+    // stay a single form.
+    let folded = compute("add x9, x27, #0x2c, lsl #12");
+    assert!(
+        folded.contains("pool + 0x2c000") || folded.contains("poolOff["),
+        "a shifted immediate should fold into the address:\n{folded}"
+    );
+}

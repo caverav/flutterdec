@@ -187,12 +187,16 @@ impl<'a> FuncEmitter<'a> {
         };
         if let Some(extended) = extended {
             return match amount.as_deref() {
-                Some(shift) if shift != "0" => format!("({extended} << {shift})"),
+                Some(shift) if shift != "0" => {
+                    simplify_bin_expr(extended, "<<", shift.to_string())
+                }
                 _ => extended,
             };
         }
         match (kind, amount) {
-            ("lsl", Some(n)) => format!("({base} << {n})"),
+            // Through the simplifier, so a shifted literal folds instead of
+            // needing a recogniser of its own downstream.
+            ("lsl", Some(n)) => simplify_bin_expr(base, "<<", n),
             ("lsr", Some(n)) => format!("({base} >>> {n})"),
             ("asr", Some(n)) => format!("({base} >> {n})"),
             ("ror", Some(n)) => format!("rotateRight({base}, {n})"),
@@ -455,10 +459,12 @@ impl<'a> FuncEmitter<'a> {
             "add" | "sub" | "mul" | "and" | "orr" | "eor" if ops.len() >= 3 => {
                 if let Some(dst) = canonical_reg(&ops[0]) {
                     let lhs = self.operand_expr(&ops[1]);
-                    let mut rhs = self.operand_expr(&ops[2]);
-                    if ops.len() > 3 {
-                        rhs = format!("{} /* {} */", rhs, ops[3..].join(", "));
-                    }
+                    // The modifier is applied, not appended as a comment. Left as
+                    // a comment the expression asserted `a | b` where the truth is
+                    // `a | (b >>> 32)`: 5,938 and 8,055 sites. A literal shifted
+                    // by a literal folds, so a shifted-immediate pool address
+                    // takes the same shape as an unshifted one.
+                    let rhs = self.shifted_operand_expr(&ops, 2);
                     let op = match mnemonic.as_str() {
                         "add" => "+",
                         "sub" => "-",
