@@ -1659,6 +1659,31 @@ region's only loop content is a back edge to the enclosing loop, which
 `structured.rs:143-146` already renders as `continue`. So `is_repeatable_region`
 rejecting on `regions.is_loop_header` is too coarse for at least that share.
 
+### The remaining register noise is dataflow, not missing instruction models
+
+Taxonomy of every `regN` occurrence by the writer set of that register within its
+function, controls 5,800 and 8,329 files and occurrence totals matching
+`quality.json` exactly:
+
+| class | LocalSend | Immich |
+|---|---|---|
+| has at least one modelled writer | 61,566 (**99.2%**) | 77,266 (**99.5%**) |
+| only unmodelled writers | 284 (0.5%) | 191 (0.2%) |
+| only a call writes it | 195 (0.3%) | 160 (0.2%) |
+| live-in, never written | 21 (0.0%) | 24 (0.0%) |
+
+The unmodelled class is overstated: the destination parser reads `tbz w0, #0, #...`
+as writing `w0`, and `tbz` is a test-and-branch that writes nothing, as are the
+`stur`/`stp`/`str` entries. So under half a percent, and the real figure is smaller.
+
+So the value behind a `regN` is almost always computable from instructions the
+lifter already models, and the loss happens at joins, loop headers and ordinary
+call clobbers. That reframes the earlier 11.33% and 11.84%: those measured the
+subset where every incoming edge already carries an *identical* expression, which
+bounds what a naive merge recovers, not what dataflow could. The ceiling is near
+total; the naive-merge recovery is small. Adding instruction models is not the
+lever.
+
 ### A `bl` into the middle of a function means the extents are wrong
 
 6.38% and 6.17% of direct call sites target an address that is not any
@@ -1699,6 +1724,26 @@ had absorbed its neighbours.
 
 **Consequence for naming: snapping an interior call target to its containing
 function would name it after the wrong function.** Deliberately not done.
+
+A decisive discriminator confirms it. A real function entry is preceded by a
+terminator; a branch target inside live code is preceded by an instruction that
+falls through to it. Measured over the interior targets:
+
+| predecessor of the target | LocalSend | Immich |
+|---|---|---|
+| a terminator (`ret`, `b`, `brk`, `br`) | 5,446 (84.7%) | 8,627 (85.5%) |
+| falls through into it | **1 (0.0%)** | **3 (0.0%)** |
+| nothing disassembled at target-4 | 981 (15.3%) | 1,464 (14.5%) |
+
+One and three fall-throughs out of 6,428 and 10,094. These are function entries.
+
+And the cost is larger than naming. Counting blocks unreachable from their own
+record's entry across all functions: **210,355 of 290,636** on LocalSend and
+**284,242 of 388,402** on Immich, 72% and 73%. Those are the swallowed neighbours'
+blocks. Both emitters walk from the entry, so that code is never emitted at all --
+which is why the output looks plausible while thousands of real functions are
+simply absent from it. The apparent function counts of 5,800 and 8,329 are records,
+not functions; the entry evidence puts the real figures near 12,200 and 18,400.
 
 **Consequence for coverage: each of those 6,428 and 10,094 addresses is exact
 evidence of a function entry the model missed**, because a `bl` sets the link
