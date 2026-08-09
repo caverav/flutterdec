@@ -171,11 +171,22 @@ pub(super) fn shared_stub_names(
         })
         .map(|f| f.entry_va)
         .collect();
+    // A trampoline is included too, inheriting the slot it hands off to. Its
+    // register effect *is* the wrapped stub's, since its whole body is the load
+    // and the branch, and its inputs are that stub's ABI rather than
+    // `DartCallingConvention`. Without an entry the 409 and 457 type-test
+    // trampoline sites were modelled as Dart calls: bound, argument list
+    // inferred, every volatile register dropped, all three wrong.
+    //
+    // `non_returning` deliberately stays keyed on `prologue_stub_slot`, which
+    // requires the register save. A trampoline may guard its tail call -- one of
+    // the two does, with `cmp w0, w22` -- so its own fall-through is real even
+    // when the stub it wraps raises.
     let effects = disasm
         .iter()
         .filter(|f| names.contains_key(&f.entry_va))
         .filter_map(|f| {
-            prologue_stub_slot(f, slots).map(|slot| {
+            prologue_stub_hit(f, slots).map(|(slot, _, _)| {
                 (
                     f.entry_va,
                     RuntimeStubEffect {
