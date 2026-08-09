@@ -1285,3 +1285,49 @@ problem. Naming a runtime entry point needs the (hash, mode) stub table. Naming 
 field or a class needs the snapshot's own tables. Both are data the binary
 contains and the decompiler does not yet read, which is why the answer to the
 dominant `obj.fN` noise is not a better heuristic.
+
+
+## R11. What the register gap actually costs, measured
+
+`regN` in the output is a register whose value the emitter did not have. The
+question was whether a smarter merge could recover them. Two independent
+measurements say mostly no.
+
+Symbolic CFG replay over the marker subset (663 LocalSend functions, 830 Immich),
+comparing all non-tainted incoming edge states at every join with a 16-state cap
+and downstream taint marking, so a conservative lower bound:
+
+| sample | agreeing | candidate dropped-binding sites | rate |
+|---|---|---|---|
+| LocalSend | 5,567 | 49,119 | 11.33% |
+| Immich | 6,445 | 54,446 | 11.84% |
+
+Including `x29` lifts it to 23.65%/24.51%, but `x29` is the frame pointer and is
+never emitted as `regN`, so that number is an artifact. Per-register the
+agreement concentrates in `x0`-`x3` (LocalSend `x0` 1,304 of 8,514).
+
+Raw `regN` references: 94,923 and 113,046, density 0.290 per line. Of those,
+3,136 (3.30%) and 5,113 (4.52%) are single-use within their function.
+
+So an exact join merge recovers roughly one binding in nine. The remainder needs
+real dataflow, not a better merge heuristic. Recorded so the next attempt starts
+from the measurement instead of the intuition.
+
+## R12. Width, and where the mask belongs
+
+`canonical_reg` folds `w1` and `x1` onto one key because they are one machine
+register. The width is still semantic: a `w` form computes in 32 bits and
+zero-extends. Where that matters is not uniform:
+
+- `and`/`orr`/`eor` of two 32-bit values: result already fits, nothing to say.
+- `add`/`sub`/`mul`: halves agree except on overflow.
+- `neg`/`mvn`: **always** differ. `~x` sets every high bit where the machine
+  clears all of them. Fixed, but only 6 sites on LocalSend and 0 on Immich.
+- `lsr`/`asr`/`sdiv`/`udiv`: the *operand* width decides the answer.
+  `lsr w0, w1, #4` is `(x1 & 0xffffffff) >>> 4`, which differs from
+  `(x1 >>> 4) & 0xffffffff` in bits 28-31 whenever the high half is live --
+  exactly the case the `w`/`x` fold creates. `asr w` sign-extends from bit 31,
+  so it needs `signExtend(x1, 32) >> n`, not a mask at all.
+
+Deliberately not landed: a trailing mask on the shift and division forms. It
+would read as fixed while still being wrong. The asymmetry is pinned by test.
