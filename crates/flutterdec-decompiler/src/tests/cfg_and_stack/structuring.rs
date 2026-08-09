@@ -1015,11 +1015,12 @@ fn logical_and_arithmetic_right_shifts_render_differently() {
 /// A binding written part-way along an arm, rather than in the block that feeds
 /// the join directly, still must not survive the join.
 ///
-/// `registers_written_between` roots its forward walk at the join's immediate
-/// predecessors, so a write in an earlier block of the same arm is an ancestor
-/// of a root rather than a successor, and was never visited. The arm here is two
-/// blocks long and writes the register in the first of them, which is the
-/// shortest shape that distinguishes the two.
+/// `registers_written_before` roots its walk at the join's immediate predecessors
+/// and follows predecessor edges backwards, so a write in an earlier block of the
+/// same arm is an ancestor of a root and has to be collected. The arm here is two
+/// blocks long and writes the register in the first of them, which is the shortest
+/// shape that separates a one-hop look at the immediate predecessors from a full
+/// backward walk.
 #[test]
 fn a_binding_written_early_in_an_arm_does_not_survive_the_join() {
     let ir = FunctionIr {

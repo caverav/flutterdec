@@ -724,7 +724,7 @@ Landed, `cargo test --workspace` green, `fmt` and `clippy` clean:
   irreducible functions.
 
 Emitted, on the sampled binary: 7,721 dispatch call statements over 544
-distinct selectors, zero negative offsets, receiver resolved on two thirds, arity
+distinct selectors, zero negative offsets, receiver resolved on two-thirds, arity
 reported as a lower bound on 70.0% and honestly unknown on the rest. Structuring
 holds emit-once on 72.8% of functions, takes inflation from 3.03x to 2.28x and
 emitted lines down 23%, and removes 1,055 references to values defined in a branch
@@ -949,9 +949,13 @@ into one entry.
 
 `emit_call` bound x0 to the call's temporary and left every other volatile
 register holding its pre-call value. `kDartVolatileCpuRegs`
-(`runtime/vm/constants_arm64.h`) is R0 through R14; the assembler uses TMP and
-TMP2 freely, R18 is volatile off Fuchsia, and the call writes LR. Only R19
-through R28 and SPREG survive.
+(`runtime/vm/constants_arm64.h:556-560`) is R0 through R14; the assembler uses TMP
+and TMP2 freely, and the call writes LR. R18 is the platform's scratch on some
+targets and callee-saved on others, but that does not matter here: the VM lists it
+in `kReservedCpuRegisters` unconditionally, with the comment that it is marked
+reserved on every OS "to avoid adding another dimension for OS into the extracted
+runtime offsets" (`constants_arm64.h:539-547`), so no Dart value ever occupies it.
+Of the registers that can hold one, only R19 through R28 and SPREG survive a call.
 
 The proof is not statistical. Instrumenting the base expression of every field
 read found 2,497 reads whose base rendered as `null` on one sample, against
@@ -1013,10 +1017,21 @@ unnamed. `CODE_REG` is explicitly "not passed in AOT".
 
 ### Named idioms
 
-`SmiUntag` is `sbfm(dst, src, kSmiTagSize, kSmiBits + kSmiTagSize)`, so it is the
-only producer of a signed extract at bit 1 of width `kSmiBits + 1`: 31 compressed,
-63 not. Both are accepted, so the rule encodes no build configuration. 25,899
-sites read `smiUntag(x)` rather than `signedBitField(x, 1, 0x1f)`. The insert form
+`SmiUntag` is `sbfm(dst, src, kSmiTagSize, kSmiBits + kSmiTagSize)`. The
+disassembler prints that as the alias `sbfx rd, rs, #lsb, #width` with
+`lsb = immr = kSmiTagSize` and `width = imms - immr + 1 = kSmiBits + 1`, so the
+condition the lifter matches is exactly `lsb == 1 && width in {31, 63}`
+(`expression_lift.rs:552-556`) -- 31 with compressed pointers, 63 without. Both are
+accepted, so the rule encodes no build configuration, and any other operand pair
+keeps the generic `signedBitField` name.
+
+The rule is safe even where the compiler's intent was not an untag, because at
+those operands the two are the same operation: a signed extract of the bits above
+the tag bit, across the full remaining width, *is* an untag of a Smi-shaped value.
+What would be unsafe is widening the match, since `sbfiz rd, rs, #l, #w`
+sign-extends from bit `l + w` rather than from `w`, so an arithmetic rendering that
+got that wrong would read as resolved. 25,899 sites read `smiUntag(x)` rather than
+`signedBitField(x, 1, 0x1f)`. The insert form
 at the same position is the tag, emitted by `BoxInteger32` and `BoxInt64`, which
 is why all 8,262 sites are followed by the round-trip compare.
 
