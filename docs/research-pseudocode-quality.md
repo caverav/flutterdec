@@ -1587,10 +1587,19 @@ at the commonest call site in the binary:
 
 | | LocalSend | Immich |
 |---|---|---|
-| `raw_register_name_refs` | 94,923 -> **62,066** (-34.6%) | 113,046 -> **77,641** (-31.3%) |
+| `raw_register_name_refs` | 94,923 -> **65,835** (-30.6%) | 113,046 -> **84,822** (-25.0%) |
 
 This is the largest single reduction in register noise this project has measured,
 and it came from an ABI fact rather than from any dataflow work.
+
+The figure moved *up* later in the cycle, from 62,066 and 77,641, and the direction
+is correct. `written_registers` reported no destination at all for a store and only
+the loaded register for a load, so it missed the base register that a pre- or
+post-indexed access writes back. 2,346 and 1,394 such instructions per sample have
+a base outside the pinned set, and each one left that register's binding alive
+across a join that had in fact redefined it. Reporting the base makes the merge drop
+those bindings, which turns 5,045 and 9,141 stale values into admitted unknowns.
+A `regN` that replaces a wrong value is a gain, not a regression.
 
 ### Most "irreducible control flow" was the fake edge
 

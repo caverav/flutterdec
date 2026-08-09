@@ -198,14 +198,23 @@ impl<'a> FuncEmitter<'a> {
         // once. It declines on irreducible control flow, and verifies the
         // emit-once invariant rather than assuming it, so a failure rolls back
         // and the DFS emitter runs instead.
-        if !self.try_emit_structured() {
+        let structured = self.try_emit_structured();
+        if !structured {
             if let Some(entry) = self.ir.blocks.first() {
                 self.emit_block(entry.id, 1, 0);
             }
         }
 
+        // Last resort for a body that came out empty, which means the DFS emitter
+        // above declined every path. Gated on the structured attempt having
+        // failed: a successful one has already emitted every reachable block, and
+        // running this anyway would let both emitters contribute to one body,
+        // because `emitted` tracks the DFS emitter alone and is empty after a
+        // structured success. Not currently reachable, since no function on either
+        // sample has an entry block with no instructions, but the guard states the
+        // intent rather than relying on that.
         let body_lines = self.lines.len().saturating_sub(body_start);
-        if body_lines == 0 {
+        if !structured && body_lines == 0 {
             for b in &self.ir.blocks {
                 if self.emitted.contains(&b.id) {
                     continue;

@@ -272,9 +272,19 @@ fn shift_amount(operand: &str) -> Option<u32> {
     amount.trim().parse().ok()
 }
 
-/// Registers an instruction overwrites. Anything not recognised as a pure read
-/// is treated as writing its first operands, so stale state cannot survive.
+/// Registers an instruction overwrites.
+///
+/// Anything not recognised as a pure read is treated as writing its first
+/// operands. That is deliberately over-approximate: naming a register that was
+/// not written drops a binding needlessly, which costs a `regN`, while missing one
+/// lets a stale value read as a resolved fact.
 pub(super) fn written_registers(mnemonic: &str, ops: &[String]) -> Vec<String> {
+    // A pre- or post-indexed access writes the base register back, so the base is
+    // a destination even for a store, which otherwise writes nothing. 2,346 and
+    // 1,394 such instructions on the two samples have a base that is not one of
+    // the pinned registers, so without this their binding survived a join that had
+    // redefined it.
+    let mut written: Vec<String> = writeback_base(ops).into_iter().collect();
     let reads_only = matches!(
         mnemonic,
         "cmp" | "cmn" | "tst" | "ccmp" | "fcmp" | "ret" | "b" | "br" | "str" | "stur" | "strb"
@@ -282,14 +292,39 @@ pub(super) fn written_registers(mnemonic: &str, ops: &[String]) -> Vec<String> {
     ) || mnemonic.starts_with("b.")
         || matches!(mnemonic, "cbz" | "cbnz" | "tbz" | "tbnz");
     if reads_only {
-        return Vec::new();
+        return written;
     }
     // Load-pair writes both destinations; everything else writes the first.
     let count = if mnemonic == "ldp" { 2 } else { 1 };
-    ops.iter()
-        .take(count)
-        .filter_map(|o| canonical_reg(o))
-        .collect()
+    written.extend(ops.iter().take(count).filter_map(|o| canonical_reg(o)));
+    written
+}
+
+/// The base register a pre- or post-indexed memory operand writes back.
+///
+/// Pre-indexed keeps the offset inside the brackets and marks the writeback with
+/// `!`, as in `str x1, [x0, #8]!`. Post-indexed closes the brackets first and puts
+/// the offset in the next operand, as in `ldr x1, [x0], #8`, so it is recognised
+/// by a bracketed operand followed by an immediate one.
+fn writeback_base(ops: &[String]) -> Option<String> {
+    for (i, op) in ops.iter().enumerate() {
+        let token = op.trim();
+        let inner = match token.strip_suffix("]!") {
+            Some(pre) => pre.strip_prefix('[')?,
+            None => {
+                let closed = token.strip_prefix('[').and_then(|t| t.strip_suffix(']'));
+                let followed_by_offset = ops
+                    .get(i + 1)
+                    .is_some_and(|next| next.trim_start().starts_with('#'));
+                match (closed, followed_by_offset) {
+                    (Some(base), true) => base,
+                    _ => continue,
+                }
+            }
+        };
+        return canonical_reg(inner.split(',').next()?.trim());
+    }
+    None
 }
 
 /// Index register of a scaled load off `DISPATCH_TABLE_REG`, e.g.
