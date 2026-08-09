@@ -791,6 +791,31 @@ mod trampoline_tests {
             "a `blr` caller is not a trampoline: {:?}",
             named.names
         );
+
+        // The trampoline inherits the wrapped slot's call effects. Its body is
+        // the load and the branch, so its register effect *is* that stub's, and
+        // its inputs are that stub's ABI rather than `DartCallingConvention`.
+        // Without an entry here it is modelled as a Dart call: result bound,
+        // arguments inferred, every volatile register dropped.
+        let thunk = named
+            .effects
+            .get(&0x4000)
+            .copied()
+            .expect("a trampoline needs the wrapped stub's effects");
+        let wrapped = named
+            .effects
+            .get(&0x2200)
+            .copied()
+            .expect("control failed: the wrapped stub has no effects");
+        assert_eq!(
+            (thunk.writes_result, thunk.preserves_registers),
+            (wrapped.writes_result, wrapped.preserves_registers),
+            "a trampoline must inherit the slot it hands off to"
+        );
+        assert!(
+            !named.effects.contains_key(&0x6000),
+            "a `blr` caller is not a runtime stub and keeps the Dart-call model"
+        );
     }
 }
 
