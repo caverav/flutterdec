@@ -1577,6 +1577,35 @@ at the commonest call site in the binary:
 This is the largest single reduction in register noise this project has measured,
 and it came from an ABI fact rather than from any dataflow work.
 
+### Most "irreducible control flow" was the fake edge
+
+The biggest surprise. `Regions::build` gives up on three conditions only: an empty
+CFG (`regions.rs:33-34`), a block id outside the block count (`:38-39`), and a
+retreating edge whose target does not dominate its source (`:75-76`, leaf at
+`:184`). Replaying that predicate exactly over both samples, before and after the
+fake edges were cut:
+
+| | LocalSend | Immich |
+|---|---|---|
+| irreducible | 250 -> **7** | 232 -> **7** |
+| region recovery succeeds | 95.69% -> **99.88%** | 97.21% -> **99.92%** |
+
+**97% of the irreducible control flow was an artifact of modelling a throw as a
+call that returns.** A raising stub call with a fabricated fall-through creates a
+retreating edge into a shared slow path that nothing dominates. The graph was
+never irreducible; the model of it was wrong. Every earlier count in this document
+that treated 250 irreducible functions as a structural floor was measuring that
+defect.
+
+Files carrying a DFS-only marker (`omitted complex paths`, `depth-limited block`,
+`loop back-edges`) fell from 12.47% to 8.53% and 11.11% to 7.40%. That is a lower
+bound on the fallback rate, not an exact one: `helper_flow/inlining.rs:151-180` can
+inline a helper and erase the marker, so a fallback can leave no trace in the final
+artifact. An exact figure needs a replay of `try_emit_structured`, whose remaining
+decline gates are `depth > 64` (`structured.rs:135`), a repeated region rejected by
+`is_repeatable_region` (`:157-160`, `:457-462`), a failed `render_loop`
+(`:170-175`), and a coverage mismatch (`:55-67`).
+
 ### Corrections to earlier figures in this document
 
 - R13 reported 21,920 and 26,663 named stub call sites. That grep counted name
