@@ -1759,6 +1759,35 @@ call -- a dispatch-table slot, a closure, or a pool-held target -- which no `bl`
 names, so direct-call evidence cannot discover it. That is a separate recovery
 problem from extents, and it is the larger half.
 
+The residual has a cause, and it is bigger than the split. Applying the same
+terminator predicate to every *unreachable component root*, independent of whether
+anything calls it:
+
+| unreachable component root | LocalSend | Immich |
+|---|---|---|
+| roots total | 43,822 | 53,799 |
+| follows a terminator | 40,222 (91.8%) | 48,501 (90.2%) |
+| has a frame-setup prologue | 16,372 (37.4%) | 20,541 (38.2%) |
+| is a direct `bl` target | 6,185 (14.1%) | 9,713 (18.1%) |
+| **entry-shaped but uncalled** | **35,018 (79.9%)** | **40,252 (74.8%)** |
+
+An unreachable block that follows a terminator is reached by nothing and preceded
+by a return or an unconditional branch, so it is a function entry or alignment
+padding, not a branch target. Most of them have no direct caller because in Dart
+AOT most calls go through the dispatch table or an IC, leaving no `bl` to split on.
+
+So the split predicate should be "looks like an entry", with a direct call target as
+corroboration rather than the trigger. The conservative subset -- terminator-preceded
+*and* carrying a frame prologue -- is 16,372 and 20,541. The permissive one is
+40,222 and 48,501.
+
+Either way the scale of the gap is now clear. The adapter declares 5,800 and 8,329
+functions; the instruction stream carries entry evidence for roughly 46,000 and
+54,000. The decompiler is emitting something on the order of an eighth of the
+functions in the binary, and the rest is not missing from the disassembly at all --
+it is decoded, sitting inside inflated records, unreachable from the declared
+entry, and silently never walked.
+
 The apparent function counts of 5,800 and 8,329 are records, not functions. Direct
 call evidence alone raises the floor to about 12,200 and 18,400; the residual says
 the true figure is higher still and not discoverable this way.
