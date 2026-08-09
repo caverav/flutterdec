@@ -1331,3 +1331,73 @@ zero-extends. Where that matters is not uniform:
 
 Deliberately not landed: a trailing mask on the shift and division forms. It
 would read as fixed while still being wrong. The asymmetry is pinned by test.
+
+
+## R13. Stub identity is derivable exactly, and this is the largest named win left
+
+Null and bounds checks are the biggest unnamed call group. They were blocked on
+"deriving stub identity rather than inferring it from call frequency". They are
+derivable, and the derivation is exact.
+
+An ARM64 generic shared stub loads its own `Code` object from a fixed `Thread`
+slot before the runtime call: `GenerateSharedStubGeneric` does
+`ldr CODE_REG, [THR, #self_offset]` after the canonical pushes
+(`stub_code_compiler_arm64.cc:287-337`), and each error generator passes its own
+self offset plus runtime entry (`stub_code_compiler.cc:1666-1727`, RangeError at
+`stub_code_compiler_arm64.cc:617-668`). So the callee's *own prologue* names it.
+
+Measured on the IR, mapping each direct call target to the THR self-offset in its
+prologue:
+
+| sample | null-check calls | distinct targets | bounds calls | distinct targets | mapped |
+|---|---|---|---|---|---|
+| LocalSend | 7,378 | 5 | 5,729 | 2 | 100% |
+| Immich | 10,777 | 4 | 3,477 | 2 | 100% |
+
+Across all generic shared stubs: 11 distinct target addresses per sample, 29,922
+and 39,811 calls, every self-offset mapping to an exact SDK name.
+
+Why the names are not in the binary: `VM_STUB_CODE_LIST` and `StubNames[]` are
+compile-time (`stub_code.h:57-68,111-119`); `NameOfStub` is a runtime
+entrypoint->name search (`stub_code.cc:350-378`). The VM snapshot serializes stub
+roots in list order (`app_snapshot.cc:6997-7015`, restored at `7110-7114`) but
+`WriteRootRef` emits a name only when a profile writer is attached
+(`app_snapshot.cc:439-446`), and `ImageWriter::WriteText` writes bare text with
+no per-stub name table (`image_snapshot.cc:743-1048`). So release AOT has no
+literal stub names, and ordered root refs plus the compile-time list are the two
+exact routes.
+
+The gate is the same as for thread offsets: the self-offset is version and mode
+dependent, so it needs the `(hash, mode)` table, which is now readable from the
+snapshot header and vendored for 3.5 and 3.12 under `docs/research-data/`. Not
+frequency, not address hardcoding.
+
+## R14. Two naming subsystems are dormant on real input
+
+Measured zero output on both binaries:
+
+- `[selector]`, `// stdlib:`, `// framework:`, `// package:` intent annotations.
+- `dispatch.<recovered-name>(` from `helpers/call_intent/intent.rs:145`.
+
+Both need adapter selector metadata or symbol names the current adapter does not
+manifest. The `dispatch.selN` table path, which does fire, is the one fixed in
+this cycle. Worth knowing before anyone extends these: the code is implemented and
+tested, and the input is missing, so the tests pass while the output is empty.
+
+Do **not** copy the `selN` fix to `intent.rs:145`. The two cases are asymmetric.
+`sel25768` is self-evidently a placeholder, so a bare `sel25768(...)` cannot be
+misread. A recovered human-readable selector is the opposite: bare
+`minWidth(...)` reads as a resolved top-level function call, and Dart has
+top-level functions, so that is a *stronger* claim than `dispatch.minWidth(...)`,
+not a weaker one. If that path is ever touched, keep a prefix that cannot be
+mistaken for a resolved call and move the admission into the comment
+(`// selector: minWidth, receiver: unrecovered`).
+
+Blast radius if anyone tries: about ten assertions in
+`tests/cfg_and_stack/call_and_loops.rs`, plus `docs/how-it-works.md:119` and
+`:626`, where `call_fallback` diagnostics classify on the `dispatch.invoke(...)`
+string.
+
+Consequence for the showcase: `docs/assets/readme-src/` shows `dispatch.minWidth`,
+which the pipeline cannot currently produce on a stripped APK. The `/* lsl #2 */`
+in the same asset was impossible for a different reason and is corrected.
