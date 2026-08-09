@@ -191,9 +191,9 @@ fn stub_slots(
 fn prologue_stub_name(
     f: &FunctionDisassembly,
     slots: &'static [(u64, &'static str)],
-) -> Option<&'static str> {
+) -> Option<String> {
     let mut saw_push = false;
-    for ins in f.instructions.iter().take(PROLOGUE_WINDOW) {
+    for (index, ins) in f.instructions.iter().take(PROLOGUE_WINDOW).enumerate() {
         if is_dart_stack_push(ins) {
             saw_push = true;
             continue;
@@ -204,18 +204,47 @@ fn prologue_stub_name(
         let Some(offset) = thread_slot_offset(&ins.op_str) else {
             continue;
         };
-        if !slots.iter().any(|(slot, _)| *slot == offset) {
+        let Some((_, name)) = slots.iter().find(|(slot, _)| *slot == offset) else {
             continue;
+        };
+        if saw_push {
+            return Some((*name).to_string());
         }
-        if !saw_push {
-            return None;
-        }
-        return slots
-            .iter()
-            .find(|(slot, _)| *slot == offset)
-            .map(|(_, name)| *name);
+        // No register save, so this is not the stub. It is still exactly
+        // derivable when it hands straight off to the slot it read: the two per
+        // sample are trampolines, and their own call sites -- 520 on LocalSend
+        // and 696 on Immich -- would otherwise stay anonymous. `Thunk` says it
+        // wraps the stub rather than being it, which matters because one of them
+        // guards the tail call with `cmp w0, w22`.
+        return tail_calls_immediately(f, index).then(|| format!("{name}Thunk"));
     }
     None
+}
+
+/// Whether the function is a trampoline: the whole body after the slot load is
+/// pulling the entry point out of the loaded `Code` and branching to it.
+///
+/// The measured sequence is `ldr x24, [x26, #slot]; ldur x16, [x24, #7];
+/// br x16`, so both following instructions are required. `br` never returns,
+/// which is what makes the thunk equivalent to the stub. An ordinary function
+/// that calls a shared stub uses `blr` and carries on afterwards, so it is not a
+/// trampoline and takes no name -- naming it would be the same false claim as
+/// naming the thunk after the stub itself.
+fn tail_calls_immediately(f: &FunctionDisassembly, load_index: usize) -> bool {
+    let mut after = f.instructions.iter().skip(load_index + 1);
+    let Some(entry_load) = after.next() else {
+        return false;
+    };
+    let loads_entry_point = matches!(
+        entry_load.mnemonic.to_ascii_lowercase().as_str(),
+        "ldr" | "ldur"
+    ) && entry_load.op_str.contains(", #7]");
+    if !loads_entry_point {
+        return false;
+    }
+    after
+        .next()
+        .is_some_and(|ins| ins.mnemonic.eq_ignore_ascii_case("br"))
 }
 
 /// A push onto the Dart stack: `str`/`stp` through the stack pointer with
@@ -394,54 +423,6 @@ mod tests {
     }
 }
 #[cfg(test)]
-mod thunk_tests {
-    use super::tests::{ins, stub};
-    use super::*;
-
-    /// A thunk that tail-calls a stub reads the same `Thread` slot the stub reads
-    /// from itself. Naming the thunk after the stub names a function after the
-    /// one it calls, and the guarded variant would hide its `cmp w0, w22` null
-    /// check behind the stub's name. The shape that distinguishes them is the
-    /// register save: the stub pushes first, the thunk pushes nothing.
-    #[test]
-    fn a_thunk_that_tail_calls_a_stub_is_not_that_stub() {
-        let thunk = FunctionDisassembly {
-            function_id: 0x4000,
-            function_name: "sub_4000".to_string(),
-            owner_class: String::new(),
-            entry_va: 0x4000,
-            size: 16,
-            instructions: vec![
-                ins(0x4000, "cmp", "w0, w22"),
-                ins(0x4004, "b.eq", "#0x4014"),
-                ins(0x4008, "ldr", "x24, [x26, #0x118]"),
-                ins(0x400c, "ldur", "x16, [x24, #7]"),
-                ins(0x4010, "br", "x16"),
-            ],
-        };
-        // Enough real stubs alongside it to confirm the 3.12 table, so a refusal
-        // here is about the thunk and not about the version guard.
-        let disasm = vec![
-            thunk,
-            stub(0x2100, 0x148),
-            stub(0x2200, 0x190),
-            stub(0x2300, 0x1d8),
-        ];
-        let named = shared_stub_names(&disasm, Some("3.12.1"), Some(true));
-        assert_eq!(named.status, "named", "control failed: nothing was named");
-        assert!(
-            named.names.contains_key(&0x2200),
-            "control failed: a real stub went unnamed: {:?}",
-            named.names
-        );
-        assert!(
-            !named.names.contains_key(&0x4000),
-            "a thunk must not take the name of the stub it calls: {:?}",
-            named.names
-        );
-    }
-}
-#[cfg(test)]
 mod window_tests {
     use super::tests::{ins, stub};
     use super::*;
@@ -494,6 +475,77 @@ mod window_tests {
             named.names.get(&0x5000).map(String::as_str),
             Some("allocateMintWithFpuRegs"),
             "the deepest measured self-load must be reachable: {:?}",
+            named.names
+        );
+    }
+}
+#[cfg(test)]
+mod trampoline_tests {
+    use super::tests::{ins, stub};
+    use super::*;
+
+    fn body(entry_va: u64, instrs: Vec<flutterdec_disasm_arm64::AsmInstruction>) -> FunctionDisassembly {
+        FunctionDisassembly {
+            function_id: entry_va,
+            function_name: format!("sub_{entry_va:x}"),
+            owner_class: String::new(),
+            entry_va,
+            size: (instrs.len() as u64) * 4,
+            instructions: instrs,
+        }
+    }
+
+    /// A trampoline reads the stub's `Code` from the slot, pulls the entry point
+    /// out of it and branches. It never returns, so it is equivalent to the stub
+    /// and its own call sites -- 520 on LocalSend, 696 on Immich -- deserve a
+    /// name. `Thunk` keeps it distinct: one of the real ones guards the tail call
+    /// with `cmp w0, w22`, so calling it the stub outright would hide a check.
+    ///
+    /// An ordinary caller uses `blr` and continues afterwards. Naming that after
+    /// the stub it calls is the same false claim, so it stays anonymous.
+    #[test]
+    fn a_trampoline_is_named_for_what_it_wraps_but_a_caller_is_not() {
+        let trampoline = body(
+            0x4000,
+            vec![
+                ins(0x4000, "cmp", "w0, w22"),
+                ins(0x4004, "b.eq", "#0x4014"),
+                ins(0x4008, "ldr", "x24, [x26, #0x118]"),
+                ins(0x400c, "ldur", "x16, [x24, #7]"),
+                ins(0x4010, "br", "x16"),
+            ],
+        );
+        let caller = body(
+            0x6000,
+            vec![
+                ins(0x6000, "ldr", "x24, [x26, #0x118]"),
+                ins(0x6004, "ldur", "x16, [x24, #7]"),
+                ins(0x6008, "blr", "x16"),
+                ins(0x600c, "ret", ""),
+            ],
+        );
+        let disasm = vec![
+            trampoline,
+            caller,
+            stub(0x2100, 0x148),
+            stub(0x2200, 0x190),
+            stub(0x2300, 0x1d8),
+        ];
+        let named = shared_stub_names(&disasm, Some("3.12.1"), Some(true));
+        assert!(
+            named.names.contains_key(&0x2200),
+            "control failed: a real stub went unnamed: {:?}",
+            named.names
+        );
+        assert_eq!(
+            named.names.get(&0x4000).map(String::as_str),
+            Some("nullCastErrorSharedWithoutFpuRegsThunk"),
+            "a trampoline takes the wrapped name, marked: {:?}",
+            named.names
+        );
+        assert!(
+            !named.names.contains_key(&0x6000),
+            "a `blr` caller is not a trampoline: {:?}",
             named.names
         );
     }

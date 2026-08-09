@@ -1400,11 +1400,19 @@ in the set.
 Two shapes cost coverage before the push requirement and the window were
 measured rather than assumed:
 
-- A **thunk that tail-calls a stub** reads the same slot the stub reads from
+- A **trampoline that tail-calls a stub** reads the same slot the stub reads from
   itself: `ldr x24, [x26, #0x1d8]; ldur x16, [x24, #7]; br x16`. Two per sample
-  matched, and one guards its tail call with `cmp w0, w22`, so the stub's name
-  would have hidden a null check. `GenerateSharedStubGeneric` saves the register
-  set first and the thunks push nothing, which separates them exactly.
+  matched and were given the stub's own name, and one guards its tail call with
+  `cmp w0, w22`, so that name hid a null check.
+  `GenerateSharedStubGeneric` saves the register set first and the trampolines
+  push nothing, which separates them exactly.
+
+  Refusing the stub's name would have made 520 and 696 call sites anonymous
+  again, so they are named `<stub>Thunk` instead: the whole body after the load
+  is `ldur` the entry point then `br`, which never returns, so the wrapper is
+  derivable rather than guessed. An ordinary caller uses `blr` and continues
+  afterwards; naming that after the stub it calls would be the same false claim,
+  so it stays anonymous. Both directions are pinned by test.
 - The **mint allocators** save the FPU set too, putting their self-load at
   instruction 37 on 3.5 and 38 on 3.12. A 32-instruction window dropped one stub
   from every binary silently, because a stub that goes unnamed looks identical to
@@ -1413,10 +1421,10 @@ measured rather than assumed:
 Result, with the derived names fed through the existing `symbol_names` channel at
 `Exact` quality:
 
-| sample | SDK | stubs named | call sites named |
+| sample | SDK | named | call sites named |
 |---|---|---|---|
-| LocalSend | 3.5.0 | 12 | 21,369 |
-| Immich | 3.12.1 | 12 | 25,967 |
+| LocalSend | 3.5.0 | 12 stubs + 2 trampolines | 21,920 |
+| Immich | 3.12.1 | 12 stubs + 2 trampolines | 26,663 |
 
 The output corroborates itself. `if (reg0 == null) { nullCastErrorSharedWithoutFpuRegs(); }`
 and `if (index >= smiUntag(reg2.f28.f20)) { rangeErrorSharedWithoutFpuRegs(index, ...); }`
