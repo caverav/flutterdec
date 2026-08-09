@@ -1737,13 +1737,38 @@ falls through to it. Measured over the interior targets:
 
 One and three fall-throughs out of 6,428 and 10,094. These are function entries.
 
-And the cost is larger than naming. Counting blocks unreachable from their own
-record's entry across all functions: **210,355 of 290,636** on LocalSend and
-**284,242 of 388,402** on Immich, 72% and 73%. Those are the swallowed neighbours'
-blocks. Both emitters walk from the entry, so that code is never emitted at all --
-which is why the output looks plausible while thousands of real functions are
-simply absent from it. The apparent function counts of 5,800 and 8,329 are records,
-not functions; the entry evidence puts the real figures near 12,200 and 18,400.
+And the cost is larger than naming. Blocks unreachable from their own record's
+entry: **210,355 of 290,636** on LocalSend and **284,242 of 388,402** on Immich,
+72% and 73%. Both emitters walk from the entry, so none of that code is emitted,
+which is why the output looks plausible while a great deal of the binary is absent
+from it.
+
+I first attributed all of that to swallowed neighbours. Partitioning it refutes
+that, so the claim is corrected here rather than left standing:
+
+| root of the unreachable component | LocalSend | Immich |
+|---|---|---|
+| an interior `bl` target -- splitting recovers this | 58,484 (27.8%) | 85,544 (30.1%) |
+| downstream of a raising call -- correctly dead, this pass created it | 10,387 (4.9%) | 11,392 (4.0%) |
+| **rooted at neither** | **141,484 (67.3%)** | **187,306 (65.9%)** |
+
+So splitting at interior call targets recovers under a third. Two thirds is a third
+cause I had not named: decoded blocks that no direct call and no fall-through
+reaches. The likely mechanism is an entry reachable only through an *indirect*
+call -- a dispatch-table slot, a closure, or a pool-held target -- which no `bl`
+names, so direct-call evidence cannot discover it. That is a separate recovery
+problem from extents, and it is the larger half.
+
+The apparent function counts of 5,800 and 8,329 are records, not functions. Direct
+call evidence alone raises the floor to about 12,200 and 18,400; the residual says
+the true figure is higher still and not discoverable this way.
+
+When the split is implemented it should be a post-pass partitioning the already
+decoded `instructions` of an inflated record, needing no re-disassembly and no
+adapter change. Pieces after the first must NOT inherit the record's
+`function_name` or `owner_class`: that name belongs to the declared entry, and
+copying it onto a swallowed neighbour would give thousands of functions a
+confidently wrong name, which is the same defect class as a fabricated receiver.
 
 **Consequence for coverage: each of those 6,428 and 10,094 addresses is exact
 evidence of a function entry the model missed**, because a `bl` sets the link
