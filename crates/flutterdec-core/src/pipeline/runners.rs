@@ -13,6 +13,7 @@ use runners_stubs::shared_stub_names;
 struct SharedStubNamingSummary {
     status: String,
     named: usize,
+    scanned: usize,
 }
 #[path = "runners/manifest.rs"]
 mod runners_manifest;
@@ -1474,6 +1475,7 @@ pub fn run_decompile(
     let shared_stub_naming = SharedStubNamingSummary {
         status: stub_naming.status.to_string(),
         named: stub_naming.names.len(),
+        scanned: stub_naming.scanned,
     };
     for (va, name) in stub_naming.names {
         merge_symbol_name(
@@ -2088,6 +2090,8 @@ pub fn run_decompile(
         "shared_stub_naming": {
             "status": shared_stub_naming.status,
             "named": shared_stub_naming.named,
+            "functions_scanned": shared_stub_naming.scanned,
+            "model": model.adapter_kind.clone(),
             "snapshot_dart_version": bundle.dart_profile.as_ref().map(|p| p.dart_version.clone()),
             "compressed_pointers": bundle.compressed_pointers
         },

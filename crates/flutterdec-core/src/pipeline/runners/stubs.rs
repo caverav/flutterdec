@@ -84,7 +84,7 @@ pub(super) fn shared_stub_names(
     compressed_pointers: Option<bool>,
 ) -> SharedStubNaming {
     let Some(slots) = stub_slots(dart_version, compressed_pointers) else {
-        return SharedStubNaming::refused("unknown_key");
+        return SharedStubNaming::refused("unknown_key", disasm.len());
     };
     let mut names = HashMap::new();
     for f in disasm {
@@ -93,7 +93,7 @@ pub(super) fn shared_stub_names(
         }
     }
     if names.is_empty() {
-        return SharedStubNaming::refused("no_stub_prologues");
+        return SharedStubNaming::refused("no_stub_prologues", disasm.len());
     }
     // The header is not the only evidence of which table applies. Every
     // vendored table matches a different number of prologues in the same
@@ -103,11 +103,12 @@ pub(super) fn shared_stub_names(
     // best-scoring table, the two disagree and naming tens of thousands of call
     // sites off the losing table would be a silent mislabel. Refuse instead.
     if !is_best_scoring(disasm, slots) {
-        return SharedStubNaming::refused("table_disagreement");
+        return SharedStubNaming::refused("table_disagreement", disasm.len());
     }
     SharedStubNaming {
         names,
         status: "named",
+        scanned: disasm.len(),
     }
 }
 
@@ -119,13 +120,20 @@ pub(super) fn shared_stub_names(
 pub(super) struct SharedStubNaming {
     pub(super) names: HashMap<u64, String>,
     pub(super) status: &'static str,
+    /// How many functions the prologue scan looked at. Without it
+    /// `no_stub_prologues` reads the same whether the binary has no stubs or the
+    /// model's function table never covered the stub range -- the observed case,
+    /// where one model listed 39,343 functions and none of them were the stubs
+    /// while another listed 5,800 and named 14.
+    pub(super) scanned: usize,
 }
 
 impl SharedStubNaming {
-    fn refused(status: &'static str) -> Self {
+    fn refused(status: &'static str, scanned: usize) -> Self {
         Self {
             names: HashMap::new(),
             status,
+            scanned,
         }
     }
 }
