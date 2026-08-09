@@ -1509,3 +1509,85 @@ string.
 Consequence for the showcase: `docs/assets/readme-src/` shows `dispatch.minWidth`,
 which the pipeline cannot currently produce on a stripped APK. The `/* lsl #2 */`
 in the same asset was impossible for a different reason and is corrected.
+
+
+## R15. A stub call is not a Dart call, and the difference was 24% of the output
+
+Naming the shared stubs (R13) made a second defect visible: every call to one was
+still modelled as an ordinary Dart call. Three SDK facts contradict that, and each
+was measurably wrong in emitted output.
+
+### The fall-through after a raising call does not exist
+
+`GenerateSharedStub` takes `allow_return`, and when it is false the generator
+emits `Breakpoint()` in place of the epilogue
+(`stub_code_compiler_arm64.cc:303-307`). Independently visible in both binaries:
+every non-returning stub body reaches `brk` before any `ret`, every returning one
+reaches `ret` first. The disassembler records a fall-through edge after any
+non-terminator, so the edge after such a call was fiction.
+
+45.7% of LocalSend functions and 42.5% of Immich functions contain one. Cutting
+those edges before either emitter sees the CFG:
+
+| | LocalSend | Immich |
+|---|---|---|
+| emitted lines | 387,070 -> **295,465** (-23.7%) | 530,129 -> **408,442** (-23.0%) |
+| `omitted complex paths` markers | 663 -> **439** | 830 -> **520** |
+
+Nearly a quarter of all output was unreachable code rendered as live. That also
+confirms a note already in `structured.rs:431-436`: the shared non-returning slow
+path, with many predecessors and no successors, post-dominates nothing, is never a
+follow node, and "alone accounted for 84% of the fallbacks". Removing its fake
+edges is why the fallback marker count fell by a third.
+
+Blocks are cut, not removed. `regions.rs:38` rejects a CFG whose block ids are not
+dense and `structured.rs` iterates `0..blocks.len()` as ids, so dropping a block
+without renumbering would make region recovery fail and push the function onto the
+very fallback emitter this is meant to feed less. Clearing the edge is enough:
+both emitters walk from the entry, so an orphan is never visited.
+
+### Returning is not the same as defining a value
+
+`store_runtime_result_in_result_register` is a separate SDK flag, defaulted false
+and set only for the mint allocator (`stub_code_compiler_arm64.cc:1481,1501`). So:
+
+| stub | returns | defines a value |
+|---|---|---|
+| null / nullArg / nullCast / range / write / fieldAccess / lateInit errors | no | no |
+| `stackOverflow` | yes | no |
+| `allocateMint` | yes | yes, in `R0` |
+| `slowTypeTest` | yes | no -- `TypeTestABI::kInstanceReg` is `R0` and *preserved*; the answer goes to `R7` (`constants_arm64.h:237-258`) |
+
+`final tN = stackOverflowSharedWithoutFpuRegs()` was therefore as false as binding
+a throw, and `stackOverflow` is the largest family by call volume. Bindings on a
+call that defines nothing: **19,328 -> 0** and **23,646 -> 0**. `allocateMint`
+stays bound, 1,800 and 2,074 sites.
+
+### A shared stub clobbers nothing
+
+It pushes and pops `AddAllNonReservedRegisters` around the runtime call
+(`stub_code_compiler_arm64.cc:300,309`; `locations.h:692-703`), so every
+caller-saved binding survives it. Treating it as a normal call was dropping them
+at the commonest call site in the binary:
+
+| | LocalSend | Immich |
+|---|---|---|
+| `raw_register_name_refs` | 94,923 -> **62,066** (-34.6%) | 113,046 -> **77,641** (-31.3%) |
+
+This is the largest single reduction in register noise this project has measured,
+and it came from an ABI fact rather than from any dataflow work.
+
+### Corrections to earlier figures in this document
+
+- R13 reported 21,920 and 26,663 named stub call sites. That grep counted name
+  substring occurrences, including inside bindings and comments, over pre-prune
+  output. Counted as call sites on current output: **10,054** and **11,613**.
+- A stub's inputs are not in `DartCallingConvention`, so the inferred argument
+  list described the wrong thing entirely and is dropped. The 409 and 457 that
+  remain belong to the two trampolines, deliberately left as unknown callees.
+- The last 1,180 sites resolved through `helper_flow/summary.rs:57`, which builds
+  a second emitter for helper bodies and did not carry the table. Helper bodies
+  are where the shared slow paths land, so that was most of the residue. Three
+  wrong hypotheses were tried first (the indirect-call path, branch precedence,
+  alternate entry points); only the last-mentioned was checked by measurement, and
+  interior-offset stub calls turned out to be exactly zero in both samples.
