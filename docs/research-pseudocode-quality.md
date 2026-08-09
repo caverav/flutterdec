@@ -1827,3 +1827,59 @@ intra-function control flow, which uses `b`. Splitting the containing record at
 those addresses is derived, not heuristic. It is a loader and disassembler change
 rather than a naming one, and it would move function counts, the disassembly ratio
 and prioritization, so it is recorded here rather than attempted late in a cycle.
+
+
+## R17. Allocation stubs name their own class, exactly
+
+A per-class allocation stub materialises `MakeTagWordForNewSpaceObject(cid,
+instance_size)` before tail-calling the shared allocate entry
+(`stub_code_compiler_arm64.cc:2389-2451`). The tag layout is fixed: `SizeTagBits`
+occupies bits 8 to 11 and `ClassIdTag` the 20 bits above it
+(`raw_object.h:258-303`), so the class id is `(tag >> 12) & 0xfffff`, read off the
+callee rather than inferred.
+
+Validated by the shift being wrong any other way:
+
+| | LocalSend | Immich |
+|---|---|---|
+| allocation stubs recognised | 1,059 | 1,353 |
+| ids in 1..30,000 at shift 12 | **1,059 (100%)** | **1,353 (100%)** |
+| ids in range at shift 8 | 187 (17.7%) | 285 (21.1%) |
+| distinct ids | 1,059 | 1,353 |
+
+One distinct id per stub, which is what per-class stubs must produce. Result:
+4,623 and 5,413 call sites named across 399 and 587 distinct classes, and `sub_`
+call references fall to 34,048 and 52,043.
+
+**The id stays a number.** `CLASS_LIST` gained an entry before `FunctionType`
+between the two SDKs -- `RecordType` sits at `class_id.h:77` in 3.5 and `:78` in
+3.12, and `Finalizer`, `Record` and `SuspendState` shift with it -- so a single
+vendored cid-to-name table would name one of these two samples confidently wrong.
+Resolving `cid` to a class name needs the snapshot's class table
+(`ClassTable::At(cid)`), which this pipeline does not read.
+
+The pass runs ahead of every shared-stub gate on purpose. It needs neither the
+vendored slot table nor the version, since the tag layout is identical in both
+SDKs, and gating it would have discarded these names wherever the shared-stub
+table refuses -- not hypothetical, since one model yields `no_stub_prologues` on a
+binary whose allocation stubs are perfectly nameable. `allocation_named` is
+reported separately so `status` still describes what actually failed.
+
+### What the mint allocator does and does not say
+
+The shared mint allocator only allocates. `BoxInt64Instr` on ARM64 binds its input
+to an arbitrary register and issues the payload store itself *after* the call:
+`StoreToOffset(in, out, Mint::value_offset() - kHeapObjectTag)`
+(`il_arm64.cc:3800-3852`), and the runtime fallback returns
+`Integer::New(kMaxInt64)`, a placeholder. So the returned object is empty at the
+call and the value arrives from a following store. The current rendering -- bind
+the call, then store into the binding -- is exactly that, and claims nothing more.
+
+### Type tests carry a name, but not the type
+
+`GenerateTTSCall` reserves two pool entries: the first a patchable null subtype
+test cache, the second a patchable `dst_name` String, which is the *variable* name
+used in the error message (`flow_graph_compiler.cc:2838-2873`,
+`runtime_entry.cc:1877-1902`). The destination type itself is in `R8` at the call
+site, not in the pool (`constants_arm64.h:234-243`). So a type test can yield the
+name being assigned to, and the type only through the register.
