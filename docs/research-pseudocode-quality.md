@@ -1333,7 +1333,7 @@ Deliberately not landed: a trailing mask on the shift and division forms. It
 would read as fixed while still being wrong. The asymmetry is pinned by test.
 
 
-## R13. Stub identity is derivable exactly, and this is the largest named win left
+## R13. Stub identity, derived from the callee's own prologue (landed)
 
 Null and bounds checks are the biggest unnamed call group. They were blocked on
 "deriving stub identity rather than inferring it from call frequency". They are
@@ -1386,6 +1386,53 @@ The gate is the same as for thread offsets: the self-offset is version and mode
 dependent, so it needs the `(hash, mode)` table, which is now readable from the
 snapshot header and vendored for 3.5 and 3.12 under `docs/research-data/`. Not
 frequency, not address hardcoding.
+
+### What landed
+
+`shared_stub_names` scans each function's prologue for `ldr rD, [x26, #imm]` --
+`THR` is `R26`, confirmed in the stream where `x26` is the base of 2,971 of the
+sampled loads -- and accepts the displacement only if it is a member of the
+vendored stub-slot set for the binary's SDK. Ordinary functions are not at risk:
+their prologue loads the stack limit (`0x48` on 3.12, 1,537 sampled loads), a
+thread field that is not in the set.
+
+Result, with the derived names fed through the existing `symbol_names` channel at
+`Exact` quality:
+
+| sample | SDK | stubs named | call sites named |
+|---|---|---|---|
+| LocalSend | 3.5.0 | 13 | 21,889 |
+| Immich | 3.12.1 | 13 | 26,649 |
+
+The output corroborates itself. `if (reg0 == null) { nullCastErrorSharedWithoutFpuRegs(); }`
+and `if (index >= smiUntag(reg2.f28.f20)) { rangeErrorSharedWithoutFpuRegs(index, ...); }`
+-- the recovered guard independently matches the stub the name claims.
+
+### The version hazard, and two guards
+
+**All eleven slots present in both vendored tables disagree on the name.** `0x118`
+is `nullCastErrorSharedWithoutFpuRegs` on 3.12 and
+`writeErrorSharedWithoutFpuRegs` on 3.5; `0x128` is `rangeError...` on 3.12 and
+`allocateMint...` on 3.5. A version confusion therefore mislabels *every* call
+site, not some.
+
+So the header is not trusted alone. The binary's own offset set fingerprints the
+SDK: the correct table matches 14 prologues on each sample and the other matches
+7 and 8. If the header's version is not the best-scoring table, naming is
+refused. On an equal score the names themselves are compared, because an equal
+count is not agreement -- a binary with one shared slot separates nothing, and
+that case refuses too.
+
+A semantic cross-check was measured and found **insufficient** as a validator:
+call sites of the stub named `nullCastError` are 100% preceded by `cmp` against
+NULL_REG on both samples, but so are the sites of `nullError` when the wrong
+table renames them, because both are null-related. It distinguishes null from
+range, not null-cast from null-error. Kept as a measurement, not as a gate.
+
+`report.json.shared_stub_naming` carries `status`, `named`, and the two keys the
+gate used, so a zero is diagnosable rather than indistinguishable from a feature
+that never ran: `unknown_key`, `no_stub_prologues`, `table_disagreement`, `named`.
+
 
 ## R14. Two naming subsystems are dormant on real input
 

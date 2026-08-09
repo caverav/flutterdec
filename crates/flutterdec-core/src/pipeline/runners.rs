@@ -5,6 +5,15 @@ use runners_reporting::{
     collect_selector_fallback_summary, BootflowDiscoveryEntry, BootflowDiscoverySummary,
     CallFallbackSummary, SelectorFallbackSummary, SemanticIntentSummary,
 };
+#[path = "runners/stubs.rs"]
+mod runners_stubs;
+use runners_stubs::shared_stub_names;
+
+/// Why the shared-stub naming produced the count it did, for the report.
+struct SharedStubNamingSummary {
+    status: String,
+    named: usize,
+}
 #[path = "runners/manifest.rs"]
 mod runners_manifest;
 use runners_manifest::{
@@ -1451,6 +1460,31 @@ pub fn run_decompile(
             );
         }
     }
+    // Shared stubs name themselves: each loads its own `Code` object from a
+    // fixed `Thread` slot in its prologue, so this is read from the callee
+    // rather than inferred from how often it is called. `Exact` for that
+    // reason. Gated on a known (version, pointer mode) and cross-checked
+    // against the binary's own offset set, so an unknown SDK names nothing
+    // instead of naming everything wrong.
+    let stub_naming = shared_stub_names(
+        &disasm,
+        bundle.dart_profile.as_ref().map(|p| p.dart_version.as_str()),
+        bundle.compressed_pointers,
+    );
+    let shared_stub_naming = SharedStubNamingSummary {
+        status: stub_naming.status.to_string(),
+        named: stub_naming.names.len(),
+    };
+    for (va, name) in stub_naming.names {
+        merge_symbol_name(
+            &mut symbol_names,
+            &mut symbol_quality,
+            va,
+            name,
+            Some(SymbolNameQuality::Exact),
+            &mut symbol_merge_stats,
+        );
+    }
     let symbol_quality_counts = collect_symbol_quality_counts(&symbol_quality);
     let pseudo = emit_program_with_pool_context(
         &ir,
@@ -2046,6 +2080,16 @@ pub fn run_decompile(
             "total": selector_fallback.total,
             "unique": selector_fallback.unique,
             "top": selector_fallback_top
+        },
+        // Carries the keys the gate actually used, not just the outcome: a
+        // `named` status beside an unknown version would leave no way to tell
+        // which SDK the names came from, and a zero would be indistinguishable
+        // from a feature that never ran.
+        "shared_stub_naming": {
+            "status": shared_stub_naming.status,
+            "named": shared_stub_naming.named,
+            "snapshot_dart_version": bundle.dart_profile.as_ref().map(|p| p.dart_version.clone()),
+            "compressed_pointers": bundle.compressed_pointers
         },
         "call_fallback": {
             "dynamic_call": call_fallback.dynamic_call,
