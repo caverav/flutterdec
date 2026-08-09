@@ -1449,3 +1449,54 @@ fn a_shifted_arithmetic_operand_is_applied_not_commented() {
         "a shifted immediate should fold into the address:\n{folded}"
     );
 }
+/// A `w` form computes in 32 bits and zero-extends into the 64-bit register, and
+/// `canonical_reg` folds `w1` and `x1` onto one key, so the width is lost unless
+/// the renderer restores it. Complement and negation always differ: `~x` sets
+/// every high bit where the machine clears all of them.
+///
+/// The mask belongs on the *result* only because negation and complement are
+/// homomorphic mod 2^32. It must not be copied to `lsr`/`asr`/`sdiv`, where the
+/// operand width decides the answer: `lsr w0, w1, #4` is
+/// `(x1 & 0xffffffff) >>> 4`, which differs from `(x1 >>> 4) & 0xffffffff` in
+/// bits 28-31 whenever the high half is live.
+#[test]
+fn a_w_form_complement_is_zero_extended() {
+    let render = |src: &str| {
+        let ir = FunctionIr {
+            function_id: 0x1000,
+            name: "narrowWidth".to_string(),
+            entry_va: 0x1000,
+            blocks: vec![blk(
+                0,
+                0x1000,
+                vec![
+                    stmt(0x1000, src),
+                    stmt(0x1004, "stur x9, [x4, #7]"),
+                    ret(0x1008),
+                ],
+                vec![],
+            )],
+        };
+        emit_pseudocode(&ir, &HashMap::new()).source
+    };
+
+    let narrow = render("mvn w9, w1");
+    assert!(
+        narrow.contains("& 0xffffffff"),
+        "a 32-bit complement clears the high half:\n{narrow}"
+    );
+
+    let wide = render("mvn x9, x1");
+    assert!(
+        !wide.contains("& 0xffffffff"),
+        "a 64-bit complement has no high half to clear:\n{wide}"
+    );
+
+    // A right shift is deliberately left alone rather than given a trailing
+    // mask, which would read as fixed while still being wrong.
+    let shifted = render("lsr w9, w1, #4");
+    assert!(
+        !shifted.contains("& 0xffffffff"),
+        "a narrow shift needs its operand masked, not its result:\n{shifted}"
+    );
+}

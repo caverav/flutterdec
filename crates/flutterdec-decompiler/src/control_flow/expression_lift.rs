@@ -303,6 +303,18 @@ impl<'a> FuncEmitter<'a> {
                         "neg" => format!("(-{src})"),
                         _ => format!("(~{src})"),
                     };
+                    // A `w` form computes in 32 bits and zero-extends into the
+                    // 64-bit register. For `and`/`orr`/`eor` of two 32-bit values
+                    // the result already fits, and for `add`/`sub` the halves
+                    // agree except on overflow, so neither needs saying. Negation
+                    // and complement always differ: `~x` sets every high bit
+                    // where the machine clears all of them. `sxtw` writes an `x`
+                    // destination by definition, so it is never masked.
+                    let value = if mnemonic != "sxtw" && is_w_register(&ops[0]) {
+                        format!("(({value}) & 0xffffffff)")
+                    } else {
+                        value
+                    };
                     self.state.reg_values.insert(dst, value);
                 }
             }

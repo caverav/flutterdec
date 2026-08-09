@@ -387,11 +387,13 @@ impl<'a> FuncEmitter<'a> {
             // over every heuristic below.
             if let Some(dispatch) = self.dispatch_calls.get(&va) {
                 let selector = dispatch_selector_name(dispatch.selector_offset);
-                let receiver = dispatch
-                    .receiver
-                    .as_ref()
-                    .map(|reg| self.lookup_reg(reg))
-                    .unwrap_or_else(|| "dispatch".to_string());
+                // A receiver the recogniser could not attribute to a register is
+                // reported as unrecovered rather than given a name. Rendering the
+                // word `dispatch` in the receiver position read as an object the
+                // call was made on, which is a claim: 2,117 and 3,368 sites, 34%
+                // and 33% of all dispatch-table calls. Without a receiver the
+                // selector stands alone, which says only what is known.
+                let receiver = dispatch.receiver.as_ref().map(|reg| self.lookup_reg(reg));
                 // Only argument registers the call site actually defined, in
                 // `DartCallingConvention` order. A lower bound on the real
                 // argument list: stack-passed arguments are not modelled, and a
@@ -410,11 +412,25 @@ impl<'a> FuncEmitter<'a> {
                 } else {
                     "args: lower bound"
                 };
+                let callee = match &receiver {
+                    Some(receiver) => format!("{receiver}.{selector}"),
+                    None => selector.clone(),
+                };
+                let receiver_note = if receiver.is_some() {
+                    ""
+                } else {
+                    ", receiver: unrecovered"
+                };
                 self.push_line(
                     indent,
                     &format!(
-                        "final {} = {}.{}({}); // dispatch table, selector_offset: {}, {}",
-                        tname, receiver, selector, dispatch_args, dispatch.selector_offset, arity
+                        "final {} = {}({}); // dispatch table, selector_offset: {}, {}{}",
+                        tname,
+                        callee,
+                        dispatch_args,
+                        dispatch.selector_offset,
+                        arity,
+                        receiver_note
                     ),
                 );
                 self.clobber_call_registers();

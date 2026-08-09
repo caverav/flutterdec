@@ -299,7 +299,7 @@ final t1 = dispatch.torstai(null, null, (objTmp1.f7), poolStr8768);
 
 // after, recovered selector, recovered receiver, argument list not overclaimed
 final t2 = objTmp1.sel1814(t1); // dispatch table, selector_offset: 1814, args: lower bound
-final t3 = dispatch.sel25768(); // dispatch table, selector_offset: 25768, args: unknown
+final t3 = sel25768(); // dispatch table, selector_offset: 25768, args: unknown, receiver: unrecovered
 ```
 
 Measured in the reachable CFG, where duplication cannot inflate the count:

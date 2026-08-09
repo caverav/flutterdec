@@ -138,6 +138,11 @@ fn renders_the_receiver_and_omits_it_from_the_arguments() {
 
 /// Redefining the receiver register between the header load and the call makes
 /// the receiver unknown. Rendering the new occupant would be a wrong receiver.
+///
+/// The intent has always been to degrade, but the spelling used to be a literal
+/// `dispatch` in the receiver position, which reads as an object the call was made
+/// on rather than as an admission. The selector now stands alone and the comment
+/// says the receiver was not recovered.
 #[test]
 fn drops_a_receiver_whose_register_was_redefined() {
     let ir = dispatch_call_ir(vec![
@@ -146,8 +151,13 @@ fn drops_a_receiver_whose_register_was_redefined() {
     ]);
     let artifact = emit_pseudocode(&ir, &HashMap::new());
     assert!(
-        artifact.source.contains("dispatch.sel163("),
-        "a clobbered receiver must degrade to an unknown receiver:\n{}",
+        artifact.source.contains("receiver: unrecovered"),
+        "a clobbered receiver must be reported as unrecovered:\n{}",
+        artifact.source
+    );
+    assert!(
+        !artifact.source.contains("dispatch.sel"),
+        "an unknown receiver must not be spelled as an object:\n{}",
         artifact.source
     );
 }
@@ -210,9 +220,16 @@ fn recovers_the_receiver_under_a_shifted_class_id_bitfield() {
         .lines()
         .find(|l| l.contains(".sel163("))
         .expect("dispatch call line");
+    // Anchored on the receiver actually resolving, not on the absence of the old
+    // `dispatch.` marker: that marker can no longer be emitted at all, so a
+    // negative assertion against it would pass without testing anything.
     assert!(
-        !call.contains("dispatch.sel163("),
+        !call.contains("receiver: unrecovered"),
         "receiver must still resolve when the bitfield position differs: {call}"
+    );
+    assert!(
+        call.contains("receiver.sel163(") || call.contains("param1.sel163("),
+        "the resolved receiver must appear in the callee position: {call}"
     );
 }
 
