@@ -1781,12 +1781,33 @@ corroboration rather than the trigger. The conservative subset -- terminator-pre
 *and* carrying a frame prologue -- is 16,372 and 20,541. The permissive one is
 40,222 and 48,501.
 
-Either way the scale of the gap is now clear. The adapter declares 5,800 and 8,329
-functions; the instruction stream carries entry evidence for roughly 46,000 and
-54,000. The decompiler is emitting something on the order of an eighth of the
-functions in the binary, and the rest is not missing from the disassembly at all --
-it is decoded, sitting inside inflated records, unreachable from the declared
-entry, and silently never walked.
+A terminator predecessor alone is not enough to call a root a function, and I
+published an inflated count before checking. Dart catch-block entries are reached
+only through the runtime's exception dispatch, so they are unreachable roots
+preceded by a terminator, and they belong to the *enclosing* function: splitting
+there would tear one function apart, the inverse of the extent defect. The
+discriminator is the frame: a function entry *pushes* one with writeback
+(`stp x29, x30, [x15, #-0x10]!`), a catch entry *restores* one from `x29`.
+
+| unreachable component root | LocalSend | Immich |
+|---|---|---|
+| pushes a new frame -- a function entry | **16,021 (36.6%)** | **19,861 (36.9%)** |
+| ... and also follows a terminator | 14,231 (32.5%) | 16,828 (31.3%) |
+| ... and is also a direct `bl` target | 4,246 (9.7%) | 6,650 (12.4%) |
+| restores a frame -- catch-like, do not split | 95 (0.2%) | 365 (0.7%) |
+| neither | 27,706 (63.2%) | 33,573 (62.4%) |
+
+So catch entries are a real hazard but a small population. The frame-push count is
+a **lower** bound on missed entries, because a leaf function needs no frame at all,
+and the terminator count of 40,222 and 48,501 is an upper bound. The truth is
+between them.
+
+Stated conservatively: the adapter declares 5,800 and 8,329 functions, and the
+instruction stream carries frame-push entry evidence for at least 16,021 and 19,861
+more, so roughly **3.8x and 3.4x** as many functions exist as are emitted. Not the
+eightfold figure I first recorded from the permissive predicate. Either way the code
+is not missing from the disassembly: it is decoded, sitting inside inflated records,
+unreachable from the declared entry, and never walked.
 
 The apparent function counts of 5,800 and 8,329 are records, not functions. Direct
 call evidence alone raises the floor to about 12,200 and 18,400; the residual says
