@@ -13,6 +13,7 @@ use runners_stubs::{prune_calls_that_never_return, shared_stub_names};
 struct SharedStubNamingSummary {
     status: String,
     named: usize,
+    allocation_named: usize,
     scanned: usize,
 }
 #[path = "runners/manifest.rs"]
@@ -1475,6 +1476,7 @@ pub fn run_decompile(
     let shared_stub_naming = SharedStubNamingSummary {
         status: stub_naming.status.to_string(),
         named: stub_naming.names.len(),
+        allocation_named: stub_naming.allocation_named,
         scanned: stub_naming.scanned,
     };
     // A call that raises has no fall-through, so the edge the disassembler
@@ -2095,6 +2097,7 @@ pub fn run_decompile(
         "shared_stub_naming": {
             "status": shared_stub_naming.status,
             "named": shared_stub_naming.named,
+            "allocation_named": shared_stub_naming.allocation_named,
             "functions_scanned": shared_stub_naming.scanned,
             "noreturn_pruned_functions": noreturn_prune.functions,
             "noreturn_pruned_blocks": noreturn_prune.blocks_cut,

@@ -141,17 +141,48 @@ pub(super) fn shared_stub_names(
     dart_version: Option<&str>,
     compressed_pointers: Option<bool>,
 ) -> SharedStubNaming {
-    let Some(slots) = stub_slots(dart_version, compressed_pointers) else {
-        return SharedStubNaming::refused("unknown_key", disasm.len());
-    };
+    // The allocation pass runs first and is deliberately outside every gate
+    // below. It needs no vendored slot table and no SDK version: `SizeTagBits`
+    // occupies bits 8..11 and `ClassIdTag` the 20 above it in both 3.5 and 3.12
+    // (`raw_object.h:258-303`), so the shift is not version-dependent. Gating it
+    // with the shared-stub table would have discarded 1,059 and 1,353 exact names
+    // on any binary where that table refuses -- which is not hypothetical, since
+    // one model yields `no_stub_prologues` on a binary whose allocation stubs are
+    // perfectly nameable.
+    // Per-class allocation stubs identify their class exactly. The ARM64
+    // generator materialises `MakeTagWordForNewSpaceObject(cid, instance_size)`
+    // into a register before tail-calling the shared allocate entry
+    // (`stub_code_compiler_arm64.cc:2389-2451`), and the tag's layout is fixed:
+    // `SizeTagBits` occupies bits 8..11 and `ClassIdTag` the 20 bits above it
+    // (`raw_object.h:258-303`), so the class id is `(tag >> 12) & 0xfffff`.
+    //
+    // Validated by the shift being wrong any other way: on the two samples all
+    // 1,059 and 1,353 recognised stubs yield an id below 30,000 at shift 12,
+    // against 17.7% and 21.1% at shift 8, and every stub yields a distinct id,
+    // which is what per-class stubs must do.
+    //
+    // The id is not a name. Turning it into one needs the snapshot's class table
+    // (`ClassTable::At(cid)`), which this pipeline does not read, so the number is
+    // reported as a number.
     let mut names = HashMap::new();
+    for f in disasm {
+        if let Some(cid) = allocation_stub_class_id(f) {
+            names.insert(f.entry_va, format!("allocateClassId{cid}"));
+        }
+    }
+    let allocation_named = names.len();
+    let Some(slots) = stub_slots(dart_version, compressed_pointers) else {
+        return SharedStubNaming::partial("unknown_key", disasm.len(), names, allocation_named);
+    };
+    let mut shared = 0usize;
     for f in disasm {
         if let Some(name) = prologue_stub_name(f, slots) {
             names.insert(f.entry_va, name.to_string());
+            shared += 1;
         }
     }
-    if names.is_empty() {
-        return SharedStubNaming::refused("no_stub_prologues", disasm.len());
+    if shared == 0 {
+        return SharedStubNaming::partial("no_stub_prologues", disasm.len(), names, allocation_named);
     }
     // The header is not the only evidence of which table applies. Every
     // vendored table matches a different number of prologues in the same
@@ -161,7 +192,8 @@ pub(super) fn shared_stub_names(
     // best-scoring table, the two disagree and naming tens of thousands of call
     // sites off the losing table would be a silent mislabel. Refuse instead.
     if !is_best_scoring(disasm, slots) {
-        return SharedStubNaming::refused("table_disagreement", disasm.len());
+        names.retain(|va, _| allocation_stub_class_id_at(disasm, *va));
+        return SharedStubNaming::partial("table_disagreement", disasm.len(), names, allocation_named);
     }
     let non_returning = disasm
         .iter()
@@ -186,15 +218,27 @@ pub(super) fn shared_stub_names(
         .iter()
         .filter(|f| names.contains_key(&f.entry_va))
         .filter_map(|f| {
-            prologue_stub_hit(f, slots).map(|(slot, _, _)| {
-                (
+            match prologue_stub_hit(f, slots) {
+                Some((slot, _, _)) => Some((
                     f.entry_va,
                     RuntimeStubEffect {
                         writes_result: slot.writes_result,
                         preserves_registers: slot.preserves_registers,
                     },
-                )
-            })
+                )),
+                // An allocation stub returns the new object in R0. It is not a
+                // `GenerateSharedStub`, so it carries no register-preservation
+                // guarantee and the conservative clobber applies.
+                None => allocation_stub_class_id(f).map(|_| {
+                    (
+                        f.entry_va,
+                        RuntimeStubEffect {
+                            writes_result: true,
+                            preserves_registers: false,
+                        },
+                    )
+                }),
+            }
         })
         .collect();
     SharedStubNaming {
@@ -203,6 +247,7 @@ pub(super) fn shared_stub_names(
         effects,
         status: "named",
         scanned: disasm.len(),
+        allocation_named,
     }
 }
 
@@ -222,6 +267,9 @@ pub(super) struct SharedStubNaming {
     /// argument convention does not describe its inputs.
     pub(super) effects: HashMap<u64, RuntimeStubEffect>,
     pub(super) status: &'static str,
+    /// How many of the names came from the allocation pass, which is independent
+    /// of the shared-stub table and its version gate.
+    pub(super) allocation_named: usize,
     /// How many functions the prologue scan looked at. Without it
     /// `no_stub_prologues` reads the same whether the binary has no stubs or the
     /// model's function table never covered the stub range -- the observed case,
@@ -231,15 +279,45 @@ pub(super) struct SharedStubNaming {
 }
 
 impl SharedStubNaming {
-    fn refused(status: &'static str, scanned: usize) -> Self {
+    /// The shared-stub table did not apply, but the allocation pass does not
+    /// depend on it, so its names survive. Their effects survive with them: an
+    /// allocation stub returns the new object in `R0`.
+    fn partial(
+        status: &'static str,
+        scanned: usize,
+        names: HashMap<u64, String>,
+        allocation_named: usize,
+    ) -> Self {
+        let effects = names
+            .keys()
+            .map(|va| {
+                (
+                    *va,
+                    RuntimeStubEffect {
+                        writes_result: true,
+                        preserves_registers: false,
+                    },
+                )
+            })
+            .collect();
         Self {
-            names: HashMap::new(),
+            names,
             non_returning: HashSet::new(),
-            effects: HashMap::new(),
+            effects,
             status,
             scanned,
+            allocation_named,
         }
     }
+}
+
+/// Whether the function at `va` is a per-class allocation stub.
+fn allocation_stub_class_id_at(disasm: &[FunctionDisassembly], va: u64) -> bool {
+    disasm
+        .iter()
+        .find(|f| f.entry_va == va)
+        .and_then(allocation_stub_class_id)
+        .is_some()
 }
 
 /// Whether the header's table is the one the binary's own prologues support.
@@ -409,6 +487,46 @@ fn thread_slot_offset(op_str: &str) -> Option<u64> {
     let hex = disp.strip_prefix("0x")?;
     u64::from_str_radix(hex, 16).ok()
 }
+/// The class id a per-class allocation stub allocates, from the tag word its
+/// prologue materialises.
+///
+/// The shape is `mov rD, #lo` then `movk rD, #hi, lsl #16`, which is how the
+/// assembler builds a 32-bit constant. Anything else is not this stub.
+fn allocation_stub_class_id(f: &FunctionDisassembly) -> Option<u64> {
+    let mut instrs = f.instructions.iter();
+    let mov = instrs.next()?;
+    let movk = instrs.next()?;
+    if !mov.mnemonic.eq_ignore_ascii_case("mov") || !movk.mnemonic.eq_ignore_ascii_case("movk") {
+        return None;
+    }
+    let dst = mov.op_str.split(',').next()?.trim();
+    if movk.op_str.split(',').next()?.trim() != dst {
+        return None;
+    }
+    // Only the `lsl #16` form composes a tag word; without the shift the second
+    // write would replace the low lane rather than extend it.
+    if !movk.op_str.contains("lsl #16") {
+        return None;
+    }
+    let tag = immediate(&mov.op_str)? | (immediate(&movk.op_str)? << 16);
+    let cid = (tag >> 12) & 0xf_ffff;
+    // Class 0 is the illegal id and the tag would then encode nothing useful.
+    (cid > 0).then_some(cid)
+}
+
+/// The first `#`-prefixed immediate in an operand list.
+fn immediate(op_str: &str) -> Option<u64> {
+    let rest = op_str.split('#').nth(1)?.trim();
+    let token: String = rest
+        .chars()
+        .take_while(|c| c.is_ascii_alphanumeric() || *c == 'x')
+        .collect();
+    match token.strip_prefix("0x") {
+        Some(hex) => u64::from_str_radix(hex, 16).ok(),
+        None => token.parse().ok(),
+    }
+}
+
 /// How much unreachable code a prune removed, for the report.
 #[derive(Debug, Default, Clone, Copy)]
 pub(super) struct NoreturnPrune {
@@ -980,5 +1098,96 @@ mod prune_tests {
             }
         }
         assert!(checked >= 30, "control failed: only {checked} slots checked");
+    }
+}
+
+#[cfg(test)]
+mod allocation_tests {
+    use super::tests::{ins, stub};
+    use super::*;
+
+    /// A per-class allocation stub materialises
+    /// `MakeTagWordForNewSpaceObject(cid, size)` before tail-calling the shared
+    /// allocate entry, and the tag's layout is fixed: `SizeTagBits` at bits 8..11
+    /// and `ClassIdTag` in the 20 above it, so the class id is
+    /// `(tag >> 12) & 0xfffff`. Identical in 3.5 and 3.12, so this needs no
+    /// version gate -- and must not sit behind one.
+    fn alloc_stub(entry_va: u64, cid: u64, size: u64) -> FunctionDisassembly {
+        let tag = (cid << 12) | (size << 8) | 0b1_1100;
+        let lo = tag & 0xffff;
+        let hi = (tag >> 16) & 0xffff;
+        FunctionDisassembly {
+            function_id: entry_va,
+            function_name: format!("sub_{entry_va:x}"),
+            owner_class: String::new(),
+            entry_va,
+            size: 12,
+            instructions: vec![
+                ins(entry_va, "mov", &format!("x2, #{lo:#x}")),
+                ins(entry_va + 4, "movk", &format!("x2, #{hi:#x}, lsl #16")),
+                ins(entry_va + 8, "br", "x4"),
+            ],
+        }
+    }
+
+    #[test]
+    fn an_allocation_stub_yields_its_class_id() {
+        let disasm = vec![alloc_stub(0x7000, 8270, 6)];
+        let named = shared_stub_names(&disasm, Some("3.12.1"), Some(true));
+        assert_eq!(
+            named.names.get(&0x7000).map(String::as_str),
+            Some("allocateClassId8270"),
+            "the class id comes out of the tag word: {:?}",
+            named.names
+        );
+        let effect = named.effects.get(&0x7000).copied().expect("needs effects");
+        assert!(
+            effect.writes_result,
+            "an allocation stub returns the new object in R0"
+        );
+        assert!(
+            !effect.preserves_registers,
+            "it is not a GenerateSharedStub and carries no preservation guarantee"
+        );
+    }
+
+    /// The allocation pass must survive every shared-stub refusal, because it
+    /// depends on neither the vendored slot table nor the SDK version. Gating it
+    /// discarded 1,059 and 1,353 exact names on a binary whose shared-stub table
+    /// did not apply.
+    #[test]
+    fn allocation_names_survive_a_shared_stub_refusal() {
+        let disasm = vec![alloc_stub(0x7000, 8270, 6)];
+        for (version, compressed, expected) in [
+            (Some("3.12.1"), Some(true), "no_stub_prologues"),
+            (Some("9.9.9"), Some(true), "unknown_key"),
+            (Some("3.12.1"), Some(false), "unknown_key"),
+            (None, None, "unknown_key"),
+        ] {
+            let named = shared_stub_names(&disasm, version, compressed);
+            assert_eq!(named.status, expected, "({version:?}, {compressed:?})");
+            assert_eq!(
+                named.names.get(&0x7000).map(String::as_str),
+                Some("allocateClassId8270"),
+                "the allocation name must survive {expected}: {:?}",
+                named.names
+            );
+            assert_eq!(named.allocation_named, 1, "reported separately");
+        }
+    }
+
+    /// Only the shifted form composes a tag word. Without `lsl #16` the second
+    /// write replaces the low lane instead of extending it, so the constant is
+    /// not a tag and the function is not this stub.
+    #[test]
+    fn an_unshifted_pair_is_not_a_tag_word() {
+        let mut disasm = vec![alloc_stub(0x7000, 8270, 6), stub(0x2200, 0x190)];
+        disasm[0].instructions[1] = ins(0x7004, "movk", "x2, #0x2");
+        let named = shared_stub_names(&disasm, Some("3.12.1"), Some(true));
+        assert!(
+            !named.names.contains_key(&0x7000),
+            "an unshifted movk does not build a tag: {:?}",
+            named.names
+        );
     }
 }
