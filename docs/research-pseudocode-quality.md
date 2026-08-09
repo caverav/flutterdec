@@ -1620,3 +1620,90 @@ decline gates are `depth > 64` (`structured.rs:135`), a repeated region rejected
   wrong hypotheses were tried first (the indirect-call path, branch precedence,
   alternate entry points); only the last-mentioned was checked by measurement, and
   interior-offset stub calls turned out to be exactly zero in both samples.
+
+
+## R16. What is left, measured on a correct CFG
+
+Every figure below is from a replay over the post-prune artifacts, with controls.
+
+### The structurer now succeeds on 89-90%, and the residue is mostly one shape
+
+Faithful replay of `try_emit_structured`, first leaf gate per function:
+
+| gate | LocalSend | Immich |
+|---|---|---|
+| structured | **5,173 (89.19%)** | **7,522 (90.31%)** |
+| repeated region contains a loop header | 323 (5.57%) | 434 (5.21%) |
+| repeated region over 8 blocks | 191 (3.29%) | 214 (2.57%) |
+| repeated region over 48 instructions | 105 (1.81%) | 149 (1.79%) |
+| `Regions::build` irreducible | 7 (0.12%) | 7 (0.08%) |
+| depth over 64 | 1 (0.02%) | 3 (0.04%) |
+
+Cross-checked against the artifacts: 495 and 616 pseudocode files carry a DFS-only
+marker and **zero** of them replay as structured, so the replay never contradicts
+the output, and the marker count is confirmed as a lower bound (627 and 807 actual
+declines).
+
+The two budget gates are tunable. Rerunning only those declines at 2x
+(8->16 blocks, 48->96 instructions) clears 121 of 296 and 169 of 363, costing
+23,519 and 28,145 duplicated instructions, median 91. At 4x it clears 193 and 269
+but the tail is bad: one Immich function duplicates 45,863 instructions. 2x is the
+defensible point if any.
+
+`repeated:loop` is the largest gate and is **not** simply structural. Dart has
+labelled `break` and `continue`, and `structured.rs:151-152` says so itself: "An
+outer loop would need a labelled `continue`, which is declined for now". Splitting
+those declines by loop count, 121 of 323 (37.5%) and 173 of 434 (39.9%) are in
+functions with exactly **one** loop header, where no label is needed at all -- the
+region's only loop content is a back edge to the enclosing loop, which
+`structured.rs:143-146` already renders as `continue`. So `is_repeatable_region`
+rejecting on `regions.is_loop_header` is too coarse for at least that share.
+
+### A `bl` into the middle of a function means the extents are wrong
+
+6.38% and 6.17% of direct call sites target an address that is not any
+disassembled function's entry: 8,124 and 12,095 distinct targets. Two facts kill
+the obvious response and reveal a better one.
+
+**There is no head to exploit.** Every single outside-model target is called
+exactly once -- maximum frequency 1, so p50, p90 and p99 are all 1. A naming-only
+side table would therefore name at most 6.4% of call sites, one site each.
+
+**79% and 83% of them are interior addresses of functions already disassembled**
+(6,428 and 10,094). The offsets are not an entry-point convention. Dart AOT does
+have alternate entry points -- `kMonomorphicEntryOffsetAOT = 8` and
+`kPolymorphicEntryOffsetAOT = 24` on ARM64 (`object.h:5922-5923`), plus a variable
+unchecked entry (`object.h:7041-7065`) -- but the measured distribution is:
+
+| offset from containing entry | LocalSend | Immich |
+|---|---|---|
+| +0 to +8 | 0 (0.0%) | 2 (0.0%) |
+| +9 to +24 | 248 (3.9%) | 361 (3.6%) |
+| +25 to +64 | 131 (2.0%) | 195 (1.9%) |
+| +65 to +256 | 1,092 (17.0%) | 1,563 (15.5%) |
+| +257 to +1024 | 2,260 (35.2%) | 3,622 (35.9%) |
+| +1025 and up | 2,697 (42.0%) | 4,351 (43.1%) |
+
+As a fraction of the containing function's size the offsets are uniform: p10 0.08,
+p50 **0.49**, p90 0.91 on both samples. A median at half the function is the
+signature of a random position inside a record that spans several real functions,
+not of a fixed entry-point offset. Only the 3.6-3.9% in the +9 to +24 bucket look
+like alternate entries.
+
+So the model's function extents are inflated. `_recover_functions` in the adapter
+sizes a function as the gap to the next recovered start, capped at 0x8000, so any
+real function it fails to recover is swallowed by its predecessor. The same defect
+was visible earlier from the other side: `allocateMintWithFpuRegs` disassembles as
+133 and 190 instructions against 45 and 46 for the without-FPU variant, because it
+had absorbed its neighbours.
+
+**Consequence for naming: snapping an interior call target to its containing
+function would name it after the wrong function.** Deliberately not done.
+
+**Consequence for coverage: each of those 6,428 and 10,094 addresses is exact
+evidence of a function entry the model missed**, because a `bl` sets the link
+register and expects to return, so its target is a callee entry rather than
+intra-function control flow, which uses `b`. Splitting the containing record at
+those addresses is derived, not heuristic. It is a loader and disassembler change
+rather than a naming one, and it would move function counts, the disassembly ratio
+and prioritization, so it is recorded here rather than attempted late in a cycle.
