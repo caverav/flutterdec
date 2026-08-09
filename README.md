@@ -487,7 +487,9 @@ The IR stage makes the selector-bearing pool values explicit before readability 
   <img src="docs/assets/readme/zedsecure-minwidth-pseudocode.svg" alt="Recovered pseudocode with named Flutter selectors from the ZedSecure APK" width="900">
 </p>
 
-The important part is not the anonymous function name. The important part is that `flutterdec` surfaced readable Flutter selector names from the APK itself, including `dispatch.minWidth(...)`, `dispatch.messageMap(...)`, and the framework-side `flutter.foundation.invoke(...)`.
+The important part is not the anonymous function name. The important part is that `flutterdec` surfaced readable Flutter selector names from the AOT payload, including `dispatch.minWidth(...)`, `dispatch.messageMap(...)`, and the framework-side `flutter.foundation.invoke(...)`.
+
+This capture is from a target whose adapter recovered class and selector metadata. Selector naming is gated on that metadata: on a target where the adapter recovers only strings, the same run emits no selector names at all (measured zero on two release APKs). Function names, control flow, and expressions do not depend on it.
 
 This gives the README both views the tool is meant to show publicly:
 

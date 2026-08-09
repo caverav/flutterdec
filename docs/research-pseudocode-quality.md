@@ -1362,10 +1362,25 @@ compile-time (`stub_code.h:57-68,111-119`); `NameOfStub` is a runtime
 entrypoint->name search (`stub_code.cc:350-378`). The VM snapshot serializes stub
 roots in list order (`app_snapshot.cc:6997-7015`, restored at `7110-7114`) but
 `WriteRootRef` emits a name only when a profile writer is attached
-(`app_snapshot.cc:439-446`), and `ImageWriter::WriteText` writes bare text with
-no per-stub name table (`image_snapshot.cc:743-1048`). So release AOT has no
-literal stub names, and ordered root refs plus the compile-time list are the two
-exact routes.
+(`app_snapshot.cc:439-446`). Names do exist at write time:
+`SnapshotTextObjectNamer::AddNonUniqueNameFor` calls
+`StubCode::NameOfStub(insns.EntryPoint())` and prefixes `stub ` for stub code
+(`image_snapshot.cc:1300-1332`), fed to `AddCodeSymbol`
+(`image_snapshot.cc:886-944`). But those are *local static symbols*, not payload:
+`ELF::InitializeSymbolTables` omits `.symtab`/`.strtab` when stripped
+(`elf.cc:1244-1272`), so they survive only in an unstripped or separate-debug
+artifact.
+
+In the release artifact the bare `InstructionsSection` header carries only
+payload length, BSS offset, relocated address and build id
+(`object.h:6078-6110`, `raw_object.h:2217-2241`), and `WriteText` concatenates
+payloads with no per-stub name table (`image_snapshot.cc:743-890,1020-1063`).
+What *is* present is the RO-data `InstructionsTable`, whose `DataEntry` holds
+`{pc_offset, stack_map_offset}` alongside the code-object sequence
+(`raw_object.h:2459-2488`, `app_snapshot.cc:8302-8387,8421-8434`), and the
+deserializer associates cluster order with `EntryPointAt`
+(`app_snapshot.cc:1853-1864,9618-9639`). So the two exact routes are the
+prologue self-offset above, and ordered stub roots joined to that table.
 
 The gate is the same as for thread offsets: the self-offset is version and mode
 dependent, so it needs the `(hash, mode)` table, which is now readable from the
