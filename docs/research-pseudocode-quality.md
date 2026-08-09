@@ -1907,3 +1907,73 @@ used in the error message (`flow_graph_compiler.cc:2838-2873`,
 `runtime_entry.cc:1877-1902`). The destination type itself is in `R8` at the call
 site, not in the pool (`constants_arm64.h:234-243`). So a type test can yield the
 name being assigned to, and the type only through the register.
+
+
+## R18. A split predicate that needs no CFG, validated four ways
+
+R16 established that the model's function records swallow their neighbours, and that
+at least 16,021 and 19,861 missed entries are visible as unreachable component roots
+that push a frame. That derivation needs the CFG. A split has to happen earlier than
+that, on `FunctionDisassembly` before `build_program_ir`, so the useful question is
+whether the same points are visible in the instruction list alone.
+
+They are. Scanning each record's instructions in address order, a candidate is an
+index whose predecessor is a terminator (`ret`, an unconditional `b`, `brk`, `br`) and
+whose own instruction pushes a frame through x15 with writeback:
+
+| | LocalSend | Immich |
+|---|---|---|
+| candidates from the instruction stream | 17,988 | 22,553 |
+| frame-push unreachable roots from the CFG | 16,021 | 19,861 |
+| CFG roots that are also stream candidates | 15,641 (**97.6%**) | 19,333 (**97.3%**) |
+
+Two filters bring the stream figure down to something safe to cut at.
+
+**Reject a candidate any branch inside the record reaches.** A conditional branch into
+a frame push means the push is intra-function control flow, not an entry. That removes
+1,729 and 2,320 candidates, 9.6% and 10.3%. Unconditional branches, which would be
+tail calls to a genuinely separate function, hit 1 candidate and 0.
+
+**Reject a candidate that sits below the record's own reachable code.** Every check so
+far establishes that a root *looks like* an entry; none establishes that cutting there
+does not amputate the function that currently emits. A layout of entry, code, an
+unreachable root, then more code reachable from the first part would truncate a
+function that works today, which is a regression on the part of the output that is
+already correct. Taking the highest address reached from the record's entry and
+requiring the candidate to lie above it rejects 95 and 78 candidates.
+
+Final predicate, four clauses, all evaluable from the instruction list plus intra-record
+reachability:
+
+| | LocalSend | Immich |
+|---|---|---|
+| terminator predecessor and frame push | 17,988 | 22,553 |
+| minus branch targets | 16,258 | 20,233 |
+| minus below reachable code | **16,163** | **20,155** |
+
+That lands within 1% of the CFG-derived count from R16, from the other direction, which
+is the corroboration worth having: two independent derivations of the same set.
+
+### What the output is made of now
+
+For deciding where the next lever is, per emitted line across both samples:
+
+| shape | LocalSend | per line | Immich | per line |
+|---|---|---|---|---|
+| local `tmpN`/`objTmpN` | 117,143 | 0.40 | 170,043 | 0.42 |
+| field read `obj.fN` | 91,571 | 0.31 | 130,230 | 0.32 |
+| call temporary `tN` | 88,113 | 0.30 | 131,121 | 0.32 |
+| unresolved `regN` | 65,835 | 0.22 | 84,822 | 0.21 |
+| anonymous `sub_` call | 34,048 | 0.12 | 52,043 | 0.13 |
+| `poolOff[N]` displacement | 14,567 | 0.05 | 23,178 | 0.06 |
+| named runtime stub call | 10,054 | 0.03 | 11,613 | 0.03 |
+| `smiUntag`/`smiTag` | 7,301 | 0.02 | 9,217 | 0.02 |
+| `selN` dispatch | 5,173 | 0.02 | 8,187 | 0.02 |
+| `allocateClassId` | 4,623 | 0.02 | 5,413 | 0.01 |
+| omitted-path marker | 439 | 0.00 | 520 | 0.00 |
+
+The two largest are not defects: a local name and a call temporary are how any
+decompiler names an intermediate. `obj.fN` at a third of a line is the field-naming
+problem waiting on the snapshot's class and field tables. `poolOff[N]` waits on pool
+geometry. So of the shapes this pipeline can act on alone, `regN` and the anonymous
+call remain the two, and the anonymous call is what a record split addresses.
