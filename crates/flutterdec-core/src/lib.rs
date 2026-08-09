@@ -4,7 +4,7 @@ use anyhow::{bail, Context, Result};
 use flutterdec_adapter::{
     list_adapters, resolve_adapter_exec, run_adapter, AdapterInput, ProgramModel,
 };
-use flutterdec_decompiler::{emit_program_with_pool_context, PseudocodeArtifact};
+use flutterdec_decompiler::{emit_program_with_runtime_stubs, PseudocodeArtifact};
 use flutterdec_disasm_arm64::{
     disassemble_program_with_priorities_and_package_hints, FunctionDisassembly,
     FunctionPriorityBreakdown,

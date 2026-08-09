@@ -471,6 +471,18 @@ impl<'a> FuncEmitter<'a> {
             .or(library_intent.clone())
             .or(target_library_intent.clone());
             let selector_name = selector_name.or(target_selector_name);
+            // An SDK fact about the callee outranks a heuristic rename of it. The
+            // intent rewrite below fires first otherwise, and 1,180 error-stub
+            // sites resolve that way and keep the Dart-call model.
+            if let Some((_, target_va)) = self
+                .resolve_indirect_target_symbol_call_name(&target_value)
+                .filter(|(_, va)| self.runtime_stubs.contains_key(va))
+            {
+                self.semantic_indirect_calls += 1;
+                self.target_va_symbol_calls += 1;
+                self.emit_runtime_stub_call(target_va, &tname, indent);
+                return;
+            }
             if let Some(rewritten_name) = readable_call_name_from_intent(&named_target, intent.as_deref()) {
                 self.semantic_indirect_calls += 1;
                 let mut comments = Vec::new();
@@ -646,6 +658,12 @@ impl<'a> FuncEmitter<'a> {
                     }
                 }
             }
+        } else if let Some(va) = u64::from_str_radix(target.trim_start_matches("0x"), 16)
+            .ok()
+            .filter(|va| self.runtime_stubs.contains_key(va))
+        {
+            self.emit_runtime_stub_call(va, &tname, indent);
+            return;
         } else {
             let call_name = if let Some(hex) = target.strip_prefix("0x") {
                 if let Ok(va) = u64::from_str_radix(hex, 16) {
@@ -698,6 +716,42 @@ impl<'a> FuncEmitter<'a> {
         }
         self.clobber_call_registers();
         self.state.reg_values.insert("x0".to_string(), tname);
+    }
+
+    /// Emits a call into a known runtime stub, modelled from the SDK rather than
+    /// as a Dart call.
+    ///
+    /// Three facts differ. A stub's inputs are not in `DartCallingConvention`, so
+    /// the inferred argument list would describe the wrong thing entirely and is
+    /// dropped. A `GenerateSharedStub` saves and restores every non-reserved
+    /// register around its runtime call (`stub_code_compiler_arm64.cc:300,309`),
+    /// so it clobbers nothing, which matters because these are the commonest
+    /// calls in the binary. And it defines a value only when the SDK stores the
+    /// runtime result, which is the mint allocator alone: `stackOverflow` comes
+    /// back having defined nothing, and the type test preserves `R0` and answers
+    /// in `R7`, so binding either would claim a value that does not exist.
+    fn emit_runtime_stub_call(&mut self, va: u64, tname: &str, indent: usize) {
+        let Some(effect) = self.runtime_stubs.get(&va).copied() else {
+            return;
+        };
+        let name = self
+            .symbol_names
+            .get(&va)
+            .map(|n| sanitize_name(n))
+            .unwrap_or_else(|| format!("fn_0x{va:x}"));
+        if effect.writes_result {
+            self.push_line(indent, &format!("final {tname} = {name}();"));
+        } else {
+            self.push_line(indent, &format!("{name}();"));
+        }
+        if !effect.preserves_registers {
+            self.clobber_call_registers();
+        }
+        if effect.writes_result {
+            self.state
+                .reg_values
+                .insert("x0".to_string(), tname.to_string());
+        }
     }
 
     /// Drop the bindings a call does not preserve.

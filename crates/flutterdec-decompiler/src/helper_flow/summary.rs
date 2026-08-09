@@ -61,6 +61,10 @@ impl<'a> FuncEmitter<'a> {
             helper.call_index = self.call_index;
             helper.pool_value_hints = self.pool_value_hints.clone();
             helper.pool_semantic_hints = self.pool_semantic_hints.clone();
+            // Helper bodies contain the shared slow paths, so this is where most
+            // of the runtime-stub calls end up: without it 535 error-stub sites
+            // on one sample keep the Dart-call model and bind a throw.
+            helper.runtime_stubs = self.runtime_stubs.clone();
             helper.emit_block(id, 1, 0);
             self.call_index = helper.call_index;
             let has_terminator = helper.lines.iter().any(|line| {

@@ -1,49 +1,107 @@
 use flutterdec_disasm_arm64::FunctionDisassembly;
-use std::collections::HashMap;
+use flutterdec_decompiler::RuntimeStubEffect;
+use flutterdec_ir::{FunctionIr, IROp};
+use std::collections::{HashMap, HashSet};
+
+/// One vendored `Thread` slot: its displacement, the SDK stub it holds, and
+/// whether control can come back from that stub.
+struct StubSlot {
+    offset: u64,
+    name: &'static str,
+    returns: bool,
+    writes_result: bool,
+    preserves_registers: bool,
+}
 
 /// Dart 3.5, product ARM64, compressed pointers.
-const STUB_SLOTS_3_5: &[(u64, &str)] = &[
-    (0xc8, "lateInitializationErrorSharedWithoutFpuRegs"),
-    (0xd0, "lateInitializationErrorSharedWithFpuRegs"),
-    (0xd8, "nullErrorSharedWithoutFpuRegs"),
-    (0xe0, "nullErrorSharedWithFpuRegs"),
-    (0xe8, "nullArgErrorSharedWithoutFpuRegs"),
-    (0xf0, "nullArgErrorSharedWithFpuRegs"),
-    (0xf8, "nullCastErrorSharedWithoutFpuRegs"),
-    (0x100, "nullCastErrorSharedWithFpuRegs"),
-    (0x108, "rangeErrorSharedWithoutFpuRegs"),
-    (0x110, "rangeErrorSharedWithFpuRegs"),
-    (0x118, "writeErrorSharedWithoutFpuRegs"),
-    (0x120, "writeErrorSharedWithFpuRegs"),
-    (0x128, "allocateMintWithFpuRegs"),
-    (0x130, "allocateMintWithoutFpuRegs"),
-    (0x178, "stackOverflowSharedWithoutFpuRegs"),
-    (0x180, "stackOverflowSharedWithFpuRegs"),
-    (0x1c8, "slowTypeTest"),
+///
+/// `returns` is `allow_return` from `GenerateSharedStub`: `false` means the stub
+/// raises and control never comes back. Corroborated in both sample binaries,
+/// where every `false` row reaches `brk` before any `ret` and every `true` row
+/// reaches `ret` first.
+///
+/// `writes_result` is `store_runtime_result_in_result_register`, defaulted false
+/// by the SDK and set only for the mint allocator
+/// (`stub_code_compiler_arm64.cc:1481,1501`). Separate from `returns`:
+/// `stackOverflow` comes back but defines no value, so binding its result would
+/// be as false as binding a throw. The type test does not define one either:
+/// `TypeTestABI::kInstanceReg` is `R0` and sits in `kPreservedAbiRegisters`, so
+/// x0 still holds the instance afterwards, and the answer goes to
+/// `kSubtypeTestCacheResultReg` = `R7`, which is not preserved
+/// (`constants_arm64.h:237-258`). Only `invokeDartCode` returns in `R0`.
+///
+/// `preserves_registers` marks the `GenerateSharedStub` family, which pushes and
+/// pops `AddAllNonReservedRegisters` around the runtime call
+/// (`stub_code_compiler_arm64.cc:300,309`; `locations.h:692-703`). Those calls
+/// clobber nothing, and the mint allocator writes its result into the *saved*
+/// slot of `SharedSlowPathStubABI::kResultReg` = `R0`
+/// (`stub_code_compiler_arm64.cc:326-331`; `constants_arm64.h:170-172`), so x0
+/// alone changes. The two non-shared rows carry no such guarantee.
+const STUB_SLOTS_3_5: &[StubSlot] = &[
+    StubSlot { offset: 0xc8, name: "lateInitializationErrorSharedWithoutFpuRegs", returns: false, writes_result: false, preserves_registers: true },
+    StubSlot { offset: 0xd0, name: "lateInitializationErrorSharedWithFpuRegs", returns: false, writes_result: false, preserves_registers: true },
+    StubSlot { offset: 0xd8, name: "nullErrorSharedWithoutFpuRegs", returns: false, writes_result: false, preserves_registers: true },
+    StubSlot { offset: 0xe0, name: "nullErrorSharedWithFpuRegs", returns: false, writes_result: false, preserves_registers: true },
+    StubSlot { offset: 0xe8, name: "nullArgErrorSharedWithoutFpuRegs", returns: false, writes_result: false, preserves_registers: true },
+    StubSlot { offset: 0xf0, name: "nullArgErrorSharedWithFpuRegs", returns: false, writes_result: false, preserves_registers: true },
+    StubSlot { offset: 0xf8, name: "nullCastErrorSharedWithoutFpuRegs", returns: false, writes_result: false, preserves_registers: true },
+    StubSlot { offset: 0x100, name: "nullCastErrorSharedWithFpuRegs", returns: false, writes_result: false, preserves_registers: true },
+    StubSlot { offset: 0x108, name: "rangeErrorSharedWithoutFpuRegs", returns: false, writes_result: false, preserves_registers: true },
+    StubSlot { offset: 0x110, name: "rangeErrorSharedWithFpuRegs", returns: false, writes_result: false, preserves_registers: true },
+    StubSlot { offset: 0x118, name: "writeErrorSharedWithoutFpuRegs", returns: false, writes_result: false, preserves_registers: true },
+    StubSlot { offset: 0x120, name: "writeErrorSharedWithFpuRegs", returns: false, writes_result: false, preserves_registers: true },
+    StubSlot { offset: 0x128, name: "allocateMintWithFpuRegs", returns: true, writes_result: true, preserves_registers: true },
+    StubSlot { offset: 0x130, name: "allocateMintWithoutFpuRegs", returns: true, writes_result: true, preserves_registers: true },
+    StubSlot { offset: 0x178, name: "stackOverflowSharedWithoutFpuRegs", returns: true, writes_result: false, preserves_registers: true },
+    StubSlot { offset: 0x180, name: "stackOverflowSharedWithFpuRegs", returns: true, writes_result: false, preserves_registers: true },
+    StubSlot { offset: 0x1c8, name: "slowTypeTest", returns: true, writes_result: false, preserves_registers: false },
 ];
 
 /// Dart 3.12, product ARM64, compressed pointers.
-const STUB_SLOTS_3_12: &[(u64, &str)] = &[
-    (0xd0, "invokeDartCode"),
-    (0xe8, "lateInitializationErrorSharedWithoutFpuRegs"),
-    (0xf0, "lateInitializationErrorSharedWithFpuRegs"),
-    (0xf8, "nullErrorSharedWithoutFpuRegs"),
-    (0x100, "nullErrorSharedWithFpuRegs"),
-    (0x108, "nullArgErrorSharedWithoutFpuRegs"),
-    (0x110, "nullArgErrorSharedWithFpuRegs"),
-    (0x118, "nullCastErrorSharedWithoutFpuRegs"),
-    (0x120, "nullCastErrorSharedWithFpuRegs"),
-    (0x128, "rangeErrorSharedWithoutFpuRegs"),
-    (0x130, "rangeErrorSharedWithFpuRegs"),
-    (0x138, "writeErrorSharedWithoutFpuRegs"),
-    (0x140, "writeErrorSharedWithFpuRegs"),
-    (0x148, "fieldAccessErrorSharedWithoutFpuRegs"),
-    (0x150, "fieldAccessErrorSharedWithFpuRegs"),
-    (0x158, "allocateMintWithFpuRegs"),
-    (0x160, "allocateMintWithoutFpuRegs"),
-    (0x190, "stackOverflowSharedWithoutFpuRegs"),
-    (0x198, "stackOverflowSharedWithFpuRegs"),
-    (0x1d8, "slowTypeTest"),
+///
+/// `returns` is `allow_return` from `GenerateSharedStub`: `false` means the stub
+/// raises and control never comes back. Corroborated in both sample binaries,
+/// where every `false` row reaches `brk` before any `ret` and every `true` row
+/// reaches `ret` first.
+///
+/// `writes_result` is `store_runtime_result_in_result_register`, defaulted false
+/// by the SDK and set only for the mint allocator
+/// (`stub_code_compiler_arm64.cc:1481,1501`). Separate from `returns`:
+/// `stackOverflow` comes back but defines no value, so binding its result would
+/// be as false as binding a throw. The type test does not define one either:
+/// `TypeTestABI::kInstanceReg` is `R0` and sits in `kPreservedAbiRegisters`, so
+/// x0 still holds the instance afterwards, and the answer goes to
+/// `kSubtypeTestCacheResultReg` = `R7`, which is not preserved
+/// (`constants_arm64.h:237-258`). Only `invokeDartCode` returns in `R0`.
+///
+/// `preserves_registers` marks the `GenerateSharedStub` family, which pushes and
+/// pops `AddAllNonReservedRegisters` around the runtime call
+/// (`stub_code_compiler_arm64.cc:300,309`; `locations.h:692-703`). Those calls
+/// clobber nothing, and the mint allocator writes its result into the *saved*
+/// slot of `SharedSlowPathStubABI::kResultReg` = `R0`
+/// (`stub_code_compiler_arm64.cc:326-331`; `constants_arm64.h:170-172`), so x0
+/// alone changes. The two non-shared rows carry no such guarantee.
+const STUB_SLOTS_3_12: &[StubSlot] = &[
+    StubSlot { offset: 0xd0, name: "invokeDartCode", returns: true, writes_result: true, preserves_registers: false },
+    StubSlot { offset: 0xe8, name: "lateInitializationErrorSharedWithoutFpuRegs", returns: false, writes_result: false, preserves_registers: true },
+    StubSlot { offset: 0xf0, name: "lateInitializationErrorSharedWithFpuRegs", returns: false, writes_result: false, preserves_registers: true },
+    StubSlot { offset: 0xf8, name: "nullErrorSharedWithoutFpuRegs", returns: false, writes_result: false, preserves_registers: true },
+    StubSlot { offset: 0x100, name: "nullErrorSharedWithFpuRegs", returns: false, writes_result: false, preserves_registers: true },
+    StubSlot { offset: 0x108, name: "nullArgErrorSharedWithoutFpuRegs", returns: false, writes_result: false, preserves_registers: true },
+    StubSlot { offset: 0x110, name: "nullArgErrorSharedWithFpuRegs", returns: false, writes_result: false, preserves_registers: true },
+    StubSlot { offset: 0x118, name: "nullCastErrorSharedWithoutFpuRegs", returns: false, writes_result: false, preserves_registers: true },
+    StubSlot { offset: 0x120, name: "nullCastErrorSharedWithFpuRegs", returns: false, writes_result: false, preserves_registers: true },
+    StubSlot { offset: 0x128, name: "rangeErrorSharedWithoutFpuRegs", returns: false, writes_result: false, preserves_registers: true },
+    StubSlot { offset: 0x130, name: "rangeErrorSharedWithFpuRegs", returns: false, writes_result: false, preserves_registers: true },
+    StubSlot { offset: 0x138, name: "writeErrorSharedWithoutFpuRegs", returns: false, writes_result: false, preserves_registers: true },
+    StubSlot { offset: 0x140, name: "writeErrorSharedWithFpuRegs", returns: false, writes_result: false, preserves_registers: true },
+    StubSlot { offset: 0x148, name: "fieldAccessErrorSharedWithoutFpuRegs", returns: false, writes_result: false, preserves_registers: true },
+    StubSlot { offset: 0x150, name: "fieldAccessErrorSharedWithFpuRegs", returns: false, writes_result: false, preserves_registers: true },
+    StubSlot { offset: 0x158, name: "allocateMintWithFpuRegs", returns: true, writes_result: true, preserves_registers: true },
+    StubSlot { offset: 0x160, name: "allocateMintWithoutFpuRegs", returns: true, writes_result: true, preserves_registers: true },
+    StubSlot { offset: 0x190, name: "stackOverflowSharedWithoutFpuRegs", returns: true, writes_result: false, preserves_registers: true },
+    StubSlot { offset: 0x198, name: "stackOverflowSharedWithFpuRegs", returns: true, writes_result: false, preserves_registers: true },
+    StubSlot { offset: 0x1d8, name: "slowTypeTest", returns: true, writes_result: false, preserves_registers: false },
 ];
 
 /// The Dart thread register on ARM64 AOT: `const Register THR = R26`
@@ -105,8 +163,33 @@ pub(super) fn shared_stub_names(
     if !is_best_scoring(disasm, slots) {
         return SharedStubNaming::refused("table_disagreement", disasm.len());
     }
+    let non_returning = disasm
+        .iter()
+        .filter(|f| {
+            prologue_stub_slot(f, slots).is_some_and(|slot| !slot.returns)
+                && names.contains_key(&f.entry_va)
+        })
+        .map(|f| f.entry_va)
+        .collect();
+    let effects = disasm
+        .iter()
+        .filter(|f| names.contains_key(&f.entry_va))
+        .filter_map(|f| {
+            prologue_stub_slot(f, slots).map(|slot| {
+                (
+                    f.entry_va,
+                    RuntimeStubEffect {
+                        writes_result: slot.writes_result,
+                        preserves_registers: slot.preserves_registers,
+                    },
+                )
+            })
+        })
+        .collect();
     SharedStubNaming {
         names,
+        non_returning,
+        effects,
         status: "named",
         scanned: disasm.len(),
     }
@@ -119,6 +202,14 @@ pub(super) fn shared_stub_names(
 /// `table_disagreement` rather than as silence.
 pub(super) struct SharedStubNaming {
     pub(super) names: HashMap<u64, String>,
+    /// Entry VAs of the named stubs that raise. `allow_return=false` in the SDK,
+    /// so a call to one of these never comes back and the fall-through edge the
+    /// disassembler recorded does not exist.
+    pub(super) non_returning: HashSet<u64>,
+    /// Every named stub, mapped to whether it defines a value in the result
+    /// register. Presence also means the callee is a runtime stub, so the Dart
+    /// argument convention does not describe its inputs.
+    pub(super) effects: HashMap<u64, RuntimeStubEffect>,
     pub(super) status: &'static str,
     /// How many functions the prologue scan looked at. Without it
     /// `no_stub_prologues` reads the same whether the binary has no stubs or the
@@ -132,6 +223,8 @@ impl SharedStubNaming {
     fn refused(status: &'static str, scanned: usize) -> Self {
         Self {
             names: HashMap::new(),
+            non_returning: HashSet::new(),
+            effects: HashMap::new(),
             status,
             scanned,
         }
@@ -149,8 +242,8 @@ impl SharedStubNaming {
 /// `nullErrorSharedWithFpuRegs` on 3.12, so two tables can match the same
 /// prologues and disagree on every name. On a tie the names themselves are
 /// compared, and only an identical mapping is accepted.
-fn is_best_scoring(disasm: &[FunctionDisassembly], slots: &'static [(u64, &'static str)]) -> bool {
-    let names = |table: &'static [(u64, &'static str)]| {
+fn is_best_scoring(disasm: &[FunctionDisassembly], slots: &'static [StubSlot]) -> bool {
+    let names = |table: &'static [StubSlot]| {
         disasm
             .iter()
             .filter_map(|f| prologue_stub_name(f, table).map(|n| (f.entry_va, n)))
@@ -164,7 +257,7 @@ fn is_best_scoring(disasm: &[FunctionDisassembly], slots: &'static [(u64, &'stat
 }
 
 /// Every vendored table, for the cross-check above.
-const ALL_STUB_TABLES: &[&[(u64, &str)]] = &[STUB_SLOTS_3_5, STUB_SLOTS_3_12];
+const ALL_STUB_TABLES: &[&[StubSlot]] = &[STUB_SLOTS_3_5, STUB_SLOTS_3_12];
 
 /// The table for a binary, or `None` when either key is unknown. The vendored
 /// rows are from the product ARM64 `DART_COMPRESSED_POINTERS` block, so an
@@ -172,7 +265,7 @@ const ALL_STUB_TABLES: &[&[(u64, &str)]] = &[STUB_SLOTS_3_5, STUB_SLOTS_3_12];
 fn stub_slots(
     dart_version: Option<&str>,
     compressed_pointers: Option<bool>,
-) -> Option<&'static [(u64, &'static str)]> {
+) -> Option<&'static [StubSlot]> {
     if compressed_pointers != Some(true) {
         return None;
     }
@@ -198,8 +291,27 @@ fn stub_slots(
 /// Dart stack. The thunks push nothing.
 fn prologue_stub_name(
     f: &FunctionDisassembly,
-    slots: &'static [(u64, &'static str)],
+    slots: &'static [StubSlot],
 ) -> Option<String> {
+    let (slot, index, saw_push) = prologue_stub_hit(f, slots)?;
+    if saw_push {
+        return Some(slot.name.to_string());
+    }
+    // No register save, so this is not the stub. It is still exactly derivable
+    // when it hands straight off to the slot it read: the two per sample are
+    // trampolines, and their own call sites -- 520 on LocalSend and 696 on
+    // Immich -- would otherwise stay anonymous. `Thunk` says it wraps the stub
+    // rather than being it, which matters because one of them guards the tail
+    // call with `cmp w0, w22`.
+    tail_calls_immediately(f, index).then(|| format!("{}Thunk", slot.name))
+}
+
+/// The slot a function is named from, if any: the slot, the instruction index of
+/// the load, and whether a register save preceded it.
+fn prologue_stub_hit(
+    f: &FunctionDisassembly,
+    slots: &'static [StubSlot],
+) -> Option<(&'static StubSlot, usize, bool)> {
     let mut saw_push = false;
     for (index, ins) in f.instructions.iter().take(PROLOGUE_WINDOW).enumerate() {
         if is_dart_stack_push(ins) {
@@ -212,21 +324,26 @@ fn prologue_stub_name(
         let Some(offset) = thread_slot_offset(&ins.op_str) else {
             continue;
         };
-        let Some((_, name)) = slots.iter().find(|(slot, _)| *slot == offset) else {
+        let Some(slot) = slots.iter().find(|s| s.offset == offset) else {
             continue;
         };
-        if saw_push {
-            return Some((*name).to_string());
-        }
-        // No register save, so this is not the stub. It is still exactly
-        // derivable when it hands straight off to the slot it read: the two per
-        // sample are trampolines, and their own call sites -- 520 on LocalSend
-        // and 696 on Immich -- would otherwise stay anonymous. `Thunk` says it
-        // wraps the stub rather than being it, which matters because one of them
-        // guards the tail call with `cmp w0, w22`.
-        return tail_calls_immediately(f, index).then(|| format!("{name}Thunk"));
+        return Some((slot, index, saw_push));
     }
     None
+}
+
+/// The slot a function *is*, ignoring trampolines: only a stub that saved the
+/// register set identifies itself, and only that stub's `returns` flag describes
+/// what a call to it does. A trampoline inherits nothing here on purpose -- it
+/// may guard the tail call, so its own fall-through is real.
+fn prologue_stub_slot(
+    f: &FunctionDisassembly,
+    slots: &'static [StubSlot],
+) -> Option<&'static StubSlot> {
+    match prologue_stub_hit(f, slots) {
+        Some((slot, _, true)) => Some(slot),
+        _ => None,
+    }
 }
 
 /// Whether the function is a trampoline: the whole body after the slot load is
@@ -281,6 +398,113 @@ fn thread_slot_offset(op_str: &str) -> Option<u64> {
     let hex = disp.strip_prefix("0x")?;
     u64::from_str_radix(hex, 16).ok()
 }
+/// How much unreachable code a prune removed, for the report.
+#[derive(Debug, Default, Clone, Copy)]
+pub(super) struct NoreturnPrune {
+    pub(super) functions: usize,
+    pub(super) blocks_cut: usize,
+    pub(super) instructions_cut: usize,
+}
+
+/// Removes the control flow that follows a call which never returns.
+///
+/// The disassembler records a fall-through edge after every non-terminator, so a
+/// call to a raising stub looks like it comes back. It does not, and the cost is
+/// not cosmetic: on the samples 45.7% and 42.5% of functions contain such a
+/// call, and 20.6% and 19.8% of all reachable blocks are only reachable through
+/// one. The emitter was rendering them as live code -- binding the result of a
+/// throw, reading that binding, returning it, and merging register state from a
+/// path that cannot execute, which is the same impossible-output class as a field
+/// read off `null`.
+///
+/// Blocks are deliberately NOT removed. `regions.rs` requires block ids to be
+/// dense (`if b.id >= n { return None; }`) and `structured.rs` iterates
+/// `0..blocks.len()` as ids, so dropping a block without renumbering would make
+/// region recovery fail and push the function onto the very fallback emitter
+/// this is meant to stop feeding. Cutting the edge is enough: both emitters walk
+/// from the entry along successors, so an orphan is simply never visited, and
+/// `Regions` recomputes reachability from what it is given.
+pub(super) fn prune_calls_that_never_return(
+    ir: &mut [FunctionIr],
+    non_returning: &HashSet<u64>,
+) -> NoreturnPrune {
+    let mut stats = NoreturnPrune::default();
+    if non_returning.is_empty() {
+        return stats;
+    }
+    for f in ir {
+        // Measured as reachable-before minus reachable-after. The IR already
+        // contains blocks no path reaches, so counting every unreachable block
+        // after the cut would credit this pass with them: on one sample that
+        // reads 162,081 instead of the 13,696 it actually removes.
+        let reachable_before = reachable_block_count(f);
+        let mut cut_any = false;
+        // Which blocks terminate, and after which instruction.
+        let terminators: Vec<(usize, usize)> = f
+            .blocks
+            .iter()
+            .filter_map(|b| {
+                b.instrs
+                    .iter()
+                    .position(|ins| {
+                        matches!(ins.op, IROp::Call)
+                            && parse_target_va(&ins.target)
+                                .is_some_and(|va| non_returning.contains(&va))
+                    })
+                    .map(|at| (b.id, at))
+            })
+            .collect();
+        for (id, at) in terminators {
+            let Some(index) = f.blocks.iter().position(|b| b.id == id) else {
+                continue;
+            };
+            let dropped_succs = std::mem::take(&mut f.blocks[index].succs);
+            let tail = f.blocks[index].instrs.len().saturating_sub(at + 1);
+            f.blocks[index].instrs.truncate(at + 1);
+            stats.instructions_cut += tail;
+            if !dropped_succs.is_empty() || tail > 0 {
+                cut_any = true;
+            }
+            // Keep `preds` consistent: `helper_flow/summary.rs` reads it directly
+            // to score a block, without cross-checking the successor side.
+            for succ in dropped_succs {
+                if let Some(sb) = f.blocks.iter_mut().find(|b| b.id == succ) {
+                    sb.preds.retain(|p| *p != id);
+                }
+            }
+        }
+        if !cut_any {
+            continue;
+        }
+        stats.functions += 1;
+        stats.blocks_cut += reachable_before.saturating_sub(reachable_block_count(f));
+    }
+    stats
+}
+
+/// Blocks reachable from the entry along successor edges.
+fn reachable_block_count(f: &FunctionIr) -> usize {
+    let Some(entry) = f.blocks.first().map(|b| b.id) else {
+        return 0;
+    };
+    let mut seen = HashSet::new();
+    let mut stack = vec![entry];
+    while let Some(id) = stack.pop() {
+        if !seen.insert(id) {
+            continue;
+        }
+        if let Some(b) = f.blocks.iter().find(|b| b.id == id) {
+            stack.extend(b.succs.iter().copied());
+        }
+    }
+    seen.len()
+}
+
+/// The VA a `Call` target names, e.g. `"#0x17368d0"`.
+fn parse_target_va(target: &str) -> Option<u64> {
+    u64::from_str_radix(target.trim().trim_start_matches('#').strip_prefix("0x")?, 16).ok()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -556,5 +780,169 @@ mod trampoline_tests {
             "a `blr` caller is not a trampoline: {:?}",
             named.names
         );
+    }
+}
+
+#[cfg(test)]
+mod prune_tests {
+    use super::*;
+    use flutterdec_ir::{BasicBlock, LlirInstr};
+
+    fn call(va: u64, target: &str) -> LlirInstr {
+        LlirInstr {
+            va,
+            op: IROp::Call,
+            src: format!("bl {target}"),
+            target: target.to_string(),
+        }
+    }
+
+    fn other(va: u64, src: &str) -> LlirInstr {
+        LlirInstr {
+            va,
+            op: IROp::Other,
+            src: src.to_string(),
+            target: String::new(),
+        }
+    }
+
+    fn blk(id: usize, start_va: u64, instrs: Vec<LlirInstr>, succs: Vec<usize>) -> BasicBlock {
+        BasicBlock {
+            id,
+            start_va,
+            instrs,
+            succs,
+            preds: Vec::new(),
+        }
+    }
+
+    /// The fall-through after a raising stub is not real, and the instructions
+    /// after the call in the same block are unreachable bytes of another slow
+    /// path. Both go. What must NOT happen is a block being removed: `regions.rs`
+    /// rejects a CFG whose ids are not dense, so dropping one would push the
+    /// function onto the fallback emitter -- the opposite of the intent.
+    #[test]
+    fn a_call_that_never_returns_ends_its_block_without_renumbering() {
+        let mut ir = vec![FunctionIr {
+            function_id: 1,
+            name: "sub_1000".to_string(),
+            entry_va: 0x1000,
+            blocks: vec![
+                blk(0, 0x1000, vec![other(0x1000, "mov x0, x1")], vec![1]),
+                blk(
+                    1,
+                    0x1004,
+                    vec![
+                        call(0x1004, "#0x9000"),
+                        other(0x1008, "mov x2, x3"),
+                        other(0x100c, "mov x4, x5"),
+                    ],
+                    vec![2],
+                ),
+                blk(2, 0x1010, vec![other(0x1010, "ret")], vec![]),
+            ],
+        }];
+        for b in 0..ir[0].blocks.len() {
+            let succs = ir[0].blocks[b].succs.clone();
+            let id = ir[0].blocks[b].id;
+            for s in succs {
+                ir[0].blocks[s].preds.push(id);
+            }
+        }
+
+        let stats = prune_calls_that_never_return(&mut ir, &HashSet::from([0x9000]));
+
+        assert_eq!(stats.functions, 1);
+        assert_eq!(stats.blocks_cut, 1, "block 2 becomes unreachable");
+        assert_eq!(stats.instructions_cut, 2, "the two bytes after the throw");
+
+        let blocks = &ir[0].blocks;
+        assert_eq!(blocks.len(), 3, "no block may be removed: ids must stay dense");
+        assert_eq!(
+            blocks.iter().map(|b| b.id).collect::<Vec<_>>(),
+            vec![0, 1, 2],
+            "ids must stay dense"
+        );
+        assert!(blocks[1].succs.is_empty(), "the fall-through edge is fake");
+        assert_eq!(blocks[1].instrs.len(), 1, "the call itself is kept");
+        assert!(
+            blocks[2].preds.is_empty(),
+            "preds must not go stale: helper_flow reads it directly"
+        );
+    }
+
+    /// A stub that returns keeps its fall-through. `stackOverflow` does work and
+    /// comes back, and `allocateMint` produces a value, so the flag is per slot
+    /// rather than per family.
+    #[test]
+    fn a_call_that_returns_keeps_its_edge() {
+        let mut ir = vec![FunctionIr {
+            function_id: 1,
+            name: "sub_1000".to_string(),
+            entry_va: 0x1000,
+            blocks: vec![
+                blk(0, 0x1000, vec![call(0x1000, "#0x8000")], vec![1]),
+                blk(1, 0x1004, vec![other(0x1004, "ret")], vec![]),
+            ],
+        }];
+        let stats = prune_calls_that_never_return(&mut ir, &HashSet::from([0x9000]));
+        assert_eq!(stats.functions, 0);
+        assert_eq!(ir[0].blocks[0].succs, vec![1], "a returning call falls through");
+    }
+
+    /// Every row of both vendored tables must agree with the SDK's `allow_return`
+    /// split. The seven error families raise; `stackOverflow`, `allocateMint`,
+    /// `invokeDartCode` and `slowTypeTest` come back. Independently corroborated
+    /// in both sample binaries: every non-returning stub reaches `brk` before any
+    /// `ret`, and every returning one reaches `ret` first.
+    #[test]
+    fn the_tables_agree_with_the_sdk_allow_return_split() {
+        let raises = [
+            "nullError",
+            "nullArgError",
+            "nullCastError",
+            "rangeError",
+            "writeError",
+            "fieldAccessError",
+            "lateInitializationError",
+        ];
+        let mut checked = 0;
+        for table in ALL_STUB_TABLES {
+            for slot in *table {
+                let should_raise = raises.iter().any(|r| slot.name.starts_with(r));
+                assert_eq!(
+                    slot.returns,
+                    !should_raise,
+                    "{} returns={}",
+                    slot.name,
+                    slot.returns
+                );
+                // `store_runtime_result_in_result_register` is set only for the
+                // mint allocator among the shared stubs. The type test and the
+                // Dart entry are not shared stubs and do produce a value.
+                // Only these define a value in the result register. The type
+                // test is deliberately excluded: `TypeTestABI::kInstanceReg` is
+                // `R0` and preserved, so x0 still holds the instance, and the
+                // answer lands in `R7` (`constants_arm64.h:237-258`).
+                let defines_value =
+                    slot.name.starts_with("allocateMint") || slot.name == "invokeDartCode";
+                assert_eq!(
+                    slot.writes_result,
+                    defines_value,
+                    "{} writes_result={}",
+                    slot.name,
+                    slot.writes_result
+                );
+                // A stub that raises defines nothing, so the two flags are never
+                // both set: `ASSERT(!store_runtime_result || allow_return)`.
+                assert!(
+                    slot.returns || !slot.writes_result,
+                    "{} claims to raise and to define a value",
+                    slot.name
+                );
+                checked += 1;
+            }
+        }
+        assert!(checked >= 30, "control failed: only {checked} slots checked");
     }
 }

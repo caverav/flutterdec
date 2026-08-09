@@ -7,7 +7,7 @@ use runners_reporting::{
 };
 #[path = "runners/stubs.rs"]
 mod runners_stubs;
-use runners_stubs::shared_stub_names;
+use runners_stubs::{prune_calls_that_never_return, shared_stub_names};
 
 /// Why the shared-stub naming produced the count it did, for the report.
 struct SharedStubNamingSummary {
@@ -1302,7 +1302,7 @@ pub fn run_decompile(
         &priority_package_hints,
         opt.engine_options.bootflow_category_seeds,
     );
-    let ir: Vec<FunctionIr> = build_program_ir(&disasm);
+    let mut ir: Vec<FunctionIr> = build_program_ir(&disasm);
     let mut symbol_names: HashMap<u64, String> = HashMap::new();
     let mut symbol_quality: HashMap<u64, SymbolNameQuality> = HashMap::new();
     let mut symbol_merge_stats = SymbolMergeStats::default();
@@ -1477,6 +1477,10 @@ pub fn run_decompile(
         named: stub_naming.names.len(),
         scanned: stub_naming.scanned,
     };
+    // A call that raises has no fall-through, so the edge the disassembler
+    // recorded after it is not real. Cut before the emitters see the CFG.
+    let noreturn_prune =
+        prune_calls_that_never_return(&mut ir, &stub_naming.non_returning);
     for (va, name) in stub_naming.names {
         merge_symbol_name(
             &mut symbol_names,
@@ -1488,11 +1492,12 @@ pub fn run_decompile(
         );
     }
     let symbol_quality_counts = collect_symbol_quality_counts(&symbol_quality);
-    let pseudo = emit_program_with_pool_context(
+    let pseudo = emit_program_with_runtime_stubs(
         &ir,
         &symbol_names,
         &pool_value_hints,
         &pool_semantic_hints,
+        &stub_naming.effects,
     );
 
     let asm_dir = opt.out_dir.join("asm");
@@ -2091,6 +2096,9 @@ pub fn run_decompile(
             "status": shared_stub_naming.status,
             "named": shared_stub_naming.named,
             "functions_scanned": shared_stub_naming.scanned,
+            "noreturn_pruned_functions": noreturn_prune.functions,
+            "noreturn_pruned_blocks": noreturn_prune.blocks_cut,
+            "noreturn_pruned_instructions": noreturn_prune.instructions_cut,
             "model": model.adapter_kind.clone(),
             "snapshot_dart_version": bundle.dart_profile.as_ref().map(|p| p.dart_version.clone()),
             "compressed_pointers": bundle.compressed_pointers

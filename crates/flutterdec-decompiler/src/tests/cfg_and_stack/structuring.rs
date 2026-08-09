@@ -1500,3 +1500,102 @@ fn a_w_form_complement_is_zero_extended() {
         "a narrow shift needs its operand masked, not its result:\n{shifted}"
     );
 }
+
+/// A call into a known runtime stub is modelled from the SDK, not as a Dart call.
+///
+/// Three facts. The stub's inputs are not in `DartCallingConvention`, so no
+/// argument list is inferred. A `GenerateSharedStub` saves and restores every
+/// non-reserved register, so it clobbers nothing and bindings survive across it --
+/// which matters because `stackOverflow` alone is ~38,000 call sites across the
+/// two samples. And it defines a value only when the SDK stores the runtime
+/// result, which is the mint allocator alone: binding `stackOverflow` would claim
+/// a value that does not exist.
+#[test]
+fn a_runtime_stub_call_is_modelled_from_the_sdk_not_as_a_dart_call() {
+    let call = |va: u64, target: u64| LlirInstr {
+        va,
+        op: IROp::Call,
+        src: format!("bl #0x{target:x}"),
+        target: format!("#0x{target:x}"),
+    };
+    let ir = FunctionIr {
+        function_id: 0x1000,
+        name: "stubCaller".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![blk(
+            0,
+            0x1000,
+            vec![
+                stmt(0x1000, "mov x9, x1"),
+                call(0x1004, 0x9000),
+                stmt(0x1008, "stur x9, [x4, #7]"),
+                ret(0x100c),
+            ],
+            vec![],
+        )],
+    };
+    let mut symbols = HashMap::new();
+    symbols.insert(0x9000u64, "stackOverflowSharedWithoutFpuRegs".to_string());
+    let mut stubs = HashMap::new();
+    stubs.insert(
+        0x9000u64,
+        RuntimeStubEffect {
+            writes_result: false,
+            preserves_registers: true,
+        },
+    );
+    let out = emit_program_with_runtime_stubs(
+        std::slice::from_ref(&ir),
+        &symbols,
+        &HashMap::new(),
+        &HashMap::new(),
+        &stubs,
+    )
+    .remove(0)
+    .source;
+
+    assert!(
+        out.contains("stackOverflowSharedWithoutFpuRegs();"),
+        "a stub that defines no value must not be bound:\n{out}"
+    );
+    assert!(
+        !out.contains("= stackOverflowSharedWithoutFpuRegs"),
+        "binding it claims a value the SDK says does not exist:\n{out}"
+    );
+    // Anchored on the store rendering the value x9 held before the call. A bare
+    // `contains("receiver")` would match the signature line and pass even when
+    // the call clobbers everything.
+    assert!(
+        out.contains("reg4.f8 = receiver;"),
+        "a shared stub preserves every register, so x9's binding survives:\n{out}"
+    );
+    assert!(
+        !out.contains("reg9"),
+        "x9 must not read as unresolved after a call that preserves it:\n{out}"
+    );
+
+    // The mint allocator is the one shared stub that does define a result.
+    let mut mint = HashMap::new();
+    mint.insert(
+        0x9000u64,
+        RuntimeStubEffect {
+            writes_result: true,
+            preserves_registers: true,
+        },
+    );
+    let mut mint_symbols = HashMap::new();
+    mint_symbols.insert(0x9000u64, "allocateMintWithoutFpuRegs".to_string());
+    let bound = emit_program_with_runtime_stubs(
+        std::slice::from_ref(&ir),
+        &mint_symbols,
+        &HashMap::new(),
+        &HashMap::new(),
+        &mint,
+    )
+    .remove(0)
+    .source;
+    assert!(
+        bound.contains("= allocateMintWithoutFpuRegs();"),
+        "a stub that stores the runtime result does define a value:\n{bound}"
+    );
+}

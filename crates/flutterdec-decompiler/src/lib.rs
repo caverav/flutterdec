@@ -47,6 +47,9 @@ struct FuncEmitter<'a> {
     symbol_names: &'a HashMap<u64, String>,
     pool_value_hints: HashMap<u64, String>,
     pool_semantic_hints: HashMap<u64, PoolSemanticHint>,
+    /// Per-target facts for calls into known runtime stubs; empty when the SDK
+    /// table did not apply, in which case every call is modelled as a Dart call.
+    runtime_stubs: HashMap<u64, RuntimeStubEffect>,
     locals: BTreeMap<i64, String>,
     block_by_id: HashMap<usize, &'a BasicBlock>,
     va_to_id: HashMap<u64, usize>,
@@ -138,6 +141,7 @@ impl<'a> FuncEmitter<'a> {
             symbol_names,
             pool_value_hints: HashMap::new(),
             pool_semantic_hints: HashMap::new(),
+            runtime_stubs: HashMap::new(),
             locals,
             block_by_id,
             va_to_id,
@@ -259,6 +263,20 @@ impl<'a> FuncEmitter<'a> {
     }
 }
 
+/// What a call to a known runtime stub does, read from the SDK per stub slot.
+///
+/// The Dart calling convention does not describe a stub's inputs, so a call to
+/// one gets no inferred argument list either way.
+#[derive(Debug, Clone, Copy)]
+pub struct RuntimeStubEffect {
+    /// The stub defines a value in `SharedSlowPathStubABI::kResultReg` (`R0`).
+    /// When false, binding the call's result claims a value that does not exist.
+    pub writes_result: bool,
+    /// The stub saves and restores every non-reserved register around its
+    /// runtime call, so it clobbers nothing a normal call would.
+    pub preserves_registers: bool,
+}
+
 pub fn emit_pseudocode(ir: &FunctionIr, symbol_names: &HashMap<u64, String>) -> PseudocodeArtifact {
     FuncEmitter::new(ir, symbol_names).emit()
 }
@@ -307,15 +325,35 @@ pub fn emit_program_with_pool_context(
     pool_value_hints: &HashMap<u64, String>,
     pool_semantic_hints: &HashMap<u64, PoolSemanticHint>,
 ) -> Vec<PseudocodeArtifact> {
+    let empty = HashMap::new();
+    emit_program_with_runtime_stubs(
+        ir,
+        symbol_names,
+        pool_value_hints,
+        pool_semantic_hints,
+        &empty,
+    )
+}
+
+/// As `emit_program_with_pool_context`, plus what the SDK says a call to each
+/// known runtime stub does. Without the table every call is modelled as a normal
+/// Dart call: result bound, caller-saved registers dropped. Both are wrong for a
+/// shared stub, and those are the commonest calls in the binary.
+pub fn emit_program_with_runtime_stubs(
+    ir: &[FunctionIr],
+    symbol_names: &HashMap<u64, String>,
+    pool_value_hints: &HashMap<u64, String>,
+    pool_semantic_hints: &HashMap<u64, PoolSemanticHint>,
+    runtime_stubs: &HashMap<u64, RuntimeStubEffect>,
+) -> Vec<PseudocodeArtifact> {
     let mut artifacts = ir
         .iter()
         .map(|f| {
-            emit_pseudocode_with_pool_context(
-                f,
-                symbol_names,
-                pool_value_hints,
-                pool_semantic_hints,
-            )
+            let mut emitter = FuncEmitter::new(f, symbol_names);
+            emitter.pool_value_hints = pool_value_hints.clone();
+            emitter.pool_semantic_hints = pool_semantic_hints.clone();
+            emitter.runtime_stubs = runtime_stubs.clone();
+            emitter.emit()
         })
         .collect::<Vec<_>>();
     apply_program_level_generic_call_rewrites(&mut artifacts);
