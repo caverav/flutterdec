@@ -358,7 +358,9 @@ mod expr_cleanup_utf8_tests {
 
     #[test]
     fn clean_expr_normalizes_shifted_pool_field_access() {
-        let input = "((pool + 8 /* lsl #12 */)).f3640".to_string();
+        // The shift folds in the simplifier now, so this is the shape the emitter
+        // produces: `add rD, pool, #0x8, lsl #12` reaches here already added.
+        let input = "((pool + 0x8000)).f3640".to_string();
         let out = FuncEmitter::clean_expr(input);
         // (8 << 12) + 3640 == 36408 bytes from PP. Converting that to an entry index
         // needs the pool's entries_offset/word_size, which this layer does not have.
@@ -367,7 +369,7 @@ mod expr_cleanup_utf8_tests {
 
     #[test]
     fn clean_expr_normalizes_nested_shifted_pool_field_access() {
-        let input = "((((pool + 8 /* lsl #12 */)).f816).f7)".to_string();
+        let input = "((((pool + 0x8000)).f816).f7)".to_string();
         let out = FuncEmitter::clean_expr(input);
         assert_eq!(out, "(poolOff[33584].f7)");
     }
