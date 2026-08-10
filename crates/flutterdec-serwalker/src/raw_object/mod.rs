@@ -213,7 +213,33 @@ pub struct UnlinkedCall {
 
 #[derive(Default)]
 pub struct ObjectPool {
-    data: Vec<u32>, // vector holding the array of reference ids making up the object pool
+    pub length: usize,
+    pub entries: Vec<ObjectPoolEntry>,
+}
+
+#[derive(Debug)]
+pub struct ObjectPoolEntry {
+    // ObjectPoolBuilderEntry::{TypeBits, PatchableBit, SnapshotBehaviorBits}.
+    // Keep the serialized byte even when the runtime would rewrite the entry.
+    pub entry_bits: u8,
+    pub value: ObjectPoolEntryValue,
+}
+
+#[derive(Debug)]
+pub enum ObjectPoolEntryValue {
+    TaggedObjectRef(u32),
+    Immediate(i64),
+
+    // Snapshotable native-function entries carry no serialized value. The VM
+    // installs NativeEntry::LinkNativeCallEntry while deserializing them.
+    NativeFunctionLazyLink,
+
+    // These snapshot behaviors also carry no serialized value. They describe
+    // the value installed by the VM rather than inventing a reference/address
+    // that is not present in the program snapshot.
+    ResetToBootstrapNative,
+    ResetToSwitchableCallMissEntryPoint,
+    SetToZero,
 }
 
 #[derive(Default)]

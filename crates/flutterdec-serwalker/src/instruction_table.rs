@@ -50,11 +50,11 @@ pub fn parse_instr_table_from_rodata(stream: &mut Stream) -> anyhow::Result<Inst
     Ok(instruction_table)
 }
 
-pub fn resolve_entry_points(
-    code_index: u32,
+pub fn get_pc_offset_from_code_cluster_index(
+    code_cluster_index: u32,
     instr_table: &InstructionTable,
 ) -> anyhow::Result<usize> {
-    let abs_index = instr_table.first_entry_with_code + code_index as usize;
+    let abs_index = instr_table.first_entry_with_code + code_cluster_index as usize;
     let entry = instr_table.data.get(abs_index).ok_or_else(|| {
         anyhow::anyhow!(
             "instruction-table index {abs_index} is out of bounds for length {}",

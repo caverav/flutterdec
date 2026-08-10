@@ -565,10 +565,72 @@ IMPLEMENT_VARIABLE_LENGTH_CLUSTER!(
     |cluster, stream| {
         cluster.obj_count = stream.read_unsigned()?;
         for _ in 0..cluster.obj_count {
-            cluster.objs.push(Box::<ObjectPool>::default());
+            let length = usize::try_from(stream.read_unsigned()?)
+                .map_err(|_| anyhow::anyhow!("ObjectPool length does not fit in usize"))?;
+            cluster.objs.push(Box::new(ObjectPool {
+                length,
+                entries: Vec::new(),
+            }));
         }
     },
-    |cluster, stream| {}
+    |cluster, stream| {
+        const ENTRY_TYPE_MASK: u8 = 0x0f;
+        const SNAPSHOT_BEHAVIOR_SHIFT: u32 = 5;
+        const SNAPSHOT_BEHAVIOR_MASK: u8 = 0x07;
+
+        const IMMEDIATE: u8 = 0;
+        const TAGGED_OBJECT: u8 = 1;
+        const NATIVE_FUNCTION: u8 = 2;
+
+        const SNAPSHOTABLE: u8 = 0;
+        const NOT_SNAPSHOTABLE: u8 = 1;
+        const RESET_TO_BOOTSTRAP_NATIVE: u8 = 2;
+        const RESET_TO_SWITCHABLE_CALL_MISS_ENTRY_POINT: u8 = 3;
+        const SET_TO_ZERO: u8 = 4;
+
+        for obj in &mut cluster.objs {
+            let fill_length = usize::try_from(stream.read_unsigned()?)
+                .map_err(|_| anyhow::anyhow!("ObjectPool fill length does not fit in usize"))?;
+            anyhow::ensure!(
+                fill_length == obj.length,
+                "length changed between alloc ({}) and fill ({fill_length})",
+                obj.length
+            );
+
+            for _ in 0..fill_length {
+                let entry_bits = stream.read_byte()?;
+                let entry_type = entry_bits & ENTRY_TYPE_MASK;
+                let snapshot_behavior =
+                    (entry_bits >> SNAPSHOT_BEHAVIOR_SHIFT) & SNAPSHOT_BEHAVIOR_MASK;
+
+                let value = match snapshot_behavior {
+                    SNAPSHOTABLE => match entry_type {
+                        TAGGED_OBJECT => {
+                            ObjectPoolEntryValue::TaggedObjectRef(stream.read_ref_id()?)
+                        }
+                        IMMEDIATE => ObjectPoolEntryValue::Immediate(stream.read()? as i64),
+                        NATIVE_FUNCTION => ObjectPoolEntryValue::NativeFunctionLazyLink,
+                        _ => anyhow::bail!(
+                            "unsupported snapshotable ObjectPool entry type {entry_type}"
+                        ),
+                    },
+                    NOT_SNAPSHOTABLE => {
+                        anyhow::bail!("ObjectPool contains an entry marked as not snapshotable")
+                    }
+                    RESET_TO_BOOTSTRAP_NATIVE => ObjectPoolEntryValue::ResetToBootstrapNative,
+                    RESET_TO_SWITCHABLE_CALL_MISS_ENTRY_POINT => {
+                        ObjectPoolEntryValue::ResetToSwitchableCallMissEntryPoint
+                    }
+                    SET_TO_ZERO => ObjectPoolEntryValue::SetToZero,
+                    _ => anyhow::bail!(
+                        "unsupported ObjectPool snapshot behavior {snapshot_behavior}"
+                    ),
+                };
+
+                obj.entries.push(ObjectPoolEntry { entry_bits, value });
+            }
+        }
+    }
 );
 
 DECLARE_VARIABLE_LENGTH_CLUSTER!(Map, MapCluster);
