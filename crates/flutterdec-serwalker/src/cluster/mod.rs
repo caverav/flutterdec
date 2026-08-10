@@ -1,3 +1,7 @@
+mod base_objects_pseudocluster;
+
+use std::u64;
+
 use crate::constants::{ClassId, ClassId::*};
 use crate::raw_object::*;
 use crate::stream::Stream;
@@ -378,9 +382,6 @@ DECLARE_FIXED_LENGTH_CLUSTER!(WeakProperty, WeakPropertyCluster, |_self, stream|
     }
 });
 
-DECLARE_VARIABLE_LENGTH_CLUSTER!(Code, CodeCluster);
-DECLARE_VARIABLE_LENGTH_CLUSTER!(ObjectPool, ObjectPoolCluster);
-
 macro_rules! IMPLEMENT_VARIABLE_LENGTH_CLUSTER {
     (
         $cluster_name:ident,
@@ -447,6 +448,128 @@ fn typed_data_element_size(cid: ClassId) -> anyhow::Result<usize> {
     };
     Ok(size)
 }
+
+pub struct CodeCluster {
+    tags: u32,
+    cid: ClassId,
+    is_immutable: bool,
+    is_canonical: bool,
+    obj_count: u64,
+    non_deferred_obj_count: u64,
+    deferred_obj_count: u64,
+
+    start_of_fill: usize,
+    start_of_alloc: usize,
+
+    end_of_fill: usize,
+    end_of_alloc: usize,
+
+    first_ref_id: u32,
+
+    objs: Vec<Box<Code>>,
+}
+
+IMPLEMENT_VARIABLE_LENGTH_CLUSTER!(
+    CodeCluster,
+    |cluster, stream| {
+        cluster.non_deferred_obj_count = stream.read_unsigned()?;
+        for _ in 0..cluster.non_deferred_obj_count {
+            // for normal code objects
+            let mut code = Box::<Code>::default();
+            code.state_bits = stream.read()? as i32;
+            cluster.objs.push(code);
+        }
+
+        cluster.deferred_obj_count = stream.read_unsigned()?; // number of deferred objs
+        for _ in 0..cluster.deferred_obj_count {
+            // for deferred code objects
+            let mut code = Box::<Code>::default();
+            code.state_bits = stream.read()? as i32;
+            cluster.objs.push(code);
+        }
+
+        cluster.obj_count = cluster.non_deferred_obj_count + cluster.deferred_obj_count;
+    },
+    |cluster, stream| {
+        // this is the ARM-64-specific offsets, in the future we must add the other architecture's offsets if we want to support them
+        // const MONOMORPHIC_ENTRY_OFFSET: usize = 8;
+        // const POLYMORPHIC_ENTRY_OFFSET: usize = 24;
+
+        for idx in 0..cluster.non_deferred_obj_count
+        // normal code objects
+        {
+            // --- ReadInstructions ---
+            let payload_info = stream.read_unsigned()?;
+            let has_monomorphic_entrypoint = (payload_info & 1) == 1;
+            let unchecked_offset = payload_info >> 1;
+
+            let obj = cluster.objs.get_mut(idx as usize).unwrap(); // this can never panic
+
+            // unresolved before resolve_entrypoints
+            obj.entry_point = u64::MAX; // [[IMPORTANT]] WE USE u64::MAX to indicate an unresolved entry
+            obj.monomorphic_entry_point = u64::MAX; // so u64::MAX should NEVER be the final state for non-deferred Code objects
+            obj.unchecked_entry_point = unchecked_offset;
+            obj.monomorphic_unchecked_entry_point = unchecked_offset;
+            obj.has_monomorphic_entrypoint = has_monomorphic_entrypoint; // used to resolve monomorphic_unchecked_entry_pint
+                                                                         // --- ReadInstructions ---
+
+            // really important, in FullAOT all code objects use the
+            // global object pool, and DO NOT store a refid to any particular ObjectPool
+            // even though there are multiple other cases like this if we compare
+            // AOT vs JIT, this one is important enough to leave a piece of code
+            // reminding us of it
+
+            obj.object_pool = 0;
+            obj.owner = stream.read_ref_id()?;
+            obj.exception_handlers = stream.read_ref_id()?;
+            obj.pc_descriptors = stream.read_ref_id()?;
+            obj.catch_entry = stream.read_ref_id()?;
+
+            // again, for AOT snapshots the stackmaps aren't written to the clustered
+            // stream, they are in the instruction tables along with the pc offset
+            // into the instruction image
+            obj.compressed_stackmaps = 0;
+            obj.inlined_id_to_function = stream.read_ref_id()?;
+            obj.code_source_map = stream.read_ref_id()?;
+        }
+
+        for idx in cluster.non_deferred_obj_count..cluster.obj_count
+        // deferred code objects
+        {
+            // No read instructions equivalent
+            let obj = cluster.objs.get_mut(idx as usize).unwrap();
+
+            // always unresolved inside the current snapshot, these
+            // are resolved during runtime, at some point we would have to emulate the behavior of
+            // the Unit serialization/deserialization process, i.e ReadUnitSnapshot
+            // so for now, we do NOT support this
+            obj.entry_point = u64::MAX;
+            obj.monomorphic_entry_point = u64::MAX;
+            obj.unchecked_entry_point = u64::MAX;
+            obj.monomorphic_unchecked_entry_point = u64::MAX;
+
+            obj.object_pool = 0;
+            obj.owner = stream.read_ref_id()?;
+            obj.exception_handlers = stream.read_ref_id()?;
+            obj.pc_descriptors = stream.read_ref_id()?;
+            obj.catch_entry = stream.read_ref_id()?;
+            obj.compressed_stackmaps = 0;
+            obj.inlined_id_to_function = stream.read_ref_id()?;
+            obj.code_source_map = stream.read_ref_id()?;
+        }
+    }
+);
+DECLARE_VARIABLE_LENGTH_CLUSTER!(ObjectPool, ObjectPoolCluster);
+IMPLEMENT_VARIABLE_LENGTH_CLUSTER!(
+    ObjectPoolCluster,
+    |cluster, stream| {
+        cluster.obj_count = stream.read_unsigned()?;
+        for _ in 0..cluster.obj_count {
+            cluster.objs.push(Box::<ObjectPool>::default());
+        }
+    },
+    |cluster, stream| {}
+);
 
 DECLARE_VARIABLE_LENGTH_CLUSTER!(Map, MapCluster);
 IMPLEMENT_VARIABLE_LENGTH_CLUSTER!(

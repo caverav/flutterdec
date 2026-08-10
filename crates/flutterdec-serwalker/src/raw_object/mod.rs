@@ -378,7 +378,31 @@ pub struct GrowableObjectArray {
 
 #[derive(Default)]
 pub struct Code {
+    // these four are NOT computed during our cluster deserialization as we need the information
+    // in the instructions table in order to do so, and this table is
+    // read after the clustered stream reading, which is waht the function resolve_entrypoints does
+    pub entry_point: u64,             // unset before resolve_entrypoints
+    pub monomorphic_entry_point: u64, // unset before resolve_entrypoints
+    pub unchecked_entry_point: u64,   // set to unchecked_offset before resolve_entrypoints
+    pub monomorphic_unchecked_entry_point: u64, // set to unchecked_offset before resolve_entrypoints
+
+    pub has_monomorphic_entrypoint: bool, // this field doesn't exist in UntaggedCode, its here so
+    // resolve_entrypoints can make use of it
+    pub object_pool: u32,          // ObjectPoolPtr
+    pub instructions: u32,         // InstructionsPtr
+    pub owner: u32, // ClassPtr or FunctionPtr or null, but the actual type in the class is an ObjectPtr
+    pub exception_handlers: u32, // ExceptionHandlerPtr
+    pub pc_descriptors: u32, // PcDescriptorsPtr
+    pub catch_entry: u32, // ObjectPtr
+    pub compressed_stackmaps: u32, // CompressedStackMapsPtr
+    pub inlined_id_to_function: u32,
+    pub code_source_map: u32, // CodeSourceMapPtr
+
+    // pub active_instructions: u32, // InstructionsPtr [[NOT PRESENT IN FullAOT]]
+    // pub deopt_info_array: u32, // ArrayPtr [[NOT PRESENT IN FullAOT]]
+    // pub static_calls_target_table: u32, // ArrayPtr [[NOT PRESENT IN FullAOT]]
     pub state_bits: i32,
+    pub instructions_length_: u32,
 }
 
 #[derive(Default)]
