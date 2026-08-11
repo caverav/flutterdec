@@ -1967,6 +1967,16 @@ reachability:
 That lands within 1% of the CFG-derived count from R16, from the other direction, which
 is the corroboration worth having: two independent derivations of the same set.
 
+Those three figures are from a simulation over the emitted IR, and the implementation
+measures slightly more: 18,487 and 23,087 candidates, 16,302 and 20,424 accepted. The
+difference is provenance rather than logic, and it is worth naming because it took a
+measurement to explain. The IR the simulation read is post-prune, so it is missing the
+32,811 and 37,162 instructions the raising-call prune truncates. The split runs earlier,
+on the unpruned `FunctionDisassembly` list, so it sees adjacent pairs the simulation
+could not. Checked directly: the terminator and frame-push predicates agree on every
+instruction in the corpus, zero disagreements, so the instruction set is the only
+difference. The implementation's numbers are the correct ones.
+
 ### There is no other evidence for an entry point today
 
 Shape is all there is, which is why the predicate has to carry its own precision. Over
