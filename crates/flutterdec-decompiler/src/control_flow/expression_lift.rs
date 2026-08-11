@@ -31,7 +31,7 @@ impl<'a> FuncEmitter<'a> {
     ///
     /// Every read that substitutes a value into a larger expression goes through
     /// here, so this is the single place the growth is bounded.
-    fn capped_reg_value(&self, reg: &str) -> Option<String> {
+    pub(super) fn capped_reg_value(&self, reg: &str) -> Option<String> {
         self.state
             .reg_values
             .get(reg)
@@ -624,7 +624,7 @@ impl<'a> FuncEmitter<'a> {
                             .cloned()
                             .unwrap_or_else(|| local_name(off + stride))
                     } else {
-                        let base_expr = self.state.reg_values.get(&base).cloned().unwrap_or(base);
+                        let base_expr = self.capped_reg_value(&base).unwrap_or(base);
                         Self::clean_expr(Self::field_expr(&base_expr, off + stride))
                     }
                 });
@@ -652,7 +652,7 @@ impl<'a> FuncEmitter<'a> {
                         self.update_selector_binding_from_assignment(&local, &rhs);
                         self.push_line(indent, &format!("{} = {};", local, rhs));
                     } else {
-                        let base_expr = self.state.reg_values.get(&base).cloned().unwrap_or(base);
+                        let base_expr = self.capped_reg_value(&base).unwrap_or(base);
                         let lhs = Self::field_expr(&base_expr, off);
                         self.update_selector_binding_from_assignment(&lhs, &rhs);
                         self.push_line(indent, &format!("{} = {};", lhs, rhs));

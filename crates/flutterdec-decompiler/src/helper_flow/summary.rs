@@ -72,10 +72,7 @@ impl<'a> FuncEmitter<'a> {
                 t.starts_with("return ") || t == "continue;"
             });
             let fallback_return = helper
-                .state
-                .reg_values
-                .get("x0")
-                .cloned()
+                .capped_reg_value("x0")
                 .unwrap_or_else(|| "null".to_string());
 
             self.lines.push(format!("dynamic _block_{}() {{", id));

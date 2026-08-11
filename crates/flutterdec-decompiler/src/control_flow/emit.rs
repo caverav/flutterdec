@@ -336,7 +336,7 @@ impl<'a> FuncEmitter<'a> {
         let mut prefix: Vec<(bool, String)> = DART_ARGUMENT_REGISTERS
             .iter()
             .enumerate()
-            .map(|(i, reg)| match self.state.reg_values.get(*reg) {
+            .map(|(i, reg)| match self.capped_reg_value(reg).as_ref() {
                 // Untouched since entry: nothing here says this is an argument.
                 Some(v) if *v == format!("arg{i}") => (false, format!("arg{i}")),
                 Some(v) => (true, v.clone()),
@@ -439,10 +439,7 @@ impl<'a> FuncEmitter<'a> {
             }
             let named_target = named_indirect_target(&target);
             let target_value = self
-                .state
-                .reg_values
-                .get(&target)
-                .cloned()
+                .capped_reg_value(&target)
                 .unwrap_or_else(|| named_target.clone());
             let target_selector_context = self.selector_context_expr(&target_value);
             let target_selector_intent = infer_selector_intent_from_context(
@@ -1013,10 +1010,7 @@ impl<'a> FuncEmitter<'a> {
                 }
                 IROp::Return => {
                     let ret = self
-                        .state
-                        .reg_values
-                        .get("x0")
-                        .cloned()
+                        .capped_reg_value("x0")
                         .unwrap_or_else(|| "null".to_string());
                     self.push_line(indent, &format!("return {};", ret));
                     self.active_stack.pop();

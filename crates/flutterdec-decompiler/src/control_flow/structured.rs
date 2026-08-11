@@ -362,10 +362,7 @@ impl<'a> FuncEmitter<'a> {
                 IROp::Other => self.apply_other_lift(&ins.src, indent),
                 IROp::Return => {
                     let ret = self
-                        .state
-                        .reg_values
-                        .get("x0")
-                        .cloned()
+                        .capped_reg_value("x0")
                         .unwrap_or_else(|| "null".to_string());
                     self.push_line(indent, &format!("return {};", ret));
                     return Flow::Ends;
