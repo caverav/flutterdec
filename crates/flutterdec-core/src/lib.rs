@@ -27,6 +27,11 @@ pub struct DecompileOptions {
     pub emit_ghidra_script: bool,
     pub emit_ida_script: bool,
     pub emit_ir: bool,
+    /// Split a function record that spans more than one real function.
+    /// Opt-in: it multiplies the emitted function count, which moves every
+    /// absolute quality counter and makes the model-derived disassembly ratio
+    /// compare unlike things.
+    pub split_records: bool,
     pub extra_symbol_elfs: Vec<PathBuf>,
     pub extra_symbol_map_targets: Vec<PathBuf>,
     pub include_nearest_symbol_map: bool,

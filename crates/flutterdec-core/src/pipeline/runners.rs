@@ -5,6 +5,10 @@ use runners_reporting::{
     collect_selector_fallback_summary, BootflowDiscoveryEntry, BootflowDiscoverySummary,
     CallFallbackSummary, SelectorFallbackSummary, SemanticIntentSummary,
 };
+#[path = "runners/split.rs"]
+mod runners_split;
+use runners_split::{split_inflated_records, SplitStats};
+
 #[path = "runners/stubs.rs"]
 mod runners_stubs;
 use runners_stubs::{prune_calls_that_never_return, shared_stub_names};
@@ -1303,6 +1307,15 @@ pub fn run_decompile(
         &priority_package_hints,
         opt.engine_options.bootflow_category_seeds,
     );
+    // Records that span several real functions are split before the IR is built, so
+    // each piece gets dense block ids and an entry at block 0, which is what
+    // `Regions::build` requires. Opt-in, because it multiplies the function count.
+    let pre_split_disassembled = disasm.len();
+    let (disasm, split_stats) = if opt.split_records {
+        split_inflated_records(disasm)
+    } else {
+        (disasm, SplitStats::default())
+    };
     let mut ir: Vec<FunctionIr> = build_program_ir(&disasm);
     let mut symbol_names: HashMap<u64, String> = HashMap::new();
     let mut symbol_quality: HashMap<u64, SymbolNameQuality> = HashMap::new();
@@ -1578,7 +1591,8 @@ pub fn run_decompile(
         None
     };
 
-    let report = quality_from_artifacts(&selected_model, &disasm, &pseudo, opt);
+    let report =
+        quality_from_artifacts(&selected_model, &pseudo, opt, pre_split_disassembled);
     let (semantic_intent, call_fallback, selector_fallback, selector_fallback_top) =
         if opt.engine_options.semantic_reporting {
             let semantic_intent = collect_semantic_intent_summary(&pseudo);
@@ -2084,6 +2098,18 @@ pub fn run_decompile(
             "native": semantic_intent.native,
             "selector_tagged": semantic_intent.selector_tagged,
             "constructor_calls": semantic_intent.constructor_calls
+        },
+        // Reported separately, and never folded into the disassembly ratio: the
+        // ratio's denominator is the model's function list, so counting split
+        // pieces in its numerator would compare unlike things.
+        "record_split": {
+            "enabled": opt.split_records,
+            "records_declared": pre_split_disassembled,
+            "records_split": split_stats.records_split,
+            "functions_recovered": split_stats.functions_recovered,
+            "rejected_branch_target": split_stats.rejected_branch_target,
+            "rejected_not_contained": split_stats.rejected_not_contained,
+            "rejected_no_block": split_stats.rejected_no_block
         },
         "selector_fallback": {
             "total": selector_fallback.total,

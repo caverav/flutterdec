@@ -1600,3 +1600,56 @@ fn a_runtime_stub_call_is_modelled_from_the_sdk_not_as_a_dart_call() {
         "a stub that stores the runtime result does define a value:\n{bound}"
     );
 }
+
+/// A register that feeds itself grows its expression geometrically, because every
+/// modelled instruction builds its value out of the text of the values it reads.
+///
+/// A hash or mixing routine is the worst case, and one exists in a real binary:
+/// 217 straight-line instructions of `add`, `and` and `lsl` over three registers
+/// that reference each other reached a one-gigabyte allocation and the process was
+/// killed. No branch is involved, so no visit budget or depth limit applies. Past
+/// the cap the register reads as itself and renders as `regN`, which is the gap the
+/// emitter prefers to a value nobody can read.
+///
+/// The chain here is deliberately short. It has to be long enough that an uncapped
+/// emitter fails the assertion, and short enough that it fails in milliseconds
+/// rather than hanging: a hanging test cannot be attributed to the mutation that
+/// caused it, and it would stall the suite instead of reporting.
+#[test]
+fn a_self_feeding_expression_stops_growing() {
+    let mut instrs = vec![stmt(0x1000, "mov x1, #0x3fffffff")];
+    let mut va = 0x1004;
+    for _ in 0..6 {
+        for src in [
+            "add w2, w1, w1",
+            "and x1, x2, x1",
+            "lsl w3, w1, #0xa",
+            "add w1, w3, w2",
+        ] {
+            instrs.push(stmt(va, src));
+            va += 4;
+        }
+    }
+    instrs.push(stmt(va, "stur x1, [x4, #7]"));
+    instrs.push(ret(va + 4));
+
+    let ir = FunctionIr {
+        function_id: 0x1000,
+        name: "mixer".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![blk(0, 0x1000, instrs, vec![])],
+    };
+    let out = emit_pseudocode(&ir, &HashMap::new()).source;
+
+    // A value at the cap still passes, so a binary operator over two of them
+    // stores about twice it. The bound asserted here is that, not the constant.
+    let longest = out.lines().map(|l| l.len()).max().unwrap_or(0);
+    assert!(
+        longest <= 1100,
+        "a self-feeding expression must stop being inlined, longest line was {longest}"
+    );
+    assert!(
+        out.contains("reg1") || out.contains("reg2") || out.contains("reg3"),
+        "past the cap the register reads as itself:\n{out}"
+    );
+}

@@ -1,5 +1,24 @@
 use super::*;
 
+/// Longest substituted expression a register read will inline.
+///
+/// Every modelled instruction builds its value out of the text of the values it
+/// reads, so a register that feeds itself grows the string geometrically. A hash
+/// or mixing routine is the worst case: 217 straight-line instructions of
+/// `add`/`and`/`lsl` over three registers that reference each other reached a
+/// one-gigabyte allocation and killed the process. There is no branch involved, so
+/// no visit or depth limit applies.
+///
+/// Past this size the register reads as itself, which renders as `regN`. That is an
+/// admitted gap, and an admitted gap is what the whole emitter prefers to a value
+/// nobody can read.
+///
+/// A value this size still passes, so a binary operator over two of them stores
+/// roughly twice the constant: the effective bound on a stored value is about
+/// 2x, not 1x. Every read that substitutes into a larger expression goes through
+/// `capped_reg_value`, which is what keeps that from compounding.
+const MAX_SUBSTITUTED_EXPR: usize = 512;
+
 impl<'a> FuncEmitter<'a> {
     /// Resolve a register read that is consumed as a whole value.
     ///
@@ -8,8 +27,23 @@ impl<'a> FuncEmitter<'a> {
     /// dereference paths below deliberately do not call this: `pool[40].f7` is a field
     /// read on the pooled object, and rendering the literal there would claim a field
     /// access on a string. Those keep `pool[<index> /* "value" */]` instead.
+    /// The value bound to `reg`, unless it has grown past what is worth inlining.
+    ///
+    /// Every read that substitutes a value into a larger expression goes through
+    /// here, so this is the single place the growth is bounded.
+    fn capped_reg_value(&self, reg: &str) -> Option<String> {
+        self.state
+            .reg_values
+            .get(reg)
+            .filter(|value| value.len() <= MAX_SUBSTITUTED_EXPR)
+            .cloned()
+    }
+
     fn resolved_reg_value(&self, reg: &str) -> String {
-        let raw = Self::clean_expr(self.state.reg_values.get(reg).cloned().unwrap_or_else(|| reg.to_string()));
+        let raw = Self::clean_expr(
+            self.capped_reg_value(reg)
+                .unwrap_or_else(|| reg.to_string()),
+        );
         self.annotate_pool_refs(&raw)
     }
 
@@ -43,7 +77,7 @@ impl<'a> FuncEmitter<'a> {
                 return local_name(off);
             }
 
-            let base_expr = self.state.reg_values.get(&base).cloned().unwrap_or(base);
+            let base_expr = self.capped_reg_value(&base).unwrap_or(base);
             return Self::clean_expr(Self::field_expr(&base_expr, off));
         }
 
@@ -65,16 +99,10 @@ impl<'a> FuncEmitter<'a> {
     pub(super) fn indexed_expr(&self, token: &str) -> Option<String> {
         let operand = parse_indexed_operand(token)?;
         let base_expr = self
-            .state
-            .reg_values
-            .get(&operand.base)
-            .cloned()
+            .capped_reg_value(&operand.base)
             .unwrap_or_else(|| operand.base.clone());
         let index_expr = self
-            .state
-            .reg_values
-            .get(&operand.index)
-            .cloned()
+            .capped_reg_value(&operand.index)
             .unwrap_or_else(|| operand.index.clone());
         // A 32-bit extended index is the low half of the register, so saying so
         // is the difference between an index and a claim about one.

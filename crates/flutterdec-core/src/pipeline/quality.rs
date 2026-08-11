@@ -1,11 +1,14 @@
 fn quality_from_artifacts(
     model: &ProgramModel,
-    disasm: &[FunctionDisassembly],
     pseudo: &[PseudocodeArtifact],
     opt: &DecompileOptions,
+    // Records decoded, before any record split. The ratio's denominator is the
+    // model's function list, so counting split pieces in the numerator would
+    // compare unlike things and report a fraction above one.
+    decoded_records: usize,
 ) -> QualityReport {
     let function_count = model.functions.len();
-    let disassembled_function_count = disasm.len();
+    let disassembled_function_count = decoded_records;
 
     let mut total_calls = 0usize;
     let mut indirect_calls = 0usize;
@@ -56,6 +59,9 @@ fn quality_from_artifacts(
         }
     }
 
+    // Deliberately `decoded_records`, not `disasm.len()`: with a record split the
+    // latter counts recovered functions the model never declared, which would push
+    // this above 1.0 and turn a minimum gate into a meaningless one.
     let disassembly_ratio = if function_count == 0 {
         0.0
     } else {

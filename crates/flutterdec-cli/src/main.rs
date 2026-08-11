@@ -88,6 +88,16 @@ struct DecompileCmd {
     /// Write the intermediate representation to ir/*.json
     #[arg(long, help_heading = "Emitted artifacts")]
     emit_ir: bool,
+    /// Split a function record that spans more than one real function.
+    ///
+    /// The adapter sizes a record as the gap to the next start it recovered, so a
+    /// function it missed is swallowed by its predecessor and never emitted. On two
+    /// release samples that hides roughly three quarters of the decoded blocks.
+    /// Off by default: it multiplies the emitted function count, which moves every
+    /// absolute quality counter and makes `--max-functions` and `--function-scope`
+    /// apply to records rather than to what is emitted.
+    #[arg(long)]
+    split_records: bool,
 
     /// Unstripped engine ELF to harvest symbol names from (repeatable)
     #[arg(
@@ -619,6 +629,7 @@ fn build_decompile_options(cmd: DecompileCmd) -> Result<DecompileOptions> {
         emit_ghidra_script: cmd.emit_ghidra_script,
         emit_ida_script: cmd.emit_ida_script,
         emit_ir: cmd.emit_ir,
+        split_records: cmd.split_records,
         extra_symbol_elfs: cmd.extra_symbol_elfs,
         extra_symbol_map_targets: cmd.extra_symbol_map_targets,
         include_nearest_symbol_map: cmd.include_nearest_symbol_map,
