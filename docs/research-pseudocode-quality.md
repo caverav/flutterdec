@@ -2019,3 +2019,61 @@ decompiler names an intermediate. `obj.fN` at a third of a line is the field-nam
 problem waiting on the snapshot's class and field tables. `poolOff[N]` waits on pool
 geometry. So of the shapes this pipeline can act on alone, `regN` and the anonymous
 call remain the two, and the anonymous call is what a record split addresses.
+
+
+## R19. The split, landed, and the latent defect it uncovered
+
+`--split-records` implements the R18 predicate as a pass over `FunctionDisassembly`
+before `build_program_ir`, so each piece gets dense block ids and an entry at block
+zero, which is what `Regions::build` requires. Measured on both samples:
+
+| | LocalSend | Immich |
+|---|---|---|
+| records declared by the adapter | 5,800 | 8,329 |
+| records that held more than one function | 2,875 | 4,576 |
+| functions recovered | **16,302** | **20,424** |
+| functions emitted after the split | **22,102** | **28,753** |
+| emitted lines | 295,450 -> 846,661 | 408,421 -> 1,162,933 |
+| wall time | 102s | 137s |
+| candidates rejected: branch target | 1,906 | 2,390 |
+| candidates rejected: not contained | 279 | 268 |
+| candidates rejected: no block | 0 | 5 |
+
+The gates hold. `disassembly_ratio` stays 1.0 because its numerator is the pre-split
+record count, the quality report passes, and `shared_stub_naming.status` is still
+`named` on both, which was the risk worth checking: the split changes the population
+the vendored-table fingerprint scores. Simulated beforehand and confirmed after, the
+correct table gains a prologue as buried stubs become their own records, and the
+margin moves from 1.71x to 1.62x on LocalSend and from 1.50x to 1.62x on Immich
+rather than flipping.
+
+`rejected_no_block` was added purely so a silent abandonment would be visible, and it
+immediately earned it: 5 candidates on Immich.
+
+The flag is opt-in, and the reason is not runtime. It multiplies the emitted function
+count, so every absolute quality counter grows, and `--max-functions` and
+`--function-scope` continue to apply to records rather than to what is emitted.
+
+### The defect the split uncovered
+
+The first full run died after 26 minutes, killed by the kernel at 23.8GB resident.
+Bisecting by function found `sub_964fc8` in LocalSend, and inside it the block at
+`0x969aa0`: one block, 217 straight-line instructions, and a one-gigabyte allocation
+request. No branch, so no visit budget or depth limit applied.
+
+It is a mixing routine, and the constants say so: `0x1fffffff`, `0x7ffff`,
+`0x3ffffff`. Three registers feed each other through `add`, `and` and `lsl`, and
+because every modelled instruction builds its value out of the *text* of the values
+it reads, the string doubles every few instructions.
+
+**This was latent, not introduced.** Any binary whose reachable code contains a hash
+of that shape would have hit it; the split only made this block reachable. The cap is
+on the read: past 512 characters a register reads as itself and renders as `regN`,
+which is the gap this emitter prefers to a value nobody can read. Eight reads in the
+lifter and four more that put a stored value directly into emitted text now route
+through one helper, including the `ldp` second-destination path, which stores its
+result and so compounded outside the first version of the fix.
+
+With the cap, both samples complete in 102 and 137 seconds, and the longest emitted
+line across either is 2,660 characters. Without it the test fixture reaches 175,787
+characters at six iterations of the real shape and 109,863,287 at ten.
