@@ -2825,3 +2825,91 @@ added line, for the narrow and generalized designs separately. If both come in b
 honest outcome is a recorded negative with numbers, which the stop rule explicitly permits. It
 would be the second negative this lever has produced, and that pattern is itself the finding:
 register loss at joins is real, dominant, and may simply not be worth paying for in text.
+
+## R26. The phi is dropped, and why the prize resisted five measurements
+
+R25 registered a kill criterion for the join phi - recovered `regN` occurrences per added line
+must reach 1.0 - and left its numerator unmeasured. Measuring it was attempted three times, and
+the outcome is a **recorded negative: the prize is unmeasurable at acceptable cost, and the phi is
+not built.**
+
+### The one solid number
+
+Instrumenting the real emitter at the generic join site gives the first emitter-true candidate
+population, which supersedes R25's retracted figures:
+
+| candidate sites at the generic join | LocalSend | Immich |
+|---|---:|---:|
+| raw, as captured | 52,772 | 78,118 |
+| x29 (frame pointer) leaked in | 4,673 | 4,811 |
+| **net** | **48,099** | **73,307** |
+
+The leak is worth its own note. `merge_state_at_join` exempts pinned registers and `x15` from
+clearing, but the arm-end capture applied a different exclusion set, so the frame pointer entered
+the population at 8.9% and 6.2%. R11 recorded the identical artifact inflating its own agreement
+rate to 23.65%/24.51%, and observed that `x29` is never emitted as `regN`. That holds here and is
+refined: canonical `x29` and `indirectTarget29` reads are exactly zero, while the `framePointer`
+spelling does appear 350 and 590 times. So the register is emitted, just never under a name that
+claims it is an unrecovered value.
+
+### The criterion could not be evaluated
+
+Only an upper bound was obtainable, because the read hook counts occurrences across the whole
+function with no line provenance, so it cannot attribute a read to the join that dropped the
+binding. Arm text before the join and unrelated later positions all count:
+
+| | LocalSend | Immich |
+|---|---:|---:|
+| function-wide occurrences (upper bound on numerator) | 353,881 | 395,259 |
+| added arm lines (denominator) | 117,172 | 192,706 |
+| **recovered-per-added-line** | **<= 3.020** | **<= 2.051** |
+
+An upper bound is decision-relevant in one direction only. Below 1.0 it would have killed the
+design outright, since the true ratio cannot exceed the bound. At or above 1.0 it proves nothing,
+and both samples land above. So the criterion is **inconclusive**, which under the pre-registered
+rule is the same outcome as a failure to measure: the phi is dropped rather than built on a number
+nobody has.
+
+Controls, each capable of failing: total reads nonzero and not equal to the site count
+(353,881 against 48,099; 395,259 against 73,307); `x0` reads nonzero at 121,596 and 158,995; reads
+broken down per rendered spelling so a zero for any one form is visible rather than folded into a
+total; and instrumented against clean `quality.json` side by side.
+
+### Five defects, five different reasons
+
+The durable finding of this front is not a ratio. It is that one quantity resisted measurement
+five times, each for an unrelated reason, and every failure produced a number that looked
+plausible until it was checked:
+
+1. **Wrong unit.** An IR proxy counted raw arm-reachable definitions intersected with static
+   CFG live-in, never reconstructing `state_at_branch` or arm-end `LiftState`. Its counts were
+   published and retracted.
+2. **Never run.** The corrected instrumentation was designed and compiled but the pass ended
+   before it executed.
+3. **Wrong token spelling.** The read hook searched the canonical `xN` key, but it runs at
+   `lib.rs:282`, after `apply_name_and_type_hints` at `:280`, so every one of 52,772 sites came
+   back `unread` - a clean all-zero result from a hook that could not observe the thing.
+4. **Incomplete spelling set.** `named_register_alias` renders 30 as `returnAddress` and 29 as
+   `framePointer`, and `named_indirect_target` renders 30 as `dispatchTarget` and 2 as
+   `cachedTarget`. Searching `reg{n}` alone would have produced a low but nonzero ratio that read
+   as a measurement rather than a miss.
+5. **No line provenance.** The hook scans every final line of the function, so even with correct
+   spellings it yields function-wide occurrences rather than post-join attributable reads. This is
+   the one that stopped the measurement, and closing it needs a new hook rather than a fix.
+
+Defect 3 is the instructive one for method: an all-zero result passed every control in place at
+the time, because none of those controls could fail. The nonzero-total control that would have
+caught it was added only after the fact.
+
+### What would change this
+
+Per-join read attribution needs the emitter to record, for each rendered `regN`, which join
+dropped its binding - line provenance the current hook does not carry. That is a fourth
+instrumentation design, and three rounds on one counterfactual is already past the point of
+diminishing returns for a prize whose eligible population is gated by the topology constraints in
+R25.
+
+The alternative is to stop measuring the counterfactual and build the cheaper design instead. An
+annotation adds no lines, so the criterion that could not be evaluated here does not apply to it
+at all, and its coverage is directly observable on real output rather than by proxy. That is the
+path taken next.
