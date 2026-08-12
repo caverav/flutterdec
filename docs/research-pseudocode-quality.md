@@ -2602,6 +2602,23 @@ on a figure the defect could have moved.
 
 ## R25. The phi prize, bounded by topology rather than liveness
 
+> **PROVISIONAL. The counts in this section are under active challenge and must not be cited
+> yet.** The front that produced them has since stated that its figures came from a broader IR
+> proxy rather than a trace of the actual emitter, and a second front instrumenting the real
+> renderer reports numbers that conflict with them. The controls this section quotes are real but
+> narrower than they look: matching the published structured share validates the *structural gate*
+> of the replay, not its liveness or eligibility computation, and a partition closing on its own
+> total says only that the proxy is internally consistent.
+>
+> What survives regardless: the **100% generic-merge kill** below, which is a membership test
+> against `written` at `structured.rs:185-189` and is independent of how candidates are counted;
+> the identification of predecessor completeness as the dominant topology gate, whose direction
+> does not depend on the exact count; and the units and denominator discipline recorded here.
+>
+> The eligible and raw populations will be restated from instrumented emitter measurement, and
+> this notice removed or the section rewritten. It is left in place rather than deleted because
+> the reasoning it establishes is what the correction has to be measured against.
+
 R23 named joins as the dominant register loss. R24's addendum showed the obvious insertion
 point cannot work. This sizes what a correct one would recover, by replaying the actual
 `render_sequence` branch-follow events over HEAD's IR on both samples. Controls: 22,102/22,102
