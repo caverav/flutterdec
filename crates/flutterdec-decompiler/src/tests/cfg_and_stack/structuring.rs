@@ -319,7 +319,43 @@ fn repeats_a_small_shared_region_that_is_not_a_follow_node() {
 /// than duplicating an arbitrary amount of code.
 #[test]
 fn declines_to_repeat_a_shared_region_over_budget() {
-    // Chain of 10 blocks, above the 8-block budget.
+    // Chain of 18 blocks, above the 16-block budget.
+    let mut blocks = vec![
+        blk(0, 0x1000, vec![cbz(0x1000, "x1", 0x2000)], vec![1, 2]),
+        blk(1, 0x1004, vec![stmt(0x1004, "stur x1, [x29, #-0x10]")], vec![3]),
+        blk(2, 0x2000, vec![cbz(0x2000, "x2", 0x5000)], vec![3, 21]),
+    ];
+    for i in 0..18 {
+        let id = 3 + i;
+        let va = 0x3000 + (i as u64) * 8;
+        blocks.push(blk(
+            id,
+            va,
+            vec![stmt(va, &format!("stur x{}, [x29, #-0x{:x}]", i % 4, 0x20 + i * 8))],
+            vec![id + 1],
+        ));
+    }
+    blocks.push(blk(21, 0x5000, vec![ret(0x5000)], Vec::new()));
+
+    let ir = FunctionIr {
+        function_id: 1008,
+        name: "longTail".to_string(),
+        entry_va: 0x1000,
+        blocks,
+    };
+    let artifact = emit_pseudocode(&ir, &HashMap::new());
+    assert_eq!(
+        artifact.repeated_blocks, 0,
+        "a region over budget must not be repeated:\n{}",
+        artifact.source
+    );
+}
+
+/// A ten-block shared tail used to exceed the old eight-block ceiling. The
+/// expanded limit must structure it, while the separate over-budget test keeps
+/// the ceiling real.
+#[test]
+fn repeats_a_shared_region_within_expanded_budget() {
     let mut blocks = vec![
         blk(0, 0x1000, vec![cbz(0x1000, "x1", 0x2000)], vec![1, 2]),
         blk(1, 0x1004, vec![stmt(0x1004, "stur x1, [x29, #-0x10]")], vec![3]),
@@ -337,16 +373,18 @@ fn declines_to_repeat_a_shared_region_over_budget() {
     }
     blocks.push(blk(13, 0x5000, vec![ret(0x5000)], Vec::new()));
 
-    let ir = FunctionIr {
-        function_id: 1008,
-        name: "longTail".to_string(),
-        entry_va: 0x1000,
-        blocks,
-    };
-    let artifact = emit_pseudocode(&ir, &HashMap::new());
-    assert_eq!(
-        artifact.repeated_blocks, 0,
-        "a region over budget must not be repeated:\n{}",
+    let artifact = emit_pseudocode(
+        &FunctionIr {
+            function_id: 1010,
+            name: "expandedTail".to_string(),
+            entry_va: 0x1000,
+            blocks,
+        },
+        &HashMap::new(),
+    );
+    assert!(
+        artifact.repeated_blocks > 0,
+        "the expanded budget should structure this shared tail:\n{}",
         artifact.source
     );
 }
@@ -374,6 +412,57 @@ fn never_repeats_a_region_containing_a_loop() {
         1,
         "the loop must be emitted once, never duplicated into both arms:\n{}",
         artifact.source
+    );
+}
+
+/// A repeated path inside a loop can end at that loop's own header. It is a
+/// `continue`, not a second loop: the shared body repeats, while the header body
+/// and `while` stay singular.
+#[test]
+fn repeats_a_shared_path_ending_at_the_enclosing_loop() {
+    let ir = FunctionIr {
+        function_id: 1011,
+        name: "continueTail".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![
+            blk(0, 0x1000, Vec::new(), vec![1]),
+            // The natural-loop header is emitted once before either shared path.
+            blk(1, 0x1004, vec![stmt(0x1004, "stur x0, [x29, #-0x10]")], vec![2]),
+            blk(2, 0x1008, vec![cbz(0x1008, "x1", 0x2000)], vec![3, 5]),
+            // Both paths reach this shared latch and then continue the outer loop.
+            blk(3, 0x2000, vec![stmt(0x2000, "stur x3, [x29, #-0x18]")], vec![4]),
+            blk(4, 0x2004, vec![stmt(0x2004, "stur x4, [x29, #-0x20]")], vec![1]),
+            // This arm can instead leave the loop, so block 3 is not a follow node.
+            blk(5, 0x3000, vec![cbz(0x3000, "x2", 0x2000)], vec![3, 6]),
+            blk(6, 0x4000, vec![ret(0x4000)], Vec::new()),
+        ],
+    };
+
+    let artifact = emit_pseudocode(&ir, &HashMap::new());
+    let src = &artifact.source;
+    assert!(
+        artifact.repeated_blocks > 0,
+        "the shared path should be structured rather than falling back:\n{src}"
+    );
+    assert_eq!(
+        src.matches("while (").count(),
+        1,
+        "the enclosing loop must not be duplicated:\n{src}"
+    );
+    assert_eq!(
+        src.lines().filter(|line| line.contains("= reg0;")).count(),
+        1,
+        "the loop-header body must be emitted once:\n{src}"
+    );
+    assert_eq!(
+        src.lines().filter(|line| line.contains("= param2;")).count(),
+        2,
+        "the shared body must be emitted on both paths:\n{src}"
+    );
+    assert_eq!(
+        src.matches("continue;").count(),
+        2,
+        "both shared latches must continue the enclosing loop:\n{src}"
     );
 }
 

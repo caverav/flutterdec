@@ -432,23 +432,28 @@ impl<'a> FuncEmitter<'a> {
     /// stub, many predecessors, no successors. It post-dominates nothing, so it
     /// is never a follow node, and it alone accounted for 84% of the fallbacks.
     ///
-    /// A region containing a loop is never repeated, and the budget was chosen
-    /// from the measured distribution: at 8 blocks and 48 instructions, 85% of
-    /// reducible functions structure with 1.09x duplication inside them, against
-    /// 75% at 1.02x for terminal blocks only and 92% at 1.45x if the budget is
-    /// raised eightfold.
+    /// A repeated region may end at the innermost enclosing loop header, which
+    /// renders as `continue;`. Any other loop header is still rejected: entering
+    /// one would duplicate a nested loop body or target the wrong `continue`.
+    ///
+    /// The 16-block, 96-instruction budget bounds the remaining duplication and
+    /// stays below the fourfold alternative's pathological tail.
     fn is_repeatable_region(&self, id: usize, follow: Option<usize>) -> bool {
-        const MAX_REPEATED_BLOCKS: usize = 8;
-        const MAX_REPEATED_INSTRUCTIONS: usize = 48;
+        const MAX_REPEATED_BLOCKS: usize = 16;
+        const MAX_REPEATED_INSTRUCTIONS: usize = 96;
         let Some(regions) = self.regions.as_ref() else {
             return false;
         };
 
         let mut seen: HashSet<usize> = HashSet::new();
         let mut instructions = 0usize;
+        let enclosing_loop = self.loop_stack.last().map(|(header, _)| *header);
         let mut stack = vec![id];
         while let Some(block) = stack.pop() {
-            if Some(block) == follow || !seen.insert(block) {
+            if Some(block) == follow
+                || Some(block) == enclosing_loop
+                || !seen.insert(block)
+            {
                 continue;
             }
             if regions.is_loop_header(block) || seen.len() > MAX_REPEATED_BLOCKS {
