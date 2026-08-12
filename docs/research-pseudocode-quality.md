@@ -2434,8 +2434,13 @@ still apply. So R16's loop-count figure was a proxy, and the exact predicate is 
 
 ### Measured on both samples, integrated
 
-Re-measured in the integrated tree against the pinned `2619ec7` baseline, both runs
-`--adapter-backend internal --split-records --function-scope all`:
+Re-measured against the pinned `2619ec7` baseline, both runs
+`--adapter-backend internal --split-records --function-scope all`. The "after" column is
+reproducible at branch HEAD: a direct run at `750be0c` returns `raw_register_name_refs` 136,378
+and 189,696, rendered lines 777,937 and 1,074,372, and file counts 22,102 and 28,753 - identical
+to the figures below, so the recipe and the numbers agree at a named commit rather than at "the
+integrated tree". Note the counters are computed in-pipeline from the emitted source, so the
+trailing-newline fix landed at `33d73e9` does not move them; it changes bytes on disk only.
 
 | | LocalSend | Immich |
 |---|---:|---:|
