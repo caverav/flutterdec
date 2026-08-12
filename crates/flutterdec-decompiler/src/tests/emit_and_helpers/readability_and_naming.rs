@@ -2415,3 +2415,30 @@ fn rename_order_is_total_regardless_of_map_iteration_order() {
         "longest first, then lexicographic"
     );
 }
+
+#[test]
+fn alias_candidate_order_is_total_regardless_of_map_iteration_order() {
+    // Equal counts are the case a frequency-only comparator leaves to the per-process
+    // HashMap seed, and `sort_unstable_by` does not preserve input order for them
+    // either. Building the vectors directly reproduces both orders without needing a
+    // seed, so this fails deterministically if the lexicographic tie-break is removed.
+    let mk = |v: &[(&str, usize)]| -> Vec<(String, usize)> {
+        v.iter().map(|(a, b)| ((*a).to_string(), *b)).collect()
+    };
+    let mut forward = mk(&[("reg8", 5), ("reg9", 5), ("value2", 9)]);
+    let mut reverse = mk(&[("reg9", 5), ("value2", 9), ("reg8", 5)]);
+
+    crate::passes::sort_alias_candidates(&mut forward);
+    crate::passes::sort_alias_candidates(&mut reverse);
+
+    assert_eq!(
+        forward, reverse,
+        "alias order must not depend on the order the map yielded"
+    );
+    let names: Vec<&str> = forward.iter().map(|(k, _)| k.as_str()).collect();
+    assert_eq!(
+        names,
+        vec!["value2", "reg8", "reg9"],
+        "most frequent first, then lexicographic"
+    );
+}

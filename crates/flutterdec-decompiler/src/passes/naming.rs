@@ -13,6 +13,19 @@ pub(crate) fn sort_rename_pairs(pairs: &mut [(String, String)]) {
     pairs.sort_by(|a, b| b.0.len().cmp(&a.0.len()).then_with(|| a.0.cmp(&b.0)));
 }
 
+/// Order the minus-one alias candidates before they are turned into named locals.
+///
+/// Most frequent first, so the alias budget goes to the identifiers that appear most,
+/// then lexicographic to make the order total. The second key is load-bearing for the
+/// same reason as `sort_rename_pairs`, and worse here: the candidates arrive from a
+/// `HashMap` whose iteration order is seeded per process, and `sort_unstable_by` does not
+/// even preserve that order for equal keys. With frequency as the only key, two idents
+/// sharing a count were emitted in an arbitrary order, so `reg8Minus1` and `reg9Minus1`
+/// swapped declarations between runs while every counter stayed identical.
+pub(crate) fn sort_alias_candidates(candidates: &mut [(String, usize)]) {
+    candidates.sort_unstable_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+}
+
 impl<'a> FuncEmitter<'a> {
     fn alias_repeated_stack_slots(&mut self) {
         if self.lines.len() < 3 {
@@ -286,7 +299,7 @@ impl<'a> FuncEmitter<'a> {
             .into_iter()
             .filter(|(_, count)| *count >= 4)
             .collect();
-        candidates.sort_unstable_by(|a, b| b.1.cmp(&a.1));
+        sort_alias_candidates(&mut candidates);
         if candidates.is_empty() {
             return;
         }

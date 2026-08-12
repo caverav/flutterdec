@@ -2603,6 +2603,41 @@ to the pre-fix majority permutation, so it removes the divergence without churni
 test constructs both insertion orders directly and asserts the sorted result is identical, so
 it fails deterministically without the tie-break rather than flaking.
 
+### The class had a second instance, and here is the audit
+
+Fixing one site did not close the class. A second partial order in the same file was found later,
+by a front comparing two builds carefully: `extract_minus_one_aliases` collected candidates from a
+`HashMap` and sorted them with `sort_unstable_by` on **frequency alone**. Worse than the first
+case - an unstable sort does not even preserve input order for equal keys - so two identifiers
+sharing a count were emitted in an arbitrary order. It surfaced as `reg8Minus1` and `reg9Minus1`
+swapping declarations between runs in one function, with every counter identical. Fixed the same
+way, frequency then lexicographic, with a test that constructs both insertion orders and fails
+deterministically without the tie-break.
+
+Then the whole class was audited rather than waiting for a sixth discovery, and the rule that
+emerged is worth more than the fix:
+
+> **A partial-order sort is a nondeterminism hazard only when its input order is itself
+> nondeterministic.** `sort_unstable` is deterministic for a fixed input sequence; it merely fails
+> to preserve the relative order of equal elements. So the hazard is precisely a partial comparator
+> applied to a sequence derived from `HashMap`/`HashSet` iteration.
+
+Every sort on an output-affecting path, judged by that rule:
+
+| site | input source | verdict |
+|---|---|---|
+| `naming.rs` rename pairs | `HashMap` | fixed earlier, total order |
+| `naming.rs` alias candidates | `HashMap` | **fixed here**, total order |
+| `naming.rs` stack-slot and pool-literal candidates | `HashMap`, then full `.sort()` on `Vec<String>` | total, safe |
+| `lib.rs` symbol ranking | `HashMap`, comparator ends in `a_name.cmp(b_name)` | total, safe |
+| `helper_flow/inlining.rs` removal ranges | `scan_helpers(&self.lines)`, line order | deterministic input, safe |
+| `symbol_map/elf.rs` section table | ELF headers in file order | deterministic input, safe |
+| `control_flow/regions.rs` branch targets | full `sort_unstable()` | total, safe |
+
+Two defects, both in the same file, both from the same habit of sorting a hash-derived list by one
+key. Nothing else in the audit needs changing, and the rule above is what makes that a conclusion
+rather than an assumption.
+
 Consequence for the figures above, stated narrowly. Everything derived from `quality.json` is
 unaffected, because those values were byte-identical across the divergent pair, and inflation
 is unaffected because identifier renaming changes no call count.
