@@ -2626,15 +2626,23 @@ excludes pinned registers and `x15` exactly as `merge_state_at_join` does.
 The partitions close exactly on both samples: 7,519 + 25,326 + 5 = 32,850 and
 12,466 + 45,846 + 4 = 58,316.
 
-So the eligible prize is **6.66%/8.37%** of R23's join-drop marks and **5.51%/6.57%** of HEAD's
-136,378/189,696 raw register references. Under the sound arm policy - decline the whole phi
-unless every incoming arm can assign, because an unassigned predecessor reaches code that reads
-the local - the floor is 5,493/9,133, or 4.03%/4.82%.
+So the eligible prize is **5.51%/6.57%** of HEAD's 136,378/189,696 raw register references.
+Under the sound arm policy - decline the whole phi unless every incoming arm can assign, because
+an unassigned predecessor reaches code that reads the local - the floor is 5,493/9,133, or
+**4.03%/4.81%**. Both figures put a HEAD numerator over a HEAD denominator.
+
+R23's join-drop marks are deliberately **not** used as a denominator here. They were measured at
+`2619ec7`, before the structurer moved 538 and 751 functions into the structured path and took
+`raw_register_name_refs` from 152,595/213,394 to 136,378/189,696. Dividing a HEAD numerator by
+that pre-structurer total would mix commits in exactly the direction that moves join counts, and
+this document's own rule is that a result whose denominator moved without explanation is not
+evidence. A HEAD join-drop total would require re-running R23's instrumentation, which was not
+done.
 
 ### The gate is predecessor completeness, not liveness or agreement
 
-Liveness removes far less than expected: the raw live population is 29.1%/39.2% of R23's join
-drops. The reduction to 6.66%/8.37% comes almost entirely from one topology rule, which
+Liveness removes far less than expected: 32,850/58,316 of the branch-follow candidates are live.
+The reduction to 7,519/12,466 comes almost entirely from one topology rule, which
 declines **25,326/45,846 events, 77.1%/78.6%** of the live population, because the join has a
 third-or-more predecessor that is not one of the two emitted arms. Loop headers remove 5 and 4.
 
