@@ -2680,9 +2680,10 @@ the **full predecessor set** itself.
 
 So the same change that is mandatory for correctness may dissolve the dominant gate. If a phi at
 the join-block site can assign on every predecessor rather than two arms, the addressable
-population rises from 7,519/12,466 toward the raw 32,850/58,316, which is **24.1%/30.7%** of HEAD
-raw register references rather than 5.51%/6.57%. That is the difference between a marginal change
-and the largest single quality win available in this seam.
+population rises from 7,519/12,466 binding events toward the raw 32,850/58,316, a factor of
+4.4x and 4.7x. Stated as a factor rather than a share of raw register references, because those
+are occurrences and these are events. That factor is the difference between a marginal change and
+the largest single quality win available in this seam.
 
 That upper bound will not survive contact, and "is there room for an assignment" is too loose to
 measure. The computable predicate is **emitted text order**: for each declined event, is every
@@ -2726,9 +2727,11 @@ binding is a **whole new line** of scaffolding. Removing one token by adding two
 total text for the reader, and the added text is itself a shape this census already classifies as
 noise.
 
-The arithmetic on the measured population: 7,519 events across 5,351 sites is 1.41 references per
-site, and 12,466 across 9,241 is 1.35. With at least two arm assignments per site, that is
-roughly **2 added lines per opaque token removed**, and most phi locals are read about once.
+The cost side is arithmetic: at least two arm assignments per site, so at least two added lines
+per site, across 5,351 and 9,241 sites. The **benefit** side is not yet measured. It requires the
+number of emitted `regN` occurrences each site would remove, and the only figure available -
+events exceeding sites by 1.39-1.41x - is render-walk multiplicity rather than reads per register,
+as stated above. So it cannot stand in for occurrences recovered.
 
 This does not automatically kill it. A `tN` bound to a traceable expression carries information an
 opaque `regN` does not, so it is an information gain rather than a relabel. But it must be scored
@@ -2736,8 +2739,10 @@ on that axis, with the budget declared before the result is seen:
 
 > **Pre-registered kill criterion.** The phi must remove more opaque `regN` tokens than the number
 > of lines it adds - a recovered-per-added-line ratio of at least 1.0 - or it is recorded as a
-> negative result and not landed. On the measured narrow population that ratio is approximately
-> 0.7, so the arm-eligible design is predicted to **fail** this criterion before it is built.
+> negative result and not landed. The criterion is registered now, before the input to it is
+> known, precisely so the threshold cannot be moved once the result is in. **Its numerator is
+> unmeasured**: no prediction of pass or fail is made here, because the only ratio in hand
+> measures something else.
 
 [INFERENCE] The generalized join-block design is not obviously better on this axis and may be
 worse: more predecessors means more assignments per site, so unless multi-predecessor joins carry
