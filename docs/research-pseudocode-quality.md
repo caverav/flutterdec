@@ -2602,22 +2602,31 @@ on a figure the defect could have moved.
 
 ## R25. The phi prize, bounded by topology rather than liveness
 
-> **PROVISIONAL. The counts in this section are under active challenge and must not be cited
-> yet.** The front that produced them has since stated that its figures came from a broader IR
-> proxy rather than a trace of the actual emitter, and a second front instrumenting the real
-> renderer reports numbers that conflict with them. The controls this section quotes are real but
-> narrower than they look: matching the published structured share validates the *structural gate*
-> of the replay, not its liveness or eligibility computation, and a partition closing on its own
-> total says only that the proxy is internally consistent.
+> **PROVISIONAL. Every count below is unverified and must not be cited yet.** Named exactly, so
+> the scope of the retraction is not left vague: the raw live population 32,850/58,316; the
+> eligible 7,519/12,466 across 5,351/9,241 sites; the declined-incomplete 25,326/45,846; the
+> loop-header 5/4; the arm-write bounds 5,493/9,133 and 2,026/3,333; and the 1.39-1.41 event-to-site
+> multiplicity. The front that produced them has since stated they came from a broader IR proxy
+> rather than a trace of the actual emitter, and a second front instrumenting the real renderer
+> reports conflicting numbers. The instrumented measurement is authoritative, because every one of
+> these quantities is about what the render walk does.
 >
-> What survives regardless: the **100% generic-merge kill** below, which is a membership test
-> against `written` at `structured.rs:185-189` and is independent of how candidates are counted;
-> the identification of predecessor completeness as the dominant topology gate, whose direction
-> does not depend on the exact count; and the units and denominator discipline recorded here.
+> **Two controls quoted below do not do the work they appear to.** "The partitions close exactly"
+> is a tautology: the three categories are defined as a partition of the raw set, so they sum by
+> construction regardless of whether any classification is right. And the structural gate matching
+> the published structured share confirms only that the replay identifies *which functions are
+> structured* - not that it identifies joins, liveness or predecessor sets. Neither could have
+> failed, so neither is evidence.
 >
-> The eligible and raw populations will be restated from instrumented emitter measurement, and
-> this notice removed or the section rewritten. It is left in place rather than deleted because
-> the reasoning it establishes is what the correction has to be measured against.
+> **What does not depend on any count.** The claim that an arm-site binding is always destroyed is
+> deductive, not statistical: a register needing a phi is by definition written on an arm, arms are
+> predecessors of the join, so it is in the full-predecessor `written` set at
+> `structured.rs:185-189` and is dropped at `:189` before the join body renders at `:192`. That
+> holds whatever the population turns out to be, and it is the finding that changed the design.
+> The identification of predecessor completeness as the dominant gate is also directional rather
+> than magnitude-dependent. The units, denominator and text-budget reasoning stand on their own.
+>
+> Retained rather than deleted because the correction has to be measured against this reasoning.
 
 R23 named joins as the dominant register loss. R24's addendum showed the obvious insertion
 point cannot work. This sizes what a correct one would recover, by replaying the actual
