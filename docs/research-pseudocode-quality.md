@@ -2637,7 +2637,11 @@ on a figure the defect could have moved.
 > The identification of predecessor completeness as the dominant gate is also directional rather
 > than magnitude-dependent. The units, denominator and text-budget reasoning stand on their own.
 >
-> Retained rather than deleted because the correction has to be measured against this reasoning.
+> **Superseded by R26 for the population**, which gives the emitter-true net figures of 48,099
+> and 73,307 candidate sites. The criterion itself was never evaluated: only an upper bound proved
+> obtainable, and it was inconclusive. Retained rather than deleted because the correction had to
+> be measured against this reasoning, and because the topology constraints it establishes are what
+> still bound the design.
 
 ### Why the proxy diverged, from the front that built it
 
@@ -2826,10 +2830,11 @@ honest outcome is a recorded negative with numbers, which the stop rule explicit
 would be the second negative this lever has produced, and that pattern is itself the finding:
 register loss at joins is real, dominant, and may simply not be worth paying for in text.
 
-## R26. The phi is dropped, and why the prize resisted five measurements
+## R26. The phi is dropped: five defects across three attempts
 
 R25 registered a kill criterion for the join phi - recovered `regN` occurrences per added line
-must reach 1.0 - and left its numerator unmeasured. Measuring it was attempted three times, and
+must reach 1.0 - and left its numerator unmeasured. Three fronts attempted to measure it, hitting
+five unrelated defects between them, and
 the outcome is a **recorded negative: the prize is unmeasurable at acceptable cost, and the phi is
 not built.**
 
@@ -2877,9 +2882,9 @@ total; and instrumented against clean `quality.json` side by side.
 
 ### Five defects, five different reasons
 
-The durable finding of this front is not a ratio. It is that one quantity resisted measurement
-five times, each for an unrelated reason, and every failure produced a number that looked
-plausible until it was checked:
+The durable finding of this front is not a ratio. It is that one quantity resisted three
+measurement attempts for five unrelated reasons, and that every failure produced a number that
+looked plausible until it was checked:
 
 1. **Wrong unit.** An IR proxy counted raw arm-reachable definitions intersected with static
    CFG live-in, never reconstructing `state_at_branch` or arm-end `LiftState`. Its counts were
