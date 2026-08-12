@@ -2923,3 +2923,45 @@ The alternative is to stop measuring the counterfactual and build the cheaper de
 annotation adds no lines, so the criterion that could not be evaluated here does not apply to it
 at all, and its coverage is directly observable on real output rather than by proxy. That is the
 path taken next.
+
+## R27. An open anomaly in `placeholder_cond_markers`
+
+Recorded rather than resolved, because it concerns the ruler and a counter nobody should trust
+silently.
+
+A full-counter reference measured at branch HEAD, main-tree binary, both samples with
+`--adapter-backend internal --split-records --function-scope all`:
+
+| counter | LocalSend | Immich |
+|---|---:|---:|
+| `raw_register_name_refs` | 136,378 | 189,696 |
+| `raw_arg_name_refs` | 0 | 0 |
+| `placeholder_cond_markers` | **716** | **716** |
+| `omitted_path_markers` | 782 | 942 |
+| `loop_backedge_markers` | 266 | 460 |
+| `block_helper_refs` | 0 | 0 |
+| `placeholder_ifs` | 1,178 | 840 |
+| `unresolved_cf` | 0 | 0 |
+| `repeated_blocks` | 21,492 | 30,191 |
+| `total_calls` | 146,842 | 212,916 |
+
+Every other counter differs between the two samples, as it should - the corpora are 22,102 and
+28,753 functions from different apps built by different SDK generations. `placeholder_cond_markers`
+is **identical at 716**, and that is implausible as a coincidence.
+
+It is also a change. R20's census measured the `/* cond */` shape at 1,098 and 1,220 through the
+same counter at `2619ec7`, before the structurer landed - different values, as expected. After the
+structurer they converge to the same number on both samples.
+
+Two readings, and this document cannot currently choose between them. Either the structurer
+genuinely reduced the shape to a population that happens to coincide, or the counter has a defect
+that makes it insensitive to the corpus. `quality.rs:46` computes it as
+`p.source.matches("/* cond */").count()`, a plain literal scan with no obvious saturation, which
+argues for coincidence; the exact equality across dissimilar inputs argues against.
+
+Not chased here, because the counter is not a gate threshold and no result in this document rests
+on it. Recorded because a metric that returns the same value for two different programs is exactly
+the shape of a measurement that has stopped measuring, and the next person to rely on
+`placeholder_cond_markers` should resolve this first. The check is cheap: count the literal in both
+corpora directly and compare against the counter, which is the same replay control R20 used to
+validate four other counters exactly.
