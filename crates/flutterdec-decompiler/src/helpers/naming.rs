@@ -28,6 +28,28 @@ pub(super) fn named_indirect_target(token: &str) -> String {
     token.to_string()
 }
 
+/// Every spelling that denotes a register whose value was not recovered. The
+/// order is fixed and this list is for membership checks, never emitted directly.
+pub(super) fn unrecovered_value_spellings(canonical: &str) -> Vec<String> {
+    let Some(reg) = canonical_reg(canonical) else {
+        return Vec::new();
+    };
+    let Some(id) = reg.strip_prefix('x').and_then(|id| id.parse::<usize>().ok()) else {
+        return Vec::new();
+    };
+    if id > 30 {
+        return Vec::new();
+    }
+    let mut spellings = vec![
+        reg,
+        named_register_alias(id),
+        named_indirect_target(canonical),
+    ];
+    spellings.sort();
+    spellings.dedup();
+    spellings
+}
+
 pub(super) fn named_register_alias(n: usize) -> String {
     match n {
         30 => "returnAddress".to_string(),

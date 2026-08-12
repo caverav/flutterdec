@@ -1,14 +1,5 @@
 /// Order the identifier renames before they are applied as sequential textual
-/// substitutions.
-///
-/// Longest key first, so a short identifier cannot rewrite a prefix of a longer one
-/// that has not been substituted yet. The lexicographic second key is what makes the
-/// order *total*, and it is load-bearing: the renames arrive from a `HashMap`, whose
-/// `into_iter` order is seeded per process, and `sort_by` is stable. With length as the
-/// only key, equal-length names kept that seeded order, so two overlapping renames
-/// applied in different orders between runs and the emitted text differed while every
-/// `quality.json` counter stayed identical. Keys come from a map and are therefore
-/// unique, so length-then-key admits exactly one permutation.
+/// substitutions. The total secondary key protects output from HashMap seed order.
 pub(crate) fn sort_rename_pairs(pairs: &mut [(String, String)]) {
     pairs.sort_by(|a, b| b.0.len().cmp(&a.0.len()).then_with(|| a.0.cmp(&b.0)));
 }
@@ -34,10 +25,10 @@ impl<'a> FuncEmitter<'a> {
 
         let mut counts: HashMap<String, usize> = HashMap::new();
         for line in &self.lines {
-            for slot in Self::stack_slot_refs(line) {
-                *counts.entry(slot).or_insert(0) += 1;
-            }
-        }
+                    for slot in Self::stack_slot_refs(crate::code_before_annotation(line)) {
+                        *counts.entry(slot).or_insert(0) += 1;
+                    }
+                }
 
         let mut candidates: Vec<String> = counts
             .into_iter()
@@ -95,10 +86,10 @@ impl<'a> FuncEmitter<'a> {
 
         let mut counts: HashMap<String, usize> = HashMap::new();
         for line in &self.lines {
-            for lit in Self::pool_mapped_literals(line) {
-                *counts.entry(lit).or_insert(0) += 1;
-            }
-        }
+                    for lit in Self::pool_mapped_literals(crate::code_before_annotation(line)) {
+                        *counts.entry(lit).or_insert(0) += 1;
+                    }
+                }
 
         let mut candidates: Vec<String> = counts
             .into_iter()
@@ -174,13 +165,14 @@ impl<'a> FuncEmitter<'a> {
         let mul = format!("sp[{slot}] *=");
         let div = format!("sp[{slot}] /=");
         lines.iter().any(|line| {
-            line.contains(&spaced)
-                || line.contains(&compact)
-                || line.contains(&plus)
-                || line.contains(&minus)
-                || line.contains(&mul)
-                || line.contains(&div)
-        })
+                    let line = crate::code_before_annotation(line);
+                    line.contains(&spaced)
+                        || line.contains(&compact)
+                        || line.contains(&plus)
+                        || line.contains(&minus)
+                        || line.contains(&mul)
+                        || line.contains(&div)
+                })
     }
 
     fn is_simple_stack_slot_token(token: &str) -> bool {
@@ -290,10 +282,10 @@ impl<'a> FuncEmitter<'a> {
 
         let mut counts: HashMap<String, usize> = HashMap::new();
         for line in &self.lines {
-            for ident in Self::minus_one_idents(line) {
-                *counts.entry(ident).or_insert(0) += 1;
-            }
-        }
+                    for ident in Self::minus_one_idents(crate::code_before_annotation(line)) {
+                        *counts.entry(ident).or_insert(0) += 1;
+                    }
+                }
 
         let mut candidates: Vec<(String, usize)> = counts
             .into_iter()

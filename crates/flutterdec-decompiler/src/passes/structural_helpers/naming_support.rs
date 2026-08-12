@@ -43,30 +43,31 @@ impl<'a> FuncEmitter<'a> {
         let call_assign = format!("{id} = t");
 
         for line in lines {
-            let t = line.trim();
-            s.field_access += t.matches(&field_pat).count();
-            s.arith_ops += t.matches(&format!("{id} +")).count();
-            s.arith_ops += t.matches(&format!("{id} -")).count();
-            s.arith_ops += t.matches(&format!("{id} <<")).count();
-            s.arith_ops += t.matches(&format!("{id} >>")).count();
-            s.arith_ops += t.matches(&format!("{id} &")).count();
-            s.arith_ops += t.matches(&format!("{id} |")).count();
-            s.arith_ops += t.matches(&format!("{id} ^")).count();
-            s.null_cmp += t.matches(&null_eq_1).count();
-            s.null_cmp += t.matches(&null_eq_2).count();
-            s.null_cmp += t.matches(&null_ne_1).count();
-            s.null_cmp += t.matches(&null_ne_2).count();
-
-            if t.starts_with(&format!("{id} = pool["))
-                || t.contains(&format!("{id} = (pool["))
-                || t.contains(&format!("{id} = ((pool["))
-            {
-                s.pool_assign += 1;
-            }
-            if t.starts_with(&call_assign) {
-                s.call_assign += 1;
-            }
-        }
+                    let code = crate::code_before_annotation(line);
+                    let t = code.trim();
+                    s.field_access += t.matches(&field_pat).count();
+                    s.arith_ops += t.matches(&format!("{id} +")).count();
+                    s.arith_ops += t.matches(&format!("{id} -")).count();
+                    s.arith_ops += t.matches(&format!("{id} <<")).count();
+                    s.arith_ops += t.matches(&format!("{id} >>")).count();
+                    s.arith_ops += t.matches(&format!("{id} &")).count();
+                    s.arith_ops += t.matches(&format!("{id} |")).count();
+                    s.arith_ops += t.matches(&format!("{id} ^")).count();
+                    s.null_cmp += t.matches(&null_eq_1).count();
+                    s.null_cmp += t.matches(&null_eq_2).count();
+                    s.null_cmp += t.matches(&null_ne_1).count();
+                    s.null_cmp += t.matches(&null_ne_2).count();
+        
+                    if t.starts_with(&format!("{id} = pool["))
+                        || t.contains(&format!("{id} = (pool["))
+                        || t.contains(&format!("{id} = ((pool["))
+                    {
+                        s.pool_assign += 1;
+                    }
+                    if t.starts_with(&call_assign) {
+                        s.call_assign += 1;
+                    }
+                }
         s
     }
 
@@ -147,11 +148,15 @@ impl<'a> FuncEmitter<'a> {
     }
 
     pub(super) fn name_taken(lines: &[String], name: &str) -> bool {
-        lines.iter().any(|l| l.contains(name))
+        lines
+                    .iter()
+                    .any(|line| crate::code_before_annotation(line).contains(name))
     }
 
     pub(super) fn identifier_assigned(lines: &[String], ident: &str) -> bool {
-        lines.iter().any(|l| Self::assigns_ident(l, ident))
+        lines
+                    .iter()
+                    .any(|line| Self::assigns_ident(crate::code_before_annotation(line), ident))
     }
 
     pub(super) fn infer_declared_types_from_context(
@@ -161,79 +166,80 @@ impl<'a> FuncEmitter<'a> {
         let mut out: HashMap<String, String> = HashMap::new();
 
         for line in lines {
-            if let Some(condition) = Self::extract_if_condition(line) {
-                for id in ids {
-                    if Self::condition_suggests_bool(&condition, id) {
-                        Self::upsert_inferred_type(&mut out, id, "bool");
-                    }
-                }
-            }
-
-            if let Some((callee, args)) = Self::extract_call_site(line) {
-                if let Some(assign_id) = Self::extract_assignment_ident(line) {
-                    if ids.contains(&assign_id) {
-                        if let Some(local_ty) = Self::constructed_type_from_semantic_path(&callee) {
-                            Self::upsert_inferred_type(&mut out, &assign_id, &local_ty);
-                        } else if let Some(local_ty) =
-                            Self::return_type_from_semantic_path(&callee)
-                        {
-                            Self::upsert_inferred_type(&mut out, &assign_id, &local_ty);
-                        } else if let Some(path) = Self::extract_semantic_path_from_comment(line) {
-                            if let Some(local_ty) = Self::constructed_type_from_semantic_path(&path)
-                            {
-                                Self::upsert_inferred_type(&mut out, &assign_id, &local_ty);
-                            } else if let Some(local_ty) =
-                                Self::return_type_from_semantic_path(&path)
-                            {
-                                Self::upsert_inferred_type(&mut out, &assign_id, &local_ty);
+                    let line = crate::code_before_annotation(line);
+                    if let Some(condition) = Self::extract_if_condition(line) {
+                        for id in ids {
+                            if Self::condition_suggests_bool(&condition, id) {
+                                Self::upsert_inferred_type(&mut out, id, "bool");
                             }
                         }
                     }
-                }
-
-                if let Some(receiver_ty) = Self::receiver_type_from_semantic_path(&callee) {
-                    if let Some(receiver_id) = Self::receiver_ident_from_args(&args) {
-                        if ids.contains(&receiver_id) {
-                            Self::upsert_inferred_type(&mut out, &receiver_id, &receiver_ty);
+        
+                    if let Some((callee, args)) = Self::extract_call_site(line) {
+                        if let Some(assign_id) = Self::extract_assignment_ident(line) {
+                            if ids.contains(&assign_id) {
+                                if let Some(local_ty) = Self::constructed_type_from_semantic_path(&callee) {
+                                    Self::upsert_inferred_type(&mut out, &assign_id, &local_ty);
+                                } else if let Some(local_ty) =
+                                    Self::return_type_from_semantic_path(&callee)
+                                {
+                                    Self::upsert_inferred_type(&mut out, &assign_id, &local_ty);
+                                } else if let Some(path) = Self::extract_semantic_path_from_comment(line) {
+                                    if let Some(local_ty) = Self::constructed_type_from_semantic_path(&path)
+                                    {
+                                        Self::upsert_inferred_type(&mut out, &assign_id, &local_ty);
+                                    } else if let Some(local_ty) =
+                                        Self::return_type_from_semantic_path(&path)
+                                    {
+                                        Self::upsert_inferred_type(&mut out, &assign_id, &local_ty);
+                                    }
+                                }
+                            }
                         }
-                    }
-                }
-            }
-
-            if let Some(path) = Self::extract_semantic_path_from_comment(line) {
-                if let Some(receiver_ty) = Self::receiver_type_from_semantic_path(&path) {
-                    if let Some((_, args)) = Self::extract_call_site(line) {
-                        if let Some(receiver_id) = Self::receiver_ident_from_args(&args) {
-                            if ids.contains(&receiver_id) {
-                                Self::upsert_inferred_type(&mut out, &receiver_id, &receiver_ty);
+        
+                        if let Some(receiver_ty) = Self::receiver_type_from_semantic_path(&callee) {
+                            if let Some(receiver_id) = Self::receiver_ident_from_args(&args) {
+                                if ids.contains(&receiver_id) {
+                                    Self::upsert_inferred_type(&mut out, &receiver_id, &receiver_ty);
+                                }
                             }
                         }
                     }
-                }
-            }
-
-            for id in ids {
-                let Some(rhs) = Self::extract_assignment_rhs(line, id) else {
-                    continue;
-                };
-                let rhs_trim = rhs.trim();
-                if rhs_trim.starts_with('"') && rhs_trim.ends_with('"') && rhs_trim.len() >= 2 {
-                    Self::upsert_inferred_type(&mut out, id, "String");
-                } else if let Some((literal_prefix, _)) = rhs_trim.split_once("/* pool[") {
-                    let literal_prefix = literal_prefix.trim();
-                    if literal_prefix.starts_with('"')
-                        && literal_prefix.ends_with('"')
-                        && literal_prefix.len() >= 2
-                    {
-                        Self::upsert_inferred_type(&mut out, id, "String");
+        
+                    if let Some(path) = Self::extract_semantic_path_from_comment(line) {
+                        if let Some(receiver_ty) = Self::receiver_type_from_semantic_path(&path) {
+                            if let Some((_, args)) = Self::extract_call_site(line) {
+                                if let Some(receiver_id) = Self::receiver_ident_from_args(&args) {
+                                    if ids.contains(&receiver_id) {
+                                        Self::upsert_inferred_type(&mut out, &receiver_id, &receiver_ty);
+                                    }
+                                }
+                            }
+                        }
                     }
-                } else if rhs_trim == "true" || rhs_trim == "false" {
-                    Self::upsert_inferred_type(&mut out, id, "bool");
-                } else if Self::is_integer_literal(rhs_trim) {
-                    Self::upsert_inferred_type(&mut out, id, "int");
+        
+                    for id in ids {
+                        let Some(rhs) = Self::extract_assignment_rhs(line, id) else {
+                            continue;
+                        };
+                        let rhs_trim = rhs.trim();
+                        if rhs_trim.starts_with('"') && rhs_trim.ends_with('"') && rhs_trim.len() >= 2 {
+                            Self::upsert_inferred_type(&mut out, id, "String");
+                        } else if let Some((literal_prefix, _)) = rhs_trim.split_once("/* pool[") {
+                            let literal_prefix = literal_prefix.trim();
+                            if literal_prefix.starts_with('"')
+                                && literal_prefix.ends_with('"')
+                                && literal_prefix.len() >= 2
+                            {
+                                Self::upsert_inferred_type(&mut out, id, "String");
+                            }
+                        } else if rhs_trim == "true" || rhs_trim == "false" {
+                            Self::upsert_inferred_type(&mut out, id, "bool");
+                        } else if Self::is_integer_literal(rhs_trim) {
+                            Self::upsert_inferred_type(&mut out, id, "int");
+                        }
+                    }
                 }
-            }
-        }
 
         out
     }

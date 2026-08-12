@@ -42,20 +42,26 @@ fn quality_from_artifacts(
         repeated_blocks += p.repeated_blocks;
         unlifted_instructions += p.unlifted_instructions;
         target_va_symbol_calls += p.target_va_symbol_calls;
-        block_helper_refs += p.source.matches("_block_").count();
-        placeholder_cond_markers += p.source.matches("/* cond */").count();
-        omitted_path_markers += p.source.matches("omitted complex path").count();
-        loop_backedge_markers += p.source.matches("loop back-edges: ").count();
-        for n in 0..=7 {
-            raw_arg_name_refs += count_ident_token(&p.source, &format!("arg{n}"));
-        }
-        for n in 0..=30 {
-            // `xN` is the disassembly spelling; the emitter renders an
-            // unresolved register through `named_register_alias`, which yields
-            // `regN`. Counting only `xN` reported zero on every real binary
-            // while thousands of `regN` were being emitted.
-            raw_register_name_refs += count_ident_token(&p.source, &format!("x{n}"));
-            raw_register_name_refs += count_ident_token(&p.source, &format!("reg{n}"));
+        // Join annotations are reader-facing evidence, not emitted code. Strip
+        // only their exact spans: all historical comments stay in the ruler, so
+        // pre-annotation reports remain bit-for-bit comparable.
+        for line in p.source.lines() {
+            let code = flutterdec_decompiler::strip_join_annotation_span(line);
+            block_helper_refs += code.matches("_block_").count();
+            placeholder_cond_markers += code.matches("/* cond */").count();
+            omitted_path_markers += code.matches("omitted complex path").count();
+            loop_backedge_markers += code.matches("loop back-edges: ").count();
+            for n in 0..=7 {
+                raw_arg_name_refs += count_ident_token(&code, &format!("arg{n}"));
+            }
+            for n in 0..=30 {
+                // `xN` is the disassembly spelling; the emitter renders an
+                // unresolved register through `named_register_alias`, which yields
+                // `regN`. Counting only `xN` reported zero on every real binary
+                // while thousands of `regN` were being emitted.
+                raw_register_name_refs += count_ident_token(&code, &format!("x{n}"));
+                raw_register_name_refs += count_ident_token(&code, &format!("reg{n}"));
+            }
         }
     }
 
@@ -113,5 +119,29 @@ fn quality_from_artifacts(
         placeholder_cond_markers,
         omitted_path_markers,
         loop_backedge_markers,
+    }
+}
+
+
+#[cfg(test)]
+mod quality_tests {
+    use super::*;
+
+    #[test]
+    fn annotation_span_does_not_contribute_to_source_counters() {
+        let source = "sink(reg0 /* = arg3 | _block_7() */); /* cond */ // omitted complex path; loop back-edges: x1";
+        let code = flutterdec_decompiler::strip_join_annotation_span(source);
+        assert_eq!(count_ident_token(&code, "reg0"), 1);
+        assert_eq!(count_ident_token(&code, "arg3"), 0);
+        assert_eq!(code.matches("_block_").count(), 0);
+        assert_eq!(code.matches("/* cond */").count(), 1);
+        assert_eq!(code.matches("omitted complex path").count(), 1);
+        assert_eq!(code.matches("loop back-edges: ").count(), 1);
+    }
+
+    #[test]
+    fn stripping_is_a_noop_for_pre_annotation_source() {
+        let source = "sink(reg0 /* cond */); // 3 instructions not lifted: arg2 _block_9";
+        assert_eq!(flutterdec_decompiler::strip_join_annotation_span(source), source);
     }
 }

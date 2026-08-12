@@ -103,6 +103,359 @@ fn does_not_attribute_one_path_value_to_a_join() {
     );
 }
 
+#[test]
+fn annotates_a_dropped_register_at_a_two_arm_join() {
+    let ir = FunctionIr {
+        function_id: 1012,
+        name: "annotatedJoin".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![
+            blk(0, 0x1000, vec![cbz(0x1000, "x1", 0x2000)], vec![1, 2]),
+            blk(1, 0x1004, vec![stmt(0x1004, "mov x0, #7")], vec![3]),
+            blk(2, 0x2000, vec![stmt(0x2000, "mov x0, #9")], vec![3]),
+            blk(
+                3,
+                0x3000,
+                vec![stmt(0x3000, "stur x0, [x29, #-0x10]"), ret(0x3004)],
+                Vec::new(),
+            ),
+        ],
+    };
+
+    let artifact = emit_pseudocode(&ir, &HashMap::new());
+    assert!(
+        artifact.source.contains("reg0"),
+        "the join must be emitted as an unresolved register:\n{}",
+        artifact.source
+    );
+    assert!(
+        artifact.source.contains("reg0 /* = 7 | 9 */"),
+        "the join read must retain both arm-end candidates in lexical order:\n{}",
+        artifact.source
+    );
+}
+
+#[test]
+fn uses_the_same_write_set_as_the_branch_merge() {
+    let ir = FunctionIr {
+        function_id: 1018,
+        name: "mergeWriteSet".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![
+            blk(0, 0x1000, vec![ret(0x1000)], Vec::new()),
+            blk(1, 0x1010, vec![stmt(0x1010, "mov x0, #9")], vec![3]),
+            blk(2, 0x1020, vec![stmt(0x1020, "mov x2, #1")], vec![3]),
+            blk(3, 0x1030, vec![ret(0x1030)], Vec::new()),
+        ],
+    };
+    let symbols = HashMap::new();
+    let mut emitter = FuncEmitter::new(&ir, &symbols);
+    emitter.regions = Regions::build(&ir);
+    let arm_state = LiftState {
+        reg_values: [("x0".to_string(), "9".to_string())].into_iter().collect(),
+        ..LiftState::default()
+    };
+    let unchanged_state = LiftState {
+        reg_values: [("x0".to_string(), "7".to_string())].into_iter().collect(),
+        ..LiftState::default()
+    };
+    let arm_ends = [(1, arm_state), (2, unchanged_state)];
+    let expected = emitter.registers_written_between(&[1, 2], Some(3));
+    emitter.record_join_candidates(3, &arm_ends);
+    assert_eq!(expected.contains("x0"), emitter.join_candidates.contains_key(&(3, "x0".to_string())));
+    assert!(
+        emitter.join_candidates.contains_key(&(3, "x0".to_string())),
+        "a register the merge drops must have arm-end evidence"
+    );
+}
+
+#[test]
+fn marks_a_join_with_an_extra_predecessor_non_exhaustive() {
+    let ir = FunctionIr {
+        function_id: 1013,
+        name: "incompleteJoin".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![blk(0, 0x1000, vec![ret(0x1000)], Vec::new())],
+    };
+    let symbols = HashMap::new();
+    let mut emitter = FuncEmitter::new(&ir, &symbols);
+    let arms = [1, 2];
+    let preds = [1, 2, 4];
+    let complete = arms.len() == 2
+        && preds.len() == arms.len()
+        && arms.iter().all(|arm| preds.contains(arm));
+    assert!(!complete, "an extra predecessor makes the arm list non-exhaustive");
+    emitter.lines.push("  sink(x0);".to_string());
+    emitter.join_candidates.insert(
+        (3, "x0".to_string()),
+        JoinCandidates {
+                    values: vec!["9".to_string(), "7".to_string()],
+                    complete,
+                    provenance: vec![
+                        crate::control_flow::JoinCandidateProvenance {
+                            arm: 0,
+                            value: "9".to_string(),
+                        },
+                        crate::control_flow::JoinCandidateProvenance {
+                            arm: 1,
+                            value: "7".to_string(),
+                        },
+                    ],
+                },
+    );
+    emitter.join_annotation_anchors.push(JoinAnnotationAnchor {
+        join: 3,
+        candidate_regs: vec!["x0".to_string()],
+        lines: emitter.lines.clone(),
+    });
+    emitter.append_join_annotations();
+    assert_eq!(
+        emitter.lines.last().map(String::as_str),
+        Some("  sink(x0 /* possible (non-exhaustive): 9 | 7 */);")
+    );
+}
+
+#[test]
+fn drops_an_over_cap_join_candidate_without_truncation() {
+    let value = "a".repeat(crate::control_flow::MAX_SUBSTITUTED_EXPR + 1);
+    let ir = FunctionIr {
+        function_id: 1014,
+        name: "overCap".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![blk(0, 0x1000, vec![ret(0x1000)], Vec::new())],
+    };
+    let symbols = HashMap::new();
+    let mut emitter = FuncEmitter::new(&ir, &symbols);
+    emitter.lines.push("  sink(reg0);".to_string());
+    emitter.join_candidates.insert(
+        (0, "x0".to_string()),
+        JoinCandidates {
+            values: vec![value.clone()],
+            complete: true,
+            provenance: vec![crate::control_flow::JoinCandidateProvenance { arm: 0, value }],
+        },
+    );
+    emitter.join_annotation_anchors.push(JoinAnnotationAnchor {
+        join: 0,
+        candidate_regs: vec!["x0".to_string()],
+        lines: emitter.lines.clone(),
+    });
+    emitter.append_join_annotations();
+
+    assert_eq!(
+        emitter.lines.last().map(String::as_str),
+        Some("  sink(reg0);"),
+        "over-cap candidates are omitted whole, never truncated into a false expression"
+    );
+}
+
+#[test]
+fn drops_structural_delimiter_candidates_before_annotation() {
+    let ir = FunctionIr {
+        function_id: 1017,
+        name: "braceCandidate".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![blk(0, 0x1000, vec![ret(0x1000)], Vec::new())],
+    };
+    let symbols = HashMap::new();
+    let mut emitter = FuncEmitter::new(&ir, &symbols);
+    emitter.lines.push("  sink(x0);".to_string());
+    emitter.join_candidates.insert(
+        (0, "x0".to_string()),
+        JoinCandidates {
+                    values: vec!["obj1.f8 { unsafe".to_string()],
+                    complete: true,
+                    provenance: vec![crate::control_flow::JoinCandidateProvenance {
+                        arm: 0,
+                        value: "obj1.f8 { unsafe".to_string(),
+                    }],
+                },
+    );
+    emitter.join_annotation_anchors.push(JoinAnnotationAnchor {
+        join: 0,
+        candidate_regs: vec!["x0".to_string()],
+        lines: emitter.lines.clone(),
+    });
+    emitter.append_join_annotations();
+    assert_eq!(
+        emitter.lines.last().map(String::as_str),
+        Some("  sink(x0);"),
+        "brace-bearing evidence must be rejected before structural compaction sees it"
+    );
+}
+
+#[test]
+fn drops_uninformative_candidates_and_marks_remaining_evidence_non_exhaustive() {
+    let ir = FunctionIr {
+        function_id: 1016,
+        name: "usefulOnlyJoin".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![blk(0, 0x1000, vec![ret(0x1000)], Vec::new())],
+    };
+    let symbols = HashMap::new();
+    let mut emitter = FuncEmitter::new(&ir, &symbols);
+    emitter.lines.push("  sink(x0);".to_string());
+    let provenance = crate::control_flow::ordered_join_candidate_provenance([
+        crate::control_flow::JoinCandidateProvenance { arm: 0, value: "x7".to_string() },
+        crate::control_flow::JoinCandidateProvenance { arm: 0, value: "reg7".to_string() },
+        crate::control_flow::JoinCandidateProvenance { arm: 0, value: "cachedTarget".to_string() },
+        crate::control_flow::JoinCandidateProvenance { arm: 0, value: "framePointer".to_string() },
+        crate::control_flow::JoinCandidateProvenance { arm: 0, value: "returnAddress".to_string() },
+        crate::control_flow::JoinCandidateProvenance { arm: 0, value: "dispatchTarget".to_string() },
+        crate::control_flow::JoinCandidateProvenance { arm: 0, value: "indirectTarget9".to_string() },
+        crate::control_flow::JoinCandidateProvenance { arm: 1, value: "obj1.f8".to_string() },
+    ]);
+    let values = provenance
+        .iter()
+        .filter(|candidate| crate::control_flow::is_informative_join_candidate(&candidate.value))
+        .map(|candidate| candidate.value.clone())
+        .collect::<Vec<_>>();
+    // Every one of the seven register spellings is a bare unrecovered value, so the
+    // useful-only filter must reject all of them: the canonical `x7`, the `reg7` alias,
+    // and the five alias forms `named_register_alias`/`named_indirect_target` can emit.
+    // Only the real expression survives. Asserting the exact vector rather than
+    // membership is what catches a spelling the filter forgot.
+    assert_eq!(
+        values,
+        vec!["obj1.f8".to_string()],
+        "only a reader-usable expression may survive the useful-only filter"
+    );
+    emitter.join_candidates.insert(
+        (0, "x0".to_string()),
+        JoinCandidates {
+            complete: false,
+            values,
+            provenance,
+        },
+    );
+    emitter.join_annotation_anchors.push(JoinAnnotationAnchor {
+        join: 0,
+        candidate_regs: vec!["x0".to_string()],
+        lines: emitter.lines.clone(),
+    });
+    emitter.append_join_annotations();
+    assert_eq!(
+        emitter.lines.last().map(String::as_str),
+        Some("  sink(x0 /* possible (non-exhaustive): obj1.f8 */);"),
+        "the non-exhaustive annotation must retain only useful bounded arm-end evidence"
+    );
+}
+
+#[test]
+fn annotates_each_rendered_register_site_once() {
+    let ir = FunctionIr {
+        function_id: 1019,
+        name: "dedupeAnnotationSite".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![blk(0, 0x1000, vec![ret(0x1000)], Vec::new())],
+    };
+    let symbols = HashMap::new();
+    let mut emitter = FuncEmitter::new(&ir, &symbols);
+    emitter.lines.push("  sink(reg0);".to_string());
+    for join in [1usize, 2] {
+        emitter.join_candidates.insert(
+            (join, "x0".to_string()),
+            JoinCandidates {
+                values: vec!["7".to_string()],
+                complete: false,
+                provenance: vec![crate::control_flow::JoinCandidateProvenance {
+                    arm: join,
+                    value: "7".to_string(),
+                }],
+            },
+        );
+        emitter.join_annotation_anchors.push(JoinAnnotationAnchor {
+            join,
+            candidate_regs: vec!["x0".to_string()],
+            lines: emitter.lines.clone(),
+        });
+    }
+    emitter.append_join_annotations();
+    assert_eq!(
+        emitter.lines.last().map(String::as_str),
+        Some("  sink(reg0 /* possible (non-exhaustive): 7 */);"),
+        "overlapping join anchors must not stack annotations on one register token"
+    );
+}
+
+#[test]
+fn does_not_annotate_a_register_that_the_join_did_not_drop() {
+    let ir = FunctionIr {
+        function_id: 1015,
+        name: "survivingRegister".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![
+            blk(0, 0x1000, vec![stmt(0x1000, "mov x0, #7"), cbz(0x1004, "x1", 0x2000)], vec![1, 2]),
+            blk(1, 0x1008, vec![stmt(0x1008, "mov x2, #1")], vec![3]),
+            blk(2, 0x2000, vec![stmt(0x2000, "mov x2, #2")], vec![3]),
+            blk(
+                3,
+                0x3000,
+                vec![stmt(0x3000, "stur x0, [x29, #-0x10]"), ret(0x3004)],
+                Vec::new(),
+            ),
+        ],
+    };
+
+    let artifact = emit_pseudocode(&ir, &HashMap::new());
+    assert!(
+        artifact.source.contains("return 7;"),
+        "the unchanged register binding should still be used:\n{}",
+        artifact.source
+    );
+    assert!(
+        !artifact.source.contains("/* =") && !artifact.source.contains("possible (non-exhaustive)"),
+        "a register never dropped at the join must receive no annotation:\n{}",
+        artifact.source
+    );
+}
+
+#[test]
+fn join_candidate_order_ignores_source_insertion_order() {
+    let forward = crate::control_flow::ordered_join_candidate_provenance([
+        crate::control_flow::JoinCandidateProvenance {
+            arm: 0,
+            value: "taken".to_string(),
+        },
+        crate::control_flow::JoinCandidateProvenance {
+            arm: 1,
+            value: "else".to_string(),
+        },
+        crate::control_flow::JoinCandidateProvenance {
+            arm: 1,
+            value: "taken".to_string(),
+        },
+    ]);
+    let reverse = crate::control_flow::ordered_join_candidate_provenance([
+        crate::control_flow::JoinCandidateProvenance {
+            arm: 1,
+            value: "taken".to_string(),
+        },
+        crate::control_flow::JoinCandidateProvenance {
+            arm: 1,
+            value: "else".to_string(),
+        },
+        crate::control_flow::JoinCandidateProvenance {
+            arm: 0,
+            value: "taken".to_string(),
+        },
+    ]);
+    assert_eq!(forward, reverse, "candidate provenance ordering is total");
+    assert_eq!(
+        forward,
+        vec![
+            crate::control_flow::JoinCandidateProvenance {
+                arm: 1,
+                value: "else".to_string(),
+            },
+            crate::control_flow::JoinCandidateProvenance {
+                arm: 0,
+                value: "taken".to_string(),
+            },
+        ]
+    );
+}
+
 /// A back edge becomes `continue` inside `while (true)`, and the loop's exit
 /// becomes `break`, with the body emitted once.
 #[test]

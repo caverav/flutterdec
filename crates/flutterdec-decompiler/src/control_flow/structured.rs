@@ -37,6 +37,176 @@ enum Flow {
     },
 }
 
+// The side table is lookup-only; candidate text is sorted before output, so no map or
+// set iteration reaches output.
+
+/// Exact provenance of one candidate carried from an arm-end snapshot.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct JoinCandidateProvenance {
+    pub arm: usize,
+    pub value: String,
+}
+
+/// Keep candidate text and its producing arm together while sorting, so the
+/// provenance audit cannot accidentally inspect a value from another snapshot.
+pub(crate) fn ordered_join_candidate_provenance(
+    values: impl IntoIterator<Item = JoinCandidateProvenance>,
+) -> Vec<JoinCandidateProvenance> {
+    let mut ordered = values.into_iter().collect::<Vec<_>>();
+    ordered.sort_by(|left, right| {
+        left.value
+            .cmp(&right.value)
+            .then_with(|| left.arm.cmp(&right.arm))
+    });
+    ordered.dedup_by(|left, right| left.value == right.value);
+    ordered
+}
+
+/// A candidate is useful only when it identifies a field, call result, or
+/// literal; another fallback register or opaque temporary would add no evidence.
+pub(crate) fn is_informative_join_candidate(value: &str) -> bool {
+    let value = value.trim();
+    !value.is_empty()
+        && !contains_uninformative_join_token(value)
+        && (value.contains(".f") || contains_call_expression(value) || is_numeric_literal(value))
+}
+
+fn contains_call_expression(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    let mut index = 0usize;
+    while index < bytes.len() {
+        if bytes[index] != b'(' {
+            index += 1;
+            continue;
+        }
+        let mut start = index;
+        while start > 0
+            && (bytes[start - 1].is_ascii_alphanumeric()
+                || bytes[start - 1] == b'_'
+                || bytes[start - 1] == b'.')
+        {
+            start -= 1;
+        }
+        if start < index
+            && !matches!(&value[start..index], "if" | "while" | "for" | "switch" | "catch")
+        {
+            return true;
+        }
+        index += 1;
+    }
+    false
+}
+
+fn is_numeric_literal(value: &str) -> bool {
+    let value = value.trim().strip_prefix('-').unwrap_or(value.trim());
+    value
+        .strip_prefix("0x")
+        .or_else(|| value.strip_prefix("0X"))
+        .map_or_else(
+            || !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit()),
+            |hex| !hex.is_empty() && hex.bytes().all(|byte| byte.is_ascii_hexdigit()),
+        )
+}
+
+/// A candidate containing a fallback register or local temporary would merely
+/// decorate one admitted gap with another, so omit the whole candidate.
+fn contains_uninformative_join_token(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    let mut start = 0usize;
+    while start < bytes.len() {
+        while start < bytes.len()
+            && !bytes[start].is_ascii_alphanumeric()
+            && bytes[start] != b'_'
+        {
+            start += 1;
+        }
+        let end = start
+            + bytes[start..]
+                .iter()
+                .take_while(|byte| byte.is_ascii_alphanumeric() || **byte == b'_')
+                .count();
+        let token = &value[start..end];
+        if is_unrecovered_value_spelling(token) || is_opaque_join_temporary(token) {
+            return true;
+        }
+        start = end.saturating_add(1);
+    }
+    false
+}
+
+fn is_unrecovered_value_spelling(token: &str) -> bool {
+    (0..=30).any(|index| {
+        unrecovered_value_spellings(&format!("x{index}"))
+            .iter()
+            .any(|spelling| token == spelling)
+    })
+}
+
+fn is_opaque_join_temporary(token: &str) -> bool {
+    ["t", "tmp", "objTmp", "intTmp", "resultTmp"]
+        .iter()
+        .any(|prefix| {
+            token.strip_prefix(prefix).is_some_and(|suffix| {
+                !suffix.is_empty() && suffix.bytes().all(|byte| byte.is_ascii_digit())
+            })
+        })
+}
+
+/// Comments pass through brace-sensitive compaction, so a candidate needing
+/// escaping is omitted rather than allowed to alter later structural rewrites.
+fn is_safe_join_annotation_candidate(value: &str) -> bool {
+    !value.contains('{') && !value.contains('}') && !value.contains("*/")
+}
+
+fn canonical_join_register_spelling(token: &str) -> Option<String> {
+    (0..=30).find_map(|index| {
+        let canonical = format!("x{index}");
+        unrecovered_value_spellings(&canonical)
+            .iter()
+            .any(|spelling| spelling == token)
+            .then_some(canonical)
+    })
+}
+
+fn contains_identifier_token(line: &str, needle: &str) -> bool {
+    let mut offset = 0usize;
+    while let Some(found) = line[offset..].find(needle) {
+        let start = offset + found;
+        let end = start + needle.len();
+        if (start == 0 || !FuncEmitter::is_ident_char(line.as_bytes()[start - 1] as char))
+            && (end == line.len() || !FuncEmitter::is_ident_char(line.as_bytes()[end] as char))
+        {
+            return true;
+        }
+        offset = end;
+    }
+    false
+}
+
+fn register_tokens(line: &str) -> Vec<String> {
+    let bytes = line.as_bytes();
+    let mut tokens = Vec::new();
+    let mut index = 0usize;
+    while index < bytes.len() {
+        if !bytes[index].is_ascii_alphabetic() {
+            index += 1;
+            continue;
+        }
+        let start = index;
+        while index < bytes.len() && FuncEmitter::is_ident_char(bytes[index] as char) {
+            index += 1;
+        }
+        if start == 0 || !FuncEmitter::is_ident_char(bytes[start - 1] as char) {
+            if let Some(reg) = canonical_join_register_spelling(&line[start..index]) {
+                tokens.push(reg);
+            }
+        }
+    }
+    tokens.sort();
+    tokens.dedup();
+    tokens
+}
+
 impl<'a> FuncEmitter<'a> {
     /// Emit the whole function from its region structure. Returns false when the
     /// function is irreducible or the walk would have to emit a block twice, in
@@ -69,6 +239,9 @@ impl<'a> FuncEmitter<'a> {
         self.restore_counters(saved_counters);
         self.structured_emitted.clear();
         self.loop_stack.clear();
+        self.join_candidates.clear();
+        self.join_candidate_regs.clear();
+        self.join_annotation_anchors.clear();
         self.regions = None;
         false
     }
@@ -188,8 +361,19 @@ impl<'a> FuncEmitter<'a> {
                 let written = self.registers_written_between(&preds, Some(id));
                 self.merge_state_at_join(&written);
             }
+            let annotation_start = self.lines.len();
+            let flow = self.render_block_body(id, indent);
+            if is_join {
+                let candidate_regs = self.join_candidate_regs.remove(&id).unwrap_or_default();
+                self.join_annotation_anchors.push(JoinAnnotationAnchor {
+                    join: id,
+                    candidate_regs,
+                    lines: self.lines[annotation_start..].to_vec(),
+                });
+            }
 
-            match self.render_block_body(id, indent) {
+            match flow {
+
                 Flow::Ends => return true,
                 Flow::Goto(next) => cursor = Some(next),
                 Flow::Branch {
@@ -217,7 +401,8 @@ impl<'a> FuncEmitter<'a> {
                     // is how the DFS emitter avoided the problem: by duplicating
                     // the continuation per path instead of merging.
                     let state_at_branch = self.state.clone();
-                    let arms: Vec<usize> = [taken, not_taken].into_iter().flatten().collect();
+                    let mut arm_ends = Vec::with_capacity(2);
+                    
 
                     // Arms are rendered into buffers so emptiness is decided on
                     // what they actually emit, which includes merge assignments.
@@ -238,7 +423,11 @@ impl<'a> FuncEmitter<'a> {
                             }
                         }
                     }
+                    let taken_state = self.state.clone();
                     let taken_lines: Vec<String> = self.lines.split_off(buffer_start);
+                    if let Some(arm) = taken {
+                        arm_ends.push((arm, taken_state));
+                    }
 
                     self.state = state_at_branch.clone();
                     if let Some(f) = not_taken {
@@ -248,7 +437,11 @@ impl<'a> FuncEmitter<'a> {
                             return false;
                         }
                     }
+                    let else_state = self.state.clone();
                     let else_lines: Vec<String> = self.lines.split_off(buffer_start);
+                    if let Some(arm) = not_taken {
+                        arm_ends.push((arm, else_state));
+                    }
 
                     // An arm can also be empty because the lifter does not model
                     // its instructions. Eliding then deletes real computation, so
@@ -304,8 +497,10 @@ impl<'a> FuncEmitter<'a> {
                     cursor = region_follow;
                     self.state = state_at_branch;
                     if let Some(join) = cursor {
+                        self.record_join_candidates(join, &arm_ends);
                         // Reached from both arms, so a binding survives only if
                         // neither arm redefined it.
+                        let arms = arm_ends.iter().map(|(arm, _)| *arm).collect::<Vec<_>>();
                         let written = self.registers_written_between(&arms, Some(join));
                         self.merge_state_at_join(&written);
                     }
@@ -511,13 +706,14 @@ impl<'a> FuncEmitter<'a> {
     ///
     /// A binding survives a merge only if no path into it redefines the
     /// register, which is exactly this set's complement.
-    fn registers_written_between(&self, roots: &[usize], stop: Option<usize>) -> HashSet<String> {
+    pub(crate) fn registers_written_between(&self, roots: &[usize], stop: Option<usize>) -> HashSet<String> {
         let mut written = HashSet::new();
         let Some(regions) = self.regions.as_ref() else {
             return written;
         };
         let mut seen: HashSet<usize> = HashSet::new();
         let mut stack: Vec<usize> = roots.iter().copied().filter(|r| Some(*r) != stop).collect();
+
         while let Some(id) = stack.pop() {
             if Some(id) == stop || !seen.insert(id) {
                 continue;
@@ -537,6 +733,192 @@ impl<'a> FuncEmitter<'a> {
             stack.extend(regions.successors(id).iter().copied());
         }
         written
+    }
+    /// Remember the arm-end values that the generic join merge will drop.
+    ///
+    /// The upcoming merge owns the exact write-set convention; candidates are
+    /// collected from the two arm snapshots before restoring branch state.
+    /// Completeness is deliberately checked against every actual predecessor:
+    /// a third route means this is evidence, not an exhaustive value claim.
+    pub(crate) fn record_join_candidates(&mut self, join: usize, arm_ends: &[(usize, LiftState)]) {
+        if arm_ends.is_empty() {
+            return;
+        }
+        let arms = arm_ends
+            .iter()
+            .map(|(arm, _)| *arm)
+            .collect::<Vec<_>>();
+        let (preds, written) = {
+            let regions = self.regions.as_ref().expect("regions");
+            let preds: Vec<usize> = (0..self.ir.blocks.len())
+                .filter(|pred| regions.successors(*pred).contains(&join))
+                .collect();
+            // Use the same arm roots and stop node as the immediately following
+            // merge. `registers_written_between` stops before the join, so no
+            // successor beyond it contributes an unrelated write.
+            let written = self.registers_written_between(&arms, Some(join));
+            (preds, written)
+        };
+        let complete = arms.len() == 2
+            && preds.len() == arms.len()
+            && arms.iter().all(|arm| preds.contains(arm));
+        let mut regs: Vec<String> = written
+            .into_iter()
+            .filter(|reg| pinned_value(reg).is_none() && reg != "x15")
+            .collect();
+        regs.sort();
+    
+        for reg in regs {
+            let provenance = ordered_join_candidate_provenance(arm_ends.iter().flat_map(|(arm, state)| {
+                state
+                    .reg_values
+                    .get(&reg)
+                    .into_iter()
+                    .filter_map(|value| Self::capped_expr(value))
+                    .filter(|value| is_safe_join_annotation_candidate(value))
+                    .map(move |value| JoinCandidateProvenance {
+                        arm: *arm,
+                        value: value.to_string(),
+                    })
+            }));
+            debug_assert!(
+                provenance.iter().all(|candidate| arm_ends.iter().any(|(arm, state)| {
+                    *arm == candidate.arm
+                        && state.reg_values.get(&reg).is_some_and(|value| {
+                            Self::capped_expr(value)
+                                .filter(|value| is_safe_join_annotation_candidate(value))
+                                .is_some_and(|value| value == candidate.value)
+                        })
+                })),
+                "join candidate must come from its recorded arm-end snapshot"
+            );
+            if provenance.is_empty() {
+                continue;
+            }
+            let values = provenance
+                .iter()
+                .filter(|candidate| is_informative_join_candidate(&candidate.value))
+                .map(|candidate| candidate.value.clone())
+                .collect::<Vec<_>>();
+            if values.is_empty() {
+                continue;
+            }
+            self.join_candidates.insert(
+                (join, reg.clone()),
+                JoinCandidates {
+                    complete: complete && values.len() == provenance.len(),
+                    values,
+                    provenance,
+                },
+            );
+            self.join_candidate_regs.entry(join).or_default().push(reg);
+        }
+        if let Some(regs) = self.join_candidate_regs.get_mut(&join) {
+            regs.sort();
+            regs.dedup();
+        }
+    }
+
+    /// Append evidence for values lost at a join without rebinding the
+    /// register. This runs after every analysis and code rewrite.
+    pub(crate) fn append_join_annotations(&mut self) {
+        let mut inserts: Vec<(usize, usize, usize, String)> = Vec::new();
+        for anchor in &self.join_annotation_anchors {
+            let mut next_line = 0usize;
+            for original in &anchor.lines {
+                let original_tokens = register_tokens(original);
+                if original_tokens.is_empty() {
+                    continue;
+                }
+                let Some(relative) = self.lines[next_line..].iter().position(|line| {
+                    original_tokens.iter().all(|reg| {
+                        unrecovered_value_spellings(reg).iter().any(|spelling| {
+                            contains_identifier_token(line, spelling)
+                        })
+                    })
+                }) else {
+                    continue;
+                };
+                let line_index = next_line + relative;
+                next_line = line_index + 1;
+                let line = &self.lines[line_index];
+                let bytes = line.as_bytes();
+                let mut index = 0usize;
+                while index < bytes.len() {
+                    if !bytes[index].is_ascii_alphabetic() {
+                        index += 1;
+                        continue;
+                    }
+                    let token_start = index;
+                    while index < bytes.len() && Self::is_ident_char(bytes[index] as char) {
+                        index += 1;
+                    }
+                    if token_start > 0 && Self::is_ident_char(bytes[token_start - 1] as char) {
+                        continue;
+                    }
+                    let Some(reg) = canonical_join_register_spelling(&line[token_start..index]) else {
+                        continue;
+                    };
+                    if !anchor.candidate_regs.iter().any(|candidate| candidate == &reg) {
+                        continue;
+                    }
+                    let Some(candidates) = self.join_candidates.get(&(anchor.join, reg)) else {
+                        continue;
+                    };
+                    if candidates
+                        .values
+                        .iter()
+                        .any(|value| !is_safe_join_annotation_candidate(value))
+                    {
+                        continue;
+                    }
+                    debug_assert!(
+                        candidates.values.iter().all(|value| {
+                            candidates
+                                .provenance
+                                .iter()
+                                .any(|candidate| candidate.value == *value)
+                        }),
+                        "join annotation candidate must come from an arm-end snapshot"
+                    );
+                    let prefix = if candidates.complete {
+                        " = "
+                    } else {
+                        " possible (non-exhaustive): "
+                    };
+                    let annotation = format!(" /*{}{} */", prefix, candidates.values.join(" | "));
+                    // At most one annotation per register spelling on a final
+                    // line. Repeated structured renderings can map different
+                    // joins to the same textual site; retaining all would make
+                    // a single `regN` look like a chain of independently valid
+                    // values. First anchor wins, in deterministic render order.
+                    if inserts.iter().any(|(existing_line, token_at, _, _)| {
+                        *existing_line == line_index && *token_at == token_start
+                    }) {
+                        continue;
+                    }
+                    let planned = inserts
+                        .iter()
+                        .filter(|(existing_line, _, _, _)| *existing_line == line_index)
+                        .map(|(_, _, _, existing)| existing.len())
+                        .sum::<usize>();
+                    if annotation.len() <= MAX_JOIN_ANNOTATION
+                        && line.len() + planned + annotation.len() <= MAX_JOIN_ANNOTATED_LINE
+                    {
+                        inserts.push((line_index, token_start, index, annotation));
+                    }
+                }
+            }
+        }
+        inserts.sort_unstable_by(|left, right| {
+            right
+                .0
+                .cmp(&left.0)
+                .then_with(|| right.1.cmp(&left.1))
+        });
+        for (line_index, _, at, annotation) in inserts {
+            self.lines[line_index].insert_str(at, &annotation);
+        }
     }
 
     /// Drop register bindings that a merge cannot attribute to one path. A

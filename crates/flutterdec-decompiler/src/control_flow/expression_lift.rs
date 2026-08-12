@@ -17,7 +17,16 @@ use super::*;
 /// roughly twice the constant: the effective bound on a stored value is about
 /// 2x, not 1x. Every read that substitutes into a larger expression goes through
 /// `capped_reg_value`, which is what keeps that from compounding.
-const MAX_SUBSTITUTED_EXPR: usize = 512;
+pub(super) const MAX_SUBSTITUTED_EXPR: usize = 512;
+/// Longest join-value annotation added to one existing pseudocode line.
+///
+/// The cap is intentionally independent of substitution: candidates are
+/// evidence, not executable expression text, and must never make a line
+/// uninspectable. A site that cannot fit its whole candidate list is omitted
+/// rather than truncated into an ambiguous claim.
+pub(super) const MAX_JOIN_ANNOTATION: usize = 512;
+/// Maximum physical line length after a join-value annotation.
+pub(super) const MAX_JOIN_ANNOTATED_LINE: usize = 3000;
 
 impl<'a> FuncEmitter<'a> {
     /// Resolve a register read that is consumed as a whole value.
@@ -37,6 +46,10 @@ impl<'a> FuncEmitter<'a> {
             .get(reg)
             .filter(|value| value.len() <= MAX_SUBSTITUTED_EXPR)
             .cloned()
+    }
+
+    pub(super) fn capped_expr(value: &str) -> Option<&str> {
+        (value.len() <= MAX_SUBSTITUTED_EXPR).then_some(value)
     }
 
     fn resolved_reg_value(&self, reg: &str) -> String {

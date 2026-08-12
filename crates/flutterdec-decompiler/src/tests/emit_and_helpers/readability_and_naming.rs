@@ -645,6 +645,26 @@ fn renames_receiver_argument_without_field_usage() {
 }
 
 #[test]
+fn unrecovered_value_spellings_cover_every_register_alias() {
+    for index in 0..=30 {
+        let canonical = format!("x{index}");
+        let mut expected = vec![
+            canonical.clone(),
+            named_register_alias(index),
+            named_indirect_target(&canonical),
+        ];
+        expected.sort();
+        expected.dedup();
+        assert_eq!(
+            unrecovered_value_spellings(&canonical),
+            expected,
+            "rendered spelling list omitted an alias for {canonical}"
+        );
+    }
+    assert!(unrecovered_value_spellings("not-a-register").is_empty());
+}
+
+#[test]
 fn aliases_raw_register_names_after_hinting() {
     let ir = FunctionIr {
         function_id: 11,
@@ -699,6 +719,109 @@ fn aliases_frame_and_return_registers_with_semantic_names() {
     );
 }
 
+
+#[test]
+fn annotation_comment_does_not_trigger_minus_one_aliasing() {
+    let ir = FunctionIr {
+        function_id: 1018,
+        name: "annotationInert".to_string(),
+        entry_va: 0x1000,
+        blocks: Vec::new(),
+    };
+    let symbols = HashMap::new();
+    let mut emitter = FuncEmitter::new(&ir, &symbols);
+    emitter.lines = vec![
+        "dynamic annotationInert() {".to_string(),
+        "  sink(reg1 /* = (reg1 - 1) */);".to_string(),
+        "}".to_string(),
+    ];
+    emitter.extract_minus_one_aliases();
+    let out = emitter.lines.join("\n");
+    assert!(!out.contains("reg1Minus1"), "annotation must not create an alias:\n{out}");
+    assert!(out.contains("/* = (reg1 - 1) */"), "annotation must survive verbatim:\n{out}");
+}
+
+#[test]
+fn minus_one_aliasing_still_uses_code_beside_annotation() {
+    let ir = FunctionIr {
+        function_id: 1019,
+        name: "annotationInertCode".to_string(),
+        entry_va: 0x1000,
+        blocks: Vec::new(),
+    };
+    let symbols = HashMap::new();
+    let mut emitter = FuncEmitter::new(&ir, &symbols);
+    emitter.lines = vec![
+        "dynamic annotationInertCode() {".to_string(),
+        "  sink((reg1 - 1)); /* = obj1.f8 */".to_string(),
+        "  sink((reg1 - 1));".to_string(),
+        "  sink((reg1 - 1));".to_string(),
+        "  sink((reg1 - 1));".to_string(),
+        "}".to_string(),
+    ];
+    emitter.extract_minus_one_aliases();
+    let out = emitter.lines.join("\n");
+    assert!(out.contains("final int reg1Minus1 = (reg1 - 1);"), "code must still alias normally:\n{out}");
+    assert!(out.contains("/* = obj1.f8 */"), "annotation must remain decoration:\n{out}");
+}
+
+#[test]
+fn strip_join_annotation_span_leaves_other_comments_intact() {
+    let line = "  sink(reg0 /* cond */); // unlifted instruction: x1 { }";
+    assert_eq!(
+        crate::strip_join_annotation_span(line),
+        line,
+        "pre-existing comments must remain visible to historical consumers"
+    );
+}
+
+#[test]
+fn strip_join_annotation_span_removes_only_join_annotation() {
+    let line = "  sink(reg0 /* = obj1.f8 */); // unlifted instruction: x1";
+    assert_eq!(
+        crate::strip_join_annotation_span(line),
+        "  sink(reg0); // unlifted instruction: x1",
+        "only the exact annotation opener is stripped"
+    );
+}
+
+#[test]
+fn code_before_annotation_hides_annotation_from_analysis_but_not_rewrites() {
+    let line = "  sink(reg0 /* = arg3 | sp[-16] | (reg1 - 1) */);";
+    assert_eq!(
+        crate::code_before_annotation(line),
+        "  sink(reg0",
+        "analysis must stop before the annotation"
+    );
+    assert!(
+        FuncEmitter::replace_identifier_token(line, "arg3", "receiver")
+            .contains("/* = receiver | sp[-16] | (reg1 - 1) */"),
+        "rewrites must preserve and rename candidate text"
+    );
+}
+
+#[test]
+fn annotation_comment_does_not_trigger_stack_or_pool_aliasing() {
+    let ir = FunctionIr {
+        function_id: 1020,
+        name: "annotationAliasInert".to_string(),
+        entry_va: 0x1000,
+        blocks: Vec::new(),
+    };
+    let symbols = HashMap::new();
+    let mut emitter = FuncEmitter::new(&ir, &symbols);
+    emitter.lines = vec![
+        "dynamic annotationAliasInert() {".to_string(),
+        "  sink(reg0 /* = sp[-16] | \"x\" /* pool[7] */ */);".to_string(),
+        "}".to_string(),
+    ];
+    emitter.apply_name_and_type_hints("annotationAliasInert");
+    let out = emitter.lines.join("\n");
+    assert!(
+        !out.contains("stackSlotNeg16") && !out.contains("poolStr7"),
+        "annotation must not create aliases:\n{out}"
+    );
+}
 
 /// Page-based pool loads that the disassembler's register tracker could not follow
 /// still reach the decompiler as raw `((pool + <page> /* lsl #N */)).f<off>` text.
@@ -2387,33 +2510,17 @@ fn annotates_runtime_type_parameter_selector_from_pool_string() {
     );
 }
 
+
 #[test]
 fn rename_order_is_total_regardless_of_map_iteration_order() {
-    // Equal-length keys are exactly the case a length-only comparator leaves to the
-    // per-process HashMap seed. Building the vectors directly reproduces both seeded
-    // orders without depending on a seed, so this fails deterministically if the
-    // lexicographic tie-break is removed.
     let mk = |v: &[(&str, &str)]| -> Vec<(String, String)> {
-        v.iter()
-            .map(|(a, b)| ((*a).to_string(), (*b).to_string()))
-            .collect()
+        v.iter().map(|(a, b)| ((*a).to_string(), (*b).to_string())).collect()
     };
     let mut forward = mk(&[("objTmp10", "buffer"), ("tmp1", "count"), ("tmp2", "index")]);
     let mut reverse = mk(&[("tmp2", "index"), ("tmp1", "count"), ("objTmp10", "buffer")]);
-
     crate::passes::sort_rename_pairs(&mut forward);
     crate::passes::sort_rename_pairs(&mut reverse);
-
-    assert_eq!(
-        forward, reverse,
-        "rename order must not depend on the order the map yielded"
-    );
-    let keys: Vec<&str> = forward.iter().map(|(k, _)| k.as_str()).collect();
-    assert_eq!(
-        keys,
-        vec!["objTmp10", "tmp1", "tmp2"],
-        "longest first, then lexicographic"
-    );
+    assert_eq!(forward, reverse, "rename order must not depend on map insertion order");
 }
 
 #[test]

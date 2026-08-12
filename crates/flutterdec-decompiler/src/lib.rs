@@ -42,6 +42,27 @@ struct LiftState {
     last_cmp: Option<(String, String)>,
 }
 
+#[derive(Debug, Clone)]
+struct JoinCandidates {
+    values: Vec<String>,
+    complete: bool,
+    /// Exact candidate plus arm-end snapshot that produced it. This is audit
+    /// data; output only reads `values` in its pre-sorted order.
+    provenance: Vec<control_flow::JoinCandidateProvenance>,
+}
+
+/// A rendered join body and the candidate key it owns. This Vec follows the
+/// structured render order; it is never derived by iterating the lookup HashMap.
+#[derive(Debug, Clone)]
+struct JoinAnnotationAnchor {
+    join: usize,
+    /// Canonical registers with recorded candidates, sorted before output.
+    candidate_regs: Vec<String>,
+    /// Render-time lines. Later passes only modify or add surrounding lines;
+    /// final insertion finds surviving body lines in their render order.
+    lines: Vec<String>,
+}
+
 struct FuncEmitter<'a> {
     ir: &'a FunctionIr,
     symbol_names: &'a HashMap<u64, String>,
@@ -60,7 +81,16 @@ struct FuncEmitter<'a> {
     call_index: usize,
     structured_emitted: HashSet<usize>,
     loop_stack: Vec<(usize, Option<usize>)>,
-
+    /// Arm-end values for a structured branch's follow block. This stays
+    /// outside `LiftState`: restoring path state and merging registers must not
+    /// erase an annotation that describes the values just discarded.
+    join_candidates: HashMap<(usize, String), JoinCandidates>,
+    /// Candidate keys captured with a branch, sorted before its join renders.
+    /// This keeps the lookup table out of every output-affecting iteration.
+    join_candidate_regs: HashMap<usize, Vec<String>>,
+    /// Join bodies in deterministic render order. Final insertion uses their
+    /// pre-sorted candidate keys to avoid any side-table iteration.
+    join_annotation_anchors: Vec<JoinAnnotationAnchor>,
     emitted: HashSet<usize>,
     active_stack: Vec<usize>,
     inline_visits: HashMap<usize, usize>,
@@ -121,6 +151,76 @@ mod passes;
 use control_flow::Regions;
 use helpers::*;
 
+/// Remove only join-value annotations from a source line. Other emitter
+/// comments remain observable to preserve the historical quality ruler.
+pub fn strip_join_annotation_span(line: &str) -> String {
+    let bytes = line.as_bytes();
+    let mut out = String::with_capacity(line.len());
+    let mut index = 0usize;
+    while index < bytes.len() {
+        if bytes[index] == b'"' {
+            let mut end = index + 1;
+            while end < bytes.len() {
+                match bytes[end] {
+                    b'\\' => end += 2,
+                    b'"' => {
+                        end += 1;
+                        break;
+                    }
+                    _ => end += 1,
+                }
+            }
+            out.push_str(&line[index..end.min(bytes.len())]);
+            index = end.min(bytes.len());
+            continue;
+        }
+        let is_annotation = bytes[index..].starts_with(b" /* = ")
+            || bytes[index..].starts_with(b" /* possible (non-exhaustive): ");
+        if !is_annotation {
+            out.push(bytes[index] as char);
+            index += 1;
+            continue;
+        }
+        let rest = &line[index + 3..];
+        let Some(end) = rest.find(" */") else {
+            out.push_str(&line[index..]);
+            break;
+        };
+        index += 3 + end + 3;
+    }
+    out
+}
+
+/// Return the code span before a join-value annotation. Analyses use this
+/// borrowed prefix; rewrites deliberately keep operating on complete lines.
+pub(crate) fn code_before_annotation(line: &str) -> &str {
+    let bytes = line.as_bytes();
+    let mut index = 0usize;
+    while index < bytes.len() {
+        if bytes[index] == b'"' {
+            index += 1;
+            while index < bytes.len() {
+                match bytes[index] {
+                    b'\\' => index += 2,
+                    b'"' => {
+                        index += 1;
+                        break;
+                    }
+                    _ => index += 1,
+                }
+            }
+            continue;
+        }
+        if bytes[index..].starts_with(b" /* = ")
+            || bytes[index..].starts_with(b" /* possible (non-exhaustive): ")
+        {
+            return &line[..index];
+        }
+        index += 1;
+    }
+    line
+}
+
 impl<'a> FuncEmitter<'a> {
     fn new(ir: &'a FunctionIr, symbol_names: &'a HashMap<u64, String>) -> Self {
         let offsets = collect_stack_offsets(ir);
@@ -150,6 +250,9 @@ impl<'a> FuncEmitter<'a> {
             call_index: 0,
             structured_emitted: HashSet::new(),
             loop_stack: Vec::new(),
+            join_candidates: HashMap::new(),
+            join_candidate_regs: HashMap::new(),
+            join_annotation_anchors: Vec::new(),
             emitted: HashSet::new(),
             active_stack: Vec::new(),
             inline_visits: HashMap::new(),
@@ -238,6 +341,7 @@ impl<'a> FuncEmitter<'a> {
         }
         self.apply_name_and_type_hints(&fn_name);
         self.extract_minus_one_aliases();
+        self.append_join_annotations();
 
         PseudocodeArtifact {
             function_id: self.ir.function_id,
