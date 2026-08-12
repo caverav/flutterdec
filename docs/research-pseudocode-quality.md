@@ -2626,10 +2626,24 @@ excludes pinned registers and `x15` exactly as `merge_state_at_join` does.
 The partitions close exactly on both samples: 7,519 + 25,326 + 5 = 32,850 and
 12,466 + 45,846 + 4 = 58,316.
 
-So the eligible prize is **5.51%/6.57%** of HEAD's 136,378/189,696 raw register references.
-Under the sound arm policy - decline the whole phi unless every incoming arm can assign, because
-an unassigned predecessor reaches code that reads the local - the floor is 5,493/9,133, or
-**4.03%/4.81%**. Both figures put a HEAD numerator over a HEAD denominator.
+So the eligible population is **7,519/12,466 binding events** across **5,351/9,241 distinct
+`(join, register)` sites**, and under the sound arm policy - decline the whole phi unless every
+incoming arm can assign, because an unassigned predecessor reaches code that reads the local -
+**5,493/9,133 events**.
+
+**Those are binding events, not emitted `regN` occurrences, and the two must not be divided into
+each other.** The replay's own method string says so: "binding events, not emitted regN
+occurrences". A dropped binding causes a `regN` wherever that register is subsequently read, so
+one event may correspond to zero, one, or several emitted occurrences. Setting 7,519 against
+HEAD's 136,378 references therefore yields 5.51% as a ratio of *different units*, which bounds
+nothing: the recoverable-occurrence count could be larger or smaller. It is quoted here only as
+an order-of-magnitude locator, and the honest statement is that **the occurrence-level prize is
+unmeasured** - attributing occurrences to the event that caused them needs the emitter, not an IR
+replay.
+
+Events exceed sites by roughly 1.39-1.41x throughout (raw 32,850/23,603 and 58,316/42,936;
+eligible 7,519/5,351 and 12,466/9,241). That multiplicity is a property of the render walk, which
+can visit a block more than once, so it is not evidence that a phi local would be read 1.4 times.
 
 R23's join-drop marks are deliberately **not** used as a denominator here. They were measured at
 `2619ec7`, before the structurer moved 538 and 751 functions into the structured path and took
