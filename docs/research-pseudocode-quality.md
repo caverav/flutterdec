@@ -2628,6 +2628,40 @@ on a figure the defect could have moved.
 >
 > Retained rather than deleted because the correction has to be measured against this reasoning.
 
+### Why the proxy diverged, from the front that built it
+
+Recorded because a retraction that says only "the numbers were wrong" teaches nothing, and
+because each item names a trap the replacement measurement has to avoid.
+
+1. **It skipped the emitter state, which biases up.** The proxy defined a candidate as the raw
+   definitions reachable from the arms intersected with conventional CFG live-in at the join. The
+   real loss is `state.reg_values` intersected with `written` at `structured.rs:553-556`, after the
+   branch snapshot and reset discipline at `:214-251` and `:304-310`. Neither `state_at_branch` nor
+   either arm's ending `LiftState` was reconstructed, so a raw arm write counted even where the
+   lifter left no usable binding - an unmodelled or invalidating operation, a later clobber, an
+   over-cap expression, a stub-specific effect.
+2. **Liveness was static may-live, not emitted-read liveness.** A block-CFG fixed point over parsed
+   machine-register operands, rather than actual `lookup_reg`/`capped_reg_value` calls on rendered
+   paths. Any-path continuation reads and parser false reads bias high; incomplete mnemonic and
+   operand recognition biases low. The net magnitude is not defensible in either direction.
+3. **Arm availability was never measured.** "Every arm has a modelled write" is a syntactic subset:
+   an unwritten arm can legitimately retain the branch-entry binding, which is a false negative,
+   and a write can be invalidated before the arm ends, which is a false positive. Only arm-end
+   `reg_values` before the reset at `:305` resolves it.
+4. **The event unit was wrong.** It enumerated `region_follow` branch events - the `:309` view -
+   rather than each generic join-block iteration at `:179-190`. A join can be missed when it is not
+   a branch follow, and can be entered from several branch or repeated-region contexts, so the unit
+   is not denominator-compatible with R23's emitted-reference provenance.
+5. **What survives is a source invariant, not a calibrated count.** For a phi binding installed at
+   `:309`, the arm write is included in the complete-predecessor traversal at `:185-189` and
+   `:514-539`, and `merge_state_at_join` then removes the matching `reg_values` entry before `:192`.
+   That is an argument from the code, so it holds independently; the *number* killed still needs
+   renderer instrumentation.
+
+The authoritative unit follows from item 4: trace the actual arm-end state and any pending phi,
+then the actual generic merge before and after, then the actual post-join resolved reads. That is
+what the replacement measurement traces.
+
 R23 named joins as the dominant register loss. R24's addendum showed the obvious insertion
 point cannot work. This sizes what a correct one would recover, by replaying the actual
 `render_sequence` branch-follow events over HEAD's IR on both samples. Controls: 22,102/22,102
