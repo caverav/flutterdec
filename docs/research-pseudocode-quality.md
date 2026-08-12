@@ -3043,3 +3043,93 @@ What this settles:
 Left open deliberately, with the measurement recorded so nobody repeats it. The counter gates
 nothing and no result here rests on it. The 70% line-shape overlap is the part worth acting on if
 `/* cond */` ever becomes a lever.
+
+## R28. Annotate instead of materialise (landed)
+
+R26 dropped the join phi as unmeasurable. This is the cheaper design that replaced it, and it
+landed because it is measurable directly: building it *is* the measurement, so no counterfactual
+was needed.
+
+### The design, and why it sidesteps every obstacle
+
+Where a join drops a binding, the register keeps its `regN` spelling and the candidate values are
+appended as a comment on the same line:
+
+```dart
+final t1 = sub_6c1b28(reg1 /* = -1 | 1 */, reg2, poolOff[55384]);
+```
+
+Arm-end values are captured into a side table keyed by `(join, canonical register)` and inserted
+**after every analysis and rewrite has run**. That ordering is the whole design. Nothing is bound,
+so the generic full-predecessor merge has nothing to destroy - the 100% kill in R25 is irrelevant
+rather than something to work around. No assignment is placed in any predecessor, so predecessor
+completeness, loop headers and critical edges do not apply. And because insertion happens last,
+the annotation cannot influence naming, aliasing, compaction or type inference; it is invisible to
+analysis and visible only to a reader.
+
+### Honesty is enforced, not assumed
+
+A list renders `= ` only when the captured arms are exactly the join's predecessors. Otherwise it
+renders `possible (non-exhaustive):`, which is the overwhelming majority:
+
+| | LocalSend | Immich |
+|---|---:|---:|
+| complete (`= `) | 158 | 253 |
+| explicitly non-exhaustive | 4,911 | 7,854 |
+| **total annotations** | **5,069** | **8,107** |
+| share of raw register references | **3.72%** | **4.27%** |
+
+Three percent complete is the honest shape of this problem, and printing `= ` on the other 97%
+would have been the confidently-wrong-claim defect R18 and R21 both refuse.
+
+Candidates that are themselves unrecovered are rejected outright, so a reader never gets one
+unknown explained by two more. Enforcing that required a shared helper covering **every** spelling
+a bare register renders as - `regN`, canonical `xN`, `argN`, and the alias forms `framePointer`,
+`returnAddress`, `dispatchTarget`, `cachedTarget`, `indirectTarget{n}`. Four separate defects on
+this branch came from consumers hand-rolling partial subsets of that list, so it now exists once.
+
+### Neutrality, measured independently
+
+Verified by the parent on the integrated tree, not taken from the implementing front's report:
+
+| contract | LocalSend | Immich |
+|---|---|---|
+| rendered lines | 777,937 = reference | 1,074,372 = reference |
+| emitted files | 22,102 = reference | 28,753 = reference |
+| `raw_register_name_refs` | 136,378 = reference | 189,696 = reference |
+| `raw_arg_name_refs` | 0 = reference | 0 = reference |
+| unbalanced comment lines | 0 | 0 |
+| longest physical line | 2,660, unchanged | 2,490, unchanged |
+| strict gate / `disassembly_ratio` | passed / 1.0 | passed / 1.0 |
+| two cold processes | byte-identical | byte-identical |
+
+Zero physical lines added, because an annotation is characters on a line that already exists. The
+text cost is 0.47 and 0.59 bytes per rendered line.
+
+The counters read the code span so annotation text cannot inflate them. That is a **deliberate
+ruler change**, justified because the counters are meant to measure emitted code and because it is
+a bit-for-bit no-op on all pre-feature output, which contains no annotation spans - a property
+proven against a pre-annotation build rather than argued.
+
+### Corrections to the implementing front's figures
+
+The front's report quotes 7,124 and 12,602 annotations at 5.22% and 6.64%, with the longest line
+growing to 2,998 and 3,000. Those figures predate its own same-token de-duplication fix, which
+limits one annotation per rendered register site; before it, a single `regN` could take several
+comments in sequence. The parent's independent measurement on the integrated tree gives 5,069 and
+8,107 at 3.72% and 4.27%, with the longest line unchanged - because the stacked annotations were
+what had pushed those dense lines to the cap. The lower figures are the landed behaviour.
+
+Two hypotheses were tested and rejected before that cause was identified: that the alias-order fix
+ate the difference - only about 300 lines carry a `Minus1` alias at all, worth roughly a dozen
+annotations - and that annotations were failing to attach, which `raw_register_name_refs` being
+exact rules out, since the register population is unchanged.
+
+### What this is not
+
+It does not recover a value, materialise a phi, or bind a local. **96.3% and 95.7% of raw register
+references remain bare.** The residual is the liveness problem R26 could not size. "100% useful"
+is conditional on a stated syntactic rule - a candidate must be a field access, call-shaped
+expression, or literal - and measures candidate *shape*, not the semantic correctness of the
+lifted expression behind it. Six sites were traced by hand to the arm writers in the emitted IR
+and all checked out, which is a spot-check rather than a proof.
