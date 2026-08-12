@@ -2386,3 +2386,32 @@ fn annotates_runtime_type_parameter_selector_from_pool_string() {
         artifact.source
     );
 }
+
+#[test]
+fn rename_order_is_total_regardless_of_map_iteration_order() {
+    // Equal-length keys are exactly the case a length-only comparator leaves to the
+    // per-process HashMap seed. Building the vectors directly reproduces both seeded
+    // orders without depending on a seed, so this fails deterministically if the
+    // lexicographic tie-break is removed.
+    let mk = |v: &[(&str, &str)]| -> Vec<(String, String)> {
+        v.iter()
+            .map(|(a, b)| ((*a).to_string(), (*b).to_string()))
+            .collect()
+    };
+    let mut forward = mk(&[("objTmp10", "buffer"), ("tmp1", "count"), ("tmp2", "index")]);
+    let mut reverse = mk(&[("tmp2", "index"), ("tmp1", "count"), ("objTmp10", "buffer")]);
+
+    crate::passes::sort_rename_pairs(&mut forward);
+    crate::passes::sort_rename_pairs(&mut reverse);
+
+    assert_eq!(
+        forward, reverse,
+        "rename order must not depend on the order the map yielded"
+    );
+    let keys: Vec<&str> = forward.iter().map(|(k, _)| k.as_str()).collect();
+    assert_eq!(
+        keys,
+        vec!["objTmp10", "tmp1", "tmp2"],
+        "longest first, then lexicographic"
+    );
+}

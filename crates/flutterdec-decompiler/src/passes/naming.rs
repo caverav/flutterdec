@@ -1,3 +1,18 @@
+/// Order the identifier renames before they are applied as sequential textual
+/// substitutions.
+///
+/// Longest key first, so a short identifier cannot rewrite a prefix of a longer one
+/// that has not been substituted yet. The lexicographic second key is what makes the
+/// order *total*, and it is load-bearing: the renames arrive from a `HashMap`, whose
+/// `into_iter` order is seeded per process, and `sort_by` is stable. With length as the
+/// only key, equal-length names kept that seeded order, so two overlapping renames
+/// applied in different orders between runs and the emitted text differed while every
+/// `quality.json` counter stayed identical. Keys come from a map and are therefore
+/// unique, so length-then-key admits exactly one permutation.
+pub(crate) fn sort_rename_pairs(pairs: &mut [(String, String)]) {
+    pairs.sort_by(|a, b| b.0.len().cmp(&a.0.len()).then_with(|| a.0.cmp(&b.0)));
+}
+
 impl<'a> FuncEmitter<'a> {
     fn alias_repeated_stack_slots(&mut self) {
         if self.lines.len() < 3 {
@@ -419,7 +434,7 @@ impl<'a> FuncEmitter<'a> {
         }
 
         let mut rename_pairs: Vec<(String, String)> = renames.into_iter().collect();
-        rename_pairs.sort_by(|a, b| b.0.len().cmp(&a.0.len()));
+        sort_rename_pairs(&mut rename_pairs);
         for line in &mut self.lines {
             let mut cur = line.clone();
             for (from, to) in &rename_pairs {
