@@ -3103,6 +3103,27 @@ Verified by the parent on the integrated tree, not taken from the implementing f
 | strict gate / `disassembly_ratio` | passed / 1.0 | passed / 1.0 |
 | two cold processes | byte-identical | byte-identical |
 
+**One divergence was observed and is not fully explained.** The first post-integration gate run
+showed the two Immich processes producing different corpora. Every subsequent attempt to reproduce
+it failed: **17 full-scope Immich runs since are byte-identical**, including the clean gate above.
+
+The leading explanation is not a code defect. That gate run had `/tmp` at 81% capacity with stderr
+redirected to `/dev/null`, so an `ENOSPC` truncation during the second write would have produced a
+differing hash silently. The re-run with headroom and stderr captured returned `rc=0`, empty
+stderr, and full file counts on both processes. But the divergent artifact was deleted before it
+could be diffed, so this is the best available explanation rather than a proven one.
+
+What is independent of that: every path in the annotation feature was verified ordered by
+inspection - `regs.sort()` before candidate capture, provenance ordered over an arm slice,
+`join_candidate_regs` sorted and deduped, anchors iterated as a `Vec` in render order, and the
+insert sort total because dedupe makes `(line, token_start)` unique. Two hash-order defects found
+earlier on this branch were both in `naming.rs` and both are fixed.
+
+Recorded here rather than left in a summary, because R24 makes reproducibility this branch's
+headline claim, and the next person to see a divergence should start from this evidence rather
+than from zero. If it recurs: **retain both corpora immediately** - losing the artifact is what
+turned a five-minute diff into an hour of unsuccessful hunting.
+
 Zero physical lines added, because an annotation is characters on a line that already exists. The
 text cost is 0.47 and 0.59 bytes per rendered line.
 
