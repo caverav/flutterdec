@@ -2125,9 +2125,20 @@ This document already recorded the effect at the pre-split scale (line 258: `wc 
 trailing newline"). Post-split it is 94.5% and 94.7% of files. The consequence is
 sharper than a counting nicety: concatenating the corpus splices the last line of one
 file onto the first of the next, so a `cat`-based scan destroys ~20,890 and ~27,236 line
-boundaries. **Every rate below uses per-file `splitlines()`.** The missing newline is a
-real emitter defect, but fixing it moves the denominator by 2.47%/2.34% and so must land
-as its own commit outside any ablation window.
+boundaries. **Every rate below uses per-file `splitlines()`.**
+
+**That defect is now fixed** (`pipeline/helpers.rs::terminated`, applied to pseudocode, asm
+and IR artifact writes). Verified on a 2,343-file sample: 0 files lack a terminator in either
+artifact kind, and `cat corpus | wc -l` now returns 76,831, exactly equal to per-file
+`splitlines()`. The two conventions converge, so the ambiguity that produced this subsection
+cannot recur.
+
+What that does and does not supersede. **Corpus digests are superseded** on the far side of
+that commit, since every emitted file gained a byte. **The per-line rates in this section are
+not affected at all**, because `splitlines()` counts an unterminated final line and a
+terminated one identically - which is precisely why the record standardised on it rather than
+on `wc -l`. Had the rates been published on the concatenated convention, this fix would have
+moved every one of them by 2.4%.
 
 ### Ranked by what a reader encounters
 

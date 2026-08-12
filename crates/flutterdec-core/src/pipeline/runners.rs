@@ -1532,7 +1532,7 @@ pub fn run_decompile(
             p.function_id,
             normalize_file_name(&p.function_name)
         );
-        fs::write(pseudo_dir.join(filename), &p.source)?;
+        fs::write(pseudo_dir.join(filename), terminated(&p.source))?;
     }
 
     if opt.emit_asm {
@@ -1546,14 +1546,16 @@ pub fn run_decompile(
                 f.function_id,
                 normalize_file_name(&f.function_name)
             );
-            fs::write(asm_dir.join(filename), lines.join("\n"))?;
+            fs::write(asm_dir.join(filename), terminated(&lines.join("\n")))?;
         }
     }
 
     if opt.emit_ir {
         for f in &ir {
             let filename = format!("{:05}_{}.json", f.function_id, normalize_file_name(&f.name));
-            fs::write(ir_dir.join(filename), serde_json::to_vec_pretty(f)?)?;
+            let mut body = serde_json::to_vec_pretty(f)?;
+            body.push(b'\n');
+            fs::write(ir_dir.join(filename), body)?;
         }
     }
 
