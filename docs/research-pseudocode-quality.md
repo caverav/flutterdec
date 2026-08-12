@@ -50,9 +50,19 @@ All figures come from one real target, measured end to end:
 flutterdec adapter install --dart-hash 80a49c7111088100a233b2ae788e1f48
 flutterdec decompile LocalSend-1.17.0-android-arm64v8.apk -o out \
   --emit-asm --emit-ir --function-scope all \
+  --adapter-backend internal \
   --max-placeholder-ifs 999999 --max-unresolved-cf 999999 \
   --max-indirect-call-ratio 1.0 --min-disassembly-ratio 0.0
 ```
+
+`--adapter-backend internal` is load-bearing rather than decorative. The flag defaults to
+`auto`, which tries r2flutter first, then blutter, then internal, so the backend named in
+the table above is selected here only because neither alternative is on `PATH`. Reproducing
+this recipe on a machine that has one installed would silently measure a different
+substrate: the blutter table yields 39,343 function records against internal's 5,800 and
+drops `shared_stub_naming` from 14 names to 0, because it does not cover the runtime stub
+range, so there is no prologue to read. Every figure in this document is valid under
+`internal` only.
 
 Figures are from the merged branch tip, rebuilt in a clean clone. ABI claims are
 checked against the Dart SDK source, never inferred from output alone. Every constant used here was re-verified against tag `3.11.0`
@@ -2087,3 +2097,462 @@ result and so compounded outside the first version of the fix.
 With the cap, both samples complete in 102 and 137 seconds, and the longest emitted
 line across either is 2,660 characters. Without it the test fixture reaches 175,787
 characters at six iterations of the real shape and 109,863,287 at ten.
+
+## R20. What the reader actually sees after the split, measured
+
+Every shape figure above predates `--split-records`, which took emitted functions from
+5,800 to 22,102 and 8,329 to 28,753. That changed both the population and the
+denominator, so the ranking of what a reader encounters was unknown. This is the first
+census of the post-split corpus.
+
+All figures come from the pinned baseline binary built at `2619ec7`, run with
+`--adapter-backend internal --emit-ir --function-scope all --split-records` and the
+permissive gate flags. Both samples: LocalSend snapshot Dart 3.5.0, Immich 3.12.1.
+
+### The denominator convention has to be stated
+
+Two counting conventions differ on the same corpus by exactly the number of files that
+end without a newline:
+
+| convention | LocalSend | Immich |
+|---|---|---|
+| per-file `splitlines()` | **867,551** | **1,190,169** |
+| `cat corpus` then `wc -l` | 846,661 | 1,162,933 |
+| difference = files lacking a trailing newline | 20,890 of 22,102 | 27,236 of 28,753 |
+
+This document already recorded the effect at the pre-split scale (line 258: `wc -l`
+"reports 624,493 for the same output because 4,436 of the 5,800 files end without a
+trailing newline"). Post-split it is 94.5% and 94.7% of files. The consequence is
+sharper than a counting nicety: concatenating the corpus splices the last line of one
+file onto the first of the next, so a `cat`-based scan destroys ~20,890 and ~27,236 line
+boundaries. **Every rate below uses per-file `splitlines()`.** The missing newline is a
+real emitter defect, but fixing it moves the denominator by 2.47%/2.34% and so must land
+as its own commit outside any ablation window.
+
+### Ranked by what a reader encounters
+
+One classification per physical line, by parsing the line rather than counting substring
+hits. Rows overlap — a single line can be a pool reference, a field access, a call and a
+guard at once — so this is a census, not a partition, and the rates are not additive.
+
+| rank | line shape | LocalSend | per line | Immich | per line |
+|---:|---|---:|---:|---:|---:|
+| 1 | synthetic local (`tmpN`/`objTmpN`/`intTmpN`/`resultTmpN`) | 306,126 | 0.3529 | 453,062 | 0.3807 |
+| 2 | call temporary `tN` | 291,321 | 0.3358 | 411,387 | 0.3457 |
+| 3 | **anonymous field access `obj.fN`** | 199,937 | **0.2305** | 271,425 | **0.2281** |
+| 4 | unresolved `regN` | 112,485 | 0.1297 | 160,643 | 0.1350 |
+| 5 | **anonymous direct call `sub_<hex>(...)`** | 94,921 | **0.1094** | 149,422 | **0.1255** |
+| 6 | **raw pool displacement `poolOff[N]`** | 70,635 | **0.0814** | 84,205 | **0.0708** |
+| 7 | guard/null family (null, tag-bit, class-id) | 38,325 | 0.0442 | 56,237 | 0.0473 |
+| 8 | generated six-argument `dynamic sub_<hex>` header | 22,102 | 0.0255 | 28,753 | 0.0242 |
+| 9 | `smiTag`/`smiUntag` | 15,866 | 0.0183 | 19,789 | 0.0166 |
+| 10 | annotated dispatch selector `selN(...)` | 15,111 | 0.0174 | 21,889 | 0.0184 |
+| 11 | `receiver: unrecovered` (subset of row 10) | 6,170 | 0.0071 | 7,438 | 0.0062 |
+| 12 | `tailCall_<hex>` | 3,070 | 0.0035 | 4,848 | 0.0041 |
+| 13 | DFS-only marker union | 1,367 | 0.0016 | 1,819 | 0.0015 |
+| 14 | omitted-path marker (subset of row 13) | 1,020 | 0.0012 | 1,266 | 0.0011 |
+| 15 | placeholder condition `/* cond */` | 997 | 0.0011 | 1,099 | 0.0009 |
+| 16 | unlifted-instruction comment | 727 | 0.0008 | 824 | 0.0007 |
+
+Measured as exact `0/0` floors, explicitly not findings: depth-limited marker,
+`// selector:` semantic fallback, unresolved branch/jump marker, `pool[?]`, `poolValN`.
+The predicate was exercised across every validated file and matched nothing.
+
+### The scan was checked against the pipeline, not trusted
+
+R13's stub-call figures were wrong because they came from a substring grep rather than a
+replay, and that correction is recorded above. So each shape with a counter was replayed
+against it:
+
+| replay vs pipeline counter | LocalSend | Immich |
+|---|---|---|
+| `raw_register_name_refs` | 152,595 vs 152,595 | 213,394 vs 213,394 |
+| omitted complex path | 1,020 vs 1,020 | 1,266 vs 1,266 |
+| loop back-edges | 347 vs 347 | 553 vs 553 |
+| `/* cond */` | 1,098 vs 1,098 | 1,220 vs 1,220 |
+
+Two deliberate disagreements are retained rather than reconciled, because each measures
+something different and substituting either would hide the gap:
+
+- Annotated selector **lines** 15,111/21,889 against `dispatch_table_calls`
+  14,561/20,938 — a **+550/+951** difference. The counter reports pipeline events; the
+  line count reports what the reader sees. Of the selector lines, 8,941/14,451 are
+  `receiver.selN(...)` and 6,170/7,438 are bare `selN(...)` each carrying
+  `receiver: unrecovered`, which is why a `.selN`-only scan would have undercounted.
+- Emitted `sub_<hex>(...)` occurrences 94,921/149,422 against reachable IR direct calls
+  whose target is an emitted `sub_<hex>` entry, 90,049/143,035 — **+4,872/+6,387**, with
+  target-level differences in both directions.
+
+A separate control matters more than either: **0 of 94,921 and 0 of 149,422** emitted
+`sub_<hex>` targets lack a corresponding output header. They are opaque names, not
+missing targets. Malformed IR successor references while replaying reachability: 0 and 0.
+
+The two largest shapes have no pipeline counter at all, so they were bounded structurally
+instead of given a fabricated one: 53,271/83,481 explicit synthetic-local declarations
+against 306,126/453,062 bearing lines, and 150,039/219,092 `final tN =` declarations
+against 160,046/231,698 pipeline `total_calls`. That second pair is deliberately not
+presented as equality — a call can return directly or tail-call and need no binding.
+
+### Reading sixteen functions
+
+Counters cannot answer whether output reads as Dart, so sixteen complete functions were
+read across the size distribution, eight per sample at the p00 through p99 line-count
+quantiles. The judgement is not that the lines contain placeholders; it is that their
+combination defeats normal Dart reading.
+
+One line carries three of the top six losses at once:
+`sub_d50e6c(poolOff[146216], tmp1)` — the reader can identify neither the method, the
+pool value, nor the local's meaning. Another mixes `tmp2.f112`, `poolOff[74088].f8(...)`
+and `reg0` within seven executable lines, which reads as a memory-layout trace rather
+than object code. The dispatch problem is visible rather than theoretical:
+`sel3776(classId(resultTmp3))` states `receiver: unrecovered` on the same line, while the
+next call is `t2.sel942(t2)`. At the p99 end, one function opens with
+`// omitted complex paths: block 47` and then repeats near-identical call sequences.
+
+The guard family is the clearest case for restraint. Nested field null checks followed by
+named error stubs are unreadable as source, but they may implement real Dart error
+semantics, and no syntactic predicate distinguishes compiler scaffolding from required
+behaviour. It stays a candidate, not a defect.
+
+### The split's residue, quantified
+
+A blob is an emitted record over 200 instructions whose reachable fraction is under 0.20,
+by explicit DFS from block 0. R19 attributed these to a leaf-function blind spot.
+
+| | LocalSend | Immich |
+|---|---:|---:|
+| blobs / emitted functions | 179 / 22,102 (0.81%) | 242 / 28,753 (0.84%) |
+| unreachable instructions inside blobs | **117,063** | **122,068** |
+| share of all remaining unreachable IR | 37.7% | 32.1% |
+| rendered lines belonging to blobs | 8,588 (0.99%) | 9,855 (0.83%) |
+
+So blobs are a substantial **coverage** loss and a negligible **reader-line** cost, which
+is why they are not a readability lever despite hiding over 117,000 instructions. Using
+block reachability instead of instruction reachability gives 183/246 rather than 179/242,
+so the denominator is stated rather than implied.
+
+The concentration is at unreachable-component level, not file level: 5,844/6,359 (91.9%)
+and 5,348/5,980 (89.4%) of component heads follow a terminator without the frame-push
+predicate, and 5,431/4,762 of those begin with `add`. Only 63/179 (35.2%) and 82/242
+(33.9%) of blob files contain even one such component, because one inflated record can
+carry several unrelated components. [INFERENCE] This is compatible with the no-frame leaf
+blind spot, but it does not prove each component is a leaf function or that splitting
+them is safe.
+
+### What this reorders
+
+Frequency is not reachability. The corpus's largest shape is `obj.fN` at 0.23 per line,
+and R9 already measured that naming a field requires the receiver's class, which is
+identifiable for 0% and 0.0007% of field loads exactly. R21 below closes that lever with
+a stronger cause. So the top three shapes by frequency are, today, the three with the
+smallest addressable prize — and the two levers that *are* actionable from inside this
+PR are rows 4 and 13: register dataflow at 0.1297/0.1350 per line, and structuring at
+0.0016/0.0015 per line whose corpus share is small but whose local severity is high,
+since an omitted path means emitted code that is not what the function does.
+
+Rejected here with the number that killed each: deleting `tmpN`/`tN` scaffolding
+(0.353/0.381 and 0.336/0.346 per line) — the `tN` declarations cover 150,039/219,092 of
+160,046/231,698 calls, so blind inlining risks duplicating side effects or losing
+evaluation order; guard canonicalisation (0.0442/0.0473) — below the pool prize and
+indistinguishable from real Dart error paths by syntax; blob splitting — 0.99%/0.83%
+reader exposure; and the five `0/0` floors, which justify no investment from this corpus.
+
+## R21. The three largest shapes are zero-addressable, and the cause is the model contract
+
+R20 ranked what a reader sees. This section asks what can be *fixed from inside this PR*,
+and the answer for the top three shapes is nothing — for a more specific reason than
+"metadata is missing".
+
+All figures replay the retained census artifacts from the pinned `2619ec7` baseline.
+Model JSON was captured by running `info --json` on both APKs while `which r2flutter`,
+`which radare2` and `which blutter` each returned status 1, so no external backend was
+installed or on `PATH`.
+
+### What the installed adapter actually carries
+
+The distinction that matters is schema-permits versus adapter-emits — R14's lesson, where
+two naming subsystems were dormant because the schema allowed what the real input never
+carried. Here the schema is the tighter constraint:
+
+| model property | schema / Rust permits | LocalSend | Immich |
+|---|---|---:|---:|
+| classes | identity only | **1**: `Global` | **1**: `Global` |
+| class field names / offsets | **no field-table key or nested shape is defined** | 0 of 1 | 0 of 1 |
+| class method names / entries | no declared contract | 0 of 1 | 0 of 1 |
+| function names | required, optional quality kind | 5,800 `name_kind=placeholder`, **0 exact** | 8,329 placeholder, **0 exact** |
+| function entry addresses | required | 5,800 unique | 8,329 unique |
+| function owner class | required | `Global` for 5,800/5,800 | `Global` for 8,329/8,329 |
+| pool entries | base required, semantic optional | 19,872 carved strings, `source=internal`, confidence 0.4; target VA **0**, owner class **0** | 19,156; target VA **0**, owner **0** |
+| pool geometry | optional; required to claim hardware indices | **absent** | **absent** |
+
+`ClassInfo` in `schemas/adapter.schema.json:36-48` defines exactly `id`, `name`, `super`,
+`lib`, and the Rust deserializer mirrors that surface with no class-field, field-offset or
+method-table member. An exhaustive recursive raw-JSON audit of both captured models found
+only `classes[].{id,lib,name,super}` — no differently-spelled or nested field list, so this
+is not a named-key false negative.
+
+That gives the cause a precise shape. Field naming is not unavailable on this input; it is
+**unrepresentable in the current adapter contract**. There is nothing to populate. No
+adapter work short of extending the model can reach it, which is exactly why it belongs to
+the snapshot-deserialization effort (#42, PRs #74/#86) and not to this seam.
+
+It also supplies the root cause for R14, which measured two naming subsystems emitting
+zero on real input and recorded the fact without explaining it. Standard-name
+canonicalization derives names from adapter class and library metadata; with one synthetic
+class and every function name a placeholder, it cannot fire. R14's dormancy was never a
+bug in those subsystems.
+
+### The `this`-relative path, tested and closed
+
+R9 measured receiver class from a *nearby class-id check*: 0% and 0.0007% exact,
+0.6%/1.6% under a loose overcounting bound. That leaves a different mechanism untested — a
+load off the incoming receiver of a function whose own `owner_class` supplies the class,
+needing no check at all.
+
+| `receiver.fN` replay | LocalSend | Immich |
+|---|---:|---:|
+| all emitted `receiver.fN` lines | 15,949 | 14,911 |
+| lines inside model-declared first pieces | **4,863** | **6,400** |
+| share of all `.fN` lines | **2.43%** | **2.36%** |
+| classes carrying a field table | 0 of 1 | 0 of 1 |
+| **actually nameable today** | **0** | **0** |
+
+The scan traversed IR rather than reporting a textual zero: it found 5,104/6,815 `x1`
+memory operations in those receiver-bearing declared records, and sampled provenance ties
+`receiver.f16`/`receiver.f8` in emitted output to reads from incoming `x1` in the matching
+IR.
+
+Two cautions the numbers force. `receiver` is the emitter's naming convention for `arg0`,
+**not** proof of an instance receiver — the 2.43%/2.36% is an upper-bound *shape*, not
+evidence that a real declaring class exists. And 11,086/8,511 of those receiver lines sit
+in split tails, whose owner metadata is intentionally empty: copying a record's owner onto
+a swallowed neighbour is the confidently-wrong-class defect R18 warned about, enforced at
+`runners/split.rs:201-252`. So the path dead-ends at the contract boundary, not at class
+identification. 2.43%/2.36% is worth recording as the forward-looking prize for whoever
+lands the field tables.
+
+### Function identity: the addresses overlap, the names are the addresses
+
+| direct-call identity | LocalSend | Immich |
+|---|---:|---:|
+| visible anonymous calls | 94,921 | 149,422 |
+| occurrences whose target equals a model `entry_va` | 90,176 (4,390 distinct) | 142,345 (6,506 distinct) |
+| model entry names usable as identity | **0 of 5,800** | **0 of 8,329** |
+| visible calls outside the model entry set | 4,745 (3,425 distinct) | 7,077 (5,288 distinct) |
+
+The high overlap is not a naming path. Every model name is a placeholder constructed from
+the entry address itself, so substituting it prints the same `sub_<hex>` already there.
+The residual out-of-model targets are not an alias opportunity either: R16 measured that
+79%/83% of them are interiors of inflated records, and snapping them to a containing entry
+would name the wrong function.
+
+`map-symbols` does not cover app code. It reads a stripped/unstripped **ELF pair**, and
+automatic ingestion fingerprints `libflutter.so` to resolve an engine cache. Both census
+runs had engine ingestion enabled and applied **0 of 0** targets from **0 of 0** loaded
+paths while all 5,800/8,329 adapter functions stayed placeholders — a loud zero against a
+non-empty engine context, not evidence that app symbols are quietly mapped.
+
+### Pool geometry: the machinery landed; the substrate is absent
+
+Both reports state the boundary directly: 19,875/19,159 pool records, `geometry: null`,
+`index_space_authoritative: false`, and an explicit suppression reason that the indices are
+not hardware-space.
+
+PR #85, "resolve object pool references in the real index space, add r2flutter backend",
+is **already in the evaluated baseline** — its commit `36b4bc5` passes
+`git merge-base --is-ancestor 36b4bc5 2619ec7`. The named branch is an 11-commit
+continuation beyond it. The implementation emits `pool_geometry` only when r2flutter
+reconstructs it and otherwise empties the semantic hints rather than guessing, which is why
+geometry is null here: **the mechanism is landed but unfed.** With radare2 and r2flutter
+absent from this host, the addressable prize is 0 of 70,635 and 0 of 84,205 `poolOff`
+lines, against a conditional ceiling of the full category at 0.0814/0.0708 per line once an
+authoritative backend runs.
+
+That ceiling is a maximum, not a forecast: no post-backend hit rate can be claimed without
+running it. And it must never be evaluated by installing the backend mid-mission — the
+`--adapter-backend` default is `auto`, which resolves r2flutter first, so installing it
+silently changes the substrate under every comparison. The measured precedent is blutter:
+39,343 function records against internal's 5,800, with `shared_stub_naming` falling from 14
+names to 0. A backend is a separate research arm with its own scoring reference.
+
+### The boundary, stated
+
+| lever | addressable today | owner |
+|---|---:|---|
+| field names (`obj.fN`, 199,937/271,425) | **0** | #42 / PRs #74, #86 — needs the contract to gain field tables at all |
+| function identity (`sub_<hex>`, 94,921/149,422) | **0** | #42 / PRs #74, #86 — needs snapshot function metadata |
+| pool displacements (`poolOff[N]`, 70,635/84,205) | **0** | landed in #85; conditional on an r2flutter substrate, evaluated as a separate arm |
+
+So the actionable surface for pseudocode quality inside this PR is emitter and dataflow
+work: register recovery at 0.1297/0.1350 per line, and structuring. Everything larger is
+gated on metadata this seam cannot produce, and the correct response is to say so with
+numbers rather than to ship a plausible-looking name. A wrong field or method name is
+strictly worse than `fN`, because `fN` is an honest admission and a wrong name is a claim.
+
+## R22. Repeated regions may end at the enclosing loop (landed)
+
+R16 measured that the structurer's largest decline class is `repeated region contains a
+loop header`, and that 37.5%/39.9% of those declines are functions with exactly one loop
+header where Dart needs no label at all — `structured.rs` said so in its own comment. That
+is now implemented, together with a 2x repeat budget.
+
+### The predicate
+
+A repeated region is admitted when its reachable content, stopped at the region follow,
+reaches the **innermost active loop header** and contains no other loop header. That header
+is not duplicated; `render_sequence` already renders the encounter as the enclosing
+`continue;`. Precisely:
+
+1. there is an active innermost loop header `H`;
+2. from the repeated block, successors excluding `follow` reach `H`;
+3. traversal stops at `H` and does not count beyond it;
+4. every other visited block is not a loop header;
+5. the visited region stays within 16 blocks and 96 instructions.
+
+Each clause earns its place by the output a violation produces: repeating a different or
+nested header duplicates that loop's body; treating an outer header as the inner `continue`
+targets the wrong loop; traversing *through* a header instead of stopping can duplicate the
+body or drop an iteration. Every case the predicate does not cover still declines.
+
+The independent replay reproduced R16's single-loop share exactly on the original
+unsplit records — 121/323 (37.5%) and 173/434 (39.9%) — by mirroring `Regions::build`,
+`render_sequence`, `render_loop` and `is_repeatable_region` rather than grepping. On the
+post-split corpus the exact traversal predicate admits 290 of 721 and 438 of 1,075 former
+loop declines, of which 213/332 finish structuring because the independent budget gates
+still apply. So R16's loop-count figure was a proxy, and the exact predicate is narrower.
+
+### Measured on both samples, integrated
+
+Re-measured in the integrated tree against the pinned `2619ec7` baseline, both runs
+`--adapter-backend internal --split-records --function-scope all`:
+
+| | LocalSend | Immich |
+|---|---:|---:|
+| structured share (replay) | 93.3762% -> **95.8103%** (+538 fn) | 93.0512% -> **95.6631%** (+751 fn) |
+| emitted functions | 22,102 -> 22,102 | 28,753 -> 28,753 |
+| rendered lines | 867,551 -> **777,937** (-10.33%) | 1,190,169 -> **1,074,372** (-9.73%) |
+| `raw_register_name_refs` | 152,595 -> 136,378 (-10.6%) | 213,394 -> 189,696 (-11.1%) |
+| — per line | 0.175892 -> 0.175307 (-0.33%) | 0.179297 -> 0.176565 (-1.52%) |
+| `omitted_path_markers` | 1,020 -> 782 (-23.3%) | 1,266 -> 942 (-25.6%) |
+| — per line | 0.001176 -> 0.001005 (-14.50%) | 0.001064 -> 0.000877 (-17.57%) |
+| `repeated_blocks` | 7,956 -> 21,492 (+170%) | 12,898 -> 30,191 (+134%) |
+| strict gate / `disassembly_ratio` | passed / 1.0 | passed / 1.0 |
+
+Emitted function count is unchanged on both, which is the control that matters most: no
+function stopped being emitted, so the 10% line reduction is not dropped content.
+
+### `repeated_blocks` tripling is a ruler artifact, not a cost
+
+Read naively the table says duplication rose 170% while emitted text fell 10%, which cannot
+both be true. The counter is emitter-asymmetric: `structured.rs` is its only increment site
+and `lib.rs` states the asymmetry in its own doc comment — "Bounded by budget; the DFS
+fallback's duplication is not." Finding 1 is that the fallback expands a DAG into a tree, and
+none of that duplication is counted. Moving functions into the structured path therefore
+raises the counter while lowering real duplication.
+
+The duplication-immune measure defined in the Method section settles it. Emittable calls are
+byte-identical before and after — the IR did not change, so this is purely emission policy:
+
+| | LocalSend | Immich |
+|---|---:|---:|
+| emittable calls (denominator) | 112,737 -> 112,737 | 172,256 -> 172,256 |
+| emitted call statements | 160,046 -> 146,842 | 231,698 -> 212,916 |
+| **inflation** | **1.4196x -> 1.3025x** | **1.3451x -> 1.2360x** |
+
+Inflation moves toward 1.0 by 8.25% and 8.11%. Real duplication fell. Judging this change on
+`repeated_blocks` alone would have rejected it.
+
+### Cost, and why 4x was rejected
+
+Bounded duplicate emission among newly structured functions: 77,983 and 92,178 instructions,
+median 72/66, worst 3,234/1,648. On the R16 baseline the budget alone structures 121 and 169
+functions for 23,519/28,145 duplicated instructions at median 91. 4x reaches 193/269
+functions but costs 60,234/132,202 with a worst case of 6,698 and **45,863** instructions in
+one Immich function. That tail is pathological, so 2x is the landed point, as a named
+constant.
+
+Two tests were added, each mutation-checked by hand: removing the enclosing-header stop
+fails the loop test, and restoring the old 8/48 budget fails the budget test.
+
+## R23. Where register loss actually happens, partitioned
+
+R16 established that 98.0%/98.1% of `regN` occurrences have a register with a modelled
+writer, so the loss is dataflow. It did not say *which* dataflow. Instrumenting the three
+invalidation sites and running full scope on both samples gives the partition:
+
+| cause | LocalSend | Immich |
+|---|---:|---:|
+| **join merge drops the binding** | **112,904** | **148,849** |
+| loop-header merge drops the binding | 5,539 | 6,965 |
+| ordinary call clobber | 11,263 | 19,997 |
+| other invalidation / pre-existing gap | 23,160 | 37,859 |
+
+Joins dominate by an order of magnitude. The instrumentation perturbs its own output — the
+marked totals are +271/+276 against the clean baseline counters, a disclosed 0.18%/0.13%
+shift — and the category ordering survives that uncertainty by two orders of magnitude.
+Source sites: `structured.rs` clears bindings at joins and around loop headers, `emit.rs`
+clears volatile registers at ordinary calls, grounded in
+`runtime/vm/constants_arm64.h:520-530,556-560` where ABI-preserved registers are R19-R28.
+
+**What this does not say.** It would be wrong to call 112,904/148,849 recoverable. The mark
+records that the state map was conservatively cleared at a join, not that both arms define a
+useful value, that the continuation reads it before redefining it, or that the branch is
+structured. R11 measured that *exact-agreement* merging recovers one binding in nine
+(11.33%/11.84%) and concluded the remainder needs real dataflow rather than a better merge
+heuristic — so R11 bounds the merge approach, not a phi, which handles disagreeing arms by
+construction. The binding constraint on a phi is liveness, and the negative result recorded
+above is precisely what happens when liveness is approximated badly: naive materialisation
+added 120,486 lines and *increased* raw register references because its reachability proxy
+marked mostly-dead values.
+
+The design that follows is a demand-driven direct-join phi: only where a structured branch's
+join is actually read later does each arm assign a synthesised local, with the post-join state
+bound to that local. Backward recovery over dominators loses, because it cannot soundly
+choose between two non-identical reaching definitions without recreating a phi. Any
+implementation must bind a local name and never inline arm expressions across an edge — the
+512-character substitution cap exists because a self-feeding expression once reached 110MB on
+one line.
+
+No prototype landed, so no before/after is claimed. The partition is the result: it says the
+next attempt belongs at joins, and it says what would make it fail.
+
+## R24. The reproducibility gate caught a real defect
+
+Every figure in this document depends on the pipeline being deterministic, and that premise
+had never been tested at full scope. Testing it found a genuine bug.
+
+Two cold processes over LocalSend at `--function-scope all` produced **different emitted
+text** with a **byte-identical `quality.json`**. It is intermittent: three observed runs gave
+two distinct corpora, 2-1. At `--max-functions 200` it never reproduced, which is why earlier
+spot checks passed.
+
+The cause is a partial order. `renames` is a `HashMap`, so `into_iter()` yields a
+seed-dependent order; the sort key was identifier **length only**; and Rust's `sort_by` is
+stable, so equal-length names kept that seeded order. The renames are then applied as
+sequential textual substitutions, where order matters whenever two overlapping renames have
+the same key length. Counters were unaffected because none of them depends on which rename
+won, which is exactly why this survived unnoticed.
+
+The fix is a total order: length descending, then the key itself. Keys come from a map and
+are therefore unique, so length-then-key admits **exactly one permutation** regardless of what
+`into_iter()` produced. That is the argument the fix rests on — the re-run of the full-scope
+gate on both samples is corroboration, not proof, because an unfixed build passes a single
+A/B comparison about two thirds of the time.
+
+The fix is output-neutral in the common case: the post-fix LocalSend corpus hashes identical
+to the pre-fix majority permutation, so it removes the divergence without churning output. A
+test constructs both insertion orders directly and asserts the sorted result is identical, so
+it fails deterministically without the tie-break rather than flaking.
+
+Consequence for the figures above, stated narrowly. Everything derived from `quality.json` is
+unaffected, because those values were byte-identical across the divergent pair, and inflation
+is unaffected because identifier renaming changes no call count.
+
+Exactly two rows of R20's census are conditional on the pre-fix permutation: **row 1**
+(synthetic locals, 306,126/453,062) and **row 2** (call temporaries `tN`,
+291,321/411,387). Those are the shapes the rename pass rewrites. Rows 3 through 6 —
+`obj.fN`, `sub_<hex>`, `poolOff[N]` and `regN` — are emitter-generated tokens that never
+enter the rename map, so they are unaffected, and they are the rows R21's zero-addressable
+conclusion and the actionable-surface ranking actually rest on. Rows 1 and 2 are also the two
+already rejected as levers, with the reason recorded. So no conclusion in R20 or R21 depends
+on a figure the defect could have moved.
