@@ -2513,6 +2513,49 @@ implementation must bind a local name and never inline arm expressions across an
 512-character substitution cap exists because a self-feeding expression once reached 110MB on
 one line.
 
+### A second failure mode, structural, verified in current code
+
+The design above is not safe at the obvious insertion point, and the reason is in the control
+flow of the emitter rather than in any liveness estimate.
+
+`structured.rs:304` sets `cursor = region_follow`, so the join block becomes the **next
+iteration's** `id` in the `while let Some(id) = cursor` loop at `:140`. `:305` then resets
+`self.state = state_at_branch`, discarding every binding the arms established, before the arm
+merge at `:309-310` runs at all. The next iteration reaches `:179`, finds `is_join`, and at
+`:185-189` performs a **full-predecessor** merge on the same block the arm merge just handled.
+So every if/else join is merged twice, back to back.
+
+Follow a register that needs a phi. It is written on at least one arm by definition, the arms
+are predecessors of the join, so it appears in `written` at `:188` and `merge_state_at_join`
+drops its binding at `:189` - before `render_block_body` renders the join body at `:192`. A phi
+installed at `:309` is therefore destroyed before anything reads it: the arm assignments are
+emitted, so lines grow, and the join still prints `regN`.
+
+This is **additive to** the recorded cause of the earlier negative result, not a rediagnosis of
+it. That section attributes its failure to an over-approximating read set, 30,736 of 40,186
+generated locals never read. Those numbers rule out a clean substitution: 23.5% *were* read, so
+destruction cannot have been universal, which means the earlier attempt either installed at a
+different point or was not uniformly affected. Its insertion point is not in the record, so no
+claim is made about it. What is verified here is that the current code destroys a binding
+installed at `:309`, and that this would survive perfect liveness.
+
+Three shapes avoid it, and an implementation must choose one deliberately: install at the
+`:181-190` join-block site, where the destroying merge is the one being replaced; record pending
+phi bindings keyed by join block and re-establish after `:189`; or make that merge phi-aware
+with an exemption in the shape of the existing `pinned_value`/`x15` carve-out at `:555`.
+
+Three further constraints, each verified: a phi must fire only where the join's **complete**
+predecessor set equals the arms emitted into, since `:309` sees only `&arms` while `:185-189`
+sees every predecessor, and a third incoming path would leave the local unassigned; loop headers
+are ineligible because `render_loop` at `:327-337` merges twice around the body and the back-edge
+value is not rendered at the header; and a phi must restore `reg_values` only, because
+`merge_state_at_join` also clears `last_cmp` and `selector_hints` at `:553-560`, both
+path-sensitive, and resurrecting them yields wrong conditions or wrong dispatch selectors.
+
+The negative result also records a ranking trap worth repeating: do not order candidate
+registers by name. `x10` sorts before `x2`, and the Dart argument registers are x1, x2, x3, x5,
+x6, x7, so alphabetical order spends the budget on the least valuable registers first.
+
 No prototype landed, so no before/after is claimed. The partition is the result: it says the
 next attempt belongs at joins, and it says what would make it fail.
 
