@@ -2953,15 +2953,58 @@ It is also a change. R20's census measured the `/* cond */` shape at 1,098 and 1
 same counter at `2619ec7`, before the structurer landed - different values, as expected. After the
 structurer they converge to the same number on both samples.
 
-Two readings, and this document cannot currently choose between them. Either the structurer
-genuinely reduced the shape to a population that happens to coincide, or the counter has a defect
-that makes it insensitive to the corpus. `quality.rs:46` computes it as
-`p.source.matches("/* cond */").count()`, a plain literal scan with no obvious saturation, which
-argues for coincidence; the exact equality across dissimilar inputs argues against.
+**Three readings**, and the third is the one this framing initially missed:
 
-Not chased here, because the counter is not a gate threshold and no result in this document rests
-on it. Recorded because a metric that returns the same value for two different programs is exactly
-the shape of a measurement that has stopped measuring, and the next person to rely on
-`placeholder_cond_markers` should resolve this first. The check is cheap: count the literal in both
-corpora directly and compare against the counter, which is the same replay control R20 used to
-validate four other counters exactly.
+1. Coincidence: the structurer reduced the shape to app-specific populations that happen to
+   coincide at 716.
+2. Counter defect: it has become insensitive to the corpus, saturating or reading one input twice.
+3. **Shared code.** Both APKs embed the same Dart runtime and core libraries. If the structurer
+   resolved the *app-specific* placeholder conditions, the residue would be SDK-resident code -
+   identical in both binaries **by construction**, neither coincidence nor defect.
+
+Reading 3 fits the data best. R20's pre-structurer figures of 1,098 and 1,220 differed exactly as
+app-specific code would, and nothing else measured here produces exact cross-sample equality.
+
+**The discriminator is not a count.** Recounting the literal and comparing against the counter
+validates counting *fidelity* only, and every reading above predicts that agreement, so it is a
+control that cannot fail for the question it is attached to - the defect class this document
+codifies elsewhere. The check that discriminates is comparing the 716 **emitted bodies** across the
+two samples, normalised for names and addresses which necessarily differ. Same shapes means reading
+3, and it converts an anomaly into a ceiling statement in R21's style: residual placeholder
+conditions are SDK-resident, so no app-side emitter work reduces them and the lever is closed with
+a reason. Different shapes means readings 1 or 2, and a counter returning the same value for two
+dissimilar inputs would then be worth chasing properly.
+
+**The discriminator was run.** Both corpora regenerated at HEAD, every function containing the
+marker collected, and its lines and whole bodies normalised for the things that must differ between
+two apps - addresses, `sub_` names, synthesised numbering, pool indices, field offsets, literals:
+
+| | LocalSend | Immich |
+|---|---:|---:|
+| marker occurrences | **716** | **716** |
+| functions containing one | 193 | **214** |
+| distinct normalised marker lines | 89 | 37 |
+| distinct normalised function bodies | 179 | 191 |
+| shared normalised marker lines | 26 | 26 |
+| shared normalised bodies | 29 | 29 |
+
+What this settles:
+
+- **Counting fidelity is fine.** A direct scan returns 716 on both, matching the counter exactly, so
+  reading 2 has no support at the counting layer.
+- **Reading 3 is refuted in its strong form.** Only 29 of 179 and 191 normalised bodies are shared,
+  about 15%, so the residue is not one identical block of SDK-resident code appearing in both
+  binaries. The functions carrying these conditions are app-specific.
+- **But it is partly right at the shape level.** 26 of Immich's 37 distinct marker lines - 70% - also
+  occur in LocalSend. So the *conditions* are largely shared idioms while the *functions containing
+  them* are not. That is a meaningful finding on its own: the residual placeholder conditions are a
+  small vocabulary of recurring shapes, which is what a targeted fix would have to address rather
+  than a long tail.
+- **The exact equality stays unexplained.** 716 arises from 193 functions on one sample and 214 on
+  the other, with largely different bodies, so it is not equality by construction. The remaining
+  candidate is coincidence, which is unsatisfying but is what the evidence supports once counting
+  fidelity is confirmed and shared-code is refuted.
+
+Left open deliberately, with the measurement recorded so nobody repeats it. The counter gates
+nothing and no result here rests on it. The 70% line-shape overlap is the part worth acting on if
+`/* cond */` ever becomes a lever.
