@@ -2599,3 +2599,131 @@ enter the rename map, so they are unaffected, and they are the rows R21's zero-a
 conclusion and the actionable-surface ranking actually rest on. Rows 1 and 2 are also the two
 already rejected as levers, with the reason recorded. So no conclusion in R20 or R21 depends
 on a figure the defect could have moved.
+
+## R25. The phi prize, bounded by topology rather than liveness
+
+R23 named joins as the dominant register loss. R24's addendum showed the obvious insertion
+point cannot work. This sizes what a correct one would recover, by replaying the actual
+`render_sequence` branch-follow events over HEAD's IR on both samples. Controls: 22,102/22,102
+and 28,753/28,753 IR files processed, and the replay's structural gate accepted
+21,176/22,102 (95.810%) and 27,505/28,753 (95.660%), matching the published post-split
+structured shares rather than passing a silent zero.
+
+A candidate is a `(structured branch follow, canonical register)` binding event, live when the
+register is read in the join block or a reachable continuation before a modelled redefinition.
+It uses the same canonical-register convention and write set as `structured.rs:514-539` and
+excludes pinned registers and `x15` exactly as `merge_state_at_join` does.
+
+| replayed binding events | LocalSend | Immich |
+|---|---:|---:|
+| raw structured branch-follow live candidates | 32,850 | 58,316 |
+| declined: incomplete predecessor set | 25,326 | 45,846 |
+| declined: loop header | 5 | 4 |
+| **eligible under both preconditions** | **7,519** | **12,466** |
+| distinct eligible `(join, register)` sites | 5,351 | 9,241 |
+| strict policy: every arm contains a modelled write | 5,493 | 9,133 |
+
+The partitions close exactly on both samples: 7,519 + 25,326 + 5 = 32,850 and
+12,466 + 45,846 + 4 = 58,316.
+
+So the eligible prize is **6.66%/8.37%** of R23's join-drop marks and **5.51%/6.57%** of HEAD's
+136,378/189,696 raw register references. Under the sound arm policy - decline the whole phi
+unless every incoming arm can assign, because an unassigned predecessor reaches code that reads
+the local - the floor is 5,493/9,133, or 4.03%/4.82%.
+
+### The gate is predecessor completeness, not liveness or agreement
+
+Liveness removes far less than expected: the raw live population is 29.1%/39.2% of R23's join
+drops. The reduction to 6.66%/8.37% comes almost entirely from one topology rule, which
+declines **25,326/45,846 events, 77.1%/78.6%** of the live population, because the join has a
+third-or-more predecessor that is not one of the two emitted arms. Loop headers remove 5 and 4.
+
+This also settles the relationship with R11, which measured *exact agreement* at 11.33%/11.84%.
+Agreement is not the gate. A phi reconciles disagreeing arms by construction, and the live
+population is larger than R11's rate; what bounds it is emitter topology.
+
+### The double merge, confirmed at 100%
+
+**Every** raw branch-follow live event - 32,850 of 32,850 and 58,316 of 58,316 - is in the
+generic full-predecessor `written` set at `structured.rs:185-190`. So a binding installed at the
+arm site `:309-310` is killed before `render_block_body` runs at `:192`, without exception. The
+structural failure mode is not a tendency, it is total.
+
+### What this implies for the design, and the open question
+
+The complete-predecessor rule is an artifact of *where* the phi was conceived. The arm site at
+`:309` knows only two arms, so any third predecessor forces a decline. But the join-block site at
+`:185-190` - which the 100% kill result already forces the implementation to move to - computes
+the **full predecessor set** itself.
+
+So the same change that is mandatory for correctness may dissolve the dominant gate. If a phi at
+the join-block site can assign on every predecessor rather than two arms, the addressable
+population rises from 7,519/12,466 toward the raw 32,850/58,316, which is **24.1%/30.7%** of HEAD
+raw register references rather than 5.51%/6.57%. That is the difference between a marginal change
+and the largest single quality win available in this seam.
+
+That upper bound will not survive contact, and "is there room for an assignment" is too loose to
+measure. The computable predicate is **emitted text order**: for each declined event, is every
+extra predecessor rendered *before* the join? The emitter walks a cursor and marks
+`structured_emitted`, so a predecessor rendered after the join - a back-edge source, or a block
+the region tree orders later - can never assign before the join body reads the local. That is the
+loop-header exclusion generalized, and it is the real limit.
+
+Two wrinkles will invalidate the measurement if left unmodelled, and both are verified in code:
+
+- **A block can render more than once.** `structured.rs:150-163` re-renders an already-emitted
+  block when `is_repeatable_region` admits it, which is where `repeated_blocks` increments. An
+  assignment placed in a repeated predecessor is emitted in *every* copy, so its line cost
+  multiplies, and if the copies feed different joins the binding has to be per-copy rather than
+  per-block.
+- **This is edge placement, not block placement.** A predecessor with more than one successor
+  cannot carry an unconditional `tN = ...` intended for only one of them. In SSA terms it is a
+  critical edge and needs splitting, which in structured output means duplicating a tail or
+  introducing a flag - a strictly harder construction than the two-arm case.
+
+So the generalized population must be reported in three parts, not folded into one headline:
+extra predecessors rendered before the join and single-successor (the tractable set); rendered
+before but multi-successor (needs edge splitting); and rendered after the join or repeated (out of
+reach without a different emitter shape).
+
+No prototype was built and no gain is claimed. Cost, if built: one synthesized local per
+eligible site plus one assignment per participating arm, so roughly 5,351 and 9,241 declarations
+with at least twice that many assignments - line growth of order 2%, moving text from the `regN`
+category into the synthetic-local category. That trade needs the absolute counter, not a per-line
+ratio, because a phi adds lines by construction and the ratio would flatter it.
+
+### The phi converts noise rather than removing it, and that is the decisive axis
+
+Scoring this on `raw_register_name_refs` alone hides what the change actually does to a reader.
+A phi emits `final tN = ...` on each participating arm. That is R20 row 2, `tN` temporaries, the
+corpus's **second largest** shape at 0.336/0.346 per line. `regN` is row 4 at 0.1297/0.1350. So
+the change grows the second-biggest noise class in order to shrink the fourth.
+
+The asymmetry is what matters. A `regN` is an opaque token **inside an existing line**. A `tN`
+binding is a **whole new line** of scaffolding. Removing one token by adding two lines is more
+total text for the reader, and the added text is itself a shape this census already classifies as
+noise.
+
+The arithmetic on the measured population: 7,519 events across 5,351 sites is 1.41 references per
+site, and 12,466 across 9,241 is 1.35. With at least two arm assignments per site, that is
+roughly **2 added lines per opaque token removed**, and most phi locals are read about once.
+
+This does not automatically kill it. A `tN` bound to a traceable expression carries information an
+opaque `regN` does not, so it is an information gain rather than a relabel. But it must be scored
+on that axis, with the budget declared before the result is seen:
+
+> **Pre-registered kill criterion.** The phi must remove more opaque `regN` tokens than the number
+> of lines it adds - a recovered-per-added-line ratio of at least 1.0 - or it is recorded as a
+> negative result and not landed. On the measured narrow population that ratio is approximately
+> 0.7, so the arm-eligible design is predicted to **fail** this criterion before it is built.
+
+[INFERENCE] The generalized join-block design is not obviously better on this axis and may be
+worse: more predecessors means more assignments per site, so unless multi-predecessor joins carry
+proportionally more reads, the ratio degrades as the population grows. The references-per-site and
+arms-per-site distributions for the raw 32,850/58,316 population are unmeasured and decide it.
+
+So the next measurement is not an implementation. It is the text budget: recovered references per
+added line, for the narrow and generalized designs separately. If both come in below 1.0, the
+honest outcome is a recorded negative with numbers, which the stop rule explicitly permits. It
+would be the second negative this lever has produced, and that pattern is itself the finding:
+register loss at joins is real, dominant, and may simply not be worth paying for in text.
