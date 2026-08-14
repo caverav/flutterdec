@@ -101,6 +101,16 @@ pub(super) struct CapOmission {
 pub(super) struct PendingAnnotationRecord {
     pub(super) loss_site: &'static str,
     pub(super) site_key: SiteKey,
+    /// The rendering anchor this annotation was inserted from, named in terms
+    /// the emitted IR can resolve on its own: `["block", id]` for a merge,
+    /// `["call", va]` for a clobber.
+    ///
+    /// `site_key` is read off this same anchor, so the two cannot disagree -
+    /// that is the point. Recording it anyway is what lets an external reader
+    /// check the claim instead of taking it on trust: with the IR in hand it can
+    /// ask what kind of construct the anchor actually is and whether the label
+    /// agrees.
+    pub(super) anchor: SiteKey,
     pub(super) register: String,
     /// The exact rendered span this record describes, used to pair the record
     /// with its coordinate in the finished source.
@@ -150,6 +160,7 @@ struct AnnotationLine<'a> {
     output_col: usize,
     loss_site: &'static str,
     site_key: &'a SiteKey,
+    anchor: &'a SiteKey,
     register: &'a str,
     candidates: &'a [CandidateAttribution],
 }
@@ -358,6 +369,7 @@ pub(super) fn write_function_provenance(source: &str, provenance: &FunctionProve
             output_col: *output_col,
             loss_site: record.loss_site,
             site_key: &record.site_key,
+            anchor: &record.anchor,
             register: &record.register,
             candidates: &record.candidates,
         };

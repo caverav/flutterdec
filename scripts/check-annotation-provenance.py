@@ -153,22 +153,23 @@ def check_snapshot(annotations, snapshots):
                 continue
             path = key_of(candidate.get("path_key"))
             recorded = key_of(snapshot.get("site_key"))
-            # A call site captures at the call, so its snapshot, its path and its
-            # site are one key and any disagreement is a mis-attribution. The
-            # other two sites capture at a predecessor's end, so their snapshot
-            # is keyed by the construct that owns it rather than by the path, and
-            # requiring identity here would fail a correct implementation.
-            if site is not None and site[0] == "call":
-                if recorded != path:
-                    bad.append(
-                        (where, index, f"snapshot is for {recorded}, candidate claims path {path}")
-                    )
-                    continue
-                if path != site:
-                    bad.append(
-                        (where, index, f"call candidate path {path} is not its own site {site}")
-                    )
-                    continue
+            # One rule for all three sites: a snapshot names the incoming path it
+            # is the end state of. A call captures at the call, so its path is the
+            # call itself; a join or a loop header captures at a predecessor's
+            # end, so its path is that block. Keying a snapshot by the site
+            # instead makes this pairing agree with itself for a value borrowed
+            # from any sibling path, which is what it did for 6,206 join
+            # candidates.
+            if recorded != path:
+                bad.append(
+                    (where, index, f"snapshot is for {recorded}, candidate claims path {path}")
+                )
+                continue
+            if site is not None and site[0] == "call" and path != site:
+                bad.append(
+                    (where, index, f"call candidate path {path} is not its own site {site}")
+                )
+                continue
             registers = {tuple(pair) for pair in snapshot.get("registers") or []}
             if (register, candidate.get("value")) not in registers:
                 bad.append(

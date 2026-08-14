@@ -224,6 +224,12 @@ fn records_one_audit_row_per_annotation_with_a_resolvable_snapshot_per_candidate
         SiteKey("join", 4),
         "the site key is annotation-level and tagged, and carries no predecessor id"
     );
+    assert_eq!(
+        record.anchor,
+        SiteKey("block", 4),
+        "and the rendering anchor it was read off is recorded in IR terms, so a \
+         reader can resolve the block itself instead of trusting the label"
+    );
     assert_eq!(record.register, "x0");
     assert_eq!(
         record
@@ -249,9 +255,10 @@ fn records_one_audit_row_per_annotation_with_a_resolvable_snapshot_per_candidate
             .find(|snapshot| snapshot.snapshot_id == candidate.snapshot_id)
             .unwrap_or_else(|| panic!("cited snapshot {} is recorded", candidate.snapshot_id));
         assert_eq!(
-            snapshot.site_key,
-            SiteKey("join", 4),
-            "a snapshot must belong to the site whose drop it documents"
+            snapshot.site_key, candidate.path_key,
+            "a snapshot must name the predecessor path its values were read from, \
+             or a value borrowed from a sibling path is checked against a key that \
+             agrees with itself"
         );
         assert!(
             snapshot
@@ -312,12 +319,8 @@ fn declines_a_loop_header_that_is_also_a_join() {
         "a loop header belongs to the loop site, so no join-tagged row may claim it"
     );
     assert!(
-        emitter
-            .join_provenance
-            .snapshots
-            .iter()
-            .all(|snapshot| snapshot.site_key != SiteKey("join", 3)),
-        "and no join-tagged snapshot may be recorded for it either"
+        emitter.join_provenance.snapshots.is_empty(),
+        "and the join stream records no snapshot for it either"
     );
 }
 

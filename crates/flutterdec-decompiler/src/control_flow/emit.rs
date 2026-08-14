@@ -1100,6 +1100,10 @@ impl<'a> FuncEmitter<'a> {
                 // never off a second walk of the IR, so the record cannot name a
                 // real site that is not the site this annotation was emitted at.
                 site_key: SiteKey(CALL_LOSS_SITE, anchor.call_va),
+                // The rendering anchor itself, recorded so an external reader
+                // can resolve it in the emitted IR rather than trust the
+                // comment above.
+                anchor: SiteKey(CALL_LOSS_SITE, anchor.call_va),
                 register: anchor.register.clone(),
                 rendered: annotation.clone(),
                 candidates: vec![CandidateAttribution {

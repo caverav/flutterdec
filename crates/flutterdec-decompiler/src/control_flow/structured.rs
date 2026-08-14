@@ -1047,7 +1047,12 @@ impl<'a> FuncEmitter<'a> {
             };
             self.join_provenance.snapshots.push(ValueSnapshot {
                 snapshot_id: candidate.snapshot_id.clone(),
-                site_key: SiteKey(JOIN_LOSS_SITE, join as u64),
+                // The path this snapshot is the end state of, not the join that
+                // dropped it - the same key the loop site records, and the one
+                // the shared checker pairs against the candidate's own
+                // `path_key`. Naming the join here made that pairing agree with
+                // itself for a value borrowed from any sibling predecessor.
+                site_key: SiteKey(JOIN_PATH_KIND, candidate.pred as u64),
                 registers,
             });
         }
@@ -1468,6 +1473,11 @@ impl<'a> FuncEmitter<'a> {
                 Some(PendingAnnotationRecord {
                     loss_site: LOOP_LOSS_SITE,
                     site_key: SiteKey(LOOP_SITE_TAG, planned.join as u64),
+                    // The block whose rendered body this annotation was placed
+                    // in, from the same planned insertion the key above comes
+                    // off. An external reader resolves it in the emitted IR and
+                    // asks whether a loop-tagged label is what that block earns.
+                    anchor: SiteKey(JOIN_PATH_KIND, planned.join as u64),
                     register: planned.register.clone(),
                     rendered: planned.text.clone(),
                     // Every attribution, duplicates included: two entry arms
@@ -1534,6 +1544,10 @@ impl<'a> FuncEmitter<'a> {
                 Some(PendingAnnotationRecord {
                     loss_site: JOIN_LOSS_SITE,
                     site_key: SiteKey(JOIN_LOSS_SITE, planned.join as u64),
+                    // Same anchor the key above is read off, recorded so the
+                    // derivation is inspectable: the IR says whether that block
+                    // is the multi-predecessor non-header a join label claims.
+                    anchor: SiteKey(JOIN_PATH_KIND, planned.join as u64),
                     register: planned.register.clone(),
                     rendered: planned.text.clone(),
                     // Every attribution, duplicates included: two predecessors

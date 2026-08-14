@@ -8,7 +8,9 @@ annotation passes as one satisfied row.
 An element is a violation when any of these does not hold:
 
   1. the snapshot it cites exists, in the same function;
-  2. that snapshot belongs to the site the record claims;
+  2. that snapshot is keyed by the predecessor path it is the end state of, which
+     is the same key every other site records - naming the site instead makes the
+     pairing agree with itself for a value borrowed from a sibling path;
   3. the snapshot holds the record's register bound to exactly this value;
   4. the element's ``path_key`` names the predecessor the cited snapshot was
      taken at - which is what makes a value borrowed from a sibling path visible,
@@ -133,10 +135,10 @@ def check(path, schema_version):
                     label,
                 )
                 continue
-            if site_key_of(snapshot) != site:
+            if site_key_of(snapshot) != path_key:
                 fail(
-                    f"snapshot {snapshot_id!r} belongs to site {snapshot.get('site_key')!r}, "
-                    f"not {record.get('site_key')!r}",
+                    f"snapshot {snapshot_id!r} is the end state of {snapshot.get('site_key')!r}, "
+                    f"but the value is attributed to path {element.get('path_key')!r}",
                     label,
                 )
                 continue
