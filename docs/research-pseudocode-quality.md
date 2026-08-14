@@ -3499,6 +3499,14 @@ The `quality.json` comparison and the gate derivation also have retained copies 
 
 ## R30. The fabricated signature, and why trimming it is the wrong fix
 
+> **Resolved in R32, from a direction this section did not consider.** The analysis below holds - trimming
+> really is wrong, and the over-pass measurement stands - but it framed the honest options as "keep six slots
+> and add a marker" or "leave it and document". There was a third: keep all six slots and change their
+> **spelling**, so the names stop claiming a role they cannot support. `receiver, param1..param5` became
+> `slot0..slot5`. The six-slot envelope survives, so a declaration is still at least as wide as any call and
+> the over-pass this section warned about cannot occur. No comment was added, no counter moved, and the line
+> is shorter than before. Read this section for why the obvious fix is wrong; read R32 for what landed.
+
 Not a result. This records an investigation that stopped short of a change, because the obvious fix is
 measurably worse than the defect, and the next person to look at this should not have to re-derive that.
 
@@ -3597,6 +3605,16 @@ Implementation cost, for whoever takes it: seven test files hardcode a literal s
 `readability_and_naming.rs` and two others), 44 occurrences in total.
 
 ## R31. Heuristic names are indistinguishable from recovered ones
+
+> **Half resolved in R32.** The classification below is unchanged and the measurement stands. What landed is
+> the rule that separates the families: a name may describe an observed **source**, never an inferred type or
+> role. So `objN`, `valueN`, `receiver`, `paramN`, `objTmpN` and `intTmpN` are gone, while `poolValN`,
+> `resultTmpN`, `tN` and `local_mN` stayed, because each states something observed. The per-declaration
+> marker this section costed and rejected was never needed.
+>
+> **Still open:** absence of a synthetic marker still does not certify that a name **was** recovered, because
+> the metadata-derived bucket is empty. Reserving a `source_` prefix for that bucket would close it, and is
+> cheap precisely because it applies to nothing today.
 
 Also not a result. Same shape as R30: a defect located, sized, and left unimplemented because the fix is a
 design decision rather than an edit.
