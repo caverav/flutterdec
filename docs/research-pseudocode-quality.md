@@ -3540,9 +3540,26 @@ arity distribution is 0:2,472, 1:1,844, 2:2,251, 3:1,342, 4:223, 5:77, 6:85, max
 the constructed bound.
 
 Today every declaration is six wide, so a declaration is always at least as wide as any call to it and no call
-can over-pass. Trimming inverts that invariant: a callee whose body ignores its arguments becomes `f()` while
-other functions still visibly call it with up to six. Emitted code that contradicts itself is worse for a
-reader than a uniform template, so the trim fails on its own terms.
+can over-pass. Trimming inverts that invariant, and this was **measured by joining each callee to its own
+callers** rather than inferred from the two distributions above - which would have been exactly the kind of
+composed claim this section argues against. Parsing all 400 declarations and every call site in the same
+corpus, then matching on callee name:
+
+| | |
+|---|---:|
+| declarations parsed | 400 |
+| callees with at least one visible caller | 36 |
+| of those, **over-passed after trimming** | **14 (38%)** |
+| worst gap | 3 extra arguments |
+
+Concretely, `sub_9a0f0c` reads one parameter and is called with four; `sub_ab51e8` reads none and is called
+with two. After trimming, that renders as a function declared `f(receiver)` invoked as `f(a, b, c, d)` in the
+same corpus.
+
+Only 36 of 400 callees have a caller inside a 400-function slice, so 38% is a rate over the joinable subset and
+the absolute count is a lower bound - a full-scope run would join far more. That is enough to decide the
+design: emitted Dart that contradicts itself is worse for a reader than a uniform template, so the trim fails
+on its own terms.
 
 *Method note, because it nearly became a false figure in this record: a first pass reported a maximum of 13,
 which was an artifact of splitting on `(`, `)` and `,` together, so nested calls such as
