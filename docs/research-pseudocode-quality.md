@@ -3664,3 +3664,73 @@ counter diff, never by eye.
 That second constraint is the reusable lesson, and it generalises beyond this gap: on this project a comment
 is not automatically free. Adding one is a ruler change unless its span is stripped or its wording avoids every
 counted token.
+
+## R32. Names may say where a value came from, not what it is
+
+R31 recorded that no local or parameter name is metadata-derived, and left the fix open because the
+obvious one - a marker comment per declaration - costs roughly ten times the project's entire annotation
+budget and risks the ruler. This is the fix that avoids both, and the measurements that chose it.
+
+### The rule
+
+**A name may describe an observed source. It may not assert an inferred type or role.**
+
+Applied to the two families that broke it:
+
+| old | new | what it asserted, and on what evidence |
+|---|---|---|
+| `receiver` | `slot0` | a role, from position alone |
+| `objN` | `slotN` | an object, from **one** field access |
+| `valueN` | `slotN` | a value, from **two** arithmetic operations |
+| `paramN` | `slotN` | a parameter, when arity is unrecoverable (R30) |
+| `objTmpN` | `tmpN` | a type, from two field accesses |
+| `intTmpN` | `tmpN` | a type, from two arithmetic operations |
+
+Kept, because each states something observed rather than inferred: `poolValN` (assigned from the object
+pool), `resultTmpN` (assigned from a call result), `tN` (the Nth call in this body), `local_mN` / `local_pN`
+(the stack offset).
+
+The index on `slotN` is the one earned fact about a parameter - its position in the argument-register file -
+and it survives verbatim. It is **never renumbered**, because callers render arguments from the same file, so
+renumbering would relabel which register a reader is looking at.
+
+### Why this and not a marker
+
+Three designs were costed on the real LocalSend corpus, 22,102 files and 777,937 rendered lines, by applying
+each renaming to actual output and measuring:
+
+| design | characters | per line | longest line | honest about |
+|---|---:|---:|---:|---|
+| baseline | 25,651,247 | - | 2,660 | nothing |
+| `synthetic_param_N` / `synthetic_local_N` prefixes | 35,227,813 | **+12.31** | 2,660 | everything, including the earned names |
+| this change | 24,460,315 | **-1.53** | 2,660 | only the unearned |
+
+The verbose prefix is **+37.3%** of all emitted characters. For scale, the entire annotation feature of R28
+and R29 added 362,383 bytes at 0.47 bytes per rendered line, and that was treated as a cost worth measuring
+carefully; a `synthetic_` prefix is roughly **26 times more per line**. For a tool whose purpose is
+readability that is disqualifying, and it also relabels `poolValN` and `local_mN`, discarding facts.
+
+This change instead makes output **smaller**: measured end to end against the reference binary, LocalSend
+25,711,643 to 25,301,455 characters (**-1.60%**) and Immich 35,027,028 to 34,444,860 (**-1.66%**). Honesty and
+brevity aligned here rather than trading off, because the names that were removed were the long ones.
+
+### Neutrality
+
+Verified by running the candidate and the `ff07207` reference over both samples at full scope, then comparing
+`quality.json` field by field. **All fourteen counters are equal**, `raw_register_name_refs` included at
+136,378 and 189,696. Rendered line counts are identical, +0 on both samples. Longest physical line is
+unchanged at 2,660 and 2,490 against the 3,000 cap. Emitted file manifests are 22,102 and 28,753 on both
+sides. So this is not a ruler change, and `slotN` / `tmpN` contain none of the `argN`, `xN`, `regN`,
+`_block_` or `/* cond */` spellings the counters look for - no stripper change was needed.
+
+### The information is relocated, not lost
+
+The type guesses that used to live in identifiers still exist where they can be checked. `intTmp1` became
+`int tmp1` - the inference is unchanged, it simply moved from the name to the declared type, which is
+`dynamic` when unproven. A reader can disagree with a declared type by reading the code; they cannot
+disagree with a name.
+
+This closes the half of R31 that was actionable. What remains open is the other half: absence of a
+`synthetic_` marker still does not certify that a name **was** recovered, because the metadata-derived
+bucket is empty. Reserving a `source_` prefix for that bucket would close it, and is cheap precisely because
+it would apply to nothing today.

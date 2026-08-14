@@ -1,4 +1,4 @@
-dynamic goldenSimpleLoop(dynamic receiver, dynamic param1, dynamic param2, dynamic param3, dynamic param4, dynamic param5) {
+dynamic goldenSimpleLoop(dynamic slot0, dynamic slot1, dynamic slot2, dynamic slot3, dynamic slot4, dynamic slot5) {
   while (true) {
     if ((reg0 + 1) != 0) {
       break;

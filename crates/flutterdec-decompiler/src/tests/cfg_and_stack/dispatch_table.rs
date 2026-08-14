@@ -228,7 +228,7 @@ fn recovers_the_receiver_under_a_shifted_class_id_bitfield() {
         "receiver must still resolve when the bitfield position differs: {call}"
     );
     assert!(
-        call.contains("receiver.sel163(") || call.contains("param1.sel163("),
+        call.contains("slot0.sel163(") || call.contains("slot1.sel163("),
         "the resolved receiver must appear in the callee position: {call}"
     );
 }

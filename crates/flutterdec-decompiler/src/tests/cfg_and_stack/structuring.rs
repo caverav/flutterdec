@@ -65,7 +65,7 @@ fn emits_a_join_block_exactly_once() {
     let joins = artifact
         .source
         .lines()
-        .filter(|l| l.contains("= receiver;"))
+        .filter(|l| l.contains("= reg0;"))
         .count();
     assert_eq!(
         joins, 1,
@@ -726,7 +726,7 @@ fn repeats_a_small_shared_region_that_is_not_a_follow_node() {
         artifact
             .source
             .lines()
-            .filter(|l| l.contains("= param2;"))
+            .filter(|l| l.contains("= slot2;"))
             .count(),
         2,
         "the shared block is emitted on both paths:\n{}",
@@ -1077,7 +1077,7 @@ fn repeats_a_shared_path_ending_at_the_enclosing_loop() {
         "the loop-header body must be emitted once:\n{src}"
     );
     assert_eq!(
-        src.lines().filter(|line| line.contains("= param2;")).count(),
+        src.lines().filter(|line| line.contains("= slot2;")).count(),
         2,
         "the shared body must be emitted on both paths:\n{src}"
     );
@@ -1258,7 +1258,7 @@ fn post_index_addressing_drops_the_base_binding() {
     };
     let out = emit_pseudocode(&ir, &HashMap::new()).source;
     assert!(
-        !out.contains("= receiver;"),
+        !out.contains("= slot0;"),
         "the written-back base must not still read as its pre-access value:\n{out}"
     );
 }
@@ -1266,7 +1266,7 @@ fn post_index_addressing_drops_the_base_binding() {
 /// Dart materialises the canonical bools by adding `kTrueOffsetFromNull` and
 /// `kFalseOffsetFromNull` to NULL_REG, and `csel` between them turns a
 /// comparison into a value. Unmodelled, the destination kept a stale binding,
-/// so a function returning `cond ? true : false` emitted `return receiver;`.
+/// so a function returning `cond ? true : false` emitted `return slot0;`.
 #[test]
 fn conditional_select_between_bools_recovers_the_comparison() {
     let ir = FunctionIr {
@@ -1289,7 +1289,7 @@ fn conditional_select_between_bools_recovers_the_comparison() {
     };
     let out = emit_pseudocode(&ir, &HashMap::new()).source;
     assert!(
-        out.contains("(receiver != param1)"),
+        out.contains("(slot0 != slot1)"),
         "true-then-false arms should render as the comparison itself:\n{out}"
     );
 }
@@ -1318,7 +1318,7 @@ fn conditional_select_reads_the_arm_order() {
     };
     let out = emit_pseudocode(&ir, &HashMap::new()).source;
     assert!(
-        out.contains("(receiver == param1)"),
+        out.contains("(slot0 == slot1)"),
         "false-then-true arms should render as the inverse condition:\n{out}"
     );
 }
@@ -1359,7 +1359,7 @@ fn mask_test_supplies_the_following_condition() {
     };
     let out = emit_pseudocode(&ir, &HashMap::new()).source;
     assert!(
-        out.contains("(receiver & 1)"),
+        out.contains("(slot0 & 1)"),
         "the condition should describe the mask test, not an earlier compare:\n{out}"
     );
 }
@@ -1423,7 +1423,7 @@ fn unmodelled_instruction_drops_its_destination_binding() {
     };
     let out = emit_pseudocode(&ir, &HashMap::new()).source;
     assert!(
-        !out.contains("= receiver;"),
+        !out.contains("= slot0;"),
         "a register overwritten by an unmodelled instruction must not keep its old value:\n{out}"
     );
 }
@@ -1606,17 +1606,17 @@ fn signed_extract_at_the_smi_position_is_named_untag() {
     };
     let compressed = extract("1", "0x1f");
     assert!(
-        compressed.contains("smiUntag(receiver)"),
+        compressed.contains("smiUntag(slot0)"),
         "width 31 at bit 1 is a Smi untag:\n{compressed}"
     );
     let uncompressed = extract("1", "0x3f");
     assert!(
-        uncompressed.contains("smiUntag(receiver)"),
+        uncompressed.contains("smiUntag(slot0)"),
         "width 63 at bit 1 is the same untag without compressed pointers:\n{uncompressed}"
     );
     let other = extract("0xc", "0x14");
     assert!(
-        other.contains("signedBitField(receiver, 0xc, 0x14)"),
+        other.contains("signedBitField(slot0, 0xc, 0x14)"),
         "any other position keeps the arithmetic rendering:\n{other}"
     );
 }
@@ -1644,7 +1644,7 @@ fn pointer_decompression_is_transparent() {
     };
     let out = emit_pseudocode(&ir, &HashMap::new()).source;
     assert!(
-        out.contains("= (receiver.f8);") || out.contains("= receiver.f8;"),
+        out.contains("= (slot0.f8);") || out.contains("= slot0.f8;"),
         "decompression should leave the field read alone:\n{out}"
     );
     assert!(
@@ -1715,11 +1715,11 @@ fn logical_and_arithmetic_right_shifts_render_differently() {
     };
     let out = emit_pseudocode(&ir, &HashMap::new()).source;
     assert!(
-        out.contains("(receiver >>> 4)"),
+        out.contains("(slot0 >>> 4)"),
         "a logical shift right is Dart's unsigned shift:\n{out}"
     );
     assert!(
-        out.contains("(receiver >> 4)"),
+        out.contains("(slot0 >> 4)"),
         "an arithmetic shift right is Dart's signed shift:\n{out}"
     );
 }
@@ -1856,19 +1856,19 @@ fn a_shifted_compare_operand_keeps_its_shift() {
     };
     let arithmetic = compare("asr #1");
     assert!(
-        arithmetic.contains("(param1 >> 1)"),
+        arithmetic.contains("(slot1 >> 1)"),
         "an arithmetic shift belongs in the comparison:\n{arithmetic}"
     );
     let logical = compare("lsr #32");
     assert!(
-        logical.contains("(param1 >>> 32)"),
+        logical.contains("(slot1 >>> 32)"),
         "a logical shift is Dart's unsigned shift:\n{logical}"
     );
     // An extend narrows and then scales; dropping the scale would render a
     // scaled index as unscaled, which is a wrong value rather than a missing one.
     let scaled = compare("sxtw #3");
     assert!(
-        scaled.contains("(signExtend(param1, 32) << 3)"),
+        scaled.contains("(signExtend(slot1, 32) << 3)"),
         "an extend must keep its shift amount:\n{scaled}"
     );
 }
@@ -2053,17 +2053,17 @@ fn computed_instruction_renderings_use_the_right_operands() {
         emit_pseudocode(&ir, &HashMap::new()).source
     };
     // x1, x2 and x3 are the first three Dart argument registers, so they read as
-    // `receiver`, `param1` and `param2`.
+    // `slot0`, `slot1` and `slot2`.
     for (instruction, expected) in [
-        ("neg x9, x1", "(-receiver)"),
-        ("mvn x9, x1", "(~receiver)"),
-        ("sxtw x9, w1", "signExtend(receiver, 32)"),
+        ("neg x9, x1", "(-slot0)"),
+        ("mvn x9, x1", "(~slot0)"),
+        ("sxtw x9, w1", "signExtend(slot0, 32)"),
         // Xd = Xa - Xn * Xm, with Xa the *last* operand.
-        ("msub x9, x1, x2, x3", "(param2 - (receiver * param1))"),
-        ("madd x9, x1, x2, x3", "(param2 + (receiver * param1))"),
-        ("sdiv x9, x1, x2", "signedDivide(receiver, param1)"),
-        ("umulh x9, x1, x2", "unsignedHighMultiply(receiver, param1)"),
-        ("ubfiz x9, x1, #1, #0x1e", "unsignedBitFieldInsert(receiver, 1, 0x1e)"),
+        ("msub x9, x1, x2, x3", "(slot2 - (slot0 * slot1))"),
+        ("madd x9, x1, x2, x3", "(slot2 + (slot0 * slot1))"),
+        ("sdiv x9, x1, x2", "signedDivide(slot0, slot1)"),
+        ("umulh x9, x1, x2", "unsignedHighMultiply(slot0, slot1)"),
+        ("ubfiz x9, x1, #1, #0x1e", "unsignedBitFieldInsert(slot0, 1, 0x1e)"),
     ] {
         let out = render(instruction);
         assert!(
@@ -2104,7 +2104,7 @@ fn a_conditional_value_composes_without_rebinding() {
         .unwrap_or_default()
         .to_string();
     assert!(
-        line.contains("((receiver != param1) ? 1 : 0)"),
+        line.contains("((slot0 != slot1) ? 1 : 0)"),
         "the conditional must be bracketed before composing:\n{out}"
     );
     // The subtraction has to apply to the whole conditional, not to its false arm.
@@ -2140,12 +2140,12 @@ fn a_shifted_arithmetic_operand_is_applied_not_commented() {
     };
     let scaled = compute("add x9, x1, w2, sxtw #2");
     assert!(
-        scaled.contains("(signExtend(param1, 32) << 2)"),
+        scaled.contains("(signExtend(slot1, 32) << 2)"),
         "an extend with a scale must keep both:\n{scaled}"
     );
     let logical = compute("orr x9, x1, x2, lsr #32");
     assert!(
-        logical.contains("(param1 >>> 0x20)") || logical.contains("(param1 >>> 32)"),
+        logical.contains("(slot1 >>> 0x20)") || logical.contains("(slot1 >>> 32)"),
         "a logical shift belongs in the expression:\n{logical}"
     );
     assert!(
@@ -2275,10 +2275,10 @@ fn a_runtime_stub_call_is_modelled_from_the_sdk_not_as_a_dart_call() {
         "binding it claims a value the SDK says does not exist:\n{out}"
     );
     // Anchored on the store rendering the value x9 held before the call. A bare
-    // `contains("receiver")` would match the signature line and pass even when
+    // `contains("slot0")` would match the signature line and pass even when
     // the call clobbers everything.
     assert!(
-        out.contains("reg4.f8 = receiver;"),
+        out.contains("reg4.f8 = slot0;"),
         "a shared stub preserves every register, so x9's binding survives:\n{out}"
     );
     assert!(

@@ -454,7 +454,7 @@ fn rewrites_dispatch_target_fallback_to_resolved_target_invoke() {
     assert!(
         artifact
             .source
-            .contains("receiver(); // indirect via: dispatchTarget"),
+            .contains("slot0(); // indirect via: dispatchTarget"),
         "resolved dispatch target should render as target(...) fallback:\n{}",
         artifact.source
     );
@@ -506,7 +506,7 @@ fn rewrites_dispatch_target_fallback_to_library_invoke_when_uri_is_known() {
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
         artifact.source.contains(
-            "flutter.widgets.invoke(receiver, \"package:flutter/src/widgets/heroes.dart\" /* pool[44] */); // framework:flutter.widgets.invoke [library], indirect via: dispatchTarget"
+            "flutter.widgets.invoke(slot0, \"package:flutter/src/widgets/heroes.dart\" /* pool[44] */); // framework:flutter.widgets.invoke [library], indirect via: dispatchTarget"
         ),
         "known library URI should rewrite dispatch fallback to semantic library invoke:\n{}",
         artifact.source
@@ -514,7 +514,7 @@ fn rewrites_dispatch_target_fallback_to_library_invoke_when_uri_is_known() {
     assert!(
         !artifact
             .source
-            .contains("dispatch.invoke(receiver, param1, \"package:flutter/src/widgets/heroes.dart\""),
+            .contains("dispatch.invoke(slot0, slot1, \"package:flutter/src/widgets/heroes.dart\""),
         "library-aware fallback should avoid plain dispatch.invoke:\n{}",
         artifact.source
     );
@@ -567,7 +567,7 @@ fn rewrites_generic_direct_call_to_owner_invoke_when_library_and_owner_markers_e
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
         artifact.source.contains(
-            "flutter.widgets.RenderErrorBox.invoke(receiver, \"package:flutter/src/widgets/heroes.dart\" /* pool[44] */, \"RenderErrorBox.\" /* pool[45] */); // framework:flutter.widgets.RenderErrorBox.invoke, was: sub_6141f8"
+            "flutter.widgets.RenderErrorBox.invoke(slot0, \"package:flutter/src/widgets/heroes.dart\" /* pool[44] */, \"RenderErrorBox.\" /* pool[45] */); // framework:flutter.widgets.RenderErrorBox.invoke, was: sub_6141f8"
         ),
         "generic direct calls with owner/library markers should rewrite to semantic owner invoke:\n{}",
         artifact.source
@@ -733,7 +733,7 @@ fn rewrites_dispatch_target_fallback_to_package_invoke_when_uri_is_known() {
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
         artifact.source.contains(
-            "spotube.models.connect.load.invoke(receiver, \"package:spotube/models/connect/load.dart\" /* pool[45] */); // package:spotube.models.connect.load.invoke [library], indirect via: dispatchTarget"
+            "spotube.models.connect.load.invoke(slot0, \"package:spotube/models/connect/load.dart\" /* pool[45] */); // package:spotube.models.connect.load.invoke [library], indirect via: dispatchTarget"
         ),
         "package URI should rewrite dispatch fallback to semantic package invoke:\n{}",
         artifact.source
@@ -741,7 +741,7 @@ fn rewrites_dispatch_target_fallback_to_package_invoke_when_uri_is_known() {
     assert!(
         !artifact
             .source
-            .contains("dispatch.invoke(receiver, param1, \"package:spotube/models/connect/load.dart\""),
+            .contains("dispatch.invoke(slot0, slot1, \"package:spotube/models/connect/load.dart\""),
         "package-aware fallback should avoid plain dispatch.invoke:\n{}",
         artifact.source
     );

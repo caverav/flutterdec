@@ -368,15 +368,23 @@ impl<'a> FuncEmitter<'a> {
         for arg in &arg_ids {
             let stats = Self::collect_ident_stats(&self.lines, arg);
             let idx = arg.trim_start_matches("arg").parse::<usize>().unwrap_or(0);
-            let base = if idx == 0 {
-                "receiver".to_string()
-            } else if stats.field_access >= 1 {
-                format!("obj{idx}")
-            } else if stats.arith_ops >= 2 && stats.field_access == 0 {
-                format!("value{idx}")
-            } else {
-                format!("param{idx}")
-            };
+            // `slot{idx}` and nothing more. The previous spelling named a
+            // parameter from usage counts - index 0 became `receiver`, one field
+            // access became `obj{idx}`, two arithmetic ops became `value{idx}` -
+            // which reads like a recovered source name while resting on evidence
+            // that cannot support it. One field access does not make a receiver
+            // an object, and no analysis here recovers a parameter's role.
+            //
+            // The index is the one earned fact: it is the position in
+            // `DART_ARGUMENT_REGISTERS`. It must survive verbatim, because a
+            // caller renders arguments from the same register file, so
+            // renumbering would relabel which register a reader is looking at.
+            //
+            // `stats` is still consumed below for the *type* hint, where a usage
+            // count is legitimate evidence: a guessed type is declared `dynamic`
+            // and stays checkable, while a guessed name is indistinguishable
+            // from a recovered one.
+            let base = format!("slot{idx}");
             let name = Self::unique_name(&base, &mut used);
             if name != *arg {
                 renames.insert(arg.clone(), name);
@@ -395,23 +403,27 @@ impl<'a> FuncEmitter<'a> {
         }
 
         let mut pool_i = 1usize;
-        let mut obj_i = 1usize;
-        let mut int_i = 1usize;
         let mut tmp_i = 1usize;
         for local in &local_ids {
             let stats = Self::collect_ident_stats(&self.lines, local);
+            // A name may describe where a value came from. It may not assert
+            // what the value *is*.
+            //
+            // `poolVal` and `resultTmp` survive because each states an observed
+            // fact about the assignment: this local was assigned from the object
+            // pool, or from a call result. `objTmp` and `intTmp` did not - they
+            // guessed a *type* from usage counts, where two field accesses made
+            // something an "obj" and two arithmetic operations made it an "int",
+            // and then rendered that guess as a name indistinguishable from a
+            // recovered one. A type guess belongs in the declared type, which is
+            // `dynamic` when unproven and stays checkable; it does not belong in
+            // an identifier, which a reader cannot check.
+            //
+            // Both collapse into the `tmp` counter, which claims nothing.
             let base = if stats.pool_assign > 0 {
                 let n = pool_i;
                 pool_i += 1;
                 format!("poolVal{n}")
-            } else if stats.field_access >= 2 {
-                let n = obj_i;
-                obj_i += 1;
-                format!("objTmp{n}")
-            } else if stats.arith_ops >= 2 && stats.field_access == 0 {
-                let n = int_i;
-                int_i += 1;
-                format!("intTmp{n}")
             } else if stats.call_assign > 0 {
                 let n = tmp_i;
                 tmp_i += 1;

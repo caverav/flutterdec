@@ -129,7 +129,7 @@ fn infers_local_names_and_int_types() {
         "stack local should be renamed:\n{out}"
     );
     assert!(
-        out.contains("int intTmp"),
+        out.contains("int tmp1;"),
         "arithmetic local should get int type:\n{out}"
     );
     assert!(
@@ -158,7 +158,7 @@ fn infers_receiver_type_from_semantic_call_path() {
     emitter.apply_name_and_type_hints("typedReceiver");
     let out = emitter.lines.join("\n");
     assert!(
-        out.contains("flutter.widgets.State receiver"),
+        out.contains("flutter.widgets.State slot0"),
         "semantic call path should type receiver as flutter State:\n{out}"
     );
 }
@@ -183,7 +183,7 @@ fn infers_receiver_type_from_semantic_comment_path() {
     emitter.apply_name_and_type_hints("typedFuture");
     let out = emitter.lines.join("\n");
     assert!(
-        out.contains("dart.async.Future param1"),
+        out.contains("dart.async.Future slot1"),
         "semantic intent comment should type Future receiver:\n{out}"
     );
 }
@@ -208,7 +208,7 @@ fn infers_receiver_type_from_package_owner_semantic_comment_path() {
     emitter.apply_name_and_type_hints("typedPackageReceiver");
     let out = emitter.lines.join("\n");
     assert!(
-        out.contains("spotube.models.connect.load.ConnectService param1"),
+        out.contains("spotube.models.connect.load.ConnectService slot1"),
         "package owner semantic comment should type receiver with package owner path:\n{out}"
     );
 }
@@ -233,7 +233,7 @@ fn infers_receiver_type_from_classid_receiver_pattern() {
     emitter.apply_name_and_type_hints("typedClassIdReceiver");
     let out = emitter.lines.join("\n");
     assert!(
-        out.contains("flutter.widgets.State receiver"),
+        out.contains("flutter.widgets.State slot0"),
         "classId(receiver), receiver pattern should infer typed receiver:\n{out}"
     );
 }
@@ -258,11 +258,11 @@ fn does_not_infer_receiver_type_from_constructor_semantic_path() {
     emitter.apply_name_and_type_hints("ctorNoReceiverType");
     let out = emitter.lines.join("\n");
     assert!(
-        out.contains("dynamic receiver"),
+        out.contains("dynamic slot0"),
         "constructor semantic paths should not force receiver typing:\n{out}"
     );
     assert!(
-        !out.contains("dart.typed_data.Int64List receiver"),
+        !out.contains("dart.typed_data.Int64List slot0"),
         "constructor semantic paths should not be treated as instance receiver calls:\n{out}"
     );
 }
@@ -411,7 +411,7 @@ fn infers_bool_types_from_if_condition_context() {
     emitter.apply_name_and_type_hints("typedConditionBools");
     let out = emitter.lines.join("\n");
     assert!(
-        out.contains("bool param1"),
+        out.contains("bool slot1"),
         "if-condition use should infer bool argument type:\n{out}"
     );
     assert!(
@@ -446,7 +446,7 @@ fn aliases_repeated_pool_mapped_literals() {
         "repeated pool literal should hoist to String alias:\n{out}"
     );
     assert!(
-        out.contains("dispatch.customAction(receiver, poolStr42, param2, param3);"),
+        out.contains("dispatch.customAction(slot0, poolStr42, slot2, slot3);"),
         "repeated pool literal callsites should use hoisted alias:\n{out}"
     );
     assert_eq!(
@@ -605,12 +605,12 @@ fn renames_receiver_argument_from_field_usage() {
     emitter.apply_name_and_type_hints("receiverHints");
     let out = emitter.lines.join("\n");
     assert!(
-        out.contains("dynamic receiver"),
-        "arg0 should be renamed to receiver:\n{out}"
+        out.contains("dynamic slot0"),
+        "arg0 should be renamed to slot0:\n{out}"
     );
     assert!(
         !out.contains("arg0.f"),
-        "field access should use receiver:\n{out}"
+        "field access should use slot0:\n{out}"
     );
 }
 
@@ -634,13 +634,13 @@ fn renames_receiver_argument_without_field_usage() {
     emitter.apply_name_and_type_hints("receiverDefault");
     let out = emitter.lines.join("\n");
     assert!(
-        out.contains("dynamic receiver"),
-        "arg0 should default to receiver:\n{out}"
+        out.contains("dynamic slot0"),
+        "arg0 should default to slot0:\n{out}"
     );
     assert!(!out.contains("arg0"), "arg0 should be replaced:\n{out}");
     assert!(
-        out.contains("dynamic param1"),
-        "non-inferred args should use param naming:\n{out}"
+        out.contains("dynamic slot1"),
+        "non-inferred args should use positional naming:\n{out}"
     );
 }
 
@@ -925,7 +925,7 @@ fn aliases_repeated_stack_slot_reads() {
         "repeated stack slot should be aliased into a prelude local:\n{out}"
     );
     assert!(
-        out.contains("fn_0x10(stackSlotNeg0x10, param1, param2, param3);"),
+        out.contains("fn_0x10(stackSlotNeg0x10, slot1, slot2, slot3);"),
         "stack slot call arguments should use alias:\n{out}"
     );
     assert_eq!(
