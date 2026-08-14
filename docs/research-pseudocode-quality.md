@@ -3595,3 +3595,50 @@ is a real trade and belongs in a contract with a falsifiable acceptance clause.
 Implementation cost, for whoever takes it: seven test files hardcode a literal signature string
 (`golden_and_parser.rs`, `control_flow_compaction.rs`, `alias_and_expr_cleanup.rs`, `helper_inlining.rs`,
 `readability_and_naming.rs` and two others), 44 occurrences in total.
+
+## R31. Heuristic names are indistinguishable from recovered ones
+
+Also not a result. Same shape as R30: a defect located, sized, and left unimplemented because the fix is a
+design decision rather than an edit.
+
+### The defect
+
+An emitted local carries a name that looks derived from the program, and often is not. Two families:
+
+- **Parameters** are named from usage counts at `passes/naming.rs:371-379`: index 0 becomes `receiver`,
+  `field_access >= 1` becomes `objN`, `arith_ops >= 2 && field_access == 0` becomes `valueN`, everything else
+  `paramN`.
+- **Locals** are named at `:402-424` on the same principle: `pool_assign > 0` becomes `poolValN`,
+  `field_access >= 2` becomes `objTmpN`, `arith_ops >= 2 && field_access == 0` becomes `intTmpN`, then
+  `resultTmpN`, then `tmpN`.
+
+One field access is enough to call something `obj`. Two arithmetic operations are enough to call it `value` or
+`intTmp`. These are reasonable reading aids and they are **not** recovered facts, but nothing in the output
+says which is which: a name derived from engine symbol metadata and a name derived from "this identifier
+appeared next to a `+` twice" render identically. The request's definition of noise is "constructs that admit
+the decompiler did not recover something"; these constructs quietly assert the opposite.
+
+Measured on 400 LocalSend functions: 9,609 of 9,613 emitted `final` declarations use a synthesized name.
+
+### Why this is not a one-line fix, and the trap waiting for whoever tries
+
+The obvious fix is a marker distinguishing heuristic names from recovered ones. Two constraints make it a
+contract-sized decision:
+
+**Volume.** It applies to essentially every declaration - tens of thousands per sample, far more than R29's
+entire annotation output. A per-declaration comment is a large readability cost paid on every line to flag
+something a convention could carry instead (for example, reserving a spelling that means "synthesized" and
+documenting it once, which is what `tmpN` already half-does by accident).
+
+**The counters are not comment-blind.** `pipeline/quality.rs:12` strips **only** the four annotation literals
+before counting, deliberately, so that pre-annotation reports stay bit-comparable. Everything else in a line -
+including any new comment form - is still counted. And `:18-24` counts `x0..x30` **and** `reg0..reg30` as
+identifier tokens. So the natural marker wording, something like `/* name synthesized from x8 */` or
+`/* unrecovered reg12 */`, would **inflate `raw_register_name_refs`**, the one counter this round requires to
+be byte-equal in both directions. Any marker must either avoid the `xN`, `regN`, `_block_` and `/* cond */`
+token spellings entirely, or be added to the strip span like the four annotation literals were. Verify with a
+counter diff, never by eye.
+
+That second constraint is the reusable lesson, and it generalises beyond this gap: on this project a comment
+is not automatically free. Adding one is a ruler change unless its span is stripped or its wording avoids every
+counted token.
