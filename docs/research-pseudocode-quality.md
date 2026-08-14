@@ -3162,3 +3162,325 @@ is conditional on a stated syntactic rule - a candidate must be a field access, 
 expression, or literal - and measures candidate *shape*, not the semantic correctness of the
 lifted expression behind it. Six sites were traced by hand to the arm writers in the emitted IR
 and all checked out, which is a spot-check rather than a proof.
+## R29. Round 2 annotation coverage, published per loss site
+
+R28 annotated one loss site. Round 2 extended the same annotate-do-not-materialise design to two
+more - loop-header entry and pre-call clobber - and, at the site R28 already covered, replaced a
+containment test with a whole-value whitelist. This section publishes what came out, per sample and
+per loss site.
+
+**The headline number went down.** Total annotations fell from 5,069 to 4,369 on LocalSend and from
+8,107 to 7,246 on Immich, and their share of raw register references fell from 3.72% to 3.20% and
+from 4.27% to 3.82%. Two new sites contributed 397 and 510 annotations; tightening the existing site
+removed 1,097 and 1,371. The second number is larger, so the round is a **net negative on annotation
+volume** and is recorded as one. What moved in the other direction is the honest-form share, below.
+
+### Identity of the two builds
+
+**Reference: commit `ff07207`, identified by commit plus the output it produces, not by a binary
+digest.** The digest this record once pinned for it is retracted as an identity test. The release
+binary embeds its build directory, `/tmp` is tmpfs and was erased by a power cut mid-round, the
+worktree that produced the pinned binary is gone, and a rebuild at the same path still hashed
+differently - so the digest was never reproducible and a mismatch on it is not evidence of a stale
+binary. A build is the reference iff it reproduces all of: 22,102 and 28,753 emitted files, 777,937
+and 1,074,372 rendered lines, longest physical line 2,660 and 2,490, and `raw_register_name_refs`
+136,378 and 189,696. The build used here reproduced every one.
+
+**Candidate: commit `a7119ab`**, release binary
+`b12271063c572646e4a3c68c3ab49c622ab1a546267e3b6278945e11e1bec5d2`. Unlike the reference, the
+candidate binary is reproducible in this worktree, so that digest is a usable pin and is published as
+one.
+
+The coverage ledger was first built by an earlier candidate build of the same feature set,
+`470334075c69fa30ad3fe35da1f971ef8f0c8962d000603556b7fef3d42b523d`. Every figure below was
+**re-derived at `a7119ab`** by a fresh full-scope run of both samples, and the resulting annotation
+span inventories are byte-identical to that earlier build's. Both artifact sets are retained and
+listed at the end.
+
+The ledger's schema has a `binaries.reference_sha256` field, and the re-derived ledger carries the
+string `ff07207-output-anchored-no-digest` in it rather than a hash. That is deliberate: the field
+predates the retraction, and filling it with any digest would republish an identity test this record
+no longer stands behind.
+
+### Method and units
+
+Corpus runs are full scope on both samples - `decompile <apk> --function-scope all
+--adapter-backend internal --split-records` plus the four permissive gate flags, no
+`--max-functions`. Serial, one sample at a time, `df -h /tmp` recorded before and after each run,
+stderr captured to its own file, `rc=0` asserted, and the manifest asserted at exactly 22,102 and
+28,753 files before anything downstream ran. A truncated run is void rather than weak, so the count
+is a precondition and not a reported figure. The permissive flags were separately shown to leave
+every emitted counter unchanged - they move the gate verdict only - so a permissive corpus is a valid
+source for these counts.
+
+The units are:
+
+- an **annotation** is one rendered comment span at one loss site on one output line. At most one
+  annotation survives per rendered register spelling, so a `regN` never carries a chain;
+- a **candidate element** is one rendered value inside such a span. A three-predecessor join whose
+  arms disagree three ways is **one** annotation and **three** elements, so the two columns are not
+  interchangeable and neither is a restatement of the other;
+- **omitted by cap** is one annotation dropped **whole**. There is no partial annotation: the
+  insertion path decides whole-or-nothing in one place per site.
+
+Two independent counting paths are published side by side rather than reconciled into one number.
+The audit stream (`FLUTTERDEC_PROV_AUDIT`, JSONL, one record per annotation plus per-function
+omission summaries) is the emitter's own account. The corpus scan
+(`scripts/scan-annotation-safety.py`) is a black-box parse of the emitted text that takes the four
+annotation literals from `helpers/annotation.rs` rather than restating them. The ledger reports both
+and their difference.
+
+Figures are **per sample, never averaged**. LocalSend is Dart 3.5 and Immich is Dart 3.12; a mean
+over two SDK generations describes neither.
+
+### The ledger schema, so a missing row reads differently from an absent measurement
+
+`coverage-ledger.json` is `schema_version` 1 and carries its own `fields` block. The fields this
+section reports, all counts of annotations except where stated:
+
+| field | meaning |
+|---|---|
+| `annotations` | annotations emitted at this loss site, from the audit stream |
+| `candidate_elements` | rendered candidate values across those annotations |
+| `omitted_by_cap` | annotations dropped whole by a budget |
+| `omitted_by_cap_annotation_budget` | of those, dropped by `MAX_JOIN_ANNOTATION` |
+| `omitted_by_cap_line_budget` | of those, dropped by the aggregate line budget `MAX_JOIN_ANNOTATED_LINE` |
+| `omitted_by_unsafe_span` | dropped by the structural safety gate, not by a budget |
+| `omitted_at_insertion` | the emitter's own count of every drop, counted at the drop |
+| `annotations_in_corpus` | annotations the corpus scan found for this site's literals |
+
+The distinction the schema is built to make:
+
+- a site that **was** measured and found empty publishes a full row of zeros. A site that was **not**
+  measured is absent from `loss_sites` entirely. The three site keys are fixed - `join`,
+  `loop_entry`, `call` - so an absent key is a gap in the measurement, never a zero;
+- an audit row whose site tag is none of those three lands in `unknown_loss_sites`, which is a
+  separate map and is `{}` on both samples. A mislabelled row therefore cannot hide inside a site
+  total;
+- `annotations` and `annotations_in_corpus` come from different sides of the emitter, and
+  `reconciliation.audit_rows_vs_corpus_scan` is their disagreement. A record that was emitted but
+  never placed would show up there as a nonzero, rather than as a smaller total that still looks
+  plausible;
+- `reconciliation.rows_vs_counter` compares the summed drop rows against `omitted_at_insertion`,
+  which the emitter counts at the drop itself and publishes per function. A row lost between emitter
+  and audit file surfaces here;
+- `reconciled` is true only when both reconciliation counts are zero and `unknown_loss_sites` is
+  empty. It is true on both samples.
+
+Whether a drop was whole rather than a truncation is deliberately **not** asked of the ledger. It is
+a property of the artifact, and the corpus scan answers it: a span cut short is either left without
+its terminator, reported as `unclosed`, or longer than a budget, reported as `over_span` and
+`over_cap`. All three are zero on both samples.
+
+### LocalSend (Dart 3.5), candidate `a7119ab`
+
+| loss site | annotations | candidate elements | `omitted_by_cap` | by annotation budget | by line budget | `omitted_by_unsafe_span` | `omitted_at_insertion` | `annotations_in_corpus` |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| `join` | 3,972 | 4,839 | **0** | 0 | 0 | 0 | 0 | 3,972 |
+| `loop_entry` | 390 | 390 | **0** | 0 | 0 | 0 | 0 | 390 |
+| `call` | 7 | 7 | **0** | 0 | 0 | 0 | 0 | 7 |
+| **total** | **4,369** | **5,236** | **0** | 0 | 0 | 0 | 0 | **4,369** |
+
+`unknown_loss_sites` `{}`, `audit_rows_vs_corpus_scan` 0, `rows_vs_counter` 0, `reconciled` true.
+Against `raw_register_name_refs` of 136,378: join 2.91%, loop entry 0.29%, call 0.005%, all sites
+3.20%.
+
+### Immich (Dart 3.12), candidate `a7119ab`
+
+| loss site | annotations | candidate elements | `omitted_by_cap` | by annotation budget | by line budget | `omitted_by_unsafe_span` | `omitted_at_insertion` | `annotations_in_corpus` |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| `join` | 6,736 | 8,340 | **0** | 0 | 0 | 0 | 0 | 6,736 |
+| `loop_entry` | 488 | 488 | **0** | 0 | 0 | 0 | 0 | 488 |
+| `call` | 22 | 22 | **0** | 0 | 0 | 0 | 0 | 22 |
+| **total** | **7,246** | **8,850** | **0** | 0 | 0 | 0 | 0 | **7,246** |
+
+`unknown_loss_sites` `{}`, `audit_rows_vs_corpus_scan` 0, `rows_vs_counter` 0, `reconciled` true.
+Against `raw_register_name_refs` of 189,696: join 3.55%, loop entry 0.26%, call 0.012%, all sites
+3.82%.
+
+Elements per annotation are 1.22 and 1.24 at the join site and exactly 1.00 at the other two, which
+is a property of those sites rather than a measurement: a loop header annotates its single entry
+value and a call annotates the one pre-call value.
+
+### Against the reference, per site
+
+The reference corpus is **not** annotation-free - R28's join annotation landed before `ff07207` - so
+the reference column is a real count, taken from the same corpus scan run against a `ff07207` build.
+
+| loss site | LocalSend `ff07207` | LocalSend `a7119ab` | Immich `ff07207` | Immich `a7119ab` |
+|---|---:|---:|---:|---:|
+| `join`, exhaustive (`= `) | 158 | 762 | 253 | 1,412 |
+| `join`, non-exhaustive | 4,911 | 3,210 | 7,854 | 5,324 |
+| `join`, total | 5,069 | 3,972 | 8,107 | 6,736 |
+| `loop_entry` | 0 | 390 | 0 | 488 |
+| `call` | 0 | 7 | 0 | 22 |
+| **all sites** | **5,069** | **4,369** | **8,107** | **7,246** |
+
+Two things happened at the join site and they pull opposite ways.
+
+**The population shrank, because the usefulness filter was wrong.** R28's filter was a containment
+test: `value.contains(".f")` accepted `(thread.f80 + 1)`, which is an arithmetic expression over a
+field, not a field access. It is now a whole-value whitelist of exactly three forms - literal, field
+access, call-shaped expression - decided by one function, `candidate_form` in
+`control_flow/structured.rs`, which all three loss sites classify through. An old-filter control
+built from the same tree isolates the cost of that change to the join site at 5,284 down to 3,972
+and 8,543 down to 6,736. *That intermediate pair is a worker-reported control figure whose corpus was
+not retained off tmpfs; the two end points are both traceable to retained scans, the middle is not,
+and it is labelled here rather than presented as if it were.*
+
+**The honest form got much more common.** An annotation renders `= ` only when the captured arms are
+exactly the join's own predecessors, and `possible (non-exhaustive):` otherwise. Capture now
+enumerates the join's predecessors and reads each candidate from that predecessor's retained
+block-end snapshot, so joins with three and four predecessors are covered at all and a complete one
+is recognised as complete. The exhaustive share of join annotations rose from 3.1% to 19.2% on
+LocalSend and from 3.1% to 21.0% on Immich.
+
+So the round bought a smaller set of annotations, a much larger fraction of which make a complete
+claim, plus coverage of two loss sites that previously had none. Whether that trade is worth 700 and
+861 annotations is not something these figures decide, and this section does not claim they do.
+
+### `omitted_by_cap` is a measured zero, not an unexercised counter
+
+A zero in a drop counter is the easiest number in this record to obtain dishonestly, so it carries
+two controls.
+
+**An uncapped control proves the zero.** The same tree rebuilt with both budgets at `usize::MAX`
+(binary `0ac03e7bebf0a160da489801c7f05b50f048f58ccbd82e0dc91745218298cc4a`) produced span inventories
+**byte-identical** to the candidate on both samples - re-checked here by diffing that control's
+retained inventory against the `a7119ab` re-derivation, not inherited from a report. If any
+annotation had been dropped by a budget, raising the budgets would have made it appear.
+
+**A lowered-cap pair proves the drop path executes end to end through the CLI.** Rebuilding with the
+budgets at 40 and 200 (candidate `be4b8bdc03b03eafb98a5c5d85ec6533a9f08f15e300077fac26c2dca27ec2a8`,
+its uncapped twin `46603e77ff70cddeff4c60203977597963f557c42739d5832ce08fa3f8aff744`):
+
+| | LocalSend annotations | LocalSend `omitted_by_cap` | Immich annotations | Immich `omitted_by_cap` |
+|---|---:|---:|---:|---:|
+| `join` | 582 | 5,238 (5,231 annotation / 7 line) | 1,144 | 8,611 (8,581 / 30) |
+| `loop_entry` | 388 | 4 (4 / 0) | 484 | 4 (4 / 0) |
+| `call` | 3 | 4 (4 / 0) | 7 | 15 (15 / 0) |
+| **total** | **973** | **5,246** (5,239 / 7) | **1,635** | **8,630** (8,600 / 30) |
+
+Rows and the emitter's own `omitted_at_insertion` agree exactly on both samples, and `unclosed` stays
+at zero, so lowering a budget drops whole annotations rather than truncating them.
+
+At the shipped budgets the margin is wide: the longest physical line is 2,660 and 2,490 against a
+3,000 line budget, and the longest annotation span is 124 and 101 against 512.
+
+Two counts in the lowered-cap ledger are reported and deliberately **not** failed, under
+`reported_not_failed`. `dropped_span_not_in_uncapped_corpus` is 643 and 772: every one of those comes
+from a function and register with a second dropped row, and the cause is the
+one-annotation-per-register-spelling rule - raising the budgets lets the first anchor take a
+coordinate the second would otherwise have taken. `dropped_span_also_emitted_elsewhere` is 6 and 29,
+which is not evidence of a false drop either, because spans are not unique: identical values at two
+joins render identical bytes. Truncation is answered by the scan, not by looking a span up in the
+corpus.
+
+### The counters did not move, which is the required result rather than a good one
+
+Annotation recovers nothing. It appends a comment after every analysis and rewrite have run, and the
+quality counters read the code span before it. So a delta in **either** direction in any
+`quality.json` counter would be contamination, and the target was zero deltas rather than a lower
+number.
+
+On both samples, candidate `a7119ab` and reference `ff07207` produce **byte-identical**
+`quality.json` files: sha256 `5ea32677b160e94633704bb9f95939dc5d63386602444fcefc240529d15ea56c` on
+LocalSend and `bd3255abb0eb1e461c2f0d45b4d541a0fa98ff2a6f3fe784a751242e17284cb0` on Immich, all keys
+equal, `raw_register_name_refs` 136,378 and 189,696 with a delta of 0 in both directions and
+`raw_arg_name_refs` 0 on both. Because the gate verdict is a total function of those four thresholded
+values, byte-identical `quality.json` files mean **no candidate-introduced gate failure at any
+threshold set**, not merely at the ones that were run.
+
+### `argN` is not a register spelling this feature has to cover
+
+Recorded because an earlier draft of R28 said it was, and a record that quietly drops a corrected
+claim teaches nothing.
+
+Candidates that are themselves unrecovered are rejected, and the authority for what counts as
+unrecovered is one function: `unrecovered_value_spellings` in `crates/flutterdec-decompiler/src/helpers/naming.rs`.
+It returns the canonical `xN`, the `named_register_alias` form (`regN`, with `framePointer` for 29
+and `returnAddress` for 30), and the `named_indirect_target` form (`dispatchTarget` for 30,
+`cachedTarget` for 2, `indirectTarget{n}` otherwise). **`argN` is not a member of that set and the
+record must not describe it as one.** `apply_name_and_type_hints` rewrites every argument register to
+a named form, so `argN` does not survive into final output and `raw_arg_name_refs` measures 0 on both
+samples. The reason it came up at all was comment contamination, before the counters were taught to
+read the code span, which is a different problem and is fixed separately.
+
+### A delimiter drift that never fired, and was one edit from six counters
+
+Worth an entry precisely because it produced no observable defect.
+
+At `ff07207` the join emitter built its span as `format!(" /*{}{} */", prefix, values.join(" | "))`,
+where `prefix` held only the label. The strip parser that hides annotations from the quality counters
+matched byte strings that included the delimiters. That is two independent spellings of one literal
+with no constant tying them together - they agreed only because the emitter's concatenation happened
+to produce the parser's bytes.
+
+The blast radius if they had ever disagreed: the strip parser stops recognising the span, and the
+whole annotation - label, every candidate value, both delimiters - is counted as emitted code by all
+six counters in `source_text_counters` (`crates/flutterdec-core/src/pipeline/quality.rs`). One reword
+of a label on either side would have done it, and the resulting counter movement would have looked
+like a change in the emitted program rather than like a parser miss.
+
+Removed by giving each literal a single definition that owns **every** delimiter - opener, the ` | `
+separator and the ` */` terminator, the latter two shared across all four literals in
+`helpers/annotation.rs`. The emitter renders through `render()` and both parsers recognise through
+`annotation_at()`, so no consumer holds its own copy. A constant holding only the label would not
+have fixed it, because both sides would still have hand-rolled the delimiters.
+
+Two hazards found while closing it, both cheap to re-trip:
+
+- a drift check that counts occurrences of a literal also counts the literal **quoted in a comment**,
+  so the file defining a protected literal must not spell it again in prose beside it;
+- the one-definition check counts occurrences of the *current* opener, so a hand-written copy of a
+  **superseded** spelling is invisible to it. A separate check for consumers hand-rolling a delimiter
+  is what catches that case; the two are not redundant.
+
+### The two-sample limitation, restated
+
+Every figure above is one sample's. There are two samples - LocalSend, Dart 3.5, and Immich, Dart
+3.12 - chosen as a deliberate two-generation control, and nothing here is averaged across them. A
+mechanism that holds on both is evidence about the SDK; one that holds on a single sample is a
+version artifact until a third disagrees.
+
+Neither sample is a random draw from any population of Flutter applications, so none of these counts
+is an estimate of anything beyond these two binaries. In particular the `call` site's 7 and 22
+annotations are small enough that a third sample could move them by an order of magnitude in either
+direction without contradicting anything published here.
+
+### Retained raw artifacts
+
+Every cell above comes from one of these. Digests are of the artifact, not of a corpus - the emitted
+corpora are hundreds of megabytes on tmpfs and were deleted after scanning, which is why the scans
+and the audit streams are what is kept.
+
+Re-derived at `a7119ab` for this section, under `~/.zenith/evidence/record-016/`:
+
+| artifact | what it carries |
+|---|---|
+| `run.sh` | the exact driver: flags, serial order, `df` preflight, `rc` and manifest assertions |
+| `A-{localsend,immich}-scan.json` | files, lines, longest line, longest span, annotations by literal, all four violation counts |
+| `A-{localsend,immich}-scan-spans.txt` | the full span inventory, one line per distinct span with its count |
+| `A-{localsend,immich}-quality.json` | every quality counter for the candidate |
+| `audit-{localsend,immich}.jsonl` | one record per annotation, plus the per-function omission summaries |
+| `coverage-ledger.json` | the two per-sample ledgers rebuilt from the above |
+| `A-{localsend,immich}.stderr` | both 0 bytes, which is the assertion the runs were clean |
+| `df.log` | `/tmp` free space before and after each run |
+| `evidence.sha256`, `candidate-binary.sha256` | digests of all of the above, and of the candidate binary |
+
+Retained from the round's own measurement, under `~/.zenith/evidence/cap-and-ledger/`:
+
+| artifact | what it carries |
+|---|---|
+| `R-{localsend,immich}-scan.json` | the `ff07207` reference scan - the reference column of the per-site table |
+| `R-{localsend,immich}-quality.json` | the reference quality counters the candidate is compared against |
+| `A2-{localsend,immich}-scan*.txt/json` | the wave-2 candidate scan, span inventories byte-identical to the `a7119ab` re-derivation |
+| `B-{localsend,immich}-scan-spans.txt` | the uncapped control's span inventory |
+| `C-{localsend,immich}-scan*.json` | the lowered-cap corpus, including every over-cap line |
+| `Bp-{localsend,immich}-scan*.json` | the lowered-cap pair's uncapped twin |
+| `audit-c-{localsend,immich}.jsonl` | the lowered-cap audit stream, source of the 5,246 and 8,630 drop rows |
+| `coverage-ledger-lowered-caps.json` | the lowered-cap ledger |
+| `binaries.sha256`, `evidence.sha256`, `run.sh`, `runc.sh`, `rescan.sh`, `df.log` | build identities, artifact digests and the drivers |
+
+The `quality.json` comparison and the gate derivation also have retained copies under
+`~/.zenith/evidence/gate-counters/` as `q-{cand,ref}-{ls,im}.quality.json`.
