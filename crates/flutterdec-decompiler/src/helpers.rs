@@ -2,6 +2,8 @@ use super::LiftState;
 use flutterdec_ir::FunctionIr;
 use std::collections::{BTreeSet, HashMap, HashSet};
 
+include!("helpers/annotation.rs");
+include!("helpers/provenance.rs");
 include!("helpers/registers.rs");
 include!("helpers/expr.rs");
 include!("helpers/instruction_parse.rs");

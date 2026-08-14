@@ -3084,8 +3084,16 @@ would have been the confidently-wrong-claim defect R18 and R21 both refuse.
 
 Candidates that are themselves unrecovered are rejected outright, so a reader never gets one
 unknown explained by two more. Enforcing that required a shared helper covering **every** spelling
-a bare register renders as - `regN`, canonical `xN`, `argN`, and the alias forms `framePointer`,
-`returnAddress`, `dispatchTarget`, `cachedTarget`, `indirectTarget{n}`. Four separate defects on
+a bare register renders as: canonical `xN`, the `named_register_alias` form (`regN`, or
+`framePointer` for 29 and `returnAddress` for 30), and the `named_indirect_target` form
+(`dispatchTarget` for 30, `cachedTarget` for 2, `indirectTarget{n}` otherwise).
+
+`argN` is deliberately **not** in that set, and the distinction is worth recording because an
+earlier draft of this section said it was. `argN` is rewritten to a named form by
+`apply_name_and_type_hints` for every argument register, so it does not survive into final output -
+`raw_arg_name_refs` measures 0 on both samples. The reason `argN` came up at all was comment
+contamination before the counters were taught to read the code span, which is a different problem
+and is fixed separately. Four separate defects on
 this branch came from consumers hand-rolling partial subsets of that list, so it now exists once.
 
 ### Neutrality, measured independently

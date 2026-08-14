@@ -7,3 +7,7 @@ license.workspace = true
 [dependencies]
 flutterdec-ir = { path = "../flutterdec-ir" }
 serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

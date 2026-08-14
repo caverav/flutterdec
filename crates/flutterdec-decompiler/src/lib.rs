@@ -40,15 +40,53 @@ struct LiftState {
     reg_values: HashMap<String, String>,
     selector_hints: HashMap<String, String>,
     last_cmp: Option<(String, String)>,
+    /// Per register, the value the most recent call dropped from it, and the
+    /// snapshot that value was read out of.
+    ///
+    /// This lives on `LiftState` rather than beside it because the emitter
+    /// clones and restores path state around branch arms and loop bodies. A
+    /// side table would keep an arm's clobber after the arm was rolled back and
+    /// annotate the fall-through path with a value that path never held.
+    call_clobbers: HashMap<String, CallClobber>,
+}
+
+/// What one call took from one register.
+#[derive(Debug, Clone)]
+struct CallClobber {
+    /// Address of the clobbering instruction, which is this site's key.
+    call_va: u64,
+    /// The value held immediately before the call, never after it.
+    value: String,
+    snapshot_id: String,
 }
 
 #[derive(Debug, Clone)]
 struct JoinCandidates {
+    /// The rendered list: the candidate values deduplicated by first occurrence
+    /// over `provenance`'s canonical order.
     values: Vec<String>,
+    /// Every actual predecessor contributed a usable candidate, so the rendered
+    /// list is an exhaustive claim rather than evidence. Rendered arity does not
+    /// decide this: dedup can collapse three covered predecessors to one value.
     complete: bool,
-    /// Exact candidate plus arm-end snapshot that produced it. This is audit
-    /// data; output only reads `values` in its pre-sorted order.
+    /// One attribution per emitted candidate, in ascending predecessor id, with
+    /// duplicates retained - two predecessors carrying the same value are one
+    /// rendered value and two attributions. This is audit data; output only reads
+    /// `values`.
     provenance: Vec<control_flow::JoinCandidateProvenance>,
+}
+
+/// The register state a block ended with, kept until the annotation pass can
+/// record the snapshot its candidates cite. Its index in `block_snapshots` is its
+/// identity, which is what the audit's `snapshot_id` is built from.
+///
+/// Every snapshot is retained rather than one per block: a block emitted twice
+/// would otherwise overwrite the state a recorded candidate was read from, and
+/// the audit would cite a snapshot whose contents no longer exist.
+#[derive(Debug, Clone)]
+struct BlockSnapshot {
+    block: usize,
+    reg_values: HashMap<String, String>,
 }
 
 /// A rendered join body and the candidate key it owns. This Vec follows the
@@ -61,6 +99,25 @@ struct JoinAnnotationAnchor {
     /// Render-time lines. Later passes only modify or add surrounding lines;
     /// final insertion finds surviving body lines in their render order.
     lines: Vec<String>,
+}
+
+/// One unresolved read of a register an ordinary call clobbered.
+///
+/// Captured when the line is rendered, because that is the only moment the
+/// register is known to be both unbound and unbound *by this call*. The site key
+/// the audit reports is read straight off this anchor, so a record cannot claim
+/// a site other than the one that produced its annotation.
+#[derive(Debug, Clone)]
+struct CallAnnotationAnchor {
+    call_va: u64,
+    /// Canonical name, e.g. `x9`.
+    register: String,
+    value: String,
+    snapshot_id: String,
+    /// Index of the line carrying the read, in the body as it was rendered. The
+    /// finished line is found by aligning that body against the finished one,
+    /// never by searching the finished text for something that looks like it.
+    line_index: usize,
 }
 
 struct FuncEmitter<'a> {
@@ -91,6 +148,39 @@ struct FuncEmitter<'a> {
     /// Join bodies in deterministic render order. Final insertion uses their
     /// pre-sorted candidate keys to avoid any side-table iteration.
     join_annotation_anchors: Vec<JoinAnnotationAnchor>,
+    /// One per unresolved read of a call-clobbered register, in render order.
+    /// The rendering anchor is the only source of this site's key, so the
+    /// audit cannot name a site the annotation was not emitted at.
+    call_annotation_anchors: Vec<CallAnnotationAnchor>,
+    /// The body exactly as it was rendered, kept so a call anchor's line can be
+    /// followed through the rewrites that come after. Taken once, when emission
+    /// ends.
+    render_lines: Vec<String>,
+    /// Monotonic within the function; names one pre-call snapshot.
+    snapshot_index: usize,
+    /// Set while a call statement is being rendered, so its own line is not
+    /// annotated with an earlier call's value under the words "this call".
+    rendering_call: bool,
+    call_provenance: FunctionProvenance,
+    /// End states of blocks that precede an annotatable join, in capture order.
+    /// A join is emitted after its predecessors, and the merge there drops the
+    /// bindings, so the state has to be kept rather than recomputed.
+    block_snapshots: Vec<BlockSnapshot>,
+    /// Audit rows the join annotations owe, kept per loss site so each site's
+    /// records stay in their own output order. Empty unless the run asked for an
+    /// audit.
+    join_provenance: FunctionProvenance,
+    /// Loop headers whose candidates were captured as a loop-entry site.
+    ///
+    /// Recorded at capture, not re-derived when the annotation is inserted: a
+    /// loop header with several predecessors is also a join, so the site is not a
+    /// property of the block id alone, and one classification with two readers
+    /// cannot disagree with itself the way two derivations can.
+    loop_annotation_sites: HashSet<usize>,
+    /// Audit rows the loop-entry annotations owe. Its own stream, because
+    /// `write_function_provenance` walks a stream in output order and a
+    /// concatenation of two sites' rows is not in output order.
+    loop_provenance: FunctionProvenance,
     emitted: HashSet<usize>,
     active_stack: Vec<usize>,
     inline_visits: HashMap<usize, usize>,
@@ -149,10 +239,17 @@ mod helpers;
 mod passes;
 
 use control_flow::Regions;
+use control_flow::{JOIN_LOSS_SITE, LOOP_LOSS_SITE};
 use helpers::*;
 
-/// Remove only join-value annotations from a source line. Other emitter
-/// comments remain observable to preserve the historical quality ruler.
+pub use helpers::{
+    AnnotationLiteral, ANNOTATION_LITERALS, EXHAUSTIVE_JOIN_ANNOTATION, LOOP_ENTRY_ANNOTATION,
+    NON_EXHAUSTIVE_JOIN_ANNOTATION, PRE_CALL_ANNOTATION,
+};
+
+/// Remove every value annotation from a source line, whichever loss site
+/// emitted it. Other emitter comments remain observable to preserve the
+/// historical quality ruler.
 pub fn strip_join_annotation_span(line: &str) -> String {
     let bytes = line.as_bytes();
     let mut out = String::with_capacity(line.len());
@@ -174,25 +271,23 @@ pub fn strip_join_annotation_span(line: &str) -> String {
             index = end.min(bytes.len());
             continue;
         }
-        let is_annotation = bytes[index..].starts_with(b" /* = ")
-            || bytes[index..].starts_with(b" /* possible (non-exhaustive): ");
-        if !is_annotation {
+        let Some(literal) = annotation_at(&bytes[index..]) else {
             out.push(bytes[index] as char);
             index += 1;
             continue;
-        }
-        let rest = &line[index + 3..];
-        let Some(end) = rest.find(" */") else {
+        };
+        let Some(span) = literal.span_len(&bytes[index..]) else {
             out.push_str(&line[index..]);
             break;
         };
-        index += 3 + end + 3;
+        index += span;
     }
     out
 }
 
-/// Return the code span before a join-value annotation. Analyses use this
-/// borrowed prefix; rewrites deliberately keep operating on complete lines.
+/// Return the code span before a value annotation, whichever loss site emitted
+/// it. Analyses use this borrowed prefix; rewrites deliberately keep operating
+/// on complete lines.
 pub(crate) fn code_before_annotation(line: &str) -> &str {
     let bytes = line.as_bytes();
     let mut index = 0usize;
@@ -211,9 +306,7 @@ pub(crate) fn code_before_annotation(line: &str) -> &str {
             }
             continue;
         }
-        if bytes[index..].starts_with(b" /* = ")
-            || bytes[index..].starts_with(b" /* possible (non-exhaustive): ")
-        {
+        if annotation_at(&bytes[index..]).is_some() {
             return &line[..index];
         }
         index += 1;
@@ -253,6 +346,27 @@ impl<'a> FuncEmitter<'a> {
             join_candidates: HashMap::new(),
             join_candidate_regs: HashMap::new(),
             join_annotation_anchors: Vec::new(),
+            call_annotation_anchors: Vec::new(),
+            render_lines: Vec::new(),
+            snapshot_index: 0,
+            rendering_call: false,
+            call_provenance: FunctionProvenance {
+                function_id: ir.function_id,
+                loss_site: CALL_LOSS_SITE,
+                ..FunctionProvenance::default()
+            },
+            block_snapshots: Vec::new(),
+            join_provenance: FunctionProvenance {
+                function_id: ir.function_id,
+                loss_site: JOIN_LOSS_SITE,
+                ..FunctionProvenance::default()
+            },
+            loop_annotation_sites: HashSet::new(),
+            loop_provenance: FunctionProvenance {
+                function_id: ir.function_id,
+                loss_site: LOOP_LOSS_SITE,
+                ..FunctionProvenance::default()
+            },
             emitted: HashSet::new(),
             active_stack: Vec::new(),
             inline_visits: HashMap::new(),
@@ -278,7 +392,24 @@ impl<'a> FuncEmitter<'a> {
         }
     }
 
-    fn emit(mut self) -> PseudocodeArtifact {
+    fn emit(self) -> PseudocodeArtifact {
+        self.emit_with_provenance().0
+    }
+
+    /// The artifact plus the audit rows its annotations owe, one set per loss
+    /// site.
+    ///
+    /// The rows leave here without an output coordinate. A program-level rewrite
+    /// still runs over the finished source and can move text on an annotated
+    /// line, so the coordinate is derived from the artifact after that, by
+    /// finding the annotation span itself.
+    ///
+    /// One set per site rather than one merged list, because that search is
+    /// monotonic: it resumes where the previous record was found, so identical
+    /// spans are told apart by order. Two sites' records interleave in the
+    /// output, so merging them into one list would leave the second site's rows
+    /// searching from a cursor already past their own annotations.
+    fn emit_with_provenance(mut self) -> (PseudocodeArtifact, Vec<FunctionProvenance>) {
         let fn_name = sanitize_name(&self.ir.name);
 
         // One parameter per register the Dart convention passes an argument in.
@@ -327,6 +458,10 @@ impl<'a> FuncEmitter<'a> {
             }
         }
 
+        // The rendered body, before a single rewrite touches it. Every call
+        // anchor indexes into this.
+        self.render_lines = self.lines.clone();
+
         self.lines.push("}".to_string());
         if !self.omitted_blocks.is_empty() {
             self.lines.push(String::new());
@@ -342,8 +477,9 @@ impl<'a> FuncEmitter<'a> {
         self.apply_name_and_type_hints(&fn_name);
         self.extract_minus_one_aliases();
         self.append_join_annotations();
+        self.append_call_annotations();
 
-        PseudocodeArtifact {
+        let artifact = PseudocodeArtifact {
             function_id: self.ir.function_id,
             function_name: fn_name,
             source: self.lines.join("\n"),
@@ -359,11 +495,24 @@ impl<'a> FuncEmitter<'a> {
             repeated_blocks: self.repeated_blocks,
             unlifted_instructions: self.unlifted_instructions,
             target_va_symbol_calls: self.target_va_symbol_calls,
-        }
+        };
+        (
+            artifact,
+            vec![
+                self.call_provenance,
+                self.join_provenance,
+                self.loop_provenance,
+            ],
+        )
     }
 
     fn push_line(&mut self, indent: usize, line: &str) {
-        self.lines.push(format!("{}{}", "  ".repeat(indent), line));
+        let line = format!("{}{}", "  ".repeat(indent), line);
+        // Before the line is owned by `lines`, because the anchor needs the
+        // register state as it stood when the read was rendered: after the push
+        // the emitter may bind, drop or restore any of it.
+        self.record_call_annotation_anchors(&line);
+        self.lines.push(line);
     }
 
     fn emit_omitted_path(&mut self, indent: usize, block_id: Option<usize>) {
@@ -459,17 +608,27 @@ pub fn emit_program_with_runtime_stubs(
     pool_semantic_hints: &HashMap<u64, PoolSemanticHint>,
     runtime_stubs: &HashMap<u64, RuntimeStubEffect>,
 ) -> Vec<PseudocodeArtifact> {
-    let mut artifacts = ir
+    let (mut artifacts, provenance): (Vec<_>, Vec<_>) = ir
         .iter()
         .map(|f| {
             let mut emitter = FuncEmitter::new(f, symbol_names);
             emitter.pool_value_hints = pool_value_hints.clone();
             emitter.pool_semantic_hints = pool_semantic_hints.clone();
             emitter.runtime_stubs = runtime_stubs.clone();
-            emitter.emit()
+            emitter.emit_with_provenance()
         })
-        .collect::<Vec<_>>();
+        .unzip();
     apply_program_level_generic_call_rewrites(&mut artifacts);
+    // After the rewrite, never before: it substitutes a callee name on lines
+    // that can also carry an annotation, which moves every column to its right.
+    // An audit coordinate taken earlier would point at the wrong byte.
+    if audit_enabled() {
+        for (artifact, provenance) in artifacts.iter().zip(&provenance) {
+            for site in provenance {
+                write_function_provenance(&artifact.source, site);
+            }
+        }
+    }
     artifacts
 }
 

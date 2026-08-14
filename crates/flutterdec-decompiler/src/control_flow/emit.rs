@@ -315,7 +315,23 @@ impl<'a> FuncEmitter<'a> {
         None
     }
 
+    /// Render one call.
+    ///
+    /// The wrapper exists for the flag. A line that renders a call may also read
+    /// a register an *earlier* call clobbered, and the annotation on it would
+    /// say "value before this call" next to a call that is not the one meant:
+    /// under the reading a reader would actually take, that is a false claim
+    /// about the register's value at the call they can see. The value is right
+    /// and the referent is not, which is the failure this site exists to avoid,
+    /// so those reads are left bare. The flag covers `emit_runtime_stub_call`
+    /// too, which renders from inside here.
     pub(super) fn emit_call(&mut self, ins_target: &str, va: u64, indent: usize) {
+        self.rendering_call = true;
+        self.emit_call_body(ins_target, va, indent);
+        self.rendering_call = false;
+    }
+
+    fn emit_call_body(&mut self, ins_target: &str, va: u64, indent: usize) {
         self.total_calls += 1;
         self.call_index += 1;
 
@@ -433,7 +449,7 @@ impl<'a> FuncEmitter<'a> {
                         receiver_note
                     ),
                 );
-                self.clobber_call_registers();
+                self.clobber_call_registers(va);
                 self.state.reg_values.insert("x0".to_string(), tname);
                 return;
             }
@@ -477,7 +493,7 @@ impl<'a> FuncEmitter<'a> {
             {
                 self.semantic_indirect_calls += 1;
                 self.target_va_symbol_calls += 1;
-                self.emit_runtime_stub_call(target_va, &tname, indent);
+                self.emit_runtime_stub_call(target_va, va, &tname, indent);
                 return;
             }
             if let Some(rewritten_name) = readable_call_name_from_intent(&named_target, intent.as_deref()) {
@@ -655,11 +671,11 @@ impl<'a> FuncEmitter<'a> {
                     }
                 }
             }
-        } else if let Some(va) = u64::from_str_radix(target.trim_start_matches("0x"), 16)
+        } else if let Some(stub_va) = u64::from_str_radix(target.trim_start_matches("0x"), 16)
             .ok()
-            .filter(|va| self.runtime_stubs.contains_key(va))
+            .filter(|stub_va| self.runtime_stubs.contains_key(stub_va))
         {
-            self.emit_runtime_stub_call(va, &tname, indent);
+            self.emit_runtime_stub_call(stub_va, va, &tname, indent);
             return;
         } else {
             let call_name = if let Some(hex) = target.strip_prefix("0x") {
@@ -711,7 +727,7 @@ impl<'a> FuncEmitter<'a> {
                 ),
             );
         }
-        self.clobber_call_registers();
+        self.clobber_call_registers(va);
         self.state.reg_values.insert("x0".to_string(), tname);
     }
 
@@ -727,7 +743,7 @@ impl<'a> FuncEmitter<'a> {
     /// runtime result, which is the mint allocator alone: `stackOverflow` comes
     /// back having defined nothing, and the type test preserves `R0` and answers
     /// in `R7`, so binding either would claim a value that does not exist.
-    fn emit_runtime_stub_call(&mut self, va: u64, tname: &str, indent: usize) {
+    fn emit_runtime_stub_call(&mut self, va: u64, call_va: u64, tname: &str, indent: usize) {
         let Some(effect) = self.runtime_stubs.get(&va).copied() else {
             return;
         };
@@ -742,7 +758,7 @@ impl<'a> FuncEmitter<'a> {
             self.push_line(indent, &format!("{name}();"));
         }
         if !effect.preserves_registers {
-            self.clobber_call_registers();
+            self.clobber_call_registers(call_va);
         }
         if effect.writes_result {
             self.state
@@ -762,7 +778,8 @@ impl<'a> FuncEmitter<'a> {
     /// happen and reads as resolved fact rather than as a gap. 2,497 such reads
     /// on one sample, against a single genuine load off NULL_REG in the whole
     /// binary.
-    fn clobber_call_registers(&mut self) {
+    fn clobber_call_registers(&mut self, call_va: u64) {
+        self.record_pre_call_snapshot(call_va);
         for reg in CALL_CLOBBERED_REGISTERS {
             self.state.reg_values.remove(*reg);
         }
@@ -772,6 +789,352 @@ impl<'a> FuncEmitter<'a> {
         // unmodelled flag writer and feeds the structurer.
         self.state.last_cmp = None;
         self.state.selector_hints.clear();
+    }
+
+    /// Capture what this call is about to take, immediately before it takes it.
+    ///
+    /// Ordering is the whole point. `clobber_call_registers` runs after the call
+    /// has been rendered, so reading the state any later reads it post-call;
+    /// this runs as its first statement, while every binding is still the one
+    /// the call site held on entry.
+    ///
+    /// The two negatives fall out of where this sits rather than out of a test
+    /// for them. A runtime stub whose `preserves_registers` holds never reaches
+    /// `clobber_call_registers` at all, and `CALL_CLOBBERED_REGISTERS` is the
+    /// volatile set from `constants_arm64.h`, so R19-R28 are absent from it.
+    /// Neither can be annotated even by mistake.
+    fn record_pre_call_snapshot(&mut self, call_va: u64) {
+        let snapshot_id = format!("{}:{}", self.ir.function_id, self.snapshot_index);
+        self.snapshot_index += 1;
+        // Fixed iteration order, so nothing here depends on hash seeding.
+        let mut registers: Vec<(String, String)> = Vec::new();
+        let mut clobbers: Vec<(String, String)> = Vec::new();
+        for reg in CALL_CLOBBERED_REGISTERS {
+            // Stale by construction otherwise: this call is the most recent one
+            // to touch the register, whether or not it held anything worth
+            // recording.
+            self.state.call_clobbers.remove(*reg);
+            let Some(value) = self
+                .state
+                .reg_values
+                .get(*reg)
+                .and_then(|value| Self::capped_expr(value))
+                .filter(|value| is_recordable_annotation_candidate(value))
+                .map(|value| value.to_string())
+            else {
+                continue;
+            };
+            // The snapshot keeps every recordable value, not only the ones a
+            // reader would be shown. A checker can then tell a value that was
+            // never there from one that was there and not rendered.
+            registers.push(((*reg).to_string(), value.clone()));
+            if is_informative_annotation_candidate(&value) {
+                clobbers.push(((*reg).to_string(), value));
+            }
+        }
+        if clobbers.is_empty() {
+            return;
+        }
+        for (reg, value) in clobbers {
+            self.state.call_clobbers.insert(
+                reg,
+                CallClobber {
+                    call_va,
+                    value,
+                    snapshot_id: snapshot_id.clone(),
+                },
+            );
+        }
+        if audit_enabled() {
+            self.call_provenance.snapshots.push(ValueSnapshot {
+                snapshot_id,
+                site_key: SiteKey(CALL_LOSS_SITE, call_va),
+                registers,
+            });
+        }
+    }
+
+    /// Note every unresolved read of a call-clobbered register on a line just
+    /// rendered.
+    ///
+    /// The read has to be seen here rather than reconstructed later: this is the
+    /// only moment at which the register is known to be unbound *and* known to
+    /// have been unbound by a specific call. A later scan over finished text
+    /// would find the same spelling and have to guess which call produced it.
+    pub(super) fn record_call_annotation_anchors(&mut self, line: &str) {
+        if self.state.call_clobbers.is_empty() || self.rendering_call {
+            return;
+        }
+        let bytes = line.as_bytes();
+        let mut index = 0usize;
+        let mut seen: Vec<String> = Vec::new();
+        while index < bytes.len() {
+            if !bytes[index].is_ascii_alphabetic() {
+                index += 1;
+                continue;
+            }
+            let start = index;
+            while index < bytes.len() && Self::is_ident_char(bytes[index] as char) {
+                index += 1;
+            }
+            if start > 0 && Self::is_ident_char(bytes[start - 1] as char) {
+                continue;
+            }
+            let Some(reg) = canonical_reg(&line[start..index]) else {
+                continue;
+            };
+            // A read that resolved is not a loss: the register is bound, the
+            // line carries a value, and there is nothing to report.
+            if self.state.reg_values.contains_key(&reg) {
+                continue;
+            }
+            if seen.contains(&reg) {
+                continue;
+            }
+            let Some(clobber) = self.state.call_clobbers.get(&reg) else {
+                continue;
+            };
+            seen.push(reg.clone());
+            self.call_annotation_anchors.push(CallAnnotationAnchor {
+                call_va: clobber.call_va,
+                register: reg,
+                value: clobber.value.clone(),
+                snapshot_id: clobber.snapshot_id.clone(),
+                line_index: self.lines.len(),
+            });
+        }
+    }
+
+    /// A line reduced to what the later passes cannot change: register spellings
+    /// canonicalised, every other identifier blanked, punctuation and numbers
+    /// kept.
+    ///
+    /// The rename pass rewrites `arg0` to `receiver` and `x9` to `reg9`, so
+    /// neither raw text nor a token list survives it. What does survive is the
+    /// shape, and that is enough to line the rendered body up against the
+    /// finished one.
+    fn line_alignment_signature(line: &str) -> String {
+        // `clean_expr` runs over every line between the two sequences and is
+        // idempotent, so normalising both sides through it lets a line that was
+        // only tidied still pair with itself.
+        let code = Self::clean_expr(strip_join_annotation_span(line));
+        let bytes = code.as_bytes();
+        let mut out = String::with_capacity(code.len());
+        let mut index = 0usize;
+        while index < bytes.len() {
+            if !bytes[index].is_ascii_alphabetic() && bytes[index] != b'_' {
+                out.push(bytes[index] as char);
+                index += 1;
+                continue;
+            }
+            let start = index;
+            while index < bytes.len() && Self::is_ident_char(bytes[index] as char) {
+                index += 1;
+            }
+            match canonical_register_spelling(&code[start..index]) {
+                Some(reg) => out.push_str(&reg),
+                None => out.push('#'),
+            }
+        }
+        out
+    }
+
+    /// Map each rendered line to the finished line it became, or to `None` when
+    /// a rewrite consumed it.
+    ///
+    /// Both sequences are the same body in the same order, because the passes
+    /// between them rewrite lines in place, drop some and add others but never
+    /// reorder. A resynchronising walk is therefore enough, and no pairing can
+    /// cross an earlier one. `WINDOW` bounds the resync, so a run of changes
+    /// longer than it costs one rendered line rather than a guess across it.
+    ///
+    /// Matching on content alone was the previous design and it was wrong. One
+    /// `if (reg2 <= 0) {` looks like every other, so an anchor rendered late in
+    /// a duplicated body matched the first such line in the function and
+    /// annotated a read whose register was dropped by a merge, not by the call
+    /// the record named. The value was genuine and the site was not.
+    fn align_rendered_lines(rendered: &[String], finished: &[String]) -> Vec<Option<usize>> {
+        const WINDOW: usize = 64;
+        let render_signatures: Vec<String> =
+            rendered.iter().map(|line| Self::line_alignment_signature(line)).collect();
+        let finish_signatures: Vec<String> =
+            finished.iter().map(|line| Self::line_alignment_signature(line)).collect();
+        let mut mapping = vec![None; rendered.len()];
+        let (mut left, mut right) = (0usize, 0usize);
+        while left < render_signatures.len() && right < finish_signatures.len() {
+            if render_signatures[left] == finish_signatures[right] {
+                mapping[left] = Some(right);
+                left += 1;
+                right += 1;
+                continue;
+            }
+            // Smallest combined skip that resynchronises, so a one-line
+            // deletion costs one line rather than dragging the rest along.
+            let mut resynced = None;
+            'search: for distance in 1..WINDOW {
+                for skip in 0..=distance {
+                    let (l, r) = (left + skip, right + distance - skip);
+                    if l < render_signatures.len()
+                        && r < finish_signatures.len()
+                        && render_signatures[l] == finish_signatures[r]
+                    {
+                        resynced = Some((l, r));
+                        break 'search;
+                    }
+                }
+            }
+            match resynced {
+                Some((l, r)) => {
+                    left = l;
+                    right = r;
+                }
+                // A rewrite this pass cannot see through. Drop the one rendered
+                // line and keep going rather than abandoning the rest of the
+                // function: both indices still only ever move forward, so the
+                // alignment stays monotone and no later pairing can cross an
+                // earlier one.
+                None => left += 1,
+            }
+        }
+        mapping
+    }
+
+    /// Append the pre-call value beside each unresolved read of a register an
+    /// ordinary call clobbered, and record what was appended.
+    ///
+    /// Runs after every analysis and rewrite, and after the join pass, so the
+    /// annotation binds nothing and a register already carrying a join
+    /// annotation is left alone rather than given a second, competing one.
+    ///
+    /// Every annotation goes on the line the read was actually rendered on,
+    /// found by alignment rather than by search: an anchor whose line no rewrite
+    /// left intact is dropped, because the alternative is putting a real value
+    /// beside a read that never lost it.
+    pub(super) fn append_call_annotations(&mut self) {
+        if self.call_annotation_anchors.is_empty() {
+            return;
+        }
+        let mapping = Self::align_rendered_lines(&self.render_lines, &self.lines);
+        let mut inserts: Vec<(usize, usize, String, usize)> = Vec::new();
+        let mut omissions: Vec<(u64, String, String, &'static str, usize, usize)> = Vec::new();
+        for (anchor_index, anchor) in self.call_annotation_anchors.iter().enumerate() {
+            let Some(Some(line_index)) = mapping.get(anchor.line_index).copied() else {
+                continue;
+            };
+            let line = &self.lines[line_index];
+            let Some(token_end) = Self::first_register_token_end(line, &anchor.register) else {
+                continue;
+            };
+            // The join pass ran first. Two annotations on one register spelling
+            // would read as a chain of independently valid values, so the site
+            // that got there first keeps it.
+            if annotation_at(&line.as_bytes()[token_end..]).is_some() {
+                continue;
+            }
+            if inserts
+                .iter()
+                .any(|(existing, at, _, _)| *existing == line_index && *at == token_end)
+            {
+                continue;
+            }
+            let annotation = PRE_CALL_ANNOTATION.render(std::slice::from_ref(&anchor.value));
+            let planned = inserts
+                .iter()
+                .filter(|(existing, _, _, _)| *existing == line_index)
+                .map(|(_, _, text, _)| text.len())
+                .sum::<usize>();
+            // Whole or not at all, and never without a row: a span cut to fit
+            // leaves an unclosed comment opener, and a drop nobody counted is
+            // coverage loss that no ledger column can show.
+            let omitted = if !rendered_annotation_is_safe(&annotation) {
+                Some(UNSAFE_SPAN)
+            } else if annotation.len() > MAX_JOIN_ANNOTATION {
+                Some(ANNOTATION_BUDGET)
+            } else if line.len() + planned + annotation.len() > MAX_JOIN_ANNOTATED_LINE {
+                Some(LINE_BUDGET)
+            } else {
+                None
+            };
+            if let Some(reason) = omitted {
+                omissions.push((
+                    anchor.call_va,
+                    anchor.register.clone(),
+                    annotation,
+                    reason,
+                    line.len(),
+                    planned,
+                ));
+                continue;
+            }
+            inserts.push((line_index, token_end, annotation, anchor_index));
+        }
+        for (call_va, register, rendered, reason, line_len, planned_len) in omissions {
+            record_cap_omission(
+                &mut self.call_provenance,
+                CapOmissionFacts {
+                    loss_site: CALL_LOSS_SITE,
+                    site_key: SiteKey(CALL_LOSS_SITE, call_va),
+                    register,
+                    rendered,
+                    budget: reason,
+                    line_len,
+                    planned_len,
+                },
+            );
+        }
+
+        // Applied from the end so an earlier insertion cannot move a later one's
+        // planned offset.
+        inserts.sort_unstable_by(|left, right| {
+            right.0.cmp(&left.0).then_with(|| right.1.cmp(&left.1))
+        });
+        for (line_index, at, annotation, anchor_index) in &inserts {
+            self.lines[*line_index].insert_str(*at, annotation);
+            if !audit_enabled() {
+                continue;
+            }
+            let anchor = &self.call_annotation_anchors[*anchor_index];
+            self.call_provenance.records.push(PendingAnnotationRecord {
+                loss_site: CALL_LOSS_SITE,
+                // Both keys come off the anchor that produced this insertion,
+                // never off a second walk of the IR, so the record cannot name a
+                // real site that is not the site this annotation was emitted at.
+                site_key: SiteKey(CALL_LOSS_SITE, anchor.call_va),
+                register: anchor.register.clone(),
+                rendered: annotation.clone(),
+                candidates: vec![CandidateAttribution {
+                    // One incoming path, and it is the clobbering call itself.
+                    path_key: SiteKey(CALL_LOSS_SITE, anchor.call_va),
+                    value: anchor.value.clone(),
+                    snapshot_id: anchor.snapshot_id.clone(),
+                }],
+            });
+        }
+        // Insertion order runs backwards; the audit is read in output order.
+        self.call_provenance.records.reverse();
+    }
+
+    /// Offset just past the first token on `line` that spells `register`.
+    fn first_register_token_end(line: &str, register: &str) -> Option<usize> {
+        let bytes = line.as_bytes();
+        let mut index = 0usize;
+        while index < bytes.len() {
+            if !bytes[index].is_ascii_alphabetic() {
+                index += 1;
+                continue;
+            }
+            let start = index;
+            while index < bytes.len() && Self::is_ident_char(bytes[index] as char) {
+                index += 1;
+            }
+            if start > 0 && Self::is_ident_char(bytes[start - 1] as char) {
+                continue;
+            }
+            if canonical_register_spelling(&line[start..index]).as_deref() == Some(register) {
+                return Some(index);
+            }
+        }
+        None
     }
 
     /// Predecessor map and per-block written registers, built once.
@@ -919,6 +1282,9 @@ impl<'a> FuncEmitter<'a> {
                         } else {
                             ins.target.clone()
                         };
+                        // A pool load rebinds the register, so whatever a call
+                        // took from it earlier no longer describes it.
+                        self.state.call_clobbers.remove(&dst);
                         self.state.reg_values.insert(dst, Self::clean_expr(rhs));
                     }
                 }

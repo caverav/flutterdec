@@ -142,7 +142,9 @@ fn uses_the_same_write_set_as_the_branch_merge() {
         name: "mergeWriteSet".to_string(),
         entry_va: 0x1000,
         blocks: vec![
-            blk(0, 0x1000, vec![ret(0x1000)], Vec::new()),
+            // A reachable diamond: capture enumerates the join's reachable
+            // predecessors, so an unreachable arm has none to enumerate.
+            blk(0, 0x1000, vec![cbz(0x1000, "x1", 0x1020)], vec![1, 2]),
             blk(1, 0x1010, vec![stmt(0x1010, "mov x0, #9")], vec![3]),
             blk(2, 0x1020, vec![stmt(0x1020, "mov x2, #1")], vec![3]),
             blk(3, 0x1030, vec![ret(0x1030)], Vec::new()),
@@ -151,21 +153,27 @@ fn uses_the_same_write_set_as_the_branch_merge() {
     let symbols = HashMap::new();
     let mut emitter = FuncEmitter::new(&ir, &symbols);
     emitter.regions = Regions::build(&ir);
-    let arm_state = LiftState {
-        reg_values: [("x0".to_string(), "9".to_string())].into_iter().collect(),
-        ..LiftState::default()
-    };
-    let unchanged_state = LiftState {
-        reg_values: [("x0".to_string(), "7".to_string())].into_iter().collect(),
-        ..LiftState::default()
-    };
-    let arm_ends = [(1, arm_state), (2, unchanged_state)];
-    let expected = emitter.registers_written_between(&[1, 2], Some(3));
-    emitter.record_join_candidates(3, &arm_ends);
+    for (block, value) in [(1usize, "9"), (2, "7")] {
+        emitter.block_snapshots.push(BlockSnapshot {
+            block,
+            reg_values: [("x0".to_string(), value.to_string())]
+                .into_iter()
+                .collect(),
+        });
+    }
+    let preds = emitter
+        .regions
+        .as_ref()
+        .expect("regions")
+        .predecessors(3)
+        .to_vec();
+    assert_eq!(preds, vec![1, 2], "the join's own predecessor set drives capture");
+    let expected = emitter.registers_written_between(&preds, Some(3));
+    emitter.record_join_candidates(3, &preds, &expected);
     assert_eq!(expected.contains("x0"), emitter.join_candidates.contains_key(&(3, "x0".to_string())));
     assert!(
         emitter.join_candidates.contains_key(&(3, "x0".to_string())),
-        "a register the merge drops must have arm-end evidence"
+        "a register the merge drops must have predecessor-end evidence"
     );
 }
 
@@ -179,29 +187,33 @@ fn marks_a_join_with_an_extra_predecessor_non_exhaustive() {
     };
     let symbols = HashMap::new();
     let mut emitter = FuncEmitter::new(&ir, &symbols);
-    let arms = [1, 2];
-    let preds = [1, 2, 4];
-    let complete = arms.len() == 2
-        && preds.len() == arms.len()
-        && arms.iter().all(|arm| preds.contains(arm));
-    assert!(!complete, "an extra predecessor makes the arm list non-exhaustive");
+    let preds = [1usize, 2, 4];
+    let provenance = crate::control_flow::ordered_join_candidate_provenance([
+        crate::control_flow::JoinCandidateProvenance {
+            pred: 1,
+            value: "9".to_string(),
+            snapshot_id: String::new(),
+        },
+        crate::control_flow::JoinCandidateProvenance {
+            pred: 2,
+            value: "7".to_string(),
+            snapshot_id: String::new(),
+        },
+    ]);
+    // Coverage of the actual predecessor set, not a count of arms: block 4 also
+    // reaches the join and contributed nothing, so the list is evidence.
+    let complete = preds
+        .iter()
+        .all(|pred| provenance.iter().any(|candidate| candidate.pred == *pred));
+    assert!(!complete, "an uncovered predecessor makes the evidence non-exhaustive");
     emitter.lines.push("  sink(x0);".to_string());
     emitter.join_candidates.insert(
         (3, "x0".to_string()),
         JoinCandidates {
-                    values: vec!["9".to_string(), "7".to_string()],
-                    complete,
-                    provenance: vec![
-                        crate::control_flow::JoinCandidateProvenance {
-                            arm: 0,
-                            value: "9".to_string(),
-                        },
-                        crate::control_flow::JoinCandidateProvenance {
-                            arm: 1,
-                            value: "7".to_string(),
-                        },
-                    ],
-                },
+            values: crate::control_flow::rendered_candidate_values(&provenance),
+            complete,
+            provenance,
+        },
     );
     emitter.join_annotation_anchors.push(JoinAnnotationAnchor {
         join: 3,
@@ -232,7 +244,11 @@ fn drops_an_over_cap_join_candidate_without_truncation() {
         JoinCandidates {
             values: vec![value.clone()],
             complete: true,
-            provenance: vec![crate::control_flow::JoinCandidateProvenance { arm: 0, value }],
+            provenance: vec![crate::control_flow::JoinCandidateProvenance {
+                pred: 0,
+                value,
+                snapshot_id: String::new(),
+            }],
         },
     );
     emitter.join_annotation_anchors.push(JoinAnnotationAnchor {
@@ -266,8 +282,9 @@ fn drops_structural_delimiter_candidates_before_annotation() {
                     values: vec!["obj1.f8 { unsafe".to_string()],
                     complete: true,
                     provenance: vec![crate::control_flow::JoinCandidateProvenance {
-                        arm: 0,
+                        pred: 0,
                         value: "obj1.f8 { unsafe".to_string(),
+                        snapshot_id: String::new(),
                     }],
                 },
     );
@@ -296,18 +313,50 @@ fn drops_uninformative_candidates_and_marks_remaining_evidence_non_exhaustive() 
     let mut emitter = FuncEmitter::new(&ir, &symbols);
     emitter.lines.push("  sink(x0);".to_string());
     let provenance = crate::control_flow::ordered_join_candidate_provenance([
-        crate::control_flow::JoinCandidateProvenance { arm: 0, value: "x7".to_string() },
-        crate::control_flow::JoinCandidateProvenance { arm: 0, value: "reg7".to_string() },
-        crate::control_flow::JoinCandidateProvenance { arm: 0, value: "cachedTarget".to_string() },
-        crate::control_flow::JoinCandidateProvenance { arm: 0, value: "framePointer".to_string() },
-        crate::control_flow::JoinCandidateProvenance { arm: 0, value: "returnAddress".to_string() },
-        crate::control_flow::JoinCandidateProvenance { arm: 0, value: "dispatchTarget".to_string() },
-        crate::control_flow::JoinCandidateProvenance { arm: 0, value: "indirectTarget9".to_string() },
-        crate::control_flow::JoinCandidateProvenance { arm: 1, value: "obj1.f8".to_string() },
+        crate::control_flow::JoinCandidateProvenance {
+                            pred: 0,
+                            value: "x7".to_string(),
+                            snapshot_id: String::new(),
+                        },
+        crate::control_flow::JoinCandidateProvenance {
+                            pred: 0,
+                            value: "reg7".to_string(),
+                            snapshot_id: String::new(),
+                        },
+        crate::control_flow::JoinCandidateProvenance {
+                            pred: 0,
+                            value: "cachedTarget".to_string(),
+                            snapshot_id: String::new(),
+                        },
+        crate::control_flow::JoinCandidateProvenance {
+                            pred: 0,
+                            value: "framePointer".to_string(),
+                            snapshot_id: String::new(),
+                        },
+        crate::control_flow::JoinCandidateProvenance {
+                            pred: 0,
+                            value: "returnAddress".to_string(),
+                            snapshot_id: String::new(),
+                        },
+        crate::control_flow::JoinCandidateProvenance {
+                            pred: 0,
+                            value: "dispatchTarget".to_string(),
+                            snapshot_id: String::new(),
+                        },
+        crate::control_flow::JoinCandidateProvenance {
+                            pred: 0,
+                            value: "indirectTarget9".to_string(),
+                            snapshot_id: String::new(),
+                        },
+        crate::control_flow::JoinCandidateProvenance {
+                            pred: 1,
+                            value: "obj1.f8".to_string(),
+                            snapshot_id: String::new(),
+                        },
     ]);
     let values = provenance
         .iter()
-        .filter(|candidate| crate::control_flow::is_informative_join_candidate(&candidate.value))
+        .filter(|candidate| crate::control_flow::is_informative_annotation_candidate(&candidate.value))
         .map(|candidate| candidate.value.clone())
         .collect::<Vec<_>>();
     // Every one of the seven register spellings is a bare unrecovered value, so the
@@ -359,8 +408,9 @@ fn annotates_each_rendered_register_site_once() {
                 values: vec!["7".to_string()],
                 complete: false,
                 provenance: vec![crate::control_flow::JoinCandidateProvenance {
-                    arm: join,
+                    pred: join,
                     value: "7".to_string(),
+                    snapshot_id: String::new(),
                 }],
             },
         );
@@ -414,45 +464,66 @@ fn does_not_annotate_a_register_that_the_join_did_not_drop() {
 fn join_candidate_order_ignores_source_insertion_order() {
     let forward = crate::control_flow::ordered_join_candidate_provenance([
         crate::control_flow::JoinCandidateProvenance {
-            arm: 0,
+            pred: 0,
             value: "taken".to_string(),
+            snapshot_id: String::new(),
         },
         crate::control_flow::JoinCandidateProvenance {
-            arm: 1,
+            pred: 1,
             value: "else".to_string(),
+            snapshot_id: String::new(),
         },
         crate::control_flow::JoinCandidateProvenance {
-            arm: 1,
+            pred: 1,
             value: "taken".to_string(),
+            snapshot_id: String::new(),
         },
     ]);
     let reverse = crate::control_flow::ordered_join_candidate_provenance([
         crate::control_flow::JoinCandidateProvenance {
-            arm: 1,
+            pred: 1,
             value: "taken".to_string(),
+            snapshot_id: String::new(),
         },
         crate::control_flow::JoinCandidateProvenance {
-            arm: 1,
+            pred: 1,
             value: "else".to_string(),
+            snapshot_id: String::new(),
         },
         crate::control_flow::JoinCandidateProvenance {
-            arm: 0,
+            pred: 0,
             value: "taken".to_string(),
+            snapshot_id: String::new(),
         },
     ]);
     assert_eq!(forward, reverse, "candidate provenance ordering is total");
+    // Ascending predecessor id, every attribution kept: the duplicate value on a
+    // second predecessor is collapsed only in the rendered list, and the audit is
+    // where it survives.
     assert_eq!(
         forward,
         vec![
             crate::control_flow::JoinCandidateProvenance {
-                arm: 1,
-                value: "else".to_string(),
+                pred: 0,
+                value: "taken".to_string(),
+                snapshot_id: String::new(),
             },
             crate::control_flow::JoinCandidateProvenance {
-                arm: 0,
+                pred: 1,
+                value: "else".to_string(),
+                snapshot_id: String::new(),
+            },
+            crate::control_flow::JoinCandidateProvenance {
+                pred: 1,
                 value: "taken".to_string(),
+                snapshot_id: String::new(),
             },
         ]
+    );
+    assert_eq!(
+        crate::control_flow::rendered_candidate_values(&forward),
+        vec!["taken".to_string(), "else".to_string()],
+        "the rendered list dedups by first occurrence over that same order"
     );
 }
 
@@ -740,6 +811,204 @@ fn repeats_a_shared_region_within_expanded_budget() {
         "the expanded budget should structure this shared tail:\n{}",
         artifact.source
     );
+}
+
+/// A loop header's merge drops the entry binding, and what the annotation may
+/// carry is the value held on **entry** - never the one the back edge brings
+/// round, which is not rendered at the header and would be a claim about a value
+/// that is not there.
+#[test]
+fn annotates_a_loop_header_with_the_entry_value_not_the_back_edge_value() {
+    let ir = FunctionIr {
+        function_id: 1020,
+        name: "loopEntryValue".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![
+            // Entry path binds 7.
+            blk(0, 0x1000, vec![stmt(0x1000, "mov x0, #7")], vec![1]),
+            // Loop header: reads x0, exits to block 3.
+            blk(
+                1,
+                0x1004,
+                vec![
+                    stmt(0x1004, "stur x0, [x29, #-0x10]"),
+                    cbz(0x1008, "x1", 0x3000),
+                ],
+                vec![2, 3],
+            ),
+            // Latch binds 9 and goes back round, so 9 is the back-edge value.
+            blk(2, 0x2000, vec![stmt(0x2000, "mov x0, #9")], vec![1]),
+            blk(3, 0x3000, vec![ret(0x3000)], Vec::new()),
+        ],
+    };
+
+    let artifact = emit_pseudocode(&ir, &HashMap::new());
+    let src = &artifact.source;
+    assert!(
+        src.contains(&format!("reg0{}", LOOP_ENTRY_ANNOTATION.render(&["7"]))),
+        "the loop header read must carry the entry value through the shared literal:\n{src}"
+    );
+    assert!(
+        !src.contains(&LOOP_ENTRY_ANNOTATION.render(&["9"]))
+            && !src.contains(&LOOP_ENTRY_ANNOTATION.render(&["7", "9"]))
+            && !src.contains(&LOOP_ENTRY_ANNOTATION.render(&["9", "7"])),
+        "the back-edge value is not rendered at the header and must not be claimed:\n{src}"
+    );
+    assert!(
+        !src.contains(EXHAUSTIVE_JOIN_ANNOTATION.open())
+            && !src.contains(NON_EXHAUSTIVE_JOIN_ANNOTATION.open()),
+        "a loop header is a loop site, so no join form may appear:\n{src}"
+    );
+}
+
+/// The precedence rule and per-predecessor capture, in one fixture. Block 3 is a
+/// loop header **and** a join - two entry arms plus a back edge, the committed
+/// `loopTail` shape - and the two arms disagree.
+///
+/// This is what a capture reading the merged pre-loop state cannot do:
+/// `render_loop` merges before the header renders, so by then the disagreeing
+/// binding is already gone and nothing would be annotated at all. It is also what
+/// the exhaustive join form must not claim here.
+#[test]
+fn annotates_a_multi_entry_loop_header_with_every_entry_value() {
+    let artifact = emit_pseudocode(&multi_entry_loop_header_ir(), &HashMap::new());
+    let src = &artifact.source;
+    assert_eq!(
+        src.matches("while (true) {").count(),
+        1,
+        "the loop must be structured for this site to exist:\n{src}"
+    );
+    assert!(
+        src.contains(&format!("reg0{}", LOOP_ENTRY_ANNOTATION.render(&["7", "9"]))),
+        "both entry arms' values must render under the N-ary loop form, \
+         in ascending predecessor order:\n{src}"
+    );
+    assert!(
+        !src.contains(EXHAUSTIVE_JOIN_ANNOTATION.open()),
+        "the exhaustive join form asserts a present value and is forbidden at a \
+         loop header, whatever its predecessor count:\n{src}"
+    );
+    assert!(
+        !src.contains(NON_EXHAUSTIVE_JOIN_ANNOTATION.open()),
+        "a loop header that is also a join is claimed by the loop site alone:\n{src}"
+    );
+    assert!(
+        !src.contains(&LOOP_ENTRY_ANNOTATION.render(&["11"])),
+        "11 is the back-edge value, which the header does not render:\n{src}"
+    );
+}
+
+/// Block 3 is reached from block 1 holding 7 and block 2 holding 9, and its loop
+/// body rebinds the same register to 11 - so the register is dropped at the
+/// header, both entry values are true, and the back-edge value is neither.
+fn multi_entry_loop_header_ir() -> FunctionIr {
+    FunctionIr {
+        function_id: 1021,
+        name: "loopTailEntryValues".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![
+            blk(0, 0x1000, vec![cbz(0x1000, "x1", 0x2000)], vec![1, 2]),
+            blk(1, 0x1004, vec![stmt(0x1004, "mov x0, #7")], vec![3]),
+            blk(2, 0x2000, vec![stmt(0x2000, "mov x0, #9")], vec![3]),
+            // Loop header reached from both arms, reading the register they wrote.
+            blk(
+                3,
+                0x3000,
+                vec![
+                    stmt(0x3000, "stur x0, [x29, #-0x10]"),
+                    cbz(0x3004, "x3", 0x5000),
+                ],
+                vec![4, 5],
+            ),
+            // Latch: rebinds the register, so the header's merge drops it.
+            blk(
+                4,
+                0x3008,
+                vec![
+                    stmt(0x3008, "mov x0, #11"),
+                    stmt(0x300c, "sub x3, x3, #1"),
+                ],
+                vec![3],
+            ),
+            blk(5, 0x5000, vec![ret(0x5000)], Vec::new()),
+        ],
+    }
+}
+
+/// Every candidate the loop site emits must be present in the recorded end state
+/// of the entry predecessor it is attributed to - not in a sibling arm's state,
+/// and not in the merged pre-loop state, which no longer holds it.
+///
+/// The audit rows are asserted in-process here. The corpus checker runs the same
+/// rule over the emitted file; this is the version that fails in CI.
+#[test]
+fn every_loop_entry_candidate_traces_to_its_own_predecessor_snapshot() {
+    let ir = multi_entry_loop_header_ir();
+    let symbols = HashMap::new();
+    let (_, provenance) = FuncEmitter::new(&ir, &symbols).emit_with_provenance();
+    let loop_site: Vec<&FunctionProvenance> = provenance
+        .iter()
+        .filter(|site| {
+            site.records
+                .iter()
+                .any(|r| r.loss_site == crate::control_flow::LOOP_LOSS_SITE)
+        })
+        .collect();
+    assert_eq!(
+        loop_site.len(),
+        1,
+        "the loop site owns exactly one audit stream"
+    );
+    let site = loop_site[0];
+    let records: Vec<&PendingAnnotationRecord> = site
+        .records
+        .iter()
+        .filter(|record| record.register == "x0")
+        .collect();
+    assert_eq!(
+        records.len(),
+        1,
+        "one record per emitted annotation, never one per candidate: {:?}",
+        site.records
+    );
+    let record = records[0];
+    assert_eq!(record.site_key, SiteKey("loop", 3));
+    assert_eq!(
+        record
+            .candidates
+            .iter()
+            .map(|c| (c.path_key.clone(), c.value.clone()))
+            .collect::<Vec<_>>(),
+        vec![
+            (SiteKey("block", 1), "7".to_string()),
+            (SiteKey("block", 2), "9".to_string()),
+        ],
+        "one attribution per entry predecessor, in ascending predecessor id"
+    );
+    for candidate in &record.candidates {
+        let snapshot = site
+            .snapshots
+            .iter()
+            .find(|snapshot| snapshot.snapshot_id == candidate.snapshot_id)
+            .unwrap_or_else(|| {
+                panic!("no recorded snapshot for {}", candidate.snapshot_id)
+            });
+        assert_eq!(
+            snapshot.site_key, candidate.path_key,
+            "the snapshot must be the end state of the path the candidate claims"
+        );
+        assert!(
+            snapshot
+                .registers
+                .iter()
+                .any(|(reg, value)| reg == &record.register && value == &candidate.value),
+            "`{}` is not the value `{}` held in {}: {:?}",
+            candidate.value,
+            record.register,
+            candidate.snapshot_id,
+            snapshot.registers
+        );
+    }
 }
 
 /// The budget exists so a loop is never duplicated.

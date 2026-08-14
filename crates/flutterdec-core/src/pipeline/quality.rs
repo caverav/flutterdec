@@ -1,3 +1,38 @@
+/// The six counters read out of one line of emitted source, in the fixed order
+/// `[block_helper_refs, raw_arg_name_refs, raw_register_name_refs,
+/// placeholder_cond_markers, omitted_path_markers, loop_backedge_markers]`.
+///
+/// Extracted so a fixture can score an annotated line through exactly the code
+/// the pipeline runs. A fixture with its own copy of the counting rules proves
+/// only that the copy agrees with itself.
+fn source_text_counters(line: &str) -> [usize; 6] {
+    // Value annotations are reader-facing evidence, not emitted code. Strip
+    // only their exact spans: all historical comments stay in the ruler, so
+    // pre-annotation reports remain bit-for-bit comparable.
+    let code = flutterdec_decompiler::strip_join_annotation_span(line);
+    let mut arg_refs = 0usize;
+    for n in 0..=7 {
+        arg_refs += count_ident_token(&code, &format!("arg{n}"));
+    }
+    let mut register_refs = 0usize;
+    for n in 0..=30 {
+        // `xN` is the disassembly spelling; the emitter renders an unresolved
+        // register through `named_register_alias`, which yields `regN`. Counting
+        // only `xN` reported zero on every real binary while thousands of `regN`
+        // were being emitted.
+        register_refs += count_ident_token(&code, &format!("x{n}"));
+        register_refs += count_ident_token(&code, &format!("reg{n}"));
+    }
+    [
+        code.matches("_block_").count(),
+        arg_refs,
+        register_refs,
+        code.matches("/* cond */").count(),
+        code.matches("omitted complex path").count(),
+        code.matches("loop back-edges: ").count(),
+    ]
+}
+
 fn quality_from_artifacts(
     model: &ProgramModel,
     pseudo: &[PseudocodeArtifact],
@@ -42,26 +77,15 @@ fn quality_from_artifacts(
         repeated_blocks += p.repeated_blocks;
         unlifted_instructions += p.unlifted_instructions;
         target_va_symbol_calls += p.target_va_symbol_calls;
-        // Join annotations are reader-facing evidence, not emitted code. Strip
-        // only their exact spans: all historical comments stay in the ruler, so
-        // pre-annotation reports remain bit-for-bit comparable.
         for line in p.source.lines() {
-            let code = flutterdec_decompiler::strip_join_annotation_span(line);
-            block_helper_refs += code.matches("_block_").count();
-            placeholder_cond_markers += code.matches("/* cond */").count();
-            omitted_path_markers += code.matches("omitted complex path").count();
-            loop_backedge_markers += code.matches("loop back-edges: ").count();
-            for n in 0..=7 {
-                raw_arg_name_refs += count_ident_token(&code, &format!("arg{n}"));
-            }
-            for n in 0..=30 {
-                // `xN` is the disassembly spelling; the emitter renders an
-                // unresolved register through `named_register_alias`, which yields
-                // `regN`. Counting only `xN` reported zero on every real binary
-                // while thousands of `regN` were being emitted.
-                raw_register_name_refs += count_ident_token(&code, &format!("x{n}"));
-                raw_register_name_refs += count_ident_token(&code, &format!("reg{n}"));
-            }
+            let [helpers, args, registers, conds, omitted, backedges] =
+                source_text_counters(line);
+            block_helper_refs += helpers;
+            raw_arg_name_refs += args;
+            raw_register_name_refs += registers;
+            placeholder_cond_markers += conds;
+            omitted_path_markers += omitted;
+            loop_backedge_markers += backedges;
         }
     }
 
@@ -129,8 +153,16 @@ mod quality_tests {
 
     #[test]
     fn annotation_span_does_not_contribute_to_source_counters() {
-        let source = "sink(reg0 /* = arg3 | _block_7() */); /* cond */ // omitted complex path; loop back-edges: x1";
-        let code = flutterdec_decompiler::strip_join_annotation_span(source);
+        // Built by the shared literal rather than spelled here: a fixture that
+        // hand-writes the span it is testing keeps passing on its own copy after
+        // the emitter has moved, which is the drift this whole boundary exists
+        // to prevent.
+        let annotation = flutterdec_decompiler::EXHAUSTIVE_JOIN_ANNOTATION
+            .render(&["arg3", "_block_7()"]);
+        let source = format!(
+            "sink(reg0{annotation}); /* cond */ // omitted complex path; loop back-edges: x1"
+        );
+        let code = flutterdec_decompiler::strip_join_annotation_span(&source);
         assert_eq!(count_ident_token(&code, "reg0"), 1);
         assert_eq!(count_ident_token(&code, "arg3"), 0);
         assert_eq!(code.matches("_block_").count(), 0);
@@ -143,5 +175,55 @@ mod quality_tests {
     fn stripping_is_a_noop_for_pre_annotation_source() {
         let source = "sink(reg0 /* cond */); // 3 instructions not lifted: arg2 _block_9";
         assert_eq!(flutterdec_decompiler::strip_join_annotation_span(source), source);
+    }
+
+    /// One fixture per annotation literal, driven off the shared table so a
+    /// fifth literal cannot be added without being scored here. Each annotation
+    /// carries a sentinel for every source counter that reads identifiers -
+    /// `arg0`, `_block_`, a bare register spelling - and the line carries an
+    /// unrelated `/* cond */` outside the span. Annotation recovers nothing, so
+    /// all six counters must read exactly what the un-annotated line reads: a
+    /// delta in either direction is contamination.
+    #[test]
+    fn no_annotation_literal_moves_a_source_counter() {
+        let bare = "  sink(reg0); /* cond */ // omitted complex path; loop back-edges: x1";
+        let expected = source_text_counters(bare);
+        for literal in flutterdec_decompiler::ANNOTATION_LITERALS {
+            for values in [
+                vec!["arg0"],
+                vec!["arg0", "_block_7()"],
+                vec!["arg0", "_block_7()", "reg9"],
+            ] {
+                let annotated = bare.replacen("reg0", &format!("reg0{}", literal.render(&values)), 1);
+                assert_eq!(
+                    source_text_counters(&annotated),
+                    expected,
+                    "annotation `{}` moved a source counter in `{annotated}`",
+                    literal.open()
+                );
+            }
+        }
+        assert_eq!(
+            expected,
+            [0, 0, 2, 1, 1, 1],
+            "the fixture must actually exercise the counters it pins"
+        );
+    }
+
+    /// An unrelated comment is not evidence and must survive: the strip parser
+    /// keys on the annotation openers alone, so the historical ruler still sees
+    /// every comment the emitter wrote before annotation existed.
+    #[test]
+    fn an_unrelated_cond_comment_survives_stripping() {
+        let source = "  if (/* cond */) { sink(reg0 /* pool[7] */); } // loop back-edges: x1";
+        assert_eq!(
+            flutterdec_decompiler::strip_join_annotation_span(source),
+            source
+        );
+        assert_eq!(
+            source_text_counters(source)[3],
+            1,
+            "the cond marker must still count"
+        );
     }
 }

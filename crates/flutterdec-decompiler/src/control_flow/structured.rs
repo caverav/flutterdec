@@ -40,59 +40,228 @@ enum Flow {
 // The side table is lookup-only; candidate text is sorted before output, so no map or
 // set iteration reaches output.
 
-/// Exact provenance of one candidate carried from an arm-end snapshot.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct JoinCandidateProvenance {
-    pub arm: usize,
-    pub value: String,
+/// The site tag every key this site writes carries. One constant, so the loss
+/// site's name and its key space cannot drift apart, and the three key spaces
+/// stay disjoint by construction rather than by hoping block-id ranges never meet
+/// an instruction address.
+pub(crate) const JOIN_LOSS_SITE: &str = "join";
+
+/// The tag of a candidate's `path_key`: an incoming path at a join is one
+/// predecessor block. Deliberately not the site's own tag - a predecessor is not
+/// a join, and labelling it one would claim a construct that is not there.
+const JOIN_PATH_KIND: &str = "block";
+
+/// The loop-header site's name in the coverage ledger. A loop header reached
+/// from several arms is also a join, and loop semantics win: the back-edge value
+/// is never rendered at the header, so join semantics would eventually claim a
+/// value that is not there.
+pub(crate) const LOOP_LOSS_SITE: &str = "loop_entry";
+
+/// The site tag of a loop-entry `site_key`, which is `("loop", header)`. Distinct
+/// from `JOIN_LOSS_SITE` so a block that is both a header and a join lands in one
+/// key space rather than being claimed twice at one output coordinate.
+const LOOP_SITE_TAG: &str = "loop";
+
+/// Whether the audit rows are worth building at all.
+///
+/// A run that did not ask for an audit builds none: the rows are kept per
+/// function until the artifact is final, and the corpus run that measures emitted
+/// output must not carry instrumentation it never reads. Test builds always
+/// build them, so the rows themselves are assertable without an audit directory
+/// and without a process-wide environment variable that whichever test ran first
+/// would have decided for everyone.
+fn annotation_provenance_wanted() -> bool {
+    audit_enabled() || cfg!(test)
 }
 
-/// Keep candidate text and its producing arm together while sorting, so the
-/// provenance audit cannot accidentally inspect a value from another snapshot.
+/// One annotation the emitter has decided to insert: where it goes, what it
+/// says, and the site it came from. The site travels with the insertion so the
+/// audit cannot derive it a second time and disagree.
+struct PlannedJoinAnnotation {
+    line: usize,
+    /// Byte offset the annotation is inserted at, which is the end of the
+    /// register token it describes.
+    at: usize,
+    text: String,
+    join: usize,
+    register: String,
+}
+
+/// One annotation the insertion path decided not to insert, before the site it
+/// belongs to is looked up.
+///
+/// The block id is kept rather than the site tag: a loop header is also a join
+/// by predecessor count, and the classification made at capture is the single
+/// reader of that difference everywhere else in this file.
+struct PlannedCapOmission {
+    join: usize,
+    register: String,
+    rendered: String,
+    reason: &'static str,
+    line_len: usize,
+    planned_len: usize,
+}
+
+/// Exact provenance of one candidate: the predecessor whose end snapshot held
+/// it, and the id of that snapshot.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct JoinCandidateProvenance {
+    /// The predecessor block this value came from. Not an arm root: an arm root
+    /// is not the block whose end state produced the value, and a join can have
+    /// predecessors that are no branch arm at all.
+    pub pred: usize,
+    pub value: String,
+    pub snapshot_id: String,
+}
+
+/// The canonical candidate order: ascending predecessor id.
+///
+/// One order shared by the audit array and the rendered list is what makes the
+/// two comparable. Each deduplicates by first occurrence over it, so without a
+/// shared order they would dedup independently and disagree while both being
+/// stable across runs - which a cross-run byte-identity check cannot catch.
+/// Value breaks the tie so the order is total whatever the input order was.
 pub(crate) fn ordered_join_candidate_provenance(
     values: impl IntoIterator<Item = JoinCandidateProvenance>,
 ) -> Vec<JoinCandidateProvenance> {
     let mut ordered = values.into_iter().collect::<Vec<_>>();
     ordered.sort_by(|left, right| {
-        left.value
-            .cmp(&right.value)
-            .then_with(|| left.arm.cmp(&right.arm))
+        left.pred
+            .cmp(&right.pred)
+            .then_with(|| left.value.cmp(&right.value))
     });
-    ordered.dedup_by(|left, right| left.value == right.value);
     ordered
 }
 
-/// A candidate is useful only when it identifies a field, call result, or
-/// literal; another fallback register or opaque temporary would add no evidence.
-pub(crate) fn is_informative_join_candidate(value: &str) -> bool {
-    let value = value.trim();
-    !value.is_empty()
-        && !contains_uninformative_join_token(value)
-        && (value.contains(".f") || contains_call_expression(value) || is_numeric_literal(value))
+/// The rendered value list: first occurrence over the canonical order, with
+/// equal values collapsed. Every attribution stays in the provenance, including
+/// the duplicates collapsed here - two predecessors carrying one value are one
+/// rendered value and two attributions, and the audit is where both survive.
+pub(crate) fn rendered_candidate_values(provenance: &[JoinCandidateProvenance]) -> Vec<String> {
+    let mut values: Vec<String> = Vec::new();
+    for candidate in provenance {
+        if !values.iter().any(|value| value == &candidate.value) {
+            values.push(candidate.value.clone());
+        }
+    }
+    values
 }
 
-fn contains_call_expression(value: &str) -> bool {
-    let bytes = value.as_bytes();
-    let mut index = 0usize;
-    while index < bytes.len() {
-        if bytes[index] != b'(' {
-            index += 1;
-            continue;
+/// The three forms a candidate may take. There is no fourth: the rule is a
+/// whitelist, so a spelling nobody anticipated is rejected by default rather
+/// than emitted until someone thinks to name it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CandidateForm {
+    /// `0`, `0x3b`, `-1`.
+    Literal,
+    /// A dotted chain: `arg0.f16`, `thread.f104.f1968`.
+    FieldAccess,
+    /// A call spanning the whole value: `smiTag(local_m16)`.
+    Call,
+}
+
+/// Which allowed form `value` is, or `None` when it is none of them.
+///
+/// Classification is over the **whole** value, not over a substring of it. A
+/// containment test accepts anything with an allowed form buried in it -
+/// `(thread.f80 + 1)` contains a field access and is not one - and that is the
+/// gap a positively stated rule closes. Truncated and malformed text falls out
+/// of the same test rather than needing its own: an unbalanced or unterminated
+/// value matches no form.
+///
+/// Every loss site - join, loop entry and pre-call - classifies through this one
+/// function, and the atom-level rejection below comes from
+/// `unrecovered_value_spellings` alone. A site with its own list is a partial
+/// subset of that set, which is how four defects on this branch produced a
+/// convincing false pass.
+pub(crate) fn candidate_form(value: &str) -> Option<CandidateForm> {
+    // The value is classified exactly as it will be rendered, surrounding
+    // whitespace included. Trimming here would accept a candidate the reader is
+    // shown untrimmed, and an independent scan of the emitted text would then
+    // disagree with the filter that emitted it.
+    if value.is_empty() || value.trim() != value || contains_uninformative_token(value) {
+        return None;
+    }
+    if is_numeric_literal(value) {
+        return Some(CandidateForm::Literal);
+    }
+    if is_field_access(value) {
+        return Some(CandidateForm::FieldAccess);
+    }
+    if is_call_shaped(value) {
+        return Some(CandidateForm::Call);
+    }
+    None
+}
+
+pub(crate) fn is_informative_annotation_candidate(value: &str) -> bool {
+    candidate_form(value).is_some()
+}
+
+fn is_identifier(token: &str) -> bool {
+    let mut bytes = token.bytes();
+    bytes
+        .next()
+        .is_some_and(|byte| byte.is_ascii_alphabetic() || byte == b'_')
+        && bytes.all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+}
+
+/// An identifier followed by at least one `.field`. The base is an identifier
+/// too, so an indexed or parenthesised base - `local_m8.f12[0x107]`,
+/// `((arg0.f24 + 1)).f24` - is not a field access.
+fn is_field_access(value: &str) -> bool {
+    let mut segments = value.split('.');
+    let Some(base) = segments.next() else {
+        return false;
+    };
+    if !is_identifier(base) {
+        return false;
+    }
+    let mut fields = 0usize;
+    for segment in segments {
+        if !is_identifier(segment) {
+            return false;
         }
-        let mut start = index;
-        while start > 0
-            && (bytes[start - 1].is_ascii_alphanumeric()
-                || bytes[start - 1] == b'_'
-                || bytes[start - 1] == b'.')
-        {
-            start -= 1;
+        fields += 1;
+    }
+    fields > 0
+}
+
+/// A callee - identifier or field chain - and one argument list closing on the
+/// last byte. `foo(1) + 2` and `(a + b)(c)` are not calls; neither is a value
+/// whose brackets do not balance.
+fn is_call_shaped(value: &str) -> bool {
+    let Some(open) = value.find('(') else {
+        return false;
+    };
+    let callee = &value[..open];
+    if !(is_identifier(callee) || is_field_access(callee)) {
+        return false;
+    }
+    let rest = &value[open..];
+    let mut parens = 0isize;
+    let mut brackets = 0isize;
+    for (index, byte) in rest.bytes().enumerate() {
+        match byte {
+            b'(' => parens += 1,
+            b')' => {
+                parens -= 1;
+                if parens < 0 {
+                    return false;
+                }
+                if parens == 0 {
+                    return index + 1 == rest.len() && brackets == 0;
+                }
+            }
+            b'[' => brackets += 1,
+            b']' => {
+                brackets -= 1;
+                if brackets < 0 {
+                    return false;
+                }
+            }
+            _ => {}
         }
-        if start < index
-            && !matches!(&value[start..index], "if" | "while" | "for" | "switch" | "catch")
-        {
-            return true;
-        }
-        index += 1;
     }
     false
 }
@@ -110,7 +279,7 @@ fn is_numeric_literal(value: &str) -> bool {
 
 /// A candidate containing a fallback register or local temporary would merely
 /// decorate one admitted gap with another, so omit the whole candidate.
-fn contains_uninformative_join_token(value: &str) -> bool {
+fn contains_uninformative_token(value: &str) -> bool {
     let bytes = value.as_bytes();
     let mut start = 0usize;
     while start < bytes.len() {
@@ -126,7 +295,7 @@ fn contains_uninformative_join_token(value: &str) -> bool {
                 .take_while(|byte| byte.is_ascii_alphanumeric() || **byte == b'_')
                 .count();
         let token = &value[start..end];
-        if is_unrecovered_value_spelling(token) || is_opaque_join_temporary(token) {
+        if is_unrecovered_value_spelling(token) || is_opaque_temporary(token) {
             return true;
         }
         start = end.saturating_add(1);
@@ -142,7 +311,7 @@ fn is_unrecovered_value_spelling(token: &str) -> bool {
     })
 }
 
-fn is_opaque_join_temporary(token: &str) -> bool {
+fn is_opaque_temporary(token: &str) -> bool {
     ["t", "tmp", "objTmp", "intTmp", "resultTmp"]
         .iter()
         .any(|prefix| {
@@ -154,11 +323,23 @@ fn is_opaque_join_temporary(token: &str) -> bool {
 
 /// Comments pass through brace-sensitive compaction, so a candidate needing
 /// escaping is omitted rather than allowed to alter later structural rewrites.
-fn is_safe_join_annotation_candidate(value: &str) -> bool {
-    !value.contains('{') && !value.contains('}') && !value.contains("*/")
+///
+/// Shared by every loss site, and deliberately separate from
+/// `is_informative_annotation_candidate`: capture keeps a safe-but-uninformative
+/// candidate in the provenance record, and it is that record which decides
+/// whether a site's evidence is exhaustive.
+pub(crate) fn is_recordable_annotation_candidate(value: &str) -> bool {
+    // The brace and comment-terminator test is asked of the authority that owns
+    // the terminator, for the same reason the separator test is: a second
+    // spelling here would drift the moment either delimiter is reworded.
+    !contains_forbidden_sequence(value)
+        // A value containing the separator renders identically to two values, so
+        // the list stops being readable back into candidates. Asked of the
+        // authority that owns the separator rather than spelled here.
+        && !contains_candidate_separator(value)
 }
 
-fn canonical_join_register_spelling(token: &str) -> Option<String> {
+fn canonical_register_spelling(token: &str) -> Option<String> {
     (0..=30).find_map(|index| {
         let canonical = format!("x{index}");
         unrecovered_value_spellings(&canonical)
@@ -197,7 +378,7 @@ fn register_tokens(line: &str) -> Vec<String> {
             index += 1;
         }
         if start == 0 || !FuncEmitter::is_ident_char(bytes[start - 1] as char) {
-            if let Some(reg) = canonical_join_register_spelling(&line[start..index]) {
+            if let Some(reg) = canonical_register_spelling(&line[start..index]) {
                 tokens.push(reg);
             }
         }
@@ -220,6 +401,12 @@ impl<'a> FuncEmitter<'a> {
         let saved_lines = self.lines.len();
         let saved_state = self.state.clone();
         let saved_counters = self.counter_snapshot();
+        // A call anchor holds the index of the line it was rendered on, so an
+        // abandoned attempt leaves indices pointing into a body that no longer
+        // exists. Left in place they resolve against the DFS emitter's lines and
+        // annotate whatever happens to be there.
+        let saved_call_anchors = self.call_annotation_anchors.len();
+        let saved_call_snapshots = self.call_provenance.snapshots.len();
 
         self.regions = Some(regions);
         let ok = self.render_sequence(0, None, 1, 0);
@@ -242,6 +429,18 @@ impl<'a> FuncEmitter<'a> {
         self.join_candidates.clear();
         self.join_candidate_regs.clear();
         self.join_annotation_anchors.clear();
+        self.loop_annotation_sites.clear();
+        // The DFS emitter annotates nothing, so a rollback must also drop the
+        // snapshots and the audit rows the abandoned structuring captured: a
+        // snapshot no surviving annotation cites is a record of a site that is
+        // not in the output.
+        self.block_snapshots.clear();
+        self.join_provenance.snapshots.clear();
+        self.call_annotation_anchors.truncate(saved_call_anchors);
+        self.call_provenance.snapshots.truncate(saved_call_snapshots);
+        self.join_provenance.records.clear();
+        self.loop_provenance.snapshots.clear();
+        self.loop_provenance.records.clear();
         self.regions = None;
         false
     }
@@ -350,20 +549,37 @@ impl<'a> FuncEmitter<'a> {
             }
 
             let is_join = regions.is_join(id);
+            // A natural loop header can also be a join - reached from two arms
+            // plus its back edge. It is a loop site, whatever its predecessor
+            // count: the back-edge value is never rendered, so join semantics
+            // would eventually claim a value that is not there, and a join-tagged
+            // record at a site the loop pass also claims is a double claim at one
+            // output coordinate. The merge below is unchanged for it; only capture
+            // and annotation decline.
+            let annotatable_join = is_join && !regions.is_loop_header(id);
             self.structured_emitted.insert(id);
             if is_join {
                 // Emitted once, so no single incoming path describes this
                 // block's register state. Anything a predecessor could have
                 // redefined is dropped; the rest still holds its entry value.
-                let preds: Vec<usize> = (0..self.ir.blocks.len())
-                    .filter(|p| regions.successors(*p).contains(&id))
-                    .collect();
+                let preds = regions.predecessors(id).to_vec();
                 let written = self.registers_written_between(&preds, Some(id));
+                if annotatable_join {
+                    // Before the merge, and from the same write set the merge
+                    // uses: a register the merge keeps still holds its value, and
+                    // annotating it would report a loss that did not happen.
+                    self.record_join_candidates(id, &preds, &written);
+                }
                 self.merge_state_at_join(&written);
             }
             let annotation_start = self.lines.len();
             let flow = self.render_block_body(id, indent);
-            if is_join {
+            self.snapshot_block_end(id);
+            // A loop header carries its own candidates, captured by `render_loop`
+            // before the merge that dropped them, so it needs the same anchor a
+            // join gets. The site declined the join capture above; declining the
+            // anchor too would leave the candidates with nothing to attach to.
+            if annotatable_join || self.loop_annotation_sites.contains(&id) {
                 let candidate_regs = self.join_candidate_regs.remove(&id).unwrap_or_default();
                 self.join_annotation_anchors.push(JoinAnnotationAnchor {
                     join: id,
@@ -497,7 +713,6 @@ impl<'a> FuncEmitter<'a> {
                     cursor = region_follow;
                     self.state = state_at_branch;
                     if let Some(join) = cursor {
-                        self.record_join_candidates(join, &arm_ends);
                         // Reached from both arms, so a binding survives only if
                         // neither arm redefined it.
                         let arms = arm_ends.iter().map(|(arm, _)| *arm).collect::<Vec<_>>();
@@ -521,6 +736,10 @@ impl<'a> FuncEmitter<'a> {
         // body never writes survive into it, and the same holds after the loop.
         let written = self.registers_written_between(&[header], None);
         let state_before = self.state.clone();
+        // Before the merge below, and from the same write set it uses: a register
+        // the merge keeps still holds its value, so annotating it would report a
+        // loss that did not happen.
+        self.record_loop_entry_candidates(header, &written);
         self.merge_state_at_join(&written);
         let ok = self.render_sequence(header, loop_follow, indent + 1, depth + 1);
         self.loop_stack.pop();
@@ -550,6 +769,9 @@ impl<'a> FuncEmitter<'a> {
                         } else {
                             ins.target.clone()
                         };
+                        // A pool load rebinds the register, so whatever a call
+                        // took from it earlier no longer describes it.
+                        self.state.call_clobbers.remove(&dst);
                         self.state.reg_values.insert(dst, Self::clean_expr(rhs));
                     }
                 }
@@ -734,79 +956,160 @@ impl<'a> FuncEmitter<'a> {
         }
         written
     }
-    /// Remember the arm-end values that the generic join merge will drop.
+    /// Keep this block's end state when it precedes a join that can be
+    /// annotated.
     ///
-    /// The upcoming merge owns the exact write-set convention; candidates are
-    /// collected from the two arm snapshots before restoring branch state.
-    /// Completeness is deliberately checked against every actual predecessor:
-    /// a third route means this is evidence, not an exhaustive value claim.
-    pub(crate) fn record_join_candidates(&mut self, join: usize, arm_ends: &[(usize, LiftState)]) {
-        if arm_ends.is_empty() {
+    /// A candidate may only come from the end state of the predecessor it is
+    /// attributed to, and the join is emitted after all of them, so the state has
+    /// to be kept: by the time the join renders, its merge has dropped exactly
+    /// the bindings the annotation describes. Blocks that precede no annotatable
+    /// join are not snapshotted, which keeps this off the hot path for the
+    /// majority of blocks.
+    fn snapshot_block_end(&mut self, block: usize) {
+        let precedes_annotatable_merge = self.regions.as_ref().is_some_and(|regions| {
+            regions.successors(block).iter().any(|succ| {
+                (regions.is_join(*succ) && !regions.is_loop_header(*succ))
+                    // A loop header's entry paths need the same treatment, and
+                    // for the same reason: `render_loop` merges before the header
+                    // renders, so by then the entry values are gone. The back edge
+                    // is not an entry path - its value is never rendered at the
+                    // header - so a block inside the loop is not snapshotted for it.
+                    || (regions.is_loop_header(*succ) && !regions.in_loop(*succ, block))
+            })
+        });
+        if !precedes_annotatable_merge {
             return;
         }
-        let arms = arm_ends
+        self.block_snapshots.push(BlockSnapshot {
+            block,
+            reg_values: self.state.reg_values.clone(),
+        });
+    }
+
+    /// The most recent recorded end state of `block`, with its capture index. A
+    /// repeated region emits a block more than once, and it is the state the join
+    /// actually merged - the last one before the join renders - that the candidate
+    /// came from.
+    fn latest_block_snapshot(&self, block: usize) -> Option<(usize, &BlockSnapshot)> {
+        self.block_snapshots
             .iter()
-            .map(|(arm, _)| *arm)
-            .collect::<Vec<_>>();
-        let (preds, written) = {
-            let regions = self.regions.as_ref().expect("regions");
-            let preds: Vec<usize> = (0..self.ir.blocks.len())
-                .filter(|pred| regions.successors(*pred).contains(&join))
-                .collect();
-            // Use the same arm roots and stop node as the immediately following
-            // merge. `registers_written_between` stops before the join, so no
-            // successor beyond it contributes an unrelated write.
-            let written = self.registers_written_between(&arms, Some(join));
-            (preds, written)
-        };
-        let complete = arms.len() == 2
-            && preds.len() == arms.len()
-            && arms.iter().all(|arm| preds.contains(arm));
+            .enumerate()
+            .rev()
+            .find(|(_, snapshot)| snapshot.block == block)
+    }
+
+    /// The audit id of one predecessor's end state as cited by one join.
+    ///
+    /// The capture index is part of it because a repeated region snapshots a
+    /// block twice, and the two are different states; the join is part of it
+    /// because the record is what that join dropped along that path.
+    fn join_snapshot_id(join: usize, pred: usize, capture: usize) -> String {
+        format!("join:{}:pred:{}:{}", join, pred, capture)
+    }
+
+    /// Record the snapshots one register's candidates cite, once each.
+    ///
+    /// The whole register map goes in, not only the cited register: a snapshot
+    /// listing just the value being claimed is a restatement of the claim rather
+    /// than something it can disagree with.
+    fn record_join_snapshots(&mut self, join: usize, provenance: &[JoinCandidateProvenance]) {
+        if !annotation_provenance_wanted() {
+            return;
+        }
+        for candidate in provenance {
+            if self
+                .join_provenance
+                .snapshots
+                .iter()
+                .any(|snapshot| snapshot.snapshot_id == candidate.snapshot_id)
+            {
+                continue;
+            }
+            let Some(registers) = self.latest_block_snapshot(candidate.pred).and_then(
+                |(capture, snapshot)| {
+                    // The id is rebuilt rather than trusted: a snapshot recorded
+                    // under an id that does not name its own capture is how a
+                    // value from a sibling path would pass unnoticed.
+                    (Self::join_snapshot_id(join, candidate.pred, capture)
+                        == candidate.snapshot_id)
+                        .then(|| {
+                            let mut registers: Vec<(String, String)> = snapshot
+                                .reg_values
+                                .iter()
+                                .map(|(reg, value)| (reg.clone(), value.clone()))
+                                .collect();
+                            registers.sort();
+                            registers
+                        })
+                },
+            ) else {
+                continue;
+            };
+            self.join_provenance.snapshots.push(ValueSnapshot {
+                snapshot_id: candidate.snapshot_id.clone(),
+                site_key: SiteKey(JOIN_LOSS_SITE, join as u64),
+                registers,
+            });
+        }
+    }
+
+    /// Remember the values the join's merge is about to drop, one attribution per
+    /// predecessor that carried a usable one.
+    ///
+    /// The predecessor set is the join's own, not the branch's two arms. A join
+    /// with a third incoming path used to be skipped whole, and an arm root is not
+    /// the block whose end state produced the value: the arm's last block is, and
+    /// it is that block a candidate is attributed to.
+    ///
+    /// Completeness is coverage of that predecessor set, not rendered arity:
+    /// dedup can collapse three covered predecessors into one rendered value and
+    /// the claim is still exhaustive.
+    pub(crate) fn record_join_candidates(
+        &mut self,
+        join: usize,
+        preds: &[usize],
+        written: &HashSet<String>,
+    ) {
+        if preds.is_empty() {
+            return;
+        }
         let mut regs: Vec<String> = written
-            .into_iter()
-            .filter(|reg| pinned_value(reg).is_none() && reg != "x15")
+            .iter()
+            .filter(|reg| pinned_value(reg).is_none() && *reg != "x15")
+            .cloned()
             .collect();
         regs.sort();
-    
+
         for reg in regs {
-            let provenance = ordered_join_candidate_provenance(arm_ends.iter().flat_map(|(arm, state)| {
-                state
-                    .reg_values
-                    .get(&reg)
-                    .into_iter()
-                    .filter_map(|value| Self::capped_expr(value))
-                    .filter(|value| is_safe_join_annotation_candidate(value))
-                    .map(move |value| JoinCandidateProvenance {
-                        arm: *arm,
-                        value: value.to_string(),
-                    })
+            // Ascending predecessor id, which `Regions::predecessors` already is,
+            // and re-established by the shared order in case it ever is not.
+            let provenance = ordered_join_candidate_provenance(preds.iter().filter_map(|pred| {
+                let (capture, snapshot) = self.latest_block_snapshot(*pred)?;
+                let value = Self::capped_expr(snapshot.reg_values.get(&reg)?)?;
+                // Both filters, here rather than at render time: a candidate that
+                // cannot be rendered is not a candidate this predecessor
+                // contributed, and counting it as coverage would let an
+                // unrenderable value claim the exhaustive form.
+                (is_recordable_annotation_candidate(value)
+                    && is_informative_annotation_candidate(value))
+                .then(|| JoinCandidateProvenance {
+                    pred: *pred,
+                    value: value.to_string(),
+                    snapshot_id: Self::join_snapshot_id(join, *pred, capture),
+                })
             }));
-            debug_assert!(
-                provenance.iter().all(|candidate| arm_ends.iter().any(|(arm, state)| {
-                    *arm == candidate.arm
-                        && state.reg_values.get(&reg).is_some_and(|value| {
-                            Self::capped_expr(value)
-                                .filter(|value| is_safe_join_annotation_candidate(value))
-                                .is_some_and(|value| value == candidate.value)
-                        })
-                })),
-                "join candidate must come from its recorded arm-end snapshot"
-            );
             if provenance.is_empty() {
                 continue;
             }
-            let values = provenance
+            self.record_join_snapshots(join, &provenance);
+            let complete = preds
                 .iter()
-                .filter(|candidate| is_informative_join_candidate(&candidate.value))
-                .map(|candidate| candidate.value.clone())
-                .collect::<Vec<_>>();
-            if values.is_empty() {
-                continue;
-            }
+                .all(|pred| provenance.iter().any(|candidate| candidate.pred == *pred));
+            let values = rendered_candidate_values(&provenance);
             self.join_candidates.insert(
                 (join, reg.clone()),
                 JoinCandidates {
-                    complete: complete && values.len() == provenance.len(),
+                    complete,
                     values,
                     provenance,
                 },
@@ -819,10 +1122,153 @@ impl<'a> FuncEmitter<'a> {
         }
     }
 
+    /// The audit id of one entry predecessor's end state as cited by one loop
+    /// header. Same shape as the join form and a different prefix, so the two key
+    /// spaces stay disjoint at a block that is both.
+    fn loop_snapshot_id(header: usize, pred: usize, capture: usize) -> String {
+        format!("loop:{}:pred:{}:{}", header, pred, capture)
+    }
+
+    /// Record the snapshots one loop-entry candidate list cites, once each.
+    ///
+    /// The whole register map goes in, not only the cited register: a snapshot
+    /// listing just the value being claimed is a restatement of the claim rather
+    /// than something it can disagree with.
+    fn record_loop_entry_snapshots(&mut self, header: usize, provenance: &[JoinCandidateProvenance]) {
+        if !annotation_provenance_wanted() {
+            return;
+        }
+        for candidate in provenance {
+            if self
+                .loop_provenance
+                .snapshots
+                .iter()
+                .any(|snapshot| snapshot.snapshot_id == candidate.snapshot_id)
+            {
+                continue;
+            }
+            let Some(registers) = self.latest_block_snapshot(candidate.pred).and_then(
+                |(capture, snapshot)| {
+                    // The id is rebuilt rather than trusted: a snapshot recorded
+                    // under an id that does not name its own capture is how a
+                    // value from a sibling entry path would pass unnoticed.
+                    (Self::loop_snapshot_id(header, candidate.pred, capture)
+                        == candidate.snapshot_id)
+                        .then(|| {
+                            let mut registers: Vec<(String, String)> = snapshot
+                                .reg_values
+                                .iter()
+                                .map(|(reg, value)| (reg.clone(), value.clone()))
+                                .collect();
+                            registers.sort();
+                            registers
+                        })
+                },
+            ) else {
+                continue;
+            };
+            self.loop_provenance.snapshots.push(ValueSnapshot {
+                snapshot_id: candidate.snapshot_id.clone(),
+                // The path this snapshot is the end state of, not the site that
+                // dropped it: the checker pairs it against the candidate's own
+                // `path_key`, and naming the header here would make that pairing
+                // agree with itself for a value from any entry arm.
+                site_key: SiteKey(JOIN_PATH_KIND, candidate.pred as u64),
+                registers,
+            });
+        }
+    }
+
+    /// Remember the values the loop header's merge is about to drop, one
+    /// attribution per non-back-edge predecessor that carried a usable one.
+    ///
+    /// Capture is per predecessor, and that is the whole difficulty of this site.
+    /// `render_loop` merges before the header renders, so at a header reached from
+    /// two arms holding 7 and 9 the merged state holds the drop, not both values:
+    /// reading it there produces correct-looking output at single-entry headers and
+    /// silently nothing at exactly the multi-entry headers this site owns.
+    ///
+    /// The back edge is excluded by construction. Its value is not rendered at the
+    /// header, so it is not an entry value, and the temporal qualifier in the
+    /// literal is what keeps the claim honest: only what held on entry.
+    ///
+    /// Every loop header is this site's, whatever its predecessor count. A header
+    /// reached from several arms is also a join, and the join capture declines it.
+    pub(crate) fn record_loop_entry_candidates(&mut self, header: usize, written: &HashSet<String>) {
+        let entry_preds: Vec<usize> = {
+            let Some(regions) = self.regions.as_ref() else {
+                return;
+            };
+            regions
+                .predecessors(header)
+                .iter()
+                .copied()
+                .filter(|pred| !regions.in_loop(header, *pred))
+                .collect()
+        };
+        if entry_preds.is_empty() {
+            return;
+        }
+        // Recorded whatever the capture below finds, because it is the site
+        // classification the literal and the audit key both read. A header with no
+        // usable candidate simply has nothing to annotate.
+        self.loop_annotation_sites.insert(header);
+
+        let mut regs: Vec<String> = written
+            .iter()
+            .filter(|reg| pinned_value(reg).is_none() && *reg != "x15")
+            .cloned()
+            .collect();
+        regs.sort();
+
+        for reg in regs {
+            // Ascending predecessor id, which `Regions::predecessors` already is,
+            // through the same shared order the join site uses: the rendered list
+            // and the audit array deduplicate by first occurrence over it, and two
+            // independent orders would disagree while both being stable across runs.
+            let provenance =
+                ordered_join_candidate_provenance(entry_preds.iter().filter_map(|pred| {
+                    let (capture, snapshot) = self.latest_block_snapshot(*pred)?;
+                    let value = Self::capped_expr(snapshot.reg_values.get(&reg)?)?;
+                    (is_recordable_annotation_candidate(value)
+                        && is_informative_annotation_candidate(value))
+                    .then(|| JoinCandidateProvenance {
+                        pred: *pred,
+                        value: value.to_string(),
+                        snapshot_id: Self::loop_snapshot_id(header, *pred, capture),
+                    })
+                }));
+            if provenance.is_empty() {
+                continue;
+            }
+            self.record_loop_entry_snapshots(header, &provenance);
+            let values = rendered_candidate_values(&provenance);
+            self.join_candidates.insert(
+                (header, reg.clone()),
+                JoinCandidates {
+                    // There is one loop form, never the exhaustive one. The
+                    // temporal qualifier already scopes the claim to entry, so it
+                    // asserts no present value and needs no exhaustiveness marker -
+                    // and the back-edge value, which is not rendered here, is
+                    // exactly what an exhaustive claim would be wrong about.
+                    complete: false,
+                    values,
+                    provenance,
+                },
+            );
+            self.join_candidate_regs.entry(header).or_default().push(reg);
+        }
+        if let Some(regs) = self.join_candidate_regs.get_mut(&header) {
+            regs.sort();
+            regs.dedup();
+        }
+    }
+
     /// Append evidence for values lost at a join without rebinding the
     /// register. This runs after every analysis and code rewrite.
     pub(crate) fn append_join_annotations(&mut self) {
-        let mut inserts: Vec<(usize, usize, usize, String)> = Vec::new();
+        let mut inserts: Vec<PlannedJoinAnnotation> = Vec::new();
+        let mut omissions: Vec<PlannedCapOmission> = Vec::new();
         for anchor in &self.join_annotation_anchors {
             let mut next_line = 0usize;
             for original in &anchor.lines {
@@ -856,19 +1302,20 @@ impl<'a> FuncEmitter<'a> {
                     if token_start > 0 && Self::is_ident_char(bytes[token_start - 1] as char) {
                         continue;
                     }
-                    let Some(reg) = canonical_join_register_spelling(&line[token_start..index]) else {
+                    let Some(reg) = canonical_register_spelling(&line[token_start..index]) else {
                         continue;
                     };
                     if !anchor.candidate_regs.iter().any(|candidate| candidate == &reg) {
                         continue;
                     }
-                    let Some(candidates) = self.join_candidates.get(&(anchor.join, reg)) else {
+                    let Some(candidates) = self.join_candidates.get(&(anchor.join, reg.clone()))
+                    else {
                         continue;
                     };
                     if candidates
                         .values
                         .iter()
-                        .any(|value| !is_safe_join_annotation_candidate(value))
+                        .any(|value| !is_recordable_annotation_candidate(value))
                     {
                         continue;
                     }
@@ -881,44 +1328,230 @@ impl<'a> FuncEmitter<'a> {
                         }),
                         "join annotation candidate must come from an arm-end snapshot"
                     );
-                    let prefix = if candidates.complete {
-                        " = "
+                    let literal = if self.loop_annotation_sites.contains(&anchor.join) {
+                        &LOOP_ENTRY_ANNOTATION
+                    } else if candidates.complete {
+                        &EXHAUSTIVE_JOIN_ANNOTATION
                     } else {
-                        " possible (non-exhaustive): "
+                        &NON_EXHAUSTIVE_JOIN_ANNOTATION
                     };
-                    let annotation = format!(" /*{}{} */", prefix, candidates.values.join(" | "));
+                    let annotation = literal.render(&candidates.values);
                     // At most one annotation per register spelling on a final
                     // line. Repeated structured renderings can map different
                     // joins to the same textual site; retaining all would make
                     // a single `regN` look like a chain of independently valid
                     // values. First anchor wins, in deterministic render order.
-                    if inserts.iter().any(|(existing_line, token_at, _, _)| {
-                        *existing_line == line_index && *token_at == token_start
-                    }) {
+                    if inserts
+                        .iter()
+                        .any(|existing| existing.line == line_index && existing.at == index)
+                    {
                         continue;
                     }
                     let planned = inserts
                         .iter()
-                        .filter(|(existing_line, _, _, _)| *existing_line == line_index)
-                        .map(|(_, _, _, existing)| existing.len())
+                        .filter(|existing| existing.line == line_index)
+                        .map(|existing| existing.text.len())
                         .sum::<usize>();
-                    if annotation.len() <= MAX_JOIN_ANNOTATION
-                        && line.len() + planned + annotation.len() <= MAX_JOIN_ANNOTATED_LINE
-                    {
-                        inserts.push((line_index, token_start, index, annotation));
+                    // Whole or not at all. A span cut to fit leaves an unclosed
+                    // comment opener, and every consumer that parses comments
+                    // then reads the rest of the file as one.
+                    let omitted = if !rendered_annotation_is_safe(&annotation) {
+                        Some(UNSAFE_SPAN)
+                    } else if annotation.len() > MAX_JOIN_ANNOTATION {
+                        Some(ANNOTATION_BUDGET)
+                    } else if line.len() + planned + annotation.len() > MAX_JOIN_ANNOTATED_LINE {
+                        Some(LINE_BUDGET)
+                    } else {
+                        None
+                    };
+                    if let Some(reason) = omitted {
+                        // Collected here and routed after the loop: the anchors
+                        // are borrowed for the whole walk, and a silent drop is
+                        // the failure this row exists to make impossible.
+                        omissions.push(PlannedCapOmission {
+                            join: anchor.join,
+                            register: reg,
+                            rendered: annotation,
+                            reason,
+                            line_len: line.len(),
+                            planned_len: planned,
+                        });
+                        continue;
                     }
+                    inserts.push(PlannedJoinAnnotation {
+                        line: line_index,
+                        at: index,
+                        text: annotation,
+                        join: anchor.join,
+                        register: reg,
+                    });
                 }
             }
         }
+        self.record_cap_omissions(omissions);
         inserts.sort_unstable_by(|left, right| {
             right
-                .0
-                .cmp(&left.0)
-                .then_with(|| right.1.cmp(&left.1))
+                .line
+                .cmp(&left.line)
+                .then_with(|| right.at.cmp(&left.at))
         });
-        for (line_index, _, at, annotation) in inserts {
-            self.lines[line_index].insert_str(at, &annotation);
+        for planned in &inserts {
+            self.lines[planned.line].insert_str(planned.at, &planned.text);
         }
+        self.record_join_annotation_provenance(&inserts);
+        self.record_loop_entry_annotation_provenance(&inserts);
+    }
+
+    /// Route each dropped annotation to its own site's stream.
+    ///
+    /// Site classification is read from `loop_annotation_sites`, exactly as the
+    /// literal choice and the audit key read it, so a loop header cannot be
+    /// counted against the join site's ledger row.
+    fn record_cap_omissions(&mut self, omissions: Vec<PlannedCapOmission>) {
+        for omission in omissions {
+            let loop_site = self.loop_annotation_sites.contains(&omission.join);
+            let (loss_site, provenance) = if loop_site {
+                (LOOP_LOSS_SITE, &mut self.loop_provenance)
+            } else {
+                (JOIN_LOSS_SITE, &mut self.join_provenance)
+            };
+            record_cap_omission(
+                provenance,
+                CapOmissionFacts {
+                    loss_site,
+                    site_key: SiteKey(loss_site, omission.join as u64),
+                    register: omission.register,
+                    rendered: omission.rendered,
+                    budget: omission.reason,
+                    line_len: omission.line_len,
+                    planned_len: omission.planned_len,
+                },
+            );
+        }
+    }
+
+    /// One audit row per emitted loop-entry annotation, keyed off the anchor that
+    /// produced it.
+    ///
+    /// Both keys come off the planned insertion and the site classification made
+    /// at capture, never off a second walk of the region tree: a key derived on its
+    /// own path can name a real loop header with a real entry predecessor and a
+    /// real drop of the same register while the annotation it labels was emitted at
+    /// another block entirely, and every check that reads only the audit passes.
+    ///
+    /// The coordinate is deliberately not recorded here, for the same reason the
+    /// join rows do not carry one: a program-level rewrite still runs over the
+    /// finished source and can move text on an annotated line. Rows go out in
+    /// ascending output order, which is what lets that search stay monotonic.
+    fn record_loop_entry_annotation_provenance(&mut self, inserts: &[PlannedJoinAnnotation]) {
+        if !annotation_provenance_wanted() {
+            return;
+        }
+        let mut ordered: Vec<&PlannedJoinAnnotation> = inserts.iter().collect();
+        ordered.sort_by(|left, right| {
+            left.line
+                .cmp(&right.line)
+                .then_with(|| left.at.cmp(&right.at))
+        });
+        let records: Vec<PendingAnnotationRecord> = ordered
+            .iter()
+            .filter_map(|planned| {
+                // Only this site's annotations, decided by the classification the
+                // literal was chosen from. The join rows exclude the same blocks,
+                // so one annotation is claimed once.
+                if !self.loop_annotation_sites.contains(&planned.join) {
+                    return None;
+                }
+                let candidates = self
+                    .join_candidates
+                    .get(&(planned.join, planned.register.clone()))?;
+                Some(PendingAnnotationRecord {
+                    loss_site: LOOP_LOSS_SITE,
+                    site_key: SiteKey(LOOP_SITE_TAG, planned.join as u64),
+                    register: planned.register.clone(),
+                    rendered: planned.text.clone(),
+                    // Every attribution, duplicates included: two entry arms
+                    // carrying one value are one rendered value and two rows, and
+                    // this is where the second survives.
+                    candidates: candidates
+                        .provenance
+                        .iter()
+                        .map(|candidate| CandidateAttribution {
+                            path_key: SiteKey(JOIN_PATH_KIND, candidate.pred as u64),
+                            value: candidate.value.clone(),
+                            snapshot_id: candidate.snapshot_id.clone(),
+                        })
+                        .collect(),
+                })
+            })
+            .collect();
+        self.loop_provenance.records.extend(records);
+    }
+
+    /// One audit row per emitted annotation, keyed off the anchor that produced
+    /// it.
+    ///
+    /// The site and the register come from the planned insertion, not from a
+    /// second derivation: a key computed on its own path can name a real join
+    /// with a real predecessor and a real drop of the same register while the
+    /// annotation it labels was emitted somewhere else entirely, and every check
+    /// that reads only the audit passes. Taken off the anchor, that mismatch
+    /// cannot be expressed.
+    ///
+    /// The coordinate is deliberately not recorded here. A program-level rewrite
+    /// still runs over the finished source and can move text on an annotated
+    /// line, so it is derived from the artifact afterwards by locating the
+    /// rendered span. Records go out in ascending output order, which is what lets
+    /// that search stay monotonic.
+    fn record_join_annotation_provenance(&mut self, inserts: &[PlannedJoinAnnotation]) {
+        if !annotation_provenance_wanted() {
+            return;
+        }
+        let mut ordered: Vec<&PlannedJoinAnnotation> = inserts.iter().collect();
+        ordered.sort_by(|left, right| {
+            left.line
+                .cmp(&right.line)
+                .then_with(|| left.at.cmp(&right.at))
+        });
+        let records: Vec<PendingAnnotationRecord> = ordered
+            .iter()
+            .filter_map(|planned| {
+                // A loop header can be a join as well, and its candidates share
+                // this anchor table. Its annotation is a loop site's, so claiming
+                // it here would put two site-tagged records at one output
+                // coordinate - the double claim the site precedence exists to
+                // avoid.
+                if self
+                    .regions
+                    .as_ref()
+                    .is_some_and(|regions| regions.is_loop_header(planned.join))
+                {
+                    return None;
+                }
+                let candidates = self
+                    .join_candidates
+                    .get(&(planned.join, planned.register.clone()))?;
+                Some(PendingAnnotationRecord {
+                    loss_site: JOIN_LOSS_SITE,
+                    site_key: SiteKey(JOIN_LOSS_SITE, planned.join as u64),
+                    register: planned.register.clone(),
+                    rendered: planned.text.clone(),
+                    // Every attribution, duplicates included: two predecessors
+                    // carrying one value are one rendered value and two rows, and
+                    // this is where the second survives.
+                    candidates: candidates
+                        .provenance
+                        .iter()
+                        .map(|candidate| CandidateAttribution {
+                            path_key: SiteKey(JOIN_PATH_KIND, candidate.pred as u64),
+                            value: candidate.value.clone(),
+                            snapshot_id: candidate.snapshot_id.clone(),
+                        })
+                        .collect(),
+                })
+            })
+            .collect();
+        self.join_provenance.records.extend(records);
     }
 
     /// Drop register bindings that a merge cannot attribute to one path. A
@@ -936,6 +1569,12 @@ impl<'a> FuncEmitter<'a> {
         self.state.reg_values.retain(|reg, _| {
             pinned_value(reg).is_some() || reg == "x15" || !written.contains(reg)
         });
+        // A pre-call value describes one path. Past a merge that any path could
+        // have written the register on, it describes no path in particular, and
+        // an annotation carrying it would be a claim about the wrong one.
+        self.state
+            .call_clobbers
+            .retain(|reg, _| !written.contains(reg));
         self.state.last_cmp = None;
         self.state.selector_hints.clear();
     }

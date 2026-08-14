@@ -24,9 +24,9 @@ pub(super) const MAX_SUBSTITUTED_EXPR: usize = 512;
 /// evidence, not executable expression text, and must never make a line
 /// uninspectable. A site that cannot fit its whole candidate list is omitted
 /// rather than truncated into an ambiguous claim.
-pub(super) const MAX_JOIN_ANNOTATION: usize = 512;
+pub(crate) const MAX_JOIN_ANNOTATION: usize = 512;
 /// Maximum physical line length after a join-value annotation.
-pub(super) const MAX_JOIN_ANNOTATED_LINE: usize = 3000;
+pub(crate) const MAX_JOIN_ANNOTATED_LINE: usize = 3000;
 
 impl<'a> FuncEmitter<'a> {
     /// Resolve a register read that is consumed as a whole value.
@@ -271,7 +271,33 @@ impl<'a> FuncEmitter<'a> {
         }
     }
 
+    /// Lift one non-terminator instruction, then retire any pre-call value it
+    /// invalidated.
+    ///
+    /// The retirement is the point of the wrapper. A register a call dropped can
+    /// be written again afterwards - `blr` then `eor x0, x1, #0x10` - and if the
+    /// new write is one the lifter does not model, the register goes back to
+    /// reading unresolved. It is unresolved for the *second* reason by then, so
+    /// annotating it with the value the call took describes a binding two writes
+    /// old. The value would be genuine and the claim about that read false,
+    /// which is the failure this site exists to avoid.
+    ///
+    /// It runs after the body so an instruction that reads a register and writes
+    /// it in one step - `eor x0, x0, #1` - still annotates its own read.
+    /// `written_registers` is the same authority the join merge uses, so a write
+    /// form cannot be modelled here and missed there.
     pub(super) fn apply_other_lift(&mut self, ins_src: &str, indent: usize) {
+        self.apply_other_lift_body(ins_src, indent);
+        if self.state.call_clobbers.is_empty() {
+            return;
+        }
+        let (mnemonic, ops) = split_instruction(ins_src);
+        for reg in written_registers(&mnemonic, &ops) {
+            self.state.call_clobbers.remove(&reg);
+        }
+    }
+
+    fn apply_other_lift_body(&mut self, ins_src: &str, indent: usize) {
         let (mnemonic, ops) = split_instruction(ins_src);
 
         match mnemonic.as_str() {

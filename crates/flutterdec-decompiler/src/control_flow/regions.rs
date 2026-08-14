@@ -97,6 +97,14 @@ impl Regions {
         self.preds.get(id).map(|p| p.len()).unwrap_or(0) > 1
     }
 
+    /// The block's reachable predecessors, ascending. Built once from the same
+    /// successor edges `is_join` counts, so a caller enumerating a join's
+    /// incoming paths cannot disagree with the join test itself. Ascending is
+    /// relied on: it is the canonical order candidate provenance is recorded in.
+    pub(super) fn predecessors(&self, id: usize) -> &[usize] {
+        self.preds.get(id).map(Vec::as_slice).unwrap_or(&[])
+    }
+
     pub(super) fn successors(&self, id: usize) -> &[usize] {
         self.succs.get(id).map(Vec::as_slice).unwrap_or(&[])
     }
