@@ -3603,22 +3603,44 @@ design decision rather than an edit.
 
 ### The defect
 
-An emitted local carries a name that looks derived from the program, and often is not. Two families:
+An emitted local or parameter carries a name that looks derived from the program. **None of them is.** Every
+such name is synthesized from the emitted text itself: `apply_name_and_type_hints` receives only the function
+name and reads `self.lines`, and `infer_declared_types_from_context` likewise reads lines. No adapter class,
+field or symbol metadata reaches a local or parameter name. Three families produce them:
 
-- **Parameters** are named from usage counts at `passes/naming.rs:371-379`: index 0 becomes `receiver`,
-  `field_access >= 1` becomes `objN`, `arith_ops >= 2 && field_access == 0` becomes `valueN`, everything else
+- **Call results**, `tN`, from a per-function counter at `control_flow/emit.rs:338` - sequential, carrying no
+  claim beyond "the Nth call in this body".
+- **Parameters**, from usage counts at `passes/naming.rs:371-379`: index 0 becomes `receiver`,
+  `field_access >= 1` becomes `objN`, `arith_ops >= 2 && field_access == 0` becomes `valueN`, otherwise
   `paramN`.
-- **Locals** are named at `:402-424` on the same principle: `pool_assign > 0` becomes `poolValN`,
+- **Locals**, on the same principle at `:402-424`: `pool_assign > 0` becomes `poolValN`,
   `field_access >= 2` becomes `objTmpN`, `arith_ops >= 2 && field_access == 0` becomes `intTmpN`, then
-  `resultTmpN`, then `tmpN`.
+  `resultTmpN`, then `tmpN`. Separately, `helpers/naming.rs:61` derives `local_mN` / `local_pN` from the
+  **stack offset** - the one family tied to a program fact, and even that is an offset rather than a name.
 
 One field access is enough to call something `obj`. Two arithmetic operations are enough to call it `value` or
-`intTmp`. These are reasonable reading aids and they are **not** recovered facts, but nothing in the output
-says which is which: a name derived from engine symbol metadata and a name derived from "this identifier
-appeared next to a `+` twice" render identically. The request's definition of noise is "constructs that admit
-the decompiler did not recover something"; these constructs quietly assert the opposite.
+`intTmp`. These are reasonable reading aids, not recovered facts, and nothing in the output says so. The
+request's definition of noise is "constructs that admit the decompiler did not recover something"; these
+quietly assert the opposite.
 
-Measured on 400 LocalSend functions: 9,609 of 9,613 emitted `final` declarations use a synthesized name.
+**Scope of that claim, stated so it does not contradict R28 and R29.** It is about **local and parameter
+names only**. Other identifier classes in the same output *are* recovered where the evidence exists: callee
+names from runtime-stub identity and symbol maps render as real names - `allocateClassId5637`, `classId`,
+`cachedTarget` all appear in the corpus measured here - and pool-derived string and selector literals are
+resolved where the pool entry is known, which is exactly what R28 and R29 rely on for the candidate values
+they annotate. What has no recovered source is the name of a local or a parameter.
+
+Distribution over 400 LocalSend functions, by identifier occurrence: `t` 20,248, `objTmp` 9,997, `tmp` 8,669,
+`resultTmp` 3,435, `param` 2,345, `receiver` 1,549, `intTmp` 896, `obj` 148, `local_m` 48, `value` 25. Of
+9,613 emitted `final` declarations, **9,609 are `tN`** - so the dominant family is the call-result counter, not
+the heuristics, which is worth stating because the heuristics are the ones that read like recovered names.
+
+**A convention already exists and covers only half of them.** `is_opaque_temporary`
+(`control_flow/structured.rs:314`) treats `t`, `tmp`, `objTmp`, `intTmp` and `resultTmp` as opaque. It does
+**not** cover `receiver`, `objN`, `valueN`, `paramN`, `poolValN` or `local_mN`. So publishing "these prefixes
+are synthesized, everything else is recovered" would certify the heuristic *parameter* names as recovered -
+precisely the overreach this section is about. Any documented convention needs three buckets, and the third
+one, genuinely metadata-derived local and parameter names, is **empty** on current output.
 
 ### Why this is not a one-line fix, and the trap waiting for whoever tries
 
