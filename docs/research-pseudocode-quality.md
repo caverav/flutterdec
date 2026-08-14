@@ -3496,3 +3496,85 @@ Retained from the round's own measurement, under `~/.zenith/evidence/cap-and-led
 
 The `quality.json` comparison and the gate derivation also have retained copies under
 `~/.zenith/evidence/gate-counters/` as `q-{cand,ref}-{ls,im}.quality.json`.
+
+## R30. The fabricated signature, and why trimming it is the wrong fix
+
+Not a result. This records an investigation that stopped short of a change, because the obvious fix is
+measurably worse than the defect, and the next person to look at this should not have to re-derive that.
+
+### The defect
+
+Every emitted function declares the same signature:
+
+```dart
+dynamic sub_7781e4(dynamic receiver, dynamic param1, dynamic param2, dynamic param3, dynamic param4, dynamic param5)
+```
+
+Six identifiers on every function, whatever it does. `arg_ids` is built as
+`(0..DART_ARGUMENT_REGISTERS.len())` (`passes/naming.rs:349`) over
+`["x1","x2","x3","x5","x6","x7"]` (`helpers/dispatch_table.rs:30`), unconditionally. The code already carries
+a comment warning that this "silently widens every signature regardless of what the emitter wrote". It is
+**six**, not eight - the `arg0..arg7` strings elsewhere in the tree are hand-built test fixtures, not
+generated output.
+
+This is the same class as the register loss R28 and R29 address: output asserted with more confidence than the
+analysis earns. A reader has no way to tell a real two-argument function from this template.
+
+### Trimming to body-referenced parameters would produce self-contradictory Dart
+
+The tempting fix is to declare only the parameters the body actually reads. Measured on 400 LocalSend
+functions, the distribution of body-referenced parameters is:
+
+| referenced params | functions |
+|---|---|
+| 0 | 116 |
+| 1 | 10 |
+| 2 | 2 |
+| 6 | 272 |
+
+So 116 of 400 would be declared `f()`. But call sites build their argument list from the **same** six-register
+file (`control_flow/emit.rs:352`) and only truncate from the end (`:366-368`), so a rendered call carries **at
+most six** positional arguments - six by construction, not by observation. Measured on the same 400 functions,
+counting commas at paren depth 1 so nested calls and string literals do not inflate the count, the call-site
+arity distribution is 0:2,472, 1:1,844, 2:2,251, 3:1,342, 4:223, 5:77, 6:85, maximum **6**, which agrees with
+the constructed bound.
+
+Today every declaration is six wide, so a declaration is always at least as wide as any call to it and no call
+can over-pass. Trimming inverts that invariant: a callee whose body ignores its arguments becomes `f()` while
+other functions still visibly call it with up to six. Emitted code that contradicts itself is worse for a
+reader than a uniform template, so the trim fails on its own terms.
+
+*Method note, because it nearly became a false figure in this record: a first pass reported a maximum of 13,
+which was an artifact of splitting on `(`, `)` and `,` together, so nested calls such as
+`f(a, smiUntag(b.f8))` inflated the field count. The same corpus counted at depth 1 gives 6. A 6-entry
+register file that only truncates cannot emit 13, and that contradiction is what exposed the error - the
+structural bound was the better argument all along, and the measurement is now only corroboration.*
+
+### Arity from body reads is not recoverable anyway
+
+Even without the call-site problem, "the body reads two parameters" is not "the function takes two
+parameters". A callback that ignores its arguments still receives them. Trimming would replace one fabrication
+with a quieter one that is harder to notice.
+
+Two further hazards, recorded because each is a subtler bug than the one being fixed:
+
+- **`paramN` is positional; survivors must keep their original index.** If a body reads `arg0` and `arg3`, the
+  signature must read `receiver, param3`, never `receiver, param1`. Re-enumerating a filtered list silently
+  relabels which ABI register a reader believes they are looking at.
+- **The change is counter-neutral but not byte-neutral.** `raw_arg_name_refs` is 0 on both samples, because
+  every `argN` is renamed to `receiver`/`objN`/`valueN`/`paramN` before emission - a scan of a real corpus for
+  `\barg[0-7]\b` finds zero occurrences - and the signature line carries no `xN`, `regN` or `_block_` either.
+  So no quality counter moves and this is **not** a ruler change. It does change emitted bytes, needs its own
+  reference comparison, and would move the longest-line figures downward.
+
+### What an honest signature would look like
+
+Since arity is not recoverable, the honest options are to keep the six slots and **mark the declaration as a
+template rather than a signature**, or to leave it and document the convention. A comment marker is
+counter-neutral, because comments carry none of the counted tokens. Its cost is one comment on each of 22,102
+and 28,753 functions - roughly five times the entire annotation volume R29 added - so whether that is worth it
+is a real trade and belongs in a contract with a falsifiable acceptance clause.
+
+Implementation cost, for whoever takes it: seven test files hardcode a literal signature string
+(`golden_and_parser.rs`, `control_flow_compaction.rs`, `alias_and_expr_cleanup.rs`, `helper_inlining.rs`,
+`readability_and_naming.rs` and two others), 44 occurrences in total.
