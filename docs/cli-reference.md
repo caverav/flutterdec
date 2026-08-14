@@ -59,6 +59,18 @@ General options:
 - `--max-functions <N>`
 - `--function-scope <app-unknown|app|all>` (default `app-unknown`)
 - `--app-package <NAME>` (repeatable; restricts to selected `package:<NAME>/...` libraries)
+- `--split-records` (split a function record that spans more than one real function). The adapter sizes a
+  record as the gap to the next start it recovered, so a function it **missed is swallowed by its
+  predecessor and never emitted at all**. On the two research samples that hides roughly three quarters of
+  the decoded blocks, which is why every figure in `docs/research-pseudocode-quality.md` is measured with
+  this on.
+
+  Off by default, and the reasons matter: it multiplies the emitted function count (5,800 and 8,329 declared
+  records yield 22,102 and 28,753 emitted functions), which **moves every absolute quality counter**, and it
+  makes `--max-functions` and `--function-scope` apply to *records* rather than to what is emitted.
+  `disassembly_ratio` deliberately keeps the model's pre-split function list as its denominator, so the
+  ratio is not inflated by split pieces. Comparing a split run against an unsplit one compares unlike
+  populations.
 - `--adapter-backend <auto|internal|blutter|r2-flutter>` (default `auto`; `auto` tries r2flutter, then blutter, then internal)
 - `--require-snapshot-hash-match` (fail if adapter-reported snapshot hash differs from loader hash)
 

@@ -2100,6 +2100,18 @@ characters at six iterations of the real shape and 109,863,287 at ten.
 
 ## R20. What the reader actually sees after the split, measured
 
+> **Scope note, added at round-2 close. R20's absolute figures describe `2619ec7`, not HEAD, and the
+> *ranking* is what survives.** Two later changes moved the population underneath it. R22's structurer cut
+> rendered lines by roughly 10% on both samples - the census below reports 867,551 / 1,190,169, HEAD reports
+> **777,937 / 1,074,372** - and R29 added value annotations that did not exist when this was measured. Emitted
+> file counts (22,102 / 28,753) and the per-file `splitlines()` convention are unchanged and still correct.
+>
+> So read this section for **which shapes dominate and why**, which is what it was written to establish, and
+> read R22 and R29 for current magnitudes. Re-measuring the full ranking at HEAD would be its own round; it
+> has not been done, and this note exists so nobody quotes a stale absolute as current. The trailing-newline
+> subsection below is the one part that is fully superseded - that defect is fixed, as its own closing
+> paragraph records.
+
 Every shape figure above predates `--split-records`, which took emitted functions from
 5,800 to 22,102 and 8,329 to 28,753. That changed both the population and the
 denominator, so the ranking of what a reader encounters was unknown. This is the first
