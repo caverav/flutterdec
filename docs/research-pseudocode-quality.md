@@ -3196,8 +3196,10 @@ and all checked out, which is a spot-check rather than a proof.
 > | dangling identifier references | **0** | **0** |
 >
 > Against R29's published 4,369 and 7,246 that is a second, larger fall, and the two have different causes
-> which must not be merged into one narrative: the first was the usefulness whitelist tightening, the
-> second is rejecting annotations that named nothing.
+> which must not be merged into one narrative: the first was the usefulness whitelist tightening; the
+> second is **not** primarily the new dangling-identifier rule, which accounts for only 19 and 32. It is
+> replaying renames before judging, which let the pre-existing informative gate see the text it was always
+> meant to judge. R35 has the per-reason counts, and an inconsistency in the total that is still open.
 >
 > **R29's headline claim inverts.** It reported the exhaustive share rising 3.1% to 19.2% / 21.0%; the
 > honest figures are 9.6% and 8.3%, because exhaustive annotations were hit hardest - down 74% against
@@ -3945,3 +3947,97 @@ passes.
 R32's own figures are deliberately **not** retro-edited: they were measured against R32's commit, and
 folding a later change into them would make them irreproducible from that commit, which is the property
 that makes this record citable. Same treatment as R25's retracted counts and R20's baseline.
+
+## R35. Accounting for the drops, and one number that still does not add up
+
+R33 removed roughly two thousand annotations per sample and nothing recorded why. That is the same
+accounting hole the cap ledger exists to close: a budget drop emits a row naming the register, the
+budget and the rendered text, while these vanished silently. So the insertion path now emits a
+`filter_rejection` row per drop, with its own counter, kept separate from `cap_omission` - a budget drop
+and a value that is not true of the emitted text are different facts, and `CapOmissionFacts` has no
+honest value for `budget` or `planned_len` when no budget was consulted.
+
+### What the rows say
+
+| reason | LocalSend | Immich |
+|---|---:|---:|
+| `opaque_after_rename` | 854 | 1,210 |
+| `names_absent_identifier` | 19 | 32 |
+| `not_recordable` | 0 | 0 |
+| **gate rejections** | **873** | **1,242** |
+| `coordinate_already_claimed` | 974 | 1,249 |
+
+**This reframes what R33 actually changed.** The dominant class is not the new dangling-identifier rule -
+that catches 19 and 32. It is `opaque_after_rename`: replaying renames before judging let the
+**pre-existing** informative gate see the text it was always meant to judge. `local_m32.f8` passed
+capture, becomes `tmp7.f8`, and `is_opaque_temporary` rejects it. The round's substance was fixing *when*
+the judgment happens, not adding a judgment.
+
+`not_recordable` being exactly zero on both samples is worth stating: renaming maps into `tmpN`-shaped
+tokens and never introduces a brace or a comment terminator, so the form gate never fires on a renamed
+value. A counter that is structurally unreachable reads zero for a better reason than one that is merely
+untested.
+
+### The number that does not add up, stated as such
+
+The R33 span delta is **1,995** on LocalSend and **3,429** on Immich. Gate rejections are **873** and
+**1,242**. Those do not reconcile, and two candidate explanations are ruled out by measurement rather
+than by argument:
+
+- **Not a wrong denominator.** A build at the R33 parent `f733d8e`, scanned with the same four-literal
+  pattern, gives exactly **4,369** and **7,246** - R29's published figures to the digit. So R30, R31 and
+  R32 moved nothing and the whole delta belongs to R33.
+- **Not the deduplication drop.** `coordinate_already_claimed` is recorded here for completeness, but it
+  must not be added in to close the gap. That path is unchanged since R29, so those drops occur in both
+  measurements and cancel in a delta. Worse for the arithmetic: rejecting more candidates at the gate
+  leaves fewer competing for a coordinate, so dedup drops should have *fallen*, which makes 873 more
+  anomalous rather than less.
+
+The arithmetic is not merely short, it is **inconsistent**, which is a stronger statement and worth
+writing down as one. Dedup drops occur in both builds, so if the candidate population reaching insertion
+were unchanged the identity would be
+
+```
+1,995 = (gate_post + dedup_post) - (gate_pre + dedup_pre)
+1,995 = (873 + 974) - (gate_pre + dedup_pre)
+gate_pre + dedup_pre = -148
+```
+
+Negative, and both terms are counts of things that happened. Equivalently: after R33 the insertion path
+accounts for 2,374 + 873 + 974 = **4,221** candidates, while before it emitted **4,369** annotations
+*before* any of its own drops. So the population arriving at insertion is not the same in the two builds.
+
+Three explanations, and the first two are eliminated by measurement:
+
+- **Not a units mismatch.** The obvious candidate was one candidate set yielding several spans, making
+  the four-literal scan and the one-row-per-`(join, reg)` counter different units. Measured at both
+  commits with the audit on: pre-R33 emits 4,369 `annotation` records against 4,369 scanned spans, and
+  post-R33 2,374 against 2,374. Exactly one record per span on both sides.
+- **Not an upstream change.** `git diff f733d8e..663fcbc` on the structurer adds
+  `replay_identifier_renames`, `live_identifier_tokens`, `candidate_names_only_live_locals` and the gate
+  that calls them, and touches no capture-side function. `contains_uninformative_token` and the capture
+  filter are byte-identical between the builds.
+- **Open.** Something reduces the candidate population at insertion by at least 148 without being any of
+  the drops this path records. I have not found it, and I am not going to guess at it in a research
+  record whose whole subject is unsupported claims.
+
+So this section reports a **located inconsistency, not a reconciliation**. That is a worse result than a
+clean identity and a better one than the number I would have published by adding `dedup` in until the
+totals matched - which they nearly do, 1,847 against 1,995, and which would have been wrong for the
+reason given above.
+
+The rows are byte-inert - enabling the audit produces an identical corpus - and the counter is ungated
+for the reason `record_cap_omission` gives for its own: a counter that only exists under an environment
+variable is one a fixture cannot assert on.
+
+### A key-space defect the accounting work exposed
+
+`record_cap_omissions` keyed its rows by the loss-site *label*, so loop rows landed at
+`("loop_entry", header)`. The declared key space is `("loop", header)` - `LOSS_SITE_OF_TAG` in the
+reconciler states that pairing and its own fixture uses it, and `loop_entry` is not a member of
+`SITE_TAGS` at all. So those rows sat in no declared space.
+
+It survived because **no validator reads an omission row**: the reconciler filters to
+`record == "annotation"` and the provenance checker never mentions them. The cap fixture asserts on the
+label, not the key, so it stayed green through the whole defect. Fixed at both rows, and a fixture now
+pins the label-and-tag pairing at both - it fails when the tag is reverted to the label.

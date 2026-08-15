@@ -1491,11 +1491,45 @@ impl<'a> FuncEmitter<'a> {
                     // Re-judged on the text that will actually be emitted, which is
                     // what `candidate_form` promises and what an independent scan of
                     // the output checks.
-                    if renamed.iter().any(|value| {
-                        !is_recordable_annotation_candidate(value)
-                            || !is_informative_annotation_candidate(value)
-                            || !candidate_names_only_live_locals(value, &live)
-                    }) {
+                    //
+                    // Every rejection here is recorded. Bringing the spelling forward
+                    // is what makes these gates fire at all: `local_m32.f8` passed
+                    // capture and becomes `tmp7.f8`, which `is_opaque_temporary` then
+                    // rejects. So this is where the annotations lost this round actually
+                    // go, and a silent `continue` would have made a drop of roughly two
+                    // thousand per sample invisible - the same accounting gap the cap
+                    // ledger exists to prevent.
+                    let rejection = renamed.iter().find_map(|value| {
+                        if !is_recordable_annotation_candidate(value) {
+                            Some((value, "not_recordable"))
+                        } else if !is_informative_annotation_candidate(value) {
+                            Some((value, "opaque_after_rename"))
+                        } else if !candidate_names_only_live_locals(value, &live) {
+                            Some((value, "names_absent_identifier"))
+                        } else {
+                            None
+                        }
+                    });
+                    if let Some((value, reason)) = rejection {
+                        let rendered = value.clone();
+                        let loop_site = self.loop_annotation_sites.contains(&anchor.join);
+                        let (loss_site, site_tag, provenance) = if loop_site {
+                            (LOOP_LOSS_SITE, LOOP_SITE_TAG, &mut self.loop_provenance)
+                        } else {
+                            (JOIN_LOSS_SITE, JOIN_LOSS_SITE, &mut self.join_provenance)
+                        };
+                        record_filter_rejection(
+                            provenance,
+                            FilterRejection {
+                                loss_site,
+                                // Declared key space, as in `record_cap_omissions`: tag
+                                // `loop`, label `loop_entry`.
+                                site_key: SiteKey(site_tag, anchor.join as u64),
+                                register: reg.clone(),
+                                reason,
+                                rendered,
+                            },
+                        );
                         continue;
                     }
                     debug_assert!(
@@ -1524,6 +1558,26 @@ impl<'a> FuncEmitter<'a> {
                         .iter()
                         .any(|existing| existing.line == line_index && existing.at == index)
                     {
+                        // Recorded, because this is the last unaccounted drop on this
+                        // path and its size is unknown until it is counted. It is a
+                        // different fact from the gates above: nothing about this value
+                        // is wrong, the coordinate is simply already claimed.
+                        let loop_site = self.loop_annotation_sites.contains(&anchor.join);
+                        let (loss_site, site_tag, provenance) = if loop_site {
+                            (LOOP_LOSS_SITE, LOOP_SITE_TAG, &mut self.loop_provenance)
+                        } else {
+                            (JOIN_LOSS_SITE, JOIN_LOSS_SITE, &mut self.join_provenance)
+                        };
+                        record_filter_rejection(
+                            provenance,
+                            FilterRejection {
+                                loss_site,
+                                site_key: SiteKey(site_tag, anchor.join as u64),
+                                register: reg.clone(),
+                                reason: "coordinate_already_claimed",
+                                rendered: annotation.clone(),
+                            },
+                        );
                         continue;
                     }
                     let planned = inserts
@@ -1589,16 +1643,27 @@ impl<'a> FuncEmitter<'a> {
     fn record_cap_omissions(&mut self, omissions: Vec<PlannedCapOmission>) {
         for omission in omissions {
             let loop_site = self.loop_annotation_sites.contains(&omission.join);
-            let (loss_site, provenance) = if loop_site {
-                (LOOP_LOSS_SITE, &mut self.loop_provenance)
+            let (loss_site, site_tag, provenance) = if loop_site {
+                (LOOP_LOSS_SITE, LOOP_SITE_TAG, &mut self.loop_provenance)
             } else {
-                (JOIN_LOSS_SITE, &mut self.join_provenance)
+                (JOIN_LOSS_SITE, JOIN_LOSS_SITE, &mut self.join_provenance)
             };
             record_cap_omission(
                 provenance,
                 CapOmissionFacts {
                     loss_site,
-                    site_key: SiteKey(loss_site, omission.join as u64),
+                    // The key tag, not the loss-site label. The two coincide at the join
+                    // site and diverge at the loop site: the declared key space is
+                    // `("loop", header)` while the label is `loop_entry`, which is the
+                    // pairing `LOSS_SITE_OF_TAG` in the reconciler states and its own
+                    // fixture uses. `loop_entry` is not a member of `SITE_TAGS`, so
+                    // keying by the label put these rows in no declared space at all.
+                    //
+                    // It survived because neither validator reads an omission row: the
+                    // reconciler filters to `record == "annotation"` and the provenance
+                    // checker never mentions them. `annotation_caps.rs` asserts on the
+                    // `loss_site` label, not the key, so it stayed green too.
+                    site_key: SiteKey(site_tag, omission.join as u64),
                     register: omission.register,
                     rendered: omission.rendered,
                     budget: omission.reason,

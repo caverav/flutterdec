@@ -1043,10 +1043,30 @@ impl<'a> FuncEmitter<'a> {
             // Same capture-before-naming gap as the join and loop sites: bring the
             // spelling forward, then re-judge on the text that will be emitted.
             let value = replay_identifier_renames(&anchor.value, &self.identifier_renames);
-            if !is_recordable_annotation_candidate(&value)
-                || !is_informative_annotation_candidate(&value)
-                || !candidate_names_only_live_locals(&value, &live)
-            {
+            let reason = if !is_recordable_annotation_candidate(&value) {
+                Some("not_recordable")
+            } else if !is_informative_annotation_candidate(&value) {
+                Some("opaque_after_rename")
+            } else if !candidate_names_only_live_locals(&value, &live) {
+                Some("names_absent_identifier")
+            } else {
+                None
+            };
+            if let Some(reason) = reason {
+                // Accounted for, not dropped silently - same reasoning as the join and
+                // loop sites, and recorded after the cheap gates for the same reason:
+                // the counter answers how many annotations this rejection removed from
+                // the corpus, not how many values happened to fail it.
+                record_filter_rejection(
+                    &mut self.call_provenance,
+                    FilterRejection {
+                        loss_site: CALL_LOSS_SITE,
+                        site_key: SiteKey(CALL_LOSS_SITE, anchor.call_va),
+                        register: anchor.register.clone(),
+                        reason,
+                        rendered: value,
+                    },
+                );
                 continue;
             }
             let annotation = PRE_CALL_ANNOTATION.render(std::slice::from_ref(&value));

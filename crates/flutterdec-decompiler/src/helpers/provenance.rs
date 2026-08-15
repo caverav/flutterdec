@@ -135,6 +135,35 @@ pub(super) struct FunctionProvenance {
     /// them, so a row lost between the emitter and the audit file shows up as a
     /// disagreement instead of as a smaller, still plausible total.
     pub(super) omitted_at_insertion: usize,
+    /// One row per annotation dropped because the value it would show names an
+    /// identifier the reader cannot find in the body.
+    ///
+    /// Kept separate from `cap_omissions` rather than folded in with another
+    /// `budget` value. A budget drop and a filter drop answer different
+    /// questions - "the annotation did not fit" against "the annotation was not
+    /// true of the emitted text" - and `CapOmissionFacts` has no honest values
+    /// for `budget`, `line_len` or `planned_len` here, because no budget was
+    /// ever consulted. Merging them would also inflate the figure
+    /// `VAL-SAFETY-008` reads.
+    pub(super) filter_rejections: Vec<FilterRejection>,
+    /// The same rejections as a running total, for the reason given above the
+    /// cap counter.
+    pub(super) rejected_at_filter: usize,
+}
+
+/// One annotation dropped by the liveness filter rather than by a budget.
+#[derive(Debug, Clone)]
+pub(super) struct FilterRejection {
+    pub(super) loss_site: &'static str,
+    pub(super) site_key: SiteKey,
+    pub(super) register: String,
+    /// Which gate rejected it. Three classes, all reached only because the
+    /// spelling is brought forward first: a value that is not a recordable form,
+    /// one that renames into an opaque temporary, and one that names an
+    /// identifier absent from the body. Emitted so the split is data the corpus
+    /// asserts rather than a grep re-derived by hand each round.
+    pub(super) reason: &'static str,
+    pub(super) rendered: String,
 }
 
 #[derive(serde::Serialize)]
@@ -179,6 +208,21 @@ struct CapOmissionLine<'a> {
     annotation_len: usize,
     line_len: usize,
     planned_len: usize,
+    rendered: &'a str,
+}
+
+#[derive(serde::Serialize)]
+struct FilterRejectionLine<'a> {
+    schema_version: u32,
+    record: &'static str,
+    sample: &'a str,
+    candidate_sha256: &'a str,
+    function_id: u64,
+    loss_site: &'static str,
+    site_key: &'a SiteKey,
+    register: &'a str,
+    reason: &'a str,
+    annotation_len: usize,
     rendered: &'a str,
 }
 
@@ -233,6 +277,18 @@ pub(super) fn record_cap_omission(
         planned_len: facts.planned_len,
         rendered: facts.rendered,
     });
+}
+
+/// Note one annotation dropped because its value names a dead identifier.
+///
+/// Ungated for the same reason as `record_cap_omission`: a drop a fixture cannot
+/// assert on is how a silent drop returns. Only the audit file write is gated.
+pub(super) fn record_filter_rejection(
+    provenance: &mut FunctionProvenance,
+    rejection: FilterRejection,
+) {
+    provenance.rejected_at_filter += 1;
+    provenance.filter_rejections.push(rejection);
 }
 
 /// The audit output path, or `None` when the audit is off.
@@ -403,6 +459,26 @@ pub(super) fn write_function_provenance(source: &str, provenance: &FunctionProve
             out.push('\n');
         }
     }
+    for rejection in &provenance.filter_rejections {
+        let line = FilterRejectionLine {
+            schema_version: PROVENANCE_SCHEMA_VERSION,
+            record: "filter_rejection",
+            sample: sample_name(),
+            candidate_sha256: candidate_sha256(),
+            function_id: provenance.function_id,
+            loss_site: rejection.loss_site,
+            site_key: &rejection.site_key,
+            register: &rejection.register,
+            reason: rejection.reason,
+            annotation_len: rejection.rendered.len(),
+            rendered: &rejection.rendered,
+        };
+        if let Ok(text) = serde_json::to_string(&line) {
+            out.push_str(&text);
+            out.push('\n');
+        }
+    }
+
     if provenance.omitted_at_insertion > 0 {
         let line = CapSummaryLine {
             schema_version: PROVENANCE_SCHEMA_VERSION,

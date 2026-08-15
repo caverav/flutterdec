@@ -88,6 +88,42 @@ fn omission_rows(emitter: &FuncEmitter<'_>) -> Vec<(&'static str, &'static str, 
                 omission.annotation_len,
             ));
         }
+        // The label and the key tag are a declared pair, and they are not the same
+        // string at the loop site: the reconciler's `LOSS_SITE_OF_TAG` maps tag `loop`
+        // to label `loop_entry`, and `loop_entry` is not a member of its `SITE_TAGS`.
+        // Keying these rows by the label put them in no declared space at all, and it
+        // survived because no validator reads an omission row - the reconciler filters
+        // to `record == "annotation"` and the provenance checker never mentions them.
+        // The assertions above read the label, so they stayed green through it. This
+        // pins both halves.
+        for omission in &stream.cap_omissions {
+            let expected_tag = match omission.loss_site {
+                "loop_entry" => "loop",
+                other => other,
+            };
+            assert_eq!(
+                omission.site_key.0, expected_tag,
+                "a {} row must key on the declared tag, not on its label",
+                omission.loss_site
+            );
+        }
+        for rejection in &stream.filter_rejections {
+            let expected_tag = match rejection.loss_site {
+                "loop_entry" => "loop",
+                other => other,
+            };
+            assert_eq!(
+                rejection.site_key.0, expected_tag,
+                "a {} rejection row must key on the declared tag, not on its label",
+                rejection.loss_site
+            );
+        }
+        assert_eq!(
+            stream.rejected_at_filter,
+            stream.filter_rejections.len(),
+            "the counted rejections and the detail rows must agree for {}",
+            stream.loss_site
+        );
     }
     rows
 }
