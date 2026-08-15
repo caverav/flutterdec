@@ -3176,6 +3176,49 @@ lifted expression behind it. Six sites were traced by hand to the arm writers in
 and all checked out, which is a spot-check rather than a proof.
 ## R29. Round 2 annotation coverage, published per loss site
 
+> ## SUPERSEDED. Every count in this section describes a corpus whose annotations named identifiers that did not exist.
+>
+> **Do not cite a number from R29.** These counts were measured before R33 found that 3,022 annotation
+> values on LocalSend referenced identifiers appearing nowhere in their file - `argN`, `local_mN`,
+> `local_pN`, all rewritten by the naming pass after the candidate was captured. So this section counted
+> annotations a reader could not resolve, and its headline gain was substantially an artifact of that.
+>
+> Corrected figures, both samples, full scope, after the fix:
+>
+> | | LocalSend | Immich |
+> |---|---:|---:|
+> | exhaustive `= ` | 197 | 283 |
+> | non-exhaustive | 1,850 | 3,135 |
+> | loop-entry | 321 | 387 |
+> | pre-call | 6 | 12 |
+> | **total** | **2,374** | **3,817** |
+> | exhaustive share of join annotations | **9.6%** | **8.3%** |
+> | dangling identifier references | **0** | **0** |
+>
+> Against R29's published 4,369 and 7,246 that is a second, larger fall, and the two have different causes
+> which must not be merged into one narrative: the first was the usefulness whitelist tightening, the
+> second is rejecting annotations that named nothing.
+>
+> **R29's headline claim inverts.** It reported the exhaustive share rising 3.1% to 19.2% / 21.0%; the
+> honest figures are 9.6% and 8.3%, because exhaustive annotations were hit hardest - down 74% against
+> 42% for non-exhaustive. The "complete" claims this section celebrated were disproportionately the ones
+> naming dead identifiers.
+>
+> The two ledger tables below have **stale counts**, not stale integrity assertions, and the distinction
+> matters. Their `reconciled true` and `audit_rows_vs_corpus_scan 0` rows are **re-established**: both
+> validators were re-run against a fresh audit after the fix and report zero across all seven rules and
+> all seven counts. Only the volume columns await regeneration, and they are deliberately not hand-edited
+> because their columns derive from uncapped and control builds - hand-editing a provenance artifact is
+> what left a stale `site_key` in a fixture earlier in this round.
+>
+> R33 carries the method, the per-class attribution and the verification. R34 carries a later naming fix
+> which accounts for a small further shift, so a figure of 2,368 spans measured between the two is not in
+> conflict with 2,374 here: the earlier scan's pattern omitted the pre-call literal, which the table above
+> shows occurs exactly six times, and 197 + 1,850 + 321 = 2,368 exactly. `raw_register_name_refs` is
+> unchanged at 136,378 and 189,696 throughout - which is exactly
+> why the ruler could not see this defect, and why citing its zero as evidence that no `argN` reaches
+> output was circular.
+
 R28 annotated one loss site. Round 2 extended the same annotate-do-not-materialise design to two
 more - loop-header entry and pre-call clobber - and, at the site R28 already covered, replaced a
 containment test with a whole-value whitelist. This section publishes what came out, per sample and
@@ -3346,6 +3389,13 @@ enumerates the join's predecessors and reads each candidate from that predecesso
 block-end snapshot, so joins with three and four predecessors are covered at all and a complete one
 is recognised as complete. The exhaustive share of join annotations rose from 3.1% to 19.2% on
 LocalSend and from 3.1% to 21.0% on Immich.
+
+> **This conclusion reversed.** See the banner at the head of R29. The exhaustive share did not rise to
+> 19.2%/21.0%; corrected, it is 9.6% and 8.3%. The honest-form gain claimed here was substantially an
+> artifact of counting annotations whose values named identifiers absent from their own file, and the
+> exhaustive class was the one most inflated - fitting, since the exhaustive form is precisely the one
+> that asserts completeness. What survives is the second half: coverage of two loss sites that previously
+> had none.
 
 So the round bought a smaller set of annotations, a much larger fraction of which make a complete
 claim, plus coverage of two loss sites that previously had none. Whether that trade is worth 700 and
@@ -3770,3 +3820,94 @@ reserved today by someone who cannot see what it must distinguish.
 Recorded because "cheap and it applies to nothing" is an argument that sounds like thrift and is actually its
 opposite: the cost of unused machinery is not the code, it is that a later reader must work out whether the
 empty case is a gap or a decision.
+
+## R33. The annotations named identifiers that did not exist
+
+The feature's only job is telling a reader which value a register held. On LocalSend at full scope,
+**3,022 of the identifiers inside annotation spans appeared nowhere else in their file**, across 1,902
+of 22,102 files. `/* = local_m32.f8 */` beside a body that calls that local `tmp7`.
+
+### Why the ruler could not see it, and why my evidence was circular
+
+`raw_register_name_refs` reads 0, and I cited that as proof no `argN` reaches emitted output - in R28,
+then again in R31 and R32. The counter strips annotation spans **before** counting
+(`pipeline/quality.rs`), so it is structurally blind to anything inside one. The measurement I used
+could not observe the thing I claimed. That is the second published falsehood of this round traced to
+trusting a number without checking what it can see.
+
+The cause is an ordering the design always had: candidates are captured while a line is rendered, which
+is before `apply_name_and_type_hints`, and inserted after it. So a candidate spells its locals `argN`,
+`local_mN`, `local_pN` while the body has moved to `slotN`, `tmpN`, `poolValN`, `resultTmpN`.
+
+### Two mechanisms, because one class is rescuable and the other is not
+
+| class | occurrences | outcome |
+|---|---:|---|
+| `argN` | 834 | **rescued.** Replaying the rename map gives `slot0.f8` - a field access on an identifier live in the signature. 815 `slotN` appear in spans afterwards. |
+| `local_mN` | 1,215 | **dropped.** Renames to `tmpN`, which the existing filter rejects as one gap decorating another. Correct, and previously hidden by the stale spelling. |
+| `local_pN` | 974 | **dropped**, same reason. |
+
+The candidate is re-judged *after* the replay, on the text that will actually be emitted. That is what
+`candidate_form` promises - "the value is classified exactly as it will be rendered" - and what an
+independent scan of the output checks, so renaming without re-judging would have emitted text the filter
+itself would refuse.
+
+What survives both is checked against the identifiers actually present in the body. That rule is
+**structural, not a list of naming families**: a list is fail-open, passing silently the next time the
+naming pass gains a family, which is how this defect and a stale provenance fixture both arrived. So
+every identifier must be present unless its position proves it is not a local - followed by `(` it is a
+callee, preceded by `.` it is a field - with the reserved globals read from the single definition the
+naming pass already seeds from.
+
+The identifier set is snapshotted before insertion rather than scanned per token, because `self.lines`
+is mutated by the insertion loop: otherwise a token could count as live because an *earlier annotation*
+mentioned it. Annotations vouching for each other.
+
+### Snapshots had to move too
+
+Renaming candidates while leaving snapshots raw made a sound emitter report violations, because
+`check_snapshot` is audit-internal - "every candidate's value is in the snapshot its own id names".
+Renaming both is sound precisely because that rule compares the audit against itself; the rules that
+reach outside it, `ir` and `loop_ir`, check site keys, path keys and binding loss, never value
+spellings.
+
+### Verification
+
+Dangling references **3,022 to 0**. `argN` in spans **834 to 0**. Every `quality.json` counter unchanged
+on both samples, `raw_register_name_refs` at 136,378 and 189,696. The audit is byte-inert: enabling it
+produces an identical corpus (`diff -rq`, 0 differing files). Both validators report zero on a real
+corpus - the honest checker across all seven rules unfiltered, and the cross-audit reconciler across all
+seven counts, 2,374 spans against 2,374 records.
+
+Cost: annotation spans 4,363 to 2,374 on LocalSend and 7,246 to 3,817 on Immich. R29's figures are
+superseded, and its headline inverts - see the banner there.
+
+### A negative control that had rotted
+
+`testdata/provenance/join-audit-sample.jsonl` carried snapshot `site_key`s naming the join rather than
+the predecessor path, left stale when the join snapshot key was corrected earlier in this round. So the
+planted-violation test could not pass: the clean fixture scored 5 violations and each plant scored 5
+instead of 1. The control that proves the checker detects a real violation was silently dead, and
+nothing in CI would have said so - `scripts/lint-shell.sh` globs `*.sh`, so none of the round's eleven
+Python scripts is guarded by anything. Regenerated from each row's own `snapshot_id`.
+
+## R34. `resultTmpN` claimed a call result it never observed
+
+Found while auditing the naming rule R32 introduced, and it is a defect in that rule's enforcement
+rather than in the rule.
+
+`resultTmpN` survived R32 because it states an observed source: assignment from a call result. The
+selector was a `"{id} = t"` prefix test, so `{id} = thread.f104.f1968` and `{id} = true` matched too,
+and both are ubiquitous in real output. The name asserted a source nothing had verified - the exact
+class of unsupported claim R32 exists to remove, sitting inside one of the two names R32 kept.
+
+Now requires `t` followed by an ASCII digit. Checked the other survivor at the same time:
+`pool_assign` requires a literal `{id} = pool[`, `= (pool[` or `= ((pool[`, so `poolValN` does state an
+observed source. **R32's rule stands as written; exactly one survivor was misclassified.**
+
+A fixture pins it, built from the two real-corpus cases, and asserts the genuine `= t7` case still earns
+the name so it cannot pass vacuously. It fails when the digit requirement is removed.
+
+R32's own figures are deliberately **not** retro-edited: they were measured against R32's commit, and
+folding a later change into them would make them irreproducible from that commit, which is the property
+that makes this record citable. Same treatment as R25's retracted counts and R20's baseline.
