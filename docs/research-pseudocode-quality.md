@@ -4027,9 +4027,17 @@ Five explanations. All but the last are eliminated by measurement, and the last 
   assumed, since a silent `continue`'s size is unknown until it is instrumented, which is the whole
   argument of this section.
 - **Not a change in what reaches the gate.** Both builds were instrumented with the same counter for
-  distinct `(join_block, register)` pairs arriving at the candidate lookup. Both report **1,056**,
-  identically. The population offered to the gates is build-invariant, so nothing is vanishing upstream
-  of them.
+  distinct `(function_id, join_block, register)` pairs arriving at the candidate lookup. Both report
+  **5,490**, identically, so the population offered to the gates is invariant across the change and
+  nothing is vanishing upstream of them.
+
+  Worth recording how this number was nearly published wrong. The first version of the counter keyed on
+  `(join_block, register)` and omitted the function id, so the whole corpus pooled into one small space
+  and reported 1,056 on both builds. That equality was *consistent with* an invariant population but did
+  not establish one - two different per-function populations can both saturate 1,056 buckets. I wrote the
+  strong claim under the collapsed key before catching it. It is the same error as citing
+  `raw_register_name_refs`: a number that agrees with the hypothesis, from an instrument that could not
+  have disagreed.
 - **Not R34.** Isolating the two changes, `663fcbc` (R33 alone) emits **2,099** candidate sets and HEAD
   emits 2,099 - zero lost, zero gained. R34's set-neutrality is now established on set identity rather
   than on the span totals the earlier check used, so the whole 1,845 belongs to R33.
