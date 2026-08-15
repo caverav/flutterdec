@@ -18,6 +18,27 @@ struct DataEntry {
     stack_map_offset: usize,
 }
 
+impl InstructionTable {
+    pub(crate) fn len(&self) -> usize {
+        self.data.len()
+    }
+
+    pub(crate) fn first_entry_with_code(&self) -> usize {
+        self.first_entry_with_code
+    }
+
+    pub(crate) fn pc_offset_at(&self, index: usize) -> anyhow::Result<u64> {
+        let entry = self.data.get(index).ok_or_else(|| {
+            anyhow::anyhow!(
+                "instruction-table index {index} is out of bounds for length {}",
+                self.data.len()
+            )
+        })?;
+
+        Ok(entry.pc_offset as u64)
+    }
+}
+
 pub fn parse_instr_table_from_rodata(stream: &mut Stream) -> anyhow::Result<InstructionTable> {
     // ROData objects are wrapped inside OneByteString objects, so we need to read the syntetic fields first.
     let _tags = stream.read_raw_u64()?;
@@ -55,12 +76,5 @@ pub fn get_pc_offset_from_code_cluster_index(
     instr_table: &InstructionTable,
 ) -> anyhow::Result<usize> {
     let abs_index = instr_table.first_entry_with_code + code_cluster_index as usize;
-    let entry = instr_table.data.get(abs_index).ok_or_else(|| {
-        anyhow::anyhow!(
-            "instruction-table index {abs_index} is out of bounds for length {}",
-            instr_table.data.len()
-        )
-    })?;
-
-    Ok(entry.pc_offset)
+    Ok(instr_table.pc_offset_at(abs_index)? as usize)
 }

@@ -31,7 +31,7 @@ pub const VERSION_HASH_LENGTH: usize = 32usize;
 // schema information can be supplied dynamically.
 pub const DART_3_11_1_SNAPSHOT_HASH: &str = "78da37fed6bf1489361a312568249f3f";
 
-pub const HEADER_SIZE: usize = 64;
+pub const OBJECT_START_ALIGNMENT: usize = 64;
 
 macro_rules! DEFINE_CLASS_ID {
     ( $( $name:ident = $val:expr ),* ) => {

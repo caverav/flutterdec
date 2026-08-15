@@ -22,6 +22,10 @@ macro_rules! DECLARE_FIXED_LENGTH_CLUSTER {
         }
 
         impl Cluster for $cluster_name {
+            fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+                self
+            }
+
             fn set_metadata(
                 &mut self,
                 tags: u32,

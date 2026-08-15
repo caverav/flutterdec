@@ -50,6 +50,8 @@ pub struct PatchClass {
 
 #[derive(Default)]
 pub struct Function {
+    pub entry_point: u64,
+    pub unchecked_entry_point: u64,
     pub name: u32,      // StringPtr
     pub owner: u32,     // ObjectPtr
     pub signature: u32, // FunctionTypePtr
@@ -366,7 +368,7 @@ pub struct Instance {
 
 #[derive(Debug)]
 pub enum InstanceField {
-    Reference(u32),
+    Reference(u32), // maybe rename this in the future
     Unboxed(u64),
 }
 

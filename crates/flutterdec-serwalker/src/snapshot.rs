@@ -1,9 +1,8 @@
 use std::collections::HashMap;
-use std::mem::size_of;
 
-use crate::cluster::{decide_cluster, Cluster};
+use crate::cluster::{decide_cluster, resolve_entrypoints, Cluster};
 use crate::constants::{
-    self, ClassId, DART_3_11_1_SNAPSHOT_HASH, HEADER_SIZE, MAGIC_BYTES, UNSIGNED_M,
+    self, DART_3_11_1_SNAPSHOT_HASH, MAGIC_BYTES, OBJECT_START_ALIGNMENT, SNAPSHOT_MAGIC_NUMBER_SZ,
 };
 use crate::instruction_table::{parse_instr_table_from_rodata, InstructionTable};
 use crate::program_roots::structs::ProgramRoots;
@@ -48,7 +47,7 @@ pub struct DataSnapshot {
     instruction_table: InstructionTable,
 
     magic_bytes: u32,
-    size: u64,
+    clustered_size: u64,
     kind: SnapshotKind,
 
     version_hash: String,
@@ -84,7 +83,10 @@ impl DataSnapshot {
             anyhow::bail!("Not a snapshot...")
         }
 
-        self.size = stream.read_raw_u64()?;
+        self.clustered_size = stream
+            .read_raw_u64()?
+            .checked_add(SNAPSHOT_MAGIC_NUMBER_SZ as u64)
+            .ok_or_else(|| anyhow::anyhow!("snapshot length overflow"))?;
         self.kind =
             SnapshotKind::try_from(stream.read_raw_u64()?).map_err(|e| anyhow::anyhow!(e))?;
 
@@ -187,6 +189,14 @@ impl DataSnapshot {
         self.instruction_table = parse_instr_table_from_rodata(stream)?;
         Ok(())
     }
+
+    fn resolve_entrypoints(&mut self) -> anyhow::Result<()> {
+        resolve_entrypoints(
+            &mut self.clusters,
+            &self.instruction_table,
+            self.instr_table_len,
+        )
+    }
 }
 
 pub fn parse_snapshot(stream: &mut Stream) -> anyhow::Result<DataSnapshot> {
@@ -195,14 +205,34 @@ pub fn parse_snapshot(stream: &mut Stream) -> anyhow::Result<DataSnapshot> {
     println!("Now parsing the snapshot...");
     snapshot.parse_header(stream)?;
     snapshot.parse_clusters(stream)?;
-    snapshot.parse_roots(stream)?; // right after we finish reading the roots we need to align
+    snapshot.parse_roots(stream)?;
 
-    stream.align_stream(HEADER_SIZE)?;
+    let clustered_end = usize::try_from(snapshot.clustered_size)
+        .map_err(|_| anyhow::anyhow!("snapshot length does not fit in usize"))?;
+    anyhow::ensure!(
+        stream.get_current_pos() == clustered_end,
+        "clustered snapshot ended at offset {}, but its header declares {clustered_end}",
+        stream.get_current_pos()
+    );
 
-    // after that, we land right at the start of the ROData image
-    // where the instruction table is, at an offset we already know
-    stream.seek(stream.get_current_pos() + snapshot.instr_table_offset)?;
-    snapshot.parse_instruction_table(stream)?;
+    stream.seek(clustered_end)?;
+    stream.align_stream(OBJECT_START_ALIGNMENT)?;
+
+    if snapshot.instr_table_offset == 0 {
+        anyhow::ensure!(
+            snapshot.instr_table_len == 0,
+            "snapshot declares an instruction table but has no ROData offset"
+        );
+    } else {
+        let instruction_table_start = stream
+            .get_current_pos()
+            .checked_add(snapshot.instr_table_offset)
+            .ok_or_else(|| anyhow::anyhow!("instruction-table offset overflow"))?;
+        stream.seek(instruction_table_start)?;
+        snapshot.parse_instruction_table(stream)?;
+    }
+
+    snapshot.resolve_entrypoints()?;
 
     Ok(snapshot)
 }

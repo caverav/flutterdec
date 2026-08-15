@@ -1,8 +1,10 @@
 mod base_objects_pseudocluster;
 
+use std::collections::HashMap;
 use std::u64;
 
 use crate::constants::{ClassId, ClassId::*};
+use crate::instruction_table::{get_pc_offset_from_code_cluster_index, InstructionTable};
 use crate::raw_object::*;
 use crate::stream::Stream;
 use crate::DECLARE_FIXED_LENGTH_CLUSTER;
@@ -10,6 +12,7 @@ use crate::DECLARE_VARIABLE_LENGTH_CLUSTER;
 use crate::FFI_TYPES_LIST;
 
 pub trait Cluster {
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
     fn set_metadata(&mut self, tags: u32, cid: ClassId, is_immutable: bool, is_canonical: bool);
     fn is_fixed_len(&self) -> bool;
     fn read_alloc(&mut self, last_ref_id: &mut u64, stream: &mut Stream) -> anyhow::Result<usize>;
@@ -62,6 +65,8 @@ DECLARE_FIXED_LENGTH_CLUSTER!(PatchClass, PatchClassCluster, |_self, stream| {
 DECLARE_FIXED_LENGTH_CLUSTER!(Function, FunctionCluster, |_self, stream| {
     for obj_idx in 0.._self.obj_count as usize {
         let obj = &mut *_self.objs[obj_idx];
+        obj.entry_point = u64::MAX;
+        obj.unchecked_entry_point = u64::MAX;
         obj.name = stream.read_ref_id()?;
         obj.owner = stream.read_ref_id()?;
         obj.signature = stream.read_ref_id()?;
@@ -389,6 +394,10 @@ macro_rules! IMPLEMENT_VARIABLE_LENGTH_CLUSTER {
         |$fill_self:ident, $fill_stream:ident| $fill_impl:block
     ) => {
         impl Cluster for $cluster_name {
+            fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+                self
+            }
+
             fn set_metadata(
                 &mut self,
                 tags: u32,
@@ -559,6 +568,161 @@ IMPLEMENT_VARIABLE_LENGTH_CLUSTER!(
         }
     }
 );
+
+pub fn resolve_entrypoints(
+    clusters: &mut HashMap<u32, Box<dyn Cluster>>,
+    instruction_table: &InstructionTable,
+    expected_non_deferred_code_count: usize,
+) -> anyhow::Result<()> {
+    const MONOMORPHIC_ENTRY_OFFSET: u64 = 8;
+    const POLYMORPHIC_ENTRY_OFFSET: u64 = 24;
+
+    let first_entry_with_code = instruction_table.first_entry_with_code();
+    let table_non_deferred_code_count = instruction_table
+        .len()
+        .checked_sub(first_entry_with_code)
+        .ok_or_else(|| anyhow::anyhow!("instruction-table first Code entry exceeds its length"))?;
+
+    anyhow::ensure!( // idk if this should be assert
+        table_non_deferred_code_count == expected_non_deferred_code_count,
+        "instruction table contains {table_non_deferred_code_count} non-deferred Code entries, but the snapshot header declares {expected_non_deferred_code_count}"
+    );
+
+    let code_entrypoints = if let Some(code_cluster) = clusters
+        .values_mut()
+        .find_map(|cluster| cluster.as_any_mut().downcast_mut::<CodeCluster>())
+    {
+        let non_deferred_count = usize::try_from(code_cluster.non_deferred_obj_count)
+            .map_err(|_| anyhow::anyhow!("non-deferred Code count does not fit in usize"))?;
+
+        anyhow::ensure!(
+            non_deferred_count == expected_non_deferred_code_count,
+            "Code cluster contains {non_deferred_count} non-deferred objects, but the snapshot header declares {expected_non_deferred_code_count}"
+        );
+
+        anyhow::ensure!(
+            code_cluster.objs.len()
+                == usize::try_from(code_cluster.obj_count)
+                    .map_err(|_| anyhow::anyhow!("Code object count does not fit in usize"))?,
+            "Code cluster object count does not match its allocated objects"
+        );
+
+        for (cluster_index, code) in code_cluster
+            .objs
+            .iter_mut()
+            .take(non_deferred_count)
+            .enumerate()
+        {
+            anyhow::ensure!(
+                code.entry_point == u64::MAX && code.monomorphic_entry_point == u64::MAX,
+                "Code entry points were already resolved"
+            );
+            anyhow::ensure!(
+                code.unchecked_entry_point == code.monomorphic_unchecked_entry_point,
+                "Code unchecked-entry addends do not match"
+            );
+
+            let code_cluster_index = u32::try_from(cluster_index)
+                .map_err(|_| anyhow::anyhow!("Code cluster index does not fit in u32"))?;
+            let payload_start =
+                get_pc_offset_from_code_cluster_index(code_cluster_index, instruction_table)?
+                    as u64;
+            let unchecked_offset = code.unchecked_entry_point;
+            let entry_offset = if code.has_monomorphic_entrypoint {
+                POLYMORPHIC_ENTRY_OFFSET
+            } else {
+                0
+            };
+            let monomorphic_entry_offset = if code.has_monomorphic_entrypoint {
+                MONOMORPHIC_ENTRY_OFFSET
+            } else {
+                0
+            };
+
+            // these ok_or_else checks were added
+            // for robust error checking
+            // but really this should never happen in normal snapshots, as with many other checks
+
+            let entry_point = payload_start
+                .checked_add(entry_offset)
+                .ok_or_else(|| anyhow::anyhow!("Code entry-point offset overflow"))?;
+            let monomorphic_entry_point = payload_start
+                .checked_add(monomorphic_entry_offset)
+                .ok_or_else(|| anyhow::anyhow!("Code monomorphic entry-point offset overflow"))?;
+            let unchecked_entry_point = entry_point
+                .checked_add(unchecked_offset)
+                .ok_or_else(|| anyhow::anyhow!("Code unchecked entry-point offset overflow"))?;
+            let monomorphic_unchecked_entry_point = monomorphic_entry_point
+                .checked_add(unchecked_offset)
+                .ok_or_else(|| {
+                    anyhow::anyhow!("Code momomorphic unchecked entry-point offset overflow")
+                })?;
+
+            code.entry_point = entry_point;
+            code.monomorphic_entry_point = monomorphic_entry_point;
+            code.unchecked_entry_point = unchecked_entry_point;
+            code.monomorphic_unchecked_entry_point = monomorphic_unchecked_entry_point;
+        }
+
+        code_cluster
+            .objs
+            .iter()
+            .map(|code| (code.entry_point, code.unchecked_entry_point))
+            .collect::<Vec<_>>()
+    } else { // this should never happen in a normal Flutter-generated snapshot
+        anyhow::ensure!(
+            expected_non_deferred_code_count == 0,
+            "snapshot declares non-deferred Code objects but has no Code cluster"
+        );
+        Vec::new()
+    };
+
+    // this has to happen after the code cluster entry resolution
+    // because this resolution is really just grabbing the code_index to find the 
+    // respective Code object and retrieve its fields
+
+    if let Some(function_cluster) = clusters
+        .values_mut()
+        .find_map(|cluster| cluster.as_any_mut().downcast_mut::<FunctionCluster>())
+    {
+        for function in &mut function_cluster.objs {
+            anyhow::ensure!(
+                function.entry_point == u64::MAX && function.unchecked_entry_point == u64::MAX,
+                "Function entry points were already resolved"
+            );
+
+            if function.code_index == 0 {
+                continue;
+            }
+
+            let table_index = (function.code_index - 1) as usize;
+            if table_index < first_entry_with_code {
+                let entry_point = instruction_table.pc_offset_at(table_index)?;
+                function.entry_point = entry_point;
+                function.unchecked_entry_point = entry_point;
+                continue;
+            }
+
+            // instead of iterating through the CodeCluster, we just return a vec of (entry, unchecked_entry)
+            // for the Code objects we just resolved. Which is ordered of course, following the same order as the
+            // objs array of CodeCluster.
+            let code_cluster_index = table_index - first_entry_with_code;
+            let (entry_point, unchecked_entry_point) = code_entrypoints
+                .get(code_cluster_index)
+                .copied()
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "Function code index {} maps past the Code cluster",
+                        function.code_index
+                    )
+                })?;
+            function.entry_point = entry_point;
+            function.unchecked_entry_point = unchecked_entry_point;
+        }
+    }
+
+    Ok(())
+}
 DECLARE_VARIABLE_LENGTH_CLUSTER!(ObjectPool, ObjectPoolCluster);
 IMPLEMENT_VARIABLE_LENGTH_CLUSTER!(
     ObjectPoolCluster,
