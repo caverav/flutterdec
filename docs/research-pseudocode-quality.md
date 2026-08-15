@@ -4021,11 +4021,16 @@ Five explanations. All but the last are eliminated by measurement, and the last 
   `replay_identifier_renames`, `live_identifier_tokens`, `candidate_names_only_live_locals` and the gate
   that calls them, and touches no capture-side function. `contains_uninformative_token` and the capture
   filter are byte-identical between the builds.
-- **Not an unrecorded drop on this path.** Every `continue` from the anchor's line search to the insert
-  now emits a row: the unmatched-anchor search, the raw form gate, the three post-rename gates, and the
-  coordinate dedup. Two of those are measured zeros on both samples - worth having counted rather than
-  assumed, since a silent `continue`'s size is unknown until it is instrumented, which is the whole
-  argument of this section.
+- **Every `continue` I could find now emits a row** - the unmatched-anchor search, the raw form gate, the
+  three post-rename gates, and the coordinate dedup. Two are measured zeros on both samples, worth having
+  counted rather than assumed.
+
+  **That is not the same as complete, and the arrival counter below falsifies the stronger claim I first
+  wrote here.** At HEAD there are 5,490 arrivals, 2,099 emitted sets, and at most 1,597 distinct sets
+  carrying a drop row, which leaves roughly 1,800 triples that reach the candidate lookup and then
+  neither appear in output nor in any ledger row. The counter sits *after* the lookup, so the miss is not
+  the lookup. There is at least one path out of this loop I have not found, and the honest statement is
+  that the accounting is **more complete than it was and still not closed**.
 - **Not a change in what reaches the gate.** Both builds were instrumented with the same counter for
   distinct `(function_id, join_block, register)` pairs arriving at the candidate lookup. Both report
   **5,490**, identically, so the population offered to the gates is invariant across the change and
@@ -4042,12 +4047,13 @@ Five explanations. All but the last are eliminated by measurement, and the last 
   emits 2,099 - zero lost, zero gained. R34's set-neutrality is now established on set identity rather
   than on the span totals the earlier check used, so the whole 1,845 belongs to R33.
 
-With upstream loss, unrecorded drops, units and R34 all eliminated by measurement, what remains is not a
-pipeline defect but an artifact of **my decomposition**. Subtracting set populations across builds
-assumed the drop classes partition the loss; they do not. A set can be emitted at one coordinate and
-dropped at another, so it appears in both populations, and the subtraction double-counts in a direction
-that is not constant. The 1,995 span delta and the 778 rejected sets are each individually sound; the
-arithmetic joining them was not.
+With upstream loss, units and R34 eliminated by measurement, two things remain and they are different in
+kind. **An unfound path**: roughly 1,800 triples arrive at the candidate lookup and leave without either
+an annotation or a ledger row, so the accounting is improved but not closed. And **a defect in my
+decomposition**: subtracting set populations across builds assumed the drop classes partition the loss,
+and they do not - a set can be emitted at one coordinate and dropped at another, appearing in both
+populations, so the subtraction double-counts in a direction that is not constant. The 1,995 span delta
+and the 778 rejected sets are each individually sound; the arithmetic joining them was not.
 
 So this section reports a **measurement I can defend and a decomposition I cannot**, rather than the
 reconciliation it set out to produce. I am leaving it that way instead of adding `dedup` in until the
