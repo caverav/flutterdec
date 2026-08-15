@@ -4007,19 +4007,27 @@ Negative, and both terms are counts of things that happened. Equivalently: after
 accounts for 2,374 + 873 + 974 = **4,221** candidates, while before it emitted **4,369** annotations
 *before* any of its own drops. So the population arriving at insertion is not the same in the two builds.
 
-Three explanations, and the first two are eliminated by measurement:
+Four explanations, and the first three are eliminated by measurement:
 
-- **Not a units mismatch.** The obvious candidate was one candidate set yielding several spans, making
-  the four-literal scan and the one-row-per-`(join, reg)` counter different units. Measured at both
-  commits with the audit on: pre-R33 emits 4,369 `annotation` records against 4,369 scanned spans, and
-  post-R33 2,374 against 2,374. Exactly one record per span on both sides.
+- **Not a units mismatch, measured twice.** One candidate set can be reached at several coordinates, so
+  the span scan and a per-`(join, reg)` counter need not be the same unit. Both were checked. Records to
+  spans is exactly 1:1 at both commits - 4,369 records against 4,369 spans pre, 2,374 against 2,374 post.
+  And records per distinct `(function, site_key, register)` is **1.11 pre against 1.13 post**, with the
+  rejection rows at 1.12 on the same key. So the coordinate population is stable across the change and
+  the comparison is like-for-like. Re-running the whole argument in set units rather than span units does
+  not rescue it either: emitted sets fall **3,944 to 2,099**, a loss of 1,845, against **778** distinct
+  sets rejected. The gap survives the change of unit, at the same rough size.
 - **Not an upstream change.** `git diff f733d8e..663fcbc` on the structurer adds
   `replay_identifier_renames`, `live_identifier_tokens`, `candidate_names_only_live_locals` and the gate
   that calls them, and touches no capture-side function. `contains_uninformative_token` and the capture
   filter are byte-identical between the builds.
-- **Open.** Something reduces the candidate population at insertion by at least 148 without being any of
-  the drops this path records. I have not found it, and I am not going to guess at it in a research
-  record whose whole subject is unsupported claims.
+- **Not an unrecorded drop on this path.** Every `continue` between the candidate lookup and the insert
+  now emits a row: the raw form gate, the three post-rename gates, and the coordinate dedup. The raw gate
+  is a measured zero on both samples, which is worth having counted rather than assumed - it was a silent
+  `continue` whose size was unknown until it was instrumented.
+- **Open.** Something reduces the emitted population by roughly a thousand candidate sets without being
+  any drop this path takes. I have not found it, and I am not going to guess at it in a research record
+  whose whole subject is unsupported claims.
 
 So this section reports a **located inconsistency, not a reconciliation**. That is a worse result than a
 clean identity and a better one than the number I would have published by adding `dedup` in until the

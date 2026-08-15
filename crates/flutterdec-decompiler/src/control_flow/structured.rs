@@ -1469,11 +1469,35 @@ impl<'a> FuncEmitter<'a> {
                     else {
                         continue;
                     };
-                    if candidates
+                    if let Some(raw) = candidates
                         .values
                         .iter()
-                        .any(|value| !is_recordable_annotation_candidate(value))
+                        .find(|value| !is_recordable_annotation_candidate(value))
                     {
+                        // Judged on the raw value, before any rename, so this is a
+                        // different drop from the gate below and cannot be folded into
+                        // it. Recorded so "every rejection on this path is accounted"
+                        // is true of the function rather than of one branch of it.
+                        // Invariant across the R33 change, so it cannot explain the
+                        // reconciliation gap - which is exactly why it is worth having
+                        // counted rather than assumed.
+                        let rendered = raw.clone();
+                        let loop_site = self.loop_annotation_sites.contains(&anchor.join);
+                        let (loss_site, site_tag, provenance) = if loop_site {
+                            (LOOP_LOSS_SITE, LOOP_SITE_TAG, &mut self.loop_provenance)
+                        } else {
+                            (JOIN_LOSS_SITE, JOIN_LOSS_SITE, &mut self.join_provenance)
+                        };
+                        record_filter_rejection(
+                            provenance,
+                            FilterRejection {
+                                loss_site,
+                                site_key: SiteKey(site_tag, anchor.join as u64),
+                                register: reg.clone(),
+                                reason: "not_recordable_raw",
+                                rendered,
+                            },
+                        );
                         continue;
                     }
                     // Captured before the naming pass, inserted after it, so the
