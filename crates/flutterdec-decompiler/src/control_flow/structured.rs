@@ -1440,6 +1440,43 @@ impl<'a> FuncEmitter<'a> {
                         })
                     })
                 }) else {
+                    // No emitted line carries this anchor's registers, so a candidate
+                    // set that exists is never offered to any gate. This is the only
+                    // loss on this path that happens before the gates, and it was the
+                    // last silent one: the gates below record every drop they take, so
+                    // without this row "every drop is accounted" was a claim about one
+                    // branch rather than about the function.
+                    let lost: Vec<(String, String)> = original_tokens
+                        .iter()
+                        .filter_map(|reg| {
+                            self.join_candidates
+                                .get(&(anchor.join, reg.clone()))
+                                .map(|candidates| (reg.clone(), candidates.values.join(", ")))
+                        })
+                        .collect();
+                    let loop_site = self.loop_annotation_sites.contains(&anchor.join);
+                    let (loss_site, site_tag) = if loop_site {
+                        (LOOP_LOSS_SITE, LOOP_SITE_TAG)
+                    } else {
+                        (JOIN_LOSS_SITE, JOIN_LOSS_SITE)
+                    };
+                    for (reg, rendered) in lost {
+                        let provenance = if loop_site {
+                            &mut self.loop_provenance
+                        } else {
+                            &mut self.join_provenance
+                        };
+                        record_filter_rejection(
+                            provenance,
+                            FilterRejection {
+                                loss_site,
+                                site_key: SiteKey(site_tag, anchor.join as u64),
+                                register: reg,
+                                reason: "no_line_carries_register",
+                                rendered,
+                            },
+                        );
+                    }
                     continue;
                 };
                 let line_index = next_line + relative;

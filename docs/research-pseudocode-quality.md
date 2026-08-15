@@ -4007,7 +4007,7 @@ Negative, and both terms are counts of things that happened. Equivalently: after
 accounts for 2,374 + 873 + 974 = **4,221** candidates, while before it emitted **4,369** annotations
 *before* any of its own drops. So the population arriving at insertion is not the same in the two builds.
 
-Four explanations, and the first three are eliminated by measurement:
+Five explanations. All but the last are eliminated by measurement, and the last is a defect in the accounting rather than in the code:
 
 - **Not a units mismatch, measured twice.** One candidate set can be reached at several coordinates, so
   the span scan and a per-`(join, reg)` counter need not be the same unit. Both were checked. Records to
@@ -4021,16 +4021,28 @@ Four explanations, and the first three are eliminated by measurement:
   `replay_identifier_renames`, `live_identifier_tokens`, `candidate_names_only_live_locals` and the gate
   that calls them, and touches no capture-side function. `contains_uninformative_token` and the capture
   filter are byte-identical between the builds.
-- **Not an unrecorded drop on this path.** Every `continue` between the candidate lookup and the insert
-  now emits a row: the raw form gate, the three post-rename gates, and the coordinate dedup. The raw gate
-  is a measured zero on both samples, which is worth having counted rather than assumed - it was a silent
-  `continue` whose size was unknown until it was instrumented.
-- **Open.** Something reduces the emitted population by roughly a thousand candidate sets without being
-  any drop this path takes. I have not found it, and I am not going to guess at it in a research record
-  whose whole subject is unsupported claims.
+- **Not an unrecorded drop on this path.** Every `continue` from the anchor's line search to the insert
+  now emits a row: the unmatched-anchor search, the raw form gate, the three post-rename gates, and the
+  coordinate dedup. Two of those are measured zeros on both samples - worth having counted rather than
+  assumed, since a silent `continue`'s size is unknown until it is instrumented, which is the whole
+  argument of this section.
+- **Not a change in what reaches the gate.** Both builds were instrumented with the same counter for
+  distinct `(join_block, register)` pairs arriving at the candidate lookup. Both report **1,056**,
+  identically. The population offered to the gates is build-invariant, so nothing is vanishing upstream
+  of them.
+- **Not R34.** Isolating the two changes, `663fcbc` (R33 alone) emits **2,099** candidate sets and HEAD
+  emits 2,099 - zero lost, zero gained. R34's set-neutrality is now established on set identity rather
+  than on the span totals the earlier check used, so the whole 1,845 belongs to R33.
 
-So this section reports a **located inconsistency, not a reconciliation**. That is a worse result than a
-clean identity and a better one than the number I would have published by adding `dedup` in until the
+With upstream loss, unrecorded drops, units and R34 all eliminated by measurement, what remains is not a
+pipeline defect but an artifact of **my decomposition**. Subtracting set populations across builds
+assumed the drop classes partition the loss; they do not. A set can be emitted at one coordinate and
+dropped at another, so it appears in both populations, and the subtraction double-counts in a direction
+that is not constant. The 1,995 span delta and the 778 rejected sets are each individually sound; the
+arithmetic joining them was not.
+
+So this section reports a **measurement I can defend and a decomposition I cannot**, rather than the
+reconciliation it set out to produce. I am leaving it that way instead of adding `dedup` in until the
 totals matched - which they nearly do, 1,847 against 1,995, and which would have been wrong for the
 reason given above.
 
