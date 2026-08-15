@@ -2549,3 +2549,56 @@ fn alias_candidate_order_is_total_regardless_of_map_iteration_order() {
         "most frequent first, then lexicographic"
     );
 }
+
+/// `resultTmpN` claims the local was assigned from a call result, so a `t`-prefixed
+/// value that is not a numbered call temporary must not earn that name.
+///
+/// The selector used to be a `"{id} = t"` prefix test, which matched
+/// `thread.f104.f1968` and `true` - both ubiquitous in real output - so the one name
+/// kept on the grounds that it states an observed source was not enforcing it. Both
+/// negative cases here are drawn from a real corpus.
+#[test]
+fn a_t_prefixed_value_that_is_not_a_call_result_is_not_named_result_tmp() {
+    let ir = FunctionIr {
+        function_id: 9,
+        name: "tPrefix".to_string(),
+        entry_va: 0x9000,
+        blocks: Vec::new(),
+    };
+    let symbols = HashMap::new();
+    let mut emitter = FuncEmitter::new(&ir, &symbols);
+    emitter.locals.insert(-8, "local_m8".to_string());
+    emitter.locals.insert(-16, "local_m16".to_string());
+    emitter.locals.insert(-24, "local_m24".to_string());
+    emitter.lines = vec![
+        "dynamic tPrefix(dynamic arg0) {".to_string(),
+        "  var local_m8;".to_string(),
+        "  var local_m16;".to_string(),
+        "  var local_m24;".to_string(),
+        "  local_m8 = thread.f104.f1968;".to_string(),
+        "  local_m16 = true;".to_string(),
+        "  local_m24 = t7;".to_string(),
+        "  return local_m8;".to_string(),
+        "}".to_string(),
+    ];
+    emitter.apply_name_and_type_hints("tPrefix");
+    let out = emitter.lines.join("\n");
+    for claim in ["thread.f104.f1968", "true"] {
+        let offending = out
+            .lines()
+            .find(|line| line.contains("resultTmp") && line.contains(claim));
+        assert!(
+            offending.is_none(),
+            "{claim} is not a call result, so its local must not be named resultTmp:\n{out}"
+        );
+    }
+    // The genuine case still earns the name, so the check is not vacuous.
+    assert!(
+        out.contains("= t7"),
+        "the numbered call temporary must survive:\n{out}"
+    );
+    assert!(
+        out.lines().any(|line| line.contains("resultTmp") && line.contains("= t7")),
+        "an assignment from a numbered call temporary must still be resultTmp:\n{out}"
+    );
+}

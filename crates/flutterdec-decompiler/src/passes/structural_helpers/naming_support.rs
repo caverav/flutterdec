@@ -64,7 +64,15 @@ impl<'a> FuncEmitter<'a> {
                     {
                         s.pool_assign += 1;
                     }
-                    if t.starts_with(&call_assign) {
+                    // `t` followed by a digit, not merely a leading `t`. The prefix
+                    // test matched `{id} = thread.f104` and `{id} = true`, so
+                    // `resultTmpN` claimed a call result it had never observed - the
+                    // same unsupported-name defect the naming rule exists to remove,
+                    // sitting inside one of the two names that rule kept. `pool_assign`
+                    // above does not have this shape: it requires a literal `pool[`.
+                    if t.strip_prefix(&call_assign)
+                        .is_some_and(|rest| rest.starts_with(|c: char| c.is_ascii_digit()))
+                    {
                         s.call_assign += 1;
                     }
                 }
