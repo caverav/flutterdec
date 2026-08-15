@@ -3176,9 +3176,9 @@ lifted expression behind it. Six sites were traced by hand to the arm writers in
 and all checked out, which is a spot-check rather than a proof.
 ## R29. Round 2 annotation coverage, published per loss site
 
-> ## SUPERSEDED. Every count in this section describes a corpus whose annotations named identifiers that did not exist.
+> ## SUPERSEDED. R29's historical narrative and inline figures describe a corpus whose annotations named identifiers that did not exist. The four tables identified below have been regenerated after R33; no other table retains a pre-R33 count.
 >
-> **Do not cite a number from R29.** These counts were measured before R33 found that 3,022 annotation
+> **Do not cite an unmarked historical figure from R29.** The original counts were measured before R33 found that 3,022 annotation
 > values on LocalSend referenced identifiers appearing nowhere in their file - `argN`, `local_mN`,
 > `local_pN`, all rewritten by the naming pass after the candidate was captured. So this section counted
 > annotations a reader could not resolve, and its headline gain was substantially an artifact of that.
@@ -3206,12 +3206,12 @@ and all checked out, which is a spot-check rather than a proof.
 > 42% for non-exhaustive. The "complete" claims this section celebrated were disproportionately the ones
 > naming dead identifiers.
 >
-> The two ledger tables below have **stale counts**, not stale integrity assertions, and the distinction
-> matters. Their `reconciled true` and `audit_rows_vs_corpus_scan 0` rows are **re-established**: both
-> validators were re-run against a fresh audit after the fix and report zero across all seven rules and
-> all seven counts. Only the volume columns await regeneration, and they are deliberately not hand-edited
-> because their columns derive from uncapped and control builds - hand-editing a provenance artifact is
-> what left a stale `site_key` in a fixture earlier in this round.
+> The LocalSend ledger, Immich ledger, "Against the reference, per site" comparison, and lowered-cap
+> control tables have now been regenerated at current HEAD after R33. No R29 measurement table retains a
+> pre-R33 count. The retained-artifacts inventory's `audit-c-{localsend,immich}.jsonl` row still records
+> the historical 5,246 / 8,630 drop rows; it is not a regenerated measurement and must not be cited. The
+> surrounding historical prose likewise carries pre-R33 volume/share figures, including the ratios below
+> the ledger tables, and remains superseded; the refreshed tables do not rescue R29's narrative conclusions.
 >
 > R33 carries the method, the per-class attribution and the verification. R34 changes which name a local
 > is given and **does not move these counts** - measured, both totals identical at 2,374 with the
@@ -3333,10 +3333,10 @@ its terminator, reported as `unclosed`, or longer than a budget, reported as `ov
 
 | loss site | annotations | candidate elements | `omitted_by_cap` | by annotation budget | by line budget | `omitted_by_unsafe_span` | `omitted_at_insertion` | `annotations_in_corpus` |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| `join` | 3,972 | 4,839 | **0** | 0 | 0 | 0 | 0 | 3,972 |
-| `loop_entry` | 390 | 390 | **0** | 0 | 0 | 0 | 0 | 390 |
-| `call` | 7 | 7 | **0** | 0 | 0 | 0 | 0 | 7 |
-| **total** | **4,369** | **5,236** | **0** | 0 | 0 | 0 | 0 | **4,369** |
+| `join` | 2,047 | 2,299 | **0** | 0 | 0 | 0 | 0 | 2,047 |
+| `loop_entry` | 321 | 321 | **0** | 0 | 0 | 0 | 0 | 321 |
+| `call` | 6 | 6 | **0** | 0 | 0 | 0 | 0 | 6 |
+| **total** | **2,374** | **2,626** | **0** | 0 | 0 | 0 | 0 | **2,374** |
 
 `unknown_loss_sites` `{}`, `audit_rows_vs_corpus_scan` 0, `rows_vs_counter` 0, `reconciled` true.
 Against `raw_register_name_refs` of 136,378: join 2.91%, loop entry 0.29%, call 0.005%, all sites
@@ -3346,10 +3346,10 @@ Against `raw_register_name_refs` of 136,378: join 2.91%, loop entry 0.29%, call 
 
 | loss site | annotations | candidate elements | `omitted_by_cap` | by annotation budget | by line budget | `omitted_by_unsafe_span` | `omitted_at_insertion` | `annotations_in_corpus` |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| `join` | 6,736 | 8,340 | **0** | 0 | 0 | 0 | 0 | 6,736 |
-| `loop_entry` | 488 | 488 | **0** | 0 | 0 | 0 | 0 | 488 |
-| `call` | 22 | 22 | **0** | 0 | 0 | 0 | 0 | 22 |
-| **total** | **7,246** | **8,850** | **0** | 0 | 0 | 0 | 0 | **7,246** |
+| `join` | 3,418 | 3,784 | **0** | 0 | 0 | 0 | 0 | 3,418 |
+| `loop_entry` | 387 | 387 | **0** | 0 | 0 | 0 | 0 | 387 |
+| `call` | 12 | 12 | **0** | 0 | 0 | 0 | 0 | 12 |
+| **total** | **3,817** | **4,183** | **0** | 0 | 0 | 0 | 0 | **3,817** |
 
 `unknown_loss_sites` `{}`, `audit_rows_vs_corpus_scan` 0, `rows_vs_counter` 0, `reconciled` true.
 Against `raw_register_name_refs` of 189,696: join 3.55%, loop entry 0.26%, call 0.012%, all sites
@@ -3366,12 +3366,12 @@ the reference column is a real count, taken from the same corpus scan run agains
 
 | loss site | LocalSend `ff07207` | LocalSend `a7119ab` | Immich `ff07207` | Immich `a7119ab` |
 |---|---:|---:|---:|---:|
-| `join`, exhaustive (`= `) | 158 | 762 | 253 | 1,412 |
-| `join`, non-exhaustive | 4,911 | 3,210 | 7,854 | 5,324 |
-| `join`, total | 5,069 | 3,972 | 8,107 | 6,736 |
-| `loop_entry` | 0 | 390 | 0 | 488 |
-| `call` | 0 | 7 | 0 | 22 |
-| **all sites** | **5,069** | **4,369** | **8,107** | **7,246** |
+| `join`, exhaustive (`= `) | 158 | 197 | 253 | 283 |
+| `join`, non-exhaustive | 4,911 | 1,850 | 7,854 | 3,135 |
+| `join`, total | 5,069 | 2,047 | 8,107 | 3,418 |
+| `loop_entry` | 0 | 321 | 0 | 387 |
+| `call` | 0 | 6 | 0 | 12 |
+| **all sites** | **5,069** | **2,374** | **8,107** | **3,817** |
 
 Two things happened at the join site and they pull opposite ways.
 
@@ -3420,10 +3420,10 @@ its uncapped twin `46603e77ff70cddeff4c60203977597963f557c42739d5832ce08fa3f8aff
 
 | | LocalSend annotations | LocalSend `omitted_by_cap` | Immich annotations | Immich `omitted_by_cap` |
 |---|---:|---:|---:|---:|
-| `join` | 582 | 5,238 (5,231 annotation / 7 line) | 1,144 | 8,611 (8,581 / 30) |
-| `loop_entry` | 388 | 4 (4 / 0) | 484 | 4 (4 / 0) |
-| `call` | 3 | 4 (4 / 0) | 7 | 15 (15 / 0) |
-| **total** | **973** | **5,246** (5,239 / 7) | **1,635** | **8,630** (8,600 / 30) |
+| `join` | 291 | 2,443 (2,441 annotation / 2 line) | 552 | 3,701 (3,682 / 19) |
+| `loop_entry` | 322 | 0 (0 / 0) | 387 | 0 (0 / 0) |
+| `call` | 3 | 3 (3 / 0) | 7 | 5 (5 / 0) |
+| **total** | **616** | **2,446** (2,444 / 2) | **946** | **3,706** (3,687 / 19) |
 
 Rows and the emitter's own `omitted_at_insertion` agree exactly on both samples, and `unclosed` stays
 at zero, so lowering a budget drops whole annotations rather than truncating them.
