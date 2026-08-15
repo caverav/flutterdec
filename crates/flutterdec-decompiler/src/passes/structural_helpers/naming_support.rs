@@ -64,15 +64,23 @@ impl<'a> FuncEmitter<'a> {
                     {
                         s.pool_assign += 1;
                     }
-                    // `t` followed by a digit, not merely a leading `t`. The prefix
-                    // test matched `{id} = thread.f104` and `{id} = true`, so
-                    // `resultTmpN` claimed a call result it had never observed - the
-                    // same unsupported-name defect the naming rule exists to remove,
-                    // sitting inside one of the two names that rule kept. `pool_assign`
-                    // above does not have this shape: it requires a literal `pool[`.
-                    if t.strip_prefix(&call_assign)
-                        .is_some_and(|rest| rest.starts_with(|c: char| c.is_ascii_digit()))
-                    {
+                    // The whole call temporary, `tN`, and nothing appended to it.
+                    //
+                    // Two rejections, both drawn from real output. A bare `t` prefix
+                    // matched `{id} = thread.f104` and `{id} = true`. Requiring a digit
+                    // still matched `{id} = t8.f12`, which is a field *of* a call
+                    // result, not a call result - and that was the dominant case, 456
+                    // files, often beside a genuine `{id} = t8` naming a different
+                    // local. So `resultTmpN` asserted a source it had not observed,
+                    // which is the defect the naming rule exists to remove, sitting
+                    // inside one of the two names that rule kept.
+                    //
+                    // `pool_assign` above never had this shape: it requires a literal
+                    // `pool[`. Same digits-only discipline as `is_opaque_temporary`.
+                    if t.strip_prefix(&call_assign).is_some_and(|rest| {
+                        let digits = rest.trim_start_matches(|c: char| c.is_ascii_digit());
+                        digits.len() < rest.len() && (digits.is_empty() || digits.starts_with(';'))
+                    }) {
                         s.call_assign += 1;
                     }
                 }

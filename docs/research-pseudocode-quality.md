@@ -3211,11 +3211,11 @@ and all checked out, which is a spot-check rather than a proof.
 > because their columns derive from uncapped and control builds - hand-editing a provenance artifact is
 > what left a stale `site_key` in a fixture earlier in this round.
 >
-> R33 carries the method, the per-class attribution and the verification. R34 carries a later naming fix
-> which accounts for a small further shift, so a figure of 2,368 spans measured between the two is not in
-> conflict with 2,374 here: the earlier scan's pattern omitted the pre-call literal, which the table above
-> shows occurs exactly six times, and 197 + 1,850 + 321 = 2,368 exactly. `raw_register_name_refs` is
-> unchanged at 136,378 and 189,696 throughout - which is exactly
+> R33 carries the method, the per-class attribution and the verification. R34 changes which name a local
+> is given and **does not move these counts** - measured, both totals identical at 2,374 with the
+> exhaustive count identical at 197. So the 2,368 against 2,374 delta is entirely the pre-call literal the
+> earlier scan's pattern omitted, six occurrences, and 197 + 1,850 + 321 = 2,368 exactly.
+> `raw_register_name_refs` is unchanged at 136,378 and 189,696 throughout - which is exactly
 > why the ruler could not see this defect, and why citing its zero as evidence that no `argN` reaches
 > output was circular.
 
@@ -3901,12 +3901,46 @@ selector was a `"{id} = t"` prefix test, so `{id} = thread.f104.f1968` and `{id}
 and both are ubiquitous in real output. The name asserted a source nothing had verified - the exact
 class of unsupported claim R32 exists to remove, sitting inside one of the two names R32 kept.
 
-Now requires `t` followed by an ASCII digit. Checked the other survivor at the same time:
-`pool_assign` requires a literal `{id} = pool[`, `= (pool[` or `= ((pool[`, so `poolValN` does state an
-observed source. **R32's rule stands as written; exactly one survivor was misclassified.**
+### The obvious fix was itself incomplete, in the same class
 
-A fixture pins it, built from the two real-corpus cases, and asserts the genuine `= t7` case still earns
-the name so it cannot pass vacuously. It fails when the digit requirement is removed.
+Requiring `t` followed by a digit still accepted `{id} = t8.f12` - a field *of* a call result, which is
+not a call result. And that was the **dominant** case, not an edge: 456 files, against the 2 spellings
+the first fix addressed. Often both forms sit side by side on different locals, as in
+`00115_sub_613bb8`:
+
+```
+final t8 = sub_8a0018(t7);
+resultTmp2 = t8;        // earned - t8 is the call result
+resultTmp3 = t8.f12;    // a different local, named on field-load evidence alone
+```
+
+So the predicate is now the whole temporary and nothing appended: digits, then `;` or end of line. Same
+digits-only discipline as `is_opaque_temporary`. Field-load names fell **456 to 136**, and the residual
+136 are legitimate - checked exhaustively, not sampled: in every one, the same local also has a bare
+`resultTmpN = tN;` elsewhere in the file, because `collect_ident_stats` aggregates per local. Zero
+unearned remain.
+
+Checked the other survivor at the same time: `pool_assign` requires a literal `{id} = pool[`, `= (pool[`
+or `= ((pool[`, so `poolValN` does state an observed source. **R32's rule stands as written; exactly one
+survivor was misclassified.**
+
+This does not move annotation counts - measured, identical at 2,374 spans and 197 exhaustive before and
+after, `raw_register_name_refs` unchanged at 136,378. It changes which name a local is given, nothing
+about which values are annotated.
+
+### The fixture, and two ways it nearly tested nothing
+
+Both halves of the predicate are pinned by mutation: removing the terminator check fails on `= t8.f12`,
+removing the digit check fails on `= t`. The first version of this fixture pinned **neither** - its three
+cases all passed under the weaker predicate, so it would have shipped green against the defect it was
+written for.
+
+It also twice registered a local in `lines` but not in `emitter.locals`, which is silent here: an
+unregistered local keeps its `local_mN` spelling, contains no `resultTmp`, and every negative assertion
+about it passes vacuously. So the fixture now asserts no `local_m` spelling survives the naming pass,
+which makes that omission loud once for all cases. Worth stating because it is the same failure mode as
+the rotted provenance fixture in R33: a check that cannot fail is indistinguishable from a check that
+passes.
 
 R32's own figures are deliberately **not** retro-edited: they were measured against R32's commit, and
 folding a later change into them would make them irreproducible from that commit, which is the property

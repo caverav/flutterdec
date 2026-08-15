@@ -2570,35 +2570,61 @@ fn a_t_prefixed_value_that_is_not_a_call_result_is_not_named_result_tmp() {
     emitter.locals.insert(-8, "local_m8".to_string());
     emitter.locals.insert(-16, "local_m16".to_string());
     emitter.locals.insert(-24, "local_m24".to_string());
+    emitter.locals.insert(-32, "local_m32".to_string());
+    emitter.locals.insert(-40, "local_m40".to_string());
+    emitter.locals.insert(-48, "local_m48".to_string());
     emitter.lines = vec![
         "dynamic tPrefix(dynamic arg0) {".to_string(),
         "  var local_m8;".to_string(),
         "  var local_m16;".to_string(),
         "  var local_m24;".to_string(),
+        "  var local_m32;".to_string(),
+        "  var local_m40;".to_string(),
+        "  var local_m48;".to_string(),
         "  local_m8 = thread.f104.f1968;".to_string(),
         "  local_m16 = true;".to_string(),
         "  local_m24 = t7;".to_string(),
+        // Side by side, as they appear in 00115_sub_613bb8: one local assigned the
+        // whole call temporary, a different local assigned a field of it.
+        "  local_m32 = t8;".to_string(),
+        "  local_m40 = t8.f12;".to_string(),
+        // An unnumbered `t` is not a call temporary either. This is the only case the
+        // digit half of the predicate decides on its own: the terminator half already
+        // rejects `thread` and `true`, so without this line that half tests nothing.
+        "  local_m48 = t;".to_string(),
         "  return local_m8;".to_string(),
         "}".to_string(),
     ];
     emitter.apply_name_and_type_hints("tPrefix");
     let out = emitter.lines.join("\n");
-    for claim in ["thread.f104.f1968", "true"] {
-        let offending = out
-            .lines()
-            .find(|line| line.contains("resultTmp") && line.contains(claim));
+    // Every rejection below is a negative assertion, so an unregistered local would
+    // look like a pass: it keeps its `local_mN` spelling, contains no `resultTmp`, and
+    // the case silently tests nothing. This makes that failure loud, once, for all of
+    // them - it already caught two omissions while this fixture was being written.
+    assert!(
+        !out.contains("local_m"),
+        "every local must be registered in `emitter.locals` or its case is vacuous:\n{out}"
+    );
+    let line_with = |rhs: &str| -> String {
+        out.lines()
+            .find(|line| line.trim_end().ends_with(rhs))
+            .unwrap_or_else(|| panic!("no line ending in {rhs}:\n{out}"))
+            .to_string()
+    };
+    for claim in ["= thread.f104.f1968;", "= true;", "= t8.f12;", "= t;"] {
+        let line = line_with(claim);
         assert!(
-            offending.is_none(),
-            "{claim} is not a call result, so its local must not be named resultTmp:\n{out}"
+            !line.contains("resultTmp"),
+            "{claim} is not a call result, so its local must not be named resultTmp: {line}"
         );
     }
-    // The genuine case still earns the name, so the check is not vacuous.
-    assert!(
-        out.contains("= t7"),
-        "the numbered call temporary must survive:\n{out}"
-    );
-    assert!(
-        out.lines().any(|line| line.contains("resultTmp") && line.contains("= t7")),
-        "an assignment from a numbered call temporary must still be resultTmp:\n{out}"
-    );
+    // The genuine cases still earn the name, so the check is not vacuous. `t8` is the
+    // discriminating pair with `t8.f12` above: same temporary, different assignment shape.
+    for genuine in ["= t7;", "= t8;"] {
+        let line = line_with(genuine);
+        assert!(
+            line.contains("resultTmp"),
+            "an assignment from a whole numbered call temporary must be resultTmp: {line}"
+        );
+    }
 }
