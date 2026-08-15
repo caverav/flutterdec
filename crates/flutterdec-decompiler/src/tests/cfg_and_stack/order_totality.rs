@@ -343,8 +343,8 @@ fn two_call_annotations_on_one_line_land_on_their_own_registers() {
         line.trim(),
         format!(
             "reg10{}.f8 = reg9{};",
-            PRE_CALL_ANNOTATION.render(&["arg0.f16"]),
-            PRE_CALL_ANNOTATION.render(&["arg0.f8"])
+            PRE_CALL_ANNOTATION.render(&["slot0.f16"]),
+            PRE_CALL_ANNOTATION.render(&["slot0.f8"])
         ),
         "each annotation must sit immediately after its own register token"
     );

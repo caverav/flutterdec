@@ -193,6 +193,14 @@ struct FuncEmitter<'a> {
     dfs_preds: Option<HashMap<usize, Vec<usize>>>,
     dfs_block_writes: HashMap<usize, HashSet<String>>,
     lines: Vec<String>,
+    /// Identifier renames the naming pass applied to the body, longest key first.
+    ///
+    /// Annotation candidates are captured while a line is rendered, which is
+    /// *before* `apply_name_and_type_hints` runs, so a captured value spells its
+    /// locals `argN` / `local_mN` / `local_pN` - names that no longer exist by the
+    /// time the annotation is inserted. Replaying this map onto the candidate is
+    /// what keeps an annotation referring to an identifier the reader can find.
+    identifier_renames: Vec<(String, String)>,
 
     state: LiftState,
     placeholder_ifs: usize,
@@ -376,6 +384,7 @@ impl<'a> FuncEmitter<'a> {
             dfs_preds: None,
             dfs_block_writes: HashMap::new(),
             lines: Vec::new(),
+            identifier_renames: Vec::new(),
             state: init_state(),
             placeholder_ifs: 0,
             unresolved_cf: 0,
@@ -476,6 +485,10 @@ impl<'a> FuncEmitter<'a> {
         }
         self.apply_name_and_type_hints(&fn_name);
         self.extract_minus_one_aliases();
+        // Before the appenders: they replay the renames onto candidates, and the
+        // audit's snapshot rule compares a candidate against the snapshot it cites,
+        // so both sides have to be in the same namespace.
+        self.normalize_provenance_namespace();
         self.append_join_annotations();
         self.append_call_annotations();
 

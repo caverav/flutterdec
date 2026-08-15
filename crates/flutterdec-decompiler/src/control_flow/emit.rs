@@ -1017,6 +1017,9 @@ impl<'a> FuncEmitter<'a> {
         let mapping = Self::align_rendered_lines(&self.render_lines, &self.lines);
         let mut inserts: Vec<(usize, usize, String, usize)> = Vec::new();
         let mut omissions: Vec<(u64, String, String, &'static str, usize, usize)> = Vec::new();
+        // Snapshotted before insertion, so an annotation cannot vouch for its own
+        // identifiers. Same reason as the join site.
+        let live = live_identifier_tokens(&self.lines);
         for (anchor_index, anchor) in self.call_annotation_anchors.iter().enumerate() {
             let Some(Some(line_index)) = mapping.get(anchor.line_index).copied() else {
                 continue;
@@ -1037,7 +1040,16 @@ impl<'a> FuncEmitter<'a> {
             {
                 continue;
             }
-            let annotation = PRE_CALL_ANNOTATION.render(std::slice::from_ref(&anchor.value));
+            // Same capture-before-naming gap as the join and loop sites: bring the
+            // spelling forward, then re-judge on the text that will be emitted.
+            let value = replay_identifier_renames(&anchor.value, &self.identifier_renames);
+            if !is_recordable_annotation_candidate(&value)
+                || !is_informative_annotation_candidate(&value)
+                || !candidate_names_only_live_locals(&value, &live)
+            {
+                continue;
+            }
+            let annotation = PRE_CALL_ANNOTATION.render(std::slice::from_ref(&value));
             let planned = inserts
                 .iter()
                 .filter(|(existing, _, _, _)| *existing == line_index)
@@ -1109,7 +1121,11 @@ impl<'a> FuncEmitter<'a> {
                 candidates: vec![CandidateAttribution {
                     // One incoming path, and it is the clobbering call itself.
                     path_key: SiteKey(CALL_LOSS_SITE, anchor.call_va),
-                    value: anchor.value.clone(),
+                    // The same replay the rendered text went through. Pure and
+                    // deterministic, so re-applying it here cannot disagree with
+                    // the span - and `VAL-PROV-COMPLETE-015` count 5 compares the
+                    // two directly.
+                    value: replay_identifier_renames(&anchor.value, &self.identifier_renames),
                     snapshot_id: anchor.snapshot_id.clone(),
                 }],
             });

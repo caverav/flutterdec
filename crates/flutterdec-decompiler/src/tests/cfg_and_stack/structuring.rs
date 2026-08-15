@@ -311,7 +311,11 @@ fn drops_uninformative_candidates_and_marks_remaining_evidence_non_exhaustive() 
     };
     let symbols = HashMap::new();
     let mut emitter = FuncEmitter::new(&ir, &symbols);
-    emitter.lines.push("  sink(x0);".to_string());
+    emitter.lines.push(format!(
+        "dynamic {}(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5) {{",
+        ir.name
+    ));
+    emitter.lines.push("  sink(reg0);".to_string());
     let provenance = crate::control_flow::ordered_join_candidate_provenance([
         crate::control_flow::JoinCandidateProvenance {
                             pred: 0,
@@ -350,7 +354,7 @@ fn drops_uninformative_candidates_and_marks_remaining_evidence_non_exhaustive() 
                         },
         crate::control_flow::JoinCandidateProvenance {
                             pred: 1,
-                            value: "obj1.f8".to_string(),
+                            value: "arg0.f8".to_string(),
                             snapshot_id: String::new(),
                         },
     ]);
@@ -366,7 +370,7 @@ fn drops_uninformative_candidates_and_marks_remaining_evidence_non_exhaustive() 
     // membership is what catches a spelling the filter forgot.
     assert_eq!(
         values,
-        vec!["obj1.f8".to_string()],
+        vec!["arg0.f8".to_string()],
         "only a reader-usable expression may survive the useful-only filter"
     );
     emitter.join_candidates.insert(
@@ -382,10 +386,11 @@ fn drops_uninformative_candidates_and_marks_remaining_evidence_non_exhaustive() 
         candidate_regs: vec!["x0".to_string()],
         lines: emitter.lines.clone(),
     });
+    emitter.apply_name_and_type_hints(&ir.name);
     emitter.append_join_annotations();
     assert_eq!(
         emitter.lines.last().map(String::as_str),
-        Some("  sink(x0 /* possible (non-exhaustive): obj1.f8 */);"),
+        Some("  sink(reg0 /* possible (non-exhaustive): slot0.f8 */);"),
         "the non-exhaustive annotation must retain only useful bounded arm-end evidence"
     );
 }

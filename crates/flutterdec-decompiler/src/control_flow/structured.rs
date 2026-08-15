@@ -303,6 +303,113 @@ fn contains_uninformative_token(value: &str) -> bool {
     false
 }
 
+/// Replay the body's identifier renames onto a candidate captured before them.
+///
+/// `arg0` becomes `slot0`, which is live in the signature line, so `slot0.f8` stays
+/// a field access on an identifier the reader can find - the annotation was only
+/// ever wrong about the spelling. `local_m32` usually becomes `tmpN`, which
+/// `candidate_form` then rejects as one gap decorating another; that rejection is
+/// correct and was previously hidden by the stale spelling.
+///
+/// Applied longest-key-first by `sort_rename_pairs`, so `local_m8` cannot corrupt
+/// `local_m88`, and token-anchored by `replace_identifier_token`, so it cannot
+/// rewrite a substring of a longer name.
+pub(crate) fn replay_identifier_renames(value: &str, renames: &[(String, String)]) -> String {
+    let mut out = value.to_string();
+    for (from, to) in renames {
+        out = FuncEmitter::replace_identifier_token(&out, from, to);
+    }
+    out
+}
+
+/// Every identifier token in the body, snapshotted before any annotation is
+/// inserted.
+///
+/// Built once rather than scanning `self.lines` per token for two reasons. The
+/// insertion loop mutates those lines as it goes, so a token could otherwise count
+/// as live because an *earlier annotation* mentioned it rather than because the code
+/// does - annotations validating each other. And the scan was
+/// O(candidates x tokens x lines x line length) on functions running to hundreds of
+/// lines, where this is a hash lookup. Being order-independent by construction also
+/// keeps it out of `VAL-DETERM-011`'s way.
+fn live_identifier_tokens(body: &[String]) -> HashSet<String> {
+    let mut live = HashSet::new();
+    for line in body {
+        let bytes = line.as_bytes();
+        let mut index = 0usize;
+        while index < bytes.len() {
+            if !(bytes[index].is_ascii_alphabetic() || bytes[index] == b'_') {
+                index += 1;
+                continue;
+            }
+            let start = index;
+            while index < bytes.len()
+                && (bytes[index].is_ascii_alphanumeric() || bytes[index] == b'_')
+            {
+                index += 1;
+            }
+            live.insert(line[start..index].to_string());
+        }
+    }
+    live
+}
+
+/// Whether every identifier a candidate names still exists in the emitted body.
+///
+/// A candidate is captured while its line is rendered, which is *before*
+/// `apply_name_and_type_hints` runs, so it spells locals `argN`, `local_mN` and
+/// `local_pN`. Those names are gone by insertion time: the body now says `slotN`,
+/// `tmpN`, `poolValN` or `resultTmpN`. An annotation that survives with the old
+/// spelling names an identifier that appears nowhere in the file, which is the
+/// feature failing at its only job - telling a reader which value a register held.
+///
+/// Rejecting is the honest outcome rather than replaying the rename map, and two
+/// facts decided it. A rename cannot fix every case: when a value was captured from
+/// dataflow state that was never rendered into a line there is no rename entry, so
+/// the annotation would still dangle. And where a rename does exist it usually maps
+/// to `tmpN`, which `contains_uninformative_token` already rejects - `candidate_form`
+/// promises the value "is classified exactly as it will be rendered", so emitting
+/// text the filter would refuse would break that contract and fail an independent
+/// scan of the emitted output.
+///
+/// The rule is **structural, not a spelling list**. A list of naming families is
+/// fail-open: it passes silently the next time the naming pass gains a family, which
+/// is how this defect and a stale provenance fixture both got here. So every
+/// identifier must be present in the body unless its position proves it is not a
+/// local: followed by `(` it is a callee (`smiTag`, `bitField`, `classId`), preceded
+/// by `.` it is a field (`f8`, `_tag`), and `RESERVED_EMITTER_IDENTIFIERS` covers the
+/// globals the emitter renders without ever renaming. Numeric literals name nothing.
+fn candidate_names_only_live_locals(value: &str, live: &HashSet<String>) -> bool {
+    let bytes = value.as_bytes();
+    let mut index = 0usize;
+    while index < bytes.len() {
+        if !(bytes[index].is_ascii_alphabetic() || bytes[index] == b'_') {
+            index += 1;
+            continue;
+        }
+        let start = index;
+        while index < bytes.len() && (bytes[index].is_ascii_alphanumeric() || bytes[index] == b'_') {
+            index += 1;
+        }
+        let token = &value[start..index];
+        // Preceded by `.`: a field name, not an identifier in scope.
+        if start > 0 && bytes[start - 1] == b'.' {
+            continue;
+        }
+        // Followed by `(`: a callee. Emitted helpers are not locals.
+        if bytes.get(index) == Some(&b'(') {
+            continue;
+        }
+        if RESERVED_EMITTER_IDENTIFIERS.contains(&token) {
+            continue;
+        }
+        if !live.contains(token) {
+            return false;
+        }
+    }
+    true
+}
+
 fn is_unrecovered_value_spelling(token: &str) -> bool {
     (0..=30).any(|index| {
         unrecovered_value_spellings(&format!("x{index}"))
@@ -1281,7 +1388,42 @@ impl<'a> FuncEmitter<'a> {
 
     /// Append evidence for values lost at a join without rebinding the
     /// register. This runs after every analysis and code rewrite.
+    /// Bring every recorded snapshot into the namespace the body ended up in.
+    ///
+    /// Snapshots are captured at an arm end, before the naming pass, so their
+    /// register values spell locals `argN` / `local_mN`. The candidates that cite
+    /// them are replayed into `slotN` / `tmpN` at insertion, and
+    /// `check_snapshot`'s rule is *audit-internal* - "every candidate's value is in
+    /// the snapshot its own id names" - so leaving the two sides in different
+    /// namespaces makes a sound emitter report violations.
+    ///
+    /// Renaming both sides is sound precisely because that rule compares the audit
+    /// against itself: it asks whether the value the annotation shows was present in
+    /// the state the snapshot recorded, and a consistent renaming of both preserves
+    /// exactly that. The rules that do reach outside the audit - `ir` and `loop_ir` -
+    /// check site keys, path keys and binding loss, never value spellings, so they
+    /// are unaffected.
+    pub(crate) fn normalize_provenance_namespace(&mut self) {
+        if self.identifier_renames.is_empty() {
+            return;
+        }
+        let renames = self.identifier_renames.clone();
+        for stream in [
+            &mut self.join_provenance,
+            &mut self.loop_provenance,
+            &mut self.call_provenance,
+        ] {
+            for snapshot in &mut stream.snapshots {
+                for (_, value) in &mut snapshot.registers {
+                    *value = replay_identifier_renames(value, &renames);
+                }
+            }
+        }
+    }
+
     pub(crate) fn append_join_annotations(&mut self) {
+        // Before the loop, so a later annotation cannot make an identifier look live.
+        let live = live_identifier_tokens(&self.lines);
         let mut inserts: Vec<PlannedJoinAnnotation> = Vec::new();
         let mut omissions: Vec<PlannedCapOmission> = Vec::new();
         for anchor in &self.join_annotation_anchors {
@@ -1334,6 +1476,28 @@ impl<'a> FuncEmitter<'a> {
                     {
                         continue;
                     }
+                    // Captured before the naming pass, inserted after it, so the
+                    // spelling must be brought forward before anything judges it.
+                    // `arg0.f8` becomes `slot0.f8`, still a field access on an
+                    // identifier the reader can find; `local_m32.f8` becomes
+                    // `tmp7.f8`, which the filter below then rejects as one gap
+                    // decorating another - correctly, and it was only surviving
+                    // because the stale spelling hid it.
+                    let renamed: Vec<String> = candidates
+                        .values
+                        .iter()
+                        .map(|value| replay_identifier_renames(value, &self.identifier_renames))
+                        .collect();
+                    // Re-judged on the text that will actually be emitted, which is
+                    // what `candidate_form` promises and what an independent scan of
+                    // the output checks.
+                    if renamed.iter().any(|value| {
+                        !is_recordable_annotation_candidate(value)
+                            || !is_informative_annotation_candidate(value)
+                            || !candidate_names_only_live_locals(value, &live)
+                    }) {
+                        continue;
+                    }
                     debug_assert!(
                         candidates.values.iter().all(|value| {
                             candidates
@@ -1350,7 +1514,7 @@ impl<'a> FuncEmitter<'a> {
                     } else {
                         &NON_EXHAUSTIVE_JOIN_ANNOTATION
                     };
-                    let annotation = literal.render(&candidates.values);
+                    let annotation = literal.render(&renamed);
                     // At most one annotation per register spelling on a final
                     // line. Repeated structured renderings can map different
                     // joins to the same textual site; retaining all would make
@@ -1462,6 +1626,10 @@ impl<'a> FuncEmitter<'a> {
         if !annotation_provenance_wanted() {
             return;
         }
+        // Cloned before the closure: these run on `&mut self` while the
+        // attribution mapping needs the map, and a borrow of both at once does not
+        // typecheck.
+        let renames = self.identifier_renames.clone();
         let mut ordered: Vec<&PlannedJoinAnnotation> = inserts.iter().collect();
         ordered.sort_by(|left, right| {
             left.line
@@ -1498,7 +1666,10 @@ impl<'a> FuncEmitter<'a> {
                         .iter()
                         .map(|candidate| CandidateAttribution {
                             path_key: SiteKey(JOIN_PATH_KIND, candidate.pred as u64),
-                            value: candidate.value.clone(),
+                            // The same replay the rendered span went through, so the
+                            // attribution and the emitted text cannot disagree.
+                            // `VAL-PROV-COMPLETE-015` count 5 compares them directly.
+                            value: replay_identifier_renames(&candidate.value, &renames),
                             snapshot_id: candidate.snapshot_id.clone(),
                         })
                         .collect(),
@@ -1527,6 +1698,10 @@ impl<'a> FuncEmitter<'a> {
         if !annotation_provenance_wanted() {
             return;
         }
+        // Cloned before the closure: these run on `&mut self` while the
+        // attribution mapping needs the map, and a borrow of both at once does not
+        // typecheck.
+        let renames = self.identifier_renames.clone();
         let mut ordered: Vec<&PlannedJoinAnnotation> = inserts.iter().collect();
         ordered.sort_by(|left, right| {
             left.line
@@ -1568,7 +1743,9 @@ impl<'a> FuncEmitter<'a> {
                         .iter()
                         .map(|candidate| CandidateAttribution {
                             path_key: SiteKey(JOIN_PATH_KIND, candidate.pred as u64),
-                            value: candidate.value.clone(),
+                            // Same replay as the rendered span, for the same reason
+                            // as the loop site above.
+                            value: replay_identifier_renames(&candidate.value, &renames),
                             snapshot_id: candidate.snapshot_id.clone(),
                         })
                         .collect(),

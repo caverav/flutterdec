@@ -161,7 +161,8 @@ fn no_annotation_consumer_hand_rolls_a_delimiter() {
 /// The pre-call literal has one too, for the same reason.
 #[test]
 fn join_annotation_literals_round_trip_through_emitter_and_parsers() {
-    let candidates = ["obj1.f8", "obj2.f16()", "7"];
+    let candidates = ["arg0.f8", "arg1.f16()", "7"];
+    let emitted_candidates = ["slot0.f8", "slot1.f16()", "7"];
     for (complete, literal) in [
         (true, &EXHAUSTIVE_JOIN_ANNOTATION),
         (false, &NON_EXHAUSTIVE_JOIN_ANNOTATION),
@@ -179,6 +180,10 @@ fn join_annotation_literals_round_trip_through_emitter_and_parsers() {
             };
             let symbols = HashMap::new();
             let mut emitter = FuncEmitter::new(&ir, &symbols);
+            emitter.lines.push(format!(
+                "dynamic {}(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5) {{",
+                ir.name
+            ));
             emitter.lines.push("  sink(reg0);".to_string());
             emitter.join_candidates.insert(
                 (0, "x0".to_string()),
@@ -201,12 +206,16 @@ fn join_annotation_literals_round_trip_through_emitter_and_parsers() {
                 candidate_regs: vec!["x0".to_string()],
                 lines: emitter.lines.clone(),
             });
+            emitter.apply_name_and_type_hints(&ir.name);
             emitter.append_join_annotations();
 
             let line = emitter.lines.last().expect("annotated line").clone();
             assert_eq!(
                 line,
-                format!("  sink(reg0{});", literal.render(&values)),
+                format!(
+                    "  sink(reg0{});",
+                    literal.render(&emitted_candidates[..arity])
+                ),
                 "the emitter must render {arity} candidates through the shared literal"
             );
             assert_eq!(
@@ -234,7 +243,8 @@ fn join_annotation_literals_round_trip_through_emitter_and_parsers() {
 /// entry arms, and a fixed slot count would pass at arity one.
 #[test]
 fn the_loop_entry_annotation_literal_round_trips_through_emitter_and_parsers() {
-    let candidates = ["obj1.f8", "obj2.f16()", "7"];
+    let candidates = ["arg0.f8", "arg1.f16()", "7"];
+    let emitted_candidates = ["slot0.f8", "slot1.f16()", "7"];
     for arity in 1..=candidates.len() {
         let values: Vec<String> = candidates[..arity]
             .iter()
@@ -248,6 +258,10 @@ fn the_loop_entry_annotation_literal_round_trips_through_emitter_and_parsers() {
         };
         let symbols = HashMap::new();
         let mut emitter = FuncEmitter::new(&ir, &symbols);
+        emitter.lines.push(format!(
+            "dynamic {}(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5) {{",
+            ir.name
+        ));
         emitter.lines.push("  sink(reg0);".to_string());
         emitter.join_candidates.insert(
             (0, "x0".to_string()),
@@ -274,12 +288,16 @@ fn the_loop_entry_annotation_literal_round_trips_through_emitter_and_parsers() {
             candidate_regs: vec!["x0".to_string()],
             lines: emitter.lines.clone(),
         });
+        emitter.apply_name_and_type_hints(&ir.name);
         emitter.append_join_annotations();
 
         let line = emitter.lines.last().expect("annotated line").clone();
         assert_eq!(
             line,
-            format!("  sink(reg0{});", LOOP_ENTRY_ANNOTATION.render(&values)),
+            format!(
+                "  sink(reg0{});",
+                LOOP_ENTRY_ANNOTATION.render(&emitted_candidates[..arity])
+            ),
             "the emitter must render {arity} entry values through the shared literal"
         );
         assert_eq!(
@@ -504,10 +522,10 @@ fn no_named_indirect_target_survives_the_shared_filter() {
     assert_eq!(survivors_of(&candidates), vec!["obj1.f8".to_string()]);
 }
 
-/// `argN` is deliberately not in the rejected set: `apply_name_and_type_hints`
-/// rewrites every argument register to a named form before output, so `argN`
-/// never reaches a candidate list from the emitter. The filter still rejects it
-/// as uninformative on its own - it names no field, call or literal - which is a
+/// `argN` is deliberately not in the rejected set: candidates captured before
+/// `apply_name_and_type_hints` can carry it, then insertion replays the naming
+/// map to `slotN` before output. The filter still rejects bare `argN` as
+/// uninformative on its own - it names no field, call or literal - which is a
 /// different reason and is recorded here so it is not mistaken for membership in
 /// the spelling set.
 #[test]
@@ -545,21 +563,28 @@ fn the_pre_call_annotation_literal_round_trips_through_emitter_and_parsers() {
     // The rendered line carries the raw spelling and the finished one the
     // renamed spelling, which is the real shape: the rename pass runs between
     // them, and the alignment has to see through it.
+    let signature = format!(
+        "dynamic {}(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5) {{",
+        ir.name
+    );
+    emitter.render_lines.push(signature.clone());
     emitter.render_lines.push("  sink(x9);".to_string());
+    emitter.lines.push(signature);
     emitter.lines.push("  sink(reg9);".to_string());
     emitter.call_annotation_anchors.push(CallAnnotationAnchor {
         call_va: 0x1004,
         register: "x9".to_string(),
-        value: "obj1.f8".to_string(),
+        value: "arg0.f8".to_string(),
         snapshot_id: "1040:0".to_string(),
-        line_index: 0,
+        line_index: 1,
     });
+    emitter.apply_name_and_type_hints(&ir.name);
     emitter.append_call_annotations();
 
     let line = emitter.lines.last().expect("annotated line").clone();
     assert_eq!(
         line,
-        format!("  sink(reg9{});", PRE_CALL_ANNOTATION.render(&["obj1.f8"])),
+        format!("  sink(reg9{});", PRE_CALL_ANNOTATION.render(&["slot0.f8"])),
         "the emitter must render the pre-call value through the shared literal"
     );
     assert_eq!(
@@ -571,5 +596,57 @@ fn the_pre_call_annotation_literal_round_trips_through_emitter_and_parsers() {
         crate::code_before_annotation(&line),
         "  sink(reg9",
         "the code-span accessor must cut exactly at the opener"
+    );
+}
+
+#[test]
+fn a_candidate_naming_a_dead_local_is_not_annotated() {
+    let ir = FunctionIr {
+        function_id: 1041,
+        name: "deadCandidate".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![blk(0, 0x1000, vec![ret(0x1000)], Vec::new())],
+    };
+    let symbols = HashMap::new();
+    let mut emitter = FuncEmitter::new(&ir, &symbols);
+    emitter.lines.push(format!(
+        "dynamic {}(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5) {{",
+        ir.name
+    ));
+    emitter.lines.push("  sink(reg0);".to_string());
+    let dead_local = "deadLocal.f8";
+    assert!(
+        crate::control_flow::is_recordable_annotation_candidate(dead_local)
+            && crate::control_flow::is_informative_annotation_candidate(dead_local),
+        "the candidate must reach the liveness gate"
+    );
+    emitter.join_candidates.insert(
+        (0, "x0".to_string()),
+        JoinCandidates {
+            complete: true,
+            values: vec![dead_local.to_string()],
+            provenance: vec![crate::control_flow::JoinCandidateProvenance {
+                pred: 0,
+                value: dead_local.to_string(),
+                snapshot_id: String::new(),
+            }],
+        },
+    );
+    emitter.join_annotation_anchors.push(JoinAnnotationAnchor {
+        join: 0,
+        candidate_regs: vec!["x0".to_string()],
+        lines: emitter.lines.clone(),
+    });
+    emitter.apply_name_and_type_hints(&ir.name);
+    assert!(
+        emitter.lines.iter().all(|line| !line.contains("deadLocal")),
+        "the candidate names no identifier in the emitted body"
+    );
+    emitter.append_join_annotations();
+
+    assert_eq!(
+        emitter.lines.last().map(String::as_str),
+        Some("  sink(reg0);"),
+        "a candidate naming a dead local must not reach an annotation"
     );
 }

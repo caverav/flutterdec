@@ -1,3 +1,13 @@
+/// Identifiers the emitter renders that are not locals and never get renamed.
+///
+/// One definition, because two consumers need it and a duplicated list is the
+/// drift hazard `VAL-BOUNDARY-005` exists to prevent: the naming pass seeds its
+/// used-name set from this so a local can never collide with one, and the
+/// annotation filter treats them as always in scope so a candidate naming
+/// `thread` or `pool` is not mistaken for one naming a dead local.
+pub(crate) const RESERVED_EMITTER_IDENTIFIERS: [&str; 6] =
+    ["thread", "pool", "sp", "null", "flags", "dynamic"];
+
 pub(super) fn sanitize_name(name: &str) -> String {
     let mut out = String::new();
     for c in name.chars() {

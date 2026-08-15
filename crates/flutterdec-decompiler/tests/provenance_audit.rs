@@ -146,8 +146,8 @@ fn the_pre_call_audit_traces_each_candidate_and_its_checker_catches_a_wrong_path
         "second annotation must key on 0x1018:\n{}",
         annotations[1]
     );
-    assert!(annotations[0].contains("\"value\":\"arg0.f8\""));
-    assert!(annotations[1].contains("\"value\":\"arg1.f16.f8\""));
+    assert!(annotations[0].contains("\"value\":\"slot0.f8\""));
+    assert!(annotations[1].contains("\"value\":\"slot1.f16.f8\""));
     assert!(annotations[0].contains("\"loss_site\":\"call\""));
     assert!(annotations[0].contains("\"schema_version\":"));
 
@@ -204,7 +204,7 @@ fn the_pre_call_audit_traces_each_candidate_and_its_checker_catches_a_wrong_path
     // and only the attribution is wrong - which is the failure this audit
     // exists to catch and the one a self-consistent emitter would produce.
     let planted_path = dir.join("planted.jsonl");
-    let planted = text.replacen("\"value\":\"arg0.f8\"", "\"value\":\"arg1.f16.f8\"", 1);
+    let planted = text.replacen("\"value\":\"slot0.f8\"", "\"value\":\"slot1.f16.f8\"", 1);
     assert_ne!(planted, text, "the plant must change the audit");
     std::fs::write(&planted_path, &planted).expect("planted audit");
 

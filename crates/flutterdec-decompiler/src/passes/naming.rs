@@ -350,13 +350,12 @@ impl<'a> FuncEmitter<'a> {
             .map(|i| format!("arg{i}"))
             .collect();
         let local_ids: Vec<String> = self.locals.values().cloned().collect();
-        let mut used = HashSet::new();
-        used.insert("thread".to_string());
-        used.insert("pool".to_string());
-        used.insert("sp".to_string());
-        used.insert("null".to_string());
-        used.insert("flags".to_string());
-        used.insert("dynamic".to_string());
+        // Seeded from the one definition of these, so a local can never be given a
+        // name the emitter already renders as a global.
+        let mut used: HashSet<String> = RESERVED_EMITTER_IDENTIFIERS
+            .iter()
+            .map(|name| (*name).to_string())
+            .collect();
 
         let mut renames: HashMap<String, String> = HashMap::new();
         let mut arg_types: HashMap<String, String> = HashMap::new();
@@ -459,6 +458,11 @@ impl<'a> FuncEmitter<'a> {
             }
             *line = cur;
         }
+        // Kept for the annotation appenders. They insert after this pass, from
+        // candidates captured before it, so they must replay these renames or emit
+        // identifiers the body no longer has.
+        self.identifier_renames = rename_pairs.clone();
+
 
         let args_sig = arg_ids
             .iter()

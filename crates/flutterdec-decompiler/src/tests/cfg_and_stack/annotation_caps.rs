@@ -14,11 +14,11 @@
 
 use crate::control_flow::{MAX_JOIN_ANNOTATED_LINE, MAX_JOIN_ANNOTATION};
 
-/// An emitter holding `line`, with `regs` captured as one-value join candidates
-/// at block 0 and an anchor over that line.
+/// An emitter holding a pre-hint signature and `line`, with `regs` captured as
+/// one-value join candidates at block 0 and an anchor over that line.
 ///
-/// The same shape the literal drift cases use: this file is about what the
-/// insertion pass does with a candidate list, not about how capture built one.
+/// The signature drives the real naming pass; the companion body uses make
+/// controlled candidate identifiers live in code, never by their annotation.
 fn emitter_with_candidates<'a>(
     ir: &'a FunctionIr,
     symbols: &'a HashMap<u64, String>,
@@ -26,7 +26,14 @@ fn emitter_with_candidates<'a>(
     regs: &[(&str, &str)],
 ) -> FuncEmitter<'a> {
     let mut emitter = FuncEmitter::new(ir, symbols);
+    emitter.lines.push(format!(
+        "dynamic {}(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5) {{",
+        ir.name
+    ));
     emitter.lines.push(line.to_string());
+    for (_, value) in regs {
+        emitter.lines.push(format!("  sink({value});"));
+    }
     for (reg, value) in regs {
         emitter.join_candidates.insert(
             (0, (*reg).to_string()),
@@ -46,6 +53,7 @@ fn emitter_with_candidates<'a>(
         candidate_regs: regs.iter().map(|(reg, _)| (*reg).to_string()).collect(),
         lines: emitter.lines.clone(),
     });
+    emitter.apply_name_and_type_hints(&ir.name);
     emitter
 }
 
@@ -88,10 +96,10 @@ fn omission_rows(emitter: &FuncEmitter<'_>) -> Vec<(&'static str, &'static str, 
 fn value_rendering_to(literal: &AnnotationLiteral, target: usize) -> String {
     let overhead = literal.render(&[""]).len();
     assert!(
-        target >= overhead,
-        "a {target}-byte span cannot hold this literal's {overhead} bytes of delimiters"
+        target > overhead + ".f8".len(),
+        "a {target}-byte span cannot hold this literal's {overhead} bytes of delimiters and a field"
     );
-    "v".repeat(target - overhead)
+    format!("{}.f8", "v".repeat(target - overhead - ".f8".len()))
 }
 
 #[test]
@@ -108,7 +116,7 @@ fn omits_the_whole_annotation_when_it_exceeds_the_per_annotation_budget() {
             emitter_with_candidates(&ir, &symbols, code, &[("x0", value.as_str())]);
         emitter.append_join_annotations();
 
-        let line = emitter.lines[0].clone();
+        let line = emitter.lines[1].clone();
         if fits {
             assert_eq!(
                 line,
@@ -155,7 +163,7 @@ fn annotates_a_line_at_the_three_thousand_character_boundary_and_omits_one_byte_
         let mut emitter = emitter_with_candidates(&ir, &symbols, &code, &[("x0", value)]);
         emitter.append_join_annotations();
 
-        let line = emitter.lines[0].clone();
+        let line = emitter.lines[1].clone();
         if fits {
             assert_eq!(
                 line.len(),
@@ -218,7 +226,7 @@ fn omits_the_whole_annotation_when_several_on_one_line_exceed_the_aggregate_budg
     let mut emitter = emitter_with_candidates(&ir, &symbols, &code, &values);
     emitter.append_join_annotations();
 
-    let line = emitter.lines[0].clone();
+    let line = emitter.lines[1].clone();
     assert!(
         line.len() <= MAX_JOIN_ANNOTATED_LINE,
         "the emitted line must respect the aggregate budget: {} bytes",
@@ -277,7 +285,7 @@ fn no_forbidden_sequence_survives_capture_or_insertion() {
             emitter_with_candidates(&ir, &symbols, code, &[("x0", value.as_str())]);
         emitter.append_join_annotations();
         assert_eq!(
-            emitter.lines[0], code,
+            emitter.lines[1], code,
             "`{value}` must not reach the emitted line"
         );
     }
@@ -300,19 +308,28 @@ fn omits_a_whole_pre_call_annotation_over_budget_and_counts_it_against_the_call_
     let value = value_rendering_to(&PRE_CALL_ANNOTATION, MAX_JOIN_ANNOTATION + 1);
 
     let mut emitter = FuncEmitter::new(&ir, &symbols);
-    emitter.render_lines.push(code.to_string());
+    let signature = format!(
+        "dynamic {}(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5) {{",
+        ir.name
+    );
+    emitter.render_lines.push(signature.clone());
+    emitter.render_lines.push("  sink(x9);".to_string());
+    emitter.render_lines.push(format!("  sink({value});"));
+    emitter.lines.push(signature);
     emitter.lines.push(code.to_string());
+    emitter.lines.push(format!("  sink({value});"));
     emitter.call_annotation_anchors.push(CallAnnotationAnchor {
         call_va: 0x1004,
         register: "x9".to_string(),
         value: value.clone(),
         snapshot_id: "2104:0".to_string(),
-        line_index: 0,
+        line_index: 1,
     });
+    emitter.apply_name_and_type_hints(&ir.name);
     emitter.append_call_annotations();
 
     assert_eq!(
-        emitter.lines[0], code,
+        emitter.lines[1], code,
         "an over-budget pre-call span is dropped whole"
     );
     assert_eq!(
@@ -338,7 +355,7 @@ fn counts_a_loop_header_drop_against_the_loop_site() {
     emitter.loop_annotation_sites.insert(0);
     emitter.append_join_annotations();
 
-    assert_eq!(emitter.lines[0], code, "the whole span is dropped");
+    assert_eq!(emitter.lines[1], code, "the whole span is dropped");
     assert_eq!(
         omission_rows(&emitter),
         vec![("loop_entry", "annotation", MAX_JOIN_ANNOTATION + 1)],

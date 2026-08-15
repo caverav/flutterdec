@@ -98,8 +98,8 @@ fn a_call_clobber_annotates_the_value_held_immediately_before_that_call() {
     assert_eq!(
         pre_call_annotations(&out),
         vec![
-            PRE_CALL_ANNOTATION.render(&["arg0.f8"]),
-            PRE_CALL_ANNOTATION.render(&["arg1.f16.f8"]),
+            PRE_CALL_ANNOTATION.render(&["slot0.f8"]),
+            PRE_CALL_ANNOTATION.render(&["slot1.f16.f8"]),
         ],
         "each unresolved read carries the value its own call dropped, never a \
          later one and never the first one twice:\n{out}"
@@ -109,7 +109,7 @@ fn a_call_clobber_annotates_the_value_held_immediately_before_that_call() {
     assert!(
         out.contains(&format!(
             "reg19.f8 = reg9{};",
-            PRE_CALL_ANNOTATION.render(&["arg0.f8"])
+            PRE_CALL_ANNOTATION.render(&["slot0.f8"])
         )),
         "the annotation sits on the unresolved read, beside the register:\n{out}"
     );
@@ -205,7 +205,7 @@ fn a_preserving_runtime_stub_emits_no_call_annotation() {
     .source;
     assert_eq!(
         pre_call_annotations(&clobbered),
-        vec![PRE_CALL_ANNOTATION.render(&["arg0.f8"])],
+        vec![PRE_CALL_ANNOTATION.render(&["slot0.f8"])],
         "the identical fixture annotates once the stub stops preserving:\n{clobbered}"
     );
 }
@@ -240,7 +240,7 @@ fn an_abi_preserved_register_emits_no_call_annotation() {
 
     assert_eq!(
         pre_call_annotations(&out),
-        vec![PRE_CALL_ANNOTATION.render(&["arg1.f16"])],
+        vec![PRE_CALL_ANNOTATION.render(&["slot1.f16"])],
         "only the volatile register lost a value at this call:\n{out}"
     );
     assert!(
