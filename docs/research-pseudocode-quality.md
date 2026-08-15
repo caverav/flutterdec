@@ -3606,15 +3606,16 @@ Implementation cost, for whoever takes it: seven test files hardcode a literal s
 
 ## R31. Heuristic names are indistinguishable from recovered ones
 
-> **Half resolved in R32.** The classification below is unchanged and the measurement stands. What landed is
-> the rule that separates the families: a name may describe an observed **source**, never an inferred type or
+> **Resolved in R32.** The classification below is unchanged and the measurement stands. What landed is the
+> rule that separates the families: a name may describe an observed **source**, never an inferred type or
 > role. So `objN`, `valueN`, `receiver`, `paramN`, `objTmpN` and `intTmpN` are gone, while `poolValN`,
 > `resultTmpN`, `tN` and `local_mN` stayed, because each states something observed. The per-declaration
 > marker this section costed and rejected was never needed.
 >
-> **Still open:** absence of a synthetic marker still does not certify that a name **was** recovered, because
-> the metadata-derived bucket is empty. Reserving a `source_` prefix for that bucket would close it, and is
-> cheap precisely because it applies to nothing today.
+> The residual this banner previously called "still open" - reserving a `source_` prefix so that absence of a
+> synthetic marker cannot imply recovery - turned out to be **vacuous**, because no synthetic marker was
+> introduced. Nothing in the output claims recovery, so there is no absence to misread. See the closing
+> subsection of R32 for why building the unused prefix would have been worse than leaving it out.
 
 Also not a result. Same shape as R30: a defect located, sized, and left unimplemented because the fix is a
 design decision rather than an edit.
@@ -3748,7 +3749,24 @@ The type guesses that used to live in identifiers still exist where they can be 
 `dynamic` when unproven. A reader can disagree with a declared type by reading the code; they cannot
 disagree with a name.
 
-This closes the half of R31 that was actionable. What remains open is the other half: absence of a
-`synthetic_` marker still does not certify that a name **was** recovered, because the metadata-derived
-bucket is empty. Reserving a `source_` prefix for that bucket would close it, and is cheap precisely because
-it would apply to nothing today.
+### The other half of R31 is closed too, by not building anything
+
+R31 left a residual: absence of a synthetic marker does not certify that a name **was** recovered, and
+reserving a `source_` prefix for the metadata-derived bucket would close it "cheaply, because it applies to
+nothing today". Re-examined after this change, that residual is **vacuous**, and the phrase "cheap because it
+applies to nothing" was the tell.
+
+It assumed the design that was not built. The proposal it came from paired a `synthetic_` prefix with a
+`source_` prefix, so absence of the first could mislead. What landed has **no** synthetic marker: names are
+either neutral (`slotN`, `tmpN`) or state an observed source (`poolValN`, `resultTmpN`, `tN`, `local_mN`).
+Nothing claims recovery, so there is no absence to misread. A `source_` prefix would be an identifier
+namespace with no producer, no consumer and no caller - a speculative abstraction whose only justification is
+a future that may not arrive, and which would be dead on arrival by construction.
+
+If metadata-derived local names are ever recovered, whoever adds them will need a way to distinguish them,
+and will design it against a real case rather than a hypothetical one. That is strictly better than a prefix
+reserved today by someone who cannot see what it must distinguish.
+
+Recorded because "cheap and it applies to nothing" is an argument that sounds like thrift and is actually its
+opposite: the cost of unused machinery is not the code, it is that a later reader must work out whether the
+empty case is a gap or a decision.
