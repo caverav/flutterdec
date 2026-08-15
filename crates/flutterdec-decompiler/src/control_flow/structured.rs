@@ -311,14 +311,24 @@ fn is_unrecovered_value_spelling(token: &str) -> bool {
     })
 }
 
+/// Prefixes for a value whose name states nothing about where it came from.
+/// `objTmp` and `intTmp` were listed here until the naming pass stopped
+/// asserting a type from usage counts; both now render as `tmp`, which this
+/// already matches, so dropping them changed no candidate's verdict - verified
+/// by annotation counts unmoved at 4,369 and 7,246.
+///
+/// **This is not "every prefix the naming pass emits", and must not become
+/// that.** `slotN` and `poolValN` are deliberately absent. A parameter was
+/// never opaque - `receiver` and `paramN` were not listed either - and
+/// `poolValN` states an observed source, so both are legitimate annotation
+/// candidates. Adding either would silently reject a whole class of candidates,
+/// moving annotation coverage and the quality counters: a ruler change.
 fn is_opaque_temporary(token: &str) -> bool {
-    ["t", "tmp", "objTmp", "intTmp", "resultTmp"]
-        .iter()
-        .any(|prefix| {
-            token.strip_prefix(prefix).is_some_and(|suffix| {
-                !suffix.is_empty() && suffix.bytes().all(|byte| byte.is_ascii_digit())
-            })
+    ["t", "tmp", "resultTmp"].iter().any(|prefix| {
+        token.strip_prefix(prefix).is_some_and(|suffix| {
+            !suffix.is_empty() && suffix.bytes().all(|byte| byte.is_ascii_digit())
         })
+    })
 }
 
 /// Comments pass through brace-sensitive compaction, so a candidate needing
