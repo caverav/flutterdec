@@ -4028,9 +4028,14 @@ Five explanations. All but the last are eliminated by measurement, and the last 
   **That is not the same as complete, and the arrival counter below falsifies the stronger claim I first
   wrote here.** At HEAD there are 5,490 arrivals, 2,099 emitted sets, and at most 1,597 distinct sets
   carrying a drop row, which leaves roughly 1,800 triples that reach the candidate lookup and then
-  neither appear in output nor in any ledger row. The counter sits *after* the lookup, so the miss is not
-  the lookup. There is at least one path out of this loop I have not found, and the honest statement is
-  that the accounting is **more complete than it was and still not closed**.
+  neither appear in output nor in any ledger row. Two further explanations are ruled out by reading the
+  code rather than guessing: the counter sits *after* the candidate lookup, so the lookup miss is not it;
+  and every planned annotation is applied and recorded from the same vector
+  (`for planned in &inserts { insert_str }`, then both provenance recorders read `&inserts`), so nothing
+  is lost between planning and the audit either. The honest statement is that the accounting is **more
+  complete than it was and still not closed**, and that the residual is most likely the same
+  distinct-set decomposition error described below rather than a real drop - which is a hypothesis, and
+  is labelled as one.
 - **Not a change in what reaches the gate.** Both builds were instrumented with the same counter for
   distinct `(function_id, join_block, register)` pairs arriving at the candidate lookup. Both report
   **5,490**, identically, so the population offered to the gates is invariant across the change and
