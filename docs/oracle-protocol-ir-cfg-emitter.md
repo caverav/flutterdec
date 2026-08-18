@@ -242,6 +242,13 @@ compared byte for byte.
 Recorded at `1371e42` with `sha256sum`. A change to any of these files is a
 ruler change and requires section 9, whether or not a test still passes.
 
+Every digest below is the current worktree value and is re-verified whenever this
+table is touched. One row has moved since `1371e42`, `scripts/ci-check.sh`, and
+its full chain from the original fixed reference to the current digest is
+adjudicated in section 10. Every other row is byte-identical to `1371e42`. A row
+that does not match the current worktree is a failure of this table, not of the
+file.
+
 Fixed reference emission artifacts:
 
 | Path | sha256 |
@@ -270,7 +277,7 @@ Gate and harness scripts:
 
 | Path | sha256 |
 | --- | --- |
-| `scripts/ci-check.sh` | `9d994285d4605f77f725c1d2ba5035b2ce0ef4802bb82d33df94153a15c6d50d` |
+| `scripts/ci-check.sh` | `2f76a8b9abac96db026386c0626d248ade81e9690e563cbaaa901b86472b4457` |
 | `scripts/test-suite.sh` | `b1d2efd5cda5794dbb9e60c41f92eede0cc65996d66f6c73c19e905be451c38a` |
 | `scripts/lint-python.sh` | `eef80907146b5d1b3d662ad823372a8b6a33df99b458582077b0c1578680e2d7` |
 | `scripts/lint-shell.sh` | `4554f41d5dbeeadf4d2478ce97af416392b14a78cfa417673b35914877d316ab` |
@@ -287,8 +294,16 @@ Fixtures and sample data:
 Oracle test files. Adding a case to one of these is expected work; weakening or
 removing an existing assertion is a ruler change.
 
+The first row is the loader, not a test. It holds no assertion of its own; it is
+five `include!` lines that are the only thing pulling the five protected
+in-crate oracle files into the compiled test target. Deleting one of those lines
+silences a whole protected file while every other digest in this table still
+matches, so the loader is protected too and a change to it is a ruler change on
+everything it includes.
+
 | Path | sha256 |
 | --- | --- |
+| `crates/flutterdec-decompiler/src/tests.rs` | `a19fe0015869fbfeb259e28f6d4344e18a630edab92b2a7aef2a58811e3ef56b` |
 | `crates/flutterdec-decompiler/tests/provenance_audit.rs` | `e0b5c675b2510d8c17c05b15a4a33341ba6a24cbec4336512cf63028527ff3b8` |
 | `crates/flutterdec-decompiler/tests/loop_entry_provenance_audit.rs` | `02626ee1ba1b4b1b9905654a6254319ee413169341e43ddb74387813f7ecbfc7` |
 | `crates/flutterdec-decompiler/src/tests/shared.rs` | `30ef9ef9d6b55acac8d41f5e557d38a78e5a60d2c28ac612e75ccfe80e376d3e` |
@@ -395,3 +410,141 @@ reference is allowed only through all of these steps, in order:
 
 A ruler change discovered without steps 1 through 4 is a failure of the change,
 not of the ruler.
+
+## 10. Adjudication record: `scripts/ci-check.sh`
+
+This is the section 9 record for the one protected path whose digest has moved
+since `1371e42`. It is landed as its own documentation commit, with no product or
+harness change alongside it.
+
+### 10.1 Digest chain
+
+The column order below puts the state before the digest deliberately, so that a
+scanner looking for the section 7 row shape, a backticked path followed by a
+backticked digest, does not read these history rows as protected-path rows.
+
+| Commit | State | `scripts/ci-check.sh` sha256 |
+| --- | --- | --- |
+| `1371e42` | fixed reference, preserved | `9d994285d4605f77f725c1d2ba5035b2ce0ef4802bb82d33df94153a15c6d50d` |
+| `209a8fe` | unchanged, docs-only commit | `9d994285d4605f77f725c1d2ba5035b2ce0ef4802bb82d33df94153a15c6d50d` |
+| `6430765` | unchanged, harness added but not wired into the gate | `9d994285d4605f77f725c1d2ba5035b2ce0ef4802bb82d33df94153a15c6d50d` |
+| `1501bce` | intermediate | `675099447f611dcfc89cd26046ba6e6a7fd04f3ff94be54113e3c787ed21e412` |
+| `1b11f7e` | intermediate | `6ee0cdf976f4fe02c1b3bebb4495bd2dfe34dc1fbd431b1ce9b52201eebbf878` |
+| `b4b1d8c`, `3aa2fe4` | unchanged | `6ee0cdf976f4fe02c1b3bebb4495bd2dfe34dc1fbd431b1ce9b52201eebbf878` |
+| `5aa4b4e` | current | `2f76a8b9abac96db026386c0626d248ade81e9690e563cbaaa901b86472b4457` |
+| `8e7f080`, `bf9a0eb`, worktree | current, recorded in section 7 | `2f76a8b9abac96db026386c0626d248ade81e9690e563cbaaa901b86472b4457` |
+
+Reproduce any row with
+`git show <commit>:scripts/ci-check.sh | sha256sum`, and the last row with
+`sha256sum scripts/ci-check.sh`.
+
+The fixed reference is preserved two ways: the `1371e42` digest is recorded above
+and in section 7, and the file itself is recoverable verbatim from the reference
+commit, which is never rewritten, force pushed, or rebased.
+
+### 10.2 Exact diff intent, per step
+
+`1371e42` to `1501bce`, digest `9d994285...` to `675099447f...`. Adds a clippy
+lane and a test lane for the benchmark harness, plus the usage line and the
+paragraph explaining why they are needed. The harness is deliberately not a
+workspace member, so `cargo clippy --workspace` and `cargo test --workspace` do
+not reach it, and that exclusion is what keeps its `bench-spans` instrumentation
+out of every existing check. Without these two lanes the harness would be the one
+part of the repository no gate covers.
+
+`1501bce` to `1b11f7e`, digest `675099447f...` to `6ee0cdf976...`. Adds
+`cargo fmt --manifest-path crates/flutterdec-bench/Cargo.toml --all --check` for
+the same reason: `--all` means every member of the manifest's own workspace, so
+the root `cargo fmt --all` does not reach the harness either. The usage line
+changes from "clippy and tests" to "fmt, clippy and tests" to match.
+
+`1b11f7e` to `5aa4b4e`, digest `6ee0cdf976...` to `2f76a8b9...`. Adds
+`scripts/bench-identity-gate-test.sh` as a gate lane, before the clippy lane, and
+renumbers the usage list from 5 through 8 to 6 through 9 to make room for it. The
+identity gate is what stops an A/A run whose two sides are different machine code
+and an A/B run whose two sides are the same machine code, and a 6 minute pipeline
+run is the only other place it executes, so it gets a direct lane.
+
+Whole-file diff against the fixed reference:
+`git diff 1371e42 -- scripts/ci-check.sh`, 26 insertions and 3 deletions.
+
+### 10.3 Proof that no gate was removed or weakened
+
+Mechanical, over the whole file rather than over a summary of it. Strip blank and
+comment lines from both versions, sort them, and take the set difference:
+
+```
+git show 1371e42:scripts/ci-check.sh > /tmp/cic-old.sh
+strip() { grep -vE '^[[:space:]]*(#|$)' "$1" | sed 's/[[:space:]]*$//' | sort; }
+comm -23 <(strip /tmp/cic-old.sh) <(strip scripts/ci-check.sh)
+```
+
+Three lines are reported, and all three are text inside the `usage()` heredoc:
+
+```
+  5) cargo clippy --workspace --all-targets -- -D warnings
+  6) cargo test --workspace            (unless --skip-tests)
+  7) cargo build -p flutterdec-cli --release
+```
+
+Each of the three reappears in the current file with the same command text and a
+different list number, `6)`, `7)`, and `8)`, because the new identity-gate lane
+took position 5. Nothing else present at `1371e42` is absent now: no executable
+line, no `set -euo pipefail`, no argument handling, no `exit` path.
+
+The executed check set is therefore a strict superset. At `1371e42`:
+
+```
+nix flake check
+nix develop -c cargo fmt --all --check
+nix develop -c ./scripts/lint-shell.sh
+nix develop -c ./scripts/lint-python.sh
+nix develop -c cargo clippy --workspace --all-targets -- -D warnings
+nix develop -c cargo test --workspace                 (unless --skip-tests)
+nix develop -c cargo build -p flutterdec-cli --release
+```
+
+Currently: the same seven, in the same order, plus
+
+```
+./scripts/bench-identity-gate-test.sh
+nix develop -c cargo fmt --manifest-path "$bench_manifest" --all --check
+nix develop -c cargo clippy --manifest-path "$bench_manifest" --all-targets -- -D warnings
+nix develop -c cargo test --manifest-path "$bench_manifest"   (unless --skip-tests)
+```
+
+Strictness only increased. Every input that failed the gate at `1371e42` still
+fails it, because every check that could reject it still runs, unchanged and in
+the same order; four new ways to fail were added. No threshold moved, no lane
+became conditional that was not conditional before, and the one flag that
+suppresses work, `--skip-tests`, gained a lane rather than losing one. The nine
+`section 7` threshold rulers, the golden digests, and the plant tests are
+untouched by this diff, which changes no file other than
+`scripts/ci-check.sh`.
+
+### 10.4 Section 9 steps
+
+1. Invariant. Not an L1 or L2 invariant, because no expected value and no product
+   output changed: this is an L5 change, and the invariant is the one section 5
+   states, that a ruler may never be edited to obtain a pass. It is satisfied in
+   the strongest available form, set inclusion proved in 10.3: the gate cannot
+   pass anything at the current digest that it rejected at `9d994285...`.
+2. Test. `scripts/bench-identity-gate-test.sh`, 9 cases covering both directions
+   of the identity rule and both usage errors, is itself the test the third step
+   wires in. Run directly: exit 0, `[identity-gate-test] all checks passed`, 9 ok
+   lines. It fails on the old behavior in the sense that matters for a gate: at
+   `1371e42` the gate never ran it, so a broken identity gate passed CI.
+3. Diff and digests. Recorded in 10.1 and 10.2, with the reproducing commands.
+4. Original reference preserved. Recorded in 10.1.
+5. Own commit. Not satisfied at the time: the three edits rode along inside
+   harness commits `1501bce`, `1b11f7e`, and `5aa4b4e`, rather than landing as a
+   separate ruler commit, and section 7 was not updated with them. That is the
+   defect this record repairs. It is recorded as a deviation rather than
+   explained away. The mitigation is that this adjudication is itself an atomic
+   documentation commit, the chain in 10.1 lets any reader recover the exact
+   pre-change ruler, and 10.3 bounds the blast radius: reverting any one of the
+   three harness commits removes only lanes it added and cannot silently restore
+   a weaker gate, because none of them weakened anything.
+6. L5 re-run. `NIX_CONFIG='experimental-features = nix-command flakes'
+   scripts/ci-check.sh` exits 0 at the current digest, all lanes green including
+   the four added ones.
