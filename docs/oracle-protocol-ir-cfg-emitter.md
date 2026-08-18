@@ -143,16 +143,34 @@ the following instruction must become a leader.
 | `TBZ`, `TBNZ` | test bit and branch | branch | yes | label block and fallthrough | any third edge |
 | `BL label` | branch with link, sets X30, returns | call | no | fallthrough | an edge to the callee |
 | `BLR Xn` | indirect branch with link, sets X30, returns | call | no | fallthrough | an edge to a guessed callee |
-| `BR Xn` | indirect branch, no link, does not return here | jump | yes | none unless a target set is independently recovered | fallthrough |
+| `BR Xn` | indirect branch, no link, does not return here | indirect branch | yes | none unless a target set is independently recovered | fallthrough |
 | `RET` | return to X30 | return | yes | none | fallthrough |
 | `BRK #imm` | breakpoint instruction exception, control does not continue | trap | yes | none | fallthrough |
 | Dart guard group `ldr` from `THR`, `cmp` against `SPREG`, `b.ls` | runtime stack limit check, slow path re-enters the body | runtime check | no | fallthrough only | the taken guard edge, and the slow path back edge |
 
-Corroborating repository evidence for the two rows this pipeline currently gets
-wrong: `crates/flutterdec-core/src/pipeline/runners/split.rs:141-150` already
-treats `ret`, `brk`, `b`, and `br` as path enders, and
+Repository evidence for the two indirect-control rows, `BR Xn` and `BRK #imm`.
+Both were classified as `IROp::Other` with an invented fallthrough at `1371e42`,
+which is the state the section 2 rows IR-05 and IR-06 record, and both were
+brought to the values this table demands at `6756e71`. In the current tree,
+`crates/flutterdec-ir/src/lib.rs:185-191` classifies `br` as
+`IROp::IndirectBranch` and `brk` as `IROp::Trap`, `:242-246` makes the
+instruction after each of them a leader, and `:310` gives a block ending in
+either one an empty successor list, so neither can take a fallthrough and
+neither can take a guessed target. The register operand of `br` is kept only as
+provenance for the emitters (`:181-188`); `parse_target_hex` rejects a register
+name, so no edge is derived from it. The same expectation is stated as data in
+the twelve-row control-effect table at `:451-540`, whose `br` row asserts
+`IROp::IndirectBranch` with `succ_starts: &[]` and whose `brk` row asserts
+`IROp::Trap` with `succ_starts: &[]`, and that table is driven by two tests:
+`every_arm64_control_effect_has_exactly_the_documented_edges` (`:563`) for the
+edges and
+`only_a_control_effect_that_ends_a_block_makes_the_next_instruction_a_leader`
+(`:637`) for the block-ending column. Downstream evidence is unchanged from
+`1371e42` and still corroborates the same reading:
+`crates/flutterdec-core/src/pipeline/runners/split.rs:174-183` treats `ret`,
+`brk`, `b`, and `br` as path enders, and
 `crates/flutterdec-core/src/pipeline/runners/stubs.rs:461` reads `br` as the tail
-of a dispatch stub.
+of a dispatch stub. Section 14 adjudicates the class name in the `BR Xn` row.
 
 ## 4. Exact invariants
 
@@ -1272,3 +1290,272 @@ not the compiler:
 6. L5 re-run. `NIX_CONFIG='experimental-features = nix-command flakes'
    scripts/ci-check.sh` exits 0 at the current digests, with the new lane green:
    `[oracle-inventory] ok, 24 protected oracles are compiled`.
+
+## 14. Adjudication record: the indirect-control class in the L1 table
+
+Section 3 is the L1 expected-value table, the highest layer in this hierarchy.
+One cell in it named the wrong class for `BR Xn`, and the paragraph beneath it
+described `BR` and `BRK` as the two rows the pipeline gets wrong, which stopped
+being true at `6756e71`. This record adjudicates both edits.
+
+This protocol carries no digest row in section 7 and no oracle-inventory
+sentinel, so no protected digest moves here and nothing mechanical fails if this
+record is wrong. It is adjudicated anyway, because section 3 is an L1 ruler in
+substance: it is the written-from-the-manual source of every expected value the
+instruction-classification cases are held to, and editing an expected value after
+the candidate exists is precisely the shape section 5 forbids. What follows is
+the evidence that the edit did not follow the code.
+
+### 14.1 What changed, and what did not
+
+Two edits, both inside section 3. Nothing else in this protocol is touched.
+
+| Cell | Before | After |
+| --- | --- | --- |
+| `BR Xn`, Required class | `jump` | `indirect branch` |
+| `BR Xn`, Architectural effect | `indirect branch, no link, does not return here` | unchanged |
+| `BR Xn`, Ends block | `yes` | unchanged |
+| `BR Xn`, Required edges | `none unless a target set is independently recovered` | unchanged |
+| `BR Xn`, Forbidden edges | `fallthrough` | unchanged |
+| `BRK #imm`, all five value columns | `breakpoint instruction exception, control does not continue` / `trap` / `yes` / `none` / `fallthrough` | unchanged |
+| corroborating paragraph | "the two rows this pipeline currently gets wrong" | current code and test citations |
+
+The edge oracle was not weakened, and it was not touched. `BR` and `BRK` already
+required no edges and already forbade fallthrough in this table, from the day it
+was written. Those two columns are the ones a candidate could gain something by
+moving, and both rows are byte-identical to the original. Reproduce the original
+rows with
+
+```
+git show 209a8fe:docs/oracle-protocol-ir-cfg-emitter.md \
+  | grep -E '^\| `(BR Xn|BRK #imm)`'
+```
+
+which prints
+
+```
+| `BR Xn` | indirect branch, no link, does not return here | jump | yes | none unless a target set is independently recovered | fallthrough |
+| `BRK #imm` | breakpoint instruction exception, control does not continue | trap | yes | none | fallthrough |
+```
+
+Column five is `none unless a target set is independently recovered` and `none`,
+column six is `fallthrough` in both, and the current table says the same. Only
+the third column of the first row differs. `BRK` is unchanged in every column,
+because `trap` was already the right class name and `IROp::Trap` implements it
+under that name.
+
+The section 2 rows IR-05 and IR-06 are also untouched. Their Status column is
+explicitly "the state at `1371e42`", where both instructions did fall through, so
+`fails by inspection, risk R1` is still the correct historical value and
+rewriting it would be rewriting frozen history. The present state is recorded in
+section 3 and in section 18 of
+[research-ir-cfg-emitter.md](research-ir-cfg-emitter.md), not in a column pinned
+to the reference commit.
+
+### 14.2 The semantic class split
+
+`jump` in this table is the class of `B label`: the block ends and control
+transfers to a destination the instruction stream states. The pipeline
+implements it that way and nowhere else. `IROp::Jump` is the one class whose
+target is parsed and turned into an edge,
+`crates/flutterdec-ir/src/lib.rs:300-306`, and `B label`'s Required edges cell is
+`the label block` for exactly that reason.
+
+`BR Xn` shares the block-ending half of that and none of the destination half.
+Its destination is a register value this pipeline does not recover, which is why
+its own Required edges cell has always read `none unless a target set is
+independently recovered`. Holding both instructions in one class therefore
+demands one of two wrong things: either `BR` renders as a resolved jump to a
+destination nobody recovered, or `Jump` acquires a second meaning, "sometimes
+carries a target and sometimes does not", which is a wildcard none of the four
+exhaustive `match` sites on `IROp` can enforce.
+
+So the original cell was a compromise, not a mistake: with only `jump`, `branch`,
+`call`, `return`, `trap` and `runtime check` available, `jump` was the closest
+name for behavior the table already specified correctly in its other columns.
+`6756e71` created the class that behavior deserves, `IROp::IndirectBranch`
+(`crates/flutterdec-ir/src/lib.rs:14-20`), whose doc comment states the same
+split in the same terms, and this edit makes the table name it. Both halves of
+the split are named now: `indirect branch` for the register destination, `trap`
+for `BRK`, which resumes nothing and is distinct from `return`, which resumes the
+caller.
+
+The split is semantic and not behavioral, and that is checkable rather than
+asserted. The machine-readable restatement of this table is `CONTROL_EFFECTS`,
+`crates/flutterdec-ir/src/lib.rs:451-540`, whose fields are the Rust variant, the
+block-ending column and the successor-start list. It reads the Rust variant name,
+never this document's prose class, so no value of the Required class cell can
+make a case pass or fail. What the two driving tests compare is the behavior:
+`every_arm64_control_effect_has_exactly_the_documented_edges` (`:563`) pins the
+Required and Forbidden edges columns for all twelve rows, and
+`only_a_control_effect_that_ends_a_block_makes_the_next_instruction_a_leader`
+(`:637`) pins the Ends block column. Neither could be satisfied by renaming a
+class here.
+
+### 14.3 Exact diff intent
+
+One file, `docs/oracle-protocol-ir-cfg-emitter.md`, and nothing else in the
+commit. `git diff --numstat 5620242` reports 292 insertions and 5 deletions. The
+deletion count is 5 rather than 6 because the last line of the replaced
+paragraph, the one holding the `stubs.rs:461` citation, survives verbatim into
+the replacement and the diff keeps it as context.
+
+Change one, in the section 3 table: the third column of the `BR Xn` row, `jump`
+to `indirect branch`. One line, one cell, no other cell of that row and no other
+row.
+
+Change two, replacing the five-line paragraph under the table. The old paragraph
+opened "Corroborating repository evidence for the two rows this pipeline
+currently gets wrong" and cited `split.rs:141-150` and `stubs.rs:461`. Both of
+those were downstream corroboration, not the classifier, and the sentence they
+supported has been false since `6756e71`. The replacement states the `1371e42`
+state as history, then cites the classifier itself, the leader rule, the
+successor rule, the twelve-row table and the two tests that drive it, and keeps
+both downstream citations with `split.rs` renumbered to `174-183` for its current
+position. `is_terminator` and the `stubs.rs` dispatch-stub tail are both
+byte-identical to `1371e42`:
+
+```
+git show 1371e42:crates/flutterdec-core/src/pipeline/runners/split.rs \
+  | sed -n '/^fn is_terminator/,/^}/p' | sha256sum
+sed -n '/^fn is_terminator/,/^}/p' \
+  crates/flutterdec-core/src/pipeline/runners/split.rs | sha256sum
+```
+
+Both print
+`4032e0a8d7fe3b7da0fefb42f6fe05dbfc31d39987e127964228458b78d8864e`.
+
+Change three is this section, appended after section 13.
+
+No digest chain table is needed, because no protected path moves. For
+reproducibility only, this protocol's own sha256 at `5620242`, the commit
+immediately before this one, is
+`904695f860a033ad099e8568f8cd2bcc13eebfaa03748f163ddab0824ccc3a88`, recoverable
+with `git show 5620242:docs/oracle-protocol-ir-cfg-emitter.md | sha256sum`. The
+post-change digest is deliberately not recorded here: this record is inside the
+file it would digest. Recompute it with
+`sha256sum docs/oracle-protocol-ir-cfg-emitter.md`.
+
+### 14.4 Code before doc
+
+The behavior landed first and this document follows it. That direction is the
+whole point of the record, because a class name written into an L1 table
+*before* the code would be an expected value; written after, with every
+behavioral column already fixed, it is a reconciliation.
+
+| Commit | Time | Paths | What |
+| --- | --- | --- | --- |
+| `209a8fe` | 2026-08-18T03:58:59Z | 3, all docs | this protocol written, section 3 table included, both indirect-control rows already forbidding fallthrough |
+| `6756e71` | 2026-08-18T09:11:58-04:00 | 7, 0 docs | `IROp::IndirectBranch` and `IROp::Trap`, the classifier, leader and successor rules, and the tests |
+| `bd1ecbf` | 2026-08-18T09:28:43-04:00 | 8, 0 docs | block-identity validation at every consumer boundary |
+| `51c129a` | 2026-08-18T09:34:35-04:00 | 4, 0 docs | one canonical edge-rebuild path |
+| `1a00f64` | 2026-08-18T09:39:05-04:00 | 1, 0 docs | guard-prune scope pinned |
+| `5620242` | 2026-08-18T10:27:41-04:00 | 1, all docs | research doc section 18, risk R1 closed |
+| this commit | after `5620242` | 1, all docs | section 3 reconciliation and this record |
+
+Reproduce with `git log --format='%h %cI %s' 1c7507b..HEAD` and
+`git diff-tree -r --no-commit-id --name-only <commit>`.
+
+The behavioral columns of both rows predate all of it: they were written at
+`209a8fe` from `DDI 0487` C6.2, before any of this code existed, and 14.1 shows
+they are unchanged. The one cell written afterwards is a class name that 14.2
+shows no test reads. So no expected value in this table was produced by running
+the candidate, which is the section 5 rule this edit is most exposed to.
+
+### 14.5 Accepted gate evidence
+
+Run at the current worktree, with the section 3 edit and this record in place.
+
+- `NIX_CONFIG='experimental-features = nix-command flakes' scripts/ci-check.sh`
+  exits 0 and prints `[ci-check] all checks passed`. All thirteen lanes are
+  green, 20 `test result:` lines and 504 tests passed with 0 failed across the
+  whole script.
+- The `cargo test --workspace` lane inside it is 17 result lines, 466 passed and
+  0 failed. `cargo fmt --all --check` and
+  `cargo clippy --workspace --all-targets -- -D warnings` are lanes 2 and 6 and
+  both pass.
+- `scripts/check-oracle-inventory.py` is lane 8 and prints
+  `[oracle-inventory] 24 protected oracle rows in
+  docs/oracle-protocol-ir-cfg-emitter.md` and
+  `[oracle-inventory] ok, 24 protected oracles are compiled`. This is the one
+  gate that parses this document, and its parse is bounded to the section 7
+  Oracle test files table, so it is what proves an edit to section 3 and an
+  appended section 14 leave the table it reads undisturbed. The same is true of
+  `the_protected_oracle_loader_chain_is_intact`, which passes in lane 7.
+- The 47 section 7 rows all match the worktree, 0 mismatches, recomputed with
+  `sha256sum` per row. A doc-wide scan for the section 7 row shape also returns
+  47, so neither of the two tables added by this record leaks into that count.
+
+The tests named in 14.2 fail on the old behavior, which is section 9 step 2 and
+is measured rather than argued. In a disposable worktree at this commit's tree,
+deleting only the `"br"` and `"brk"` arms from `llir_from_disasm`
+(`crates/flutterdec-ir/src/lib.rs:185-191`) restores the `1371e42`
+classification exactly: both mnemonics then fall to the `IROp::Other` default at
+`:132` and take the fallthrough arm of the successor match, which is what
+`1371e42` did, since it had no arm for either mnemonic. Against that plant,
+`cargo test --workspace --no-fail-fast` exits 101 with 6 failures in 2 of the 17
+result lines and 460 of 466 still passing:
+
+| Test binary | Result | Failing tests |
+| --- | --- | --- |
+| `flutterdec-ir` lib | 16 passed, 4 failed | `every_arm64_control_effect_has_exactly_the_documented_edges`, `only_a_control_effect_that_ends_a_block_makes_the_next_instruction_a_leader`, `an_indirect_branch_keeps_its_register_and_takes_no_edge`, `a_trap_ends_the_block_with_no_successors` |
+| `flutterdec-core` lib | 97 passed, 2 failed | `quality_tests::serialized_ir_states_every_control_effect_and_its_edges`, `quality_tests::the_pipeline_reports_an_indirect_branch_as_unresolved_control_flow` |
+
+Both tests that drive the section 3 table are in that list, which is what step 2
+needs, and so are both pipeline tests in
+`crates/flutterdec-core/src/pipeline/quality.rs` (`:243` for the serialized edges
+and `:307` for `unresolved_cf`).
+
+The three cross-emitter tests in
+`crates/flutterdec-decompiler/tests/arm64_control_effects.rs` (`:156`, `:177`,
+`:203`) do *not* fail under this plant, and the decompiler unit suite stays at
+268 passed. That is not a gap in them and it is recorded rather than glossed:
+they build their `FunctionIr` by hand, constructing `IROp::IndirectBranch` and
+`IROp::Trap` directly (`:50-56`), so they pin what the emitters do with those
+classes and are deliberately independent of which mnemonic the classifier maps
+to them. The classifier is what this plant breaks, and the classifier is covered
+by the four `flutterdec-ir` rows above. The two layers are separate oracles on
+purpose, and a plant that reaches only one of them is the evidence that they are.
+
+### 14.6 No product, test, or digest change
+
+This commit changes one file and it is a document. `git diff-tree -r
+--no-commit-id --name-only` for it lists `docs/oracle-protocol-ir-cfg-emitter.md`
+and nothing else: no product source, no test, no fixture, no golden, no manifest,
+no script and no CI lane.
+
+Every protected digest row is exact. The 47 rows of section 7 all match the
+worktree, and the intersection of those 47 paths with the 14 paths changed by the
+whole IR work, `git diff --name-only 1c7507b HEAD`, is empty. So none of the five
+commits this record reconciles against moved a protected digest either, and the
+three rows that have moved since `1371e42` are still the three adjudicated in
+sections 10 through 13.
+
+That is also the honest limit of this record. Nothing under `crates/flutterdec-ir/`
+carries a section 7 digest row or an oracle-inventory sentinel, so the twelve-row
+control-effect table and the tests that drive it are not themselves protected
+rulers yet. This edit does not change that either way, and closing it is separate
+work.
+
+### 14.7 Section 9 steps
+
+1. Invariant. L1, and the invariant is I5: no block whose last instruction is an
+   unconditional jump, an indirect branch, a return, or a trap has a fallthrough
+   successor. It is not moved by this edit; it is what the unchanged Required and
+   Forbidden edges cells state, sourced from `DDI 0487` C6.2 at `209a8fe`. No
+   product output changed here, because this commit contains no product change.
+2. Test. `every_arm64_control_effect_has_exactly_the_documented_edges` and
+   `only_a_control_effect_that_ends_a_block_makes_the_next_instruction_a_leader`,
+   both in `crates/flutterdec-ir/src/lib.rs`, are the two that read this table.
+   They fail on the old behavior and pass on the new one, together with four
+   others, measured in 14.5.
+3. Diff and digests. Recorded in 14.3, with the reproducing commands. No
+   protected digest moves, and 14.6 shows the section 7 table is exact.
+4. Original reference preserved. The original section 3 rows are quoted verbatim
+   in 14.1 and recoverable from `209a8fe`, and the pre-change whole-file digest is
+   in 14.3. `1371e42` and `209a8fe` are never rewritten, force pushed, or rebased.
+5. Own commit. Satisfied. This record and the section 3 reconciliation land as one
+   documentation commit, `docs(protocol): reconcile indirect control class`, with
+   no product, test or harness change in it, and after the code it reconciles
+   against rather than before it.
+6. L5 re-run. Recorded in 14.5.
