@@ -760,10 +760,11 @@ mod tests {
     /// it, so emission falls back to the DFS walk. Nothing in the public
     /// artifact names the emitter that ran, so two observable consequences
     /// stand in for it. At 64 blocks the fallback inlines both arms of every
-    /// branch and emits several times the body the structured shapes do. Going
-    /// from 64 to 256 blocks the structured output grows with the graph while
-    /// the fallback stays flat, because its depth budget, not the block count,
-    /// is what bounds it.
+    /// branch and emits several times the body the structured shapes do, and
+    /// going from 64 to 256 blocks both grow with the graph. The fallback used
+    /// to stay flat there, but only because every path its budgets deferred to
+    /// a helper was then collapsed away; now the helper bodies survive, so the
+    /// blocks past the depth budget are in the artifact too.
     ///
     /// Restricted to the two smaller sizes. Emission dominates the matrix and
     /// the 1024-block irreducible case takes seconds on its own, which does not
@@ -811,9 +812,10 @@ mod tests {
             linear_256 > 3 * linear_64,
             "structured output grows with the graph: {linear_64} then {linear_256}"
         );
-        assert_eq!(
-            irreducible_256, irreducible_64,
-            "the fallback is bounded by its depth budget, not by the block count"
+        assert!(
+            irreducible_256 > irreducible_64,
+            "the fallback keeps the paths its budgets deferred, so its output grows \
+             with the graph: {irreducible_64} then {irreducible_256}"
         );
     }
 
