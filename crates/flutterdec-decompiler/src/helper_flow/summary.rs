@@ -47,12 +47,18 @@ impl<'a> FuncEmitter<'a> {
 
         while let Some(id) = queue.pop() {
             queued.remove(&id);
-            if !generated.insert(id) {
+            if generated.contains(&id) {
                 continue;
             }
-            if generated.len() > 64 {
-                break;
+            // Past the budget the queue is drained rather than abandoned: every
+            // block that will not get a definition has to be named, or its call
+            // site would be the only trace of it and there would be nothing to
+            // attribute the omission to.
+            if generated.len() >= HELPER_DEFINITION_BUDGET {
+                self.helper_cap_omitted.insert(id);
+                continue;
             }
+            generated.insert(id);
 
             let mut helper = FuncEmitter::new(self.ir, self.symbol_names);
             // Helper bodies are copied verbatim into the caller by
@@ -82,6 +88,20 @@ impl<'a> FuncEmitter<'a> {
             }
             self.lines.push("}".to_string());
 
+            // The helper walked its own edges, so its omissions are this
+            // function's omissions: they name the same blocks and their events
+            // belong in the same stream.
+            for event in helper.accounting.events() {
+                self.accounting.record_event(
+                    event.kind,
+                    event.function_id,
+                    event.source_start_va,
+                    event.target,
+                );
+            }
+            for (target, source) in helper.omission_sources {
+                self.omission_sources.entry(target).or_insert(source);
+            }
             for next in helper.omitted_blocks {
                 if !generated.contains(&next) && !queued.contains(&next) {
                     queue.push(next);

@@ -25,6 +25,10 @@ pub struct PseudocodeArtifact {
     /// that would otherwise have let the branch be elided as having no effect.
     pub unlifted_instructions: usize,
     pub target_va_symbol_calls: usize,
+    /// Why structured emission declined for this function, if it did, and every
+    /// traversal limit that omitted an edge. Both are primary facts; the generic
+    /// decline count and the rollback count are derived from them.
+    pub emission: EmissionAccounting,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -185,6 +189,15 @@ struct FuncEmitter<'a> {
     active_stack: Vec<usize>,
     inline_visits: HashMap<usize, usize>,
     omitted_blocks: BTreeSet<usize>,
+    /// For each omitted block, the block whose edge first asked for it. The
+    /// helper budget is spent long after that edge was walked, so without this
+    /// the omission event for a block the budget refused would have no source to
+    /// name.
+    omission_sources: BTreeMap<usize, usize>,
+    /// Omitted blocks the helper budget refused to define. Their call sites
+    /// carry an explicit omission instead of a call to a definition that is not
+    /// there.
+    helper_cap_omitted: BTreeSet<usize>,
     loop_back_edges: BTreeSet<usize>,
     loop_context: Vec<usize>,
     /// Built once on first use by the DFS emitter, which has no `Regions` to ask.
@@ -215,6 +228,7 @@ struct FuncEmitter<'a> {
     repeated_blocks: usize,
     unlifted_instructions: usize,
     target_va_symbol_calls: usize,
+    accounting: EmissionAccounting,
 }
 
 #[derive(Debug, Clone)]
@@ -249,6 +263,11 @@ mod passes;
 use control_flow::Regions;
 use control_flow::{JOIN_LOSS_SITE, LOOP_LOSS_SITE};
 use helpers::*;
+
+pub use control_flow::{
+    EmissionAccounting, StructuredDecline, StructuredDeclineCause, TraversalEvent,
+    TraversalEventKind, TraversalTarget,
+};
 
 pub use helpers::{
     AnnotationLiteral, ANNOTATION_LITERALS, EXHAUSTIVE_JOIN_ANNOTATION, LOOP_ENTRY_ANNOTATION,
@@ -379,6 +398,8 @@ impl<'a> FuncEmitter<'a> {
             active_stack: Vec::new(),
             inline_visits: HashMap::new(),
             omitted_blocks: BTreeSet::new(),
+            omission_sources: BTreeMap::new(),
+            helper_cap_omitted: BTreeSet::new(),
             loop_back_edges: BTreeSet::new(),
             loop_context: Vec::new(),
             dfs_preds: None,
@@ -398,6 +419,7 @@ impl<'a> FuncEmitter<'a> {
             repeated_blocks: 0,
             unlifted_instructions: 0,
             target_va_symbol_calls: 0,
+            accounting: EmissionAccounting::default(),
         }
     }
 
@@ -472,7 +494,7 @@ impl<'a> FuncEmitter<'a> {
             self.lines.push(String::new());
             self.append_helper_functions();
             self.inline_trivial_helpers();
-            self.collapse_remaining_helpers();
+            self.resolve_remaining_helpers();
         }
         self.insert_loop_summary_comment();
         self.compact_lines();
@@ -504,6 +526,7 @@ impl<'a> FuncEmitter<'a> {
             repeated_blocks: self.repeated_blocks,
             unlifted_instructions: self.unlifted_instructions,
             target_va_symbol_calls: self.target_va_symbol_calls,
+            emission: self.accounting,
         };
         (
             artifact,
@@ -527,10 +550,44 @@ impl<'a> FuncEmitter<'a> {
     fn emit_omitted_path(&mut self, indent: usize, block_id: Option<usize>) {
         if let Some(id) = block_id {
             self.omitted_blocks.insert(id);
+            let source = self.current_source_block();
+            self.omission_sources.entry(id).or_insert(source);
             self.push_line(indent, &format!("return _block_{}();", id));
         } else {
             self.push_line(indent, "/* path omitted */");
         }
+    }
+
+    /// The block the walk is inside right now, which is the source of any edge
+    /// it declines to render. The entry block when nothing is on the stack,
+    /// which is where a helper body starts.
+    fn current_source_block(&self) -> usize {
+        self.active_stack
+            .last()
+            .copied()
+            .or_else(|| self.ir.blocks.first().map(|b| b.id))
+            .unwrap_or(0)
+    }
+
+    fn block_start_va(&self, id: usize) -> u64 {
+        self.block_by_id
+            .get(&id)
+            .map(|b| b.start_va)
+            .unwrap_or(self.ir.entry_va)
+    }
+
+    /// Record one traversal omission, keyed by function, source block, target
+    /// and ordinal.
+    fn record_traversal_event(
+        &mut self,
+        kind: TraversalEventKind,
+        source: usize,
+        target: TraversalTarget,
+    ) {
+        let function_id = self.ir.function_id;
+        let source_start_va = self.block_start_va(source);
+        self.accounting
+            .record_event(kind, function_id, source_start_va, target);
     }
 }
 
@@ -585,6 +642,9 @@ fn invalid_cfg_artifact(ir: &FunctionIr, defect: &CfgDefect) -> PseudocodeArtifa
         repeated_blocks: 0,
         unlifted_instructions: 0,
         target_va_symbol_calls: 0,
+        // Neither emitter ran, so there is no decline to attribute and no
+        // traversal to omit anything.
+        emission: EmissionAccounting::default(),
     }
 }
 

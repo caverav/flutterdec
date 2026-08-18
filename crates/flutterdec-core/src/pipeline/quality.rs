@@ -63,8 +63,33 @@ fn quality_from_artifacts(
     let mut placeholder_cond_markers = 0usize;
     let mut omitted_path_markers = 0usize;
     let mut loop_backedge_markers = 0usize;
+    let mut emission = EmissionReport::default();
 
     for p in pseudo {
+        emission.irreducible += p.emission.cause_count(StructuredDeclineCause::Irreducible);
+        emission.unsupported_region += p
+            .emission
+            .cause_count(StructuredDeclineCause::UnsupportedRegion);
+        emission.repeat_budget += p.emission.cause_count(StructuredDeclineCause::RepeatBudget);
+        emission.structured_depth_budget += p
+            .emission
+            .cause_count(StructuredDeclineCause::StructuredDepthBudget);
+        emission.coverage_mismatch += p
+            .emission
+            .cause_count(StructuredDeclineCause::CoverageMismatch);
+        emission.dfs_depth_omissions += p
+            .emission
+            .event_count(TraversalEventKind::DfsDepthOmission);
+        emission.dfs_visit_omissions += p
+            .emission
+            .event_count(TraversalEventKind::DfsVisitOmission);
+        emission.helper_cap_omissions += p
+            .emission
+            .event_count(TraversalEventKind::HelperCapOmission);
+        // Derived from the causes above, one function at a time, so the totals
+        // are sums of the same primary facts and not a second tally.
+        emission.structured_declines += p.emission.structured_declines();
+        emission.structured_rollbacks += p.emission.rollbacks();
         total_calls += p.total_calls;
         indirect_calls += p.indirect_calls;
         placeholder_ifs += p.placeholder_ifs;
@@ -143,6 +168,7 @@ fn quality_from_artifacts(
         placeholder_cond_markers,
         omitted_path_markers,
         loop_backedge_markers,
+        emission,
     }
 }
 

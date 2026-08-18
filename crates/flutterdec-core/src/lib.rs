@@ -4,7 +4,9 @@ use anyhow::{bail, Context, Result};
 use flutterdec_adapter::{
     list_adapters, resolve_adapter_exec, run_adapter, AdapterInput, ProgramModel,
 };
-use flutterdec_decompiler::{emit_program_with_runtime_stubs, PseudocodeArtifact};
+use flutterdec_decompiler::{
+    emit_program_with_runtime_stubs, PseudocodeArtifact, StructuredDeclineCause, TraversalEventKind,
+};
 use flutterdec_disasm_arm64::{
     disassemble_program_with_priorities_and_package_hints, FunctionDisassembly,
     FunctionPriorityBreakdown,
@@ -272,6 +274,28 @@ pub struct QualityReport {
     pub placeholder_cond_markers: usize,
     pub omitted_path_markers: usize,
     pub loop_backedge_markers: usize,
+    pub emission: EmissionReport,
+}
+
+/// Program-level emission accounting: why structured emission declined, and what
+/// the traversals omitted.
+///
+/// The per-cause counts are the primary facts. `structured_declines` is their
+/// sum and `structured_rollbacks` is the sum of the post-mutation ones, both
+/// derived here rather than accumulated separately, so neither can disagree with
+/// the causes it summarises.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct EmissionReport {
+    pub structured_declines: usize,
+    pub structured_rollbacks: usize,
+    pub irreducible: usize,
+    pub unsupported_region: usize,
+    pub repeat_budget: usize,
+    pub structured_depth_budget: usize,
+    pub coverage_mismatch: usize,
+    pub dfs_depth_omissions: usize,
+    pub dfs_visit_omissions: usize,
+    pub helper_cap_omissions: usize,
 }
 
 #[derive(Debug, Clone, Serialize)]

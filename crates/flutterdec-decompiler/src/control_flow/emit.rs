@@ -1266,7 +1266,12 @@ impl<'a> FuncEmitter<'a> {
             self.emit_wrapped_loop(id, indent, depth);
             return;
         }
-        if depth >= 12 {
+        if depth >= DFS_MAX_DEPTH {
+            let source = self.current_source_block();
+            let target = TraversalTarget::Block {
+                start_va: self.block_start_va(id),
+            };
+            self.record_traversal_event(TraversalEventKind::DfsDepthOmission, source, target);
             self.push_line(indent, "// depth-limited block");
             return;
         }
@@ -1279,6 +1284,11 @@ impl<'a> FuncEmitter<'a> {
             return;
         }
         if self.inline_visits.get(&id).copied().unwrap_or(0) >= self.visit_limit(id) {
+            let source = self.current_source_block();
+            let target = TraversalTarget::Block {
+                start_va: self.block_start_va(id),
+            };
+            self.record_traversal_event(TraversalEventKind::DfsVisitOmission, source, target);
             self.emit_omitted_path(indent, Some(id));
             return;
         }
@@ -1358,7 +1368,7 @@ impl<'a> FuncEmitter<'a> {
                             self.emit_block(tid, indent + 1, depth + 1);
                             self.state = saved;
                         } else {
-                            self.emit_unrenderable_successor(indent + 1, tid);
+                            self.emit_unrenderable_successor(indent + 1, tid, depth + 1);
                         }
                     } else {
                         let target = normalize_target(&ins.target);
@@ -1381,7 +1391,7 @@ impl<'a> FuncEmitter<'a> {
                             self.emit_block(fid, indent + 1, depth + 1);
                             self.state = saved;
                         } else {
-                            self.emit_unrenderable_successor(indent + 1, fid);
+                            self.emit_unrenderable_successor(indent + 1, fid, depth + 1);
                         }
                         self.push_line(indent, "}");
                     }
@@ -1395,7 +1405,7 @@ impl<'a> FuncEmitter<'a> {
                         if self.can_inline(tid, depth + 1) {
                             self.emit_block(tid, indent, depth + 1);
                         } else {
-                            self.emit_unrenderable_successor(indent, tid);
+                            self.emit_unrenderable_successor(indent, tid, depth + 1);
                         }
                     } else {
                         let target = normalize_target(&ins.target);
@@ -1450,7 +1460,7 @@ impl<'a> FuncEmitter<'a> {
                 if self.can_inline(next, depth + 1) {
                     self.emit_block(next, indent, depth + 1);
                 } else {
-                    self.emit_unrenderable_successor(indent, next);
+                    self.emit_unrenderable_successor(indent, next, depth + 1);
                 }
             }
         }
