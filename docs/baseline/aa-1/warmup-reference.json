@@ -1,11 +1,11 @@
 {
   "schema": "flutterdec-bench/result/1",
   "binding": {
-    "label": "A/A baseline 1 alternating order reference warmup",
+    "label": "A/A aa-1 harness 8e7f080 reference warmup",
     "product_ref": "1371e42549472ec388f58bc1fd5dbdf96e8dcdd1",
-    "harness_ref": "b4b1d8c24cdd57368d10634fc2b3bbcc8564736c",
-    "patch_sha256": "4d8e3682a5a1e600a49df5dbd111ac592152fa25ec06824dafda81b642e9b49f",
-    "binary_sha256": "664a414c0cd2bba8b0e8acf5da00e633308cf5249f6bc4d9115a837c9ba1626c",
+    "harness_ref": "8e7f08096434b614a1e8dc6d3092ff6a67bb44c9",
+    "patch_sha256": "14413796ca8a89cc1328497b5c87629b1c55f945ec58e73eebb3838df0700460",
+    "binary_sha256": "bc06f2bf3243dd4861c70e9139c88708413c8de7eb336f933075352f78d63369",
     "matrix": "disclosed",
     "matrix_sha256": "76b617c62858e698710f0ab068c1a8b6d8458feedc83f3738a5f5664cfacbc43",
     "held_out_seed_hex": null,
@@ -14,7 +14,7 @@
     "warmups": 3,
     "measured_runs": 0,
     "correctness_checked": true,
-    "command": "/tmp/zbench/aa-1/worktrees/reference/crates/flutterdec-bench/target/release/flutterdec-bench run --matrix disclosed --warmups 3 --runs 0 --correctness on --product-ref 1371e42549472ec388f58bc1fd5dbdf96e8dcdd1 --harness-ref b4b1d8c24cdd57368d10634fc2b3bbcc8564736c --patch-sha256 4d8e3682a5a1e600a49df5dbd111ac592152fa25ec06824dafda81b642e9b49f --binary-sha256 664a414c0cd2bba8b0e8acf5da00e633308cf5249f6bc4d9115a837c9ba1626c --label A/A baseline 1 alternating order reference warmup --out /tmp/zbench/aa-1/warmup-reference.json",
+    "command": "/tmp/bench-aa-1/bin/reference/flutterdec-bench run --matrix disclosed --warmups 3 --runs 0 --correctness on --product-ref 1371e42549472ec388f58bc1fd5dbdf96e8dcdd1 --harness-ref 8e7f08096434b614a1e8dc6d3092ff6a67bb44c9 --patch-sha256 14413796ca8a89cc1328497b5c87629b1c55f945ec58e73eebb3838df0700460 --binary-sha256 bc06f2bf3243dd4861c70e9139c88708413c8de7eb336f933075352f78d63369 --label A/A aa-1 harness 8e7f080 reference warmup --out /tmp/bench-aa-1/warmup-reference.json",
     "threads": 1
   },
   "host": {
@@ -26,7 +26,7 @@
   "limits": {
     "timeout_seconds": 120,
     "memory_limit_bytes": 2147483648,
-    "peak_rss_bytes": 79159296,
+    "peak_rss_bytes": 79007744,
     "within_memory_limit": true,
     "runs_over_timeout": []
   },
