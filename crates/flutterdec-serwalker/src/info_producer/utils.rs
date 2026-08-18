@@ -2,6 +2,11 @@ use crate::raw_object::_String;
 use crate::snapshot::DataSnapshot;
 use crate::utils::SnapshotObject;
 
+pub fn string_or_placeholder(snapshot: &DataSnapshot, id: u32) -> String {
+    find_string_by_id(snapshot, id)
+        .unwrap_or_else(|_| format!("<unresolved String reference ID {id}>"))
+}
+
 pub(super) fn find_object_by_id<T: SnapshotObject>(
     snapshot: &DataSnapshot,
     id: u32,

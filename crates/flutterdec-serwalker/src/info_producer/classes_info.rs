@@ -2,14 +2,10 @@ use flutterdec_adapter::ClassInfo;
 
 use crate::cluster::ClassCluster;
 use crate::constants::ClassId;
-use crate::info_producer::utils::{find_object_by_id, find_string_by_id};
+use crate::info_producer::utils::find_object_by_id;
+use crate::info_producer::utils::string_or_placeholder;
 use crate::raw_object::{Library, Type};
 use crate::snapshot::DataSnapshot;
-
-fn string_or_placeholder(snapshot: &DataSnapshot, id: u32) -> String {
-    find_string_by_id(snapshot, id)
-        .unwrap_or_else(|_| format!("<unresolved String reference ID {id}>"))
-}
 
 pub fn produce_class_info(snapshot: &DataSnapshot) -> anyhow::Result<Vec<ClassInfo>> {
     let mut classes_info = Vec::new();
