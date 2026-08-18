@@ -210,6 +210,8 @@ pub struct ContextScope {
 
 #[derive(Default)]
 pub struct UnlinkedCall {
+    pub target_name: u32,     // StringPtr
+    pub args_descriptor: u32, // ArrayPtr
     pub can_patch_to_monomorphic: bool,
 }
 

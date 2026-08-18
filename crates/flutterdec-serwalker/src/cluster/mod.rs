@@ -186,6 +186,8 @@ DECLARE_FIXED_LENGTH_CLUSTER!(
 DECLARE_FIXED_LENGTH_CLUSTER!(UnlinkedCall, UnlinkedCallCluster, |_self, stream| {
     for obj_idx in 0.._self.obj_count as usize {
         let obj = &mut *_self.objs[obj_idx];
+        obj.target_name = stream.read_ref_id()?;
+        obj.args_descriptor = stream.read_ref_id()?;
         obj.can_patch_to_monomorphic = stream.read_byte()? != 0;
     }
 });
