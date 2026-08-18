@@ -140,7 +140,17 @@ pub(super) fn invert_cond(cond: &str) -> Option<&'static str> {
 /// Whether an instruction sets NZCV. Any of these leaves `last_cmp` stale, so
 /// one that is not modelled must clear it: otherwise the next `b.<cc>` or
 /// `csel` renders an older comparison as its own condition.
-pub(super) fn writes_flags(mnemonic: &str) -> bool {
+///
+/// The operands are part of the summary because one family writes the flags
+/// without naming a general register: `msr nzcv, x3` moves a value straight into
+/// the flag register, and read from the mnemonic alone it looks effect-free, so
+/// the `cset` after it kept claiming the comparison before it.
+pub(super) fn writes_flags(mnemonic: &str, ops: &[String]) -> bool {
+    if mnemonic == "msr" {
+        return ops
+            .first()
+            .is_some_and(|target| target.trim().eq_ignore_ascii_case("nzcv"));
+    }
     matches!(
         mnemonic,
         "cmp"
@@ -158,5 +168,13 @@ pub(super) fn writes_flags(mnemonic: &str) -> bool {
             | "sbcs"
             | "negs"
             | "ngcs"
+            // Conditional floating-point compares and the flag-manipulation
+            // forms. None of them is lifted, so each one used to leave the
+            // previous comparison standing as the next condition's meaning.
+            | "fccmp"
+            | "fccmpe"
+            | "rmif"
+            | "setf8"
+            | "setf16"
     )
 }

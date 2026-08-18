@@ -52,9 +52,44 @@ impl<'a> FuncEmitter<'a> {
         (value.len() <= MAX_SUBSTITUTED_EXPR).then_some(value)
     }
 
-    fn resolved_reg_value(&self, reg: &str) -> String {
+    /// The value a token of this width denotes, given the value bound to the
+    /// whole register.
+    ///
+    /// `w3` and `x3` are one machine register, so one binding serves both, but a
+    /// `w` access only ever sees the low 32 bits: a read takes them and a write
+    /// leaves them zero-extended. A bound value outside the unsigned 32-bit range
+    /// is therefore not what that access produces, and `mov w0, w1` after
+    /// `mov x1, #0x100000000` rendered `0x100000000` where the register holds 0.
+    ///
+    /// Only a literal is narrowed. Its truncation is exact and costs nothing to
+    /// render, while a non-literal expression would need a mask on every 32-bit
+    /// access to say the same thing; for those the arms keep the documented
+    /// premise that a `w` form's operands are already 32-bit values, and the ones
+    /// whose halves always differ - `neg`, `mvn`, `movk` - mask themselves.
+    fn narrowed_to_token_width(value: String, token: &str) -> String {
+        if !is_w_register(token) {
+            return value;
+        }
+        match parse_expr_int(&value) {
+            Some(v) if v < 0 || v > u32::MAX as i64 => fmt_int((v as u32) as i64),
+            _ => value,
+        }
+    }
+
+    /// Bind `dst` to what the write actually leaves in it, at the width the
+    /// destination operand is spelled at.
+    ///
+    /// Every modelled write goes through here, so the width rule has one site
+    /// rather than one per arm.
+    fn bind_reg_value(&mut self, dst_token: &str, dst: String, value: String) {
+        let value = Self::narrowed_to_token_width(value, dst_token);
+        self.state.reg_values.insert(dst, value);
+    }
+
+    fn resolved_reg_value(&self, reg: &str, token: &str) -> String {
         let raw = Self::clean_expr(
             self.capped_reg_value(reg)
+                .map(|value| Self::narrowed_to_token_width(value, token))
                 .unwrap_or_else(|| reg.to_string()),
         );
         self.annotate_pool_refs(&raw)
@@ -65,7 +100,7 @@ impl<'a> FuncEmitter<'a> {
             return "0".to_string();
         }
         if let Some(reg) = canonical_reg(token) {
-            return self.resolved_reg_value(&reg);
+            return self.resolved_reg_value(&reg, token);
         }
         Self::clean_expr(token.trim().trim_start_matches('#').to_string())
     }
@@ -75,7 +110,7 @@ impl<'a> FuncEmitter<'a> {
             return "0".to_string();
         }
         if let Some(reg) = canonical_reg(token) {
-            return self.resolved_reg_value(&reg);
+            return self.resolved_reg_value(&reg, token);
         }
 
         if let Some(indexed) = self.indexed_expr(token) {
@@ -304,7 +339,7 @@ impl<'a> FuncEmitter<'a> {
             "mov" if ops.len() >= 2 => {
                 if let Some(dst) = canonical_reg(&ops[0]) {
                     let rhs = self.operand_expr(&ops[1]);
-                    self.state.reg_values.insert(dst, rhs);
+                    self.bind_reg_value(&ops[0], dst, rhs);
                 }
             }
             // `movk` replaces one 16-bit lane and leaves the rest, which is why
@@ -344,7 +379,7 @@ impl<'a> FuncEmitter<'a> {
                             if ops[0].trim().starts_with('w') {
                                 merged &= 0xffff_ffff;
                             }
-                            self.state.reg_values.insert(dst, fmt_int(merged as i64));
+                            self.bind_reg_value(&ops[0], dst, fmt_int(merged as i64));
                         }
                         // An expression cannot have a lane replaced, so the
                         // binding is dropped rather than guessed at.
@@ -382,7 +417,7 @@ impl<'a> FuncEmitter<'a> {
                     } else {
                         value
                     };
-                    self.state.reg_values.insert(dst, value);
+                    self.bind_reg_value(&ops[0], dst, value);
                 }
             }
             "sdiv" | "udiv" | "umulh" | "smulh" if ops.len() >= 3 => {
@@ -395,7 +430,7 @@ impl<'a> FuncEmitter<'a> {
                         "umulh" => "unsignedHighMultiply",
                         _ => "signedHighMultiply",
                     };
-                    self.state.reg_values.insert(dst, format!("{name}({a}, {b})"));
+                    self.bind_reg_value(&ops[0], dst, format!("{name}({a}, {b})"));
                 }
             }
             "msub" | "madd" if ops.len() >= 4 => {
@@ -404,9 +439,7 @@ impl<'a> FuncEmitter<'a> {
                     let b = self.operand_expr(&ops[2]);
                     let c = self.operand_expr(&ops[3]);
                     let op = if mnemonic == "msub" { "-" } else { "+" };
-                    self.state
-                        .reg_values
-                        .insert(dst, format!("({c} {op} ({a} * {b}))"));
+                    self.bind_reg_value(&ops[0], dst, format!("({c} {op} ({a} * {b}))"));
                 }
             }
             "ubfiz" if ops.len() >= 4 => {
@@ -414,9 +447,11 @@ impl<'a> FuncEmitter<'a> {
                     let src = self.operand_expr(&ops[1]);
                     let lsb = self.operand_expr(&ops[2]);
                     let width = self.operand_expr(&ops[3]);
-                    self.state
-                        .reg_values
-                        .insert(dst, format!("unsignedBitFieldInsert({src}, {lsb}, {width})"));
+                    self.bind_reg_value(
+                        &ops[0],
+                        dst,
+                        format!("unsignedBitFieldInsert({src}, {lsb}, {width})"),
+                    );
                 }
             }
             // Compressed-pointer decompression. These binaries use compressed
@@ -437,7 +472,7 @@ impl<'a> FuncEmitter<'a> {
             {
                 if let Some(dst) = canonical_reg(&ops[0]) {
                     let value = self.operand_expr(&ops[1]);
-                    self.state.reg_values.insert(dst, value);
+                    self.bind_reg_value(&ops[0], dst, value);
                 }
             }
             // `kTrueOffsetFromNull` and `kFalseOffsetFromNull`
@@ -463,7 +498,7 @@ impl<'a> FuncEmitter<'a> {
                         "0x20" | "32" => "true",
                         _ => "false",
                     };
-                    self.state.reg_values.insert(dst, value.to_string());
+                    self.bind_reg_value(&ops[0], dst, value.to_string());
                 }
             }
             // `BooleanNegateInstr` (`il_arm64.cc`) flips `kBoolValueMask`, so
@@ -477,10 +512,12 @@ impl<'a> FuncEmitter<'a> {
                 if let Some(dst) = canonical_reg(&ops[0]) {
                     let src = self.operand_expr(&ops[1]);
                     match src.as_str() {
-                        "true" => self.state.reg_values.insert(dst, "false".to_string()),
-                        "false" => self.state.reg_values.insert(dst, "true".to_string()),
-                        _ => self.state.reg_values.remove(&dst),
-                    };
+                        "true" => self.bind_reg_value(&ops[0], dst, "false".to_string()),
+                        "false" => self.bind_reg_value(&ops[0], dst, "true".to_string()),
+                        _ => {
+                            self.state.reg_values.remove(&dst);
+                        }
+                    }
                 }
             }
             // `csel`/`cset`/`csetm`. Unmodelled before, so the destination kept
@@ -530,9 +567,11 @@ impl<'a> FuncEmitter<'a> {
                             }
                         });
                     match named {
-                        Some(value) => self.state.reg_values.insert(dst, value),
-                        None => self.state.reg_values.remove(&dst),
-                    };
+                        Some(value) => self.bind_reg_value(&ops[0], dst, value),
+                        None => {
+                            self.state.reg_values.remove(&dst);
+                        }
+                    }
                 }
             }
             "add" | "sub" | "mul" | "and" | "orr" | "eor" if ops.len() >= 3 => {
@@ -558,7 +597,7 @@ impl<'a> FuncEmitter<'a> {
                     } else {
                         format!("({} {} {})", lhs, op, rhs)
                     };
-                    self.state.reg_values.insert(dst, expr);
+                    self.bind_reg_value(&ops[0], dst, expr);
                 }
             }
             "lsl" | "lsr" | "asr" if ops.len() >= 3 => {
@@ -575,9 +614,7 @@ impl<'a> FuncEmitter<'a> {
                         "asr" => ">>",
                         _ => "?",
                     };
-                    self.state
-                        .reg_values
-                        .insert(dst, format!("({} {} {})", lhs, op, rhs));
+                    self.bind_reg_value(&ops[0], dst, format!("({} {} {})", lhs, op, rhs));
                 }
             }
             "ubfx" if ops.len() >= 4 => {
@@ -592,7 +629,7 @@ impl<'a> FuncEmitter<'a> {
                     } else {
                         format!("bitField({src}, {lsb}, {width})")
                     };
-                    self.state.reg_values.insert(dst, value);
+                    self.bind_reg_value(&ops[0], dst, value);
                 }
             }
             // Signed field extract and its insert form.
@@ -624,7 +661,7 @@ impl<'a> FuncEmitter<'a> {
                         (_, true) => format!("smiTag({src})"),
                         _ => format!("signedBitFieldInsert({src}, {lsb}, {width})"),
                     };
-                    self.state.reg_values.insert(dst, value);
+                    self.bind_reg_value(&ops[0], dst, value);
                 }
             }
             // Byte and half-word loads read the same field as `ldr`; the width
@@ -642,7 +679,7 @@ impl<'a> FuncEmitter<'a> {
                         "ldrsw" | "ldursw" => format!("signExtend({rhs}, 32)"),
                         _ => rhs,
                     };
-                    self.state.reg_values.insert(dst, value);
+                    self.bind_reg_value(&ops[0], dst, value);
                 }
                 self.invalidate_index_writeback(&ops);
             }
@@ -654,7 +691,7 @@ impl<'a> FuncEmitter<'a> {
                 let stride = if ops[0].trim().starts_with('w') { 4 } else { 8 };
                 let first = self.operand_expr(&ops[2]);
                 if let Some(dst) = canonical_reg(&ops[0]) {
-                    self.state.reg_values.insert(dst, first);
+                    self.bind_reg_value(&ops[0], dst, first);
                 }
                 let second = parse_mem_operand(&ops[2]).map(|(base, off)| {
                     if base == "x29" {
@@ -669,9 +706,11 @@ impl<'a> FuncEmitter<'a> {
                 });
                 if let Some(dst) = canonical_reg(&ops[1]) {
                     match second {
-                        Some(value) => self.state.reg_values.insert(dst, value),
-                        None => self.state.reg_values.remove(&dst),
-                    };
+                        Some(value) => self.bind_reg_value(&ops[1], dst, value),
+                        None => {
+                            self.state.reg_values.remove(&dst);
+                        }
+                    }
                 }
                 self.invalidate_index_writeback(&ops);
             }
@@ -722,7 +761,7 @@ impl<'a> FuncEmitter<'a> {
                 let rhs = self.shifted_operand_expr(&ops, 2);
                 if let Some(dst) = canonical_reg(&ops[0]) {
                     let value = simplify_bin_expr(lhs.clone(), "-", rhs.clone());
-                    self.state.reg_values.insert(dst, value);
+                    self.bind_reg_value(&ops[0], dst, value);
                 }
                 self.state.last_cmp = Some((lhs, rhs));
             }
@@ -766,7 +805,7 @@ impl<'a> FuncEmitter<'a> {
                     simplify_bin_expr(a, "+", b)
                 };
                 if let Some(dst) = canonical_reg(&ops[0]) {
-                    self.state.reg_values.insert(dst, combined.clone());
+                    self.bind_reg_value(&ops[0], dst, combined.clone());
                 }
                 self.state.last_cmp = Some((combined, "0".to_string()));
             }
@@ -786,7 +825,7 @@ impl<'a> FuncEmitter<'a> {
                 // Same for the flags: an unmodelled flag writer leaves
                 // `last_cmp` describing an older comparison, which every
                 // following condition would then claim as its own.
-                if writes_flags(&mnemonic) {
+                if writes_flags(&mnemonic, &ops) {
                     self.state.last_cmp = None;
                 }
             }

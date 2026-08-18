@@ -272,12 +272,32 @@ fn shift_amount(operand: &str) -> Option<u32> {
     amount.trim().parse().ok()
 }
 
+/// Instructions whose destination is a register pair, so the effect summary
+/// names two registers rather than one.
+///
+/// `ldp` was the only pair form recognised, which left the second destination of
+/// every other one holding whatever the last modelled instruction put there:
+/// after `mov x1, #5`, `ldpsw x0, x1, [x2]` kept `5` bound to x1 and a later read
+/// rendered that literal as a resolved fact. `ldnp` is lifted and binds both
+/// halves itself, but this summary is also what the join merge
+/// (`registers_written_before`) and the call-clobber retirement read, so a
+/// destination missing here survives a join as well as a straight line. The
+/// atomic pair forms update both halves of the compare pair for the same reason.
+const PAIR_DESTINATION_MNEMONICS: [&str; 9] = [
+    "ldp", "ldnp", "ldpsw", "ldxp", "ldaxp", "casp", "caspa", "caspal", "caspl",
+];
+
 /// Registers an instruction overwrites.
 ///
 /// Anything not recognised as a pure read is treated as writing its first
 /// operands. That is deliberately over-approximate: naming a register that was
 /// not written drops a binding needlessly, which costs a `regN`, while missing one
 /// lets a stale value read as a resolved fact.
+///
+/// The width the destination is spelled at does not narrow this: `w3` and `x3`
+/// are one machine register, `canonical_reg` folds them onto one key, and a
+/// 32-bit write leaves the high half cleared rather than preserved, so the whole
+/// binding goes.
 pub(super) fn written_registers(mnemonic: &str, ops: &[String]) -> Vec<String> {
     // A pre- or post-indexed access writes the base register back, so the base is
     // a destination even for a store, which otherwise writes nothing. 2,346 and
@@ -294,8 +314,12 @@ pub(super) fn written_registers(mnemonic: &str, ops: &[String]) -> Vec<String> {
     if reads_only {
         return written;
     }
-    // Load-pair writes both destinations; everything else writes the first.
-    let count = if mnemonic == "ldp" { 2 } else { 1 };
+    // A pair form writes both destinations; everything else writes the first.
+    let count = if PAIR_DESTINATION_MNEMONICS.contains(&mnemonic) {
+        2
+    } else {
+        1
+    };
     written.extend(ops.iter().take(count).filter_map(|o| canonical_reg(o)));
     written
 }
