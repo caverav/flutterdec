@@ -293,6 +293,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "flutterdec-bench"
+version = "0.1.0-alpha.4"
+dependencies = [
+ "flutterdec-adapter",
+ "flutterdec-core",
+ "flutterdec-decompiler",
+ "flutterdec-disasm-arm64",
+ "flutterdec-ir",
+]
+
+[[package]]
 name = "flutterdec-cli"
 version = "0.1.0-alpha.4"
 dependencies = [

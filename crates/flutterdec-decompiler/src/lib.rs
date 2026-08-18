@@ -798,5 +798,35 @@ fn is_generic_call_name(name: &str) -> bool {
     name.starts_with("sub_") || name.starts_with("fn_0x")
 }
 
+/// Nested-span instrumentation for the phase benchmark.
+///
+/// Region analysis runs inside emission, so an emitter span that included it
+/// would overlap the CFG span. The emitter charges its region-analysis time
+/// here and the harness subtracts it, which is the only way the two spans can
+/// be disjoint without moving the call out of the emitter.
+///
+/// Counting is per thread and never synchronised: the harness is single
+/// threaded, and an atomic would put a contended read-modify-write inside the
+/// span it is supposed to be measuring.
+#[cfg(feature = "bench-spans")]
+pub mod bench_spans {
+    use std::cell::Cell;
+
+    thread_local! {
+        static CFG_NANOS: Cell<u64> = const { Cell::new(0) };
+    }
+
+    /// Nanoseconds charged to region analysis on this thread since the last
+    /// take, clearing the counter. Reading and clearing together means a caller
+    /// cannot leave a previous function's time attributed to the next one.
+    pub fn take_cfg_nanos() -> u64 {
+        CFG_NANOS.with(|c| c.replace(0))
+    }
+
+    pub(crate) fn add_cfg_nanos(nanos: u64) {
+        CFG_NANOS.with(|c| c.set(c.get().saturating_add(nanos)));
+    }
+}
+
 #[cfg(test)]
 mod tests;

@@ -511,7 +511,21 @@ impl<'a> FuncEmitter<'a> {
     /// which case nothing has been appended and the caller should use the DFS
     /// emitter instead.
     pub(super) fn try_emit_structured(&mut self) -> bool {
-        let Some(regions) = Regions::build(self.ir) else {
+        // The CFG span is region analysis alone: entry through reachability,
+        // dominators, post-dominators, loops and regions. It is nested inside
+        // emission, so the harness subtracts what is charged here to get the
+        // emission-exclusive span.
+        #[cfg(feature = "bench-spans")]
+        let built = {
+            let started = std::time::Instant::now();
+            let built = Regions::build(self.ir);
+            crate::bench_spans::add_cfg_nanos(started.elapsed().as_nanos() as u64);
+            built
+        };
+        #[cfg(not(feature = "bench-spans"))]
+        let built = Regions::build(self.ir);
+
+        let Some(regions) = built else {
             return false;
         };
 

@@ -1,0 +1,18 @@
+[package]
+name = "flutterdec-bench"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# No dependency outside the workspace, and none inside it that the product does
+# not already build. A benchmark that pulls in a timing framework measures the
+# framework's sampling policy as much as the code under test, and a harness
+# revision that moves when an external crate publishes is not a fixed ruler.
+[dependencies]
+flutterdec-adapter = { path = "../flutterdec-adapter" }
+flutterdec-disasm-arm64 = { path = "../flutterdec-disasm-arm64" }
+flutterdec-ir = { path = "../flutterdec-ir" }
+flutterdec-decompiler = { path = "../flutterdec-decompiler", features = [
+  "bench-spans",
+] }
+flutterdec-core = { path = "../flutterdec-core", features = ["bench-spans"] }
