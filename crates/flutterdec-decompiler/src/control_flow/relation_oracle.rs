@@ -26,7 +26,15 @@ mod relation_oracle {
     struct Graph {
         name: &'static str,
         succs: &'static [&'static [usize]],
+        /// Blocks whose terminator jumps to an address no block starts at, which
+        /// is a tail call and not a return. Such a block has no successor, so it
+        /// is an exit of the graph, and `lift` refuses to give it one.
+        external_jumps: &'static [usize],
     }
+
+    /// The address the external jumps target: outside every fixture's blocks,
+    /// which all start at `0x1000` and up.
+    const EXTERNAL_VA: u64 = 0x50000;
 
     /// Expected relations, hand-derived from the graph next to it.
     ///
@@ -51,6 +59,53 @@ mod relation_oracle {
         exits: &'static [usize],
         /// Where a `break` out of this loop lands.
         follow: Option<usize>,
+    }
+
+    /// What the artifact emitted from one graph must be true of, hand-written from
+    /// the successor lists next to it.
+    ///
+    /// Every field is a property the contract names, not a rendering of the
+    /// emitter's own output: which blocks reach the artifact, which arm each
+    /// conditional's taken edge is rendered as, how many loop transitions and
+    /// returns survive, what a tail call is spelled as, and how many extra copies
+    /// of a block the walk was allowed to make.
+    struct Emitted {
+        /// Whether `Regions::build` accepts the graph, so the structured walk owns
+        /// the artifact rather than the DFS fallback.
+        structured: bool,
+        /// Blocks whose marker call must appear. A block missing from here must be
+        /// unreachable, since a reachable one may only be dropped with an explicit
+        /// omission marker.
+        covered: &'static [usize],
+        branches: &'static [ExpectedBranch],
+        /// `continue;` statements the body must hold.
+        continues: usize,
+        /// `break;` statements the body must hold.
+        breaks: usize,
+        /// `return` statements that are not tail calls.
+        returns: usize,
+        /// Literal tail-call statements, which are the only `tailCall_` text the
+        /// artifact may hold.
+        tail_calls: &'static [&'static str],
+        /// Extra copies of a block the structured walk made, which must equal the
+        /// artifact's own `repeated_blocks` count.
+        repeated: usize,
+    }
+
+    /// One conditional's taken and not-taken mapping.
+    ///
+    /// `cbz` branches to the second successor, so `taken` is what the second
+    /// successor's subtree contributes and `not_taken` is what the first one's
+    /// does. Naming both sides is what makes a swapped arm or an inverted
+    /// condition a failure rather than a rearrangement: the not-taken blocks must
+    /// be outside the arm the condition guards.
+    struct ExpectedBranch {
+        /// The block whose own call result the conditional tests.
+        block: usize,
+        /// Blocks whose markers must appear inside the taken arm, ascending.
+        taken: &'static [usize],
+        /// Blocks whose markers must not, ascending.
+        not_taken: &'static [usize],
     }
 
     fn va(id: usize) -> u64 {
@@ -87,6 +142,26 @@ mod relation_oracle {
                     format!("#{:#x}", marker_va(id)),
                 )];
                 let end = start + 4;
+                if graph.external_jumps.contains(&id) {
+                    assert!(
+                        succs.is_empty(),
+                        "{}: an external jump leaves the function, so block {id} has no successor",
+                        graph.name
+                    );
+                    instrs.push(instr(
+                        end,
+                        IROp::Jump,
+                        format!("b #{EXTERNAL_VA:#x}"),
+                        format!("#{EXTERNAL_VA:#x}"),
+                    ));
+                    return BasicBlock {
+                        id,
+                        start_va: start,
+                        instrs,
+                        succs: Vec::new(),
+                        preds: Vec::new(),
+                    };
+                }
                 match *succs {
                     [] => instrs.push(instr(end, IROp::Return, "ret".to_string(), String::new())),
                     [only] => instrs.push(instr(
@@ -124,6 +199,7 @@ mod relation_oracle {
     const LINEAR: Graph = Graph {
         name: "linear",
         succs: &[&[1], &[2], &[]],
+        external_jumps: &[],
     };
     const LINEAR_EXPECTED: Expected = Expected {
         reachable: &[0, 1, 2],
@@ -134,10 +210,22 @@ mod relation_oracle {
         reducible: true,
     };
 
+    const LINEAR_EMITTED: Emitted = Emitted {
+        structured: true,
+        covered: &[0, 1, 2],
+        branches: &[],
+        continues: 0,
+        breaks: 0,
+        returns: 1,
+        tail_calls: &[],
+        repeated: 0,
+    };
+
     /// Two arms that rejoin: the join is the follow node of the branch.
     const DIAMOND: Graph = Graph {
         name: "diamond",
         succs: &[&[1, 2], &[3], &[3], &[]],
+        external_jumps: &[],
     };
     const DIAMOND_EXPECTED: Expected = Expected {
         reachable: &[0, 1, 2, 3],
@@ -148,10 +236,26 @@ mod relation_oracle {
         reducible: true,
     };
 
+    const DIAMOND_EMITTED: Emitted = Emitted {
+        structured: true,
+        covered: &[0, 1, 2, 3],
+        branches: &[ExpectedBranch {
+            block: 0,
+            taken: &[2],
+            not_taken: &[1],
+        }],
+        continues: 0,
+        breaks: 0,
+        returns: 1,
+        tail_calls: &[],
+        repeated: 0,
+    };
+
     /// Three predecessors on one block, reached from arms of different depths.
     const FAN_IN: Graph = Graph {
         name: "fan-in",
         succs: &[&[1, 2], &[4, 3], &[4], &[4], &[]],
+        external_jumps: &[],
     };
     const FAN_IN_EXPECTED: Expected = Expected {
         reachable: &[0, 1, 2, 3, 4],
@@ -162,10 +266,33 @@ mod relation_oracle {
         reducible: true,
     };
 
+    const FAN_IN_EMITTED: Emitted = Emitted {
+        structured: true,
+        covered: &[0, 1, 2, 3, 4],
+        branches: &[
+            ExpectedBranch {
+                block: 0,
+                taken: &[2],
+                not_taken: &[1],
+            },
+            ExpectedBranch {
+                block: 1,
+                taken: &[3],
+                not_taken: &[4],
+            },
+        ],
+        continues: 0,
+        breaks: 0,
+        returns: 1,
+        tail_calls: &[],
+        repeated: 0,
+    };
+
     /// One arm returns immediately, so the branch has no follow node at all.
     const EARLY_RETURN: Graph = Graph {
         name: "early-return",
         succs: &[&[2, 1], &[], &[3], &[]],
+        external_jumps: &[],
     };
     const EARLY_RETURN_EXPECTED: Expected = Expected {
         reachable: &[0, 1, 2, 3],
@@ -176,10 +303,26 @@ mod relation_oracle {
         reducible: true,
     };
 
+    const EARLY_RETURN_EMITTED: Emitted = Emitted {
+        structured: true,
+        covered: &[0, 1, 2, 3],
+        branches: &[ExpectedBranch {
+            block: 0,
+            taken: &[1],
+            not_taken: &[2, 3],
+        }],
+        continues: 0,
+        breaks: 0,
+        returns: 2,
+        tail_calls: &[],
+        repeated: 0,
+    };
+
     /// Block 2 has no predecessor, so no relation holds of it.
     const UNREACHABLE: Graph = Graph {
         name: "unreachable",
         succs: &[&[1], &[], &[]],
+        external_jumps: &[],
     };
     const UNREACHABLE_EXPECTED: Expected = Expected {
         reachable: &[0, 1],
@@ -190,10 +333,22 @@ mod relation_oracle {
         reducible: true,
     };
 
+    const UNREACHABLE_EMITTED: Emitted = Emitted {
+        structured: true,
+        covered: &[0, 1],
+        branches: &[],
+        continues: 0,
+        breaks: 0,
+        returns: 1,
+        tail_calls: &[],
+        repeated: 0,
+    };
+
     /// An inner loop 2 <-> 3 inside an outer loop headed at 1, one exit each.
     const NESTED_LOOP: Graph = Graph {
         name: "nested-loop",
         succs: &[&[1], &[2], &[4, 3], &[2], &[5, 1], &[]],
+        external_jumps: &[],
     };
     const NESTED_LOOP_EXPECTED: Expected = Expected {
         reachable: &[0, 1, 2, 3, 4, 5],
@@ -233,12 +388,37 @@ mod relation_oracle {
         reducible: true,
     };
 
+    const NESTED_LOOP_EMITTED: Emitted = Emitted {
+        structured: true,
+        covered: &[0, 1, 2, 3, 4, 5],
+        branches: &[
+            ExpectedBranch {
+                block: 2,
+                taken: &[3],
+                not_taken: &[4],
+            },
+            // The taken edge re-enters the header, which is already emitted, so
+            // the arm is the loop transition itself and holds no block of its own.
+            ExpectedBranch {
+                block: 4,
+                taken: &[],
+                not_taken: &[5],
+            },
+        ],
+        continues: 2,
+        breaks: 1,
+        returns: 1,
+        tail_calls: &[],
+        repeated: 0,
+    };
+
     /// One loop leaving from two body blocks to two different targets, which is
     /// the case the single leaving edge cannot answer and the header's own
     /// post-dominator has to.
     const MULTI_EXIT: Graph = Graph {
         name: "multi-exit",
         succs: &[&[1], &[2, 4], &[3, 5], &[1], &[6], &[6], &[]],
+        external_jumps: &[],
     };
     const MULTI_EXIT_EXPECTED: Expected = Expected {
         reachable: &[0, 1, 2, 3, 4, 5, 6],
@@ -271,11 +451,34 @@ mod relation_oracle {
         reducible: true,
     };
 
+    const MULTI_EXIT_EMITTED: Emitted = Emitted {
+        structured: true,
+        covered: &[0, 1, 2, 3, 4, 5, 6],
+        branches: &[
+            ExpectedBranch {
+                block: 1,
+                taken: &[4],
+                not_taken: &[2, 3],
+            },
+            ExpectedBranch {
+                block: 2,
+                taken: &[5],
+                not_taken: &[3],
+            },
+        ],
+        continues: 1,
+        breaks: 2,
+        returns: 1,
+        tail_calls: &[],
+        repeated: 0,
+    };
+
     /// A cycle with no return anywhere, the shape post-dominance has no exit to
     /// anchor on.
     const NO_EXIT: Graph = Graph {
         name: "no-exit",
         succs: &[&[1], &[2], &[1]],
+        external_jumps: &[],
     };
     const NO_EXIT_EXPECTED: Expected = Expected {
         reachable: &[0, 1, 2],
@@ -296,6 +499,17 @@ mod relation_oracle {
         reducible: true,
     };
 
+    const NO_EXIT_EMITTED: Emitted = Emitted {
+        structured: true,
+        covered: &[0, 1, 2],
+        branches: &[],
+        continues: 1,
+        breaks: 0,
+        returns: 0,
+        tail_calls: &[],
+        repeated: 0,
+    };
+
     /// One arm returns and the other enters a loop that never can, so the two
     /// halves of the same graph have to be answered differently: block 1 really
     /// does post-dominate the entry, and nothing post-dominates a block inside the
@@ -309,6 +523,7 @@ mod relation_oracle {
     const TRAPPED_LOOP: Graph = Graph {
         name: "trapped-loop",
         succs: &[&[1, 2], &[], &[3, 4], &[2], &[2]],
+        external_jumps: &[],
     };
     const TRAPPED_LOOP_EXPECTED: Expected = Expected {
         reachable: &[0, 1, 2, 3, 4],
@@ -325,11 +540,34 @@ mod relation_oracle {
         reducible: true,
     };
 
+    const TRAPPED_LOOP_EMITTED: Emitted = Emitted {
+        structured: true,
+        covered: &[0, 1, 2, 3, 4],
+        branches: &[
+            ExpectedBranch {
+                block: 0,
+                taken: &[2, 3, 4],
+                not_taken: &[1],
+            },
+            ExpectedBranch {
+                block: 2,
+                taken: &[4],
+                not_taken: &[3],
+            },
+        ],
+        continues: 2,
+        breaks: 0,
+        returns: 1,
+        tail_calls: &[],
+        repeated: 0,
+    };
+
     /// Two entries into the 1 <-> 2 cycle, so neither cycle block dominates the
     /// other and structuring must decline.
     const IRREDUCIBLE: Graph = Graph {
         name: "irreducible",
         succs: &[&[1, 2], &[2, 3], &[1, 3], &[]],
+        external_jumps: &[],
     };
     const IRREDUCIBLE_EXPECTED: Expected = Expected {
         reachable: &[0, 1, 2, 3],
@@ -342,18 +580,118 @@ mod relation_oracle {
         reducible: false,
     };
 
+    // The fallback owns this one, so no arm mapping is claimed: the DFS walk
+    // renders a block once per path that reaches it. What it still owes is every
+    // reachable block and no fabricated alternative.
+    const IRREDUCIBLE_EMITTED: Emitted = Emitted {
+        structured: false,
+        covered: &[0, 1, 2, 3],
+        branches: &[],
+        continues: 0,
+        breaks: 0,
+        returns: 4,
+        tail_calls: &[],
+        repeated: 0,
+    };
+
+    /// One arm jumps to an address outside the function, which is a tail call and
+    /// not a return, and is an exit of this graph either way.
+    const TAIL_CALL: Graph = Graph {
+        name: "tail-call",
+        succs: &[&[1, 2], &[], &[]],
+        external_jumps: &[1],
+    };
+    const TAIL_CALL_EXPECTED: Expected = Expected {
+        reachable: &[0, 1, 2],
+        dom: &[&[0], &[0, 1], &[0, 2]],
+        pdom: &[&[0], &[1], &[2]],
+        ipdom: &[None, None, None],
+        loops: &[],
+        reducible: true,
+    };
+
+    const TAIL_CALL_EMITTED: Emitted = Emitted {
+        structured: true,
+        covered: &[0, 1, 2],
+        branches: &[ExpectedBranch {
+            block: 0,
+            taken: &[2],
+            not_taken: &[1],
+        }],
+        continues: 0,
+        breaks: 0,
+        returns: 1,
+        tail_calls: &["return tailCall_0x50000();"],
+        repeated: 0,
+    };
+
+    /// Block 3 is the shared slow path two conditionals reach and neither one
+    /// post-dominates, so it is nobody's follow node and structuring has to repeat
+    /// it rather than name it. Block 6 is the shared continuation of the two other
+    /// arms, in the same position.
+    const REPEATED_REGION: Graph = Graph {
+        name: "repeated-region",
+        succs: &[&[1, 2], &[3, 4], &[3, 5], &[], &[6], &[6], &[]],
+        external_jumps: &[],
+    };
+    const REPEATED_REGION_EXPECTED: Expected = Expected {
+        reachable: &[0, 1, 2, 3, 4, 5, 6],
+        dom: &[
+            &[0],
+            &[0, 1],
+            &[0, 2],
+            &[0, 3],
+            &[0, 1, 4],
+            &[0, 2, 5],
+            &[0, 6],
+        ],
+        pdom: &[&[0], &[1], &[2], &[3], &[4, 6], &[5, 6], &[6]],
+        ipdom: &[None, None, None, None, Some(6), Some(6), None],
+        loops: &[],
+        reducible: true,
+    };
+
+    const REPEATED_REGION_EMITTED: Emitted = Emitted {
+        structured: true,
+        covered: &[0, 1, 2, 3, 4, 5, 6],
+        branches: &[
+            ExpectedBranch {
+                block: 0,
+                taken: &[2, 3, 5, 6],
+                not_taken: &[1],
+            },
+            ExpectedBranch {
+                block: 1,
+                taken: &[4, 6],
+                not_taken: &[3],
+            },
+            ExpectedBranch {
+                block: 2,
+                taken: &[5, 6],
+                not_taken: &[3],
+            },
+        ],
+        continues: 0,
+        breaks: 0,
+        returns: 4,
+        tail_calls: &[],
+        repeated: 2,
+    };
+
     /// Every case, so a shape cannot be dropped from the table unnoticed.
-    const CASES: &[(&Graph, &Expected)] = &[
-        (&LINEAR, &LINEAR_EXPECTED),
-        (&DIAMOND, &DIAMOND_EXPECTED),
-        (&FAN_IN, &FAN_IN_EXPECTED),
-        (&EARLY_RETURN, &EARLY_RETURN_EXPECTED),
-        (&UNREACHABLE, &UNREACHABLE_EXPECTED),
-        (&NESTED_LOOP, &NESTED_LOOP_EXPECTED),
-        (&MULTI_EXIT, &MULTI_EXIT_EXPECTED),
-        (&NO_EXIT, &NO_EXIT_EXPECTED),
-        (&IRREDUCIBLE, &IRREDUCIBLE_EXPECTED),
-        (&TRAPPED_LOOP, &TRAPPED_LOOP_EXPECTED),
+    const CASES: &[(&Graph, &Expected, &Emitted)] = &[
+        (&LINEAR, &LINEAR_EXPECTED, &LINEAR_EMITTED),
+        (&DIAMOND, &DIAMOND_EXPECTED, &DIAMOND_EMITTED),
+        (&FAN_IN, &FAN_IN_EXPECTED, &FAN_IN_EMITTED),
+        (&EARLY_RETURN, &EARLY_RETURN_EXPECTED, &EARLY_RETURN_EMITTED),
+        (&UNREACHABLE, &UNREACHABLE_EXPECTED, &UNREACHABLE_EMITTED),
+        (&NESTED_LOOP, &NESTED_LOOP_EXPECTED, &NESTED_LOOP_EMITTED),
+        (&MULTI_EXIT, &MULTI_EXIT_EXPECTED, &MULTI_EXIT_EMITTED),
+        (&NO_EXIT, &NO_EXIT_EXPECTED, &NO_EXIT_EMITTED),
+        (&IRREDUCIBLE, &IRREDUCIBLE_EXPECTED, &IRREDUCIBLE_EMITTED),
+        (&TRAPPED_LOOP, &TRAPPED_LOOP_EXPECTED, &TRAPPED_LOOP_EMITTED),
+        (&TAIL_CALL, &TAIL_CALL_EXPECTED, &TAIL_CALL_EMITTED),
+        (&REPEATED_REGION, &REPEATED_REGION_EXPECTED, &REPEATED_REGION_EMITTED),
     ];
 
     /// The symbol each block's opening call names.
@@ -460,7 +798,7 @@ mod relation_oracle {
     /// Every case's relations and artifact, in one byte-comparable record.
     fn normalized_dump() -> String {
         let mut lines = Vec::new();
-        for (graph, _) in CASES {
+        for (graph, _, _) in CASES {
             lines.extend(relations(graph));
             lines.extend(consumed_relations_and_artifact(graph));
         }
@@ -677,9 +1015,245 @@ mod relation_oracle {
         );
     }
 
+    /// How many lines name a block's own call.
+    fn marker_count(body: &str, block: usize) -> usize {
+        let marker = format!("mark{block}()");
+        body.lines().filter(|line| line.contains(&marker)).count()
+    }
+
+    /// The lines inside the `if` that tests `block`'s own call result, which is
+    /// that conditional's taken arm.
+    ///
+    /// No fixture here leaves a taken arm empty, so the emitter's negated form -
+    /// `if (!(...))`, which states the not-taken side when the taken side has
+    /// nothing to say - may not appear: on these graphs it would mean the arms had
+    /// been exchanged.
+    fn taken_arm(body: &str, block: usize) -> Vec<String> {
+        let marker = format!("mark{block}()");
+        let lines: Vec<&str> = body.lines().collect();
+        let bound = lines
+            .iter()
+            .position(|line| line.contains(&marker))
+            .unwrap_or_else(|| panic!("block {block} does not call its own marker:\n{body}"));
+        let value = lines[bound]
+            .trim()
+            .strip_prefix("final ")
+            .and_then(|rest| rest.split(" = ").next())
+            .unwrap_or_else(|| panic!("block {block}'s call binds no value:\n{body}"))
+            .to_string();
+        let open = (bound + 1..lines.len())
+            .find(|index| {
+                let line = lines[*index].trim();
+                line.starts_with("if (") && line.contains(&value)
+            })
+            .unwrap_or_else(|| panic!("block {block} tests no condition on {value}:\n{body}"));
+        assert!(
+            !lines[open].contains("if (!("),
+            "block {block}'s condition is negated, so its arms are exchanged:\n{body}"
+        );
+        let indent = lines[open].len() - lines[open].trim_start().len();
+        lines[open + 1..]
+            .iter()
+            .take_while(|line| {
+                line.trim() != "}" || line.len() - line.trim_start().len() != indent
+            })
+            .map(|line| line.to_string())
+            .collect()
+    }
+
+    /// One case's artifact against its hand-written expectations.
+    fn assert_emitted(graph: &Graph, expected: &Expected, emitted: &Emitted) {
+        let ir = lift(graph);
+        let case = graph.name;
+        let structured = Regions::build(&ir).is_some();
+        assert_eq!(
+            structured, emitted.structured,
+            "{case}: structuring status. A declined graph must fall back explicitly, \
+             an accepted one must not"
+        );
+
+        let artifact = crate::emit_pseudocode(&ir, &symbols(graph));
+        let body = &artifact.source;
+        for block in 0..graph.succs.len() {
+            let count = marker_count(body, block);
+            if emitted.covered.contains(&block) {
+                assert!(
+                    count > 0,
+                    "{case}: block {block} is reachable and was dropped with no omission marker:\n{body}"
+                );
+            } else {
+                assert!(
+                    !expected.reachable.contains(&block),
+                    "{case}: block {block} is reachable, so the expectation may not leave it out"
+                );
+                assert_eq!(
+                    count, 0,
+                    "{case}: block {block} is not reachable and must not be emitted:\n{body}"
+                );
+            }
+        }
+
+        let copies: usize = emitted
+            .covered
+            .iter()
+            .map(|block| marker_count(body, *block) - 1)
+            .sum();
+        if emitted.structured {
+            assert_eq!(
+                copies, emitted.repeated,
+                "{case}: extra copies of a block the structured walk made:\n{body}"
+            );
+            assert_eq!(
+                artifact.repeated_blocks, emitted.repeated,
+                "{case}: the artifact must report every copy it made:\n{body}"
+            );
+            let loops = expected.loops.len();
+            assert_eq!(
+                body.matches("while (").count(),
+                loops,
+                "{case}: one loop statement per natural-loop header:\n{body}"
+            );
+        } else {
+            assert!(
+                copies > 0,
+                "{case}: the fallback renders a block once per path that reaches it:\n{body}"
+            );
+            assert_eq!(
+                body.matches("while (").count(),
+                0,
+                "{case}: a declined graph has no structured loop:\n{body}"
+            );
+        }
+
+        for branch in emitted.branches {
+            let arm = taken_arm(body, branch.block).join("\n");
+            for block in branch.taken {
+                assert!(
+                    arm.contains(&format!("mark{block}()")),
+                    "{case}: block {block} belongs to the taken arm of block {}:\n{arm}",
+                    branch.block
+                );
+            }
+            for block in branch.not_taken {
+                assert!(
+                    !arm.contains(&format!("mark{block}()")),
+                    "{case}: block {block} is on the not-taken side of block {}, so it may not be \
+                     inside the arm the condition guards:\n{arm}",
+                    branch.block
+                );
+            }
+        }
+
+        let statements = |needle: &str| {
+            body.lines()
+                .filter(|line| line.trim() == needle)
+                .count()
+        };
+        assert_eq!(
+            statements("continue;"),
+            emitted.continues,
+            "{case}: loop back edges rendered as `continue;`:\n{body}"
+        );
+        assert_eq!(
+            statements("break;"),
+            emitted.breaks,
+            "{case}: loop exits rendered as `break;`:\n{body}"
+        );
+        let returns = body
+            .lines()
+            .filter(|line| line.trim().starts_with("return ") && !line.contains("tailCall_"))
+            .count();
+        assert_eq!(
+            returns, emitted.returns,
+            "{case}: returns that are not tail calls:\n{body}"
+        );
+        let tail_calls: Vec<String> = body
+            .lines()
+            .filter(|line| line.contains("tailCall_"))
+            .map(|line| line.trim().to_string())
+            .collect();
+        assert_eq!(
+            tail_calls, emitted.tail_calls,
+            "{case}: tail calls, spelled as calls and reclassified as nothing else:\n{body}"
+        );
+        assert!(
+            !body.contains("goto"),
+            "{case}: no walk may invent a jump Dart cannot express:\n{body}"
+        );
+    }
+
+    /// The same graph through both walks, at the same level: the structured walk's
+    /// own lines against the DFS fallback's own lines, before the passes that run
+    /// over either body.
+    ///
+    /// The two are separate walks over one graph, so what they must agree on is
+    /// which blocks the program can reach. They are allowed to disagree on how
+    /// often: the structured walk emits each once, up to the bounded repeat its
+    /// counter reports, and the fallback re-emits a block per path.
+    fn assert_walks_agree(graph: &Graph, emitted: &Emitted) {
+        let ir = lift(graph);
+        let case = graph.name;
+        let names = symbols(graph);
+
+        let mut structured = crate::FuncEmitter::new(&ir, &names);
+        let took_structured = structured.try_emit_structured();
+        assert_eq!(
+            took_structured,
+            Regions::build(&ir).is_some(),
+            "{case}: the walk taken must be the one the analysis allows"
+        );
+        let structured_body = structured.lines.join("\n");
+
+        let mut fallback = crate::FuncEmitter::new(&ir, &names);
+        fallback.emit_block(0, 1, 0);
+        let fallback_body = fallback.lines.join("\n");
+
+        let named = |body: &str| -> BTreeSet<usize> {
+            (0..graph.succs.len())
+                .filter(|block| marker_count(body, *block) > 0)
+                .collect()
+        };
+        let expected_blocks: BTreeSet<usize> = emitted.covered.iter().copied().collect();
+        for fabricated in ["goto", "tailCall_0x1"] {
+            assert!(
+                !fallback_body.contains(fabricated),
+                "{case}: the fallback invented `{fabricated}`:\n{fallback_body}"
+            );
+        }
+        assert_eq!(
+            named(&fallback_body),
+            expected_blocks,
+            "{case}: the fallback must reach every block the graph does:\n{fallback_body}"
+        );
+
+        if !took_structured {
+            // A declined attempt rolls back, so it contributes no alternative
+            // rendering of anything: the fallback body is the whole artifact.
+            assert!(
+                structured.lines.is_empty(),
+                "{case}: a declined structuring attempt must leave nothing behind:\n{structured_body}"
+            );
+            return;
+        }
+
+        assert_eq!(
+            named(&structured_body),
+            named(&fallback_body),
+            "{case}: the two walks name different blocks\nstructured:\n{structured_body}\nfallback:\n{fallback_body}"
+        );
+        let copies: usize = expected_blocks
+            .iter()
+            .map(|block| marker_count(&structured_body, *block) - 1)
+            .sum();
+        assert_eq!(
+            copies, structured.repeated_blocks,
+            "{case}: every copy the structured walk made must be reported:\n{structured_body}"
+        );
+    }
+
     #[test]
     fn the_case_table_covers_every_required_shape() {
-        let names: Vec<&str> = CASES.iter().map(|(graph, _)| graph.name).collect();
+        let names: Vec<&str> = CASES.iter().map(|(graph, _, _)| graph.name).collect();
         assert_eq!(
             names,
             [
@@ -693,6 +1267,8 @@ mod relation_oracle {
                 "no-exit",
                 "irreducible",
                 "trapped-loop",
+                "tail-call",
+                "repeated-region",
             ],
             "a case may not be dropped from the table without the list saying so"
         );
@@ -746,5 +1322,87 @@ mod relation_oracle {
     #[test]
     fn irreducible_relations_match_the_expected_graph() {
         assert_case(&IRREDUCIBLE, &IRREDUCIBLE_EXPECTED);
+    }
+
+    #[test]
+    fn tail_call_relations_match_the_expected_graph() {
+        assert_case(&TAIL_CALL, &TAIL_CALL_EXPECTED);
+    }
+
+    #[test]
+    fn repeated_region_relations_match_the_expected_graph() {
+        assert_case(&REPEATED_REGION, &REPEATED_REGION_EXPECTED);
+    }
+
+    #[test]
+    fn linear_emits_the_expected_artifact_and_both_walks_agree() {
+        assert_emitted(&LINEAR, &LINEAR_EXPECTED, &LINEAR_EMITTED);
+        assert_walks_agree(&LINEAR, &LINEAR_EMITTED);
+    }
+
+    #[test]
+    fn diamond_emits_the_expected_artifact_and_both_walks_agree() {
+        assert_emitted(&DIAMOND, &DIAMOND_EXPECTED, &DIAMOND_EMITTED);
+        assert_walks_agree(&DIAMOND, &DIAMOND_EMITTED);
+    }
+
+    #[test]
+    fn fan_in_emits_the_expected_artifact_and_both_walks_agree() {
+        assert_emitted(&FAN_IN, &FAN_IN_EXPECTED, &FAN_IN_EMITTED);
+        assert_walks_agree(&FAN_IN, &FAN_IN_EMITTED);
+    }
+
+    #[test]
+    fn early_return_emits_the_expected_artifact_and_both_walks_agree() {
+        assert_emitted(&EARLY_RETURN, &EARLY_RETURN_EXPECTED, &EARLY_RETURN_EMITTED);
+        assert_walks_agree(&EARLY_RETURN, &EARLY_RETURN_EMITTED);
+    }
+
+    #[test]
+    fn unreachable_emits_the_expected_artifact_and_both_walks_agree() {
+        assert_emitted(&UNREACHABLE, &UNREACHABLE_EXPECTED, &UNREACHABLE_EMITTED);
+        assert_walks_agree(&UNREACHABLE, &UNREACHABLE_EMITTED);
+    }
+
+    #[test]
+    fn nested_loop_emits_the_expected_artifact_and_both_walks_agree() {
+        assert_emitted(&NESTED_LOOP, &NESTED_LOOP_EXPECTED, &NESTED_LOOP_EMITTED);
+        assert_walks_agree(&NESTED_LOOP, &NESTED_LOOP_EMITTED);
+    }
+
+    #[test]
+    fn multi_exit_emits_the_expected_artifact_and_both_walks_agree() {
+        assert_emitted(&MULTI_EXIT, &MULTI_EXIT_EXPECTED, &MULTI_EXIT_EMITTED);
+        assert_walks_agree(&MULTI_EXIT, &MULTI_EXIT_EMITTED);
+    }
+
+    #[test]
+    fn no_exit_emits_the_expected_artifact_and_both_walks_agree() {
+        assert_emitted(&NO_EXIT, &NO_EXIT_EXPECTED, &NO_EXIT_EMITTED);
+        assert_walks_agree(&NO_EXIT, &NO_EXIT_EMITTED);
+    }
+
+    #[test]
+    fn irreducible_emits_the_expected_artifact_and_both_walks_agree() {
+        assert_emitted(&IRREDUCIBLE, &IRREDUCIBLE_EXPECTED, &IRREDUCIBLE_EMITTED);
+        assert_walks_agree(&IRREDUCIBLE, &IRREDUCIBLE_EMITTED);
+    }
+
+    #[test]
+    fn trapped_loop_emits_the_expected_artifact_and_both_walks_agree() {
+        assert_emitted(&TRAPPED_LOOP, &TRAPPED_LOOP_EXPECTED, &TRAPPED_LOOP_EMITTED);
+        assert_walks_agree(&TRAPPED_LOOP, &TRAPPED_LOOP_EMITTED);
+    }
+
+    #[test]
+    fn tail_call_emits_the_expected_artifact_and_both_walks_agree() {
+        assert_emitted(&TAIL_CALL, &TAIL_CALL_EXPECTED, &TAIL_CALL_EMITTED);
+        assert_walks_agree(&TAIL_CALL, &TAIL_CALL_EMITTED);
+    }
+
+    #[test]
+    fn repeated_region_emits_the_expected_artifact_and_both_walks_agree() {
+        assert_emitted(&REPEATED_REGION, &REPEATED_REGION_EXPECTED, &REPEATED_REGION_EMITTED);
+        assert_walks_agree(&REPEATED_REGION, &REPEATED_REGION_EMITTED);
     }
 }
