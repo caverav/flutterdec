@@ -54,6 +54,12 @@ jobs:
       - name: Oracle loader guard
         run: nix develop -c cargo test -p flutterdec-decompiler --test provenance_audit --test loop_entry_provenance_audit
 
+      # The compiled inventory, not the loader source text. A comment, a `cfg`
+      # that is never true, or a macro that swallows its argument leaves a hook
+      # byte-identical while removing the oracle it loads from the build.
+      - name: Compiled oracle inventory
+        run: nix develop -c python3 scripts/check-oracle-inventory.py
+
       - name: Test
         run: nix develop -c cargo test --workspace
 

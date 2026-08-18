@@ -99,6 +99,10 @@ const PROTOCOL: &str = "docs/oracle-protocol-ir-cfg-emitter.md";
 /// The two lanes that must name the integration test targets explicitly: the
 /// local parity script and the GitHub job, which runs only a subset of it.
 const CI_LANES: [&str; 2] = ["scripts/ci-check.sh", ".github/workflows/ci.yml"];
+/// The compiled-inventory checker, which is the correctness oracle for whether a
+/// protected file is compiled at all. It has to be reached from a real lane, or
+/// it protects nothing.
+const INVENTORY_CHECKER: &str = "scripts/check-oracle-inventory.py";
 const DECOMPILER_MANIFEST: &str = "crates/flutterdec-decompiler/Cargo.toml";
 const CORE_MANIFEST: &str = "crates/flutterdec-core/Cargo.toml";
 const DECOMPILER_LOADER: &str = "crates/flutterdec-decompiler/src/tests.rs";
@@ -254,11 +258,21 @@ fn oracle_test_file_rows(protocol: &str) -> Vec<String> {
 
 /// Every protected oracle file needs a live hook into a compiled test target, and
 /// every hook needs a protected file. The hooks are one `#[cfg(test)] mod tests;`
-/// line, twenty `include!` lines across four loaders, two `#[path]` module
+/// line, nineteen `include!` lines across four loaders, two `#[path]` module
 /// declarations in `flutterdec-core`, and Cargo's automatic discovery of the two
 /// integration tests. Delete any one of them and the affected test binary still
 /// prints `test result: ok`, with fewer tests and a whole protected oracle
 /// silenced while its digest still matches.
+///
+/// What this test does *not* do is decide whether a hook is live by looking at
+/// its text. It cannot: `/* /* */`, a leading `//`, `#[cfg(any())]`, a feature
+/// that no manifest declares, or a macro that swallows its argument all leave the
+/// hook's bytes exactly where they were while removing the item from compilation.
+/// The hook text is reported here as a diagnostic and nothing more. The
+/// correctness oracle is `scripts/check-oracle-inventory.py`, which asks the
+/// compiler: it lists each protected target's tests and requires a sentinel that
+/// exists only if the file was compiled. This test asserts that the checker is
+/// wired into a real lane, so it cannot be quietly dropped.
 ///
 /// The map is compared against the protocol's Oracle test files table in both
 /// directions, so a new protected row with no hook fails here, and a hook for a
@@ -306,6 +320,10 @@ fn the_protected_oracle_loader_chain_is_intact() {
 
     let mut expected_includes: BTreeMap<&str, usize> = BTreeMap::new();
     let mut autotest_stems: Vec<&str> = Vec::new();
+    // Source-text observations about the hooks. Reported, never asserted: matching
+    // bytes does not mean the item compiled, so treating these as a verdict is
+    // exactly the fake pass the inventory checker exists to remove.
+    let mut diagnostics: Vec<String> = Vec::new();
     for (path, hook) in &map {
         let full = root.join(path);
         assert!(
@@ -316,11 +334,12 @@ fn the_protected_oracle_loader_chain_is_intact() {
             Hook::Module { file, decl } => {
                 let source = std::fs::read_to_string(root.join(file))
                     .unwrap_or_else(|_| panic!("{file} is readable"));
-                assert!(
-                    source.contains(decl),
-                    "{file} must keep\n{decl}\nverbatim, or {path} is never compiled while its \
-                     digest still matches"
-                );
+                if !source.contains(decl) {
+                    diagnostics.push(format!(
+                        "{file} no longer holds `{}` verbatim, the recorded hook for {path}",
+                        decl.replace('\n', " ")
+                    ));
+                }
             }
             Hook::Include { loader } => {
                 let (loader_dir, _) = loader
@@ -333,10 +352,11 @@ fn the_protected_oracle_loader_chain_is_intact() {
                 let line = format!("include!(\"{relative}\");");
                 let source = std::fs::read_to_string(root.join(loader))
                     .unwrap_or_else(|_| panic!("{loader} is readable"));
-                assert!(
-                    source.contains(&line),
-                    "{loader} must keep `{line}`, or {path} is never compiled"
-                );
+                if !source.contains(&line) {
+                    diagnostics.push(format!(
+                        "{loader} no longer holds `{line}`, the recorded hook for {path}"
+                    ));
+                }
                 *expected_includes.entry(loader).or_default() += 1;
             }
             Hook::Autotest { manifest } => {
@@ -393,6 +413,28 @@ fn the_protected_oracle_loader_chain_is_intact() {
         );
     }
 
+    // The compiled-inventory checker decides whether a protected file is really
+    // compiled, so a lane has to run it. Matched as a whole command line, so an
+    // `echo` of it does not count.
+    assert!(
+        root.join(INVENTORY_CHECKER).is_file(),
+        "{INVENTORY_CHECKER} is missing, so nothing asks the compiler whether the protected \
+         oracles are compiled"
+    );
+    let inventory_lane = format!("nix develop -c python3 {INVENTORY_CHECKER}");
+    for lane in CI_LANES {
+        let script = std::fs::read_to_string(root.join(lane))
+            .unwrap_or_else(|_| panic!("{lane} is readable"));
+        assert!(
+            script
+                .lines()
+                .any(|line| line.trim().trim_start_matches("run: ") == inventory_lane),
+            "{lane} must run `{inventory_lane}` as a lane of its own. The hook checks in this \
+             test are diagnostics; that checker is the only thing that proves a protected oracle \
+             reached a compiled test target"
+        );
+    }
+
     for (loader, expected) in expected_includes {
         let source = std::fs::read_to_string(root.join(loader))
             .unwrap_or_else(|_| panic!("{loader} is readable"));
@@ -427,6 +469,13 @@ fn the_protected_oracle_loader_chain_is_intact() {
                 );
             }
         }
+    }
+
+    // Printed, not asserted. A hook whose text moved is worth knowing about, but
+    // `scripts/check-oracle-inventory.py` is what decides whether the oracle it
+    // loads still compiles.
+    for note in &diagnostics {
+        println!("loader-hook diagnostic: {note}");
     }
 }
 

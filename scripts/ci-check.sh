@@ -14,9 +14,10 @@ Runs the same checks as CI from the local workspace:
   5) scripts/bench-identity-gate-test.sh
   6) cargo clippy --workspace --all-targets -- -D warnings
   7) the decompiler oracle-loader guard targets, by name
-  8) cargo test --workspace            (unless --skip-tests)
-  9) cargo build -p flutterdec-cli --release
- 10) fmt, clippy and tests for the excluded benchmark harness
+  8) scripts/check-oracle-inventory.py
+  9) cargo test --workspace            (unless --skip-tests)
+ 10) cargo build -p flutterdec-cli --release
+ 11) fmt, clippy and tests for the excluded benchmark harness
 
 The benchmark harness is not a workspace member, so --workspace does not reach
 it and it is linted and tested through its own manifest. That exclusion is what
@@ -26,6 +27,13 @@ Step 7 names the two decompiler integration test targets explicitly and runs eve
 under --skip-tests. `cargo test --workspace` cannot protect them: with
 `autotests = false`, or with either file deleted, it reports a smaller suite and
 still exits 0. Naming the targets turns both into a hard error.
+
+Step 8 also runs under --skip-tests, and it is the correctness oracle for whether
+a protected oracle file is compiled at all. It lists every protected test target
+and requires one sentinel test per file that section 7 protects. Source text
+cannot answer that question: a comment, a `cfg` that is never true, or a macro
+that swallows its argument leaves a loader hook byte-identical while removing it
+from the build.
 EOF
 }
 
@@ -74,6 +82,11 @@ nix develop -c cargo clippy --workspace --all-targets -- -D warnings
 # leave --workspace passing with a quietly smaller suite.
 echo "[ci-check] cargo test -p flutterdec-decompiler --test provenance_audit --test loop_entry_provenance_audit"
 nix develop -c cargo test -p flutterdec-decompiler --test provenance_audit --test loop_entry_provenance_audit
+
+# The compiled inventory, not the loader source text: this is what fails when a
+# protected oracle stops being compiled while its digest still matches.
+echo "[ci-check] scripts/check-oracle-inventory.py"
+nix develop -c python3 scripts/check-oracle-inventory.py
 
 if [[ "$skip_tests" != "1" ]]; then
   echo "[ci-check] cargo test --workspace"
