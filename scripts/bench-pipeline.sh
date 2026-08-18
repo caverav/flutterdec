@@ -210,13 +210,15 @@ reference_head="$(cat "$bin_root/reference/product-ref")"
 candidate_head="$(cat "$bin_root/candidate/product-ref")"
 harness_head="$(git rev-parse HEAD)"
 
-# Hard gate, before any warmup. One product revision under one harness patch has
-# to build to one binary; if it does not, every number the run would go on to
-# print is build layout rather than product code.
+# Hard gate, before any warmup, in both directions. One product revision under
+# one harness patch has to build to one binary, or every number the run would go
+# on to print is build layout rather than product code. Two product revisions
+# have to build to two binaries, or there is no product delta to measure and the
+# numbers are noise wearing a product label.
 "$script_dir/bench-identity-gate.sh" \
   "$reference_head" "$candidate_head" \
   "$reference_binary_digest" "$candidate_binary_digest"
-identity_gate="not applicable: product commits differ"
+identity_gate="passed: different product commits and different binary sha256"
 if [[ "$reference_head" == "$candidate_head" ]]; then
   identity_gate="passed: equal product commits and equal binary sha256"
 fi
