@@ -1,10 +1,19 @@
 #!/usr/bin/env bash
 # Interleaved phase baseline for two product revisions under one harness.
 #
-# Both revisions are checked out into isolated worktrees and the same harness
-# patch is applied to each, so the only thing that differs between the two
-# binaries is product code. The patch digest is recorded on both sides: if it
-# does not match, the comparison is void.
+# Both revisions are built from the same harness patch, so the only thing that
+# differs between the two binaries is product code. The patch digest is recorded
+# on both sides: if it does not match, the comparison is void.
+#
+# The two builds run one after the other in the same canonical build path, and
+# only the finished binaries are copied out into stable side slots. Building
+# each side in its own worktree does not work: the absolute path enters the
+# build, so one source revision built at two paths yields two different
+# binaries. Measured on this repository, two same-source builds at different
+# paths differ by thousands of bytes even with `--remap-path-prefix` pointing
+# both at one virtual root, because the remap argument itself carries the path
+# and cargo hashes RUSTFLAGS into the crate metadata. Rebuilt at one path in a
+# fresh worktree, the binary is byte-identical.
 set -euo pipefail
 
 usage() {
@@ -13,6 +22,7 @@ Usage:
   scripts/bench-pipeline.sh --reference REF --candidate REF --patch FILE --out DIR
                             [--pairs N] [--warmups N] [--label TEXT] [--clear]
                             [--matrix disclosed|held-out] [--held-out-seed HEX]
+                            [--build-root DIR] [--build-only]
 
   --reference REF     Product revision measured as the baseline
   --candidate REF     Product revision measured against it. Pass the same
@@ -31,6 +41,14 @@ Usage:
   --label TEXT        Recorded in both result documents
   --matrix            Case set (default disclosed)
   --held-out-seed HEX 128-bit hex seed, required for --matrix held-out
+  --build-root DIR    Canonical build path, held under its own exclusive lock.
+                      Both revisions are built here in sequence, one at a time,
+                      so neither binary carries a side-specific path. Defaults
+                      to ${TMPDIR:-/tmp}/flutterdec-bench-build, which keeps the
+                      binaries comparable across runs as well as within one.
+  --build-only        Build both sides, report their digests, run the identity
+                      gate and stop before any warmup. A cheap pre-flight for a
+                      harness change, without spending a full measured run.
 
 Every cargo and nix invocation runs inside the flake development shell.
 EOF
@@ -46,6 +64,8 @@ label=""
 matrix="disclosed"
 held_out_seed=""
 clear_raw="0"
+build_root="${TMPDIR:-/tmp}/flutterdec-bench-build"
+build_only="0"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -59,6 +79,8 @@ while [[ $# -gt 0 ]]; do
     --label) label="$2"; shift 2 ;;
     --matrix) matrix="$2"; shift 2 ;;
     --held-out-seed) held_out_seed="$2"; shift 2 ;;
+    --build-root) build_root="$2"; shift 2 ;;
+    --build-only) build_only="1"; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown argument: $1" >&2; usage; exit 1 ;;
   esac
@@ -119,53 +141,92 @@ if [[ "$matrix" == "held-out" ]]; then
   matrix_args+=(--held-out-seed "$held_out_seed")
 fi
 
-# One worktree per side, detached at the product revision, with the harness
-# patch applied on top. `git apply` fails loudly on any drift, which is the
-# check that the two sides really are running the same harness.
-prepare() {
-  local side="$1" revision="$2" tree="$3"
-  echo "[bench] preparing $side at $revision"
-  rm -rf "$tree"
-  git worktree add --detach "$tree" "$revision" >/dev/null
-  git -C "$tree" apply --whitespace=nowarn "$patch_file"
-  echo "[bench] $side product revision: $(git -C "$tree" rev-parse HEAD)"
-}
-
-work_root="$out_dir/worktrees"
-mkdir -p "$work_root"
-reference_tree="$work_root/reference"
-candidate_tree="$work_root/candidate"
-prepare reference "$reference" "$reference_tree"
-prepare candidate "$candidate" "$candidate_tree"
+# The canonical build path is shared state across runs, so it takes its own
+# exclusive lock. Two pipelines with different output directories would
+# otherwise take turns replacing each other's worktree mid-build.
+mkdir -p "$build_root"
+build_root="$(cd "$build_root" && pwd)"
+exec 8>"$build_root/.bench-build.lock"
+if ! flock -n 8; then
+  echo "[bench] another bench-pipeline run holds $build_root/.bench-build.lock; refusing to build" >&2
+  exit 1
+fi
+echo "[bench] holding exclusive lock on canonical build path $build_root (pid $$)"
 
 # The harness is not a workspace member, so it is built through its own manifest
 # and lands in its own target directory. Building it with `-p` from the workspace
 # root would not resolve it at all, and making it a member would turn
 # `bench-spans` on for every product build in the workspace.
 bench_manifest="crates/flutterdec-bench/Cargo.toml"
-build() {
-  local tree="$1"
-  ( cd "$tree" && nix develop "${nix_flags[@]}" -c \
-      cargo build --manifest-path "$bench_manifest" --release >/dev/null )
+
+# One side at a time, always in the same directory, always from a fresh
+# worktree, and the finished binary copied out before the next side moves in.
+# The worktree is removed straight after the copy so a later run starts from the
+# same empty path this one did, and so no worktree stays registered afterwards.
+# `git apply` fails loudly on any drift, which is the check that the two sides
+# really are running the same harness.
+#
+# Both slot directories are named at the same length and hold the same file
+# name, so the two binaries are launched through paths that differ only in
+# content. The bytes are identical by construction; the gate below proves it.
+build_tree="$build_root/tree"
+bin_root="$out_dir/bin"
+rm -rf "$bin_root"
+drop_tree() {
+  git worktree remove --force "$build_tree" >/dev/null 2>&1 || true
+  rm -rf "$build_tree"
+  git worktree prune
 }
-
-echo "[bench] building both revisions"
-build "$reference_tree"
-build "$candidate_tree"
-
-reference_bin="$reference_tree/crates/flutterdec-bench/target/release/flutterdec-bench"
-candidate_bin="$candidate_tree/crates/flutterdec-bench/target/release/flutterdec-bench"
-for binary in "$reference_bin" "$candidate_bin"; do
-  if [[ ! -x "$binary" ]]; then
-    echo "[bench] expected harness binary missing: $binary" >&2
+build_side() {
+  local side="$1" revision="$2"
+  echo "[bench] building $side at $revision in $build_tree"
+  drop_tree
+  git worktree add --detach "$build_tree" "$revision" >/dev/null
+  git -C "$build_tree" apply --whitespace=nowarn "$patch_file"
+  local head
+  head="$(git -C "$build_tree" rev-parse HEAD)"
+  ( cd "$build_tree" && nix develop "${nix_flags[@]}" -c \
+      cargo build --manifest-path "$bench_manifest" --release >/dev/null )
+  local built="$build_tree/crates/flutterdec-bench/target/release/flutterdec-bench"
+  if [[ ! -x "$built" ]]; then
+    echo "[bench] expected harness binary missing: $built" >&2
     exit 1
   fi
-done
+  mkdir -p "$bin_root/$side"
+  cp "$built" "$bin_root/$side/flutterdec-bench"
+  printf '%s\n' "$head" > "$bin_root/$side/product-ref"
+  drop_tree
+  echo "[bench] $side product revision: $head"
+}
+
+build_side reference "$reference"
+build_side candidate "$candidate"
+
+reference_bin="$bin_root/reference/flutterdec-bench"
+candidate_bin="$bin_root/candidate/flutterdec-bench"
 reference_binary_digest="$(sha256sum "$reference_bin" | cut -d' ' -f1)"
 candidate_binary_digest="$(sha256sum "$candidate_bin" | cut -d' ' -f1)"
-reference_head="$(git -C "$reference_tree" rev-parse HEAD)"
-candidate_head="$(git -C "$candidate_tree" rev-parse HEAD)"
+reference_head="$(cat "$bin_root/reference/product-ref")"
+candidate_head="$(cat "$bin_root/candidate/product-ref")"
 harness_head="$(git rev-parse HEAD)"
+
+# Hard gate, before any warmup. One product revision under one harness patch has
+# to build to one binary; if it does not, every number the run would go on to
+# print is build layout rather than product code.
+"$script_dir/bench-identity-gate.sh" \
+  "$reference_head" "$candidate_head" \
+  "$reference_binary_digest" "$candidate_binary_digest"
+identity_gate="not applicable: product commits differ"
+if [[ "$reference_head" == "$candidate_head" ]]; then
+  identity_gate="passed: equal product commits and equal binary sha256"
+fi
+
+if [[ "$build_only" == "1" ]]; then
+  echo "[bench] build-only, stopping before warmup"
+  echo "[bench] reference $reference_head $reference_binary_digest"
+  echo "[bench] candidate $candidate_head $candidate_binary_digest"
+  exit 0
+fi
 
 # The matrix each side will run, before any timing. Different digests here mean
 # the two binaries would not be measured on the same work.
@@ -294,6 +355,9 @@ reference_product_ref      $reference_head
 candidate_product_ref      $candidate_head
 reference_binary_sha256    $reference_binary_digest
 candidate_binary_sha256    $candidate_binary_digest
+canonical_build_path       $build_root/tree
+build_order                sequential, one side at a time in the canonical path
+identity_gate              $identity_gate
 matrix                     $matrix
 pairs                      $pairs
 preliminary_warmups        $warmups

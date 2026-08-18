@@ -11,10 +11,11 @@ Runs the same checks as CI from the local workspace:
   2) cargo fmt --all --check
   3) scripts/lint-shell.sh
   4) scripts/lint-python.sh
-  5) cargo clippy --workspace --all-targets -- -D warnings
-  6) cargo test --workspace            (unless --skip-tests)
-  7) cargo build -p flutterdec-cli --release
-  8) fmt, clippy and tests for the excluded benchmark harness
+  5) scripts/bench-identity-gate-test.sh
+  6) cargo clippy --workspace --all-targets -- -D warnings
+  7) cargo test --workspace            (unless --skip-tests)
+  8) cargo build -p flutterdec-cli --release
+  9) fmt, clippy and tests for the excluded benchmark harness
 
 The benchmark harness is not a workspace member, so --workspace does not reach
 it and it is linted and tested through its own manifest. That exclusion is what
@@ -56,6 +57,9 @@ nix develop -c ./scripts/lint-shell.sh
 
 echo "[ci-check] scripts/lint-python.sh"
 nix develop -c ./scripts/lint-python.sh
+
+echo "[ci-check] scripts/bench-identity-gate-test.sh"
+./scripts/bench-identity-gate-test.sh
 
 echo "[ci-check] cargo clippy --workspace --all-targets -- -D warnings"
 nix develop -c cargo clippy --workspace --all-targets -- -D warnings
