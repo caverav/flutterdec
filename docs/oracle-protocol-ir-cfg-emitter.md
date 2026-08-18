@@ -260,18 +260,29 @@ compared byte for byte.
 Recorded at `1371e42` with `sha256sum`. A change to any of these files is a
 ruler change and requires section 9, whether or not a test still passes.
 
-Every digest below is the current worktree value and is re-verified whenever this
-table is touched. Two rows have moved since `1371e42`, and both have moved four
-times. `scripts/ci-check.sh` is adjudicated in section 10, with its full chain
-from the original fixed reference, its second move in section 12, its third in
-section 13, and its fourth in section 15.
+Every digest below is the current worktree value, and since section 17 it is
+recomputed on every CI run rather than only whenever this table is touched.
+`scripts/check-oracle-inventory.py` verifies all 56 rows below before it does any
+Cargo work, against a hardcoded inventory of exactly these paths, so a row
+deleted from this table, a row added to it, a duplicated path, a digest that is
+not 64 lowercase hex characters, a protected path that is no longer an existing
+regular file, and a protected file whose bytes changed are each a hard CI
+failure. That checker is itself one of the rows below, so it verifies its own
+bytes.
+
+Four rows have moved since `1371e42`. `scripts/ci-check.sh` is adjudicated in
+section 10, with its full chain from the original fixed reference, its second
+move in section 12, its third in section 13, and its fourth in section 15.
 `crates/flutterdec-decompiler/tests/provenance_audit.rs` is adjudicated in
 section 11, its second move in section 12, its third in section 13, and its
-fourth in section 15. One row was new rather than moved,
-`scripts/check-oracle-inventory.py`, added by section 13 and moved once, in
-section 15. Nine rows are new in section 15, the IR and CFG boundary oracles.
-Every other row is byte-identical to `1371e42`. A row that does not match the
-current worktree is a failure of this table, not of the file.
+fourth in section 15.
+`crates/flutterdec-decompiler/src/tests/cfg_and_stack/omitted_path_and_stack.rs`
+and `crates/flutterdec-core/src/pipeline/runners/tests.rs` each moved once, in
+section 16. One row was new rather than moved,
+`scripts/check-oracle-inventory.py`, added by section 13 and moved twice, in
+section 15 and in section 17. Nine rows are new in section 15, the IR and CFG
+boundary oracles. Every other row is byte-identical to `1371e42`. A row that does
+not match the current worktree is a failure of this table, not of the file.
 
 Fixed reference emission artifacts:
 
@@ -287,7 +298,7 @@ Checkers, scanners, and their plant tests:
 | --- | --- |
 | `scripts/check-annotation-provenance.py` | `c4e40e0122f1d87c82b5b587d8ed1ac6c74f550bed114463765f2568ea6b6f93` |
 | `scripts/check-candidate-whitelist.py` | `d8c67c8565c372c2044f6749bfe2a7b092a374c9758930c7e2ef5b45d3a6cac5` |
-| `scripts/check-oracle-inventory.py` | `b8e06c148c0268f23acbb9547e5b9248b3f4ebc6903a48e8d21112be41e3ef49` |
+| `scripts/check-oracle-inventory.py` | `98e7f29f8ebebaf68dc28c82ec465eb359cf3b91280f808ce1dfb3d17221bbf0` |
 | `scripts/prov_cross_audit_reconcile.py` | `0633bf7191d62859efcbd35b9b62e186a39005e58ec49efaf24d8e03c6319c41` |
 | `scripts/prov_join_audit_check.py` | `99a80ec27496b76737df08ae457838512495ec2e3e82668ac5ba5d73c1c5e995` |
 | `scripts/prov_join_audit_plant_test.py` | `d3e9e885878db0b6e752ab421dd9bc851b6142f4a995307d2a7763029c88374a` |

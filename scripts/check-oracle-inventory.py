@@ -17,27 +17,121 @@ each protected file it names one sentinel test that only exists if that file was
 compiled, then lists the tests each target actually contains and requires every
 sentinel to be there. Extra tests are always fine: adding cases is expected work.
 
+A digest is only a ruler while something recomputes it. Section 7 records a
+sha256 for every protected path, and until this checker grew a digest pass no CI
+lane ever recomputed one: a protected oracle could be gutted down to a one-line
+stub that keeps nothing but its sentinel's name, and the compiled inventory below
+would still be green because the sentinel is still there. So before any of the
+Cargo work, this checker verifies section 7 itself. It parses every digest row of
+that section - all five tables, not only the Oracle one - against a hardcoded
+inventory of the paths that must be there, and requires the row set to match
+exactly, every path to appear once, every digest to be 64 lowercase hex
+characters, every path to be an existing regular file, and every file's sha256 to
+equal its row. `scripts/check-oracle-inventory.py` is one of those rows, so this
+file is verified by the pass it implements.
+
 Run with no arguments from anywhere in the workspace. `--self-test` runs only the
-unit checks of the parser and the matcher, which the default run also performs
-first.
+unit checks of the parsers, the digest verifier, and the matcher, which the
+default run also performs first.
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 PROTOCOL = "docs/oracle-protocol-ir-cfg-emitter.md"
+
+# The heading that opens section 7. The digest parser reads from it to the next
+# `## ` heading, so a digest-shaped row anywhere else in the protocol - section
+# 8's evidence, the adjudication records' before-and-after chains - is neither
+# mistaken for a protected row nor able to stand in for a deleted one.
+DIGEST_SECTION_HEADING = "## 7. Protected paths and digests"
 
 # The sentence that opens the protocol's Oracle test files table. Only that table
 # is parsed: the other section 7 tables are goldens, checkers, and fixtures, none
 # of which any loader pulls into a test target. Kept byte-identical to the copy in
 # `crates/flutterdec-decompiler/tests/provenance_audit.rs`.
 ORACLE_TABLE_ANCHOR = "Oracle test files. Adding a case to one of these is expected work;"
+
+# Every path section 7 protects, in the order the five tables list them. This is
+# the ruler for the table, not a copy of it: parsing the protocol alone cannot
+# notice a row someone deleted, because a deleted row leaves nothing behind to
+# check. The two must match exactly in both directions, so adding or removing a
+# protected path is a deliberate edit here as well as there - which is what makes
+# it visible in review rather than silent.
+PROTECTED_PATHS = (
+    # Fixed reference emission artifacts.
+    "crates/flutterdec-decompiler/testdata/golden/null_guard_compaction.dartpseudo",
+    "crates/flutterdec-decompiler/testdata/golden/retry_loop_compaction.dartpseudo",
+    "crates/flutterdec-decompiler/testdata/golden/structured_loop_emit.dartpseudo",
+    # Checkers, scanners, and their plant tests. This file is one of them.
+    "scripts/check-annotation-provenance.py",
+    "scripts/check-candidate-whitelist.py",
+    "scripts/check-oracle-inventory.py",
+    "scripts/prov_cross_audit_reconcile.py",
+    "scripts/prov_join_audit_check.py",
+    "scripts/prov_join_audit_plant_test.py",
+    "scripts/prov_join_output_anchor_check.py",
+    "scripts/scan-annotation-safety.py",
+    "scripts/scan_annotation_safety_plant_test.py",
+    "scripts/scan-loop-entry-annotations.py",
+    "scripts/annotation_boundary_corpus_check.py",
+    "scripts/build-annotation-ledger.py",
+    # Gate and harness scripts.
+    "scripts/ci-check.sh",
+    "scripts/test-suite.sh",
+    "scripts/lint-python.sh",
+    "scripts/lint-shell.sh",
+    "scripts/real-golden.sh",
+    "scripts/real-golden-matrix.sh",
+    # Fixtures and sample data.
+    "testdata/provenance/join-audit-sample.jsonl",
+    "testdata/real-golden/profiles/sample/profile.env",
+    # Oracle test files. These are also the rows `SENTINELS` maps, so each one is
+    # proved twice: its bytes here, and its compilation below.
+    "crates/flutterdec-decompiler/src/tests.rs",
+    "crates/flutterdec-decompiler/tests/provenance_audit.rs",
+    "crates/flutterdec-decompiler/tests/loop_entry_provenance_audit.rs",
+    "crates/flutterdec-decompiler/src/tests/shared.rs",
+    "crates/flutterdec-decompiler/src/tests/golden_and_parser.rs",
+    "crates/flutterdec-decompiler/src/tests/cfg_and_stack.rs",
+    "crates/flutterdec-decompiler/src/tests/cfg_and_stack/structuring.rs",
+    "crates/flutterdec-decompiler/src/tests/cfg_and_stack/order_totality.rs",
+    "crates/flutterdec-decompiler/src/tests/cfg_and_stack/join_capture.rs",
+    "crates/flutterdec-decompiler/src/tests/cfg_and_stack/annotation_caps.rs",
+    "crates/flutterdec-decompiler/src/tests/cfg_and_stack/omitted_path_and_stack.rs",
+    "crates/flutterdec-decompiler/src/tests/cfg_and_stack/call_and_loops.rs",
+    "crates/flutterdec-decompiler/src/tests/cfg_and_stack/call_annotations.rs",
+    "crates/flutterdec-decompiler/src/tests/cfg_and_stack/dispatch_table.rs",
+    "crates/flutterdec-decompiler/src/tests/compaction_and_aliasing.rs",
+    "crates/flutterdec-decompiler/src/tests/compaction_and_aliasing/control_flow_compaction.rs",
+    "crates/flutterdec-decompiler/src/tests/compaction_and_aliasing/alias_and_expr_cleanup.rs",
+    "crates/flutterdec-decompiler/src/tests/emit_and_helpers.rs",
+    "crates/flutterdec-decompiler/src/tests/emit_and_helpers/helper_inlining.rs",
+    "crates/flutterdec-decompiler/src/tests/emit_and_helpers/annotation_literals.rs",
+    "crates/flutterdec-decompiler/src/tests/emit_and_helpers/candidate_whitelist.rs",
+    "crates/flutterdec-decompiler/src/tests/emit_and_helpers/readability_and_naming.rs",
+    "crates/flutterdec-core/src/pipeline/runners/tests.rs",
+    "crates/flutterdec-core/src/pipeline/symbol_map/tests.rs",
+    "crates/flutterdec-ir/src/tests/control_effects.rs",
+    "crates/flutterdec-ir/src/validate/tests.rs",
+    "crates/flutterdec-core/src/pipeline/quality/control_effect_tests.rs",
+    "crates/flutterdec-core/src/pipeline/runners/split/identity_tests.rs",
+    "crates/flutterdec-core/src/pipeline/runners/stubs/identity_tests.rs",
+    "crates/flutterdec-decompiler/src/control_flow/regions/identity_boundary_tests.rs",
+    "crates/flutterdec-decompiler/src/control_flow/relation_oracle.rs",
+    "crates/flutterdec-decompiler/tests/arm64_control_effects.rs",
+    "crates/flutterdec-decompiler/tests/cfg_identity.rs",
+)
+
+HEX = frozenset("0123456789abcdef")
 
 # The compiled test targets that hold the protected oracles: how Cargo names each
 # one in `cargo metadata`, and how `cargo test` selects it.
@@ -283,6 +377,92 @@ def parse_oracle_rows(protocol_text):
     return rows
 
 
+def parse_digest_rows(protocol_text):
+    """Every `| path | sha256 |` row of section 7, in order, as `(path, digest)`.
+
+    Bounded to that one section: the protocol's later adjudication records quote
+    before-and-after digests in the same table shape, and a row moved out of
+    section 7 into one of them must read as a deleted row, not as a live one.
+    """
+    _, separator, after = protocol_text.partition(f"\n{DIGEST_SECTION_HEADING}\n")
+    if not separator:
+        raise ParseError(
+            f"{PROTOCOL} must keep the section 7 heading verbatim: {DIGEST_SECTION_HEADING!r}"
+        )
+    section = after.split("\n## ")[0]
+    rows = []
+    for line in section.splitlines():
+        if not line.startswith("| `"):
+            continue
+        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+        if len(cells) != 2:
+            raise ParseError(f"{PROTOCOL} section 7 row is not two columns: {line!r}")
+        rows.append(tuple(cell[1:-1] if cell[:1] == "`" == cell[-1:] else cell for cell in cells))
+    return rows
+
+
+def check_digests(root, rows, expected):
+    """Section 7's digest tables against the worktree and against `expected`.
+
+    Four independent ways a digest ruler stops ruling, all of them failures here:
+    the row set drifted from `expected` in either direction, a path is listed
+    twice so one of the two digests is unenforced, a digest is not a sha256 at
+    all, or the file's bytes no longer hash to what the row says. The last is the
+    one that catches an oracle emptied out into a stub that keeps only its
+    sentinel: the compiled inventory below cannot see that, because the sentinel
+    is exactly what such a stub preserves.
+    """
+    failures = []
+
+    seen = {}
+    for path, digest in rows:
+        if path in seen:
+            failures.append(
+                f"{path} is listed twice in {PROTOCOL} section 7, as `{seen[path]}` and as "
+                f"`{digest}`; a duplicated path leaves one of its two digests unenforced"
+            )
+        else:
+            seen[path] = digest
+
+    tabled = set(seen)
+    wanted = set(expected)
+    for path in sorted(wanted - tabled):
+        failures.append(
+            f"{path} is a protected path with no digest row in {PROTOCOL} section 7; deleting a "
+            f"row is how a protected file stops being protected while every remaining row matches"
+        )
+    for path in sorted(tabled - wanted):
+        failures.append(
+            f"{path} has a digest row in {PROTOCOL} section 7 but is not in this checker's "
+            f"protected inventory; the table and the inventory must name the same paths"
+        )
+
+    for path in sorted(tabled & wanted):
+        digest = seen[path]
+        if len(digest) != 64 or not set(digest) <= HEX:
+            failures.append(
+                f"{path} has digest `{digest}` in {PROTOCOL} section 7, which is not 64 lowercase "
+                f"hex characters, so no file can ever match it"
+            )
+            continue
+        target = root / path
+        if not target.is_file():
+            failures.append(
+                f"{path} is protected by {PROTOCOL} section 7 but is not an existing regular file "
+                f"in the worktree, so its digest protects nothing"
+            )
+            continue
+        actual = hashlib.sha256(target.read_bytes()).hexdigest()
+        if actual != digest:
+            failures.append(
+                f"{path} does not match its {PROTOCOL} section 7 digest: the table says `{digest}` "
+                f"and the file hashes to `{actual}`. Changing a protected file is a ruler change "
+                f"and needs a section 9 adjudication, not a new digest"
+            )
+
+    return failures
+
+
 def check_inventory(rows, sentinels, listings, problems=None):
     """Every row needs a mapping, every mapping needs a row, every sentinel must
     have been compiled. Extra tests in a listing are never a failure.
@@ -421,9 +601,107 @@ def hook_diagnostics(root, sentinels):
     return notes
 
 
+def digest_self_test():
+    """Unit checks of the digest pass: the section-bounded parser, and each way a
+    digest ruler can stop ruling."""
+    body = (
+        "## 6. Frozen fields\n"
+        "\n"
+        "| `crates/decoy/before.rs` | `" + "0" * 64 + "` |\n"
+        "\n"
+        f"{DIGEST_SECTION_HEADING}\n"
+        "\n"
+        "| Path | sha256 |\n"
+        "| --- | --- |\n"
+        "| `scripts/one.sh` | `{one}` |\n"
+        "\n"
+        "Oracle test files.\n"
+        "\n"
+        "| Path | sha256 |\n"
+        "| --- | --- |\n"
+        "| `crates/a/src/tests.rs` | `{two}` |\n"
+        "\n"
+        "## 8. Evidence\n"
+        "\n"
+        "| `crates/decoy/after.rs` | `" + "1" * 64 + "` |\n"
+    )
+
+    with tempfile.TemporaryDirectory() as scratch:
+        root = Path(scratch)
+        (root / "scripts").mkdir()
+        (root / "crates/a/src").mkdir(parents=True)
+        one = root / "scripts/one.sh"
+        two = root / "crates/a/src/tests.rs"
+        one.write_bytes(b"#!/usr/bin/env bash\ntrue\n")
+        two.write_bytes(b"#[test]\nfn sentinel() {\n    assert_eq!(1 + 1, 2);\n}\n")
+        one_digest = hashlib.sha256(one.read_bytes()).hexdigest()
+        two_digest = hashlib.sha256(two.read_bytes()).hexdigest()
+        expected = ("scripts/one.sh", "crates/a/src/tests.rs")
+
+        def protocol(**changes):
+            return body.format(**{"one": one_digest, "two": two_digest, **changes})
+
+        # The parser takes every table of section 7 and nothing outside it: the
+        # section 6 row above and the section 8 row below are the same shape.
+        rows = parse_digest_rows(protocol())
+        assert rows == [
+            ("scripts/one.sh", one_digest),
+            ("crates/a/src/tests.rs", two_digest),
+        ], f"the parser must take exactly the section 7 digest rows, got {rows}"
+
+        try:
+            parse_digest_rows("## 7. Protected paths\n\n| `scripts/one.sh` | `beef` |\n")
+        except ParseError:
+            pass
+        else:  # pragma: no cover - the assert below is the failure report
+            raise AssertionError("a protocol without the section 7 heading must not parse")
+
+        assert not check_digests(root, rows, expected), "the clean tree must pass"
+
+        # A deleted row. Nothing is left in the table to notice it, which is why
+        # the inventory above is hardcoded.
+        deleted = [row for row in rows if row[0] != "scripts/one.sh"]
+        failures = check_digests(root, deleted, expected)
+        assert len(failures) == 1 and "no digest row" in failures[0], failures
+
+        # An added row nothing here protects.
+        failures = check_digests(root, rows + [("crates/a/src/extra.rs", "2" * 64)], expected)
+        assert len(failures) == 1 and "protected inventory" in failures[0], failures
+
+        # A duplicated path: the second digest is unenforced, so both are.
+        failures = check_digests(root, rows + [("scripts/one.sh", "3" * 64)], expected)
+        assert len(failures) == 1 and "listed twice" in failures[0], failures
+
+        # Digests that no file can ever hash to: too short, and uppercase hex.
+        for broken in ("dead", two_digest.upper()):
+            failures = check_digests(root, [rows[0], ("crates/a/src/tests.rs", broken)], expected)
+            assert len(failures) == 1, failures
+            assert "64 lowercase hex characters" in failures[0], failures
+
+        # A protected path that is not an existing regular file. A directory is
+        # the interesting half: `Path.exists` would accept it.
+        two.unlink()
+        failures = check_digests(root, rows, expected)
+        assert len(failures) == 1 and "not an existing regular file" in failures[0], failures
+        two.mkdir()
+        failures = check_digests(root, rows, expected)
+        assert len(failures) == 1 and "not an existing regular file" in failures[0], failures
+        two.rmdir()
+
+        # A mutated protected file. The stub keeps the sentinel's name, so the
+        # compiled inventory stays green and only the digest fires.
+        two.write_bytes(b"#[test]\nfn sentinel() {}\n")
+        failures = check_digests(root, rows, expected)
+        assert len(failures) == 1 and "does not match its" in failures[0], failures
+        assert two_digest in failures[0], failures
+
+    print("[oracle-inventory] digest self-test ok")
+
+
 def self_test():
-    """Unit checks of the two pieces that are not the compiler: the table parser
-    and the sentinel matcher."""
+    """Unit checks of the pieces that are not the compiler: the table parsers, the
+    digest verifier, and the sentinel matcher."""
+    digest_self_test()
     protocol = (
         "## 7. Protected paths and digests\n"
         "\n"
@@ -517,6 +795,23 @@ def main(argv=None):
 
     root = workspace_root()
     protocol_text = (root / PROTOCOL).read_text(encoding="utf-8")
+
+    # The digest pass first, and it is fatal on its own. It costs no build, and
+    # every answer the Cargo work below gives is worthless if the files it
+    # compiles are not the files section 7 protects.
+    digest_rows = parse_digest_rows(protocol_text)
+    print(f"[oracle-inventory] {len(digest_rows)} digest rows in {PROTOCOL} section 7")
+    digest_failures = check_digests(root, digest_rows, PROTECTED_PATHS)
+    if digest_failures:
+        print(f"[oracle-inventory] FAILED, {len(digest_failures)} digest problem(s):")
+        for failure in digest_failures:
+            print(f"  - {failure}")
+        return 1
+    print(
+        f"[oracle-inventory] ok, {len(PROTECTED_PATHS)} protected paths match their section 7 "
+        f"digests"
+    )
+
     rows = parse_oracle_rows(protocol_text)
     print(f"[oracle-inventory] {len(rows)} protected oracle rows in {PROTOCOL}")
 
