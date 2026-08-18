@@ -13,6 +13,8 @@ use crate::FFI_TYPES_LIST;
 
 pub trait Cluster {
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
+    fn as_any(&self) -> &dyn std::any::Any;
+    fn object_by_ref_id(&self, id: u32) -> Option<&dyn std::any::Any>;
     fn set_metadata(&mut self, tags: u32, cid: ClassId, is_immutable: bool, is_canonical: bool);
     fn is_fixed_len(&self) -> bool;
     fn read_alloc(&mut self, last_ref_id: &mut u64, stream: &mut Stream) -> anyhow::Result<usize>;
@@ -400,6 +402,17 @@ macro_rules! IMPLEMENT_VARIABLE_LENGTH_CLUSTER {
                 self
             }
 
+            fn as_any(&self) -> &dyn std::any::Any {
+                self
+            }
+
+            fn object_by_ref_id(&self, id: u32) -> Option<&dyn std::any::Any> {
+                let index = id.checked_sub(self.first_ref_id)? as usize; // turn the global id into a local one
+                self.objs
+                    .get(index)
+                    .map(|object| object.as_ref() as &dyn std::any::Any)
+            }
+
             fn set_metadata(
                 &mut self,
                 tags: u32,
@@ -671,7 +684,8 @@ pub fn resolve_entrypoints(
             .iter()
             .map(|code| (code.entry_point, code.unchecked_entry_point))
             .collect::<Vec<_>>()
-    } else { // this should never happen in a normal Flutter-generated snapshot
+    } else {
+        // this should never happen in a normal Flutter-generated snapshot
         anyhow::ensure!(
             expected_non_deferred_code_count == 0,
             "snapshot declares non-deferred Code objects but has no Code cluster"
@@ -680,7 +694,7 @@ pub fn resolve_entrypoints(
     };
 
     // this has to happen after the code cluster entry resolution
-    // because this resolution is really just grabbing the code_index to find the 
+    // because this resolution is really just grabbing the code_index to find the
     // respective Code object and retrieve its fields
 
     if let Some(function_cluster) = clusters

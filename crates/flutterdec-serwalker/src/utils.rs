@@ -1,5 +1,74 @@
 use crate::constants::ClassId;
 
+pub(crate) trait SnapshotObject: std::any::Any {
+    const CID: ClassId;
+}
+
+macro_rules! IMPLEMENT_SNAPSHOT_OBJECT {
+    ($( $name:ty = $cid:path ),* $(,)?) => {
+        $(
+            impl SnapshotObject for $name {
+                const CID: ClassId = $cid;
+            }
+        )*
+    };
+}
+
+// all this mess so we can use the generic more easily, i ******* hate Rust
+IMPLEMENT_SNAPSHOT_OBJECT! {
+    crate::raw_object::TypeParameters = ClassId::TypeParametersCid,
+    crate::raw_object::PatchClass = ClassId::PatchClassCid,
+    crate::raw_object::Function = ClassId::FunctionCid,
+    crate::raw_object::ClosureData = ClassId::ClosureDataCid,
+    crate::raw_object::FfiTrampolineData = ClassId::FfiTrampolineDataCid,
+    crate::raw_object::Field = ClassId::FieldCid,
+    crate::raw_object::Script = ClassId::ScriptCid,
+    crate::raw_object::Library = ClassId::LibraryCid,
+    crate::raw_object::Namespace = ClassId::NamespaceCid,
+    crate::raw_object::KernelProgramInfo = ClassId::KernelProgramInfoCid,
+    crate::raw_object::UnlinkedCall = ClassId::UnlinkedCallCid,
+    crate::raw_object::ICData = ClassId::ICDataCid,
+    crate::raw_object::MegamorphicCache = ClassId::MegamorphicCacheCid,
+    crate::raw_object::SubtypeTestCache = ClassId::SubtypeTestCacheCid,
+    crate::raw_object::LoadingUnit = ClassId::LoadingUnitCid,
+    crate::raw_object::LanguageError = ClassId::LanguageErrorCid,
+    crate::raw_object::UnhandledException = ClassId::UnhandledExceptionCid,
+    crate::raw_object::LibraryPrefix = ClassId::LibraryPrefixCid,
+    crate::raw_object::Type = ClassId::TypeCid,
+    crate::raw_object::FunctionType = ClassId::FunctionTypeCid,
+    crate::raw_object::RecordType = ClassId::RecordTypeCid,
+    crate::raw_object::TypeParameter = ClassId::TypeParameterCid,
+    crate::raw_object::Closure = ClassId::ClosureCid,
+    crate::raw_object::Double = ClassId::DoubleCid,
+    crate::raw_object::Int32x4 = ClassId::Int32x4Cid,
+    crate::raw_object::GrowableObjectArray = ClassId::GrowableObjectArrayCid,
+    crate::raw_object::StackTrace = ClassId::StackTraceCid,
+    crate::raw_object::RegExp = ClassId::RegExpCid,
+    crate::raw_object::WeakProperty = ClassId::WeakPropertyCid,
+    crate::raw_object::Code = ClassId::CodeCid,
+    crate::raw_object::ObjectPool = ClassId::ObjectPoolCid,
+    crate::raw_object::Map = ClassId::MapCid,
+    crate::raw_object::Set = ClassId::SetCid,
+    crate::raw_object::Class = ClassId::ClassCid,
+    crate::raw_object::TypeArguments = ClassId::TypeArgumentsCid,
+    crate::raw_object::ExceptionHandlers = ClassId::ExceptionHandlersCid,
+    crate::raw_object::Context = ClassId::ContextCid,
+    crate::raw_object::ContextScope = ClassId::ContextScopeCid,
+    crate::raw_object::Mint = ClassId::MintCid,
+    crate::raw_object::Float32x4 = ClassId::Float32x4Cid,
+    crate::raw_object::Float64x2 = ClassId::Float64x2Cid,
+    crate::raw_object::Record = ClassId::RecordCid,
+    crate::raw_object::Array = ClassId::ArrayCid,
+    crate::raw_object::WeakArray = ClassId::WeakArrayCid,
+    crate::raw_object::ImmutableArray = ClassId::ImmutableArrayCid,
+    crate::raw_object::ConstMap = ClassId::ConstMapCid,
+    crate::raw_object::ConstSet = ClassId::ConstSetCid,
+    crate::raw_object::CodeSourceMap = ClassId::CodeSourceMapCid,
+    crate::raw_object::CompressedStackMaps = ClassId::CompressedStackMapsCid,
+    crate::raw_object::PcDescriptors = ClassId::PcDescriptorsCid,
+    crate::raw_object::_String = ClassId::_StringCid,
+}
+
 #[macro_export]
 macro_rules! DECLARE_FIXED_LENGTH_CLUSTER {
     ($name:ident, $cluster_name:ident, |$_self:ident, $stream:ident| $fill_impl:block) => {
@@ -8,7 +77,7 @@ macro_rules! DECLARE_FIXED_LENGTH_CLUSTER {
             cid: ClassId,
             is_immutable: bool,
             is_canonical: bool,
-            obj_count: u64,
+            pub obj_count: u64,
 
             start_of_fill: usize,
             start_of_alloc: usize,
@@ -16,14 +85,25 @@ macro_rules! DECLARE_FIXED_LENGTH_CLUSTER {
             end_of_fill: usize,
             end_of_alloc: usize,
 
-            first_ref_id: u32,
+            pub first_ref_id: u32,
 
-            objs: Vec<Box<$name>>,
+            pub objs: Vec<Box<$name>>,
         }
 
         impl Cluster for $cluster_name {
             fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
                 self
+            }
+
+            fn as_any(&self) -> &dyn std::any::Any {
+                self
+            }
+
+            fn object_by_ref_id(&self, id: u32) -> Option<&dyn std::any::Any> {
+                let index = id.checked_sub(self.first_ref_id)? as usize;
+                self.objs
+                    .get(index)
+                    .map(|object| object.as_ref() as &dyn std::any::Any)
             }
 
             fn set_metadata(
@@ -87,7 +167,7 @@ macro_rules! DECLARE_VARIABLE_LENGTH_CLUSTER {
             cid: ClassId,
             is_immutable: bool,
             is_canonical: bool,
-            obj_count: u64,
+            pub obj_count: u64,
 
             start_of_fill: usize,
             start_of_alloc: usize,
@@ -95,9 +175,9 @@ macro_rules! DECLARE_VARIABLE_LENGTH_CLUSTER {
             end_of_fill: usize,
             end_of_alloc: usize,
 
-            first_ref_id: u32,
+            pub first_ref_id: u32,
 
-            objs: Vec<Box<$name>>,
+            pub objs: Vec<Box<$name>>,
         }
     };
 }

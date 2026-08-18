@@ -41,7 +41,7 @@ impl TryFrom<u64> for SnapshotKind {
 
 #[derive(Default)]
 pub struct DataSnapshot {
-    clusters: HashMap<u32, Box<dyn Cluster>>,
+    pub clusters: HashMap<u32, Box<dyn Cluster>>,
     cluster_order: Vec<u32>, // used in the fill step to know which cluster's read_fill function to call
     roots: ProgramRoots,
     instruction_table: InstructionTable,
