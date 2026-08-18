@@ -49,6 +49,11 @@ jobs:
       - name: Clippy
         run: nix develop -c cargo clippy --workspace --all-targets -- -D warnings
 
+      # Named targets, not --workspace: `autotests = false` or a deleted file
+      # would leave --workspace passing with a quietly smaller suite.
+      - name: Oracle loader guard
+        run: nix develop -c cargo test -p flutterdec-decompiler --test provenance_audit --test loop_entry_provenance_audit
+
       - name: Test
         run: nix develop -c cargo test --workspace
 

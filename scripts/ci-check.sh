@@ -13,13 +13,19 @@ Runs the same checks as CI from the local workspace:
   4) scripts/lint-python.sh
   5) scripts/bench-identity-gate-test.sh
   6) cargo clippy --workspace --all-targets -- -D warnings
-  7) cargo test --workspace            (unless --skip-tests)
-  8) cargo build -p flutterdec-cli --release
-  9) fmt, clippy and tests for the excluded benchmark harness
+  7) the decompiler oracle-loader guard targets, by name
+  8) cargo test --workspace            (unless --skip-tests)
+  9) cargo build -p flutterdec-cli --release
+ 10) fmt, clippy and tests for the excluded benchmark harness
 
 The benchmark harness is not a workspace member, so --workspace does not reach
 it and it is linted and tested through its own manifest. That exclusion is what
 keeps its `bench-spans` instrumentation out of every check above.
+
+Step 7 names the two decompiler integration test targets explicitly and runs even
+under --skip-tests. `cargo test --workspace` cannot protect them: with
+`autotests = false`, or with either file deleted, it reports a smaller suite and
+still exits 0. Naming the targets turns both into a hard error.
 EOF
 }
 
@@ -63,6 +69,11 @@ echo "[ci-check] scripts/bench-identity-gate-test.sh"
 
 echo "[ci-check] cargo clippy --workspace --all-targets -- -D warnings"
 nix develop -c cargo clippy --workspace --all-targets -- -D warnings
+
+# Named targets, not --workspace: `autotests = false` or a deleted file would
+# leave --workspace passing with a quietly smaller suite.
+echo "[ci-check] cargo test -p flutterdec-decompiler --test provenance_audit --test loop_entry_provenance_audit"
+nix develop -c cargo test -p flutterdec-decompiler --test provenance_audit --test loop_entry_provenance_audit
 
 if [[ "$skip_tests" != "1" ]]; then
   echo "[ci-check] cargo test --workspace"

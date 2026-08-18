@@ -243,12 +243,13 @@ Recorded at `1371e42` with `sha256sum`. A change to any of these files is a
 ruler change and requires section 9, whether or not a test still passes.
 
 Every digest below is the current worktree value and is re-verified whenever this
-table is touched. Two rows have moved since `1371e42`. `scripts/ci-check.sh` is
-adjudicated in section 10, with its full chain from the original fixed reference
-to the current digest.
+table is touched. Two rows have moved since `1371e42`, and both have moved twice.
+`scripts/ci-check.sh` is adjudicated in section 10, with its full chain from the
+original fixed reference, and its second move in section 12.
 `crates/flutterdec-decompiler/tests/provenance_audit.rs` is adjudicated in
-section 11. Every other row is byte-identical to `1371e42`. A row that does not
-match the current worktree is a failure of this table, not of the file.
+section 11, and its second move in section 12. Every other row is byte-identical
+to `1371e42`. A row that does not match the current worktree is a failure of this
+table, not of the file.
 
 Fixed reference emission artifacts:
 
@@ -278,7 +279,7 @@ Gate and harness scripts:
 
 | Path | sha256 |
 | --- | --- |
-| `scripts/ci-check.sh` | `2f76a8b9abac96db026386c0626d248ade81e9690e563cbaaa901b86472b4457` |
+| `scripts/ci-check.sh` | `171aa8894675ed2c90ff40c9d6a136bd791c3ae0d51c7965617e682b31d2f067` |
 | `scripts/test-suite.sh` | `b1d2efd5cda5794dbb9e60c41f92eede0cc65996d66f6c73c19e905be451c38a` |
 | `scripts/lint-python.sh` | `eef80907146b5d1b3d662ad823372a8b6a33df99b458582077b0c1578680e2d7` |
 | `scripts/lint-shell.sh` | `4554f41d5dbeeadf4d2478ce97af416392b14a78cfa417673b35914877d316ab` |
@@ -302,22 +303,33 @@ silences a whole protected file while every other digest in this table still
 matches, so the loader is protected too and a change to it is a ruler change on
 everything it includes.
 
-The loader has a second level that this table deliberately does not cover.
-`#[cfg(test)] mod tests;` at
-`crates/flutterdec-decompiler/src/lib.rs:831-832` is the only thing pulling
-`src/tests.rs` in, and deleting that one line silences all five protected oracle
-files at once while every digest here still matches. `src/lib.rs` is product
-source that this mission must edit, so a whole-file digest for it would fire on
-legitimate work and be worthless as a ruler. Both levels are instead asserted
-mechanically by `the_protected_oracle_loader_chain_is_intact` in
+That loader is one of five hook families, and every row below depends on one of
+them. None of the hooks can be digested here, because they all live in product
+source or in manifests that later work must edit, so a whole-file digest for any
+of them would fire on legitimate change and be worthless as a ruler. They are
+asserted by value instead, by
+`the_protected_oracle_loader_chain_is_intact` in
 `crates/flutterdec-decompiler/tests/provenance_audit.rs`, an integration test that
-compiles as its own crate and so cannot be silenced by the loader it protects.
-Section 11 records that guard and the planted deletions that prove it fires.
+compiles as its own crate and so cannot be silenced by any loader it protects. The
+guard parses this table, maps every row to its hook, and fails if a row has no
+hook or a hook has no row, so a new Rust oracle row added here without a mapping
+is a failure rather than an unprotected file. Section 12 records the guard, the
+full inventory, and the twelve planted silencings that prove it fires; section 11
+records its narrower first version.
+
+The five families are `#[cfg(test)] mod tests;` in
+`crates/flutterdec-decompiler/src/lib.rs`, the five `include!` lines in
+`src/tests.rs`, the fourteen nested `include!` lines in the three second-level
+loaders, the two `#[cfg(test)] #[path = ...]` module declarations in
+`crates/flutterdec-core/src/pipeline/runners.rs` and
+`crates/flutterdec-core/src/pipeline/symbol_map.rs`, and Cargo's automatic
+discovery of `crates/flutterdec-decompiler/tests/*.rs`, which
+`autotests = false` would switch off wholesale.
 
 | Path | sha256 |
 | --- | --- |
 | `crates/flutterdec-decompiler/src/tests.rs` | `a19fe0015869fbfeb259e28f6d4344e18a630edab92b2a7aef2a58811e3ef56b` |
-| `crates/flutterdec-decompiler/tests/provenance_audit.rs` | `8124346801612c56e9580d293c16a4e24593df175f8e7e376f16748a26560c0e` |
+| `crates/flutterdec-decompiler/tests/provenance_audit.rs` | `b5712a66b0f6472a726d4d253555272b54322cd69c3fdb1a3bed514de8cb9765` |
 | `crates/flutterdec-decompiler/tests/loop_entry_provenance_audit.rs` | `02626ee1ba1b4b1b9905654a6254319ee413169341e43ddb74387813f7ecbfc7` |
 | `crates/flutterdec-decompiler/src/tests/shared.rs` | `30ef9ef9d6b55acac8d41f5e557d38a78e5a60d2c28ac612e75ccfe80e376d3e` |
 | `crates/flutterdec-decompiler/src/tests/golden_and_parser.rs` | `73a74b04ba294f1efc7faa5b067fdbd3c4cedc892c6d15068a07a98d656235ca` |
@@ -445,7 +457,8 @@ backticked digest, does not read these history rows as protected-path rows.
 | `1b11f7e` | intermediate | `6ee0cdf976f4fe02c1b3bebb4495bd2dfe34dc1fbd431b1ce9b52201eebbf878` |
 | `b4b1d8c`, `3aa2fe4` | unchanged | `6ee0cdf976f4fe02c1b3bebb4495bd2dfe34dc1fbd431b1ce9b52201eebbf878` |
 | `5aa4b4e` | current | `2f76a8b9abac96db026386c0626d248ade81e9690e563cbaaa901b86472b4457` |
-| `8e7f080`, `bf9a0eb`, worktree | current, recorded in section 7 | `2f76a8b9abac96db026386c0626d248ade81e9690e563cbaaa901b86472b4457` |
+| `8e7f080` through `43ef193` | unchanged, docs-only and harness-only commits | `2f76a8b9abac96db026386c0626d248ade81e9690e563cbaaa901b86472b4457` |
+| this commit, worktree | current, recorded in section 7, adjudicated in section 12 | `171aa8894675ed2c90ff40c9d6a136bd791c3ae0d51c7965617e682b31d2f067` |
 
 Reproduce any row with
 `git show <commit>:scripts/ci-check.sh | sha256sum`, and the last row with
@@ -710,3 +723,262 @@ fails.
    mission.
 6. L5 re-run. `NIX_CONFIG='experimental-features = nix-command flakes'
    scripts/ci-check.sh` exits 0 at the current digest.
+
+## 12. Adjudication record: the whole oracle loader class
+
+Section 11 protected two hooks: the decompiler's `mod tests;` line and its five
+`include!` lines. That left most of the section 7 oracle table resting on hooks
+nothing checked. This record closes the class: every Rust row in that table is now
+mapped to the hook that compiles it, and the mapping is compared against the table
+itself, so a new row without a hook fails.
+
+Two protected paths move here, `crates/flutterdec-decompiler/tests/provenance_audit.rs`
+and `scripts/ci-check.sh`, plus one unprotected CI lane,
+`.github/workflows/ci.yml`. No product source, no manifest, and no oracle
+assertion changes in this commit.
+
+### 12.1 Digest chains
+
+Column order matches sections 10.1 and 11.1, state before digest, so a scanner
+looking for the section 7 row shape does not read these history rows as
+protected-path rows.
+
+`crates/flutterdec-decompiler/tests/provenance_audit.rs`:
+
+| Commit | State | sha256 |
+| --- | --- | --- |
+| `1371e42` | fixed reference, preserved | `e0b5c675b2510d8c17c05b15a4a33341ba6a24cbec4336512cf63028527ff3b8` |
+| `209a8fe` through `e43b33d` | unchanged | `e0b5c675b2510d8c17c05b15a4a33341ba6a24cbec4336512cf63028527ff3b8` |
+| `43ef193` | first, narrow guard, adjudicated in section 11 | `8124346801612c56e9580d293c16a4e24593df175f8e7e376f16748a26560c0e` |
+| this commit, worktree | current, recorded in section 7 | `b5712a66b0f6472a726d4d253555272b54322cd69c3fdb1a3bed514de8cb9765` |
+
+`scripts/ci-check.sh`, continuing the chain in section 10.1:
+
+| Commit | State | sha256 |
+| --- | --- | --- |
+| `5aa4b4e` through `43ef193` | prior, adjudicated in section 10 | `2f76a8b9abac96db026386c0626d248ade81e9690e563cbaaa901b86472b4457` |
+| this commit, worktree | current, recorded in section 7 | `171aa8894675ed2c90ff40c9d6a136bd791c3ae0d51c7965617e682b31d2f067` |
+
+`.github/workflows/ci.yml` is not a section 7 row and does not become one: it is CI
+configuration that later work may legitimately edit, exactly like the threshold
+rulers at the end of section 7. Recorded for reproducibility only:
+`817f472151aa1553e2a25014bad95cf4418aca116cdfb7ca1fa9f2e9d6599a3c` at `1371e42`
+through `43ef193`, `c51642b043cfa254c454282aee5d14b24d899d29bcda83d8e42a9e1da9968c55`
+in this commit. Its one load-bearing line is asserted by value by the guard, not
+by digest.
+
+Reproduce any row with `git show <commit>:<path> | sha256sum`, and the last row of
+each chain with `sha256sum <path>`. The fixed reference is preserved two ways: the
+`1371e42` digests are recorded above and in section 7, and both files are
+recoverable verbatim from the reference commit, which is never rewritten, force
+pushed, or rebased.
+
+### 12.2 Exact diff intent
+
+`git diff --numstat 43ef193` for the three files: 322 insertions and 37 deletions
+in `tests/provenance_audit.rs`, 14 insertions and 3 deletions in
+`scripts/ci-check.sh`, 5 insertions and 0 deletions in
+`.github/workflows/ci.yml`.
+
+The 37 deleted lines in the guard are the section 11 guard's own body and doc
+comment. They are replaced, not weakened: the same three assertions survive in
+generalized form, and the generalization is what makes them cover 24 rows instead
+of 6.
+
+| Section 11 assertion | Where it lives now |
+| --- | --- |
+| `src/lib.rs` contains `#[cfg(test)]\nmod tests;` | the `Hook::Module` row for `src/tests.rs`, same literal including the newline |
+| `src/tests.rs` contains each of five `include!` lines | five `Hook::Include` rows, each expected line derived as `include!("<path relative to the loader's own directory>");` |
+| `src/tests.rs` contains exactly five `include!` occurrences | the per-loader exact-count check, whose expected count is the number of mapped rows for that loader, so it is now enforced for four loaders rather than one |
+
+Empirically additive too: both section 11.4 plants were re-run against this guard
+and both still fail it, rows 2 and 3 of 12.4.
+
+The existing audit test is still byte-identical to `1371e42` from its signature
+onward, which is what keeps the section 8 evidence for it valid:
+
+```
+git show 1371e42:crates/flutterdec-decompiler/tests/provenance_audit.rs \
+  | sed -n '/^fn the_pre_call_audit_traces/,$p' | sha256sum
+sed -n '/^fn the_pre_call_audit_traces/,$p' \
+  crates/flutterdec-decompiler/tests/provenance_audit.rs | sha256sum
+```
+
+Both still print
+`c76130ef412fde06ba1706e924e12fe0d85e802323c6e0d155a88cf6202e6d02`.
+
+`scripts/ci-check.sh` gains one lane at position 7, the two decompiler
+integration test targets named explicitly, plus the usage renumbering and the
+paragraph explaining why `cargo test --workspace` cannot stand in for it. The
+same mechanical proof section 10.3 uses, over the whole file:
+
+```
+git show 43ef193:scripts/ci-check.sh > /tmp/cic-prev.sh
+strip() { grep -vE '^[[:space:]]*(#|$)' "$1" | sed 's/[[:space:]]*$//' | sort; }
+comm -23 <(strip /tmp/cic-prev.sh) <(strip scripts/ci-check.sh)
+```
+
+Three lines are reported, and all three are text inside the `usage()` heredoc:
+
+```
+  7) cargo test --workspace            (unless --skip-tests)
+  8) cargo build -p flutterdec-cli --release
+  9) fmt, clippy and tests for the excluded benchmark harness
+```
+
+Each reappears with the same command text and a different list number, `8)`, `9)`,
+and `10)`, because the new lane took position 7. Nothing executable present at
+`43ef193` is absent now, and the same command run against `1371e42` reports only
+the three renumbered usage lines section 10.3 already accounts for. The executed
+check set is a strict superset of both: one added command,
+`nix develop -c cargo test -p flutterdec-decompiler --test provenance_audit
+--test loop_entry_provenance_audit`, and nothing removed, reordered, or made
+conditional. The new lane deliberately runs even under `--skip-tests`, because it
+is the lane that proves the rulers still exist.
+
+`.github/workflows/ci.yml` gains the identical command as one step before its
+existing `cargo test --workspace` step, and a two-line comment saying why. No
+step is removed or reordered. That lane matters because the GitHub job is not
+`scripts/ci-check.sh`: it omits `scripts/lint-python.sh` and the identity gate, so
+without this step `autotests = false` would pass GitHub CI while failing the local
+parity script.
+
+### 12.3 The mapped inventory
+
+24 Rust rows in the section 7 oracle table, 24 hooks, five families. The guard
+holds the map; the table holds the digests; neither is complete alone.
+
+| Family | Hook | Rows |
+| --- | --- | --- |
+| Cargo integration discovery | automatic discovery of `crates/flutterdec-decompiler/tests/*.rs`, disabled wholesale by `autotests = false` | 2: `tests/provenance_audit.rs`, `tests/loop_entry_provenance_audit.rs` |
+| decompiler lib hook | `#[cfg(test)]\nmod tests;` in `crates/flutterdec-decompiler/src/lib.rs` | 1: `src/tests.rs` |
+| first-level includes | five `include!` lines in `src/tests.rs` | 5: `src/tests/` `shared.rs`, `emit_and_helpers.rs`, `cfg_and_stack.rs`, `compaction_and_aliasing.rs`, `golden_and_parser.rs` |
+| nested includes | 8 in `src/tests/cfg_and_stack.rs`, 2 in `src/tests/compaction_and_aliasing.rs`, 4 in `src/tests/emit_and_helpers.rs` | 14 |
+| core path loaders | `#[cfg(test)] #[path = "runners/tests.rs"] mod runners_tests;` in `crates/flutterdec-core/src/pipeline/runners.rs`, and `#[cfg(test)] #[path = "symbol_map/tests.rs"] mod tests;` in `crates/flutterdec-core/src/pipeline/symbol_map.rs` | 2 |
+
+What the guard asserts, exact strings rather than patterns a rename or a
+reordering could satisfy by accident:
+
+- Each `Hook::Module` file contains its declaration verbatim, newlines and
+  `#[path]` attribute included, so an uncommented, re-attributed, or re-pathed
+  `mod tests;` does not pass.
+- Each `Hook::Include` loader contains `include!("<relative path>");`, the path
+  derived from the protected row so the expectation cannot drift from the table.
+- Each include loader contains exactly as many `include!` occurrences as it has
+  mapped rows, so no loader can grow an oracle section 7 does not record.
+- Every mapped file exists on disk.
+- Both `crates/flutterdec-decompiler/Cargo.toml` and
+  `crates/flutterdec-core/Cargo.toml` contain no line whose whitespace-stripped,
+  comment-stripped form is `test=false`, `harness=false`, or `autotests=false`.
+  These are the manifest-level silencers: they need no edit to any loader and move
+  no digest in section 7.
+- Both CI lanes contain a real invocation line, not an `echo` of one, that names
+  every automatically discovered integration target in a single command. The
+  distinction is not academic: an earlier version of this guard accepted the
+  `echo "[ci-check] cargo test ... --test provenance_audit ..."` line, so deleting
+  the actual `nix develop -c` invocation passed. That hole is plant 12 in 12.4.
+- The section 7 table parse is bounded to the Oracle test files table, from its
+  anchor sentence to the end of the section, and fails if it finds fewer than 21
+  rows or a non-Rust row, so a broken parse cannot masquerade as a satisfied
+  guard.
+
+The guard resolves paths from the workspace root, found as the first ancestor of
+its own crate holding `docs/oracle-protocol-ir-cfg-emitter.md`, so it reads the
+same tree from a crate directory, the workspace root, or a disposable worktree
+copy. It reaches across crates on purpose: `flutterdec-core`'s hooks cannot be
+guarded from inside `flutterdec-core`'s own unit tests, since those are exactly
+what a broken hook silences.
+
+No mutable product source or manifest is digested anywhere in this record. The
+loader lines, the manifest settings, and the CI invocations are protected by value,
+like the threshold rulers at the end of section 7.
+
+### 12.4 Planted silencings
+
+One disposable worktree detached at `43ef193`, with this commit's guard and both
+CI lanes copied in, `git checkout -- .` between plants, removed afterwards with
+`git worktree remove --force`. Reduced suite is the target the plant silences;
+guard is `cargo test -p flutterdec-decompiler --test provenance_audit --test
+loop_entry_provenance_audit`, which is exactly the new `scripts/ci-check.sh`
+lane, so the guard column is the ci-check result for that lane.
+
+| # | Plant | Reduced suite | Guard, and the ci-check lane |
+| --- | --- | --- | --- |
+| 1 | none, control | decompiler `--lib` `ok` 266; core `--lib` `ok` 91; `--workspace` `ok` 15 binaries 433 tests, exit 0 | `ok`, 2 passed and 1 passed, exit 0 |
+| 2 | `#[cfg(test)] mod tests;` deleted from decompiler `src/lib.rs` | `--lib` `ok` 12 passed, exit 0 | `FAILED`, exit 101, names `src/lib.rs` |
+| 3 | `include!("tests/golden_and_parser.rs");` deleted from `src/tests.rs` | `--lib` `ok` 262 passed, exit 0 | `FAILED`, exit 101, names the include and the file |
+| 4 | `include!("cfg_and_stack/dispatch_table.rs");` deleted from `src/tests/cfg_and_stack.rs` | `--lib` `ok` 256 passed, exit 0 | `FAILED`, exit 101, names the nested include |
+| 5 | `#[cfg(test)] #[path = "runners/tests.rs"] mod runners_tests;` deleted from `crates/flutterdec-core/src/pipeline/runners.rs` | core `--lib` `ok` 39 passed, exit 0 | `FAILED`, exit 101, names `runners.rs` |
+| 6 | `#[cfg(test)] #[path = "symbol_map/tests.rs"] mod tests;` deleted from `crates/flutterdec-core/src/pipeline/symbol_map.rs` | core `--lib` `ok` 87 passed, exit 0 | `FAILED`, exit 101, names `symbol_map.rs` |
+| 7 | new row `crates/flutterdec-decompiler/src/tests/new_oracle.rs` added to the section 7 oracle table with no hook | not applicable | `FAILED`, exit 101, `protected oracle rows with no loader hook recorded in this guard: ["crates/flutterdec-decompiler/src/tests/new_oracle.rs"]` |
+| 8 | `[lib] test = false` in the decompiler manifest | `--workspace` with the guard filtered out: `ok` 14 binaries 166 tests, exit 0 | `FAILED`, exit 101, quotes the manifest line |
+| 9 | `[lib] harness = false` in the decompiler manifest | `--workspace` fails to compile, `error[E0601]: main function not found in crate flutterdec_decompiler` | `FAILED`, exit 101, quotes the manifest line |
+| 10 | `autotests = false` in the decompiler manifest | `--workspace` `ok` 13 binaries 430 tests, exit 0 | exit 101, `error: no test target named provenance_audit in flutterdec-decompiler package` |
+| 11 | `include!("cfg_and_stack/structuring.rs");` deleted | `--lib` fails to compile, 110 errors, shared helpers gone | `FAILED`, exit 101, names the nested include |
+| 12 | the `nix develop -c cargo test ... --test ...` line deleted from `scripts/ci-check.sh`, its `echo` of the same text left in place | not applicable | `FAILED`, exit 101, `Invocation lines found: []` |
+| 13 | `--test loop_entry_provenance_audit` dropped from the `scripts/ci-check.sh` invocation | not applicable | `FAILED`, exit 101, lists the one-target invocation it found |
+| 14 | the guard step deleted from `.github/workflows/ci.yml` | not applicable | `FAILED`, exit 101, names `ci.yml` |
+
+Plants 2 through 6, 8 and 10 are the point of the record: each leaves a suite that
+prints `test result: ok` and exits 0 with fewer tests. 266 falls to 12, 262, or
+256; core's 91 falls to 39 or 87; `test = false` takes the workspace from 15
+binaries and 433 tests to 14 and 166; `autotests = false` takes it to 13 and 430
+while the two integration oracles vanish entirely. None of those seven moves a
+single digest in section 7, so before this commit five of the seven were
+undetectable by the protocol, and plants 3 and 4 were detectable only by a reader
+recomputing a documentary table by hand.
+
+Plants 9 and 11 fail loudly on their own in this repository, by compile error, and
+are recorded as such rather than claimed as silent. They are not free: `harness =
+false` is only loud because this crate has no `main`, and the deleted
+`structuring.rs` only because it defines helpers the other seven nested files use.
+Neither property is guaranteed for a future file, which is why both are asserted
+rather than left to luck.
+
+Method note for whoever repeats this: do not share one `CARGO_TARGET_DIR` across
+several plant worktrees. The first run of this matrix did, and cargo served
+artifacts built from the first worktree to the others, reporting the same 12-test
+count and the same failure message for three different plants. One worktree reused
+serially with `git checkout -- .` between plants, and its own target directory, is
+both correct and faster.
+
+### 12.5 Proof the guard cannot be silenced by what it protects
+
+`crates/flutterdec-decompiler/tests/` is an integration-test directory, so each
+file there is its own crate root that links the library through
+`use flutterdec_decompiler::...`. Neither file there uses an `include!` invocation
+or a `#[path]` attribute; the only `include!` text in the directory is inside the
+guard's own expected-string construction. The unit-test loaders it protects are
+`#[cfg(test)]` code an integration crate cannot reach, and `flutterdec-core`'s
+loaders live in a different crate entirely. Plants 2, 5, and 6 are the runtime
+proof: with a hook gone the affected library test target shrinks and still exits
+0, while the guard, compiled separately, fails.
+
+The one hook the guard depends on for its own execution is Cargo's automatic
+discovery of its own file, which is precisely why both CI lanes now name the
+target explicitly. Plant 10 shows the failure mode that closes: `autotests =
+false` leaves `cargo test --workspace` passing with 430 tests and no guard, while
+the named-target lane errors with `no test target named provenance_audit`.
+
+### 12.6 Section 9 steps
+
+1. Invariant. Not an L1 or L2 invariant: no expected value and no product output
+   changed. This is an L4 and L5 change, and the invariant is the section 5 rule
+   that a protected oracle may not be silenced, extended from two hooks to the
+   whole class. Satisfied in the form 12.4 demonstrates, and in the form 12.2
+   proves for the gate script: the executed check set is a strict superset of
+   `43ef193` and of `1371e42`.
+2. Test. `the_protected_oracle_loader_chain_is_intact` is itself the test, and
+   `scripts/ci-check.sh` step 7 is what makes it unskippable. It fails on the old
+   behavior in the sense that matters for a guard: at `43ef193` plants 4 through
+   14 all passed every gate with every digest in section 7 matching.
+3. Diff and digests. Recorded in 12.1 and 12.2, with the reproducing commands.
+4. Original reference preserved. Recorded in 12.1.
+5. Own commit. Satisfied. This record, the guard, and the two CI lanes land as one
+   commit, `test(oracle): protect all oracle loader hooks`, with no product source
+   or manifest change in it and before any product source edit of this mission.
+6. L5 re-run. `NIX_CONFIG='experimental-features = nix-command flakes'
+   scripts/ci-check.sh` exits 0 at the current digests, all twelve lanes green
+   including the new one: `test result: ok` 2 passed for `provenance_audit`, 1
+   passed for `loop_entry_provenance_audit`, then `cargo test --workspace` with 15
+   binaries and 433 tests, and `[ci-check] all checks passed`.
