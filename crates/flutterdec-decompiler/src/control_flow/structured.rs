@@ -915,6 +915,21 @@ impl<'a> FuncEmitter<'a> {
                     self.push_line(indent, &format!("return {};", ret));
                     return Flow::Ends;
                 }
+                // `br Xn` ends the block with no recovered destination. It is
+                // not a return, not a jump to a known block and not a tail call
+                // to a known address, so the only honest rendering is the
+                // unknown effect itself, counted as unresolved control flow.
+                IROp::IndirectBranch => {
+                    self.unresolved_cf += 1;
+                    self.push_line(indent, &format!("// {}", indirect_branch_note(&ins.target)));
+                    return Flow::Ends;
+                }
+                // A trap raises; control does not continue past it and there is
+                // nothing after it to emit.
+                IROp::Trap => {
+                    self.push_line(indent, &format!("// {}", TRAP_NOTE));
+                    return Flow::Ends;
+                }
                 IROp::Jump => {
                     let target = self.branch_target_block(&ins.target);
                     return match target {

@@ -89,12 +89,15 @@ fn split_points(record: &FunctionDisassembly, stats: &mut SplitStats) -> Vec<usi
     let ir = build_function_ir(record);
     let branch_targets = branch_targets(&ir);
     // Every instruction address to the block that contains it, not just block
-    // starts. `build_function_ir` opens a new block after `Branch`, `Jump` and
-    // `Return` only, so a candidate whose predecessor is `brk` is mid-block and has
-    // no leader of its own. That is not a corner: `brk` is what every raising stub
-    // ends with, so keying this on block starts silently abandoned the rest of the
-    // record. Taking the containing block instead over-approximates the piece,
-    // which can only reject candidates, never wrongly accept one.
+    // starts. `build_function_ir` opens a new block only after a terminator, so
+    // a candidate that follows anything else is mid-block and has no leader of
+    // its own, and keying this on block starts silently abandoned the rest of
+    // the record. Taking the containing block instead over-approximates the
+    // piece, which can only reject candidates, never wrongly accept one.
+    //
+    // `is_terminator` below and `IROp` now agree on which mnemonics those are,
+    // `brk` and `br` included, so a raising stub's successor really does get a
+    // leader; this mapping stays because the general mid-block case remains.
     let containing: std::collections::HashMap<u64, usize> = ir
         .blocks
         .iter()

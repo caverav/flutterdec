@@ -1422,6 +1422,22 @@ impl<'a> FuncEmitter<'a> {
                     self.active_stack.pop();
                     return;
                 }
+                // The same two unknown control effects the structured emitter
+                // renders, in the same words: a fallback that returned or tail
+                // called here would state a destination the structured path
+                // refused to state, so the two would disagree about what the
+                // program does.
+                IROp::IndirectBranch => {
+                    self.unresolved_cf += 1;
+                    self.push_line(indent, &format!("// {}", indirect_branch_note(&ins.target)));
+                    self.active_stack.pop();
+                    return;
+                }
+                IROp::Trap => {
+                    self.push_line(indent, &format!("// {}", TRAP_NOTE));
+                    self.active_stack.pop();
+                    return;
+                }
                 // Runtime bookkeeping: no user-level statement, and the
                 // comparison must not leak into a later branch condition.
                 IROp::RuntimeCheck => {}

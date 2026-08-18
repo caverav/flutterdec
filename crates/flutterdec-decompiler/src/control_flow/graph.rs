@@ -1,3 +1,20 @@
+/// What a `brk` renders as. A trap is not a return and not a throw the source
+/// program wrote, so it is reported as the effect it is rather than as any
+/// source construct.
+pub(super) const TRAP_NOTE: &str = "trap: control does not continue";
+
+/// What a `br Xn` renders as, naming the value control left through when the
+/// operand survived. Deliberately not a `return`, a `goto` or a `tailCall_`:
+/// every one of those names a destination that was never recovered.
+pub(super) fn indirect_branch_note(target: &str) -> String {
+    let via = target.trim();
+    if via.is_empty() {
+        "indirect branch: target not recovered".to_string()
+    } else {
+        format!("indirect branch through {via}: target not recovered")
+    }
+}
+
 impl<'a> FuncEmitter<'a> {
     pub(super) fn branch_condition(&self, mnemonic: &str, ops: &[String]) -> Option<String> {
         if mnemonic.starts_with("b.") {
