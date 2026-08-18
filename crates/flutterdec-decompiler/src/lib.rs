@@ -229,6 +229,20 @@ struct FuncEmitter<'a> {
     unlifted_instructions: usize,
     target_va_symbol_calls: usize,
     accounting: EmissionAccounting,
+    /// The primary cause the structured walk stopped at, set by the first site
+    /// that refused. Later refusals are consequences of it, so the first wins.
+    decline_site: Option<StructuredDecline>,
+}
+
+/// Which emitter runs.
+///
+/// `Auto` is what every public entry point uses: structured emission first, the
+/// DFS walk when it declines. `DirectDfs` runs the DFS walk without the attempt,
+/// so a declined function can be compared with what it is supposed to equal.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum EmissionPlan {
+    Auto,
+    DirectDfs,
 }
 
 #[derive(Debug, Clone)]
@@ -420,6 +434,7 @@ impl<'a> FuncEmitter<'a> {
             unlifted_instructions: 0,
             target_va_symbol_calls: 0,
             accounting: EmissionAccounting::default(),
+            decline_site: None,
         }
     }
 
@@ -436,7 +451,20 @@ impl<'a> FuncEmitter<'a> {
     /// spans are told apart by order. Two sites' records interleave in the
     /// output, so merging them into one list would leave the second site's rows
     /// searching from a cursor already past their own annotations.
-    fn emit_with_provenance(mut self) -> (PseudocodeArtifact, Vec<FunctionProvenance>) {
+    fn emit_with_provenance(self) -> (PseudocodeArtifact, Vec<FunctionProvenance>) {
+        self.emit_with_plan(EmissionPlan::Auto)
+    }
+
+    /// The same emission under a chosen plan.
+    ///
+    /// `Auto` is the production decision and the only one any public entry point
+    /// uses. `DirectDfs` enters the fallback without attempting to structure,
+    /// which is what a declined function is supposed to be equal to: it is the
+    /// reference the decline is compared against, not a second transition.
+    fn emit_with_plan(
+        mut self,
+        plan: EmissionPlan,
+    ) -> (PseudocodeArtifact, Vec<FunctionProvenance>) {
         let fn_name = sanitize_name(&self.ir.name);
 
         // One parameter per register the Dart convention passes an argument in.
@@ -459,7 +487,10 @@ impl<'a> FuncEmitter<'a> {
         // once. It declines on irreducible control flow, and verifies the
         // emit-once invariant rather than assuming it, so a failure rolls back
         // and the DFS emitter runs instead.
-        let structured = self.try_emit_structured();
+        let structured = match plan {
+            EmissionPlan::Auto => self.try_emit_structured(),
+            EmissionPlan::DirectDfs => false,
+        };
         if !structured {
             if let Some(entry) = self.ir.blocks.first() {
                 self.emit_block(entry.id, 1, 0);
@@ -661,6 +692,24 @@ fn emit_one(
     pool_semantic_hints: &HashMap<u64, PoolSemanticHint>,
     runtime_stubs: &HashMap<u64, RuntimeStubEffect>,
 ) -> (PseudocodeArtifact, Vec<FunctionProvenance>) {
+    emit_one_with_plan(
+        ir,
+        symbol_names,
+        pool_value_hints,
+        pool_semantic_hints,
+        runtime_stubs,
+        EmissionPlan::Auto,
+    )
+}
+
+fn emit_one_with_plan(
+    ir: &FunctionIr,
+    symbol_names: &HashMap<u64, String>,
+    pool_value_hints: &HashMap<u64, String>,
+    pool_semantic_hints: &HashMap<u64, PoolSemanticHint>,
+    runtime_stubs: &HashMap<u64, RuntimeStubEffect>,
+    plan: EmissionPlan,
+) -> (PseudocodeArtifact, Vec<FunctionProvenance>) {
     if let Err(defect) = validate_block_identity(ir) {
         return (invalid_cfg_artifact(ir, &defect), Vec::new());
     }
@@ -668,7 +717,31 @@ fn emit_one(
     emitter.pool_value_hints = pool_value_hints.clone();
     emitter.pool_semantic_hints = pool_semantic_hints.clone();
     emitter.runtime_stubs = runtime_stubs.clone();
-    emitter.emit_with_provenance()
+    match plan {
+        EmissionPlan::Auto => emitter.emit_with_provenance(),
+        EmissionPlan::DirectDfs => emitter.emit_with_plan(plan),
+    }
+}
+
+/// The artifact the DFS walk produces on its own.
+///
+/// A declined structured attempt must equal this apart from its cause
+/// accounting, so this is the reference that comparison is made against, by this
+/// crate's own differential and by anything else that wants to see what
+/// structuring bought for one function.
+pub fn emit_pseudocode_direct_dfs(
+    ir: &FunctionIr,
+    symbol_names: &HashMap<u64, String>,
+) -> PseudocodeArtifact {
+    emit_one_with_plan(
+        ir,
+        symbol_names,
+        &HashMap::new(),
+        &HashMap::new(),
+        &HashMap::new(),
+        EmissionPlan::DirectDfs,
+    )
+    .0
 }
 
 pub fn emit_pseudocode(ir: &FunctionIr, symbol_names: &HashMap<u64, String>) -> PseudocodeArtifact {

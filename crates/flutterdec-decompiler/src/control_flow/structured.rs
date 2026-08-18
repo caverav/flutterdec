@@ -6,6 +6,9 @@
 // its exit, is a structural failure. The whole function then falls back to the
 // DFS emitter, so this pass can only improve output, never truncate it.
 
+/// How deep the structured walk nests regions before it declines.
+pub(super) const STRUCTURED_MAX_DEPTH: usize = 64;
+
 /// Quality counters, saved and restored around a structuring attempt.
 pub(super) struct Counters {
     placeholder_ifs: usize,
@@ -20,6 +23,50 @@ pub(super) struct Counters {
     repeated_blocks: usize,
     unlifted_instructions: usize,
     target_va_symbol_calls: usize,
+}
+
+/// Everything a structuring attempt can write, saved before it starts.
+///
+/// One value per mutable family rather than a list of the fields the walk was
+/// believed to touch: a family left out of that list is invisible until an
+/// artifact carries a name, an anchor or an audit row from a body that was never
+/// emitted. The snapshot is taken before any block is rendered, where every
+/// collection is still at its initial size, so cloning it costs nothing worth
+/// measuring.
+pub(super) struct EmitterSnapshot {
+    lines: Vec<String>,
+    render_lines: Vec<String>,
+    state: LiftState,
+    counters: Counters,
+    locals: BTreeMap<i64, String>,
+    identifier_renames: Vec<(String, String)>,
+    call_index: usize,
+    snapshot_index: usize,
+    rendering_call: bool,
+    structured_emitted: HashSet<usize>,
+    loop_stack: Vec<(usize, Option<usize>)>,
+    join_candidates: HashMap<(usize, String), JoinCandidates>,
+    join_candidate_regs: HashMap<usize, Vec<String>>,
+    join_annotation_anchors: Vec<JoinAnnotationAnchor>,
+    call_annotation_anchors: Vec<CallAnnotationAnchor>,
+    loop_annotation_sites: HashSet<usize>,
+    block_snapshots: Vec<BlockSnapshot>,
+    call_provenance: FunctionProvenance,
+    join_provenance: FunctionProvenance,
+    loop_provenance: FunctionProvenance,
+    emitted: HashSet<usize>,
+    active_stack: Vec<usize>,
+    inline_visits: HashMap<usize, usize>,
+    omitted_blocks: BTreeSet<usize>,
+    omission_sources: BTreeMap<usize, usize>,
+    helper_cap_omitted: BTreeSet<usize>,
+    loop_back_edges: BTreeSet<usize>,
+    loop_context: Vec<usize>,
+    dfs_preds: Option<HashMap<usize, Vec<usize>>>,
+    dfs_block_writes: HashMap<usize, HashSet<String>>,
+    /// Traversal events recorded before the attempt. The attempt's own events
+    /// describe edges in a body that no longer exists, so they go with it.
+    events: usize,
 }
 
 /// What a block's terminator does, once its body has been emitted.
@@ -526,54 +573,238 @@ impl<'a> FuncEmitter<'a> {
         let built = Regions::build(self.ir);
 
         let Some(regions) = built else {
+            // Preflight: the region analysis refused the graph, so nothing has
+            // been touched and there is nothing to undo.
+            self.accounting.record_decline(StructuredDecline {
+                cause: StructuredDeclineCause::Irreducible,
+                block_start_va: None,
+            });
             return false;
         };
 
-        let saved_lines = self.lines.len();
-        let saved_state = self.state.clone();
-        let saved_counters = self.counter_snapshot();
-        // A call anchor holds the index of the line it was rendered on, so an
-        // abandoned attempt leaves indices pointing into a body that no longer
-        // exists. Left in place they resolve against the DFS emitter's lines and
-        // annotate whatever happens to be there.
-        let saved_call_anchors = self.call_annotation_anchors.len();
-        let saved_call_snapshots = self.call_provenance.snapshots.len();
+        if let Some(block) = self.unsupported_region(&regions) {
+            // Preflight as well: decided from the graph and the region tree
+            // alone, before `self.regions` is set or a line is rendered.
+            self.accounting.record_decline(StructuredDecline {
+                cause: StructuredDeclineCause::UnsupportedRegion,
+                block_start_va: Some(self.block_start_va(block)),
+            });
+            return false;
+        }
+
+        // Past here the attempt writes to emitter state, so everything it can
+        // write is saved first and restored as one unit if it declines. The
+        // snapshot is whole rather than a list of the fields the walk was known
+        // to touch: that list was already wrong once, and a field left behind is
+        // invisible until an artifact carries a name or a row from a body that
+        // was never emitted.
+        let snapshot = self.emitter_snapshot();
 
         self.regions = Some(regions);
+        self.decline_site = None;
         let ok = self.render_sequence(0, None, 1, 0);
-        let covered = self.structured_emitted.len()
-            == self
-                .regions
-                .as_ref()
-                .map(Regions::reachable_count)
-                .unwrap_or(0);
+        // Membership, not a count: a count matches whenever the set happens to
+        // be the right size, so anything already in it hides a block the walk
+        // never emitted.
+        let covered = self.first_uncovered_block().is_none();
 
         if ok && covered {
+            self.decline_site = None;
             return true;
         }
 
-        self.lines.truncate(saved_lines);
-        self.state = saved_state;
-        self.restore_counters(saved_counters);
-        self.structured_emitted.clear();
-        self.loop_stack.clear();
-        self.join_candidates.clear();
-        self.join_candidate_regs.clear();
-        self.join_annotation_anchors.clear();
-        self.loop_annotation_sites.clear();
-        // The DFS emitter annotates nothing, so a rollback must also drop the
-        // snapshots and the audit rows the abandoned structuring captured: a
-        // snapshot no surviving annotation cites is a record of a site that is
-        // not in the output.
-        self.block_snapshots.clear();
-        self.join_provenance.snapshots.clear();
-        self.call_annotation_anchors.truncate(saved_call_anchors);
-        self.call_provenance.snapshots.truncate(saved_call_snapshots);
-        self.join_provenance.records.clear();
-        self.loop_provenance.snapshots.clear();
-        self.loop_provenance.records.clear();
-        self.regions = None;
+        let decline = self.decline_site.take().unwrap_or_else(|| {
+            // The walk finished but did not cover every reachable block, which
+            // is the one decline no single site reports.
+            StructuredDecline {
+                cause: StructuredDeclineCause::CoverageMismatch,
+                block_start_va: self.first_uncovered_block().map(|id| self.block_start_va(id)),
+            }
+        });
+        debug_assert!(
+            decline.cause.is_post_mutation(),
+            "a preflight cause was decided during the walk: {:?}",
+            decline.cause
+        );
+        self.accounting.record_decline(decline);
+        self.restore_emitter(snapshot);
         false
+    }
+
+    /// The lowest-id reachable block the walk did not emit, which is the block a
+    /// coverage mismatch is attributed to.
+    fn first_uncovered_block(&self) -> Option<usize> {
+        let regions = self.regions.as_ref()?;
+        self.ir
+            .blocks
+            .iter()
+            .map(|b| b.id)
+            .find(|id| regions.is_reachable(*id) && !self.structured_emitted.contains(id))
+    }
+
+    /// The first reachable block whose successor set the structured walk has no
+    /// rendering rule for, if there is one.
+    ///
+    /// Three shapes have none, and all three are decided from the graph and the
+    /// region tree without emitting anything:
+    ///
+    /// - more than two successors: the walk renders a taken arm and one
+    ///   not-taken arm, so a third edge could only be dropped;
+    /// - two successors without a conditional terminator: there is no condition
+    ///   to render them under, so both edges would collapse into one;
+    /// - a terminator whose recovered target is not a successor: rendering it
+    ///   would state an edge the graph does not have.
+    ///
+    /// Reporting them here rather than mid-walk is what makes this a preflight
+    /// cause: no state has been written when the answer is known.
+    fn unsupported_region(&self, regions: &Regions) -> Option<usize> {
+        for block in &self.ir.blocks {
+            if !regions.is_reachable(block.id) {
+                continue;
+            }
+            let succs = regions.successors(block.id);
+            if succs.len() > 2 {
+                return Some(block.id);
+            }
+            let terminator = block.instrs.last().map(|i| &i.op);
+            if succs.len() == 2 && !matches!(terminator, Some(IROp::Branch)) {
+                return Some(block.id);
+            }
+            if matches!(terminator, Some(IROp::Branch) | Some(IROp::Jump)) {
+                let target = block
+                    .instrs
+                    .last()
+                    .and_then(|i| self.branch_target_block(&i.target));
+                if target.is_some_and(|t| !succs.contains(&t)) {
+                    return Some(block.id);
+                }
+            }
+        }
+        None
+    }
+
+    /// Record the primary cause of a decline at the site that decided it. The
+    /// first site wins: later refusals are consequences of this one.
+    fn decline_with(&mut self, cause: StructuredDeclineCause, block: usize) {
+        if self.decline_site.is_none() {
+            self.decline_site = Some(StructuredDecline {
+                cause,
+                block_start_va: Some(self.block_start_va(block)),
+            });
+        }
+    }
+
+    pub(super) fn emitter_snapshot(&self) -> EmitterSnapshot {
+        EmitterSnapshot {
+            lines: self.lines.clone(),
+            render_lines: self.render_lines.clone(),
+            state: self.state.clone(),
+            counters: self.counter_snapshot(),
+            locals: self.locals.clone(),
+            identifier_renames: self.identifier_renames.clone(),
+            call_index: self.call_index,
+            snapshot_index: self.snapshot_index,
+            rendering_call: self.rendering_call,
+            structured_emitted: self.structured_emitted.clone(),
+            loop_stack: self.loop_stack.clone(),
+            join_candidates: self.join_candidates.clone(),
+            join_candidate_regs: self.join_candidate_regs.clone(),
+            join_annotation_anchors: self.join_annotation_anchors.clone(),
+            call_annotation_anchors: self.call_annotation_anchors.clone(),
+            loop_annotation_sites: self.loop_annotation_sites.clone(),
+            block_snapshots: self.block_snapshots.clone(),
+            call_provenance: self.call_provenance.clone(),
+            join_provenance: self.join_provenance.clone(),
+            loop_provenance: self.loop_provenance.clone(),
+            emitted: self.emitted.clone(),
+            active_stack: self.active_stack.clone(),
+            inline_visits: self.inline_visits.clone(),
+            omitted_blocks: self.omitted_blocks.clone(),
+            omission_sources: self.omission_sources.clone(),
+            helper_cap_omitted: self.helper_cap_omitted.clone(),
+            loop_back_edges: self.loop_back_edges.clone(),
+            loop_context: self.loop_context.clone(),
+            dfs_preds: self.dfs_preds.clone(),
+            dfs_block_writes: self.dfs_block_writes.clone(),
+            events: self.accounting.event_len(),
+        }
+    }
+
+    /// Put back exactly what the attempt started from.
+    ///
+    /// Everything except the accounting: the primary cause and the derived
+    /// counts are what the attempt is allowed to leave behind, and they are the
+    /// only difference between a declined function and the same function emitted
+    /// by the DFS walk directly.
+    pub(super) fn restore_emitter(&mut self, snapshot: EmitterSnapshot) {
+        let EmitterSnapshot {
+            lines,
+            render_lines,
+            state,
+            counters,
+            locals,
+            identifier_renames,
+            call_index,
+            snapshot_index,
+            rendering_call,
+            structured_emitted,
+            loop_stack,
+            join_candidates,
+            join_candidate_regs,
+            join_annotation_anchors,
+            call_annotation_anchors,
+            loop_annotation_sites,
+            block_snapshots,
+            call_provenance,
+            join_provenance,
+            loop_provenance,
+            emitted,
+            active_stack,
+            inline_visits,
+            omitted_blocks,
+            omission_sources,
+            helper_cap_omitted,
+            loop_back_edges,
+            loop_context,
+            dfs_preds,
+            dfs_block_writes,
+            events,
+        } = snapshot;
+        self.lines = lines;
+        self.render_lines = render_lines;
+        self.state = state;
+        self.restore_counters(counters);
+        self.locals = locals;
+        self.identifier_renames = identifier_renames;
+        self.call_index = call_index;
+        self.snapshot_index = snapshot_index;
+        self.rendering_call = rendering_call;
+        self.structured_emitted = structured_emitted;
+        self.loop_stack = loop_stack;
+        self.join_candidates = join_candidates;
+        self.join_candidate_regs = join_candidate_regs;
+        self.join_annotation_anchors = join_annotation_anchors;
+        self.call_annotation_anchors = call_annotation_anchors;
+        self.loop_annotation_sites = loop_annotation_sites;
+        self.block_snapshots = block_snapshots;
+        self.call_provenance = call_provenance;
+        self.join_provenance = join_provenance;
+        self.loop_provenance = loop_provenance;
+        self.emitted = emitted;
+        self.active_stack = active_stack;
+        self.inline_visits = inline_visits;
+        self.omitted_blocks = omitted_blocks;
+        self.omission_sources = omission_sources;
+        self.helper_cap_omitted = helper_cap_omitted;
+        self.loop_back_edges = loop_back_edges;
+        self.loop_context = loop_context;
+        self.dfs_preds = dfs_preds;
+        self.dfs_block_writes = dfs_block_writes;
+        self.accounting.truncate_events(events);
+        // Built by the attempt and owned by it: the DFS walk asks the graph
+        // directly and never reads this.
+        self.regions = None;
+        self.decline_site = None;
     }
 
     /// Counters saved before a structuring attempt, so a rollback to the DFS
@@ -635,7 +866,8 @@ impl<'a> FuncEmitter<'a> {
         indent: usize,
         depth: usize,
     ) -> bool {
-        if depth > 64 {
+        if depth > STRUCTURED_MAX_DEPTH {
+            self.decline_with(StructuredDeclineCause::StructuredDepthBudget, start);
             return false;
         }
         let mut cursor = Some(start);
@@ -660,6 +892,7 @@ impl<'a> FuncEmitter<'a> {
                 if !self.is_repeatable_region(id, follow) {
                     // Neither a back edge nor a small shared region, so the
                     // region tree does not describe this edge.
+                    self.decline_with(StructuredDeclineCause::RepeatBudget, id);
                     return false;
                 }
                 self.repeated_blocks += 1;
@@ -667,6 +900,12 @@ impl<'a> FuncEmitter<'a> {
 
             let regions = self.regions.as_ref().expect("regions");
             if !regions.is_reachable(id) {
+                // The walk and the region analysis disagree about what this
+                // function contains, which is a coverage failure rather than a
+                // property of the region shape: the preflight above proves every
+                // rendered target is a successor of a reachable block, so this
+                // is unreachable in practice and defensive here.
+                self.decline_with(StructuredDeclineCause::CoverageMismatch, id);
                 return false;
             }
             if regions.is_loop_header(id) && !self.loop_stack.iter().any(|(h, _)| *h == id) {

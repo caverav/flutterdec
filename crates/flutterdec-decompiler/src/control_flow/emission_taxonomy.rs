@@ -194,6 +194,33 @@ impl EmissionAccounting {
         self.events.iter().filter(|e| e.kind == kind).count()
     }
 
+    /// Record the function's one primary cause.
+    ///
+    /// A second call is a bug in the caller: the first cause is the one that
+    /// stopped the attempt and anything after it is a consequence. Keeping the
+    /// first is what makes the causes disjoint.
+    pub(crate) fn record_decline(&mut self, decline: StructuredDecline) {
+        debug_assert!(
+            self.decline.is_none(),
+            "a second structured decline cause was recorded: {:?} after {:?}",
+            decline,
+            self.decline
+        );
+        if self.decline.is_none() {
+            self.decline = Some(decline);
+        }
+    }
+
+    /// Number of events recorded so far, which is also the next ordinal. A
+    /// rollback uses it to drop the events an abandoned attempt recorded.
+    pub(crate) fn event_len(&self) -> usize {
+        self.events.len()
+    }
+
+    pub(crate) fn truncate_events(&mut self, len: usize) {
+        self.events.truncate(len);
+    }
+
     /// Append an event, stamping it with the next ordinal.
     pub(crate) fn record_event(
         &mut self,

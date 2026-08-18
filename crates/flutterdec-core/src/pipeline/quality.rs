@@ -186,6 +186,152 @@ mod quality_control_effect_tests;
 mod quality_tests {
     use super::*;
 
+    /// A two-block cycle entered from two sides, which the region analysis
+    /// refuses, and a diamond, which it does not. One program, one declined
+    /// function, so the report's derived counts have something to derive from.
+    fn declining_and_structured_artifacts() -> Vec<PseudocodeArtifact> {
+        use flutterdec_ir::{rebuild_edges, BasicBlock, FunctionIr, IROp, LlirInstr};
+
+        let build = |function_id: u64, succs: &[Vec<usize>]| {
+            let mut blocks: Vec<BasicBlock> = succs
+                .iter()
+                .enumerate()
+                .map(|(id, succs)| {
+                    let start = 0x1000 + 0x10 * id as u64;
+                    let mut instrs = Vec::new();
+                    match succs.as_slice() {
+                        [] => instrs.push(LlirInstr {
+                            va: start,
+                            op: IROp::Return,
+                            src: "ret".to_string(),
+                            target: String::new(),
+                        }),
+                        [only] => instrs.push(LlirInstr {
+                            va: start,
+                            op: IROp::Jump,
+                            src: format!("b #{:#x}", 0x1000 + 0x10 * *only as u64),
+                            target: format!("#{:#x}", 0x1000 + 0x10 * *only as u64),
+                        }),
+                        [_fallthrough, taken] => instrs.push(LlirInstr {
+                            va: start,
+                            op: IROp::Branch,
+                            src: format!("cbz x0, #{:#x}", 0x1000 + 0x10 * *taken as u64),
+                            target: format!("#{:#x}", 0x1000 + 0x10 * *taken as u64),
+                        }),
+                        _ => unreachable!("fixtures branch at most two ways"),
+                    }
+                    BasicBlock {
+                        id,
+                        start_va: start,
+                        instrs,
+                        succs: succs.clone(),
+                        preds: Vec::new(),
+                    }
+                })
+                .collect();
+            rebuild_edges(&mut blocks);
+            FunctionIr {
+                function_id,
+                name: format!("fixture{function_id}"),
+                entry_va: 0x1000,
+                blocks,
+            }
+        };
+
+        let irreducible = build(1, &[vec![1, 2], vec![2, 3], vec![1, 3], Vec::new()]);
+        let diamond = build(2, &[vec![1, 2], vec![3], vec![3], Vec::new()]);
+        let symbols = HashMap::new();
+        vec![
+            flutterdec_decompiler::emit_pseudocode(&irreducible, &symbols),
+            flutterdec_decompiler::emit_pseudocode(&diamond, &symbols),
+        ]
+    }
+
+    fn empty_model() -> ProgramModel {
+        ProgramModel {
+            schema_version: 3,
+            adapter_kind: "test".to_string(),
+            dart_version: "unknown".to_string(),
+            snapshot_hash: String::new(),
+            arch: "arm64".to_string(),
+            libraries: Vec::new(),
+            classes: Vec::new(),
+            functions: Vec::new(),
+            object_pool: Vec::new(),
+            pool_geometry: None,
+        }
+    }
+
+    fn default_options() -> DecompileOptions {
+        DecompileOptions {
+            out_dir: std::path::PathBuf::new(),
+            emit_asm: false,
+            emit_asm_opcodes: false,
+            emit_ghidra_script: false,
+            emit_ida_script: false,
+            emit_ir: false,
+            split_records: false,
+            extra_symbol_elfs: Vec::new(),
+            extra_symbol_map_targets: Vec::new(),
+            include_nearest_symbol_map: false,
+            focus: None,
+            function_target: None,
+            max_functions: None,
+            max_placeholder_ifs: 0,
+            max_unresolved_cf: 0,
+            max_indirect_call_ratio: 0.30,
+            min_disassembly_ratio: 0.80,
+            function_scope: FunctionScope::All,
+            app_packages: Vec::new(),
+            adapter_backend: AdapterBackend::Internal,
+            require_snapshot_hash_match: false,
+            analysis_profile: DecompileAnalysisProfile::Balanced,
+            engine_options: DecompileEngineOptions::for_profile(DecompileAnalysisProfile::Balanced),
+        }
+    }
+
+    /// The report's generic decline count and rollback count are sums of the
+    /// primary causes, never a second tally kept beside them.
+    #[test]
+    fn the_report_derives_its_decline_counts_from_the_primary_causes() {
+        let pseudo = declining_and_structured_artifacts();
+        let report = quality_from_artifacts(&empty_model(), &pseudo, &default_options(), 0);
+        let emission = &report.emission;
+
+        let per_cause = emission.irreducible
+            + emission.unsupported_region
+            + emission.repeat_budget
+            + emission.structured_depth_budget
+            + emission.coverage_mismatch;
+        assert_eq!(
+            emission.structured_declines, per_cause,
+            "the decline count is the sum of the causes"
+        );
+        assert_eq!(
+            emission.structured_rollbacks,
+            emission.repeat_budget + emission.structured_depth_budget + emission.coverage_mismatch,
+            "only post-mutation causes roll anything back"
+        );
+        assert_eq!(emission.irreducible, 1, "one fixture is irreducible");
+        assert_eq!(
+            emission.structured_declines, 1,
+            "the other fixture structures"
+        );
+        assert_eq!(
+            emission.structured_rollbacks, 0,
+            "an irreducible decline is preflight"
+        );
+
+        let events: usize = pseudo.iter().map(|p| p.emission.events().len()).sum();
+        assert_eq!(
+            emission.dfs_depth_omissions
+                + emission.dfs_visit_omissions
+                + emission.helper_cap_omissions,
+            events,
+            "every traversal event is counted under exactly one kind"
+        );
+    }
+
     #[test]
     fn annotation_span_does_not_contribute_to_source_counters() {
         // Built by the shared literal rather than spelled here: a fixture that

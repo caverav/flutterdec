@@ -151,9 +151,15 @@ impl Regions {
         self.loops.get(&header).and_then(|region| region.follow)
     }
 
+    /// How many blocks the entry reaches. Read by the relation oracle, which
+    /// asserts the reachable set itself; emission asks about membership rather
+    /// than about a size, because a size matches whenever a set happens to be
+    /// big enough.
+    #[cfg(test)]
     pub(super) fn reachable_count(&self) -> usize {
         self.reachable.iter().filter(|r| **r).count()
     }
+
 }
 
 /// The edge lists every relation below is derived from: successors by block id,
