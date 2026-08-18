@@ -61,11 +61,19 @@ Two structural facts matter for later work:
 | `b.<cond>` and anything starting with `b.` | `Branch` | yes | target plus fallthrough |
 | `cbz`, `cbnz`, `tbz`, `tbnz` | `Branch` | yes | target plus fallthrough |
 | `ret` | `Return` | yes | none |
+| `br` | `IndirectBranch` | yes | none |
+| `brk` | `Trap` | yes | none |
 | `ldr` with a `pool[` or `poolOff[` annotation | `LoadPool` | no | fallthrough |
 | Dart stack-overflow guard group | `RuntimeCheck` | no | guard edge suppressed, slow path pruned (`ir/src/lib.rs:291-352`) |
-| everything else, including `br` and `brk` | `Other` | no | fallthrough to the next block |
+| everything else | `Other` | no | fallthrough to the next block |
 
-The last row is the classification gap recorded as risk R1 in section 7.
+The `br` and `brk` rows are the state after `6756e71`, which closed risk R1. At
+`1371e42` both mnemonics had no arm of their own and fell into the last row, so
+both took an invented fallthrough edge. Their arms are now at
+`ir/src/lib.rs:185-191`, the block end at `ir/src/lib.rs:242-246`, and the empty
+successor set at `ir/src/lib.rs:310`. Section 18 records the implemented
+semantics and the tests. Every other row and both column line numbers are as of
+`1371e42`.
 
 The stack-overflow guard is recognized by shape, not by offset
 (`ir/src/lib.rs:33-58`), and both the guard and its slow path are removed by a
@@ -201,7 +209,11 @@ Coverage gaps found while mapping the above:
   file, `src/tests/cfg_and_stack/structuring.rs:155`, and only to drive
   emission. Reachability, the dominator and post-dominator relations, follow
   nodes, loop membership, loop follow, and reducibility are therefore only
-  observed through emitted text.
+  observed through emitted text. Partly closed since: `6756e71` asserts the full
+  per-mnemonic edge set against a literal table, and `bd1ecbf`, `51c129a` and
+  `1a00f64` assert block identity and edge reciprocity directly. The dominance
+  and loop relations in this bullet are still only observed through emitted text.
+  See 18.5.
 - No test crosses the 64 helper cap at `helper_flow/summary.rs:53`. The helper
   tests build helper text directly (`emit_and_helpers/helper_inlining.rs`,
   `cfg_and_stack/omitted_path_and_stack.rs`) rather than driving a function with
@@ -218,18 +230,24 @@ Coverage gaps found while mapping the above:
 Each risk states its evidence class: proven by a repository test, proven by
 inspection of cited code, or open.
 
-**R1. `br` and `brk` get an invented fallthrough edge.** Evidence: inspection.
-`ir/src/lib.rs:139-176` has no arm for either mnemonic, so both become
-`IROp::Other`. `Other` does not create a leader (`ir/src/lib.rs:203-218`) and
-takes the default successor arm, which pushes the next block
-(`ir/src/lib.rs:278-282`). The same repository already treats both as path
-enders elsewhere: `split.rs:141-150` returns true for `ret`, `brk`, `b`, and
-`br`, and the comment at `split.rs:93-97` states that `build_function_ir` opens
-a new block after `Branch`, `Jump`, and `Return` only. Consequences reach both
-emitters: the DFS emitter falls through at `emit.rs:1437-1451` and the
+**R1. Closed at `6756e71`: `br` and `brk` got an invented fallthrough edge.**
+Evidence when recorded: inspection. At `1371e42`, `ir/src/lib.rs:139-176` had no
+arm for either mnemonic, so both became `IROp::Other`. `Other` did not create a
+leader (`ir/src/lib.rs:203-218`) and took the default successor arm, which pushed
+the next block (`ir/src/lib.rs:278-282`). The same repository already treated both
+as path enders elsewhere: `split.rs:141-150` returned true for `ret`, `brk`, `b`,
+and `br`, and the comment at `split.rs:93-97` stated that `build_function_ir`
+opens a new block after `Branch`, `Jump`, and `Return` only. Consequences reached
+both emitters: the DFS emitter fell through at `emit.rs:1437-1451` and the
 structured emitter at `structured.rs:948-951`. `br` is also how a dispatch or
 tail call leaves a function (`runners/stubs.rs:461`), so the fabricated edge
-lands on the shapes that matter most.
+landed on the shapes that matter most.
+
+`br` is now `IROp::IndirectBranch` and `brk` is `IROp::Trap`, both terminators
+with no successors at all, and the splitter comment that described the old
+behavior was corrected in the same commit (`split.rs:120-130`). Section 18 records
+the implemented semantics, the rendering in both emitters, the `unresolved_cf`
+decision, and the tests that fail if either fallthrough comes back.
 
 **R2. The helper cap counts a block before refusing to define it.**
 Evidence: inspection. `helper_flow/summary.rs:48-55` inserts the id into
@@ -383,9 +401,10 @@ Restating the charter so that a later commit cannot quietly widen scope:
   measured, and the answer is that it is not the dominant cost.
 - No claim about real binary behavior beyond the input validation path in
   section 8.
-- R1, R2, R3, R8, and R9 are inspection findings. Each becomes a failing test
+- R2, R3, R8, and R9 are inspection findings. Each becomes a failing test
   first, under the case matrix in the companion protocol, before any fix is
-  written.
+  written. R1 was the first through that path and is closed at `6756e71`;
+  section 18 records what landed and what it is asserted by.
 
 ## 12. Measured cost attribution, from the accepted baseline
 
@@ -710,7 +729,7 @@ is needed to justify them.
 | Rank | Defect | Evidence class | Where |
 | --- | --- | --- | --- |
 | D1 | Coverage collapse on large declined graphs: `fan-in` and `multi-exit` emit 88 lines at 256 and 1024 blocks, `irreducible` emits 663 lines at every size, with zero helper definitions and zero helper references, so every omitted path was rewritten to `return null;` | Measured, from the committed warmup documents; the mechanism is R2 | 12.3, `inlining.rs:189-206`, `helper_flow/summary.rs:48-55` |
-| D2 | R1, `br` and `brk` get an invented fallthrough edge | Inspection | Section 7 |
+| D2 | Closed at `6756e71`: R1, `br` and `brk` got an invented fallthrough edge | Closed, asserted by test in three crates | Sections 7 and 18 |
 | D3 | R3, `omitted_blocks` is not part of the structured rollback | Inspection | Section 7 |
 
 D1 is new to this document and outranks the performance work in importance: the
@@ -845,7 +864,8 @@ Stop the performance track when either holds:
 
 Correctness work under D1, D2 and D3 does not stop with the performance track. It
 lands on its own merits with its own failing test first, per the companion
-protocol.
+protocol. Outcome recorded against that rule, not a change to it: D2 was the first
+to land, at `6756e71`, and is closed in section 18. D1 and D3 are open.
 
 ## 16. Confounds
 
@@ -1121,3 +1141,156 @@ what a members regression produces, so the probes in 17.4 remain manual. A gate
 asserting zero `bench-spans` activations in `cargo tree --workspace -e features`
 would close it in one line; it is not written, because it is a checker change and
 this record is docs-only.
+
+## 18. Indirect control terminators, implemented at `6756e71`
+
+`6756e71` ("fix(ir): model indirect control terminators") is a code-only commit,
+7 paths and 0 docs, so this section is the docs-only synchronization that follows
+it. It closes R1 in section 7 and D2 in section 14. Line numbers in this section
+are as of `1a00f64`, the branch tip when it was written, not `1371e42`.
+
+### 18.1 Implemented semantics
+
+`IROp` gains two variants: `IndirectBranch` for `br Xn`
+(`crates/flutterdec-ir/src/lib.rs:14-20`) and `Trap` for `brk #imm`
+(`ir/src/lib.rs:21-24`), classified at `ir/src/lib.rs:181-191`.
+
+- Both end their block. The instruction that follows becomes a leader, in the
+  same arm as `Return` (`ir/src/lib.rs:237-246`), so code after either one is a
+  block of its own instead of being glued on and replacing the terminator's
+  control effect.
+- Both take **zero successors**: no fallthrough and no guessed target
+  (`ir/src/lib.rs:307-310`).
+- `br` keeps its register operand as provenance for the emitters. It is never
+  parsed as an address; `parse_target_hex` rejects a register name and no edge is
+  derived from it (`ir/src/lib.rs:181-188`).
+- Neither is modelled as `Jump` or as `Return`. `Jump` would name a destination
+  the instruction stream does not state, and a trap resumes nothing, so it is not
+  a return either.
+- Nothing else in the table moved. Conditional branches keep target plus
+  fallthrough, `bl` and `blr` keep the fallthrough a call returns to, and the
+  stack-overflow guard group is handled exactly as before.
+
+Exactly four `match` sites on an `IROp` value exist repository-wide, all
+exhaustive with no wildcard arm, and all four carry the two new variants:
+`ir/src/lib.rs:228` (leaders), `ir/src/lib.rs:289` (successors),
+`control_flow/emit.rs:1313` and `control_flow/structured.rs:893`. Every other
+consumer is a `matches!` class filter and needed no change. The splitter comment
+that described the old behavior, that a new block opens after `Branch`, `Jump` and
+`Return` only, was corrected in the same commit (`split.rs:120-130`); its
+`is_terminator` already listed `br` and `brk` (`split.rs:174-183`), and the two
+now agree.
+
+### 18.2 What both emitters render, in the same words
+
+The two notes are defined once, in the shared emitter helpers:
+`indirect_branch_note` and `TRAP_NOTE` at `control_flow/graph.rs:1-16`. The
+structured emitter renders them at `structured.rs:918-932` and the DFS fallback at
+`emit.rs:1425-1440`.
+
+| Effect | Emitted line | Emitted by |
+| --- | --- | --- |
+| `br Xn` with an operand | `// indirect branch through reg16: target not recovered` | both |
+| `br` with no readable operand | `// indirect branch: target not recovered` | both |
+| `brk #imm` | `// trap: control does not continue` | both |
+
+The register spelling in the note comes from the IR operand, so the emitter
+writes `x16` and the later renaming pass rewrites it to `reg16` in the artifact.
+That is the form the tests assert.
+
+Both emitters use the identical wording on purpose: the structured path declining
+to a DFS fallback must not change what the artifact says the program does. Neither
+emitter emits a `return`, a `goto` or a `tailCall_` for either effect, because
+every one of those names a destination that was never recovered.
+
+### 18.3 Decision: unresolved control flow, and a default that stays strict
+
+An `IndirectBranch` increments `unresolved_cf` in both emitters
+(`structured.rs:923`, `emit.rs:1431`). A `Trap` does not: control genuinely ends
+there, so nothing about it is unresolved. The count is per emitted occurrence, not
+per instruction, so on a declined graph the DFS fallback, which duplicates a block
+once per path that reaches it, can count one `br` several times. The test at
+`arm64_control_effects.rs:177` pins the count to the number of emitted notes for
+that reason.
+
+The counter feeds the quality gate at `quality.rs:110` against
+`--max-unresolved-cf`, whose default is `0`
+(`crates/flutterdec-cli/src/main.rs:209-216`). Confirmed on the CLI itself:
+`decompile --help` prints `[default: 0]` for that flag.
+
+The decision, recorded so a later commit does not quietly reverse it: **the strict
+default stays.** A function reached through a `br` is a function whose control flow
+this pipeline did not recover, and the counter exists to say exactly that. The
+consequence is deliberate and product-visible: a real binary containing a
+reachable indirect branch now fails the default gate where it previously passed,
+because it previously passed over an invented fallthrough edge. The pass was the
+defect, not the failure.
+
+Three ways of hiding it were rejected: not counting the effect, lowering the
+counter's meaning, and letting either emitter name a destination. The supported
+path for a caller who wants the artifact anyway is the flag that already exists,
+`--max-unresolved-cf N`, whose value and the resulting count both land in the
+quality report. No new flag, no new default, and no silent tolerance.
+
+No real binary or baseline is committed (section 8), so this gate change has no
+real-input evidence here. It is asserted in both directions on a synthetic record
+instead: at `quality.rs:307-351` the same artifact fails with `max_unresolved_cf`
+0, naming `unresolved control-flow count exceeded threshold`, and passes with 1,
+with `unresolved_cf` equal to 1, `total_calls` 1 and `indirect_calls` 0, since a
+`br` is not a call.
+
+### 18.4 What asserts it
+
+- A 12-row ARM64 control-effect table in the IR crate
+  (`ir/src/lib.rs:436-540`), one row per classified mnemonic with its expected
+  `IROp`, whether it ends a block, and the ascending start addresses of the whole
+  successor set. Empty means no edge at all, which is what makes an invented
+  fallthrough or a guessed target visible.
+- The table is driven twice, so a lost block break and a fabricated edge fail
+  separately: `every_arm64_control_effect_has_exactly_the_documented_edges`
+  (`ir/src/lib.rs:563`) checks the successor set plus sorting, deduplication and
+  predecessor reciprocity; and
+  `only_a_control_effect_that_ends_a_block_makes_the_next_instruction_a_leader`
+  (`ir/src/lib.rs:637`) checks the leader. A new control effect cannot be added
+  without a row.
+- Two focused IR tests: `an_indirect_branch_keeps_its_register_and_takes_no_edge`
+  (`ir/src/lib.rs:679`) and `a_trap_ends_the_block_with_no_successors`
+  (`ir/src/lib.rs:714`).
+- Emitter coverage in a new integration file,
+  `crates/flutterdec-decompiler/tests/arm64_control_effects.rs`: the structured
+  path (`:156`), the forced DFS fallback on an irreducible graph (`:177`), and
+  cross-emitter agreement (`:203`). Each one runs
+  `assert_no_fabricated_control`, which rejects a `tailCall_`, a `goto` and any
+  return the graph does not license.
+- Pipeline coverage in the core crate:
+  `serialized_ir_states_every_control_effect_and_its_edges` (`quality.rs:243`) for
+  the serialized IR artifact, and the gate test in 18.3 (`quality.rs:307`) for
+  disassembly through IR through pseudocode through the quality report.
+
+Suite at `1a00f64`: `nix develop -c cargo test --workspace` is 466 passed, 0
+failed, exit 0, over 17 result lines (11 test binaries and 6 doc-test targets),
+against 432 at `1371e42` in section 6.
+
+### 18.5 Status of the CFG invariant commits
+
+Three later code-only commits on the same branch, recorded here because sections 3
+and 6 predate them: `bd1ecbf` added `crates/flutterdec-ir/src/validate.rs` and
+gated the consumer boundaries on it, `51c129a` made edge rebuilding go through one
+canonical path, and `1a00f64` pinned that only guard-stranded blocks are pruned.
+All three are accepted and pushed; nothing about them is open in this document.
+
+What they change about section 3: the invariants listed there are still the
+invariants, but they are no longer only established by the builder and then
+trusted by every consumer. `validate_block_identity` (`validate.rs:112`) is the
+identity tier and gates the public emitter (`decompiler/src/lib.rs:604`),
+`Regions::build` (`regions.rs:39`) and the record splitter (`split.rs:116`).
+`validate_canonical_cfg` (`validate.rs:176`) is that tier plus the edge clauses
+and holds the internal producers, including the noreturn prune
+(`stubs.rs:574`) and the builder's own output (`ir/src/lib.rs:403-411`).
+`rebuild_edges` (`validate.rs:218`) is the only path that rebuilds edges
+(`ir/src/lib.rs:392-395`).
+
+What they change about the section 6 gap: block identity and edge reciprocity are
+now asserted directly rather than only through emitted text. The dominator,
+post-dominator, follow-node, loop and reducibility relations named in that bullet
+are still observed through emitted text only, so that part of the gap is open.
