@@ -93,7 +93,7 @@ impl Regions {
             return None;
         }
 
-        let pdom = post_dominators(&succs, &reachable);
+        let pdom = post_dominators(&succs, &preds, &reachable);
         let ipdom = immediate_post_dominators(&pdom);
         let loops = natural_loops(&succs, &preds, &dom, &ipdom, &reachable);
         debug_assert!(
@@ -272,15 +272,44 @@ fn is_irreducible(succs: &[Vec<usize>], dom: &[HashSet<usize>], reachable: &[boo
 
 /// Full post-dominator sets: `pdom[u]` holds every block on every path from `u`
 /// to an exit, `u` itself included.
-fn post_dominators(succs: &[Vec<usize>], reachable: &[bool]) -> Vec<HashSet<usize>> {
+///
+/// A block with no path to any exit gets the empty set. "Every path to an exit
+/// passes through" is not a statement about such a block: it has no such path, so
+/// the intersection below has nothing to shrink the universe with and every block
+/// of an endless cycle comes out post-dominating every other one, its own
+/// dominators included. The relation `immediate_post_dominators` reads off that is
+/// not a tree either - two blocks of the cycle each come out as the other's
+/// nearest post-dominator - and it reaches `structured.rs` as the follow node of a
+/// conditional, which is where a branch's arms are told to converge. The empty set
+/// is reported as no follow node instead, and the loop's own exit relation, which
+/// is derived from the leaving edges rather than from post-dominance, is what
+/// still answers where such a loop can be left.
+fn post_dominators(succs: &[Vec<usize>], preds: &[Vec<usize>], reachable: &[bool]) -> Vec<HashSet<usize>> {
     let n = succs.len();
-    let all: HashSet<usize> = (0..n).filter(|i| reachable[*i]).collect();
     let exits: Vec<usize> = (0..n)
         .filter(|i| reachable[*i] && succs[*i].is_empty())
         .collect();
+
+    // Backwards from the exits: `preds` is already restricted to reachable
+    // blocks, so this cannot pick up a block the entry never reaches.
+    let mut reaches_exit = vec![false; n];
+    let mut stack = exits.clone();
+    for &e in &exits {
+        reaches_exit[e] = true;
+    }
+    while let Some(u) = stack.pop() {
+        for &p in &preds[u] {
+            if !reaches_exit[p] {
+                reaches_exit[p] = true;
+                stack.push(p);
+            }
+        }
+    }
+
+    let all: HashSet<usize> = (0..n).filter(|i| reaches_exit[*i]).collect();
     let mut pdom: Vec<HashSet<usize>> = (0..n)
         .map(|i| {
-            if reachable[i] {
+            if reaches_exit[i] {
                 all.clone()
             } else {
                 HashSet::new()
@@ -294,12 +323,14 @@ fn post_dominators(succs: &[Vec<usize>], reachable: &[bool]) -> Vec<HashSet<usiz
     while changed {
         changed = false;
         for u in (0..n).rev() {
-            if !reachable[u] || succs[u].is_empty() {
+            if !reaches_exit[u] || succs[u].is_empty() {
                 continue;
             }
             let mut new: Option<HashSet<usize>> = None;
             for &s in &succs[u] {
-                if !reachable[s] {
+                // A successor with no path to an exit contributes no path to an
+                // exit, so it constrains nothing here.
+                if !reaches_exit[s] {
                     continue;
                 }
                 new = Some(match new {
@@ -328,6 +359,9 @@ fn post_dominators(succs: &[Vec<usize>], reachable: &[bool]) -> Vec<HashSet<usiz
 fn immediate_post_dominators(pdom: &[HashSet<usize>]) -> Vec<Option<usize>> {
     (0..pdom.len())
         .map(|u| {
+            // Empty for a block with no path to an exit, which yields no follow
+            // node at all.
+            //
             // The strict post-dominators of one block form a chain, so their set
             // sizes are distinct and the block index never decides. It is in the
             // key regardless: `pdom[u]` is a `HashSet` whose iteration order is

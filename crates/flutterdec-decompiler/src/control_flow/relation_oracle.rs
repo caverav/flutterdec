@@ -271,6 +271,60 @@ mod relation_oracle {
         reducible: true,
     };
 
+    /// A cycle with no return anywhere, the shape post-dominance has no exit to
+    /// anchor on.
+    const NO_EXIT: Graph = Graph {
+        name: "no-exit",
+        succs: &[&[1], &[2], &[1]],
+    };
+    const NO_EXIT_EXPECTED: Expected = Expected {
+        reachable: &[0, 1, 2],
+        dom: &[&[0], &[0, 1], &[0, 1, 2]],
+        // No exit is reachable from any block, so "every path to an exit passes
+        // through" holds of nothing and the relation is empty rather than
+        // universal. Where a `break` could land is still answered, by the loop's
+        // own leaving edges: there are none, so there is nowhere to break to.
+        pdom: &[&[], &[], &[]],
+        ipdom: &[None, None, None],
+        loops: &[ExpectedLoop {
+            header: 1,
+            body: &[1, 2],
+            latches: &[2],
+            exits: &[],
+            follow: None,
+        }],
+        reducible: true,
+    };
+
+    /// One arm returns and the other enters a loop that never can, so the two
+    /// halves of the same graph have to be answered differently: block 1 really
+    /// does post-dominate the entry, and nothing post-dominates a block inside the
+    /// endless loop.
+    ///
+    /// Both of the loop's arms are latches, which is what makes the empty-set
+    /// answer matter: with the whole reachable set standing in for the
+    /// post-dominators of a trapped block, the two arms tie on set size and the
+    /// tie-break hands the conditional at block 2 one of its own arms as the
+    /// follow node the other arm is supposed to converge on.
+    const TRAPPED_LOOP: Graph = Graph {
+        name: "trapped-loop",
+        succs: &[&[1, 2], &[], &[3, 4], &[2], &[2]],
+    };
+    const TRAPPED_LOOP_EXPECTED: Expected = Expected {
+        reachable: &[0, 1, 2, 3, 4],
+        dom: &[&[0], &[0, 1], &[0, 2], &[0, 2, 3], &[0, 2, 4]],
+        pdom: &[&[0, 1], &[1], &[], &[], &[]],
+        ipdom: &[Some(1), None, None, None, None],
+        loops: &[ExpectedLoop {
+            header: 2,
+            body: &[2, 3, 4],
+            latches: &[3, 4],
+            exits: &[],
+            follow: None,
+        }],
+        reducible: true,
+    };
+
     /// Two entries into the 1 <-> 2 cycle, so neither cycle block dominates the
     /// other and structuring must decline.
     const IRREDUCIBLE: Graph = Graph {
@@ -297,7 +351,9 @@ mod relation_oracle {
         (&UNREACHABLE, &UNREACHABLE_EXPECTED),
         (&NESTED_LOOP, &NESTED_LOOP_EXPECTED),
         (&MULTI_EXIT, &MULTI_EXIT_EXPECTED),
+        (&NO_EXIT, &NO_EXIT_EXPECTED),
         (&IRREDUCIBLE, &IRREDUCIBLE_EXPECTED),
+        (&TRAPPED_LOOP, &TRAPPED_LOOP_EXPECTED),
     ];
 
     fn ascending(ids: &HashSet<usize>) -> Vec<usize> {
@@ -322,7 +378,7 @@ mod relation_oracle {
 
         let (succs, preds, reachable) = reachable_edges(&ir);
         let dom = dominators(&succs, &preds, &reachable);
-        let pdom = post_dominators(&succs, &reachable);
+        let pdom = post_dominators(&succs, &preds, &reachable);
         let ipdom = immediate_post_dominators(&pdom);
         let loops = natural_loops(&succs, &preds, &dom, &ipdom, &reachable);
 
@@ -411,7 +467,9 @@ mod relation_oracle {
                 "unreachable",
                 "nested-loop",
                 "multi-exit",
+                "no-exit",
                 "irreducible",
+                "trapped-loop",
             ],
             "a case may not be dropped from the table without the list saying so"
         );
@@ -450,6 +508,16 @@ mod relation_oracle {
     #[test]
     fn multi_exit_relations_match_the_expected_graph() {
         assert_case(&MULTI_EXIT, &MULTI_EXIT_EXPECTED);
+    }
+
+    #[test]
+    fn no_exit_relations_match_the_expected_graph() {
+        assert_case(&NO_EXIT, &NO_EXIT_EXPECTED);
+    }
+
+    #[test]
+    fn trapped_loop_relations_match_the_expected_graph() {
+        assert_case(&TRAPPED_LOOP, &TRAPPED_LOOP_EXPECTED);
     }
 
     #[test]
