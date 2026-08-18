@@ -4080,3 +4080,100 @@ It survived because **no validator reads an omission row**: the reconciler filte
 `record == "annotation"` and the provenance checker never mentions them. The cap fixture asserts on the
 label, not the key, so it stayed green through the whole defect. Fixed at both rows, and a fixture now
 pins the label-and-tag pairing at both - it fails when the tag is reverted to the label.
+
+## R36. Switchable calls emit two values that are not arguments
+
+An external observation, from a colleague reading the Dart runtime independently, pointed at a call
+shape this record already documented at R7's ABI notes but had never checked the emitter against.
+Confirming it cost three retractions of my own mispricing, recorded below because each was a different
+way of over-reading a measurement.
+
+### The shape, and the filter order that actually discriminates
+
+```text
+mov  x1, #N              ; argument count
+ldr  x5,  [x27, #a]      ; IC_DATA_REG   <- object pool
+ldr  x30, [x27, #b]      ; Code          <- object pool
+ldur x30, [x30, #7]      ; Code::entry_point
+blr  x30
+```
+
+Filter order matters and my first answer had it backwards. Measured over both corpora:
+
+| filter | LocalSend | Immich |
+|---|---:|---:|
+| functions | 22,102 | 28,753 |
+| `ldr x5, [x27, #off]` | 307 | 279 |
+| + `Code` from pool, `entry_point`, `blr` | **82** | **48** |
+| `ldur x30, [x30, #7]` **alone** | 6,478 in 4,789 files | - |
+
+**The load of `x5` from the pool is the discriminator; `Code::entry_point` is not.** The entry-point load
+is the generic shape of any indirect call through a pool `Code` object and fires 79 times more often than
+the sites of interest. Inside the `x5` population it separates cleanly, which is what made it look
+decisive when measured only there.
+
+The sequence is **strictly contiguous** at all 82 and all 48 sites: a 5-line co-occurrence window, an
+in-order branch-free test, and exact adjacency all return the same count. The narrow test could have
+disagreed with the loose one and did not, which is the only reason the number is quoted here.
+
+### What the emitter does with it
+
+```dart
+final t1 = poolOff[8792].f8(2, (reg15 - 0x10), slot2, poolOff[8784]);
+```
+
+Two of those four arguments are not Dart arguments. `2` is the argument count from `mov x1, #2`, and
+`poolOff[8784]` is the object in `IC_DATA_REG`.
+
+| | LocalSend |
+|---|---:|
+| sites rendering the IC-data object as an argument | 81 / 82 |
+| sites also rendering the argument count as an argument | 76 / 82 |
+
+`x1` being a count rather than `arg0` was an open contradiction in this repo: the ABI notes said
+`; argument count` while the emitter seeds `x1 -> arg0`. Settled by measurement. Across the 82 sites `x1`
+takes 0, 1, 2, 3, 4, 5 and 6 - **odd values included**, so these are not Dart Smis, which carry a tag bit
+and would all be even. Raw integers spanning exactly the six argument registers. The ABI note was right.
+
+### Why the fix waits
+
+`R5` is dual-purpose in the SDK, both true at once
+(`runtime/vm/constants_arm64.h:654,151`):
+
+```cpp
+static constexpr Register kCpuRegistersForArgs[] = {R1, R2, R3, R5, R6, R7};
+const Register IC_DATA_REG = R5;   // ICData/MegamorphicCache register
+```
+
+So register identity cannot classify `x5`, and the six-slot signature envelope is **not** fabricated -
+this defect is local to sites carrying the full shape. Any recogniser must demand the whole conjunction:
+of the 307 and 279 `x5`-from-pool sites, **182 and 208 are not calls at all** but pool constants stored
+into fields (`ldr x5, [x27, #0x350]; stur w5, [x2, #0x17]`). Gating on the load alone would corrupt more
+sites than it repairs.
+
+The honest structural fix - stop emitting the count and the IC-data object as arguments - leaves the site
+reading as an unresolved instance call. More truthful, no more useful. The useful half needs the pool:
+`target_name` lives on the shared base `CallSiteData` (`object.h:2368`), inherited by `UnlinkedCall`,
+`ICData` and `MegamorphicCache`, so the selector is readable at one offset without classifying the
+object. `SingleTargetCache` is not a `CallSiteData` and the monomorphic form holds a bare cid, so those
+two states carry no name. In a snapshot at rest the entry is normally `UnlinkedCall`.
+
+That is unreachable from the backend every measurement in this record used.
+`AdapterBackend::Internal` is documented as "String carving plus prologue scanning. No real names, no
+real ObjectPool", so this is deferred to a snapshot-deserialising backend rather than implemented now.
+
+### Three retractions
+
+- **"142 sites render a shared stub as a Dart function."** Wrong. `sub_60ae88` is an ordinary Dart
+  function with optional named parameters: it reads ArgumentsDescriptor fields off `x4`
+  (`ldur w1,[x4,#0x13]`, `#0x1f`, `#0x23`), calls the stack-limit stub at `0xd51c4c` - invoked 18,988
+  times across the corpus, as a stack check would be - and sits between `sub_60a934` and `sub_60afbc` in
+  app code, while real stubs are at `0xd5xxxx`. A recurring `bl` target is a popular function.
+- **An 18-site "call-miss family"** of `x5` + `x4` + `bl <fixed>`. Also wrong, and refutable without
+  disassembly: a switchable call is indirect precisely so the site can be patched. Those are static calls
+  to functions with named parameters, where `x4` is `ARGS_DESC_REG` and `x5` is a genuine argument.
+- **"The discriminator is the entry-point load."** Measured above: 6,478 occurrences in 4,789 files.
+
+Each retraction has the same shape as the errors in R33 and R35: a number consistent with the hypothesis,
+produced by an instrument that could not have contradicted it. Three in one section, caught by checking
+rather than by reasoning.
