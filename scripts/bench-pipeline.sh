@@ -21,7 +21,9 @@ Usage:
   --out DIR           Output directory, created if absent. Held under an
                       exclusive lock for the whole run, and refused outright if
                       it already holds raw samples unless --clear is given.
-  --pairs N           Interleaved measured pairs (default 15)
+  --pairs N           Interleaved measured pairs (default 15). Execution order
+                      alternates inside the pair: reference first on even pair
+                      indexes, candidate first on odd ones.
   --warmups N         Preliminary unmeasured warmup passes per binary, run once
                       before any measured pair (default 3). Every measured pair
                       itself runs at zero warmups.
@@ -177,8 +179,9 @@ fi
 # Warmups are preliminary and per binary, not per pair. Re-warming before every
 # one of the 30 measured passes spent four times the wall clock on warmups alone,
 # which is what made a run long enough to overlap the next one. The measured
-# pairs stay interleaved, so any drift that does survive hits both sides in the
-# same order.
+# pairs stay interleaved and their internal order alternates, so drift that does
+# survive is charged to each side about equally rather than always to the same
+# position.
 #
 # The correctness pass runs here and only here. It is a property of the binary,
 # not of a pass: it emits every case twice to prove determinism, costs about
@@ -202,8 +205,14 @@ warmup() {
     --out "$out_dir/warmup-${side}.json"
 }
 
+# `position` is `first` or `second` within the pair. It is appended to the order
+# log here rather than by the loop, so the log records the order that actually
+# executed, and it is carried in the run label so every raw document says where
+# in its pair it was measured.
+order_log="$raw_dir/pair-order.tsv"
 measure() {
-  local side="$1" binary="$2" product="$3" binary_digest="$4" pair="$5"
+  local side="$1" binary="$2" product="$3" binary_digest="$4" pair="$5" position="$6"
+  printf '%s\t%s\t%s\n' "$pair" "$position" "$side" >> "$order_log"
   "$binary" run \
     "${matrix_args[@]}" \
     --warmups 0 \
@@ -213,7 +222,7 @@ measure() {
     --harness-ref "$harness_head" \
     --patch-sha256 "$patch_digest" \
     --binary-sha256 "$binary_digest" \
-    --label "${label}${label:+ }${side} pair ${pair}" \
+    --label "${label}${label:+ }${side} pair ${pair} ${position}" \
     --out "$out_dir/raw/${side}-${pair}.json" \
     --samples "$out_dir/raw/${side}-${pair}.tsv"
 }
@@ -221,12 +230,44 @@ measure() {
 warmup reference "$reference_bin" "$reference_head" "$reference_binary_digest"
 warmup candidate "$candidate_bin" "$candidate_head" "$candidate_binary_digest"
 
-echo "[bench] $pairs interleaved pairs at zero per-pair warmups"
+# Execution order alternates inside every pair. Running the same side second
+# every time is not a neutral schedule: an A/A run of two identical binaries at
+# 1371e42 put 20 of the 24 cells whose absolute paired delta reached 2 percent in
+# favour of whichever side went second, which is a position effect and not a
+# product difference. Alternating charges that effect to reference on odd pairs
+# and to candidate on even ones, so it cancels in the median paired delta instead
+# of masquerading as one.
+echo "[bench] $pairs interleaved pairs at zero per-pair warmups, alternating order"
 for (( pair = 0; pair < pairs; pair++ )); do
-  measure reference "$reference_bin" "$reference_head" "$reference_binary_digest" "$pair"
-  measure candidate "$candidate_bin" "$candidate_head" "$candidate_binary_digest" "$pair"
+  if (( pair % 2 == 0 )); then
+    measure reference "$reference_bin" "$reference_head" "$reference_binary_digest" "$pair" first
+    measure candidate "$candidate_bin" "$candidate_head" "$candidate_binary_digest" "$pair" second
+  else
+    measure candidate "$candidate_bin" "$candidate_head" "$candidate_binary_digest" "$pair" first
+    measure reference "$reference_bin" "$reference_head" "$reference_binary_digest" "$pair" second
+  fi
   echo "[bench] pair $((pair + 1))/$pairs done"
 done
+
+# The schedule restated independently and checked against what ran. Duplicating
+# the rule is the point: if the loop above ever stops alternating, every delta
+# silently carries the position effect again, so the run fails here rather than
+# publishing numbers that look like a product difference.
+expected_order=""
+for (( pair = 0; pair < pairs; pair++ )); do
+  if (( pair % 2 == 0 )); then
+    expected_order+="${pair}"$'\t'"first"$'\t'"reference"$'\n'
+    expected_order+="${pair}"$'\t'"second"$'\t'"candidate"$'\n'
+  else
+    expected_order+="${pair}"$'\t'"first"$'\t'"candidate"$'\n'
+    expected_order+="${pair}"$'\t'"second"$'\t'"reference"$'\n'
+  fi
+done
+if ! diff -u <(printf '%s' "$expected_order") "$order_log"; then
+  echo "[bench] measured pair order is not the alternating schedule; comparison is void" >&2
+  exit 1
+fi
+echo "[bench] pair order verified alternating across $pairs pairs"
 
 # Each measured run wrote run index 0, so the pair number becomes the run index
 # the aggregator pairs on.
@@ -257,6 +298,9 @@ matrix                     $matrix
 pairs                      $pairs
 preliminary_warmups        $warmups
 warmups_per_measured_pair  0
+pair_order                 alternating: reference first on even pairs, candidate first on odd
+pair_order_log             raw/pair-order.tsv
+pair_order_verified        yes
 correctness_documents      warmup-reference.json warmup-candidate.json
 EOF
 
