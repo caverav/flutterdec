@@ -62,10 +62,16 @@ impl<'a> FuncEmitter<'a> {
                 n += 1;
             }
 
+            // Code only, and only a whole token: the slot is counted in code and
+            // must be substituted in code, or a recovered string reading
+            // `sp[0x10]` would be edited to name a local the binary never had.
             let mut replaced = false;
             for line in &mut self.lines {
-                if line.contains(&needle) {
-                    *line = line.replace(&needle, &alias);
+                let rewritten = rewrite_code_spans(line, |code| {
+                    Self::replace_identifier_token(code, &needle, &alias)
+                });
+                if rewritten != *line {
+                    *line = rewritten;
                     replaced = true;
                 }
             }
@@ -118,6 +124,12 @@ impl<'a> FuncEmitter<'a> {
                 n += 1;
             }
 
+            // The needle is the literal and its slot comment together, which is
+            // exactly the span this pass exists to move into a declaration, so it
+            // is matched whole rather than inside code spans - splitting at the
+            // quote would leave nothing to match. It cannot land inside another
+            // string either: a literal containing this text would have to escape
+            // its quotes, and `\"` does not match `"`.
             let mut replaced = false;
             for line in &mut self.lines {
                 if line.contains(&literal) {
@@ -323,8 +335,11 @@ impl<'a> FuncEmitter<'a> {
 
             let mut replaced = false;
             for line in &mut self.lines {
-                if line.contains(&pattern) {
-                    *line = line.replace(&pattern, &alias);
+                let rewritten = rewrite_code_spans(line, |code| {
+                    Self::replace_identifier_token(code, &pattern, &alias)
+                });
+                if rewritten != *line {
+                    *line = rewritten;
                     replaced = true;
                 }
             }
@@ -524,5 +539,144 @@ impl<'a> FuncEmitter<'a> {
 
         self.alias_repeated_stack_slots();
         self.alias_repeated_pool_literals();
+    }
+}
+
+/// The boundaries the alias and rename passes may not cross.
+///
+/// These drive the passes directly, on a body written out by hand: the shapes they
+/// need - a recovered string that reads like a stack slot, a comment quoting an
+/// expression, a name that only starts with an identifier the pass renames - come
+/// out of real bodies and cannot be planted through an instruction stream.
+#[cfg(test)]
+mod alias_boundary_tests {
+    use super::*;
+
+    fn emitter_for(lines: &[&str]) -> (FunctionIr, HashMap<u64, String>, Vec<String>) {
+        (
+            FunctionIr {
+                function_id: 7100,
+                name: "aliasBoundaries".to_string(),
+                entry_va: 0x1000,
+                blocks: Vec::new(),
+            },
+            HashMap::new(),
+            lines.iter().map(|line| (*line).to_string()).collect(),
+        )
+    }
+
+    /// A rename is a whole-token substitution in code. The recovered string keeps
+    /// its text, the prefixed name keeps its own identity, and the comment the
+    /// emitter wrote about the line follows the rename so it keeps naming
+    /// something the body has.
+    #[test]
+    fn a_rename_edits_code_and_comments_but_never_a_string_literal() {
+        let cases = [
+            (
+                r#"  t = f("arg0 is unset", arg0);"#,
+                r#"  t = f("arg0 is unset", slot0);"#,
+            ),
+            ("  t = arg0Helper(arg0);", "  t = arg0Helper(slot0);"),
+            ("  t = arg01 + arg0;", "  t = arg01 + slot0;"),
+            ("  t = x.arg0;", "  t = x.slot0;"),
+            // The emitter's own comments quote the expressions it rendered, so a
+            // rename that skipped them would leave a comment naming an
+            // identifier the body no longer has.
+            (
+                "  t = f(arg0); // target: (arg0.f8)",
+                "  t = f(slot0); // target: (slot0.f8)",
+            ),
+        ];
+        for (input, expected) in cases {
+            assert_eq!(
+                FuncEmitter::replace_identifier_token(input, "arg0", "slot0"),
+                expected,
+                "wrong rename for: {input}"
+            );
+        }
+    }
+
+    /// The stack-slot alias substitutes a whole slot expression in code. A
+    /// recovered string that happens to read like one is program data, and a
+    /// longer slot is a different slot.
+    #[test]
+    fn the_stack_slot_alias_stays_in_code_and_on_whole_slots() {
+        let (ir, symbols, lines) = emitter_for(&[
+            "dynamic aliasBoundaries() {",
+            r#"  final note = "read sp[0x10] first";"#,
+            "  a = sp[0x10];",
+            "  b = sp[0x10] + sp[0x100];",
+            "  c = sp[0x10]; // was sp[0x10]",
+            "  return c;",
+            "}",
+        ]);
+        let mut emitter = FuncEmitter::new(&ir, &symbols);
+        emitter.lines = lines;
+
+        emitter.alias_repeated_stack_slots();
+        let out = emitter.lines.join("\n");
+
+        assert!(
+            out.contains("final stackSlot0x10 = sp[0x10];"),
+            "the repeated slot should be aliased:\n{out}"
+        );
+        assert!(
+            out.contains(r#"final note = "read sp[0x10] first";"#),
+            "the recovered string keeps its text:\n{out}"
+        );
+        assert!(
+            out.contains("sp[0x100]"),
+            "a longer slot is a different slot:\n{out}"
+        );
+        assert!(
+            out.contains("c = stackSlot0x10; // was sp[0x10]"),
+            "code is aliased and the comment is left as written:\n{out}"
+        );
+        assert_eq!(
+            out.matches("= sp[0x10];").count(),
+            1,
+            "only the declaration still reads the slot:\n{out}"
+        );
+    }
+
+    /// Same boundaries for the minus-one alias, whose pattern is an expression
+    /// rather than a slot.
+    #[test]
+    fn the_minus_one_alias_stays_in_code() {
+        let (ir, symbols, lines) = emitter_for(&[
+            "dynamic aliasBoundaries() {",
+            r#"  final note = "index is (value3 - 1)";"#,
+            "  if ((value3 - 1) > 0x20) {",
+            "    return (value3 - 1);",
+            "  }",
+            "  if ((value3 - 1) == 0x20) {",
+            "    return (value3 - 1); // (value3 - 1) again",
+            "  }",
+            "  return (value3 - 1);",
+            "}",
+        ]);
+        let mut emitter = FuncEmitter::new(&ir, &symbols);
+        emitter.lines = lines;
+
+        emitter.extract_minus_one_aliases();
+        let out = emitter.lines.join("\n");
+
+        assert!(
+            out.contains("final int codePoint = (value3 - 1);"),
+            "the repeated expression should be aliased:\n{out}"
+        );
+        assert!(
+            out.contains(r#"final note = "index is (value3 - 1)";"#),
+            "the recovered string keeps its text:\n{out}"
+        );
+        assert!(
+            out.contains("return codePoint; // (value3 - 1) again"),
+            "code is aliased and the comment is left as written:\n{out}"
+        );
+        assert_eq!(
+            out.matches("(value3 - 1)").count(),
+            3,
+            "only the declaration, the string and the comment still spell it:\n{out}"
+        );
     }
 }

@@ -1,3 +1,82 @@
+/// Length of the string literal or comment starting at `i`, if one starts there.
+///
+/// A recovered pool string is program data: it routinely contains the same
+/// punctuation, identifiers and operators the rewrites look for, and editing it
+/// silently changes what the binary said. A comment is the emitter's own
+/// statement about a line, and rewriting inside one edits a claim rather than
+/// code. An unterminated span runs to the end of the text, so a stray quote or
+/// `/*` protects the rest of the line instead of exposing it.
+fn non_code_span_len(bytes: &[u8], i: usize, comments_too: bool) -> Option<usize> {
+    match bytes.get(i)? {
+        b'"' => {
+            let mut j = i + 1;
+            while j < bytes.len() {
+                match bytes[j] {
+                    b'\\' => j += 2,
+                    b'"' => return Some((j + 1).min(bytes.len()) - i),
+                    _ => j += 1,
+                }
+            }
+            Some(bytes.len() - i)
+        }
+        b'/' if comments_too && bytes.get(i + 1) == Some(&b'*') => {
+            let mut j = i + 2;
+            while j + 1 < bytes.len() {
+                if bytes[j] == b'*' && bytes[j + 1] == b'/' {
+                    return Some(j + 2 - i);
+                }
+                j += 1;
+            }
+            Some(bytes.len() - i)
+        }
+        // Lines are rewritten one at a time, so a line comment runs to the end.
+        b'/' if comments_too && bytes.get(i + 1) == Some(&b'/') => Some(bytes.len() - i),
+        _ => None,
+    }
+}
+
+fn rewrite_spans(text: &str, comments_too: bool, rewrite: impl Fn(&str) -> String) -> String {
+    let bytes = text.as_bytes();
+    let mut out = String::with_capacity(text.len());
+    let mut code_start = 0usize;
+    let mut i = 0usize;
+    while i < bytes.len() {
+        let Some(span) = non_code_span_len(bytes, i, comments_too) else {
+            i += 1;
+            continue;
+        };
+        out.push_str(&rewrite(&text[code_start..i]));
+        let end = (i + span).min(bytes.len());
+        out.push_str(&text[i..end]);
+        code_start = end;
+        i = end;
+    }
+    out.push_str(&rewrite(&text[code_start..]));
+    out
+}
+
+/// Apply `rewrite` to the code of `text`, copying every string literal and every
+/// comment byte for byte.
+///
+/// A rewrite runs per code span rather than once over the whole text, so a
+/// pattern that straddles a literal or a comment simply does not match. That is
+/// the conservative direction: the text is left as the emitter wrote it.
+pub(super) fn rewrite_code_spans(text: &str, rewrite: impl Fn(&str) -> String) -> String {
+    rewrite_spans(text, true, rewrite)
+}
+
+/// As `rewrite_code_spans`, but comments are ordinary text.
+///
+/// For the rewrites whose pattern deliberately includes a comment the emitter
+/// itself rendered, where splitting at the comment would stop them matching at
+/// all.
+pub(super) fn rewrite_outside_string_literals(
+    text: &str,
+    rewrite: impl Fn(&str) -> String,
+) -> String {
+    rewrite_spans(text, false, rewrite)
+}
+
 pub(super) fn parse_int(token: &str) -> Option<i64> {
     let t = token.trim().trim_start_matches('#');
     if let Some(hex) = t.strip_prefix("-0x") {
@@ -294,18 +373,21 @@ fn try_parse_pool_page_field(bytes: &[u8], start: usize) -> Option<(usize, u64)>
 
 pub(super) fn normalize_pool_page_field_exprs(input: &str) -> String {
     let bytes = input.as_bytes();
-    let mut out = String::with_capacity(input.len());
+    // Bytes, not chars: `bytes[i] as char` reinterprets each byte of a multi-byte
+    // character as its own code point, so a recovered string carrying one came out
+    // mojibake.
+    let mut out: Vec<u8> = Vec::with_capacity(input.len());
     let mut i = 0usize;
     while i < bytes.len() {
         if let Some((end, displacement)) = try_parse_pool_page_field(bytes, i) {
-            out.push_str(&format!("poolOff[{displacement}]"));
+            out.extend_from_slice(format!("poolOff[{displacement}]").as_bytes());
             i = end;
             continue;
         }
-        out.push(bytes[i] as char);
+        out.push(bytes[i]);
         i += 1;
     }
-    out
+    String::from_utf8(out).unwrap_or_else(|_| input.to_string())
 }
 
 pub(super) fn collect_pool_indices(expr: &str) -> Vec<u64> {
