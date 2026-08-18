@@ -105,7 +105,12 @@ const CI_LANES: [&str; 2] = ["scripts/ci-check.sh", ".github/workflows/ci.yml"];
 const INVENTORY_CHECKER: &str = "scripts/check-oracle-inventory.py";
 const DECOMPILER_MANIFEST: &str = "crates/flutterdec-decompiler/Cargo.toml";
 const CORE_MANIFEST: &str = "crates/flutterdec-core/Cargo.toml";
+const IR_MANIFEST: &str = "crates/flutterdec-ir/Cargo.toml";
 const DECOMPILER_LOADER: &str = "crates/flutterdec-decompiler/src/tests.rs";
+/// The control-flow loader. Unlike the four loaders under `src/tests/`, this one
+/// also pulls in five product modules, so its `include!` count is not a fixed
+/// number this guard can pin: adding a control-flow module is ordinary work.
+const CONTROL_FLOW_LOADER: &str = "crates/flutterdec-decompiler/src/control_flow.rs";
 
 /// The anchor sentence that opens the protocol's Oracle test files table. The
 /// guard parses that one table and no other: the other section 7 tables are
@@ -122,7 +127,16 @@ enum Hook {
         decl: &'static str,
     },
     /// An `include!` of this path, relative to `loader`'s own directory.
-    Include { loader: &'static str },
+    ///
+    /// `exclusive` says whether `loader` holds nothing but protected oracle
+    /// includes. When it does, the total `include!` count is pinned below, so the
+    /// loader cannot grow an oracle section 7 does not record. When it does not -
+    /// `control_flow.rs` loads five product modules beside its one oracle - that
+    /// count is ordinary work and pinning it would fire on legitimate change.
+    Include {
+        loader: &'static str,
+        exclusive: bool,
+    },
     /// Cargo's automatic integration-test discovery for `manifest`'s crate, which
     /// `autotests = false` would switch off for every file under `tests/`.
     Autotest { manifest: &'static str },
@@ -165,6 +179,76 @@ fn loader_map() -> Vec<(String, Hook)> {
             Hook::Module {
                 file: "crates/flutterdec-core/src/pipeline/symbol_map.rs",
                 decl: "#[cfg(test)]\n#[path = \"symbol_map/tests.rs\"]\nmod tests;",
+            },
+        ),
+        // The IR and CFG boundary oracles. Each was an inline module in the
+        // product file beside it until it was moved out: a digest can only
+        // protect a file later work is not expected to edit, and `lib.rs`,
+        // `validate.rs`, `quality.rs`, `split.rs`, `stubs.rs` and `regions.rs`
+        // are all edited by ordinary work.
+        (
+            "crates/flutterdec-ir/src/tests/control_effects.rs".to_string(),
+            Hook::Module {
+                file: "crates/flutterdec-ir/src/lib.rs",
+                decl: "#[cfg(test)]\n#[path = \"tests/control_effects.rs\"]\nmod control_effect_tests;",
+            },
+        ),
+        (
+            "crates/flutterdec-ir/src/validate/tests.rs".to_string(),
+            Hook::Module {
+                file: "crates/flutterdec-ir/src/validate.rs",
+                decl: "#[cfg(test)]\n#[path = \"validate/tests.rs\"]\nmod tests;",
+            },
+        ),
+        (
+            "crates/flutterdec-core/src/pipeline/quality/control_effect_tests.rs".to_string(),
+            Hook::Module {
+                file: "crates/flutterdec-core/src/pipeline/quality.rs",
+                decl: "#[cfg(test)]\n#[path = \"quality/control_effect_tests.rs\"]\nmod quality_control_effect_tests;",
+            },
+        ),
+        (
+            "crates/flutterdec-core/src/pipeline/runners/split/identity_tests.rs".to_string(),
+            Hook::Module {
+                file: "crates/flutterdec-core/src/pipeline/runners/split.rs",
+                decl: "#[cfg(test)]\n#[path = \"split/identity_tests.rs\"]\nmod split_identity_tests;",
+            },
+        ),
+        (
+            "crates/flutterdec-core/src/pipeline/runners/stubs/identity_tests.rs".to_string(),
+            Hook::Module {
+                file: "crates/flutterdec-core/src/pipeline/runners/stubs.rs",
+                decl: "#[cfg(test)]\n#[path = \"stubs/identity_tests.rs\"]\nmod stubs_identity_tests;",
+            },
+        ),
+        (
+            "crates/flutterdec-decompiler/src/control_flow/regions/identity_boundary_tests.rs"
+                .to_string(),
+            Hook::Module {
+                file: "crates/flutterdec-decompiler/src/control_flow/regions.rs",
+                decl: "#[cfg(test)]\n#[path = \"regions/identity_boundary_tests.rs\"]\nmod identity_boundary_tests;",
+            },
+        ),
+        // The CFG relation oracle is loaded the way the control-flow product
+        // modules are, by an `include!` in a loader that is not exclusively
+        // oracle includes.
+        (
+            "crates/flutterdec-decompiler/src/control_flow/relation_oracle.rs".to_string(),
+            Hook::Include {
+                loader: CONTROL_FLOW_LOADER,
+                exclusive: false,
+            },
+        ),
+        (
+            "crates/flutterdec-decompiler/tests/arm64_control_effects.rs".to_string(),
+            Hook::Autotest {
+                manifest: DECOMPILER_MANIFEST,
+            },
+        ),
+        (
+            "crates/flutterdec-decompiler/tests/cfg_identity.rs".to_string(),
+            Hook::Autotest {
+                manifest: DECOMPILER_MANIFEST,
             },
         ),
     ];
@@ -215,7 +299,13 @@ fn loader_map() -> Vec<(String, Hook)> {
             .strip_suffix(".rs")
             .expect("a loader is a Rust source file");
         for file in included {
-            map.push((format!("{dir}/{file}"), Hook::Include { loader }));
+            map.push((
+                format!("{dir}/{file}"),
+                Hook::Include {
+                    loader,
+                    exclusive: true,
+                },
+            ));
         }
     }
     map
@@ -258,11 +348,14 @@ fn oracle_test_file_rows(protocol: &str) -> Vec<String> {
 
 /// Every protected oracle file needs a live hook into a compiled test target, and
 /// every hook needs a protected file. The hooks are one `#[cfg(test)] mod tests;`
-/// line, nineteen `include!` lines across four loaders, two `#[path]` module
-/// declarations in `flutterdec-core`, and Cargo's automatic discovery of the two
-/// integration tests. Delete any one of them and the affected test binary still
-/// prints `test result: ok`, with fewer tests and a whole protected oracle
-/// silenced while its digest still matches.
+/// line, nineteen `include!` lines across four exclusive loaders under
+/// `src/tests/`, one more `include!` in `src/control_flow.rs`, which loads five
+/// product modules beside it, eight `#[cfg(test)] #[path = ...]` module
+/// declarations across `flutterdec-ir`, `flutterdec-core` and the decompiler's
+/// region analysis, and Cargo's automatic discovery of the four integration
+/// tests. Delete any one of them and the affected test binary still prints
+/// `test result: ok`, with fewer tests and a whole protected oracle silenced
+/// while its digest still matches.
 ///
 /// What this test does *not* do is decide whether a hook is live by looking at
 /// its text. It cannot: `/* /* */`, a leading `//`, `#[cfg(any())]`, a feature
@@ -341,7 +434,7 @@ fn the_protected_oracle_loader_chain_is_intact() {
                     ));
                 }
             }
-            Hook::Include { loader } => {
+            Hook::Include { loader, exclusive } => {
                 let (loader_dir, _) = loader
                     .rsplit_once('/')
                     .expect("a loader path has a directory");
@@ -357,7 +450,9 @@ fn the_protected_oracle_loader_chain_is_intact() {
                         "{loader} no longer holds `{line}`, the recorded hook for {path}"
                     ));
                 }
-                *expected_includes.entry(loader).or_default() += 1;
+                if *exclusive {
+                    *expected_includes.entry(loader).or_default() += 1;
+                }
             }
             Hook::Autotest { manifest } => {
                 let stem = path
@@ -450,7 +545,7 @@ fn the_protected_oracle_loader_chain_is_intact() {
     // loaders above: `test = false` drops the library's unit tests, `harness =
     // false` replaces the harness that reports them, and `autotests = false`
     // stops Cargo from discovering anything under `tests/`.
-    for manifest in [DECOMPILER_MANIFEST, CORE_MANIFEST] {
+    for manifest in [DECOMPILER_MANIFEST, CORE_MANIFEST, IR_MANIFEST] {
         let source = std::fs::read_to_string(root.join(manifest))
             .unwrap_or_else(|_| panic!("{manifest} is readable"));
         for line in source.lines() {

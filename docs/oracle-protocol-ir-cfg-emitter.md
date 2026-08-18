@@ -261,15 +261,17 @@ Recorded at `1371e42` with `sha256sum`. A change to any of these files is a
 ruler change and requires section 9, whether or not a test still passes.
 
 Every digest below is the current worktree value and is re-verified whenever this
-table is touched. Two rows have moved since `1371e42`, and both have moved three
+table is touched. Two rows have moved since `1371e42`, and both have moved four
 times. `scripts/ci-check.sh` is adjudicated in section 10, with its full chain
-from the original fixed reference, its second move in section 12, and its third
-in section 13. `crates/flutterdec-decompiler/tests/provenance_audit.rs` is
-adjudicated in section 11, its second move in section 12, and its third in
-section 13. One row is new rather than moved,
-`scripts/check-oracle-inventory.py`, added by section 13. Every other row is
-byte-identical to `1371e42`. A row that does not match the current worktree is a
-failure of this table, not of the file.
+from the original fixed reference, its second move in section 12, its third in
+section 13, and its fourth in section 15.
+`crates/flutterdec-decompiler/tests/provenance_audit.rs` is adjudicated in
+section 11, its second move in section 12, its third in section 13, and its
+fourth in section 15. One row was new rather than moved,
+`scripts/check-oracle-inventory.py`, added by section 13 and moved once, in
+section 15. Nine rows are new in section 15, the IR and CFG boundary oracles.
+Every other row is byte-identical to `1371e42`. A row that does not match the
+current worktree is a failure of this table, not of the file.
 
 Fixed reference emission artifacts:
 
@@ -285,7 +287,7 @@ Checkers, scanners, and their plant tests:
 | --- | --- |
 | `scripts/check-annotation-provenance.py` | `c4e40e0122f1d87c82b5b587d8ed1ac6c74f550bed114463765f2568ea6b6f93` |
 | `scripts/check-candidate-whitelist.py` | `d8c67c8565c372c2044f6749bfe2a7b092a374c9758930c7e2ef5b45d3a6cac5` |
-| `scripts/check-oracle-inventory.py` | `d882132e87cb4625ebdac88ab310e405b00133bd546e172db282be7e1bbf47bf` |
+| `scripts/check-oracle-inventory.py` | `b8e06c148c0268f23acbb9547e5b9248b3f4ebc6903a48e8d21112be41e3ef49` |
 | `scripts/prov_cross_audit_reconcile.py` | `0633bf7191d62859efcbd35b9b62e186a39005e58ec49efaf24d8e03c6319c41` |
 | `scripts/prov_join_audit_check.py` | `99a80ec27496b76737df08ae457838512495ec2e3e82668ac5ba5d73c1c5e995` |
 | `scripts/prov_join_audit_plant_test.py` | `d3e9e885878db0b6e752ab421dd9bc851b6142f4a995307d2a7763029c88374a` |
@@ -300,7 +302,7 @@ Gate and harness scripts:
 
 | Path | sha256 |
 | --- | --- |
-| `scripts/ci-check.sh` | `386e0f2a22a25c774ff43da8621e947d9c3a4137e57a5d8ee6bbad973eb25c48` |
+| `scripts/ci-check.sh` | `ec5e015bc65317c8b477c582b52a9a6d91c618e6becfe31da019b4bb34995401` |
 | `scripts/test-suite.sh` | `b1d2efd5cda5794dbb9e60c41f92eede0cc65996d66f6c73c19e905be451c38a` |
 | `scripts/lint-python.sh` | `eef80907146b5d1b3d662ad823372a8b6a33df99b458582077b0c1578680e2d7` |
 | `scripts/lint-shell.sh` | `4554f41d5dbeeadf4d2478ce97af416392b14a78cfa417673b35914877d316ab` |
@@ -324,10 +326,25 @@ silences a whole protected file while every other digest in this table still
 matches, so the loader is protected too and a change to it is a ruler change on
 everything it includes.
 
-That loader is one of five hook families, and every row below depends on one of
+That loader is one of seven hook families, and every row below depends on one of
 them. None of the hooks can be digested here, because they all live in product
 source or in manifests that later work must edit, so a whole-file digest for any
 of them would fire on legitimate change and be worthless as a ruler.
+
+That constraint decides where an oracle may live, not just how it is proved. Nine
+rows below are IR and CFG boundary rulers that were written as inline
+`#[cfg(test)] mod` blocks inside `crates/flutterdec-ir/src/lib.rs`,
+`crates/flutterdec-ir/src/validate.rs`,
+`crates/flutterdec-core/src/pipeline/quality.rs`, `runners/split.rs`,
+`runners/stubs.rs` and `crates/flutterdec-decompiler/src/control_flow/regions.rs`.
+Every one of those six files is product source that later work edits, so none of
+them can carry a digest, and while the assertions lived inside them the whole
+control-effect table, the well-formedness ruler's own tests, and every
+identity-boundary gate could be deleted with every digest in this table still
+matching. Section 15 moved each ruler into a test-only file of its own, protected
+below, and left a hook behind. The product files themselves are deliberately
+absent from this table for the same reason their hooks are: a digest over a file
+ordinary work must edit fires on legitimate change and protects nothing.
 
 They are proved by compilation instead. `scripts/check-oracle-inventory.py` parses
 this table, maps every row to one sentinel test that exists only if that row was
@@ -349,24 +366,31 @@ and every hook has a row, every mapped file exists, no loader has grown an
 unrecorded `include!`, neither manifest disables a test target, and both CI lanes
 really invoke the named integration targets and the inventory checker.
 
-Section 13 records the compiled inventory, its 24 row-to-sentinel mappings, and
-the twenty-two planted silencings that prove it fires. Section 12 records the
+Section 13 records the compiled inventory, its first 24 row-to-sentinel mappings,
+and the twenty-two planted silencings that prove it fires. Section 12 records the
 source-text guard it replaced, and section 11 that guard's narrower first
-version.
+version. Section 15 records the nine IR and CFG boundary rows, the two new hook
+families, the three new targets, and the twenty-eight planted silencings across
+every new family.
 
-The five families are `#[cfg(test)] mod tests;` in
+The seven families are `#[cfg(test)] mod tests;` in
 `crates/flutterdec-decompiler/src/lib.rs`, the five `include!` lines in
 `src/tests.rs`, the fourteen nested `include!` lines in the three second-level
-loaders, the two `#[cfg(test)] #[path = ...]` module declarations in
-`crates/flutterdec-core/src/pipeline/runners.rs` and
-`crates/flutterdec-core/src/pipeline/symbol_map.rs`, and Cargo's automatic
-discovery of `crates/flutterdec-decompiler/tests/*.rs`, which
+loaders, the eight `#[cfg(test)] #[path = ...]` module declarations in
+`crates/flutterdec-core/src/pipeline/runners.rs`,
+`crates/flutterdec-core/src/pipeline/symbol_map.rs`, `pipeline/quality.rs`,
+`pipeline/runners/split.rs`, `pipeline/runners/stubs.rs`,
+`crates/flutterdec-ir/src/lib.rs`, `crates/flutterdec-ir/src/validate.rs` and
+`crates/flutterdec-decompiler/src/control_flow/regions.rs`, the one `include!` in
+`crates/flutterdec-decompiler/src/control_flow.rs`, which loads five product
+modules beside its single oracle and so cannot have its include count pinned, and
+Cargo's automatic discovery of `crates/flutterdec-decompiler/tests/*.rs`, which
 `autotests = false` would switch off wholesale.
 
 | Path | sha256 |
 | --- | --- |
 | `crates/flutterdec-decompiler/src/tests.rs` | `a19fe0015869fbfeb259e28f6d4344e18a630edab92b2a7aef2a58811e3ef56b` |
-| `crates/flutterdec-decompiler/tests/provenance_audit.rs` | `1bda72504e7ada1c8a2e7798ca314b3843ebc6cf8b8202851de42dd542573abd` |
+| `crates/flutterdec-decompiler/tests/provenance_audit.rs` | `e93e04f71f67dc57379fcca164af80d58a403889095bcc4aced48de990b44c59` |
 | `crates/flutterdec-decompiler/tests/loop_entry_provenance_audit.rs` | `02626ee1ba1b4b1b9905654a6254319ee413169341e43ddb74387813f7ecbfc7` |
 | `crates/flutterdec-decompiler/src/tests/shared.rs` | `30ef9ef9d6b55acac8d41f5e557d38a78e5a60d2c28ac612e75ccfe80e376d3e` |
 | `crates/flutterdec-decompiler/src/tests/golden_and_parser.rs` | `73a74b04ba294f1efc7faa5b067fdbd3c4cedc892c6d15068a07a98d656235ca` |
@@ -389,6 +413,15 @@ discovery of `crates/flutterdec-decompiler/tests/*.rs`, which
 | `crates/flutterdec-decompiler/src/tests/emit_and_helpers/readability_and_naming.rs` | `7a185febb042ee53b865b8561e7d68c091003fa1a5ef066cb8ac31a9c4639bd2` |
 | `crates/flutterdec-core/src/pipeline/runners/tests.rs` | `a65298cde1ed807a838199162397bd51ff7f35e38941a0bd274872116b8c4668` |
 | `crates/flutterdec-core/src/pipeline/symbol_map/tests.rs` | `019220e1a5915365e1663a36353ff3ba2177f567bb5e1094e6575b47f01b39f5` |
+| `crates/flutterdec-ir/src/tests/control_effects.rs` | `9d6755a0001bfc839cd814fd326648e8cb8ccc186eeb3b30f3551dc8384fdf59` |
+| `crates/flutterdec-ir/src/validate/tests.rs` | `2e3e3b3bd980c1edd2de99da166e09d5bf154cbed390e87f701a50f8316e8470` |
+| `crates/flutterdec-core/src/pipeline/quality/control_effect_tests.rs` | `2dd80c63de5919b45de14a89259f90824d827c37ab7b7d943e58221587ed8c69` |
+| `crates/flutterdec-core/src/pipeline/runners/split/identity_tests.rs` | `6de85f091ee07dd84c2469784f8f4288d982b83cf38ebffa1ae3691d28fdc4d2` |
+| `crates/flutterdec-core/src/pipeline/runners/stubs/identity_tests.rs` | `a13fd1a26bafc8224edfbc9d1e8e1aa6441e935e50a5a4021315c119973e120d` |
+| `crates/flutterdec-decompiler/src/control_flow/regions/identity_boundary_tests.rs` | `84b619616bab352c6e49fab1190d80a1df4606b691811c72835266003dfcf42d` |
+| `crates/flutterdec-decompiler/src/control_flow/relation_oracle.rs` | `75fe720e04cfa6bbb859981f1b39ebba0e0ed932e8973d3bab730058cedcfa96` |
+| `crates/flutterdec-decompiler/tests/arm64_control_effects.rs` | `c50439b4e6157d6d8e5321a6c49c22a1a74a9405d7c7924b6235c84db8ca3617` |
+| `crates/flutterdec-decompiler/tests/cfg_identity.rs` | `a5e0177808c50050bfd3517a7f89a234f650ae9ec01cc75b413ba8e2b4014ac8` |
 
 Threshold rulers, protected by value rather than by digest because they live in
 files this mission may legitimately touch:
@@ -1559,3 +1592,355 @@ work.
    no product, test or harness change in it, and after the code it reconciles
    against rather than before it.
 6. L5 re-run. Recorded in 14.5.
+
+## 15. Adjudication record: the IR and CFG boundary oracles
+
+Between `1c7507b` and `2bdac88` this mission added, in eleven commits, the ARM64
+control-effect table, the `FunctionIr` well-formedness ruler and its own
+assertions, identity gates at the region-analysis, record-splitter and no-return
+prune boundaries, a hand-derived CFG relation oracle over twelve literal graphs
+with a twenty-process determinism check, and two integration test files. Not one
+of them had a row in section 7 or a sentinel in
+`scripts/check-oracle-inventory.py`.
+
+Every one could therefore be deleted outright with every digest in section 7 still
+matching, every gate in this protocol still green, and `cargo test --workspace`
+still exiting 0 with a quietly smaller suite. That is the section 5 failure the
+compiled inventory exists to remove, reopened by new work faster than the
+inventory was extended to cover it.
+
+Six of those rulers were written as inline `#[cfg(test)] mod` blocks inside
+product source: `crates/flutterdec-ir/src/lib.rs`,
+`crates/flutterdec-ir/src/validate.rs`,
+`crates/flutterdec-core/src/pipeline/quality.rs`,
+`crates/flutterdec-core/src/pipeline/runners/split.rs`,
+`crates/flutterdec-core/src/pipeline/runners/stubs.rs`, and
+`crates/flutterdec-decompiler/src/control_flow/regions.rs`. A digest over any of
+those six is worthless, because ordinary product work edits all six. This record
+moves each ruler into a test-only file that carries a digest, leaves the hook
+behind in the product file, adds the three remaining test-only files to the table,
+and extends the inventory to prove all nine by compilation.
+
+No assertion is added, weakened, reordered or removed. No product logic changes.
+No mutable product file and no manifest receives a digest row.
+
+### 15.1 Digest chains
+
+Column order matches sections 10.1, 11.1, 12.1 and 13.1, state before digest, so a
+scanner looking for the section 7 row shape does not read these history rows as
+protected-path rows.
+
+`crates/flutterdec-decompiler/tests/provenance_audit.rs`, continuing 13.1:
+
+| Commit | State | sha256 |
+| --- | --- | --- |
+| `1c7507b` | prior, adjudicated in section 13 | `1bda72504e7ada1c8a2e7798ca314b3843ebc6cf8b8202851de42dd542573abd` |
+| `6756e71` through `2bdac88` | unchanged, eleven commits of product and oracle work | `1bda72504e7ada1c8a2e7798ca314b3843ebc6cf8b8202851de42dd542573abd` |
+| this commit, worktree | current, recorded in section 7 | `e93e04f71f67dc57379fcca164af80d58a403889095bcc4aced48de990b44c59` |
+
+`scripts/ci-check.sh`, continuing 13.1:
+
+| Commit | State | sha256 |
+| --- | --- | --- |
+| `1c7507b` | prior, adjudicated in section 13 | `386e0f2a22a25c774ff43da8621e947d9c3a4137e57a5d8ee6bbad973eb25c48` |
+| `6756e71` through `2bdac88` | unchanged | `386e0f2a22a25c774ff43da8621e947d9c3a4137e57a5d8ee6bbad973eb25c48` |
+| this commit, worktree | current, recorded in section 7 | `ec5e015bc65317c8b477c582b52a9a6d91c618e6becfe31da019b4bb34995401` |
+
+`scripts/check-oracle-inventory.py`, first move since section 13 created it:
+
+| Commit | State | sha256 |
+| --- | --- | --- |
+| `1c7507b` | as created, adjudicated in section 13 | `d882132e87cb4625ebdac88ab310e405b00133bd546e172db282be7e1bbf47bf` |
+| `6756e71` through `2bdac88` | unchanged | `d882132e87cb4625ebdac88ab310e405b00133bd546e172db282be7e1bbf47bf` |
+| this commit, worktree | current, recorded in section 7 | `b8e06c148c0268f23acbb9547e5b9248b3f4ebc6903a48e8d21112be41e3ef49` |
+
+The nine new rows have no prior digest state. Six are files this commit creates by
+moving an inline module out of the product file named beside them; three already
+existed as test-only files and were simply unprotected. The pre-move location is
+given so the moved text is recoverable from history:
+
+| New protected row | Origin | State before this commit |
+| --- | --- | --- |
+| `crates/flutterdec-ir/src/tests/control_effects.rs` | `crates/flutterdec-ir/src/lib.rs:434-740` at `2bdac88` | inline `mod tests`, unprotected |
+| `crates/flutterdec-ir/src/validate/tests.rs` | `crates/flutterdec-ir/src/validate.rs:241-695` at `2bdac88` | inline `mod tests`, unprotected |
+| `crates/flutterdec-core/src/pipeline/quality/control_effect_tests.rs` | `crates/flutterdec-core/src/pipeline/quality.rs:154-352` at `2bdac88` | inline `mod quality_tests`, unprotected |
+| `crates/flutterdec-core/src/pipeline/runners/split/identity_tests.rs` | `crates/flutterdec-core/src/pipeline/runners/split.rs:428-584` at `2bdac88` | inline `mod tests`, unprotected |
+| `crates/flutterdec-core/src/pipeline/runners/stubs/identity_tests.rs` | `crates/flutterdec-core/src/pipeline/runners/stubs.rs:1068-1279` at `2bdac88` | inline `mod prune_tests`, unprotected |
+| `crates/flutterdec-decompiler/src/control_flow/regions/identity_boundary_tests.rs` | `crates/flutterdec-decompiler/src/control_flow/regions.rs:442-533` at `2bdac88` | inline `mod identity_boundary_tests`, unprotected |
+| `crates/flutterdec-decompiler/src/control_flow/relation_oracle.rs` | already test-only, added at `5ff948b` | unprotected, no sentinel |
+| `crates/flutterdec-decompiler/tests/arm64_control_effects.rs` | already test-only, added at `6756e71` | unprotected, not named by any lane |
+| `crates/flutterdec-decompiler/tests/cfg_identity.rs` | already test-only, added at `bd1ecbf` | unprotected, not named by any lane |
+
+Their digests are the nine new rows of the section 7 Oracle test files table.
+
+`.github/workflows/ci.yml` is still not a section 7 row, for the reason 12.1
+gives. Recorded for reproducibility only:
+`6866ce3d8f8f96d8f8ed59c932f1002e962763635702de687cd2dabb18b68c80` at `2bdac88`,
+`479cd6f7ea7e0cbdce791244f9e3c2560b536d62cfcddc3d4a43601c379920eb` in this
+commit. Its load-bearing lines are asserted by value by the guard, not by digest.
+
+Reproduce any row with `git show <commit>:<path> | sha256sum`, and the last row of
+each chain with `sha256sum <path>`.
+
+### 15.2 Exact diff intent
+
+`git diff --numstat 2bdac88` for the non-protocol files: 10 insertions and 308
+deletions in `crates/flutterdec-ir/src/lib.rs`, 7 and 454 in
+`crates/flutterdec-ir/src/validate.rs`, 9 and 199 in
+`crates/flutterdec-core/src/pipeline/quality.rs`, 11 and 159 in
+`runners/split.rs`, 17 and 215 in `runners/stubs.rs`, 8 and 91 in
+`crates/flutterdec-decompiler/src/control_flow/regions.rs`, 105 and 10 in
+`crates/flutterdec-decompiler/tests/provenance_audit.rs`, 68 and 0 in
+`scripts/check-oracle-inventory.py`, 6 and 6 in `scripts/ci-check.sh`, and 1 and 1
+in `.github/workflows/ci.yml`. Six files are new.
+
+**The moved assertions are the same text.** Every deletion in the six product
+files is a line that reappears verbatim in the test-only file beside it. Proved by
+token stream rather than claimed: take the cut range out of the pre-move file at
+`2bdac88`, take the new file from its first item onward, collapse every run of
+whitespace in both, and compare. `cargo fmt` legitimately rejoins one wrapped line
+in `control_effects.rs`, which gained four columns of room when the block was
+dedented out of its `mod` block, and that is the only formatting difference in the
+six files.
+
+| Moved block | Collapsed length | sha256 of the collapsed stream, first 16 |
+| --- | --- | --- |
+| `crates/flutterdec-ir/src/tests/control_effects.rs` | 7379 chars | `b33c4ed788a0287d` |
+| `crates/flutterdec-ir/src/validate/tests.rs` | 12189 chars | `8101b75114624ca0` |
+| `crates/flutterdec-core/src/pipeline/quality/control_effect_tests.rs` | 5901 chars | `ef09d8e28f59288c` |
+| `crates/flutterdec-core/src/pipeline/runners/split/identity_tests.rs` | 4478 chars | `8c8dc5aa2b9f95e2` |
+| `crates/flutterdec-core/src/pipeline/runners/stubs/identity_tests.rs` | 6539 chars | `96a8f03a7ffc385b` |
+| `crates/flutterdec-decompiler/src/control_flow/regions/identity_boundary_tests.rs` | 1932 chars | `6237541843316f88` |
+
+Each hash is over the pre-move text and equals the hash over the post-move text;
+the assertion count is 4, 10, 2, 3, 3 and 2 respectively, unchanged in every file.
+
+**What is added to the six product files.** One `#[cfg(test)] #[path = ...] mod`
+declaration each, with a comment saying why the assertions are not inline and why
+the declaration itself cannot be digested. Nothing else, with one exception: five
+test helpers keep the fixtures shared instead of duplicated, so they change
+visibility and nothing else. `ins` in `crates/flutterdec-ir/src/lib.rs`'s
+`mod tests`, `ins` and `two_functions` in `runners/split.rs`'s `mod tests`, and
+`call`, `other` and `blk` in `runners/stubs.rs`'s `mod prune_tests` become
+`pub(super)` so the moved tests can import them. `blk` is also rewrapped across
+five lines by `cargo fmt` because the longer signature no longer fits. No
+pre-existing test moves, and no pre-existing assertion changes.
+
+**`crates/flutterdec-decompiler/tests/provenance_audit.rs`.** Nine rows are added
+to `loader_map()`: six `Hook::Module` rows for the new `#[path]` declarations, one
+`Hook::Include` row for `relation_oracle.rs`, and two `Hook::Autotest` rows for
+the new integration tests. `Hook::Include` gains an `exclusive` field. The four
+loaders under `src/tests/` are exclusive, so their `include!` count is still
+pinned exactly and they still cannot grow an unrecorded oracle.
+`crates/flutterdec-decompiler/src/control_flow.rs` is not, because it loads five
+product modules beside its one oracle, and pinning that number would fire the
+moment a control-flow module is added, which is the same defect that keeps every
+hook out of section 7. The ten deleted lines are the previous `Hook::Include`
+shape and the doc paragraph describing the family counts. `IR_MANIFEST` joins the
+`test = false` / `harness = false` / `autotests = false` scan, which previously
+covered only the decompiler and core manifests, so `flutterdec-ir` could have been
+switched off silently. No assertion is removed or demoted.
+
+**`scripts/check-oracle-inventory.py`.** Three targets are added, `ir-lib`,
+`arm64-control-effects` and `cfg-identity`, and nine sentinels. Nothing is
+removed; both mechanisms 13.3 describes, the `cargo metadata` gate and the
+`-- --list` compile, now cover `flutterdec-ir` too. Extras remain allowed:
+compilation, never source text, remains the oracle, and adding a case to any of
+the thirty-three rows keeps the inventory green.
+
+**`scripts/ci-check.sh` and `.github/workflows/ci.yml`.** Exactly one existing
+lane changes in each, gaining `--test arm64_control_effects --test cfg_identity`
+on the command that already named the two audit targets, and in the shell script
+the matching `echo` and two usage lines that count the targets. Additivity by the
+13.2 command:
+
+```
+git show 2bdac88:scripts/ci-check.sh > /tmp/cic-prev.sh
+strip() { grep -vE '^[[:space:]]*(#|$)' "$1" | sed 's/[[:space:]]*$//' | sort; }
+comm -23 <(strip /tmp/cic-prev.sh) <(strip scripts/ci-check.sh)
+```
+
+Six lines are reported. Two are the `echo` and the `cargo test` invocation of the
+integration lane, and both reappear with the two extra targets appended and no
+other change. The remaining four are prose inside the `usage()` heredoc: the
+`7)` list entry, whose wording changes from `oracle-loader guard targets` to
+`oracle integration targets`, and three lines of the paragraph beneath it, which
+changes `the two decompiler integration test targets` to `the four` and `either
+file deleted` to `any of the files deleted`. No lane is removed, reordered, or
+made conditional. The two executable lines that changed are the only ones, and
+each new form is a strict superset of the old: every target `2bdac88` named is
+still named, plus two more.
+
+### 15.3 The nine new row-to-sentinel mappings
+
+Thirty-three rows now, twenty-four from 13.3 and these nine. Every one of the nine
+owns its sentinel: the test is defined in the protected file itself, so no row
+here depends on a descendant.
+
+| Protected row | Target | Sentinel |
+| --- | --- | --- |
+| `crates/flutterdec-ir/src/tests/control_effects.rs` | `ir-lib` | `control_effect_tests::every_arm64_control_effect_has_exactly_the_documented_edges` |
+| `crates/flutterdec-ir/src/validate/tests.rs` | `ir-lib` | `validate::tests::every_planted_identity_failure_is_named` |
+| `crates/flutterdec-core/src/pipeline/quality/control_effect_tests.rs` | `core-lib` | `quality_control_effect_tests::serialized_ir_states_every_control_effect_and_its_edges` |
+| `crates/flutterdec-core/src/pipeline/runners/split/identity_tests.rs` | `core-lib` | `runners_split::split_identity_tests::every_piece_of_every_split_shape_is_canonical` |
+| `crates/flutterdec-core/src/pipeline/runners/stubs/identity_tests.rs` | `core-lib` | `runners_stubs::stubs_identity_tests::every_shape_the_prune_mutates_comes_out_canonical` |
+| `crates/flutterdec-decompiler/src/control_flow/regions/identity_boundary_tests.rs` | `decompiler-lib` | `control_flow::identity_boundary_tests::every_planted_identity_failure_declines_before_any_relation_is_built` |
+| `crates/flutterdec-decompiler/src/control_flow/relation_oracle.rs` | `decompiler-lib` | `control_flow::relation_oracle::normalized_relations_are_identical_in_twenty_processes` |
+| `crates/flutterdec-decompiler/tests/arm64_control_effects.rs` | `arm64-control-effects` | `both_emitters_render_the_same_control_effects` |
+| `crates/flutterdec-decompiler/tests/cfg_identity.rs` | `cfg-identity` | `every_planted_identity_failure_emits_one_diagnostic_and_no_body` |
+
+The three new targets select `-p flutterdec-ir --lib`,
+`-p flutterdec-decompiler --test arm64_control_effects`, and
+`-p flutterdec-decompiler --test cfg_identity`. Every sentinel is distinct and
+defined exactly once across `crates/**/*.rs`, so a failure names the row that lost
+its hook rather than a family.
+
+
+### 15.4 Planted silencings
+
+One disposable worktree detached at this commit under `~/.cache`, with its own
+`TMPDIR` and `CARGO_TARGET_DIR` because this machine's `/tmp` is at its inode cap,
+`git checkout -- . && git clean -fd` between plants and a `touch` sweep over every
+`.rs` file afterwards, since restoring a file with an older mtime lets cargo reuse
+the previous row's artifacts and the control then reports phantom results. Removed
+with `git worktree remove --force`. Every row was produced in one sequential run
+against the final code.
+
+Three columns, because three different things have to be true. Workspace is
+`cargo test --workspace`, counting result lines and the passed column, and it is
+the column that shows the fake pass. Named-target lane is the `scripts/ci-check.sh`
+step-7 command, which is the only thing that catches a manifest switching a whole
+family off. Inventory is `python3 scripts/check-oracle-inventory.py`, the
+correctness oracle.
+
+| # | Plant | `cargo test --workspace` | Named-target lane | Compiled inventory |
+| --- | --- | --- | --- | --- |
+| ctl | none, control | exit 0, 17 result lines, 496 tests | exit 0 | exit 0, 33 compiled |
+| ir1 | hook deleted from crates/flutterdec-ir/src/lib.rs | exit 0, 17 result lines, 492 tests | exit 0 | exit 1, 1 problem, names `control_effects.rs` |
+| ir2 | hook line-commented in crates/flutterdec-ir/src/lib.rs | exit 0, 17 result lines, 492 tests | exit 0 | exit 1, 1 problem, names `control_effects.rs` |
+| ir3 | hook in a nested block comment in crates/flutterdec-ir/src/lib.rs | exit 0, 17 result lines, 492 tests | exit 0 | exit 1, 1 problem, names `control_effects.rs` |
+| ir4 | `#[cfg(any())]` above the crates/flutterdec-ir/src/lib.rs hook | exit 0, 17 result lines, 492 tests | exit 0 | exit 1, 1 problem, names `control_effects.rs` |
+| ir5 | crates/flutterdec-ir/src/lib.rs hook swallowed by a macro | exit 0, 17 result lines, 492 tests | exit 0 | exit 1, 1 problem, names `control_effects.rs` |
+| ir6 | hook deleted from crates/flutterdec-ir/src/validate.rs | exit 0, 17 result lines, 486 tests | exit 0 | exit 1, 1 problem, names `validate/tests.rs` |
+| ir7 | undeclared feature above the crates/flutterdec-ir/src/validate.rs hook | exit 0, 17 result lines, 486 tests | exit 0 | exit 1, 1 problem, names `validate/tests.rs` |
+| ir8 | `[lib] test = false` in the ir manifest | exit 101, 8 result lines, 428 tests | exit 101 | exit 1, 1 problem, names the `ir-lib` target and its manifest |
+| co1 | hook deleted from crates/flutterdec-core/src/pipeline/quality.rs | exit 0, 17 result lines, 494 tests | exit 0 | exit 1, 1 problem, names `quality/control_effect_tests.rs` |
+| co2 | hook line-commented in crates/flutterdec-core/src/pipeline/runners/split.rs | exit 0, 17 result lines, 493 tests | exit 0 | exit 1, 1 problem, names `split/identity_tests.rs` |
+| co3 | hook in a nested block comment in crates/flutterdec-core/src/pipeline/runners/stubs.rs | exit 0, 17 result lines, 493 tests | exit 0 | exit 1, 1 problem, names `stubs/identity_tests.rs` |
+| co4 | `#[cfg(any())]` above the crates/flutterdec-core/src/pipeline/quality.rs hook | exit 0, 17 result lines, 494 tests | exit 0 | exit 1, 1 problem, names `quality/control_effect_tests.rs` |
+| co5 | crates/flutterdec-core/src/pipeline/runners/split.rs hook swallowed by a macro | exit 0, 17 result lines, 493 tests | exit 0 | exit 1, 1 problem, names `split/identity_tests.rs` |
+| co6 | crates/flutterdec-core/src/pipeline/runners/stubs.rs hook swallowed by a macro | exit 0, 17 result lines, 493 tests | exit 0 | exit 1, 1 problem, names `stubs/identity_tests.rs` |
+| co7 | `[lib] test = false` in the core manifest | exit 101, 7 result lines, 329 tests | exit 101 | exit 1, 1 problem, names the `core-lib` target and its manifest |
+| rg1 | hook deleted from crates/flutterdec-decompiler/src/control_flow/regions.rs | exit 0, 17 result lines, 494 tests | exit 0 | exit 1, 1 problem, names `regions/identity_boundary_tests.rs` |
+| rg2 | hook line-commented in crates/flutterdec-decompiler/src/control_flow/regions.rs | exit 0, 17 result lines, 494 tests | exit 0 | exit 1, 1 problem, names `regions/identity_boundary_tests.rs` |
+| rg3 | hook in a nested block comment in crates/flutterdec-decompiler/src/control_flow/regions.rs | exit 0, 17 result lines, 494 tests | exit 0 | exit 1, 1 problem, names `regions/identity_boundary_tests.rs` |
+| rg4 | `#[cfg(any())]` above the crates/flutterdec-decompiler/src/control_flow/regions.rs hook | exit 0, 17 result lines, 494 tests | exit 0 | exit 1, 1 problem, names `regions/identity_boundary_tests.rs` |
+| rg5 | crates/flutterdec-decompiler/src/control_flow/regions.rs hook swallowed by a macro | exit 0, 17 result lines, 494 tests | exit 0 | exit 1, 1 problem, names `regions/identity_boundary_tests.rs` |
+| ro1 | relation-oracle include deleted | exit 0, 17 result lines, 466 tests | exit 0 | exit 1, 1 problem, names `relation_oracle.rs` |
+| ro2 | relation-oracle include line-commented | exit 0, 17 result lines, 466 tests | exit 0 | exit 1, 1 problem, names `relation_oracle.rs` |
+| ro3 | relation-oracle include in a nested block comment | exit 0, 17 result lines, 466 tests | exit 0 | exit 1, 1 problem, names `relation_oracle.rs` |
+| ro4 | `#[cfg(any())]` above the relation-oracle include | exit 0, 17 result lines, 466 tests | exit 0 | exit 1, 1 problem, names `relation_oracle.rs` |
+| ro5 | relation-oracle include swallowed by a macro | exit 0, 17 result lines, 466 tests | exit 0 | exit 1, 1 problem, names `relation_oracle.rs` |
+| at1 | `autotests = false` in the decompiler manifest | exit 0, 13 result lines, 484 tests | exit 101 | exit 1, 4 problems, names the decompiler integration targets |
+| at2 | protected file tests/cfg_identity.rs deleted, target gone | exit 101, 7 result lines, 422 tests | exit 101 | exit 1, 1 problem, names the `cfg-identity` target |
+| at3 | protected file tests/arm64_control_effects.rs deleted, target gone | exit 101, 7 result lines, 425 tests | exit 101 | exit 1, 1 problem, names the decompiler integration targets |
+| sr1 | sentinel renamed in control_effects.rs | exit 0, 17 result lines, 496 tests | exit 0 | exit 1, 1 problem, names `control_effects.rs` |
+| sr2 | sentinel renamed in relation_oracle.rs | exit 101, 4 result lines, 416 tests | exit 0 | exit 1, 1 problem, names `relation_oracle.rs` |
+| sr3 | sentinel renamed in tests/cfg_identity.rs | exit 0, 17 result lines, 496 tests | exit 0 | exit 1, 1 problem, names `tests/cfg_identity.rs` |
+| ur1 | unmapped ghost row added to the section 7 oracle table | exit 101, 8 result lines, 428 tests | exit 101 | exit 1, 1 problem, `has no sentinel here` |
+| ext | control: a case added to a protected oracle | exit 0, 17 result lines, 497 tests | exit 0 | exit 0, 33 compiled |
+
+Twenty-six of the thirty-four rows are silencings that leave
+`cargo test --workspace` exiting 0. Twenty-two of those also leave the suite
+visibly smaller and nothing else complains: `ir1` through `ir5` take 496 tests to
+492, `ir6` and `ir7` to 486, `co1` and `co4` to 494, `co2`, `co3`, `co5` and `co6`
+to 493, `rg1` through `rg5` to 494, `ro1` through `ro5` to 466, and `at1` to 484
+with all four integration targets gone and four fewer result lines. Every one of
+the twenty-six is rejected by the compiled inventory, which names the exact
+protected row that stopped being compiled.
+
+Twenty of the twenty-six leave the hook's own bytes byte-identical: the four
+`//`-prefixed and nested-block-comment rows, the three `#[cfg]` rows, the five
+macro-swallowed rows, `at1`, and the three sentinel renames, which do not touch a
+hook at all. Source text cannot see any of them, which is why 13.2 demoted text
+matching to a diagnostic and why this record extends the compiled inventory rather
+than the guard's text checks.
+
+`sr1` and `sr3` are the sharpest rows in the table. Renaming a sentinel changes no
+count at all: the workspace suite stays at exactly 496 tests and exits 0, because
+the test still exists and still runs under its new name. Only the inventory
+notices, and what it reports is exactly right - the mapping in
+`scripts/check-oracle-inventory.py` no longer points at a test that exists, so
+nothing proves that file is compiled. A rename is legitimate work; the fix is to
+update the mapping in the same commit, which is what the failure asks for. `sr2` is
+the same plant on `relation_oracle.rs` and is additionally loud, because the
+twenty-process determinism check re-executes itself by exact test path and cannot
+find its own new name.
+
+Six rows fail loudly on their own and are recorded as such rather than claimed as
+silent: `ir8` and `co7` (`test = false` breaks the build of the crate's own test
+target), `at2` and `at3` (the guard asserts every protected file exists), `sr2`,
+and `ur1` (the guard's unmapped-row check). Their inventory column still matters:
+each names the specific target or row rather than reporting a generic build
+failure, so the diagnosis does not depend on reading a compiler error.
+
+`ext` is the no-false-positive control. Adding a case to a protected oracle raises
+the suite to 497 and the inventory stays green at 33 compiled, because extras are
+always allowed. Compilation, not source text, is the oracle, and growing a ruler is
+expected work.
+
+### 15.5 Why the six product files carry no digest
+
+The rulers this record protects were inline modules in six files that ordinary
+work edits. A digest over any of them would fire on the next unrelated change to
+the surrounding product code, and a digest that fires on legitimate change gets
+relaxed, deleted, or routinely re-recorded, which is the same as no digest. That
+is the reason section 7 has never held a hook, and it is the reason it does not
+hold `crates/flutterdec-ir/src/lib.rs`, `crates/flutterdec-ir/src/validate.rs`,
+`crates/flutterdec-core/src/pipeline/quality.rs`, `runners/split.rs`,
+`runners/stubs.rs`, `crates/flutterdec-decompiler/src/control_flow/regions.rs`,
+`crates/flutterdec-decompiler/src/control_flow.rs`, or any `Cargo.toml`.
+
+So the assertions moved instead. Each test-only file is one this mission does not
+expect later work to edit except by adding a case, which is exactly what a digest
+plus an extras-allowed inventory can protect. The product file keeps only the
+declaration, which nothing but the compiler can vouch for, and that is what
+`scripts/check-oracle-inventory.py` asks.
+
+Two protections therefore compose, and neither is sufficient alone. The digest
+says the ruler's bytes are unchanged; it cannot say the compiler saw them. The
+inventory says the compiler saw them; it cannot say they still assert what they
+did. Section 15.4 measures the second half. The first half is measured by the
+digest table itself: all fifty-six rows of section 7 match the worktree in this
+commit, verified by `sha256sum` per row.
+
+### 15.6 Section 9 steps
+
+1. Invariant. Not an L1 or L2 invariant: no expected value, no product logic and
+   no emitted output changes. This is an L4 and L5 change, and the invariant is
+   the section 5 rule that a protected oracle may not be silenced, applied to the
+   nine IR and CFG rulers that had no protection at all. 15.2 proves the
+   assertions are the same text by token stream, and 15.4 measures the protection.
+2. Test. `scripts/check-oracle-inventory.py` is the test, extended to
+   thirty-three rows and three new targets, and `scripts/ci-check.sh` step 8 plus
+   the `Compiled oracle inventory` step in `.github/workflows/ci.yml` are what
+   make it unskippable. It fails on the old behavior in the sense that matters:
+   at `2bdac88` every one of the twenty-six silencings in 15.4 passed every gate
+   in this protocol with every digest in section 7 matching, because none of the
+   nine files had a digest or a sentinel.
+3. Diff and digests. Recorded in 15.1 and 15.2, with the reproducing commands. All
+   fifty-six section 7 rows were re-verified against the worktree with `sha256sum`
+   per row, 0 mismatches.
+4. Original reference preserved. Recorded in 15.1, continuing the chains in 10.1,
+   11.1, 12.1 and 13.1. The nine new rows record their pre-move location at
+   `2bdac88`, so the text is recoverable from history. `1371e42` is untouched.
+5. Own commit. Satisfied. This record, the six moves and their hooks, the guard
+   extension, the checker extension and the two CI lane changes land as one
+   commit, `test(oracle): protect IR and CFG boundary tests`, with no product
+   logic change in it.
+6. L5 re-run. `TMPDIR=... CARGO_TARGET_DIR=...
+   NIX_CONFIG='experimental-features = nix-command flakes' scripts/ci-check.sh`
+   exits 0 at the current digests, 13 lanes, `[ci-check] all checks passed`, 22
+   result lines and 543 tests, with the inventory lane reporting
+   `[oracle-inventory] ok, 33 protected oracles are compiled` and the step-7 lane
+   now naming all four integration targets.

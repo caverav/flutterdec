@@ -72,6 +72,24 @@ TARGETS = {
         "name": "loop_entry_provenance_audit",
         "select": ["-p", "flutterdec-decompiler", "--test", "loop_entry_provenance_audit"],
     },
+    "ir-lib": {
+        "package": "flutterdec-ir",
+        "kind": "lib",
+        "name": "flutterdec_ir",
+        "select": ["-p", "flutterdec-ir", "--lib"],
+    },
+    "arm64-control-effects": {
+        "package": "flutterdec-decompiler",
+        "kind": "test",
+        "name": "arm64_control_effects",
+        "select": ["-p", "flutterdec-decompiler", "--test", "arm64_control_effects"],
+    },
+    "cfg-identity": {
+        "package": "flutterdec-decompiler",
+        "kind": "test",
+        "name": "cfg_identity",
+        "select": ["-p", "flutterdec-decompiler", "--test", "cfg_identity"],
+    },
 }
 
 # One entry per row of the Oracle test files table: the target that must contain
@@ -185,6 +203,56 @@ SENTINELS = {
     "crates/flutterdec-core/src/pipeline/symbol_map/tests.rs": (
         "core-lib",
         "tests::resolves_exact_before_nearest",
+    ),
+    # The IR and CFG boundary oracles. Every one of them was an inline module in
+    # product source until it was moved out into a file of its own: a digest can
+    # only protect a file later work is not expected to edit, and each of these
+    # rulers used to sit in `lib.rs`, `validate.rs`, `quality.rs`, `split.rs`,
+    # `stubs.rs` or `regions.rs`, all of which ordinary work edits. The hook left
+    # behind in each of those files is a `#[cfg(test)] #[path = ...]`
+    # declaration, which is why these rows need the compiler and not a digest to
+    # prove they run.
+    "crates/flutterdec-ir/src/tests/control_effects.rs": (
+        "ir-lib",
+        "control_effect_tests::every_arm64_control_effect_has_exactly_the_documented_edges",
+    ),
+    "crates/flutterdec-ir/src/validate/tests.rs": (
+        "ir-lib",
+        "validate::tests::every_planted_identity_failure_is_named",
+    ),
+    "crates/flutterdec-core/src/pipeline/quality/control_effect_tests.rs": (
+        "core-lib",
+        "quality_control_effect_tests::serialized_ir_states_every_control_effect_and_its_edges",
+    ),
+    "crates/flutterdec-core/src/pipeline/runners/split/identity_tests.rs": (
+        "core-lib",
+        "runners_split::split_identity_tests::every_piece_of_every_split_shape_is_canonical",
+    ),
+    "crates/flutterdec-core/src/pipeline/runners/stubs/identity_tests.rs": (
+        "core-lib",
+        "runners_stubs::stubs_identity_tests::every_shape_the_prune_mutates_comes_out_canonical",
+    ),
+    "crates/flutterdec-decompiler/src/control_flow/regions/identity_boundary_tests.rs": (
+        "decompiler-lib",
+        "control_flow::identity_boundary_tests::"
+        "every_planted_identity_failure_declines_before_any_relation_is_built",
+    ),
+    # Reached by an `include!` in `src/control_flow.rs`, a loader that also pulls
+    # in five product modules, so its include count cannot be pinned the way the
+    # pure test loaders' can. The sentinel is the twenty-process determinism
+    # check, which no other file defines.
+    "crates/flutterdec-decompiler/src/control_flow/relation_oracle.rs": (
+        "decompiler-lib",
+        "control_flow::relation_oracle::normalized_relations_are_identical_in_twenty_processes",
+    ),
+    # Integration tests, discovered by Cargo from `tests/`.
+    "crates/flutterdec-decompiler/tests/arm64_control_effects.rs": (
+        "arm64-control-effects",
+        "both_emitters_render_the_same_control_effects",
+    ),
+    "crates/flutterdec-decompiler/tests/cfg_identity.rs": (
+        "cfg-identity",
+        "every_planted_identity_failure_emits_one_diagnostic_and_no_body",
     ),
 }
 

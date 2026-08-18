@@ -52,7 +52,7 @@ jobs:
       # Named targets, not --workspace: `autotests = false` or a deleted file
       # would leave --workspace passing with a quietly smaller suite.
       - name: Oracle loader guard
-        run: nix develop -c cargo test -p flutterdec-decompiler --test provenance_audit --test loop_entry_provenance_audit
+        run: nix develop -c cargo test -p flutterdec-decompiler --test provenance_audit --test loop_entry_provenance_audit --test arm64_control_effects --test cfg_identity
 
       # The compiled inventory, not the loader source text. A comment, a `cfg`
       # that is never true, or a macro that swallows its argument leaves a hook
