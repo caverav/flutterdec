@@ -14,7 +14,7 @@ Runs the same checks as CI from the local workspace:
   5) cargo clippy --workspace --all-targets -- -D warnings
   6) cargo test --workspace            (unless --skip-tests)
   7) cargo build -p flutterdec-cli --release
-  8) clippy and tests for the excluded benchmark harness
+  8) fmt, clippy and tests for the excluded benchmark harness
 
 The benchmark harness is not a workspace member, so --workspace does not reach
 it and it is linted and tested through its own manifest. That exclusion is what
@@ -69,6 +69,11 @@ echo "[ci-check] cargo build -p flutterdec-cli --release"
 nix develop -c cargo build -p flutterdec-cli --release
 
 bench_manifest="crates/flutterdec-bench/Cargo.toml"
+# `--all` means every member of the manifest's own workspace, and the harness is
+# its own workspace, so the root `cargo fmt --all` above does not reach it.
+echo "[ci-check] cargo fmt --manifest-path ${bench_manifest} --all --check"
+nix develop -c cargo fmt --manifest-path "$bench_manifest" --all --check
+
 echo "[ci-check] cargo clippy --manifest-path ${bench_manifest} --all-targets -- -D warnings"
 nix develop -c cargo clippy --manifest-path "$bench_manifest" --all-targets -- -D warnings
 

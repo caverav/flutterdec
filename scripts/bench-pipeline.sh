@@ -179,13 +179,25 @@ fi
 # which is what made a run long enough to overlap the next one. The measured
 # pairs stay interleaved, so any drift that does survive hits both sides in the
 # same order.
+#
+# The correctness pass runs here and only here. It is a property of the binary,
+# not of a pass: it emits every case twice to prove determinism, costs about
+# twice a measured pass, and repeating it identically before each of the 30
+# measured passes both quadrupled the run and put unrelated graph work in the
+# cache between pairs. A failure exits non-zero, so no pair is ever measured
+# against a binary whose cases did not check out.
 warmup() {
-  local side="$1" binary="$2"
-  echo "[bench] warming $side with $warmups unmeasured pass(es)"
+  local side="$1" binary="$2" product="$3" binary_digest="$4"
+  echo "[bench] warming $side with $warmups unmeasured pass(es) and the correctness pass"
   "$binary" run \
     "${matrix_args[@]}" \
     --warmups "$warmups" \
     --runs 0 \
+    --correctness on \
+    --product-ref "$product" \
+    --harness-ref "$harness_head" \
+    --patch-sha256 "$patch_digest" \
+    --binary-sha256 "$binary_digest" \
     --label "${label}${label:+ }${side} warmup" \
     --out "$out_dir/warmup-${side}.json"
 }
@@ -196,6 +208,7 @@ measure() {
     "${matrix_args[@]}" \
     --warmups 0 \
     --runs 1 \
+    --correctness off \
     --product-ref "$product" \
     --harness-ref "$harness_head" \
     --patch-sha256 "$patch_digest" \
@@ -205,8 +218,8 @@ measure() {
     --samples "$out_dir/raw/${side}-${pair}.tsv"
 }
 
-warmup reference "$reference_bin"
-warmup candidate "$candidate_bin"
+warmup reference "$reference_bin" "$reference_head" "$reference_binary_digest"
+warmup candidate "$candidate_bin" "$candidate_head" "$candidate_binary_digest"
 
 echo "[bench] $pairs interleaved pairs at zero per-pair warmups"
 for (( pair = 0; pair < pairs; pair++ )); do
@@ -244,6 +257,7 @@ matrix                     $matrix
 pairs                      $pairs
 preliminary_warmups        $warmups
 warmups_per_measured_pair  0
+correctness_documents      warmup-reference.json warmup-candidate.json
 EOF
 
 echo "[bench] wrote $out_dir/analysis.json"

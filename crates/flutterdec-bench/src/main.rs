@@ -63,6 +63,14 @@ run options
                                 warmups and the correctness pass only, which is
                                 how a binary is warmed once before interleaving
                                 measured pairs at --warmups 0.
+  --correctness on|off          Structural and determinism pass over every case
+                                before any span opens (default on). It costs
+                                about twice a measured pass and its verdict is a
+                                property of the binary, not of a pass, so an
+                                interleaved schedule runs it once per binary in
+                                the warmup invocation and off in each measured
+                                pair. Off is refused with --runs 0, which would
+                                otherwise do nothing at all.
   --timeout-seconds N           Per measured run (default 120)
   --memory-limit-bytes N        Peak resident set (default 2 GiB)
   --product-ref REF             Recorded binding
@@ -438,16 +446,30 @@ fn run(argv: &[String]) -> Result<(), String> {
     let timeout_seconds = args.number("timeout-seconds", DEFAULT_TIMEOUT_SECONDS)?;
     let memory_limit = args.number("memory-limit-bytes", DEFAULT_MEMORY_LIMIT_BYTES)?;
     let seed = args.number("seed", DISCLOSED_SEED)?;
+    let correctness_enabled = match args.text("correctness", "on").as_str() {
+        "on" => true,
+        "off" => false,
+        other => return Err(format!("--correctness must be on or off, got {other}")),
+    };
+    // Warmup-only with no correctness pass would generate the fixtures, run the
+    // warmups and prove nothing, so it is a usage error rather than a fast path.
+    if runs == 0 && !correctness_enabled {
+        return Err("--runs 0 with --correctness off would measure and prove nothing".to_string());
+    }
 
     // Fixture state, all built before any span opens.
     let symbols: HashMap<u64, String> = HashMap::new();
     let model = flutterdec_core::bench_spans::synthetic_model(1);
     let options = flutterdec_core::bench_spans::balanced_options();
 
-    let correctness: Vec<Correctness> = cases
-        .iter()
-        .map(|case| check_case(case, &symbols))
-        .collect();
+    let correctness: Vec<Correctness> = if correctness_enabled {
+        cases
+            .iter()
+            .map(|case| check_case(case, &symbols))
+            .collect()
+    } else {
+        Vec::new()
+    };
     let correctness_failures: Vec<&str> = cases
         .iter()
         .zip(&correctness)
@@ -579,6 +601,7 @@ fn run(argv: &[String]) -> Result<(), String> {
                 ("profile", Json::s(build_profile())),
                 ("warmups", Json::U(warmups as u64)),
                 ("measured_runs", Json::U(runs as u64)),
+                ("correctness_checked", Json::Bool(correctness_enabled)),
                 (
                     "command",
                     Json::s(std::env::args().collect::<Vec<_>>().join(" ")),
@@ -649,12 +672,17 @@ fn run(argv: &[String]) -> Result<(), String> {
             Json::A(
                 cases
                     .iter()
-                    .zip(&correctness)
-                    .map(|(case, check)| {
+                    .enumerate()
+                    .map(|(index, case)| {
                         let Json::O(mut fields) = case_manifest(case) else {
                             unreachable!("case manifest is an object")
                         };
-                        fields.push(("correctness".to_string(), check.to_json()));
+                        // Absent rather than a passing default when the pass did
+                        // not run, so a document cannot be read as a clean
+                        // verdict it never produced.
+                        if let Some(check) = correctness.get(index) {
+                            fields.push(("correctness".to_string(), check.to_json()));
+                        }
                         Json::O(fields)
                     })
                     .collect(),
@@ -871,6 +899,22 @@ mod tests {
             Args::parse(&argv).expect("parses").number("runs", 15),
             Ok(3)
         );
+    }
+
+    /// A warmup-only invocation with the correctness pass turned off would run
+    /// the warmups, measure nothing and assert nothing, so it has to be refused
+    /// rather than silently produce an empty document that reads as a clean run.
+    #[test]
+    fn a_run_that_would_prove_nothing_is_refused() {
+        let argv =
+            |flags: &[&str]| -> Vec<String> { flags.iter().map(|f| (*f).to_string()).collect() };
+        let error = run(&argv(&["--runs", "0", "--correctness", "off"]))
+            .expect_err("warmup-only with no correctness pass is refused");
+        assert!(error.contains("prove nothing"), "{error}");
+
+        let error =
+            run(&argv(&["--correctness", "sometimes"])).expect_err("only on and off are accepted");
+        assert!(error.contains("must be on or off"), "{error}");
     }
 
     /// The matrix digest binds the whole case set, so a dropped or reordered
