@@ -3,7 +3,7 @@ use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 
 mod validate;
-pub use validate::{validate_block_identity, CfgDefect};
+pub use validate::{rebuild_edges, validate_block_identity, validate_canonical_cfg, CfgDefect};
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub enum IROp {
@@ -318,8 +318,9 @@ pub fn build_function_ir(d: &FunctionDisassembly) -> FunctionIr {
             }
         }
 
-        succs.sort_unstable();
-        succs.dedup();
+        // Left exactly as derived, duplicates and all: a conditional whose target
+        // is its own fallthrough names one block twice. `rebuild_edges` below is
+        // the one place that decides what a canonical edge list looks like.
         blocks[i].succs = succs;
     }
 
@@ -379,27 +380,19 @@ pub fn build_function_ir(d: &FunctionDisassembly) -> FunctionIr {
     let mut blocks = kept;
     for (i, b) in blocks.iter_mut().enumerate() {
         b.id = i;
+        // Remapped, not dropped: the ids move, the edges do not change. Dropping
+        // an edge is `rebuild_edges`'s job and only for a target that no longer
+        // exists at all.
         b.succs = b
             .succs
             .iter()
             .filter_map(|s| remap.get(s).copied())
             .collect();
     }
-
-    for i in 0..blocks.len() {
-        let succs = blocks[i].succs.clone();
-        let pred_id = blocks[i].id;
-        for s in succs {
-            if let Some(target) = blocks.iter_mut().find(|b| b.id == s) {
-                target.preds.push(pred_id);
-            }
-        }
-    }
-
-    for b in &mut blocks {
-        b.preds.sort_unstable();
-        b.preds.dedup();
-    }
+    // The only place edges become canonical, on this path and on every later
+    // mutation path: successors sorted and unique, predecessors derived from them
+    // in full so the two sides cannot disagree.
+    rebuild_edges(&mut blocks);
 
     let ir = FunctionIr {
         function_id: d.function_id,
@@ -412,7 +405,7 @@ pub fn build_function_ir(d: &FunctionDisassembly) -> FunctionIr {
     // so its own output is held to the ruler its consumers apply. Costs nothing
     // in a release build; fires in every test and every debug run.
     debug_assert_eq!(
-        validate_block_identity(&ir),
+        validate_canonical_cfg(&ir),
         Ok(()),
         "the builder produced a graph its consumers cannot index"
     );

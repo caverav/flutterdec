@@ -571,7 +571,7 @@ pub(super) fn prune_calls_that_never_return(
         // graph with a duplicate id or an edge to a block that does not exist the
         // walk reads another block's successors, and the count it produces is what
         // the report publishes as blocks removed.
-        if flutterdec_ir::validate_block_identity(f).is_err() {
+        if flutterdec_ir::validate_canonical_cfg(f).is_err() {
             stats.skipped_invalid_ir += 1;
             continue;
         }
@@ -607,17 +607,21 @@ pub(super) fn prune_calls_that_never_return(
             if !dropped_succs.is_empty() || tail > 0 {
                 cut_any = true;
             }
-            // Keep `preds` consistent: `helper_flow/summary.rs` reads it directly
-            // to score a block, without cross-checking the successor side.
-            for succ in dropped_succs {
-                if let Some(sb) = f.blocks.iter_mut().find(|b| b.id == succ) {
-                    sb.preds.retain(|p| *p != id);
-                }
-            }
         }
         if !cut_any {
             continue;
         }
+        // Successors are the authority and predecessors are re-derived from them,
+        // through the one canonical path rather than through a second copy of the
+        // reciprocity rule here. `helper_flow/summary.rs` reads predecessors
+        // directly to score a block without cross-checking the successor side, so
+        // the predecessor side is exactly the one that used to go stale.
+        flutterdec_ir::rebuild_edges(&mut f.blocks);
+        debug_assert_eq!(
+            flutterdec_ir::validate_canonical_cfg(f),
+            Ok(()),
+            "the noreturn prune left a graph its consumers cannot index"
+        );
         stats.functions += 1;
         stats.blocks_cut += reachable_before.saturating_sub(reachable_block_count(f));
     }
@@ -1009,16 +1013,15 @@ mod prune_tests {
                 blk(2, 0x1010, vec![other(0x1010, "ret")], vec![]),
             ],
         }];
-        for b in 0..ir[0].blocks.len() {
-            let succs = ir[0].blocks[b].succs.clone();
-            let id = ir[0].blocks[b].id;
-            for s in succs {
-                ir[0].blocks[s].preds.push(id);
-            }
-        }
+        flutterdec_ir::rebuild_edges(&mut ir[0].blocks);
 
         let stats = prune_calls_that_never_return(&mut ir, &HashSet::from([0x9000]));
 
+        assert_eq!(
+            flutterdec_ir::validate_canonical_cfg(&ir[0]),
+            Ok(()),
+            "the prune must leave a canonical graph"
+        );
         assert_eq!(stats.functions, 1);
         assert_eq!(stats.blocks_cut, 1, "block 2 becomes unreachable");
         assert_eq!(stats.instructions_cut, 2, "the two bytes after the throw");
@@ -1052,10 +1055,134 @@ mod prune_tests {
                 blk(1, 0x1004, vec![other(0x1004, "ret")], vec![]),
             ],
         }];
+        // Through the canonical path, not by hand: a fixture whose predecessors
+        // are empty fails the ruler the prune applies, so it would be skipped and
+        // every assertion below would pass for the wrong reason.
+        flutterdec_ir::rebuild_edges(&mut ir[0].blocks);
         let stats = prune_calls_that_never_return(&mut ir, &HashSet::from([0x9000]));
         assert_eq!(stats.functions, 0);
         assert_eq!(stats.skipped_invalid_ir, 0, "the fixture is well formed");
         assert_eq!(ir[0].blocks[0].succs, vec![1], "a returning call falls through");
+    }
+
+    /// The prune is a mutation path: it drops a block's whole successor list. The
+    /// shapes below are the ones where dropping one edge leaves the other side of
+    /// a *shared* target to keep -- a join still reached by another path, a back
+    /// edge, a block that was its own successor -- so re-deriving predecessors has
+    /// to remove exactly the cut edge and nothing else.
+    #[test]
+    fn every_shape_the_prune_mutates_comes_out_canonical() {
+        let shapes: Vec<(&str, Vec<BasicBlock>)> = vec![
+            (
+                "join still reached by a second path",
+                vec![
+                    blk(0, 0x1000, vec![other(0x1000, "cbz x0, #0x1008")], vec![1, 2]),
+                    blk(1, 0x1004, vec![call(0x1004, "#0x9000")], vec![3]),
+                    blk(2, 0x1008, vec![other(0x1008, "mov x1, x2")], vec![3]),
+                    blk(3, 0x100c, vec![other(0x100c, "ret")], vec![]),
+                ],
+            ),
+            (
+                "the cut block is a loop's back edge",
+                vec![
+                    blk(0, 0x1000, vec![other(0x1000, "mov x0, x1")], vec![1]),
+                    blk(1, 0x1004, vec![other(0x1004, "cbz x0, #0x100c")], vec![2, 3]),
+                    blk(2, 0x1008, vec![call(0x1008, "#0x9000")], vec![1]),
+                    blk(3, 0x100c, vec![other(0x100c, "ret")], vec![]),
+                ],
+            ),
+            (
+                "two cut blocks share one target",
+                vec![
+                    blk(0, 0x1000, vec![other(0x1000, "cbz x0, #0x1008")], vec![1, 2]),
+                    blk(1, 0x1004, vec![call(0x1004, "#0x9000")], vec![3]),
+                    blk(2, 0x1008, vec![call(0x1008, "#0x9000")], vec![3]),
+                    blk(3, 0x100c, vec![other(0x100c, "ret")], vec![]),
+                ],
+            ),
+            (
+                "the cut block is its own successor",
+                vec![
+                    blk(0, 0x1000, vec![other(0x1000, "mov x0, x1")], vec![1]),
+                    blk(1, 0x1004, vec![call(0x1004, "#0x9000")], vec![1]),
+                ],
+            ),
+            (
+                "nothing to cut at all",
+                vec![
+                    blk(0, 0x1000, vec![call(0x1000, "#0x8000")], vec![1]),
+                    blk(1, 0x1004, vec![other(0x1004, "ret")], vec![]),
+                ],
+            ),
+        ];
+
+        for (label, blocks) in shapes {
+            let mut ir = vec![FunctionIr {
+                function_id: 1,
+                name: "sub_1000".to_string(),
+                entry_va: 0x1000,
+                blocks,
+            }];
+            flutterdec_ir::rebuild_edges(&mut ir[0].blocks);
+            assert_eq!(
+                flutterdec_ir::validate_canonical_cfg(&ir[0]),
+                Ok(()),
+                "{label}: the fixture itself"
+            );
+
+            let stats = prune_calls_that_never_return(&mut ir, &HashSet::from([0x9000]));
+            assert_eq!(stats.skipped_invalid_ir, 0, "{label}");
+            assert_eq!(
+                flutterdec_ir::validate_canonical_cfg(&ir[0]),
+                Ok(()),
+                "{label}: after the prune: {:?}",
+                ir[0]
+                    .blocks
+                    .iter()
+                    .map(|b| (b.id, b.succs.clone(), b.preds.clone()))
+                    .collect::<Vec<_>>()
+            );
+            // No block may be removed, whatever was cut: `regions.rs` needs the
+            // ids dense and renumbering here would push the function onto the
+            // fallback emitter.
+            assert_eq!(
+                ir[0].blocks.iter().map(|b| b.id).collect::<Vec<_>>(),
+                (0..ir[0].blocks.len()).collect::<Vec<_>>(),
+                "{label}: ids must stay dense"
+            );
+        }
+    }
+
+    /// A block no cut touched must keep exactly the predecessors it had. Re-deriving
+    /// the whole predecessor side is what makes the cut edge disappear, and it must
+    /// not take an unrelated one with it.
+    #[test]
+    fn the_prune_removes_only_the_cut_edge() {
+        let mut ir = vec![FunctionIr {
+            function_id: 1,
+            name: "sub_1000".to_string(),
+            entry_va: 0x1000,
+            blocks: vec![
+                blk(0, 0x1000, vec![other(0x1000, "cbz x0, #0x1008")], vec![1, 2]),
+                blk(1, 0x1004, vec![call(0x1004, "#0x9000")], vec![3]),
+                blk(2, 0x1008, vec![other(0x1008, "mov x1, x2")], vec![3]),
+                blk(3, 0x100c, vec![other(0x100c, "ret")], vec![]),
+            ],
+        }];
+        flutterdec_ir::rebuild_edges(&mut ir[0].blocks);
+        assert_eq!(ir[0].blocks[3].preds, vec![1, 2]);
+
+        prune_calls_that_never_return(&mut ir, &HashSet::from([0x9000]));
+
+        assert_eq!(ir[0].blocks[1].succs, Vec::<usize>::new(), "the cut edge");
+        assert_eq!(
+            ir[0].blocks[3].preds,
+            vec![2],
+            "block 2's edge into the join is unrelated and must survive"
+        );
+        assert_eq!(ir[0].blocks[0].succs, vec![1, 2], "nothing else moved");
+        assert_eq!(ir[0].blocks[1].preds, vec![0]);
+        assert_eq!(ir[0].blocks[2].preds, vec![0]);
     }
 
     /// The identity gate at the prune's own boundary. The reachability walk below
@@ -1108,6 +1235,26 @@ mod prune_tests {
             (
                 "predecessor names no block",
                 Box::new(|f: &mut FunctionIr| f.blocks[2].preds = vec![9]),
+            ),
+            (
+                "duplicate successor",
+                Box::new(|f: &mut FunctionIr| f.blocks[1].succs = vec![2, 2]),
+            ),
+            (
+                "unsorted successors",
+                Box::new(|f: &mut FunctionIr| f.blocks[0].succs = vec![2, 1]),
+            ),
+            (
+                "duplicate predecessor",
+                Box::new(|f: &mut FunctionIr| f.blocks[2].preds = vec![1, 1]),
+            ),
+            (
+                "asymmetric edge, successor side only",
+                Box::new(|f: &mut FunctionIr| f.blocks[2].preds = Vec::new()),
+            ),
+            (
+                "asymmetric edge, predecessor side only",
+                Box::new(|f: &mut FunctionIr| f.blocks[1].succs = Vec::new()),
             ),
         ];
         for (label, break_it) in breakers {

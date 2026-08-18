@@ -12,7 +12,7 @@
 //! disagree with the rest about what a usable graph is, which is the failure
 //! this module exists to remove.
 
-use crate::FunctionIr;
+use crate::{BasicBlock, FunctionIr};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
@@ -44,6 +44,19 @@ pub enum CfgDefect {
     MissingSuccessorBlock { from: usize, to: usize },
     /// A predecessor names a block that does not exist.
     MissingPredecessorBlock { of: usize, from: usize },
+    /// A successor list is not ascending, or names the same block twice. Order is
+    /// output-affecting: the emitters render a conditional's arms in successor
+    /// order, and a duplicate makes one arm two.
+    UnorderedSuccessors { id: usize },
+    /// A predecessor list is not ascending, or names the same block twice. Join
+    /// provenance is recorded in predecessor order, and a duplicate turns one
+    /// incoming path into two claims about the same one.
+    UnorderedPredecessors { id: usize },
+    /// An edge exists on the successor side and not on the predecessor side, so a
+    /// reader of one disagrees with a reader of the other about the graph.
+    SuccessorWithoutPredecessor { from: usize, to: usize },
+    /// An edge exists on the predecessor side and not on the successor side.
+    PredecessorWithoutSuccessor { of: usize, from: usize },
 }
 
 impl fmt::Display for CfgDefect {
@@ -67,6 +80,18 @@ impl fmt::Display for CfgDefect {
                     f,
                     "predecessor {from} of {of} names a block that does not exist"
                 )
+            }
+            Self::UnorderedSuccessors { id } => {
+                write!(f, "successors of {id} are not ascending and unique")
+            }
+            Self::UnorderedPredecessors { id } => {
+                write!(f, "predecessors of {id} are not ascending and unique")
+            }
+            Self::SuccessorWithoutPredecessor { from, to } => {
+                write!(f, "edge {from} -> {to} is missing its predecessor")
+            }
+            Self::PredecessorWithoutSuccessor { of, from } => {
+                write!(f, "predecessor {from} of {of} has no matching edge")
             }
         }
     }
@@ -132,6 +157,85 @@ pub fn validate_block_identity(ir: &FunctionIr) -> Result<(), CfgDefect> {
     }
 
     Ok(())
+}
+
+/// Whether the graph is canonical: block identity holds *and* every edge is
+/// stated once, in ascending order, from both ends.
+///
+/// This is the ruler every internal producer is held to, and it is the identity
+/// ruler plus the edge clauses -- never a different rule set. A consumer that
+/// only indexes blocks needs `validate_block_identity`; a producer that mutates
+/// edges owes this.
+///
+/// Edge order matters to output, not just to tidiness: both emitters render a
+/// conditional's arms in successor order and record join provenance in
+/// predecessor order, so an unstable list is an unstable artifact. Reciprocity
+/// matters because both sides have readers -- `helper_flow` scores a block from
+/// its predecessors while the emitters walk successors -- and a one-sided edge
+/// makes those two readers describe different graphs.
+pub fn validate_canonical_cfg(ir: &FunctionIr) -> Result<(), CfgDefect> {
+    validate_block_identity(ir)?;
+    for b in &ir.blocks {
+        if !is_ascending_unique(&b.succs) {
+            return Err(CfgDefect::UnorderedSuccessors { id: b.id });
+        }
+        if !is_ascending_unique(&b.preds) {
+            return Err(CfgDefect::UnorderedPredecessors { id: b.id });
+        }
+    }
+    // Identity holds, so `id == position` and every endpoint is in range.
+    for b in &ir.blocks {
+        for s in &b.succs {
+            if !ir.blocks[*s].preds.contains(&b.id) {
+                return Err(CfgDefect::SuccessorWithoutPredecessor { from: b.id, to: *s });
+            }
+        }
+        for p in &b.preds {
+            if !ir.blocks[*p].succs.contains(&b.id) {
+                return Err(CfgDefect::PredecessorWithoutSuccessor { of: b.id, from: *p });
+            }
+        }
+    }
+    Ok(())
+}
+
+fn is_ascending_unique(ids: &[usize]) -> bool {
+    ids.windows(2).all(|w| w[0] < w[1])
+}
+
+/// The one path that makes a mutated CFG canonical again.
+///
+/// Successor lists are the authority and predecessor lists are derived from them
+/// in full, so reciprocity cannot be half-applied. A pass that removed an edge by
+/// hand from both sides was two copies of this rule that had to agree; the copy
+/// on the predecessor side is the one that goes stale, and `helper_flow` reads
+/// predecessors directly to score a block.
+///
+/// A successor naming a block that does not exist is dropped rather than kept: an
+/// edge to nothing is not an edge, and leaving it in would make every consumer
+/// index out of range. Callers that renumber must remap their successor ids
+/// *before* calling this, or the edge is dropped rather than moved.
+pub fn rebuild_edges(blocks: &mut [BasicBlock]) {
+    let ids: BTreeSet<usize> = blocks.iter().map(|b| b.id).collect();
+    for b in blocks.iter_mut() {
+        b.succs.retain(|s| ids.contains(s));
+        b.succs.sort_unstable();
+        b.succs.dedup();
+    }
+    // A set per target, so the derived list is ascending and unique by
+    // construction rather than by a sort a caller could forget.
+    let mut incoming: BTreeMap<usize, BTreeSet<usize>> = BTreeMap::new();
+    for b in blocks.iter() {
+        for s in &b.succs {
+            incoming.entry(*s).or_default().insert(b.id);
+        }
+    }
+    for b in blocks.iter_mut() {
+        b.preds = incoming
+            .get(&b.id)
+            .map(|from| from.iter().copied().collect())
+            .unwrap_or_default();
+    }
 }
 
 #[cfg(test)]
@@ -294,11 +398,152 @@ mod tests {
         }
     }
 
-    /// The builder's own output has to satisfy the ruler its consumers apply,
-    /// including on the paths that renumber: the runtime-check slow-path prune
-    /// removes blocks and remaps every id.
+    /// One planted failure per edge rule. Every row is one field edit away from a
+    /// graph the ruler accepts, so a rejection is the edge and nothing else.
     #[test]
-    fn the_builder_produces_a_graph_the_ruler_accepts() {
+    fn every_planted_edge_failure_is_named() {
+        assert_eq!(validate_canonical_cfg(&diamond()), Ok(()));
+
+        let mut ir = diamond();
+        ir.blocks[0].succs = vec![1, 1, 2];
+        ir.blocks[1].preds = vec![0, 0];
+        assert_eq!(
+            validate_canonical_cfg(&ir),
+            Err(CfgDefect::UnorderedSuccessors { id: 0 }),
+            "a duplicate successor makes one arm two"
+        );
+
+        let mut ir = diamond();
+        ir.blocks[0].succs = vec![2, 1];
+        assert_eq!(
+            validate_canonical_cfg(&ir),
+            Err(CfgDefect::UnorderedSuccessors { id: 0 }),
+            "arm order is output-affecting"
+        );
+
+        let mut ir = diamond();
+        ir.blocks[3].preds = vec![1, 1, 2];
+        assert_eq!(
+            validate_canonical_cfg(&ir),
+            Err(CfgDefect::UnorderedPredecessors { id: 3 }),
+            "a duplicate predecessor is a second claim about one path"
+        );
+
+        let mut ir = diamond();
+        ir.blocks[3].preds = vec![2, 1];
+        assert_eq!(
+            validate_canonical_cfg(&ir),
+            Err(CfgDefect::UnorderedPredecessors { id: 3 }),
+            "join provenance is recorded in predecessor order"
+        );
+
+        let mut ir = diamond();
+        ir.blocks[3].preds = vec![2];
+        assert_eq!(
+            validate_canonical_cfg(&ir),
+            Err(CfgDefect::SuccessorWithoutPredecessor { from: 1, to: 3 }),
+            "an edge only the successor side knows about"
+        );
+
+        let mut ir = diamond();
+        ir.blocks[1].succs = Vec::new();
+        assert_eq!(
+            validate_canonical_cfg(&ir),
+            Err(CfgDefect::PredecessorWithoutSuccessor { of: 3, from: 1 }),
+            "an edge only the predecessor side knows about"
+        );
+
+        // Identity is checked first, so an edge clause can never mask a defect
+        // that would make the edge clauses index the wrong rows.
+        let mut ir = diamond();
+        ir.blocks[3].id = 9;
+        ir.blocks[3].preds = vec![2, 1];
+        assert_eq!(
+            validate_canonical_cfg(&ir),
+            Err(CfgDefect::NonDenseBlockId { position: 3, id: 9 }),
+            "identity comes first"
+        );
+    }
+
+    #[test]
+    fn every_edge_defect_renders_a_distinct_one_line_diagnostic() {
+        let rendered: Vec<String> = [
+            CfgDefect::UnorderedSuccessors { id: 0 },
+            CfgDefect::UnorderedPredecessors { id: 3 },
+            CfgDefect::SuccessorWithoutPredecessor { from: 1, to: 3 },
+            CfgDefect::PredecessorWithoutSuccessor { of: 3, from: 1 },
+        ]
+        .iter()
+        .map(|d| d.to_string())
+        .collect();
+        assert_eq!(
+            rendered,
+            vec![
+                "successors of 0 are not ascending and unique",
+                "predecessors of 3 are not ascending and unique",
+                "edge 1 -> 3 is missing its predecessor",
+                "predecessor 1 of 3 has no matching edge",
+            ]
+        );
+        for text in &rendered {
+            assert!(!text.contains('\n'), "a diagnostic is one line: {text}");
+        }
+    }
+
+    /// The canonical path takes any of the ways a mutation can leave edges wrong
+    /// and produces the one form the ruler accepts, without a caller having to
+    /// know which of them applied.
+    #[test]
+    fn the_canonical_rebuild_repairs_every_edge_defect() {
+        let mut ir = diamond();
+        // Unsorted, duplicated, and pointing at a block that does not exist.
+        ir.blocks[0].succs = vec![2, 1, 1, 9];
+        // Stale on both sides: one predecessor that no longer has an edge, one
+        // edge whose predecessor was never recorded, and a duplicate.
+        ir.blocks[1].preds = vec![3, 3];
+        ir.blocks[2].preds = Vec::new();
+        ir.blocks[3].preds = vec![2, 1, 1];
+
+        rebuild_edges(&mut ir.blocks);
+
+        assert_eq!(validate_canonical_cfg(&ir), Ok(()));
+        assert_eq!(
+            ir.blocks[0].succs,
+            vec![1, 2],
+            "sorted, unique, and existing"
+        );
+        assert_eq!(ir.blocks[0].preds, Vec::<usize>::new());
+        assert_eq!(ir.blocks[1].preds, vec![0], "derived from successors alone");
+        assert_eq!(ir.blocks[2].preds, vec![0]);
+        assert_eq!(ir.blocks[3].preds, vec![1, 2]);
+        assert!(
+            !ir.blocks[0].succs.contains(&9),
+            "an edge to a block that does not exist is not an edge"
+        );
+    }
+
+    /// The rebuild is idempotent: running it on its own output changes nothing, so
+    /// a pass that calls it twice cannot drift.
+    #[test]
+    fn the_canonical_rebuild_is_idempotent() {
+        let mut once = diamond();
+        once.blocks[0].succs = vec![2, 1, 1];
+        rebuild_edges(&mut once.blocks);
+        let mut twice = once.clone();
+        rebuild_edges(&mut twice.blocks);
+        for (a, b) in once.blocks.iter().zip(&twice.blocks) {
+            assert_eq!(a.succs, b.succs, "block {}", a.id);
+            assert_eq!(a.preds, b.preds, "block {}", a.id);
+        }
+    }
+
+    /// The builder's own output has to satisfy the ruler its consumers apply, on
+    /// every path it can take: a conditional with a fallthrough, a conditional
+    /// whose target *is* its fallthrough so the derived list holds one block
+    /// twice, the terminators that take no edge at all, and the guarded shape
+    /// whose slow path is pruned and whose ids are all remapped.
+    #[test]
+    fn the_builder_is_canonical_on_every_path_it_takes() {
         use flutterdec_disasm_arm64::{AsmInstruction, FunctionDisassembly};
 
         let ins = |va: u64, mnemonic: &str, op_str: &str| AsmInstruction {
@@ -317,39 +562,74 @@ mod tests {
             instructions,
         };
 
-        // Plain conditional, an indirect branch and a trap, then the guarded
-        // shape whose slow path is pruned and whose ids are all remapped.
         let cases = vec![
-            record(vec![
-                ins(0x1000, "cbz", "x0, #0x1010"),
-                ins(0x1004, "br", "x16"),
-                ins(0x1008, "brk", "#0x1"),
-                ins(0x100c, "ret", ""),
-                ins(0x1010, "ret", ""),
-            ]),
-            record(vec![
-                ins(0x1000, "ldr", "x16, [x26, #0x38]"),
-                ins(0x1004, "cmp", "x15, x16"),
-                ins(0x1008, "b.ls", "#0x1014"),
-                ins(0x100c, "mov", "x0, x1"),
-                ins(0x1010, "ret", ""),
-                ins(0x1014, "bl", "#0x9000"),
-                ins(0x1018, "b", "#0x100c"),
-            ]),
-            record(Vec::new()),
+            (
+                "conditional, indirect branch and trap",
+                record(vec![
+                    ins(0x1000, "cbz", "x0, #0x1010"),
+                    ins(0x1004, "br", "x16"),
+                    ins(0x1008, "brk", "#0x1"),
+                    ins(0x100c, "ret", ""),
+                    ins(0x1010, "ret", ""),
+                ]),
+                None,
+            ),
+            (
+                "conditional whose target is its own fallthrough",
+                record(vec![
+                    ins(0x1000, "cbz", "x0, #0x1004"),
+                    ins(0x1004, "mov", "x0, x1"),
+                    ins(0x1008, "ret", ""),
+                ]),
+                // One block, named once, not twice.
+                Some(vec![vec![1usize], vec![]]),
+            ),
+            (
+                "unconditional jump to its own fallthrough",
+                record(vec![ins(0x1000, "b", "#0x1004"), ins(0x1004, "ret", "")]),
+                Some(vec![vec![1usize], vec![]]),
+            ),
+            (
+                "guard and its pruned slow path",
+                record(vec![
+                    ins(0x1000, "ldr", "x16, [x26, #0x38]"),
+                    ins(0x1004, "cmp", "x15, x16"),
+                    ins(0x1008, "b.ls", "#0x1014"),
+                    ins(0x100c, "mov", "x0, x1"),
+                    ins(0x1010, "ret", ""),
+                    ins(0x1014, "bl", "#0x9000"),
+                    ins(0x1018, "b", "#0x100c"),
+                ]),
+                None,
+            ),
+            (
+                "no instructions at all",
+                record(Vec::new()),
+                Some(Vec::new()),
+            ),
         ];
 
-        for case in cases {
+        for (label, case, expected_succs) in cases {
             let ir = crate::build_function_ir(&case);
             assert_eq!(
-                validate_block_identity(&ir),
+                validate_canonical_cfg(&ir),
                 Ok(()),
-                "the builder must not emit a graph its own consumers refuse: {:?}",
+                "{label}: the builder must not emit a graph its own consumers refuse: {:?}",
                 ir.blocks
                     .iter()
                     .map(|b| (b.id, b.start_va, b.succs.clone(), b.preds.clone()))
                     .collect::<Vec<_>>()
             );
+            if let Some(expected) = expected_succs {
+                assert_eq!(
+                    ir.blocks
+                        .iter()
+                        .map(|b| b.succs.clone())
+                        .collect::<Vec<_>>(),
+                    expected,
+                    "{label}: edge list"
+                );
+            }
         }
     }
 }

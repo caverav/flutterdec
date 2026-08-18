@@ -438,17 +438,90 @@ mod tests {
             "the builder must not produce a graph the splitter refuses"
         );
         assert_eq!(
-            flutterdec_ir::validate_block_identity(&build_function_ir(&two_functions())),
+            flutterdec_ir::validate_canonical_cfg(&build_function_ir(&two_functions())),
             Ok(()),
             "the pre-split record's own graph"
         );
         for piece in &out {
             assert_eq!(
-                flutterdec_ir::validate_block_identity(&build_function_ir(piece)),
+                flutterdec_ir::validate_canonical_cfg(&build_function_ir(piece)),
                 Ok(()),
-                "piece at {:#x} must build an indexable graph",
+                "piece at {:#x} must build a canonical graph",
                 piece.entry_va
             );
+        }
+    }
+
+    /// Splitting is a mutation path of its own: it cuts one instruction list into
+    /// several and every piece is built into its own graph. The shapes below are
+    /// the ones where a cut can land next to an edge -- a branch back across the
+    /// cut, a conditional whose target is its own fallthrough, a raising stub that
+    /// ends in `brk`, an indirect tail call -- so every piece of every one of them
+    /// has to come out canonical.
+    #[test]
+    fn every_piece_of_every_split_shape_is_canonical() {
+        let records = vec![
+            ("two plain functions", two_functions().instructions),
+            (
+                "second piece branches within itself",
+                vec![
+                    ins(0x1000, "stp", "x29, x30, [x15, #-0x10]!"),
+                    ins(0x1004, "ret", ""),
+                    ins(0x1008, "stp", "x29, x30, [x15, #-0x10]!"),
+                    ins(0x100c, "cbz", "x0, #0x1008"),
+                    ins(0x1010, "ret", ""),
+                ],
+            ),
+            (
+                "conditional target is its own fallthrough",
+                vec![
+                    ins(0x1000, "stp", "x29, x30, [x15, #-0x10]!"),
+                    ins(0x1004, "ret", ""),
+                    ins(0x1008, "stp", "x29, x30, [x15, #-0x10]!"),
+                    ins(0x100c, "cbz", "x0, #0x1010"),
+                    ins(0x1010, "ret", ""),
+                ],
+            ),
+            (
+                "first piece ends in a trap",
+                vec![
+                    ins(0x1000, "stp", "x29, x30, [x15, #-0x10]!"),
+                    ins(0x1004, "brk", "#0x1"),
+                    ins(0x1008, "stp", "x29, x30, [x15, #-0x10]!"),
+                    ins(0x100c, "ret", ""),
+                ],
+            ),
+            (
+                "first piece ends in an indirect branch",
+                vec![
+                    ins(0x1000, "stp", "x29, x30, [x15, #-0x10]!"),
+                    ins(0x1004, "br", "x16"),
+                    ins(0x1008, "stp", "x29, x30, [x15, #-0x10]!"),
+                    ins(0x100c, "ret", ""),
+                ],
+            ),
+        ];
+
+        for (label, instructions) in records {
+            let record = FunctionDisassembly {
+                function_id: 7,
+                function_name: "declaredName".to_string(),
+                owner_class: "SomeClass".to_string(),
+                entry_va: 0x1000,
+                size: 4 * instructions.len() as u64,
+                instructions,
+            };
+            let (out, stats) = split_inflated_records(vec![record]);
+            assert_eq!(stats.rejected_invalid_ir, 0, "{label}");
+            assert_eq!(stats.rejected_no_block, 0, "{label}");
+            for piece in &out {
+                assert_eq!(
+                    flutterdec_ir::validate_canonical_cfg(&build_function_ir(piece)),
+                    Ok(()),
+                    "{label}: piece at {:#x}",
+                    piece.entry_va
+                );
+            }
         }
     }
 
