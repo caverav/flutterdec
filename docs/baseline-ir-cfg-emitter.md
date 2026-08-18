@@ -112,7 +112,28 @@ beforehand in any case.
 | Timeout | 120 s per measured run; `runs_over_timeout` empty for all four binaries |
 | Memory limit | 2147483648 bytes; peak resident set 79007744 to 79241216 bytes across the four binaries, `within_memory_limit` true for each |
 | Timer overhead | 20 ns, calibrated over 4096 samples |
-| Reconciliation | 2 percent tolerance; worst unaccounted fraction 0.0, `reconciliation_failures` empty for all four binaries |
+| Reconciliation | 2 percent tolerance; worst unaccounted fraction over the 495 measured passes per binary: 0.000755 aa-1 reference, 0.000656 aa-1 candidate, 0.001204 aa-2 reference, 0.000560 aa-2 candidate |
+
+The reconciliation row is recomputed from the committed sample streams, not read
+off a harness document. The harness records `worst_unaccounted_fraction` in the
+invocation that measured the pass, and the two warmup invocations per run measure
+zero runs, so their documents necessarily report `0.0` and
+`reconciliation_failures` empty no matter what the measured passes did. That
+value is not evidence, and the audit in section 9 now rejects a warmup document
+that claims otherwise.
+
+The durable values above come from the residue the harness itself defines,
+`(combined - (ir + cfg + emission_exclusive + serialization)) / combined`
+(`crates/flutterdec-bench/src/main.rs:365-378`), recomputed over all 495 measured
+passes of each of the four binaries from `aa-*/samples-*.tsv`. Every one of the
+1980 residues is positive, as it must be since the combined span also contains
+the clock reads at the inner boundaries, the worst is 0.12 percent of one
+combined span, and none reaches the 2 percent tolerance. The median residue is
+0.000003 to 0.000004. The worst case in every binary is `linear/64/base`, the
+cheapest case in the matrix, which is where a fixed number of boundary clock
+reads costs the largest fraction. Output:
+`docs/baseline/audit-committed-runs.txt`, reproducible from the committed
+artifacts alone.
 
 ## 5. Schedule and pair order
 
@@ -258,9 +279,12 @@ any of: the two runs overlapping in time, a missing or duplicated sample, a
 sample key present on one side only, a binary digest mismatch between sides, a
 matrix or per-case workload digest that differs between binaries, a manifest that
 differs between sides or runs, a correctness failure, a memory or timeout limit
-breach, a reconciliation failure, a warmup or run count other than 3 and 0 for
-warmups and 0 and 1 for measured passes, a measured document whose binding does
-not match `binding.txt`, a label that does not carry its pair and position, a
+breach, a reconciliation failure, a measured pass whose four spans exceed or fail
+to reconcile with its combined span, a warmup document that claims a non-zero
+worst unaccounted fraction it never measured, a warmup or run count other than 3
+and 0 for warmups and 0 and 1 for measured passes, a measured document whose
+binding does not match `binding.txt`, a label that does not carry its pair and
+position, a
 cell clearing its own MDE in an A/A run, a position effect reaching the 5 percent
 floor, or a held-position A/A skew of the same sign in both slots (the
 build-layout signature).
@@ -282,12 +306,25 @@ python3 docs/baseline/audit-aa-runs.py \
   docs/baseline/aa-1 docs/baseline/aa-2 docs/baseline/per-case-summary.tsv
 ```
 
-exit 0, same numbers. Two checks are skipped there and say so on stdout rather
-than passing silently: the overlap check, because a committed copy carries
-checkout modification times and not measurement ones, and the per-pair document
-binding check, because the committed evidence keeps the aggregated sample streams
-instead of the 60 raw per-pair documents. Both are exercised by the live run
-above.
+exit 0, same numbers, output `docs/baseline/audit-committed-runs.txt`. Three
+checks are skipped there and say so on stdout rather than passing silently: the
+overlap check, because a committed copy carries checkout modification times and
+not measurement ones, the per-pair document binding check, because the committed
+evidence keeps the aggregated sample streams instead of the 60 raw per-pair
+documents, and the side-versus-side manifest check, because the committed
+evidence keeps only the reference manifest. All three are exercised by the live
+run above. Nothing else degrades: in particular the section 4 reconciliation
+numbers and every statistic in sections 7 and 8 are recomputed in full from the
+committed streams, so a reader with only this repository can reproduce them after
+the live directories are gone.
+
+The reconciliation check has provable detection power. Against a copy of the
+committed artifacts with one `emission_exclusive` sample tripled, so the four
+parts exceed their combined span, the audit exits 1 with
+`worst=-1.416358 ... negative=1` and rejects. With one `serialization` sample
+zeroed instead, so the residue stays positive but grows, it exits 1 with
+`worst=+0.237064` over the 0.02 tolerance. With a warmup document edited to claim
+`worst_unaccounted_fraction` 0.0004 it exits 1 naming that document.
 
 The audit's per-phase deltas and noise agree with the harness aggregator's own
 `analysis.json` to within 1e-4 on all 10 phase rows, so the two implementations
@@ -299,8 +336,9 @@ of the statistic are independent and consistent.
 | --- | --- |
 | `baseline/harness-8e7f080.patch` | `14413796ca8a89cc1328497b5c87629b1c55f945ec58e73eebb3838df0700460` |
 | `baseline/per-case-summary.tsv` | `e24e5ff4bf06abd1014b75b3fc4a18d3bd75f2b2c1c0550ecf2a0e149a94680a` |
-| `baseline/audit-aa-runs.py` | `c2f69d18f676f77ba5415a661dc48497994d4a9b5a334005f8dbdeea6fdae77e` |
-| `baseline/audit-live-runs.txt` | `df95fa3f0f70b46759dbb6db961868e490cbbfb410e43bac5a2b7f1ec71557db` |
+| `baseline/audit-aa-runs.py` | `14cac59f60bec444a753d99225561f6fcbc5222b12698e2895555549129c24de` |
+| `baseline/audit-live-runs.txt` | `229ed7c4f95a9648f6480ced2b1bb32f95f2973b4cfebc0ae13d71e5202b691e` |
+| `baseline/audit-committed-runs.txt` | `5c752778d41c9ba84635c6c5094e15736f89eb6e9dd610cf618c04932383175c` |
 | `baseline/build-only-console.txt` | `a61906124da4da440f89c68add320c5da6e3c229747e4fbc084ffea04aa7dd4b` |
 | `baseline/aa-1/analysis.json` | `81fdb55fa9d84eb4e04a65bd5f9e741d823bdb3e4a71dc2753e60c50f53db047` |
 | `baseline/aa-1/binding.txt` | `c321d872eee85bb8afa7f797551e8274e3024fe7743e7b64377d73f348eeef20` |
@@ -322,6 +360,19 @@ of the statistic are independent and consistent.
 | `baseline/aa-2/warmup-candidate.json` | `5e4cdc53b627ad2dc8abdf0041f2d2a6157734ee972759b1069b2b5336cc1200` |
 | `baseline/invalidated-runs.md` | chronology, not a measurement |
 | `baseline/invalidated-2026-08-18-fixed-order.txt` | `066554cd8e6633b3aa9f6cb7860861f47bfc2dc477ea8f9667b3aee10673c5ab` |
+
+Two rows moved when the measured-pass reconciliation check was added to the
+audit. The superseded digests are kept here so a reader can tell which version
+produced an older copy: `baseline/audit-aa-runs.py` was
+`c2f69d18f676f77ba5415a661dc48497994d4a9b5a334005f8dbdeea6fdae77e` and
+`baseline/audit-live-runs.txt` was
+`df95fa3f0f70b46759dbb6db961868e490cbbfb410e43bac5a2b7f1ec71557db`. No sample
+stream, warmup document, analysis, manifest, console log or patch changed, and
+`baseline/per-case-summary.tsv` is regenerated byte-identically by the new
+version, so every measurement in this document is the same measurement. Neither
+file is a protected ruler under section 7 of
+[oracle-protocol-ir-cfg-emitter.md](oracle-protocol-ir-cfg-emitter.md); the
+change is additive there too, adding two reject conditions and removing none.
 
 ## 11. Limits
 

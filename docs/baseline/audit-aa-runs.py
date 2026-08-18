@@ -4,7 +4,8 @@
 Recomputes every published statistic from the raw sample streams, restates the
 alternating schedule from scratch, and exits 1 on any reject condition: run
 overlap, stale or unpaired samples, binary digest mismatch, workload drift,
-correctness failure, a cell clearing its own MDE, or a systematic order or
+correctness failure, a measured pass whose four spans do not reconcile with its
+combined span, a cell clearing its own MDE, or a systematic order or
 build-layout bias.
 
     python3 docs/baseline/audit-aa-runs.py AA1_DIR AA2_DIR [PER_CASE_SUMMARY_TSV]
@@ -142,6 +143,16 @@ for d in RUNS:
             problems.append(f"{name}/{side}: runs over timeout")
         if w["timer"]["reconciliation_failures"]:
             problems.append(f"{name}/{side}: reconciliation failures")
+        # A warmup invocation measures zero runs, so its
+        # `worst_unaccounted_fraction` is the untouched 0.0 initial value and
+        # says nothing about the measured passes. Recomputed below from the
+        # sample streams instead; reject the document if it ever claims
+        # otherwise.
+        if w["timer"]["worst_unaccounted_fraction"] != 0.0:
+            problems.append(
+                f"{name}/{side}: warmup document reports a non-zero "
+                f"worst_unaccounted_fraction {w['timer']['worst_unaccounted_fraction']}"
+            )
         if w["binding"]["warmups"] != 3:
             problems.append(f"{name}/{side}: warmups={w['binding']['warmups']}, expected 3")
         if w["binding"]["measured_runs"] != 0:
@@ -189,6 +200,51 @@ if first["window"] and second["window"]:
     print(f"gap between runs: {w2[0] - w1[1]:.1f}s")
 else:
     print("[skip] no raw/ sample mtimes, overlap check skipped (committed copy)")
+
+# --- reject: timer reconciliation on the MEASURED passes. The harness computes
+# `combined - (ir + cfg + emission_exclusive + serialization)` per pass and only
+# records the worst one in the invocation that measured it, so the warmup
+# documents cannot carry this number. Both terms are in the committed sample
+# streams, so the residue is recomputed here from durable evidence rather than
+# from the per-pair documents under a live `raw/`.
+print("\n== timer reconciliation, measured passes (combined minus the four parts)")
+for name, R in runs.items():
+    tolerance = R["warm"]["reference"]["timer"]["reconciliation_tolerance"]
+    for side, tbl in (("reference", R["ref"]), ("candidate", R["cand"])):
+        residues = []
+        for p in range(PAIRS):
+            for case in R["cases"]:
+                combined = tbl[(p, case, "combined")]
+                if combined == 0:
+                    problems.append(f"{name}/{side}: zero combined span pair={p} {case}")
+                    continue
+                parts = sum(tbl[(p, case, ph)] for ph in PHASES if ph != "combined")
+                residues.append(((combined - parts) / combined, p, case))
+        expected_passes = PAIRS * len(R["cases"])
+        if len(residues) != expected_passes:
+            problems.append(
+                f"{name}/{side}: reconciled {len(residues)} passes, expected {expected_passes}"
+            )
+        worst = max(residues, key=lambda t: abs(t[0]))
+        # Positive by construction: the combined span also contains the clock
+        # reads at the inner boundaries. A negative residue means the parts
+        # exceed the whole, which is a broken or double-counted span.
+        negative = [r for r in residues if r[0] < 0.0]
+        over = [r for r in residues if abs(r[0]) > tolerance]
+        print(f"{name}/{side:<10} passes={len(residues)} "
+              f"worst={worst[0]:+.6f} at pair={worst[1]} {worst[2]} "
+              f"median={median([r[0] for r in residues]):.6f} "
+              f"negative={len(negative)} over-tolerance={len(over)} tolerance={tolerance}")
+        if negative:
+            problems.append(
+                f"{name}/{side}: {len(negative)} measured pass(es) where the four "
+                f"parts exceed the combined span, worst {min(r[0] for r in negative):+.6f}"
+            )
+        if over:
+            problems.append(
+                f"{name}/{side}: {len(over)} measured pass(es) over the "
+                f"{tolerance} reconciliation tolerance"
+            )
 
 # --- per-cell and per-phase stats, plus per-case summary rows
 summary_rows = []
