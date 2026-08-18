@@ -537,6 +537,66 @@ mod tests {
         }
     }
 
+    /// The guard prune removes the guard's own slow path and nothing else. A block
+    /// unreachable for any other reason is code the adapter merged in from a
+    /// neighbouring function, and deleting it would silently lose real program
+    /// text, so it must survive with its ids still dense and its edges canonical.
+    #[test]
+    fn only_the_guard_stranded_blocks_are_pruned() {
+        use flutterdec_disasm_arm64::{AsmInstruction, FunctionDisassembly};
+
+        let ins = |va: u64, mnemonic: &str, op_str: &str| AsmInstruction {
+            va,
+            word: 0,
+            mnemonic: mnemonic.to_string(),
+            op_str: op_str.to_string(),
+            annotation: String::new(),
+        };
+        // The guard and its slow path at 0x1014, plus an island at 0x1020 that
+        // nothing in the record reaches and that the guard never reached either.
+        let d = FunctionDisassembly {
+            function_id: 11,
+            function_name: "guardedWithIsland".to_string(),
+            owner_class: "Global".to_string(),
+            entry_va: 0x1000,
+            size: 0x2c,
+            instructions: vec![
+                ins(0x1000, "ldr", "x16, [x26, #0x38]"),
+                ins(0x1004, "cmp", "x15, x16"),
+                ins(0x1008, "b.ls", "#0x1014"),
+                ins(0x100c, "mov", "x0, x1"),
+                ins(0x1010, "ret", ""),
+                // Guard slow path: calls the stub, jumps back into the body.
+                ins(0x1014, "bl", "#0x9000"),
+                ins(0x1018, "b", "#0x100c"),
+                // Island: unreachable, and not through the guard.
+                ins(0x101c, "mov", "x2, x3"),
+                ins(0x1020, "ret", ""),
+            ],
+        };
+
+        let ir = crate::build_function_ir(&d);
+        assert_eq!(validate_canonical_cfg(&ir), Ok(()));
+
+        let starts: Vec<u64> = ir.blocks.iter().map(|b| b.start_va).collect();
+        assert!(
+            !starts.contains(&0x1014),
+            "the guard's slow path is the one thing pruned: {starts:x?}"
+        );
+        assert!(
+            starts.contains(&0x101c),
+            "an unrelated unreachable block must survive: {starts:x?}"
+        );
+        assert_eq!(
+            ir.blocks
+                .iter()
+                .find(|b| b.start_va == 0x101c)
+                .map(|b| (b.succs.clone(), b.preds.clone())),
+            Some((Vec::new(), Vec::new())),
+            "it survives as an orphan, with no edge invented in either direction"
+        );
+    }
+
     /// The builder's own output has to satisfy the ruler its consumers apply, on
     /// every path it can take: a conditional with a fallthrough, a conditional
     /// whose target *is* its fallthrough so the derived list holds one block
