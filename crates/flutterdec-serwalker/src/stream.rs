@@ -26,7 +26,19 @@ impl<'a> Stream<'a> {
         Ok(())
     }
 
-    fn take(&mut self, n: usize) -> Result<&'a [u8]> {
+    pub fn align_stream(&mut self, alignment: usize) -> anyhow::Result<()> {
+        let mut next_pos = self.get_current_pos();
+        if next_pos % alignment == 0 {
+            return Ok(());
+        }
+
+        next_pos = next_pos & !(alignment - 1);
+        next_pos += alignment;
+
+        self.seek(next_pos)
+    }
+
+    fn take(&mut self, n: usize) -> Result<&[u8]> {
         let end = self
             .curr_stream_offset
             .checked_add(n)
@@ -140,7 +152,7 @@ impl<'a> Stream<'a> {
     }
 
     /// Reads a block of bytes and returns a reference to the slice (Zero-copy, highly recommended for large payloads)
-    pub fn read_bytes_zero_copy(&mut self, len: usize) -> Result<&'a [u8]> {
+    pub fn read_bytes_zero_copy(&mut self, len: usize) -> Result<&[u8]> {
         self.take(len)
     }
 }

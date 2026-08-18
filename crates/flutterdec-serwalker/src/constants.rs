@@ -26,6 +26,13 @@ pub const SMI_SHIFT: usize = 1usize;
 
 pub const VERSION_HASH_LENGTH: usize = 32usize;
 
+// Version::SnapshotString() for the Dart SDK 3.11.1 tag (e927f58e327a).
+// The current parser has a hardcoded VM schema, so reject other layouts until
+// schema information can be supplied dynamically.
+pub const DART_3_11_1_SNAPSHOT_HASH: &str = "78da37fed6bf1489361a312568249f3f";
+
+pub const OBJECT_START_ALIGNMENT: usize = 64;
+
 macro_rules! DEFINE_CLASS_ID {
     ( $( $name:ident = $val:expr ),* ) => {
         #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]

@@ -2,6 +2,7 @@ use anyhow::{anyhow, bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::Write;
+#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -171,9 +172,12 @@ pub fn install_adapter(repo_root: &Path, dart_hash: &str) -> Result<PathBuf> {
     );
 
     fs::write(&out, script).with_context(|| format!("write adapter script: {}", out.display()))?;
-    let mut perms = fs::metadata(&out)?.permissions();
-    perms.set_mode(0o755);
-    fs::set_permissions(&out, perms)?;
+    #[cfg(unix)]
+    {
+        let mut perms = fs::metadata(&out)?.permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&out, perms)?;
+    }
 
     Ok(out)
 }

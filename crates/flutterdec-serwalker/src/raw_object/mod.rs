@@ -1,5 +1,3 @@
-use std::default;
-
 pub type Smi = i32;
 
 #[derive(Default)]
@@ -9,6 +7,8 @@ pub struct Object {
 
 #[derive(Default)]
 pub struct Class {
+    pub id: i32,
+    pub is_predefined: bool,
     pub name: u32,                                // StringPtr
     pub user_name: u32,                           // StringPtr
     pub functions: u32,                           // ArrayPtr
@@ -38,17 +38,19 @@ pub struct Class {
     pub target_instance_size_in_words: i32,
     pub target_type_arguments_field_offset_in_words: i32,
     pub target_next_field_offset_in_words: i32,
+    pub unboxed_fields_bitmap: Option<u64>,
 }
 
 #[derive(Default)]
 pub struct PatchClass {
-    pub wrapped_class: u32,       // ClassPtr
-    pub script: u32,              // ScriptPtr
-    pub kernel_program_info: u32, // KernelProgramInfoPtr
+    pub wrapped_class: u32, // ClassPtr
+    pub script: u32,        // ScriptPtr
 }
 
 #[derive(Default)]
 pub struct Function {
+    pub entry_point: u64,
+    pub unchecked_entry_point: u64,
     pub name: u32,      // StringPtr
     pub owner: u32,     // ObjectPtr
     pub signature: u32, // FunctionTypePtr
@@ -77,8 +79,8 @@ pub struct FfiTrampolineData {
     pub c_signature: u32,                 // FunctionTypePtr
     pub callback_target: u32,             // FunctionPtr
     pub callback_exceptional_return: u32, // InstancePtr
-    pub ffi_function_kind: u8,
     pub callback_id: i32,
+    pub ffi_function_kind: u8,
 }
 
 #[derive(Default)]
@@ -104,7 +106,8 @@ pub struct Field {
 
 #[derive(Default)]
 pub struct Script {
-    // Fieldless class
+    pub url: u32, // StringPtr
+    pub kernel_script_index: i32,
 }
 
 #[derive(Default)]
@@ -154,7 +157,8 @@ pub struct KernelProgramInfo {
 
 #[derive(Default)]
 pub struct CodeSourceMap {
-    // Fieldless class
+    pub length: u32,
+    pub data: Vec<u8>,
 }
 
 #[derive(Default)]
@@ -175,28 +179,71 @@ pub struct PcDescriptors {
 pub struct ExceptionHandlers {
     pub handled_types_data: u32, // ArrayPtr
     pub packed_fields: u32,
+    pub num_entries: usize,
+    pub entries: Vec<ExceptionHandlerInfo>,
+}
+
+#[derive(Default)]
+pub struct ExceptionHandlerInfo {
+    pub handler_pc_offset: u32,
+    pub outer_try_index: i16,
+    pub needs_stacktrace: i8,
+    pub has_catch_all: i8,
+    pub is_generated: i8,
 }
 
 #[derive(Default)]
 pub struct Context {
     pub parent: u32, // ContextPtr
     pub num_variables: i32,
+    pub variables: Vec<u32>,
 }
 
 #[derive(Default)]
 pub struct ContextScope {
     pub num_variables: i32,
     pub is_implicit: bool,
+    /// Flattened `VariableDesc` reference fields. There are ten per variable
+    /// in this SDK revision.
+    pub variables: Vec<u32>,
 }
 
 #[derive(Default)]
 pub struct UnlinkedCall {
+    pub target_name: u32,     // StringPtr
+    pub args_descriptor: u32, // ArrayPtr
     pub can_patch_to_monomorphic: bool,
 }
 
 #[derive(Default)]
 pub struct ObjectPool {
-    data: Vec<u32>, // vector holding the array of reference ids making up the object pool
+    pub length: usize,
+    pub entries: Vec<ObjectPoolEntry>,
+}
+
+#[derive(Debug)]
+pub struct ObjectPoolEntry {
+    // ObjectPoolBuilderEntry::{TypeBits, PatchableBit, SnapshotBehaviorBits}.
+    // Keep the serialized byte even when the runtime would rewrite the entry.
+    pub entry_bits: u8,
+    pub value: ObjectPoolEntryValue,
+}
+
+#[derive(Debug)]
+pub enum ObjectPoolEntryValue {
+    TaggedObjectRef(u32),
+    Immediate(i64),
+
+    // Snapshotable native-function entries carry no serialized value. The VM
+    // installs NativeEntry::LinkNativeCallEntry while deserializing them.
+    NativeFunctionLazyLink,
+
+    // These snapshot behaviors also carry no serialized value. They describe
+    // the value installed by the VM rather than inventing a reference/address
+    // that is not present in the program snapshot.
+    ResetToBootstrapNative,
+    ResetToSwitchableCallMissEntryPoint,
+    SetToZero,
 }
 
 #[derive(Default)]
@@ -215,6 +262,7 @@ pub struct TypeArguments {
     pub length: Smi,         // SmiPtr
     pub hash: Smi,           // SmiPtr
     pub nullability: Smi,    // SmiPtr
+    pub types: Vec<u32>,     // AbstractTypePtr elements
 }
 
 #[derive(Default)]
@@ -232,7 +280,16 @@ pub struct Type {
     pub type_test_stub: u32, // CodePtr
     pub hash: u32,           // SmiPtr
     pub arguments: u32,      // TypeArgumentsPtr
-    pub flags: u8,
+    pub flags: u32,
+}
+
+impl Type {
+    const TYPE_CLASS_ID_SHIFT: u32 = 3;
+    const TYPE_CLASS_ID_MASK: u32 = (1 << 20) - 1;
+
+    pub fn type_class_id(&self) -> i32 {
+        ((self.flags >> Self::TYPE_CLASS_ID_SHIFT) & Self::TYPE_CLASS_ID_MASK) as i32
+    }
 }
 
 #[derive(Default)]
@@ -278,6 +335,7 @@ pub struct _String {
 pub struct Array {
     pub type_arguments: u32, // TypeArgumentsPtr
     pub length: Smi,         // SmiPtr
+    pub elements: Vec<u32>,  // ObjectPtr elements
 }
 
 #[derive(Default)]
@@ -313,13 +371,23 @@ pub struct Closure {
 
 #[derive(Default)]
 pub struct Instance {
-    // Fieldless class
+    pub next_field_offset_in_words: i32,
+    pub instance_size_in_words: i32,
+    pub unboxed_fields_bitmap: u64,
+    pub fields: Vec<InstanceField>,
+}
+
+#[derive(Debug)]
+pub enum InstanceField {
+    Reference(u32), // maybe rename this in the future
+    Unboxed(u64),
 }
 
 #[derive(Default)]
 pub struct WeakArray {
     pub next_seen_by_gc: u32, // WeakArrayPtr
     pub length: Smi,          // SmiPtr
+    pub elements: Vec<u32>,   // ObjectPtr elements
 }
 
 #[derive(Default)]
@@ -330,11 +398,13 @@ pub struct TypedDataBase {
 
 #[derive(Default)]
 pub struct TypedData {
-    // Fieldless class
+    pub length: usize,
+    pub data: Vec<u8>,
 }
 
 #[derive(Default)]
 pub struct TypedDataView {
+    pub length: Smi,          // SmiPtr
     pub typed_data: u32,      // TypedDataBasePtr
     pub offset_in_bytes: Smi, // SmiPtr
 }
@@ -342,13 +412,37 @@ pub struct TypedDataView {
 #[derive(Default)]
 pub struct GrowableObjectArray {
     pub type_arguments: u32, // TypeArgumentsPtr
-    pub data: u32,           // ArrayPtr
     pub length: Smi,         // SmiPtr
+    pub data: u32,           // ArrayPtr
 }
 
 #[derive(Default)]
 pub struct Code {
+    // these four are NOT computed during our cluster deserialization as we need the information
+    // in the instructions table in order to do so, and this table is
+    // read after the clustered stream reading, which is waht the function resolve_entrypoints does
+    pub entry_point: u64,             // unset before resolve_entrypoints
+    pub monomorphic_entry_point: u64, // unset before resolve_entrypoints
+    pub unchecked_entry_point: u64,   // set to unchecked_offset before resolve_entrypoints
+    pub monomorphic_unchecked_entry_point: u64, // set to unchecked_offset before resolve_entrypoints
+
+    pub has_monomorphic_entrypoint: bool, // this field doesn't exist in UntaggedCode, its here so
+    // resolve_entrypoints can make use of it
+    pub object_pool: u32,          // ObjectPoolPtr
+    pub instructions: u32,         // InstructionsPtr
+    pub owner: u32, // ClassPtr or FunctionPtr or null, but the actual type in the class is an ObjectPtr
+    pub exception_handlers: u32, // ExceptionHandlerPtr
+    pub pc_descriptors: u32, // PcDescriptorsPtr
+    pub catch_entry: u32, // ObjectPtr
+    pub compressed_stackmaps: u32, // CompressedStackMapsPtr
+    pub inlined_id_to_function: u32,
+    pub code_source_map: u32, // CodeSourceMapPtr
+
+    // pub active_instructions: u32, // InstructionsPtr [[NOT PRESENT IN FullAOT]]
+    // pub deopt_info_array: u32, // ArrayPtr [[NOT PRESENT IN FullAOT]]
+    // pub static_calls_target_table: u32, // ArrayPtr [[NOT PRESENT IN FullAOT]]
     pub state_bits: i32,
+    pub instructions_length_: u32,
 }
 
 #[derive(Default)]
@@ -419,12 +513,13 @@ pub struct RecordType {
 
 #[derive(Default)]
 pub struct Int32x4 {
-    // Fieldless class
+    pub value: Vec<u8>,
 }
 
 #[derive(Default)]
 pub struct ExternalTypedData {
-    // Fieldless class
+    pub length: usize,
+    pub data: Vec<u8>,
 }
 
 #[derive(Default)]
@@ -445,7 +540,7 @@ pub struct RegExp {
     pub two_byte_sticky: u32,  // TypedDataPtr
     pub num_one_byte_registers: i32,
     pub num_two_byte_registers: i32,
-    pub flags: u32,
+    pub type_flags: i8,
 }
 
 #[derive(Default)]
@@ -457,41 +552,65 @@ pub struct WeakProperty {
 
 #[derive(Default)]
 pub struct Map {
-    // Fieldless class
+    pub type_arguments: u32,
+    pub hash_mask: u32,
+    pub data: u32,
+    pub used_data: u32,
+    pub deleted_keys: u32,
+    pub index: u32,
 }
 
 #[derive(Default)]
 pub struct Set {
-    // Fieldless class
+    pub type_arguments: u32,
+    pub hash_mask: u32,
+    pub data: u32,
+    pub used_data: u32,
+    pub deleted_keys: u32,
+    pub index: u32,
 }
 
 #[derive(Default)]
 pub struct Float32x4 {
-    // Fieldless class
+    pub value: Vec<u8>,
 }
 
 #[derive(Default)]
 pub struct Float64x2 {
-    // Fieldless class
+    pub value: Vec<u8>,
 }
 
 #[derive(Default)]
 pub struct ConstMap {
-    // Fieldless class
+    pub type_arguments: u32,
+    pub hash_mask: u32,
+    pub data: u32,
+    pub used_data: u32,
+    pub deleted_keys: u32,
+    pub index: u32,
 }
 
 #[derive(Default)]
 pub struct ConstSet {
-    // Fieldless class
+    pub type_arguments: u32,
+    pub hash_mask: u32,
+    pub data: u32,
+    pub used_data: u32,
+    pub deleted_keys: u32,
+    pub index: u32,
 }
 
 #[derive(Default)]
 pub struct Record {
     pub shape: Smi, // SmiPtr
     pub padding: u32,
+    pub num_fields: usize,
+    pub fields: Vec<u32>,
 }
 
 #[derive(Default)]
 pub struct ImmutableArray {
-    // Fieldless class
+    pub type_arguments: u32,
+    pub length: Smi,
+    pub elements: Vec<u32>,
 }
