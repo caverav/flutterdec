@@ -13,7 +13,7 @@ pub(super) fn find_object_by_id<T: SnapshotObject>(
 ) -> anyhow::Result<&T> {
     let base_key = (T::CID as u32) << 2;
 
-    for flags in 0..4u32 {
+    for flags in 0..4u32 { // iterate through all cluster types for the same CID
         let Some(cluster) = snapshot.clusters.get(&(base_key | flags)) else {
             continue;
         };
