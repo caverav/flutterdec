@@ -395,6 +395,13 @@ change is additive there too, adding two reject conditions and removing none.
 - The identity gate compares whole-binary digests. It proves the two sides are or
   are not the same machine code; it does not localise a difference to a crate or
   a function.
+- The first harness commit `6430765` had the harness inside the product
+  workspace, so feature unification turned `bench-spans` on for product builds
+  for 33 minutes 29 seconds, until `1501bce`. No run recorded here touches that
+  revision: both runs bind `harness_ref 8e7f080`, the accepted patch carries the
+  `exclude` line, and the earliest commit under `docs/baseline/` postdates the
+  fix. Full disclosure in
+  [research-ir-cfg-emitter.md](research-ir-cfg-emitter.md) section 17.
 
 ## 12. Reproducing
 

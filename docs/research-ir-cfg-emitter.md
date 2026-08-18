@@ -890,3 +890,213 @@ Recorded because each one can make a candidate look better or worse than it is.
     Flutter snapshot. No real binary or baseline is committed (section 8), so the
     share of real work that looks like `irreducible` is unknown. The ranking
     above is a ranking on this matrix.
+
+## 17. Harness activation transient at `6430765`
+
+Disclosure, recorded after the fact. The first harness commit put the benchmark
+crate inside the product workspace, and Cargo feature unification then turned the
+benchmark instrumentation on for product builds at that one revision. The tip is
+isolated, no accepted evidence was measured on the affected revision, and the
+semantic suite passes with the instrumentation active. What was wrong is the
+earlier structural argument, which was stated without a from-when qualifier: the
+`exclude` line is what forbids unification, and that line does not exist before
+`1501bce`.
+
+### 17.1 The defect
+
+At `6430765` the root manifest listed the harness as a workspace member, and the
+harness manifest asks for the feature on both product crates:
+
+```
+git show 6430765:Cargo.toml
+git show 6430765:crates/flutterdec-bench/Cargo.toml
+```
+
+```
+members = [
+  "crates/flutterdec-cli",
+  "crates/flutterdec-core",
+  "crates/flutterdec-loader",
+  "crates/flutterdec-adapter",
+  "crates/flutterdec-disasm-arm64",
+  "crates/flutterdec-ir",
+  "crates/flutterdec-decompiler",
+  "crates/flutterdec-bench",
+]
+resolver = "2"
+```
+
+```
+flutterdec-decompiler = { path = "../flutterdec-decompiler", features = [
+  "bench-spans",
+] }
+flutterdec-core = { path = "../flutterdec-core", features = ["bench-spans"] }
+```
+
+Resolver 2 unifies features across the packages selected in one build
+invocation. The harness is one of the selected packages in any `--workspace`
+build at that revision, so `flutterdec-core` and `flutterdec-decompiler` were
+compiled with `bench-spans` on for every `--workspace` build, clippy run and
+test, and for a bare `cargo build --release` as well, since the root workspace
+declares no `default-members`.
+
+What was compiled in is the timing instrumentation and nothing else, and the
+whole of it is three `cfg` gates added by the same commit
+(`git diff 209a8fe 6430765 -- crates/flutterdec-core crates/flutterdec-decompiler`,
+223 insertions and 1 deletion over 5 files):
+
+- `control_flow/structured.rs`, in `try_emit_structured`: two
+  `std::time::Instant` reads around the existing `Regions::build` call and one
+  thread-local `Cell<u64>` add. The single deleted line is the old
+  `let Some(regions) = Regions::build(self.ir) else {`, replaced by a `built`
+  binding that both gate arms produce identically.
+- `flutterdec-decompiler/src/lib.rs`: a gated `bench_spans` module holding that
+  counter.
+- `flutterdec-core/src/lib.rs`: a gated `bench_spans` module that calls the
+  existing serialization code and returns a byte count.
+
+Both `[features]` blocks are empty by default. The comment above them reads "Off
+in every product build", which is true at the tip and was not true at
+`6430765`.
+
+### 17.2 Exact interval
+
+Committer dates from the GitHub API, not from local clocks
+(`gh api repos/caverav/flutterdec/commits/<ref> --jq .commit.committer.date`):
+
+| Revision | Committed (UTC) | State |
+| --- | --- | --- |
+| `209a8fe` | 2026-08-18T03:58:59Z | no harness in the tree |
+| `6430765` | 2026-08-18T04:59:03Z | opened: harness added as a workspace member |
+| `1501bce` | 2026-08-18T05:32:32Z | closed: `exclude = ["crates/flutterdec-bench"]` |
+
+Elapsed 33 minutes 29 seconds. `6430765` is the parent of `1501bce`
+(`git rev-parse 1501bce^` is `6430765`), so the affected set is exactly one
+revision of one branch, and no commit on the branch other than `6430765` has the
+harness in `members`.
+
+### 17.3 Files that opened and closed it
+
+`git show --stat 1501bce`, 8 files. One of them is the fix and four follow from
+it. The commit also carries harness changes that have nothing to do with the
+isolation, which is recorded here rather than smoothed over.
+
+| Path | Role |
+| --- | --- |
+| `Cargo.toml` | the fix: removes the harness from `members`, adds `exclude = ["crates/flutterdec-bench"]` with the reason |
+| `.gitignore` | follows: ignores `crates/flutterdec-bench/target`, which the harness now builds into |
+| `Cargo.lock`, `crates/flutterdec-bench/Cargo.lock` | follows: 11 lines leave the product lock, the harness gets its own 799-line lock |
+| `crates/flutterdec-bench/Cargo.toml` | follows: own `[workspace]` table, and version, edition and license spelled out, because an excluded crate inherits nothing |
+| `scripts/ci-check.sh` | follows: 14 lines adding the harness clippy and test lanes, since `--workspace` no longer reaches it; the fmt lane arrives at `1b11f7e` |
+| `crates/flutterdec-bench/src/main.rs`, `scripts/bench-pipeline.sh` | unrelated to the isolation: `--runs 0` becomes valid, plus the output-directory lock, the raw-sample refusal and the per-binary warmup schedule |
+
+The commit message of `1501bce` states the defect and the fix in its own words.
+This section exists because the message is not where a reader looks for it, and
+because the branch forbids force push, so history cannot be amended.
+
+### 17.4 Symbol and binary probes
+
+Run in a disposable worktree at `6430765`, then again in the same worktree with
+only the `members` line replaced by `exclude`, so the build path is identical on
+both sides and cannot enter the comparison:
+
+```
+git worktree add /tmp/tr-6430765 6430765
+nix develop -c cargo tree --workspace -e features | grep -c bench-spans
+nix develop -c cargo build --release --workspace
+strings target/release/libflutterdec_decompiler.rlib | grep -c take_cfg_nanos
+strings target/release/libflutterdec_core.rlib | grep -c serialize_artifacts
+sha256sum target/release/flutterdec
+```
+
+| Probe | `6430765` as committed | same tree, `exclude` instead of `members` | tip `0f37284` |
+| --- | --- | --- | --- |
+| `cargo tree --workspace -e features`, `bench-spans` activations | 3 | 0 | 0 |
+| `take_cfg_nanos` in the release decompiler rlib | 3 | 0 | 0 |
+| `add_cfg_nanos` in the release decompiler rlib | 3 | 0 | 0 |
+| `serialize_artifacts` in the release core rlib | 4 | 0 | 0 |
+| `flutterdec` release CLI sha256 | `b5caf69037e5b99f4547d8c6802cb80c59825a9877187928a7f6e19d9e281535` | `1d6264dbe621fdbfa8c2d1443b7db5eb259590ee7b340911f43272da9b3092db` | `1d6264dbe621fdbfa8c2d1443b7db5eb259590ee7b340911f43272da9b3092db` |
+| `flutterdec` release CLI bytes | 17398888 | 17393976 | 17393976 |
+
+Two readings matter here. Flipping that one manifest line changes the shipped CLI
+binary, which is the strongest available statement that the product build was
+genuinely different. And the corrected `6430765` tree and the tip produce the
+same CLI digest from two different build paths, which is what places the whole
+product delta of this branch inside the `cfg` gates.
+
+The bare string `bench_spans` still returns 1 hit per rlib at the tip. That is
+the feature name in the crate metadata feature table, not compiled code. Count
+the three function symbols separately or the metadata name reads as a false
+positive.
+
+### 17.5 Semantics at the transient revision
+
+`nix develop -c cargo test --workspace` at `6430765`: 466 passed, 0 failed, exit
+0, over 16 targets. The tip is 432 passed, 0 failed, over 15 targets. The
+difference is the harness's own 34 tests, which `--workspace` reached only while
+the harness was a member; the 432 product tests are the same 432, and they passed
+with the instrumentation compiled in. That includes the three golden snapshots,
+so the emitted artifacts are unchanged by the gate.
+
+The instrumentation was also linked into the test build, not only the release
+build: `strings target/debug/deps/libflutterdec_decompiler-*.rlib` at that
+revision returns 14 hits for `add_cfg_nanos` and 13 for `take_cfg_nanos`.
+
+### 17.6 No baseline or accepted artifact is on the transient revision
+
+- The first commit that adds anything under `docs/baseline/` is `3aa2fe4` at
+  2026-08-18T06:16:26Z, which is 43 minutes 54 seconds after `1501bce`. There is
+  no earlier measurement record in the branch:
+  `git log --diff-filter=A -- docs/baseline` has four commits, all later.
+- Exactly two harness patches were ever committed, the invalidated
+  `harness-b4b1d8c.patch` (added by `3aa2fe4`, deleted by `bf9a0eb`) and the
+  accepted `harness-8e7f080.patch`. Both contain
+  `exclude = ["crates/flutterdec-bench"]`, so every worktree either patch ever
+  produced was isolated. `grep -c 'exclude = \["crates/flutterdec-bench"\]'` is 1
+  on each.
+- All four accepted A/A runs bind `harness_ref 8e7f080` and product `1371e42` on
+  both sides (`docs/baseline/aa-*/binding.txt`), and the two committed runs
+  produced one binary digest `bc06f2bf...` for both sides.
+- `grep -rl 6430765 docs/` matches only the companion protocol's digest-chain
+  table. No measured artifact references the revision at all.
+
+### 17.7 The probe that cannot see this
+
+`cargo build -p flutterdec-decompiler -p flutterdec-core` returns zero symbol
+hits at `6430765`, at the exact revision where `--workspace` returns three,
+because unification applies only to the packages selected in one invocation. Any
+future claim that the instrumentation is absent from a product build has to use
+`--workspace`, or workspace membership from `cargo metadata`, and never `-p`.
+
+### 17.8 Correction to an earlier claim
+
+The structural argument used in earlier notes on this branch, that the root
+manifest's `exclude` makes it impossible for feature unification to turn
+`bench-spans` on, holds from `1501bce` onward and not before it. It is a
+commit-scoped property of the manifest, not a property of the branch, and it must
+be cited with the revision it applies to.
+
+### 17.9 Already adjudicated: `scripts/ci-check.sh`
+
+Separate from the above and disclosed here so the two are not conflated. The
+harness commits also changed a protected ruler: `scripts/ci-check.sh` moved at
+`1501bce`, `1b11f7e` and `5aa4b4e`, all before baseline acceptance. That change
+is adjudicated in the companion protocol section 10, landed in `bcdc017` under
+VAL-ORACLE-002, with the digest chain `9d994285...` to `675099447f...` to
+`6ee0cdf976...` to `2f76a8b9...`, and the additivity proof: 26 insertions and 3
+deletions against `1371e42`, and the only three lines the diff removes are the
+usage-heredoc list numbers `5)`, `6)` and `7)`, which reappear with the same
+command text as `6)`, `7)` and `8)`. Zero executable lines were removed and four
+lanes were added.
+
+### 17.10 What this leaves open
+
+No gate detects a members-versus-`exclude` regression, and the instrumentation is
+invisible to every check the repository runs. At `6430765`, with the
+instrumentation active, `cargo fmt --all --check` exits 0,
+`cargo clippy --workspace --all-targets -- -D warnings` exits 0, and
+`cargo test --workspace` is 466 passed and 0 failed. A green check is exactly
+what a members regression produces, so the probes in 17.4 remain manual. A gate
+asserting zero `bench-spans` activations in `cargo tree --workspace -e features`
+would close it in one line; it is not written, because it is a checker change and
+this record is docs-only.

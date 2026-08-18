@@ -446,11 +446,18 @@ commit, which is never rewritten, force pushed, or rebased.
 
 `1371e42` to `1501bce`, digest `9d994285...` to `675099447f...`. Adds a clippy
 lane and a test lane for the benchmark harness, plus the usage line and the
-paragraph explaining why they are needed. The harness is deliberately not a
-workspace member, so `cargo clippy --workspace` and `cargo test --workspace` do
-not reach it, and that exclusion is what keeps its `bench-spans` instrumentation
-out of every existing check. Without these two lanes the harness would be the one
-part of the repository no gate covers.
+paragraph explaining why they are needed. From `1501bce` onward the harness is
+deliberately not a workspace member, so `cargo clippy --workspace` and
+`cargo test --workspace` do not reach it, and that exclusion is what keeps its
+`bench-spans` instrumentation out of every existing check. Without these two
+lanes the harness would be the one part of the repository no gate covers.
+
+The qualifier is load bearing and the exclusion is not a property of the branch:
+at `6430765` the harness was a workspace member and unification did turn
+`bench-spans` on for product builds. That transient is disclosed in
+[research-ir-cfg-emitter.md](research-ir-cfg-emitter.md) section 17, with the
+interval, the probes and the semantic evidence. No accepted measurement is on
+that revision.
 
 `1501bce` to `1b11f7e`, digest `675099447f...` to `6ee0cdf976...`. Adds
 `cargo fmt --manifest-path crates/flutterdec-bench/Cargo.toml --all --check` for
