@@ -400,6 +400,56 @@ fn a_depth_omission_names_the_edge_it_did_not_walk() {
     assert_helpers_resolve("depth omission", &artifact);
 }
 
+/// An omission made inside a helper body is an omission of this function.
+///
+/// The walk defers past its depth budget to a helper, and that helper walks its
+/// own edges under its own budget, so it refuses edges too. Those refusals name
+/// this function's blocks and their markers are copied into this function's
+/// artifact, so dropping them leaves markers with nothing accounting for them -
+/// which every other assertion here survives, because the blocks behind them are
+/// still emitted through the helper.
+///
+/// In this spine a block's id is its distance from the entry, so an event whose
+/// source lies past one walk's depth budget can only have been recorded inside a
+/// helper.
+#[test]
+fn omissions_inside_a_helper_body_belong_to_the_function() {
+    let ir = fan_in(9108, 128);
+    let artifact = artifact_of(&ir);
+    assert!(
+        !definition_ids(&artifact).is_empty(),
+        "the fixture must defer to helpers, or there is no helper body to walk"
+    );
+
+    let deepest = artifact
+        .emission
+        .events()
+        .iter()
+        .filter_map(|event| {
+            ir.blocks
+                .iter()
+                .find(|b| b.start_va == event.source_start_va)
+        })
+        .map(|b| b.id)
+        .max()
+        .expect("the fixture omits at least one edge");
+    assert!(
+        deepest > DFS_MAX_DEPTH,
+        "every event source is within one walk's depth budget (deepest {deepest}, budget \
+         {DFS_MAX_DEPTH}), so the helpers' own omissions were dropped"
+    );
+
+    // And they scale with the graph: each helper the budget adds walks its own
+    // edges, so a longer spine refuses more of them.
+    let longer = artifact_of(&fan_in(9109, 256));
+    assert!(
+        longer.emission.events().len() > artifact.emission.events().len(),
+        "a longer spine must record more omissions, got {} then {}",
+        artifact.emission.events().len(),
+        longer.emission.events().len()
+    );
+}
+
 /// Every reachable block is either emitted or named by an omission event, and
 /// a block that is neither is only ever reached through one that is named.
 ///
