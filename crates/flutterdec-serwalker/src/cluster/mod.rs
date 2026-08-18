@@ -42,6 +42,21 @@ pub fn decide_cluster(class_id: ClassId) -> Result<Box<dyn Cluster>, &'static st
     }
 }
 
+pub(crate) fn read_canonical_set_layout(obj_count: u64, stream: &mut Stream) -> anyhow::Result<()> {
+    let _table_length = stream.read_unsigned()?;
+    let first_element = stream.read_unsigned()?;
+    anyhow::ensure!(
+        first_element <= obj_count,
+        "canonical-set first element {first_element} exceeds object count {obj_count}"
+    );
+
+    for _ in first_element..obj_count {
+        let _gap = stream.read_unsigned()?;
+    }
+
+    Ok(())
+}
+
 // These are the objects that call ReadAllocFixedSize during deserialization,
 // whose fill cluster size is uniquely determined by sizeof(Object) * num_of_objects
 // and alloc cluster size is tags (MULEB128) + num_of_objects (MULEB128)
@@ -60,7 +75,6 @@ DECLARE_FIXED_LENGTH_CLUSTER!(PatchClass, PatchClassCluster, |_self, stream| {
         let obj = &mut *_self.objs[obj_idx];
         obj.wrapped_class = stream.read_ref_id()?;
         obj.script = stream.read_ref_id()?;
-        obj.kernel_program_info = stream.read_ref_id()?;
         // obj.kernel_library_index = stream.read_unsigned()? as u32; [[NOT PRESENT IN FullAOT]]
     }
 });
@@ -87,7 +101,6 @@ DECLARE_FIXED_LENGTH_CLUSTER!(Function, FunctionCluster, |_self, stream| {
 DECLARE_FIXED_LENGTH_CLUSTER!(ClosureData, ClosureDataCluster, |_self, stream| {
     for obj_idx in 0.._self.obj_count as usize {
         let obj = &mut *_self.objs[obj_idx];
-        obj.context_scope = stream.read_ref_id()?;
         obj.parent_function = stream.read_ref_id()?;
         obj.closure = stream.read_ref_id()?;
         obj.packed_fields = stream.read_unsigned()? as u32;
@@ -103,8 +116,8 @@ DECLARE_FIXED_LENGTH_CLUSTER!(
             obj.c_signature = stream.read_ref_id()?;
             obj.callback_target = stream.read_ref_id()?;
             obj.callback_exceptional_return = stream.read_ref_id()?;
-            obj.ffi_function_kind = stream.read_byte()? as u8;
             obj.callback_id = stream.read()? as i32;
+            obj.ffi_function_kind = stream.read_byte()? as u8;
         }
     }
 );
@@ -115,23 +128,27 @@ DECLARE_FIXED_LENGTH_CLUSTER!(Field, FieldCluster, |_self, stream| {
         obj.owner = stream.read_ref_id()?;
         obj.type_field = stream.read_ref_id()?;
         obj.initializer_function = stream.read_ref_id()?;
-        obj.host_offset_or_field_id = stream.read_ref_id()?;
         // obj.guarded_list_length = stream.read_ref_id()?; [[NOT PRESENT IN FullAOT]]
         // obj.exact_type = stream.read_ref_id()?; [[NOT PRESENT IN FullAOT]]
         // obj.dependent_code = stream.read_ref_id()?; [[NOT PRESENT IN FullAOT]]
-        obj.token_pos = stream.read()? as i32;
-        obj.end_token_pos = stream.read()? as i32;
-        obj.guarded_cid = stream.read_unsigned()? as u32;
-        obj.is_nullable = stream.read_unsigned()? as u32;
-        // obj.kernel_offset = stream.read_unsigned()? as u32; [[NOT PRESENT IN FullAOT]]
-        // obj.guarded_list_length_in_object_offset = stream.read()? as i8; [[NOT PRESENT IN FullAOT]]
-        // obj.static_type_exactness_state = stream.read()? as i8; [[NOT PRESENT IN FullAOT]]
+        // obj.token_pos = stream.read()? as i32; [[NOT PRESENT IN FullAOT]]
+        // obj.end_token_pos = stream.read()? as i32; [[NOT PRESENT IN FullAOT]]
+        // obj.guarded_cid = stream.read()? as u32; [[NOT PRESENT IN FullAOT]]
+        // obj.is_nullable = stream.read()? as u32; [[NOT PRESENT IN FullAOT]]
+        // obj.kernel_offset = stream.read()? as u32; [[NOT PRESENT IN FullAOT]]
+        // obj.guarded_list_length_in_object_offset = stream.read_byte()? as i8; [[NOT PRESENT IN FullAOT]]
+        // obj.static_type_exactness_state = stream.read_byte()? as i8; [[NOT PRESENT IN FullAOT]]
         // obj.target_offset = stream.read()? as i32; [[NOT PRESENT IN FullAOT]]
-        obj.kind_bits = stream.read_unsigned()? as u32;
+        obj.kind_bits = stream.read()? as u32;
+        obj.host_offset_or_field_id = stream.read_ref_id()?;
     }
 });
 DECLARE_FIXED_LENGTH_CLUSTER!(Script, ScriptCluster, |_self, stream| {
-    for _ in 0.._self.obj_count as usize {}
+    for obj_idx in 0.._self.obj_count as usize {
+        let obj = &mut *_self.objs[obj_idx];
+        obj.url = stream.read_ref_id()?;
+        obj.kernel_script_index = stream.read()? as i32;
+    }
 });
 DECLARE_FIXED_LENGTH_CLUSTER!(Library, LibraryCluster, |_self, stream| {
     for obj_idx in 0.._self.obj_count as usize {
@@ -160,9 +177,6 @@ DECLARE_FIXED_LENGTH_CLUSTER!(Namespace, NamespaceCluster, |_self, stream| {
     for obj_idx in 0.._self.obj_count as usize {
         let obj = &mut *_self.objs[obj_idx];
         obj.target = stream.read_ref_id()?;
-        obj.show_names = stream.read_ref_id()?;
-        obj.hide_names = stream.read_ref_id()?;
-        obj.owner = stream.read_ref_id()?;
     }
 });
 DECLARE_FIXED_LENGTH_CLUSTER!(
@@ -199,7 +213,7 @@ DECLARE_FIXED_LENGTH_CLUSTER!(ICData, ICDataCluster, |_self, stream| {
         obj.target_name = stream.read_ref_id()?;
         obj.args_descriptor = stream.read_ref_id()?;
         obj.entries = stream.read_ref_id()?;
-        obj.state_bits = stream.read_unsigned()? as u32;
+        obj.state_bits = stream.read()? as u32;
     }
 });
 DECLARE_FIXED_LENGTH_CLUSTER!(
@@ -223,8 +237,8 @@ DECLARE_FIXED_LENGTH_CLUSTER!(
         for obj_idx in 0.._self.obj_count as usize {
             let obj = &mut *_self.objs[obj_idx];
             obj.cache = stream.read_ref_id()?;
-            obj.num_inputs = stream.read_unsigned()? as u32;
-            obj.num_occupied = stream.read_unsigned()? as u32;
+            obj.num_inputs = stream.read()? as u32;
+            obj.num_occupied = stream.read()? as u32;
         }
     }
 );
@@ -232,7 +246,6 @@ DECLARE_FIXED_LENGTH_CLUSTER!(LoadingUnit, LoadingUnitCluster, |_self, stream| {
     for obj_idx in 0.._self.obj_count as usize {
         let obj = &mut *_self.objs[obj_idx];
         obj.parent = stream.read_ref_id()?;
-        obj.base_objects = stream.read_ref_id()?;
         obj.packed_fields = stream.read()? as i64;
     }
 });
@@ -264,21 +277,20 @@ DECLARE_FIXED_LENGTH_CLUSTER!(LibraryPrefix, LibraryPrefixCluster, |_self, strea
         let obj = &mut *_self.objs[obj_idx];
         obj.name = stream.read_ref_id()?;
         obj.imports = stream.read_ref_id()?;
-        obj.importer = stream.read_ref_id()?;
-        obj.num_imports = stream.read_unsigned()? as u16;
+        obj.num_imports = stream.read()? as u16;
         obj.is_deferred_load = stream.read_byte()? != 0;
     }
 });
-DECLARE_FIXED_LENGTH_CLUSTER!(Type, TypeCluster, |_self, stream| {
+DECLARE_FIXED_LENGTH_CLUSTER!(Type, TypeCluster, true, |_self, stream| {
     for obj_idx in 0.._self.obj_count as usize {
         let obj = &mut *_self.objs[obj_idx];
         obj.type_test_stub = stream.read_ref_id()?;
         obj.hash = stream.read_ref_id()?;
         obj.arguments = stream.read_ref_id()?;
-        obj.flags = stream.read_unsigned()? as u8;
+        obj.flags = stream.read_unsigned()?.try_into()?;
     }
 });
-DECLARE_FIXED_LENGTH_CLUSTER!(FunctionType, FunctionTypeCluster, |_self, stream| {
+DECLARE_FIXED_LENGTH_CLUSTER!(FunctionType, FunctionTypeCluster, true, |_self, stream| {
     for obj_idx in 0.._self.obj_count as usize {
         let obj = &mut *_self.objs[obj_idx];
         obj.type_test_stub = stream.read_ref_id()?;
@@ -288,11 +300,11 @@ DECLARE_FIXED_LENGTH_CLUSTER!(FunctionType, FunctionTypeCluster, |_self, stream|
         obj.parameter_types = stream.read_ref_id()?;
         obj.named_parameter_names = stream.read_ref_id()?;
         obj.flags = stream.read_byte()? as u8;
-        obj.packed_parameter_counts = stream.read_unsigned()? as u32;
-        obj.packed_type_parameter_counts = stream.read_unsigned()? as u16;
+        obj.packed_parameter_counts = stream.read()? as u32;
+        obj.packed_type_parameter_counts = stream.read()? as u16;
     }
 });
-DECLARE_FIXED_LENGTH_CLUSTER!(RecordType, RecordTypeCluster, |_self, stream| {
+DECLARE_FIXED_LENGTH_CLUSTER!(RecordType, RecordTypeCluster, true, |_self, stream| {
     for obj_idx in 0.._self.obj_count as usize {
         let obj = &mut *_self.objs[obj_idx];
         obj.type_test_stub = stream.read_ref_id()?;
@@ -303,17 +315,22 @@ DECLARE_FIXED_LENGTH_CLUSTER!(RecordType, RecordTypeCluster, |_self, stream| {
         // obj.shape = stream.read_ref_id()?; as i32;
     }
 });
-DECLARE_FIXED_LENGTH_CLUSTER!(TypeParameter, TypeParameterCluster, |_self, stream| {
-    for obj_idx in 0.._self.obj_count as usize {
-        let obj = &mut *_self.objs[obj_idx];
-        obj.type_test_stub = stream.read_ref_id()?;
-        obj.hash = stream.read_ref_id()?;
-        obj.owner = stream.read_ref_id()?;
-        obj.base = stream.read()? as u16;
-        obj.index = stream.read()? as u16;
-        obj.flags = stream.read_byte()? as u8;
+DECLARE_FIXED_LENGTH_CLUSTER!(
+    TypeParameter,
+    TypeParameterCluster,
+    true,
+    |_self, stream| {
+        for obj_idx in 0.._self.obj_count as usize {
+            let obj = &mut *_self.objs[obj_idx];
+            obj.type_test_stub = stream.read_ref_id()?;
+            obj.hash = stream.read_ref_id()?;
+            obj.owner = stream.read_ref_id()?;
+            obj.base = stream.read()? as u16;
+            obj.index = stream.read()? as u16;
+            obj.flags = stream.read_byte()? as u8;
+        }
     }
-});
+);
 DECLARE_FIXED_LENGTH_CLUSTER!(Closure, ClosureCluster, |_self, stream| {
     for obj_idx in 0.._self.obj_count as usize {
         let obj = &mut *_self.objs[obj_idx];
@@ -328,11 +345,13 @@ DECLARE_FIXED_LENGTH_CLUSTER!(Closure, ClosureCluster, |_self, stream| {
 DECLARE_FIXED_LENGTH_CLUSTER!(Double, DoubleCluster, |_self, stream| {
     for obj_idx in 0.._self.obj_count as usize {
         let obj = &mut *_self.objs[obj_idx];
-        obj.value = f64::from_bits(stream.read_raw_u64()?);
+        obj.value = f64::from_bits(stream.read()?);
     }
 });
 DECLARE_FIXED_LENGTH_CLUSTER!(Int32x4, Int32x4Cluster, |_self, stream| {
-    for _ in 0.._self.obj_count as usize {}
+    for obj in &mut _self.objs {
+        obj.value = stream.read_bytes(16)?;
+    }
 });
 DECLARE_FIXED_LENGTH_CLUSTER!(
     GrowableObjectArray,
@@ -341,14 +360,15 @@ DECLARE_FIXED_LENGTH_CLUSTER!(
         for obj_idx in 0.._self.obj_count as usize {
             let obj = &mut *_self.objs[obj_idx];
             obj.type_arguments = stream.read_ref_id()?;
-            obj.data = stream.read_ref_id()?;
             obj.length = stream.read_ref_id()? as i32;
+            obj.data = stream.read_ref_id()?;
         }
     }
 );
 DECLARE_FIXED_LENGTH_CLUSTER!(TypedDataView, TypedDataViewCluster, |_self, stream| {
     for obj_idx in 0.._self.obj_count as usize {
         let obj = &mut *_self.objs[obj_idx];
+        obj.length = stream.read_ref_id()? as i32;
         obj.typed_data = stream.read_ref_id()?;
         obj.offset_in_bytes = stream.read_ref_id()? as i32;
     }
@@ -356,7 +376,19 @@ DECLARE_FIXED_LENGTH_CLUSTER!(TypedDataView, TypedDataViewCluster, |_self, strea
 DECLARE_FIXED_LENGTH_CLUSTER!(
     ExternalTypedData,
     ExternalTypedDataCluster,
-    |_self, stream| { for _ in 0.._self.obj_count as usize {} }
+    |_self, stream| {
+        let element_size = typed_data_element_size(_self.cid)?;
+        for obj in &mut _self.objs {
+            let length = usize::try_from(stream.read_unsigned()?)
+                .map_err(|_| anyhow::anyhow!("ExternalTypedData length does not fit in usize"))?;
+            let byte_length = length
+                .checked_mul(element_size)
+                .ok_or_else(|| anyhow::anyhow!("ExternalTypedData byte length overflow"))?;
+            stream.align_stream(8)?;
+            obj.length = length;
+            obj.data = stream.read_bytes(byte_length)?;
+        }
+    }
 );
 DECLARE_FIXED_LENGTH_CLUSTER!(StackTrace, StackTraceCluster, |_self, stream| {
     for obj_idx in 0.._self.obj_count as usize {
@@ -463,12 +495,35 @@ macro_rules! IMPLEMENT_VARIABLE_LENGTH_CLUSTER {
 
 fn typed_data_element_size(cid: ClassId) -> anyhow::Result<usize> {
     let size = match cid {
-        TypedDataInt8ArrayCid | TypedDataUint8ArrayCid | TypedDataUint8ClampedArrayCid => 1,
-        TypedDataInt16ArrayCid | TypedDataUint16ArrayCid => 2,
-        TypedDataInt32ArrayCid | TypedDataUint32ArrayCid | TypedDataFloat32ArrayCid => 4,
-        TypedDataInt64ArrayCid | TypedDataUint64ArrayCid | TypedDataFloat64ArrayCid => 8,
-        TypedDataFloat32x4ArrayCid | TypedDataInt32x4ArrayCid | TypedDataFloat64x2ArrayCid => 16,
-        _ => anyhow::bail!("class {:?} is not an internal TypedData class", cid),
+        TypedDataInt8ArrayCid
+        | TypedDataUint8ArrayCid
+        | TypedDataUint8ClampedArrayCid
+        | ExternalTypedDataInt8ArrayCid
+        | ExternalTypedDataUint8ArrayCid
+        | ExternalTypedDataUint8ClampedArrayCid => 1,
+        TypedDataInt16ArrayCid
+        | TypedDataUint16ArrayCid
+        | ExternalTypedDataInt16ArrayCid
+        | ExternalTypedDataUint16ArrayCid => 2,
+        TypedDataInt32ArrayCid
+        | TypedDataUint32ArrayCid
+        | TypedDataFloat32ArrayCid
+        | ExternalTypedDataInt32ArrayCid
+        | ExternalTypedDataUint32ArrayCid
+        | ExternalTypedDataFloat32ArrayCid => 4,
+        TypedDataInt64ArrayCid
+        | TypedDataUint64ArrayCid
+        | TypedDataFloat64ArrayCid
+        | ExternalTypedDataInt64ArrayCid
+        | ExternalTypedDataUint64ArrayCid
+        | ExternalTypedDataFloat64ArrayCid => 8,
+        TypedDataFloat32x4ArrayCid
+        | TypedDataInt32x4ArrayCid
+        | TypedDataFloat64x2ArrayCid
+        | ExternalTypedDataFloat32x4ArrayCid
+        | ExternalTypedDataInt32x4ArrayCid
+        | ExternalTypedDataFloat64x2ArrayCid => 16,
+        _ => anyhow::bail!("class {:?} is not a supported TypedData class", cid),
     };
     Ok(size)
 }
@@ -994,17 +1049,7 @@ IMPLEMENT_VARIABLE_LENGTH_CLUSTER!(
 
         // so this is just for the canonical TypeArguments cluster (if any)
         if cluster.is_canonical {
-            let _table_length = stream.read_unsigned()?;
-            let first_element = stream.read_unsigned()?;
-            if first_element > cluster.obj_count {
-                anyhow::bail!(
-                    "canonical TypeArguments first element {first_element} exceeds count {}",
-                    cluster.obj_count
-                );
-            }
-            for _ in first_element..cluster.obj_count {
-                let _gap = stream.read_unsigned()?;
-            }
+            read_canonical_set_layout(cluster.obj_count, stream)?;
         }
     },
     |cluster, stream| {
@@ -1369,6 +1414,9 @@ IMPLEMENT_VARIABLE_LENGTH_CLUSTER!(
                 length: (encoded >> 1) as i32,
                 .._String::default()
             }));
+        }
+        if cluster.is_canonical {
+            read_canonical_set_layout(cluster.obj_count, stream)?;
         }
     },
     |cluster, stream| {

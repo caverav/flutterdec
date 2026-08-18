@@ -43,9 +43,8 @@ pub struct Class {
 
 #[derive(Default)]
 pub struct PatchClass {
-    pub wrapped_class: u32,       // ClassPtr
-    pub script: u32,              // ScriptPtr
-    pub kernel_program_info: u32, // KernelProgramInfoPtr
+    pub wrapped_class: u32, // ClassPtr
+    pub script: u32,        // ScriptPtr
 }
 
 #[derive(Default)]
@@ -80,8 +79,8 @@ pub struct FfiTrampolineData {
     pub c_signature: u32,                 // FunctionTypePtr
     pub callback_target: u32,             // FunctionPtr
     pub callback_exceptional_return: u32, // InstancePtr
-    pub ffi_function_kind: u8,
     pub callback_id: i32,
+    pub ffi_function_kind: u8,
 }
 
 #[derive(Default)]
@@ -107,7 +106,8 @@ pub struct Field {
 
 #[derive(Default)]
 pub struct Script {
-    // Fieldless class
+    pub url: u32, // StringPtr
+    pub kernel_script_index: i32,
 }
 
 #[derive(Default)]
@@ -280,7 +280,16 @@ pub struct Type {
     pub type_test_stub: u32, // CodePtr
     pub hash: u32,           // SmiPtr
     pub arguments: u32,      // TypeArgumentsPtr
-    pub flags: u8,
+    pub flags: u32,
+}
+
+impl Type {
+    const TYPE_CLASS_ID_SHIFT: u32 = 3;
+    const TYPE_CLASS_ID_MASK: u32 = (1 << 20) - 1;
+
+    pub fn type_class_id(&self) -> i32 {
+        ((self.flags >> Self::TYPE_CLASS_ID_SHIFT) & Self::TYPE_CLASS_ID_MASK) as i32
+    }
 }
 
 #[derive(Default)]
@@ -395,6 +404,7 @@ pub struct TypedData {
 
 #[derive(Default)]
 pub struct TypedDataView {
+    pub length: Smi,          // SmiPtr
     pub typed_data: u32,      // TypedDataBasePtr
     pub offset_in_bytes: Smi, // SmiPtr
 }
@@ -402,8 +412,8 @@ pub struct TypedDataView {
 #[derive(Default)]
 pub struct GrowableObjectArray {
     pub type_arguments: u32, // TypeArgumentsPtr
-    pub data: u32,           // ArrayPtr
     pub length: Smi,         // SmiPtr
+    pub data: u32,           // ArrayPtr
 }
 
 #[derive(Default)]
@@ -503,12 +513,13 @@ pub struct RecordType {
 
 #[derive(Default)]
 pub struct Int32x4 {
-    // Fieldless class
+    pub value: Vec<u8>,
 }
 
 #[derive(Default)]
 pub struct ExternalTypedData {
-    // Fieldless class
+    pub length: usize,
+    pub data: Vec<u8>,
 }
 
 #[derive(Default)]

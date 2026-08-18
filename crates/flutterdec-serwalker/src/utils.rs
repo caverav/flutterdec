@@ -72,6 +72,14 @@ IMPLEMENT_SNAPSHOT_OBJECT! {
 #[macro_export]
 macro_rules! DECLARE_FIXED_LENGTH_CLUSTER {
     ($name:ident, $cluster_name:ident, |$_self:ident, $stream:ident| $fill_impl:block) => {
+        DECLARE_FIXED_LENGTH_CLUSTER!($name, $cluster_name, false, |$_self, $stream| $fill_impl);
+    };
+    (
+        $name:ident,
+        $cluster_name:ident,
+        $has_canonical_set_layout:literal,
+        |$_self:ident, $stream:ident| $fill_impl:block
+    ) => {
         pub struct $cluster_name {
             tags: u32,
             cid: ClassId,
@@ -131,6 +139,10 @@ macro_rules! DECLARE_FIXED_LENGTH_CLUSTER {
 
                 for _obj_idx in 0..self.obj_count {
                     self.objs.push(Box::<$name>::default());
+                }
+
+                if $has_canonical_set_layout && self.is_canonical {
+                    $crate::cluster::read_canonical_set_layout(self.obj_count, stream)?;
                 }
 
                 *last_ref_id += self.obj_count;

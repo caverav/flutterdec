@@ -6,8 +6,13 @@ use crate::info_producer::utils::{find_object_by_id, find_string_by_id};
 use crate::raw_object::{Library, Type};
 use crate::snapshot::DataSnapshot;
 
+fn string_or_placeholder(snapshot: &DataSnapshot, id: u32) -> String {
+    find_string_by_id(snapshot, id)
+        .unwrap_or_else(|_| format!("<unresolved String reference ID {id}>"))
+}
+
 pub fn produce_class_info(snapshot: &DataSnapshot) -> anyhow::Result<Vec<ClassInfo>> {
-    let class_info = Vec::new();
+    let mut classes_info = Vec::new();
     // obtain all class clusters (there should only be one)
     let class_cluster = snapshot
         .clusters
@@ -19,13 +24,37 @@ pub fn produce_class_info(snapshot: &DataSnapshot) -> anyhow::Result<Vec<ClassIn
 
     for class in &class_cluster.objs {
         let cls_id = class.id;
-        let cls_name = find_string_by_id(snapshot, class.name)?;
+        let cls_name = string_or_placeholder(snapshot, class.name);
 
-        let cls_super: &Type = find_object_by_id(snapshot, class.super_type)?;
+        let cls_super_name = match find_object_by_id::<Type>(snapshot, class.super_type) {
+            Ok(cls_super) => {
+                let cls_super_cid = cls_super.type_class_id();
+                match snapshot
+                    .class_table
+                    .get(&cls_super_cid)
+                    .and_then(|index| class_cluster.objs.get(*index))
+                {
+                    Some(cls_super_class) => string_or_placeholder(snapshot, cls_super_class.name),
+                    None => format!("<unresolved Class CID {cls_super_cid}>"),
+                }
+            }
+            Err(_) => format!("<unresolved Type reference ID {}>", class.super_type),
+        };
 
-        let cls_library: &Library = find_object_by_id(snapshot, class.library)?;
-        let cls_library_name = find_string_by_id(snapshot, cls_library.name)?;
+        let cls_library_uri = match find_object_by_id::<Library>(snapshot, class.library) {
+            Ok(cls_library) => string_or_placeholder(snapshot, cls_library.url),
+            Err(_) => format!("<unresolved Library reference ID {}>", class.library),
+        };
+
+        let class_info = ClassInfo {
+            id: cls_id as u64,
+            name: cls_name,
+            super_name: cls_super_name,
+            library_uri: cls_library_uri,
+        };
+
+        classes_info.push(class_info);
     }
 
-    Ok(class_info)
+    Ok(classes_info)
 }

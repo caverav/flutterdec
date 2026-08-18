@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 
-use crate::cluster::{decide_cluster, resolve_entrypoints, Cluster};
+use crate::cluster::{decide_cluster, resolve_entrypoints, ClassCluster, Cluster};
 use crate::constants::{
-    self, DART_3_11_1_SNAPSHOT_HASH, MAGIC_BYTES, OBJECT_START_ALIGNMENT, SNAPSHOT_MAGIC_NUMBER_SZ,
+    self, ClassId, DART_3_11_1_SNAPSHOT_HASH, MAGIC_BYTES, OBJECT_START_ALIGNMENT,
+    SNAPSHOT_MAGIC_NUMBER_SZ,
 };
 use crate::instruction_table::{parse_instr_table_from_rodata, InstructionTable};
 use crate::program_roots::structs::ProgramRoots;
@@ -45,6 +46,7 @@ pub struct DataSnapshot {
     cluster_order: Vec<u32>, // used in the fill step to know which cluster's read_fill function to call
     roots: ProgramRoots,
     instruction_table: InstructionTable,
+    pub(crate) class_table: HashMap<i32, usize>, // maps a CID to an index into ClassCluster::objs
 
     magic_bytes: u32,
     clustered_size: u64,
@@ -167,6 +169,39 @@ impl DataSnapshot {
             (*cluster).read_fill(stream)?;
         }
         self.end_of_fill_area = stream.get_current_pos();
+        self.build_class_table()?; // we need this to resolve class names associated with Type objects
+        Ok(())
+    }
+
+    fn build_class_table(&mut self) -> anyhow::Result<()> {
+        let class_table = {
+            let class_cluster = self
+                .clusters
+                .get(&((ClassId::ClassCid as u32) << 2))
+                .ok_or_else(|| anyhow::anyhow!("Class cluster is missing"))?
+                .as_any()
+                .downcast_ref::<ClassCluster>()
+                .ok_or_else(|| anyhow::anyhow!("Cluster is not a ClassCluster"))?;
+
+            let mut class_table = HashMap::with_capacity(class_cluster.objs.len());
+            for (index, class) in class_cluster.objs.iter().enumerate() {
+                if class.id == ClassId::IllegalCid as i32 {
+                    anyhow::bail!("class at cluster index {index} has an illegal CID");
+                    // should never happen
+                }
+
+                if let Some(previous_index) = class_table.insert(class.id, index) {
+                    anyhow::bail!(
+                        "duplicate class CID {} at cluster indexes {previous_index} and {index}",
+                        class.id
+                    );
+                }
+            }
+
+            class_table
+        };
+
+        self.class_table = class_table;
         Ok(())
     }
 
