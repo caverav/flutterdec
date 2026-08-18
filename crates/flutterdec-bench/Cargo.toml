@@ -1,8 +1,22 @@
+# Its own workspace root, and excluded from the product workspace on purpose.
+#
+# This crate is the only consumer of `bench-spans`. If it were a member of the
+# product workspace, feature unification would activate that instrumentation on
+# `flutterdec-decompiler` and `flutterdec-core` for every `--workspace` build,
+# clippy run and test in the repository, which is exactly the harness drift the
+# measurement protocol forbids. Standing alone, the product workspace never
+# resolves the feature and the harness still builds with
+# `--manifest-path crates/flutterdec-bench/Cargo.toml`.
+[workspace]
+
 [package]
 name = "flutterdec-bench"
-version.workspace = true
-edition.workspace = true
-license.workspace = true
+# Not inherited: an excluded crate has no parent workspace to inherit from.
+# Keep in step with the workspace version in the root manifest.
+version = "0.1.0-alpha.4"
+edition = "2021"
+license = "MIT"
+publish = false
 
 # No dependency outside the workspace, and none inside it that the product does
 # not already build. A benchmark that pulls in a timing framework measures the

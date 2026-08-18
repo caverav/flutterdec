@@ -14,6 +14,11 @@ Runs the same checks as CI from the local workspace:
   5) cargo clippy --workspace --all-targets -- -D warnings
   6) cargo test --workspace            (unless --skip-tests)
   7) cargo build -p flutterdec-cli --release
+  8) clippy and tests for the excluded benchmark harness
+
+The benchmark harness is not a workspace member, so --workspace does not reach
+it and it is linted and tested through its own manifest. That exclusion is what
+keeps its `bench-spans` instrumentation out of every check above.
 EOF
 }
 
@@ -62,5 +67,14 @@ fi
 
 echo "[ci-check] cargo build -p flutterdec-cli --release"
 nix develop -c cargo build -p flutterdec-cli --release
+
+bench_manifest="crates/flutterdec-bench/Cargo.toml"
+echo "[ci-check] cargo clippy --manifest-path ${bench_manifest} --all-targets -- -D warnings"
+nix develop -c cargo clippy --manifest-path "$bench_manifest" --all-targets -- -D warnings
+
+if [[ "$skip_tests" != "1" ]]; then
+  echo "[ci-check] cargo test --manifest-path ${bench_manifest}"
+  nix develop -c cargo test --manifest-path "$bench_manifest"
+fi
 
 echo "[ci-check] all checks passed"

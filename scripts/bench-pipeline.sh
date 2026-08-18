@@ -101,17 +101,29 @@ candidate_tree="$work_root/candidate"
 prepare reference "$reference" "$reference_tree"
 prepare candidate "$candidate" "$candidate_tree"
 
+# The harness is not a workspace member, so it is built through its own manifest
+# and lands in its own target directory. Building it with `-p` from the workspace
+# root would not resolve it at all, and making it a member would turn
+# `bench-spans` on for every product build in the workspace.
+bench_manifest="crates/flutterdec-bench/Cargo.toml"
 build() {
   local tree="$1"
-  ( cd "$tree" && nix develop "${nix_flags[@]}" -c cargo build -p flutterdec-bench --release >/dev/null )
+  ( cd "$tree" && nix develop "${nix_flags[@]}" -c \
+      cargo build --manifest-path "$bench_manifest" --release >/dev/null )
 }
 
 echo "[bench] building both revisions"
 build "$reference_tree"
 build "$candidate_tree"
 
-reference_bin="$reference_tree/target/release/flutterdec-bench"
-candidate_bin="$candidate_tree/target/release/flutterdec-bench"
+reference_bin="$reference_tree/crates/flutterdec-bench/target/release/flutterdec-bench"
+candidate_bin="$candidate_tree/crates/flutterdec-bench/target/release/flutterdec-bench"
+for binary in "$reference_bin" "$candidate_bin"; do
+  if [[ ! -x "$binary" ]]; then
+    echo "[bench] expected harness binary missing: $binary" >&2
+    exit 1
+  fi
+done
 reference_binary_digest="$(sha256sum "$reference_bin" | cut -d' ' -f1)"
 candidate_binary_digest="$(sha256sum "$candidate_bin" | cut -d' ' -f1)"
 reference_head="$(git -C "$reference_tree" rev-parse HEAD)"

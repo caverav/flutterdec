@@ -1,4 +1,7 @@
 /target
+# The benchmark harness is its own workspace root, so it builds into its own
+# target directory rather than the workspace one above.
+/crates/flutterdec-bench/target
 /result
 /.direnv
 /dist
