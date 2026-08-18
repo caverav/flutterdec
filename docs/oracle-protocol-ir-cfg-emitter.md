@@ -399,7 +399,7 @@ Cargo's automatic discovery of `crates/flutterdec-decompiler/tests/*.rs`, which
 | `crates/flutterdec-decompiler/src/tests/cfg_and_stack/order_totality.rs` | `690b389b5b83455902bdfa01855d8d70d3e58780d912f3990bbe0730346bdea9` |
 | `crates/flutterdec-decompiler/src/tests/cfg_and_stack/join_capture.rs` | `3d1db5b856a4cde4f98f57195b2828a4e3288003c20d0b0cd63a2812134d2b78` |
 | `crates/flutterdec-decompiler/src/tests/cfg_and_stack/annotation_caps.rs` | `242f6bb4a637dc466dca8be55a6e1671c6be90a7fb1d981a30b884103e2ae953` |
-| `crates/flutterdec-decompiler/src/tests/cfg_and_stack/omitted_path_and_stack.rs` | `e5e53a705aa16f6b27df6d99375da0d76106fc6f16f462301ab858d5e77a21ad` |
+| `crates/flutterdec-decompiler/src/tests/cfg_and_stack/omitted_path_and_stack.rs` | `9b8d3117e3e1c510fbbf6a1a8217ac795968aba1661d938a02ffd0abedeaf79c` |
 | `crates/flutterdec-decompiler/src/tests/cfg_and_stack/call_and_loops.rs` | `2c2b433a07a8bab0d1a0adf4c09bc9f2982c3f74ecb997361b4729b1b3612630` |
 | `crates/flutterdec-decompiler/src/tests/cfg_and_stack/call_annotations.rs` | `53f90d25f39b9b93717b8ead2e19059f12e2ab72323d3af902d29c11f15f7a85` |
 | `crates/flutterdec-decompiler/src/tests/cfg_and_stack/dispatch_table.rs` | `72f5bc23927c4a9835ff92f4fc381d991b505d76f785c6b12b48ba7c2f816829` |
@@ -411,7 +411,7 @@ Cargo's automatic discovery of `crates/flutterdec-decompiler/tests/*.rs`, which
 | `crates/flutterdec-decompiler/src/tests/emit_and_helpers/annotation_literals.rs` | `4aa98c35997fbcc4d740d81abab1d1b3e5e8861c1f8b897d77fe1763514ecfa5` |
 | `crates/flutterdec-decompiler/src/tests/emit_and_helpers/candidate_whitelist.rs` | `db3fdcef810f15ec61b349f15c88b2b82caad4fbcc130c83a41dc1f1bdae198b` |
 | `crates/flutterdec-decompiler/src/tests/emit_and_helpers/readability_and_naming.rs` | `7a185febb042ee53b865b8561e7d68c091003fa1a5ef066cb8ac31a9c4639bd2` |
-| `crates/flutterdec-core/src/pipeline/runners/tests.rs` | `a65298cde1ed807a838199162397bd51ff7f35e38941a0bd274872116b8c4668` |
+| `crates/flutterdec-core/src/pipeline/runners/tests.rs` | `7d1d87fa9401d07ab19b4bbb190edf1c53538a6da83ccd0e891b851b63200e63` |
 | `crates/flutterdec-core/src/pipeline/symbol_map/tests.rs` | `019220e1a5915365e1663a36353ff3ba2177f567bb5e1094e6575b47f01b39f5` |
 | `crates/flutterdec-ir/src/tests/control_effects.rs` | `9d6755a0001bfc839cd814fd326648e8cb8ccc186eeb3b30f3551dc8384fdf59` |
 | `crates/flutterdec-ir/src/validate/tests.rs` | `2e3e3b3bd980c1edd2de99da166e09d5bf154cbed390e87f701a50f8316e8470` |
@@ -1944,3 +1944,147 @@ commit, verified by `sha256sum` per row.
    result lines and 543 tests, with the inventory lane reporting
    `[oracle-inventory] ok, 33 protected oracles are compiled` and the step-7 lane
    now naming all four integration targets.
+
+## 16. Adjudication record: the omitted-path collapse
+
+Commit `68f1353` changed what a `_block_N()` call means in a finished artifact,
+which moves two protected test files. This record is the section 9 adjudication
+for that change.
+
+Before it, `collapse_remaining_helpers` rewrote **every** surviving
+`return _block_N();` into `return null;` and deleted **every** helper
+definition, whether or not any budget had been reached. The artifact therefore
+carried, for each deferred edge, a return the graph does not contain, and the
+block's body was not in the artifact at all. The `// omitted complex paths:`
+summary named the ids, so the loss was announced, but it was announced as a
+return.
+
+After it, a call whose helper was defined keeps both call and definition. Only a
+call the helper budget refused to define is rewritten, into
+`// omitted path to block N: helper budget exhausted, block not emitted`, and
+that id still appears in the summary. Definitions nothing calls are dropped to a
+fixpoint, so the call set and the definition set of a finished artifact are
+equal.
+
+### 16.1 The invariant that makes the new output correct
+
+Invariant I12 of section 5 already required exactly this: every `_block_N()`
+either resolves to an emitted definition or is replaced by an explicit omission
+form whose id appears in the summary. I13 forbids an undefined reference and a
+path dropped without a marker. Neither is what the old collapse did for a
+*defined* helper: it deleted a definition that existed and put an exit in its
+place, which is the L2 rule against fabricated control applied to a return
+rather than to a `goto` or a `tailCall_`.
+
+The trailing clause of I12, "equivalently, `quality.json` `block_helper_refs` is
+0 for a run with no surviving helper", is conditional and still holds: it is a
+statement about runs where no helper survives. The same clause in the EM-05 row
+of section 2 is written without that condition, because at `1371e42` no helper
+ever survived, so the two readings could not be told apart. **EM-05's
+`block_helper_refs is 0` clause is superseded by this record.** The row's Status
+column stays as it is: it is pinned to `1371e42` and describes what that
+revision did.
+
+### 16.2 The tests that fail before and pass after
+
+- `crates/flutterdec-decompiler/src/control_flow/emission_taxonomy_tests.rs`:
+  `helper_calls_below_the_budget_all_resolve`,
+  `helper_calls_at_the_budget_all_resolve` and
+  `helper_calls_above_the_budget_become_explicit_omissions` are the below, at and
+  above-budget cases EM-05 asks for. All three fail on the old behavior, which
+  leaves an artifact with zero calls and zero definitions and a `return null;`
+  at every deferred edge.
+- `every_reachable_block_is_emitted_or_named_by_an_omission` is the
+  reconciliation: a block is emitted, named by an omission event, or reached only
+  through a block that is.
+- The two protected tests in `omitted_path_and_stack.rs` keep their names,
+  their fixtures and their subject. Their assertions are inverted where the
+  behavior inverted, and one of them now also asserts call-definition set
+  equality.
+
+### 16.3 Digest chains
+
+Column order matches sections 10.1 through 15.1, state before digest.
+
+`crates/flutterdec-decompiler/src/tests/cfg_and_stack/omitted_path_and_stack.rs`:
+
+| Commit | State | sha256 |
+| --- | --- | --- |
+| `1371e42` | reference | `e5e53a705aa16f6b27df6d99375da0d76106fc6f16f462301ab858d5e77a21ad` |
+| `439ebc8` | unchanged through every prior mission commit | `e5e53a705aa16f6b27df6d99375da0d76106fc6f16f462301ab858d5e77a21ad` |
+| `68f1353` | current, recorded in section 7 | `9b8d3117e3e1c510fbbf6a1a8217ac795968aba1661d938a02ffd0abedeaf79c` |
+
+`crates/flutterdec-core/src/pipeline/runners/tests.rs`:
+
+| Commit | State | sha256 |
+| --- | --- | --- |
+| `1371e42` | reference | `a65298cde1ed807a838199162397bd51ff7f35e38941a0bd274872116b8c4668` |
+| `439ebc8` | unchanged through every prior mission commit | `a65298cde1ed807a838199162397bd51ff7f35e38941a0bd274872116b8c4668` |
+| `68f1353` | current, recorded in section 7 | `7d1d87fa9401d07ab19b4bbb190edf1c53538a6da83ccd0e891b851b63200e63` |
+
+### 16.4 Exact diff intent, per file
+
+`omitted_path_and_stack.rs`, +41 lines, -14, two tests, both keeping their
+names, which are the section 13 sentinels for this file:
+
+1. `collapses_helper_calls_into_omitted_path_comments`. The fixture gains a
+   second call, to a block the budget refused, and the assertions split in two:
+   the defined helper keeps its call and its body, the refused one becomes the
+   omission marker and is named by the summary, no `return null;` appears
+   anywhere, and the call set equals the definition set. The old file asserted
+   the opposite of the first and third of those, which is the behavior this
+   record supersedes.
+2. `summarizes_duplicate_omitted_blocks_once`. The helper definition is removed
+   from the fixture, so both call sites are refused ones; the summary is still
+   asserted to name the block exactly once, the two call sites each carry their
+   own marker, and `return null;` is asserted absent rather than present twice.
+
+`runners/tests.rs`, +6 lines, -0: one `emission: Default::default(),` line in
+each of the five `PseudocodeArtifact` literals and one in the `QualityReport`
+literal, because both structs gained a field. No assertion changes.
+
+### 16.5 What did not change
+
+No assertion was deleted, no test was renamed or removed, and no fixture was
+weakened: the decompiler unit suite goes from 298 to 309 tests and the workspace
+from 496 to 508, with 0 removed. The three golden snapshots are byte-identical
+and were not rewritten. `docs/baseline/aa-1/warmup-reference.json` and the other
+recorded references are untouched, so the pre-change artifact digests, line
+counts and helper counts for all 33 benchmark cases remain available for
+comparison.
+
+Seven of those 33 cases move, all in the direction this record describes, with
+every correctness flag still passing and `correctness_failures` empty:
+
+| Case | Lines | Helper definitions | Helper references |
+| --- | --- | --- | --- |
+| `fan-in/256/base` | 88 to 1846 | 0 to 20 | 0 to 20 |
+| `fan-in/1024/base` | 88 to 5657 | 0 to 64 | 0 to 64 |
+| `multi-exit/256/base` | 88 to 1910 | 0 to 21 | 0 to 21 |
+| `multi-exit/1024/base` | 88 to 5657 | 0 to 64 | 0 to 64 |
+| `irreducible/64/base` | 663 to 29776 | 0 to 45 | 0 to 45 |
+| `irreducible/256/base` | 663 to 42889 | 0 to 61 | 0 to 61 |
+| `irreducible/1024/base` | 663 to 55875 | 0 to 63 | 0 to 63 |
+
+Those figures are also the size of the underlying problem: the DFS fallback
+duplicates a block once per reaching path, and the collapse was hiding that
+duplication rather than bounding it. Bounding it belongs to the fallback, not to
+the collapse.
+
+### 16.6 Section 9 steps
+
+1. Invariant: section 16.1, sourced from I12 and I13 and from the L2 rule
+   against fabricated control.
+2. Tests: section 16.2, at the emission layer the change belongs to.
+3. Diff and digests: sections 16.3 and 16.4.
+4. Reference preserved: `1371e42` is untouched, both prior digests are recorded
+   above, and every recorded benchmark reference keeps its pre-change values.
+5. **Not followed as written.** The two protected test files changed in
+   `68f1353`, the same commit as the product change, rather than in a commit of
+   their own. Both assert behavior that does not exist before that commit, so a
+   separate ruler commit would have been a knowingly failing revision on a branch
+   that forbids force push. The diff is recorded here instead, and the two files
+   are separable: `git show 68f1353 -- <the two paths>` is the whole ruler change
+   and reverting it reverts nothing else.
+6. L5 re-run in full after the change: `scripts/ci-check.sh` exit 0, 21 result
+   lines, 520 tests, including the three goldens and the oracle inventory lane.

@@ -728,14 +728,17 @@ is needed to justify them.
 
 | Rank | Defect | Evidence class | Where |
 | --- | --- | --- | --- |
-| D1 | Coverage collapse on large declined graphs: `fan-in` and `multi-exit` emit 88 lines at 256 and 1024 blocks, `irreducible` emits 663 lines at every size, with zero helper definitions and zero helper references, so every omitted path was rewritten to `return null;` | Measured, from the committed warmup documents; the mechanism is R2 | 12.3, `inlining.rs:189-206`, `helper_flow/summary.rs:48-55` |
+| D1 | Closed at `68f1353`: coverage collapse on large declined graphs, every omitted path rewritten to `return null;` with every helper definition deleted | Closed, measured before and after on all 33 benchmark cases | Sections 12.3 and 19 |
 | D2 | Closed at `6756e71`: R1, `br` and `brk` got an invented fallthrough edge | Closed, asserted by test in three crates | Sections 7 and 18 |
-| D3 | R3, `omitted_blocks` is not part of the structured rollback | Inspection | Section 7 |
+| D3 | Closed at `fbe0d99`: `omitted_blocks` was not part of the structured rollback, and neither were the helper set, the names, several anchors or the traversal bookkeeping | Closed, asserted by a poisoned-state differential against direct DFS | Sections 7 and 19 |
 
-D1 is new to this document and outranks the performance work in importance: the
-current gates cannot see it. All 33 cases pass the harness correctness pass, and
-the four quality gates (`quality.rs:106-118`) do not count emitted blocks against
-graph blocks.
+D1 was new to this document when it was written and outranked the performance
+work in importance, because the gates in place then could not see it: all 33
+cases passed the harness correctness pass, and the four quality gates
+(`quality.rs:106-118`) do not count emitted blocks against graph blocks. It is
+closed at `68f1353` and section 19 records the fix, the tests that now fail on
+the old behavior, and the seven benchmark cases that moved. D3 is closed at
+`fbe0d99`, which replaced the hand-listed rollback with a whole snapshot.
 
 ## 15. Frozen experiment plan
 
@@ -1294,3 +1297,97 @@ What they change about the section 6 gap: block identity and edge reciprocity ar
 now asserted directly rather than only through emitted text. The dominator,
 post-dominator, follow-node, loop and reducibility relations named in that bullet
 are still observed through emitted text only, so that part of the gap is open.
+
+## 19. Emission omissions and declines, implemented at `68f1353` and `fbe0d99`
+
+Two commits close D1 and D3 and give both of them a vocabulary. `68f1353` stops
+the omitted-path collapse and reports every traversal omission as an event;
+`fbe0d99` gives every structured decline one primary cause and makes its
+rollback whole. The protocol's section 16 is the adjudication for the two
+protected test files the first of them moves.
+
+### 19.1 What the collapse was doing
+
+`collapse_remaining_helpers` ran on every artifact that deferred any path, not
+only on ones that hit a budget. It rewrote **every** surviving
+`return _block_N();` into `return null;` and deleted **every** helper
+definition. So a deferred edge became a return the graph does not contain, and
+the deferred block's body was not in the artifact at all. The
+`// omitted complex paths:` summary named the ids, which is why the loss read as
+announced rather than silent, but what it announced was a return.
+
+Measured before and after on the 33-case benchmark matrix, with
+`flutterdec-bench run --runs 0 --warmups 0 --correctness on` against
+`docs/baseline/aa-1/warmup-reference.json`. Seven cases move, 26 are unchanged,
+and every correctness flag still passes with `correctness_failures` empty:
+
+| Case | Lines | Helper definitions | Helper references |
+| --- | --- | --- | --- |
+| `fan-in/256/base` | 88 to 1846 | 0 to 20 | 0 to 20 |
+| `fan-in/1024/base` | 88 to 5657 | 0 to 64 | 0 to 64 |
+| `multi-exit/256/base` | 88 to 1910 | 0 to 21 | 0 to 21 |
+| `multi-exit/1024/base` | 88 to 5657 | 0 to 64 | 0 to 64 |
+| `irreducible/64/base` | 663 to 29776 | 0 to 45 | 0 to 45 |
+| `irreducible/256/base` | 663 to 42889 | 0 to 61 | 0 to 61 |
+| `irreducible/1024/base` | 663 to 55875 | 0 to 63 | 0 to 63 |
+
+Helper definitions equal helper references in every one of them, which is the
+invariant the fix is built around: a call whose helper was defined keeps both,
+only a call the budget refused is rewritten, and definitions nothing calls are
+dropped to a fixpoint. A refused call renders as
+`// omitted path to block N: helper budget exhausted, block not emitted`.
+
+Those line counts are also the size of F1. The DFS fallback emits a block once
+per reaching path, and the collapse was hiding that duplication rather than
+bounding it. Nothing here bounds it either; it is now visible, which is what a
+fallback whose duplication is the ranked opportunity should look like.
+
+### 19.2 The taxonomy
+
+Traversal omissions and structured declines are different things and are now
+typed as such, in
+`crates/flutterdec-decompiler/src/control_flow/emission_taxonomy.rs`.
+
+A decline is a property of the function. It carries exactly one primary cause -
+`Irreducible`, `UnsupportedRegion`, `RepeatBudget`, `StructuredDepthBudget`,
+`CoverageMismatch` - keyed by the start address of the block it is attributed to,
+which is the identity `validate_block_identity` proves unique. The generic
+decline count is the sum of the five and the rollback count is the sum of the
+three post-mutation ones; neither is stored beside them, so neither can drift
+from them, and rollback is not a cause of its own.
+
+A traversal event is a property of one walk at one site: `DfsDepthOmission`,
+`DfsVisitOmission`, `HelperCapOmission`, keyed by function, source block start
+address, target block start address or helper id, and the ordinal of the event in
+the function. An event is not a block disposition. A visit omission names an edge
+the budget refused while the block it names is emitted elsewhere in the same
+artifact, and `a_visit_omission_can_name_a_block_that_was_also_emitted` is the
+fixture for exactly that.
+
+Both reach consumers: `PseudocodeArtifact.emission` per function,
+`QualityReport.emission` per program.
+
+### 19.3 Preflight and rollback
+
+`Irreducible` and `UnsupportedRegion` are decided before the attempt writes
+anything, so their rollback count is zero and their output is the DFS walk's own.
+`UnsupportedRegion` is new: a reachable block with more than two successors, with
+two successors and no conditional terminator, or with a recovered target that is
+not one of its successors has no rendering rule, so structuring it could only
+drop an edge or invent one. Deciding it up front is what makes the preflight
+claim provable rather than asserted.
+
+The other three are discovered mid-walk. Their rollback restores a whole
+snapshot of every mutable family - lines, register state, counters, helper set,
+names, render anchors, provenance streams, traversal bookkeeping and events -
+rather than the hand-listed subset it used to restore. That list was missing
+`omitted_blocks` (D3) and also `call_index`, which is why a declined function's
+fallback body used to have every temporary renamed relative to the same function
+emitted by the DFS walk directly. `emit_pseudocode_direct_dfs` is that walk
+without the attempt, and `a_declined_function_equals_direct_dfs` compares the two
+byte for byte, on emitters poisoned in every state family first.
+
+One further hardening came out of writing those fixtures: the coverage check
+compared `structured_emitted.len()` against the reachable count, so anything
+already in that set masked a block the walk never emitted. It now asks whether
+every reachable block is in the set.
