@@ -26,3 +26,10 @@ flutterdec-adapter = { path = "../flutterdec-adapter" }
 flutterdec-disasm-arm64 = { path = "../flutterdec-disasm-arm64" }
 flutterdec-ir = { path = "../flutterdec-ir" }
 flutterdec-decompiler = { path = "../flutterdec-decompiler" }
+
+[dev-dependencies]
+# Both are already regular dependencies of this crate; an integration test can
+# only reach dev-dependencies, so they are named again rather than added.
+serde_json.workspace = true
+tempfile.workspace = true
+flutterdec-decompiler = { path = "../flutterdec-decompiler" }
