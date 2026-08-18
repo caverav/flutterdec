@@ -996,33 +996,46 @@ because the branch forbids force push, so history cannot be amended.
 
 ### 17.4 Symbol and binary probes
 
-Run in a disposable worktree at `6430765`, then again in the same worktree with
-only the `members` line replaced by `exclude`, so the build path is identical on
-both sides and cannot enter the comparison:
+All three columns below were built in one disposable worktree at the single path
+`/tmp/pb-6430765`: first at `6430765` as committed, then in the same worktree
+with only the `members` line replaced by `exclude`, then with the tip checked out
+into that same worktree. The build path is therefore identical across the three
+columns and cannot enter the comparison:
 
 ```
-git worktree add /tmp/tr-6430765 6430765
+git worktree add --detach /tmp/pb-6430765 6430765
 nix develop -c cargo tree --workspace -e features | grep -c bench-spans
 nix develop -c cargo build --release --workspace
 strings target/release/libflutterdec_decompiler.rlib | grep -c take_cfg_nanos
 strings target/release/libflutterdec_core.rlib | grep -c serialize_artifacts
 sha256sum target/release/flutterdec
+git checkout --force --detach 70b2feb
 ```
 
-| Probe | `6430765` as committed | same tree, `exclude` instead of `members` | tip `0f37284` |
+| Probe | `6430765` as committed | same tree, `exclude` instead of `members` | tip `70b2feb`, same worktree |
 | --- | --- | --- | --- |
 | `cargo tree --workspace -e features`, `bench-spans` activations | 3 | 0 | 0 |
 | `take_cfg_nanos` in the release decompiler rlib | 3 | 0 | 0 |
 | `add_cfg_nanos` in the release decompiler rlib | 3 | 0 | 0 |
 | `serialize_artifacts` in the release core rlib | 4 | 0 | 0 |
-| `flutterdec` release CLI sha256 | `b5caf69037e5b99f4547d8c6802cb80c59825a9877187928a7f6e19d9e281535` | `1d6264dbe621fdbfa8c2d1443b7db5eb259590ee7b340911f43272da9b3092db` | `1d6264dbe621fdbfa8c2d1443b7db5eb259590ee7b340911f43272da9b3092db` |
+| `flutterdec` release CLI sha256, path-bound | `1354353263992a45ec44032f2f116b048210b306f66b532a0f6887216e309dd3` | `45b4c30c743ce9589446f18740ea13f6b05294f55c76cd1c1e21646f4ce9d05d` | `45b4c30c743ce9589446f18740ea13f6b05294f55c76cd1c1e21646f4ce9d05d` |
 | `flutterdec` release CLI bytes | 17398888 | 17393976 | 17393976 |
+
+The three digests are path-bound and are not portable numbers. The worktree path
+enters the crate metadata hash, so one source tree built at two paths yields two
+different digests at the same byte count. It is the same mechanism section 1 of
+the companion baseline records when it explains why both A/A sides are built in
+one canonical path and only the finished binary is copied into a side slot.
+Rebuilding this table at another path reproduces the row structure, the symbol
+counts, both byte counts and the equality of the last two columns, and reproduces
+none of the three digest values. Only equality within one path is a claim about
+the code.
 
 Two readings matter here. Flipping that one manifest line changes the shipped CLI
 binary, which is the strongest available statement that the product build was
-genuinely different. And the corrected `6430765` tree and the tip produce the
-same CLI digest from two different build paths, which is what places the whole
-product delta of this branch inside the `cfg` gates.
+genuinely different. And at this one path the corrected `6430765` tree and the
+tip produce a byte-identical CLI, 17393976 bytes under one digest, which is what
+places the whole product delta of this branch inside the `cfg` gates.
 
 The bare string `bench_spans` still returns 1 hit per rlib at the tip. That is
 the feature name in the crate metadata feature table, not compiled code. Count
@@ -1054,11 +1067,19 @@ revision returns 14 hits for `add_cfg_nanos` and 13 for `take_cfg_nanos`.
   `exclude = ["crates/flutterdec-bench"]`, so every worktree either patch ever
   produced was isolated. `grep -c 'exclude = \["crates/flutterdec-bench"\]'` is 1
   on each.
-- All four accepted A/A runs bind `harness_ref 8e7f080` and product `1371e42` on
-  both sides (`docs/baseline/aa-*/binding.txt`), and the two committed runs
-  produced one binary digest `bc06f2bf...` for both sides.
-- `grep -rl 6430765 docs/` matches only the companion protocol's digest-chain
-  table. No measured artifact references the revision at all.
+- The two committed A/A runs bind `harness_ref 8e7f080`
+  (`docs/baseline/aa-*/binding.txt`) and produced one binary digest `bc06f2bf...`
+  for both sides. The two validator runs held under the mission evidence
+  directory bind `harness_ref bf9a0eb` instead, which is the docs-only commit
+  that recorded the accepted baseline;
+  `git diff 8e7f080 bf9a0eb -- . ':!docs'` is empty, so that is a label
+  difference and not a different harness. All four runs bind product `1371e42` on
+  both sides and the same `patch_sha256 14413796...`, which is the binding that
+  actually holds across the four.
+- No measured artifact references the transient revision:
+  `grep -rl 6430765 docs/baseline/` matches zero files. Under `docs/` the
+  revision appears only in disclosure prose, this section included, and in the
+  companion protocol's digest-chain table.
 
 ### 17.7 The probe that cannot see this
 
