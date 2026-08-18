@@ -1,3 +1,13 @@
+/// Identifiers the emitter renders that are not locals and never get renamed.
+///
+/// One definition, because two consumers need it and a duplicated list is the
+/// drift hazard `VAL-BOUNDARY-005` exists to prevent: the naming pass seeds its
+/// used-name set from this so a local can never collide with one, and the
+/// annotation filter treats them as always in scope so a candidate naming
+/// `thread` or `pool` is not mistaken for one naming a dead local.
+pub(crate) const RESERVED_EMITTER_IDENTIFIERS: [&str; 6] =
+    ["thread", "pool", "sp", "null", "flags", "dynamic"];
+
 pub(super) fn sanitize_name(name: &str) -> String {
     let mut out = String::new();
     for c in name.chars() {
@@ -26,6 +36,28 @@ pub(super) fn named_indirect_target(token: &str) -> String {
         }
     }
     token.to_string()
+}
+
+/// Every spelling that denotes a register whose value was not recovered. The
+/// order is fixed and this list is for membership checks, never emitted directly.
+pub(super) fn unrecovered_value_spellings(canonical: &str) -> Vec<String> {
+    let Some(reg) = canonical_reg(canonical) else {
+        return Vec::new();
+    };
+    let Some(id) = reg.strip_prefix('x').and_then(|id| id.parse::<usize>().ok()) else {
+        return Vec::new();
+    };
+    if id > 30 {
+        return Vec::new();
+    }
+    let mut spellings = vec![
+        reg,
+        named_register_alias(id),
+        named_indirect_target(canonical),
+    ];
+    spellings.sort();
+    spellings.dedup();
+    spellings
 }
 
 pub(super) fn named_register_alias(n: usize) -> String {

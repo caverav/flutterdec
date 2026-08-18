@@ -162,11 +162,26 @@ impl<'a> FuncEmitter<'a> {
         };
 
         if off == -1 {
-            format!("{b}._tag")
-        } else if off >= 0 {
-            format!("{b}.f{off}")
+            return format!("{b}._tag");
+        }
+        if off < 0 {
+            return format!("{b}.m{}", -off);
+        }
+        // Dart object pointers carry `kHeapObjectTag`, so a field load reads
+        // `[obj + offset - 1]`. Field offsets are 4-aligned, so a displacement of
+        // 3 mod 4 is exactly a tag-adjusted one and identifies itself: no
+        // knowledge of the base is needed, and THR or pool displacements, which
+        // are aligned and untagged, never match. Measured on a real binary,
+        // 262439 of 272805 object-base displacements are 3 or 7 mod 8, and every
+        // THR displacement is 0 mod 8.
+        //
+        // Reporting the real offset makes the number readable without knowing the
+        // tagging scheme, and joinable by equality to a recovered class field
+        // table, which is keyed the same way.
+        if off % 4 == 3 {
+            format!("{b}.f{}", off + 1)
         } else {
-            format!("{b}.m{}", -off)
+            format!("{b}.f{off}")
         }
     }
 
@@ -343,7 +358,9 @@ mod expr_cleanup_utf8_tests {
 
     #[test]
     fn clean_expr_normalizes_shifted_pool_field_access() {
-        let input = "((pool + 8 /* lsl #12 */)).f3640".to_string();
+        // The shift folds in the simplifier now, so this is the shape the emitter
+        // produces: `add rD, pool, #0x8, lsl #12` reaches here already added.
+        let input = "((pool + 0x8000)).f3640".to_string();
         let out = FuncEmitter::clean_expr(input);
         // (8 << 12) + 3640 == 36408 bytes from PP. Converting that to an entry index
         // needs the pool's entries_offset/word_size, which this layer does not have.
@@ -352,8 +369,28 @@ mod expr_cleanup_utf8_tests {
 
     #[test]
     fn clean_expr_normalizes_nested_shifted_pool_field_access() {
-        let input = "((((pool + 8 /* lsl #12 */)).f816).f7)".to_string();
+        let input = "((((pool + 0x8000)).f816).f7)".to_string();
         let out = FuncEmitter::clean_expr(input);
         assert_eq!(out, "(poolOff[33584].f7)");
+    }
+
+    /// A Dart object pointer carries `kHeapObjectTag`, so a field load reads one
+    /// byte below the field. Field offsets are 4-aligned, so a displacement of 3
+    /// mod 4 is exactly a tag-adjusted one and identifies itself; everything else
+    /// is already in the untagged space and must not shift.
+    #[test]
+    fn field_offsets_are_reported_untagged() {
+        // Tagged: the load was `[obj + 0x10 - 1]`.
+        assert_eq!(FuncEmitter::field_expr("obj", 15), "obj.f16");
+        assert_eq!(FuncEmitter::field_expr("obj", 7), "obj.f8");
+        // Compressed slots are 4 bytes, so 3 mod 4 also covers `[obj + 4 - 1]`.
+        assert_eq!(FuncEmitter::field_expr("obj", 3), "obj.f4");
+        // Already aligned, so untagged: an object pool or THR displacement.
+        assert_eq!(FuncEmitter::field_expr("obj", 16), "obj.f16");
+        assert_eq!(FuncEmitter::field_expr("thread", 72), "thread.f72");
+        assert_eq!(FuncEmitter::field_expr("thread", 0x38), "thread.f56");
+        // The header sits below the tag and is named, not numbered.
+        assert_eq!(FuncEmitter::field_expr("obj", -1), "obj._tag");
+        assert_eq!(FuncEmitter::field_expr("obj", -8), "obj.m8");
     }
 }

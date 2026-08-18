@@ -9,7 +9,7 @@ if ((obj1.f7) == null) {
   ...
 
   final t5 = dispatch.minWidth(
-    ((((objTmp2.f15) + t4 /* lsl #2 */)).f15),
+    ((((objTmp2.f15) + (t4 << 2))).f15),
     null,
     objTmp3,
     "minWidth",

@@ -5,6 +5,21 @@ use runners_reporting::{
     collect_selector_fallback_summary, BootflowDiscoveryEntry, BootflowDiscoverySummary,
     CallFallbackSummary, SelectorFallbackSummary, SemanticIntentSummary,
 };
+#[path = "runners/split.rs"]
+mod runners_split;
+use runners_split::{split_inflated_records, SplitStats};
+
+#[path = "runners/stubs.rs"]
+mod runners_stubs;
+use runners_stubs::{prune_calls_that_never_return, shared_stub_names};
+
+/// Why the shared-stub naming produced the count it did, for the report.
+struct SharedStubNamingSummary {
+    status: String,
+    named: usize,
+    allocation_named: usize,
+    scanned: usize,
+}
 #[path = "runners/manifest.rs"]
 mod runners_manifest;
 use runners_manifest::{
@@ -1001,6 +1016,8 @@ pub fn run_info(repo_root: &Path, input_path: &Path) -> Result<InfoOutput> {
             .dart_profile
             .as_ref()
             .map(|p| p.profile.tag_style.as_str().to_string()),
+        compressed_pointers: bundle.compressed_pointers,
+        snapshot_features: bundle.snapshot_features.clone(),
         adapter_installed,
         adapter_kind: None,
         manifest_entry_present: None,
@@ -1290,7 +1307,16 @@ pub fn run_decompile(
         &priority_package_hints,
         opt.engine_options.bootflow_category_seeds,
     );
-    let ir: Vec<FunctionIr> = build_program_ir(&disasm);
+    // Records that span several real functions are split before the IR is built, so
+    // each piece gets dense block ids and an entry at block 0, which is what
+    // `Regions::build` requires. Opt-in, because it multiplies the function count.
+    let pre_split_disassembled = disasm.len();
+    let (disasm, split_stats) = if opt.split_records {
+        split_inflated_records(disasm)
+    } else {
+        (disasm, SplitStats::default())
+    };
+    let mut ir: Vec<FunctionIr> = build_program_ir(&disasm);
     let mut symbol_names: HashMap<u64, String> = HashMap::new();
     let mut symbol_quality: HashMap<u64, SymbolNameQuality> = HashMap::new();
     let mut symbol_merge_stats = SymbolMergeStats::default();
@@ -1449,12 +1475,44 @@ pub fn run_decompile(
             );
         }
     }
+    // Shared stubs name themselves: each loads its own `Code` object from a
+    // fixed `Thread` slot in its prologue, so this is read from the callee
+    // rather than inferred from how often it is called. `Exact` for that
+    // reason. Gated on a known (version, pointer mode) and cross-checked
+    // against the binary's own offset set, so an unknown SDK names nothing
+    // instead of naming everything wrong.
+    let stub_naming = shared_stub_names(
+        &disasm,
+        bundle.dart_profile.as_ref().map(|p| p.dart_version.as_str()),
+        bundle.compressed_pointers,
+    );
+    let shared_stub_naming = SharedStubNamingSummary {
+        status: stub_naming.status.to_string(),
+        named: stub_naming.names.len(),
+        allocation_named: stub_naming.allocation_named,
+        scanned: stub_naming.scanned,
+    };
+    // A call that raises has no fall-through, so the edge the disassembler
+    // recorded after it is not real. Cut before the emitters see the CFG.
+    let noreturn_prune =
+        prune_calls_that_never_return(&mut ir, &stub_naming.non_returning);
+    for (va, name) in stub_naming.names {
+        merge_symbol_name(
+            &mut symbol_names,
+            &mut symbol_quality,
+            va,
+            name,
+            Some(SymbolNameQuality::Exact),
+            &mut symbol_merge_stats,
+        );
+    }
     let symbol_quality_counts = collect_symbol_quality_counts(&symbol_quality);
-    let pseudo = emit_program_with_pool_context(
+    let pseudo = emit_program_with_runtime_stubs(
         &ir,
         &symbol_names,
         &pool_value_hints,
         &pool_semantic_hints,
+        &stub_naming.effects,
     );
 
     let asm_dir = opt.out_dir.join("asm");
@@ -1474,7 +1532,7 @@ pub fn run_decompile(
             p.function_id,
             normalize_file_name(&p.function_name)
         );
-        fs::write(pseudo_dir.join(filename), &p.source)?;
+        fs::write(pseudo_dir.join(filename), terminated(&p.source))?;
     }
 
     if opt.emit_asm {
@@ -1488,14 +1546,16 @@ pub fn run_decompile(
                 f.function_id,
                 normalize_file_name(&f.function_name)
             );
-            fs::write(asm_dir.join(filename), lines.join("\n"))?;
+            fs::write(asm_dir.join(filename), terminated(&lines.join("\n")))?;
         }
     }
 
     if opt.emit_ir {
         for f in &ir {
             let filename = format!("{:05}_{}.json", f.function_id, normalize_file_name(&f.name));
-            fs::write(ir_dir.join(filename), serde_json::to_vec_pretty(f)?)?;
+            let mut body = serde_json::to_vec_pretty(f)?;
+            body.push(b'\n');
+            fs::write(ir_dir.join(filename), body)?;
         }
     }
 
@@ -1533,7 +1593,8 @@ pub fn run_decompile(
         None
     };
 
-    let report = quality_from_artifacts(&selected_model, &disasm, &pseudo, opt);
+    let report =
+        quality_from_artifacts(&selected_model, &pseudo, opt, pre_split_disassembled);
     let (semantic_intent, call_fallback, selector_fallback, selector_fallback_top) =
         if opt.engine_options.semantic_reporting {
             let semantic_intent = collect_semantic_intent_summary(&pseudo);
@@ -2040,10 +2101,38 @@ pub fn run_decompile(
             "selector_tagged": semantic_intent.selector_tagged,
             "constructor_calls": semantic_intent.constructor_calls
         },
+        // Reported separately, and never folded into the disassembly ratio: the
+        // ratio's denominator is the model's function list, so counting split
+        // pieces in its numerator would compare unlike things.
+        "record_split": {
+            "enabled": opt.split_records,
+            "records_declared": pre_split_disassembled,
+            "records_split": split_stats.records_split,
+            "functions_recovered": split_stats.functions_recovered,
+            "rejected_branch_target": split_stats.rejected_branch_target,
+            "rejected_not_contained": split_stats.rejected_not_contained,
+            "rejected_no_block": split_stats.rejected_no_block
+        },
         "selector_fallback": {
             "total": selector_fallback.total,
             "unique": selector_fallback.unique,
             "top": selector_fallback_top
+        },
+        // Carries the keys the gate actually used, not just the outcome: a
+        // `named` status beside an unknown version would leave no way to tell
+        // which SDK the names came from, and a zero would be indistinguishable
+        // from a feature that never ran.
+        "shared_stub_naming": {
+            "status": shared_stub_naming.status,
+            "named": shared_stub_naming.named,
+            "allocation_named": shared_stub_naming.allocation_named,
+            "functions_scanned": shared_stub_naming.scanned,
+            "noreturn_pruned_functions": noreturn_prune.functions,
+            "noreturn_pruned_blocks": noreturn_prune.blocks_cut,
+            "noreturn_pruned_instructions": noreturn_prune.instructions_cut,
+            "model": model.adapter_kind.clone(),
+            "snapshot_dart_version": bundle.dart_profile.as_ref().map(|p| p.dart_version.clone()),
+            "compressed_pointers": bundle.compressed_pointers
         },
         "call_fallback": {
             "dynamic_call": call_fallback.dynamic_call,

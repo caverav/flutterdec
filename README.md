@@ -171,6 +171,25 @@ flutterdec adapter install --dart-hash <HASH>
 flutterdec decompile ./sample.apk -o ./out
 ```
 
+**Expect a non-zero exit on a real app, and expect your artifacts anyway.** The strict quality gate is on by
+default with `--max-placeholder-ifs 0`, and every real Flutter app has placeholder ifs. So the command above
+prints `reasons: placeholder if-count exceeded threshold`, exits `1`, and **still writes every artifact
+listed in step 4**. Nothing is missing - the gate is reporting a quality measurement, not a failure to
+decompile. Measured on LocalSend 1.17: 501 at the default scope, 5,800 pseudocode files written, exit 1.
+
+Read your own number rather than guessing one. It is `placeholder_ifs` in `out/quality.json`, and it grows
+with scope - the same app reports 1,178 under `--function-scope all --split-records`:
+
+```bash
+flutterdec decompile ./sample.apk -o ./out            # exits 1, writes everything
+python3 -c "import json;print(json.load(open('out/quality.json'))['placeholder_ifs'])"
+flutterdec decompile ./sample.apk -o ./out --max-placeholder-ifs <that number>
+```
+
+Setting the threshold from the measurement is the point: a huge round number silences the gate permanently,
+whereas a real one still fails when the count **rises**, which is the only thing it is useful for. Keep the
+strict default in CI. See [`docs/cli-reference.md`](docs/cli-reference.md) for the other gate flags.
+
 4. Open the main outputs first:
 
 - `out/pseudocode/*.dartpseudo`
@@ -487,7 +506,9 @@ The IR stage makes the selector-bearing pool values explicit before readability 
   <img src="docs/assets/readme/zedsecure-minwidth-pseudocode.svg" alt="Recovered pseudocode with named Flutter selectors from the ZedSecure APK" width="900">
 </p>
 
-The important part is not the anonymous function name. The important part is that `flutterdec` surfaced readable Flutter selector names from the APK itself, including `dispatch.minWidth(...)`, `dispatch.messageMap(...)`, and the framework-side `flutter.foundation.invoke(...)`.
+The important part is not the anonymous function name. The important part is that `flutterdec` surfaced readable Flutter selector names from the AOT payload, including `dispatch.minWidth(...)`, `dispatch.messageMap(...)`, and the framework-side `flutter.foundation.invoke(...)`.
+
+This capture is from a target whose adapter recovered class and selector metadata. Selector naming is gated on that metadata: on a target where the adapter recovers only strings, the same run emits no selector names at all (measured zero on two release APKs). Function names, control flow, and expressions do not depend on it.
 
 This gives the README both views the tool is meant to show publicly:
 

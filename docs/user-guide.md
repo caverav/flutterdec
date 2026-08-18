@@ -110,6 +110,47 @@ nix develop -c cargo build -p flutterdec-cli --release
 ./target/release/flutterdec --help
 ```
 
+### Where Adapters Live, And Why A Run Can Fail Outside A Checkout
+
+`decompile` needs a Python adapter installed for the target's Dart snapshot hash. The adapter store is found
+by **walking up from your current directory** for a folder containing *both* `Cargo.toml` and
+`adapters/manifest.json`; if no such folder is found, the current directory is used as-is. So the binary's
+own location is irrelevant - what matters is where you `cd`.
+
+Two consequences that produce the same confusing error:
+
+- **Running from outside a checkout finds no store.** `nix run`, a `nix profile` install, or a release binary
+  invoked from, say, `~/work` will report:
+
+  ```
+  Error: adapter not installed for hash 80a49c7111088100a233b2ae788e1f48.
+  run: flutterdec adapter install --dart-hash 80a49c7111088100a233b2ae788e1f48
+  ```
+
+  The message is correct and the fix is to run that command - but run it from **inside** the checkout, or the
+  adapter lands somewhere the next invocation will not look.
+- **A fresh clone or `git worktree` has the manifest but no adapters.** `adapters/installed/` is gitignored,
+  so a second working tree of the same repository starts with zero installed adapters even though your main
+  checkout has them. This has already caused a real misdiagnosis in this project's own research: a run in a
+  fresh worktree hit the error above and it was recorded as "the quality gate is unrunnable" before the true
+  cause was found. If a command works in one tree and not another, check this first.
+
+Install once per snapshot hash, from within the checkout:
+
+```bash
+flutterdec info ./sample.apk --json      # read snapshot_hash
+flutterdec adapter install --dart-hash <HASH>
+flutterdec adapter list
+```
+
+Two things to know about that install step. `adapter install` writes the built adapter into
+`adapters/installed/`, which is gitignored, **but it also registers the hash in `adapters/manifest.json`,
+which is tracked** - so installing an adapter leaves your working tree dirty with a one-entry diff. That is
+expected, not a mistake, and the entry is worth keeping if you intend to share support for that snapshot
+hash. Second, the manifest and the installed adapters can disagree: a fresh clone has a manifest listing
+adapters whose files are absent, and you get the same "adapter not installed" message as if the manifest were
+empty. `flutterdec adapter list` shows both sides, which is the quickest way to tell the two apart.
+
 ## First Use
 
 If this is your first run, this is the shortest useful path.
@@ -359,3 +400,35 @@ Most users should start by reading:
 - `pseudocode/*.dartpseudo`
 - `report.json.android_startup`
 - `quality.json`
+
+
+## Reading Value Annotations In The Pseudocode
+
+A register whose binding the decompiler could not carry through a control-flow merge renders as a bare
+`regN`. Where the value it *held* is known, `flutterdec` appends it as a comment rather than substituting it,
+so the comment never changes what the code says. Four forms appear, and the distinction between the first two
+is the one worth learning:
+
+| form | meaning |
+|---|---|
+| `regN /* = a \| b */` | **exhaustive.** Every path reaching this merge contributed a value, and they are all listed. `regN` is one of these. |
+| `regN /* possible (non-exhaustive): a \| b */` | **incomplete.** At least one incoming path contributed no usable value, so the real value may be something not listed. |
+| `regN /* loop-entry value: a \| b */` | the value held on **entry** to the loop, one per entry arm - several when the loop has more than one entry arm and they disagree. The value on the back edge is never shown, and is usually different. |
+| `regN /* value before this call: a */` | the value held **immediately before** the adjacent call, which clobbered the register. Not the value after it. Always a single value. |
+
+Expect the incomplete form to dominate, and expect the call form to be rare. Measured on LocalSend 1.17 at
+default scope: 917 non-exhaustive, 246 exhaustive, 148 loop-entry, **3** pre-call. Values are listed in
+ascending predecessor order, so the order is stable across runs.
+
+Two properties are worth relying on:
+
+- **The annotations are comments and nothing else.** Strip every one and you get byte-identical output to a
+  build without them. They do not participate in naming, aliasing or type inference, so they cannot make the
+  surrounding code wrong.
+- **A listed value was actually observed on the path it is attributed to**, not guessed from context. Values
+  the analysis could not attribute are omitted rather than approximated, which is why the non-exhaustive form
+  exists and is the more common of the two.
+
+Absence of an annotation means the value was not recovered, not that the register is unimportant. Most bare
+`regN` occurrences carry no annotation: see `docs/research-pseudocode-quality.md` R29 for the measured
+coverage per site and its limits.

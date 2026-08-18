@@ -244,3 +244,34 @@ fn inlines_placeholder_cond_helper_body() {
     );
 }
 
+/// A pre- or post-indexed access writes its base register back, so the base is a
+/// destination even for a store, which otherwise writes nothing at all.
+///
+/// This feeds the join merge through `dfs_block_writes`, so a missed base write
+/// left that register's binding alive across a join that had redefined it. 2,346
+/// and 1,394 such instructions on the two sample binaries have a base outside the
+/// pinned set, where the omission is observable.
+#[test]
+fn a_writeback_access_writes_its_base_register() {
+    let cases = [
+        // pre-indexed: offset inside the brackets, writeback marked with `!`
+        ("str x1, [x0, #8]!", vec!["x0"]),
+        ("stp x2, x3, [x15, #-0x10]!", vec!["x15"]),
+        // post-indexed: brackets close first, offset is the next operand
+        ("ldr x1, [x0], #8", vec!["x0", "x1"]),
+        ("ldp x1, x2, [x0], #16", vec!["x0", "x1", "x2"]),
+        // no writeback: a plain store writes no register, a plain load its dest
+        ("str x1, [x0, #8]", vec![]),
+        ("ldr x1, [x0, #8]", vec!["x1"]),
+        ("stp x2, x3, [x15, #16]", vec![]),
+    ];
+    for (src, expected) in cases {
+        let (mnemonic, ops) = split_instruction(src);
+        let mut got = written_registers(&mnemonic, &ops);
+        got.sort();
+        got.dedup();
+        let mut want: Vec<String> = expected.iter().map(|s| s.to_string()).collect();
+        want.sort();
+        assert_eq!(got, want, "written registers for `{src}`");
+    }
+}

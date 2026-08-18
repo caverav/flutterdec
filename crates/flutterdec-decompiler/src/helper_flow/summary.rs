@@ -55,16 +55,24 @@ impl<'a> FuncEmitter<'a> {
             }
 
             let mut helper = FuncEmitter::new(self.ir, self.symbol_names);
+            // Helper bodies are copied verbatim into the caller by
+            // `inline_helper_calls`, so their temporaries share the caller's
+            // namespace and the counter has to continue rather than restart.
+            helper.call_index = self.call_index;
+            helper.pool_value_hints = self.pool_value_hints.clone();
+            helper.pool_semantic_hints = self.pool_semantic_hints.clone();
+            // Helper bodies contain the shared slow paths, so this is where most
+            // of the runtime-stub calls end up: without it 535 error-stub sites
+            // on one sample keep the Dart-call model and bind a throw.
+            helper.runtime_stubs = self.runtime_stubs.clone();
             helper.emit_block(id, 1, 0);
+            self.call_index = helper.call_index;
             let has_terminator = helper.lines.iter().any(|line| {
                 let t = line.trim_start();
                 t.starts_with("return ") || t == "continue;"
             });
             let fallback_return = helper
-                .state
-                .reg_values
-                .get("x0")
-                .cloned()
+                .capped_reg_value("x0")
                 .unwrap_or_else(|| "null".to_string());
 
             self.lines.push(format!("dynamic _block_{}() {{", id));

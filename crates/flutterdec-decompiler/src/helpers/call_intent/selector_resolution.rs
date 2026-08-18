@@ -26,15 +26,31 @@ pub(super) fn infer_selector_intent_from_context(
     infer_selector_intent_from_pool(args, pool_value_hints)
 }
 
+/// Selector name trusted enough to name a call: pool metadata that identifies
+/// the slot as a selector.
 pub(super) fn infer_selector_name_from_context(
     args: &[String],
     pool_value_hints: &HashMap<u64, String>,
     pool_semantic_hints: &HashMap<u64, crate::PoolSemanticHint>,
 ) -> Option<String> {
-    if let Some(v) = infer_selector_name_from_pool_metadata(args, pool_value_hints, pool_semantic_hints)
-    {
-        return Some(v);
-    }
+    infer_selector_name_from_pool_metadata(args, pool_value_hints, pool_semantic_hints)
+}
+
+/// Identifier-shaped string reachable from an argument register.
+///
+/// Not a selector. Dart AOT passes arguments in
+/// `DartCallingConvention::kCpuRegistersForArgs` starting at x1 and keeps the
+/// selector inside the object in `IC_DATA_REG` for switchable calls, or encodes
+/// it as a dispatch-table offset. An argument's contents carry no evidence about
+/// the callee. Naming calls from these produced, on a real binary,
+/// `dispatch.torstai` ("Thursday", Finnish), `LoadingUnit.new` beside
+/// `"Til baka"` (Icelandic) and `dispatch.jz` beside a date pattern. Kept as a
+/// reported candidate, because a wrong method name costs a reverser more than an
+/// honest unknown.
+pub(super) fn infer_selector_candidate_from_context(
+    args: &[String],
+    pool_value_hints: &HashMap<u64, String>,
+) -> Option<String> {
     for arg in args {
         for idx in extract_pool_indices(arg) {
             let Some(v) = pool_value_hints.get(&idx) else {

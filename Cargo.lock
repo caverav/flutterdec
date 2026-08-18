@@ -330,6 +330,7 @@ version = "0.1.0-alpha.4"
 dependencies = [
  "flutterdec-ir",
  "serde",
+ "serde_json",
 ]
 
 [[package]]

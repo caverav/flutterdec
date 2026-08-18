@@ -1,3 +1,14 @@
 {
-  "entries": []
+  "entries": [
+    {
+      "snapshot_hash": "ace654289f5abc240509fc941453ebc5",
+      "version": "unknown",
+      "adapter": "dart_adapter_ace654289f5abc240509fc941453ebc5"
+    },
+    {
+      "snapshot_hash": "80a49c7111088100a233b2ae788e1f48",
+      "version": "unknown",
+      "adapter": "dart_adapter_80a49c7111088100a233b2ae788e1f48"
+    }
+  ]
 }
