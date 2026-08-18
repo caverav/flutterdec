@@ -1,0 +1,14 @@
+harness_ref                b4b1d8c24cdd57368d10634fc2b3bbcc8564736c
+patch_sha256               4d8e3682a5a1e600a49df5dbd111ac592152fa25ec06824dafda81b642e9b49f
+reference_product_ref      1371e42549472ec388f58bc1fd5dbdf96e8dcdd1
+candidate_product_ref      1371e42549472ec388f58bc1fd5dbdf96e8dcdd1
+reference_binary_sha256    6d2ee8449058ba1da4bcb456454770506e6e31c1e54e8b0fbc7dffe0e8cfbd86
+candidate_binary_sha256    657cfadf082b0583da8b181e9b19a6b2e4409107c87f5212af3ceda3d846f3b5
+matrix                     disclosed
+pairs                      15
+preliminary_warmups        3
+warmups_per_measured_pair  0
+pair_order                 alternating: reference first on even pairs, candidate first on odd
+pair_order_log             raw/pair-order.tsv
+pair_order_verified        yes
+correctness_documents      warmup-reference.json warmup-candidate.json
