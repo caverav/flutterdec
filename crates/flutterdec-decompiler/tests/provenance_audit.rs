@@ -6,9 +6,10 @@
 //! library would race whichever unit test emitted first and silently observe no
 //! audit at all.
 //!
-//! There is exactly one test here for the same reason: the audit file is
-//! append-only and shared, so two tests writing it concurrently would each see
-//! the other's records.
+//! Only one test here emits: the audit file is append-only and shared, so two
+//! tests writing it concurrently would each see the other's records. The loader
+//! guard below is safe to sit alongside it because it emits nothing, sets no
+//! environment variable, and only reads the source tree.
 
 use flutterdec_decompiler::{
     emit_program_with_runtime_stubs, RuntimeStubEffect, PRE_CALL_ANNOTATION,
@@ -92,6 +93,56 @@ fn field<'a>(row: &'a str, name: &str) -> &'a str {
         let end = rest.find([',', '}']).expect("terminated value");
         &rest[..end]
     }
+}
+
+/// The five `include!` lines in `src/tests.rs` are the only thing pulling the
+/// five protected in-crate oracle files into the compiled unit-test target, and
+/// `#[cfg(test)] mod tests;` in `src/lib.rs` is the only thing pulling
+/// `src/tests.rs` in. Delete either level and the unit-test binary still prints
+/// `test result: ok`, with fewer tests and a whole protected oracle silenced.
+///
+/// This assertion lives in an integration test on purpose: it compiles as its own
+/// crate, so it cannot be silenced by the loader it protects. A `#[test]` inside
+/// the library would disappear along with everything else the moment `mod tests;`
+/// went away.
+///
+/// `src/lib.rs` is deliberately absent from the protocol's protected digest table
+/// because it is product source that later work must edit, so its one loader line
+/// is protected by this assertion rather than by a whole-file digest.
+#[test]
+fn the_protected_oracle_loader_chain_is_intact() {
+    let crate_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+
+    let lib_path = crate_root.join("src/lib.rs");
+    let lib = std::fs::read_to_string(&lib_path).expect("the crate root source is readable");
+    assert!(
+        lib.contains("#[cfg(test)]\nmod tests;"),
+        "{} must keep the unit-test loader hook `#[cfg(test)] mod tests;` verbatim, \
+         or every in-crate oracle is silenced while its digest still matches",
+        lib_path.display()
+    );
+
+    let loader_path = crate_root.join("src/tests.rs");
+    let loader = std::fs::read_to_string(&loader_path).expect("the loader source is readable");
+    for included in [
+        "tests/shared.rs",
+        "tests/emit_and_helpers.rs",
+        "tests/cfg_and_stack.rs",
+        "tests/compaction_and_aliasing.rs",
+        "tests/golden_and_parser.rs",
+    ] {
+        let line = format!("include!(\"{included}\");");
+        assert!(
+            loader.contains(&line),
+            "{} must keep `{line}`, or that protected oracle file is never compiled",
+            loader_path.display()
+        );
+    }
+    assert_eq!(
+        loader.matches("include!").count(),
+        5,
+        "the loader is exactly the five protected includes, nothing else:\n{loader}"
+    );
 }
 
 #[test]

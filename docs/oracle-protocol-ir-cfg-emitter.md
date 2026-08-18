@@ -243,11 +243,12 @@ Recorded at `1371e42` with `sha256sum`. A change to any of these files is a
 ruler change and requires section 9, whether or not a test still passes.
 
 Every digest below is the current worktree value and is re-verified whenever this
-table is touched. One row has moved since `1371e42`, `scripts/ci-check.sh`, and
-its full chain from the original fixed reference to the current digest is
-adjudicated in section 10. Every other row is byte-identical to `1371e42`. A row
-that does not match the current worktree is a failure of this table, not of the
-file.
+table is touched. Two rows have moved since `1371e42`. `scripts/ci-check.sh` is
+adjudicated in section 10, with its full chain from the original fixed reference
+to the current digest.
+`crates/flutterdec-decompiler/tests/provenance_audit.rs` is adjudicated in
+section 11. Every other row is byte-identical to `1371e42`. A row that does not
+match the current worktree is a failure of this table, not of the file.
 
 Fixed reference emission artifacts:
 
@@ -301,10 +302,22 @@ silences a whole protected file while every other digest in this table still
 matches, so the loader is protected too and a change to it is a ruler change on
 everything it includes.
 
+The loader has a second level that this table deliberately does not cover.
+`#[cfg(test)] mod tests;` at
+`crates/flutterdec-decompiler/src/lib.rs:831-832` is the only thing pulling
+`src/tests.rs` in, and deleting that one line silences all five protected oracle
+files at once while every digest here still matches. `src/lib.rs` is product
+source that this mission must edit, so a whole-file digest for it would fire on
+legitimate work and be worthless as a ruler. Both levels are instead asserted
+mechanically by `the_protected_oracle_loader_chain_is_intact` in
+`crates/flutterdec-decompiler/tests/provenance_audit.rs`, an integration test that
+compiles as its own crate and so cannot be silenced by the loader it protects.
+Section 11 records that guard and the planted deletions that prove it fires.
+
 | Path | sha256 |
 | --- | --- |
 | `crates/flutterdec-decompiler/src/tests.rs` | `a19fe0015869fbfeb259e28f6d4344e18a630edab92b2a7aef2a58811e3ef56b` |
-| `crates/flutterdec-decompiler/tests/provenance_audit.rs` | `e0b5c675b2510d8c17c05b15a4a33341ba6a24cbec4336512cf63028527ff3b8` |
+| `crates/flutterdec-decompiler/tests/provenance_audit.rs` | `8124346801612c56e9580d293c16a4e24593df175f8e7e376f16748a26560c0e` |
 | `crates/flutterdec-decompiler/tests/loop_entry_provenance_audit.rs` | `02626ee1ba1b4b1b9905654a6254319ee413169341e43ddb74387813f7ecbfc7` |
 | `crates/flutterdec-decompiler/src/tests/shared.rs` | `30ef9ef9d6b55acac8d41f5e557d38a78e5a60d2c28ac612e75ccfe80e376d3e` |
 | `crates/flutterdec-decompiler/src/tests/golden_and_parser.rs` | `73a74b04ba294f1efc7faa5b067fdbd3c4cedc892c6d15068a07a98d656235ca` |
@@ -555,3 +568,145 @@ untouched by this diff, which changes no file other than
 6. L5 re-run. `NIX_CONFIG='experimental-features = nix-command flakes'
    scripts/ci-check.sh` exits 0 at the current digest, all lanes green including
    the four added ones.
+
+## 11. Adjudication record: `crates/flutterdec-decompiler/tests/provenance_audit.rs`
+
+This is the section 9 record for the second protected path whose digest has moved
+since `1371e42`. It is landed as its own commit, carrying only this file and the
+protected test file, with no product change alongside it, and before any product
+source edit of this mission.
+
+### 11.1 Digest chain
+
+Column order matches section 10.1, state before digest, so a scanner looking for
+the section 7 row shape does not read these history rows as protected-path rows.
+
+| Commit | State | `tests/provenance_audit.rs` sha256 |
+| --- | --- | --- |
+| `1371e42` | fixed reference, preserved | `e0b5c675b2510d8c17c05b15a4a33341ba6a24cbec4336512cf63028527ff3b8` |
+| `209a8fe` through `e43b33d` | unchanged, docs-only and harness-only commits | `e0b5c675b2510d8c17c05b15a4a33341ba6a24cbec4336512cf63028527ff3b8` |
+| this commit, worktree | current, recorded in section 7 | `8124346801612c56e9580d293c16a4e24593df175f8e7e376f16748a26560c0e` |
+
+Reproduce any row with
+`git show <commit>:crates/flutterdec-decompiler/tests/provenance_audit.rs | sha256sum`,
+and the last row with
+`sha256sum crates/flutterdec-decompiler/tests/provenance_audit.rs`.
+
+The fixed reference is preserved two ways: the `1371e42` digest is recorded above,
+and the file itself is recoverable verbatim from the reference commit, which is
+never rewritten, force pushed, or rebased.
+
+### 11.2 Exact diff intent
+
+Purely additive. One new `#[test]`,
+`the_protected_oracle_loader_chain_is_intact`, plus its doc comment, and a
+four-line correction to the file's module comment, which previously said there was
+exactly one test here and now says which of the two emits.
+
+`git diff --numstat 1371e42 -- crates/flutterdec-decompiler/tests/provenance_audit.rs`
+is 54 insertions and 3 deletions. The three deleted lines are the module-comment
+sentence that is being corrected, replaced by four. The other 50 insertions are the
+new test and its doc comment. No assertion, no fixture, no plant, and no `Command`
+invocation of the existing test changed:
+`the_pre_call_audit_traces_each_candidate_and_its_checker_catches_a_wrong_path` is
+byte-identical to `1371e42` from its signature onward, which is what keeps the
+section 8 evidence for it valid. Verify with
+
+```
+git show 1371e42:crates/flutterdec-decompiler/tests/provenance_audit.rs \
+  | sed -n '/^fn the_pre_call_audit_traces/,$p' | sha256sum
+sed -n '/^fn the_pre_call_audit_traces/,$p' \
+  crates/flutterdec-decompiler/tests/provenance_audit.rs | sha256sum
+```
+
+Both print
+`c76130ef412fde06ba1706e924e12fe0d85e802323c6e0d155a88cf6202e6d02`.
+
+### 11.3 What the guard asserts
+
+The exact strings, not a pattern that a rename or a reordering could satisfy by
+accident:
+
+- `src/lib.rs` contains `#[cfg(test)]\nmod tests;`, the hook verbatim including
+  the newline between attribute and item, so an uncommented or re-attributed
+  `mod tests;` does not pass.
+- `src/tests.rs` contains all five of `include!("tests/shared.rs");`,
+  `include!("tests/emit_and_helpers.rs");`,
+  `include!("tests/cfg_and_stack.rs");`,
+  `include!("tests/compaction_and_aliasing.rs");`, and
+  `include!("tests/golden_and_parser.rs");`.
+- `src/tests.rs` contains exactly five occurrences of `include!`, so the loader
+  cannot grow a sixth path that this record does not name.
+
+`src/lib.rs` is not added to the section 7 table. It is product source that later
+tasks must edit, and a whole-file digest for it would fire on every legitimate
+edit, which is the failure mode section 5 calls editing a ruler to obtain a pass,
+arrived at from the other direction. The one line that matters is asserted instead
+of the whole file.
+
+### 11.4 Planted deletions, both loader levels
+
+Run in disposable worktrees detached at `e43b33d` with the guard copied in, one
+worktree per plant, each removed with `git worktree remove --force` afterwards.
+`--lib` is the reduced unit-test suite; `--test provenance_audit` is the
+independent guard.
+
+| Plant | `--lib` result | Guard result |
+| --- | --- | --- |
+| none, current worktree | `ok`, 266 passed, 0 failed | `ok`, 2 passed, 0 failed |
+| `#[cfg(test)] mod tests;` deleted from `src/lib.rs` | `ok`, 12 passed, 0 failed, exit 0 | `FAILED`, 1 passed 1 failed, exit 101 |
+| `include!("tests/golden_and_parser.rs");` deleted from `src/tests.rs` | `ok`, 262 passed, 0 failed, exit 0 | `FAILED`, 1 passed 1 failed, exit 101 |
+
+Both plants leave a unit-test suite that prints `test result: ok` and exits 0, and
+that is the whole point: 266 tests fall to 12 or to 262 with no failure anywhere.
+The first plant moves no digest in section 7 at all, because `src/lib.rs` has no
+row there and the five included files are untouched, so before this guard existed
+it was undetectable by the protocol. The second plant does move the
+`src/tests.rs` row, so it was already detectable, but only by a reader
+recomputing a documentary table; it is now also detectable by a test.
+
+The failure messages name the level and the file:
+
+```
+/tmp/loader-probe-a/crates/flutterdec-decompiler/src/lib.rs must keep the
+unit-test loader hook `#[cfg(test)] mod tests;` verbatim, or every in-crate
+oracle is silenced while its digest still matches
+
+/tmp/loader-probe-b/crates/flutterdec-decompiler/src/tests.rs must keep
+`include!("tests/golden_and_parser.rs");`, or that protected oracle file is
+never compiled
+```
+
+### 11.5 Proof the guard is not compiled under the loader it protects
+
+`crates/flutterdec-decompiler/tests/` is an integration-test directory, so each
+file there is its own crate root linking the library through
+`use flutterdec_decompiler::...`. Neither of the two files there uses an
+`include!` invocation or a `#[path]` attribute, the only `include!` text in the
+directory being the guard's own expected-string literals, and `src/tests.rs` with
+its five included files is `#[cfg(test)]` unit-test code that an integration crate
+cannot reach. Plant A is the runtime
+proof: with `mod tests;` gone the library's own test target drops to 12 tests and
+still exits 0, while the guard in the separate target compiles unchanged and
+fails.
+
+### 11.6 Section 9 steps
+
+1. Invariant. Not an L1 or L2 invariant, because no expected value and no product
+   output changed. This is an L4 and L5 change and the invariant is the one
+   section 5 states, that a protected oracle may not be silenced. It is satisfied
+   in the form 11.4 demonstrates: both loader levels now have a mechanical
+   detector that does not depend on the loader.
+2. Test. `the_protected_oracle_loader_chain_is_intact` is itself the test. It
+   fails on the old behavior in the sense that matters for a guard: the assertion
+   did not exist before this commit, so deleting `mod tests;` passed every gate,
+   including `scripts/ci-check.sh`, with every digest in this section 7 table
+   matching.
+3. Diff and digests. Recorded in 11.1 and 11.2, with the reproducing commands.
+4. Original reference preserved. Recorded in 11.1.
+5. Own commit. Satisfied. This record and the protected test file land together as
+   one commit, `test(oracle): protect decompiler test loader chain`, with no
+   product source change in it and before any product source edit of this
+   mission.
+6. L5 re-run. `NIX_CONFIG='experimental-features = nix-command flakes'
+   scripts/ci-check.sh` exits 0 at the current digest.
