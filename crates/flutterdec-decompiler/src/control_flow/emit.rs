@@ -905,100 +905,6 @@ impl<'a> FuncEmitter<'a> {
         }
     }
 
-    /// A line reduced to what the later passes cannot change: register spellings
-    /// canonicalised, every other identifier blanked, punctuation and numbers
-    /// kept.
-    ///
-    /// The rename pass rewrites `arg0` to `receiver` and `x9` to `reg9`, so
-    /// neither raw text nor a token list survives it. What does survive is the
-    /// shape, and that is enough to line the rendered body up against the
-    /// finished one.
-    fn line_alignment_signature(line: &str) -> String {
-        // `clean_expr` runs over every line between the two sequences and is
-        // idempotent, so normalising both sides through it lets a line that was
-        // only tidied still pair with itself.
-        let code = Self::clean_expr(strip_join_annotation_span(line));
-        let bytes = code.as_bytes();
-        let mut out = String::with_capacity(code.len());
-        let mut index = 0usize;
-        while index < bytes.len() {
-            if !bytes[index].is_ascii_alphabetic() && bytes[index] != b'_' {
-                out.push(bytes[index] as char);
-                index += 1;
-                continue;
-            }
-            let start = index;
-            while index < bytes.len() && Self::is_ident_char(bytes[index] as char) {
-                index += 1;
-            }
-            match canonical_register_spelling(&code[start..index]) {
-                Some(reg) => out.push_str(&reg),
-                None => out.push('#'),
-            }
-        }
-        out
-    }
-
-    /// Map each rendered line to the finished line it became, or to `None` when
-    /// a rewrite consumed it.
-    ///
-    /// Both sequences are the same body in the same order, because the passes
-    /// between them rewrite lines in place, drop some and add others but never
-    /// reorder. A resynchronising walk is therefore enough, and no pairing can
-    /// cross an earlier one. `WINDOW` bounds the resync, so a run of changes
-    /// longer than it costs one rendered line rather than a guess across it.
-    ///
-    /// Matching on content alone was the previous design and it was wrong. One
-    /// `if (reg2 <= 0) {` looks like every other, so an anchor rendered late in
-    /// a duplicated body matched the first such line in the function and
-    /// annotated a read whose register was dropped by a merge, not by the call
-    /// the record named. The value was genuine and the site was not.
-    fn align_rendered_lines(rendered: &[String], finished: &[String]) -> Vec<Option<usize>> {
-        const WINDOW: usize = 64;
-        let render_signatures: Vec<String> =
-            rendered.iter().map(|line| Self::line_alignment_signature(line)).collect();
-        let finish_signatures: Vec<String> =
-            finished.iter().map(|line| Self::line_alignment_signature(line)).collect();
-        let mut mapping = vec![None; rendered.len()];
-        let (mut left, mut right) = (0usize, 0usize);
-        while left < render_signatures.len() && right < finish_signatures.len() {
-            if render_signatures[left] == finish_signatures[right] {
-                mapping[left] = Some(right);
-                left += 1;
-                right += 1;
-                continue;
-            }
-            // Smallest combined skip that resynchronises, so a one-line
-            // deletion costs one line rather than dragging the rest along.
-            let mut resynced = None;
-            'search: for distance in 1..WINDOW {
-                for skip in 0..=distance {
-                    let (l, r) = (left + skip, right + distance - skip);
-                    if l < render_signatures.len()
-                        && r < finish_signatures.len()
-                        && render_signatures[l] == finish_signatures[r]
-                    {
-                        resynced = Some((l, r));
-                        break 'search;
-                    }
-                }
-            }
-            match resynced {
-                Some((l, r)) => {
-                    left = l;
-                    right = r;
-                }
-                // A rewrite this pass cannot see through. Drop the one rendered
-                // line and keep going rather than abandoning the rest of the
-                // function: both indices still only ever move forward, so the
-                // alignment stays monotone and no later pairing can cross an
-                // earlier one.
-                None => left += 1,
-            }
-        }
-        mapping
-    }
-
     /// Append the pre-call value beside each unresolved read of a register an
     /// ordinary call clobbered, and record what was appended.
     ///
@@ -1007,37 +913,68 @@ impl<'a> FuncEmitter<'a> {
     /// annotation is left alone rather than given a second, competing one.
     ///
     /// Every annotation goes on the line the read was actually rendered on,
-    /// found by alignment rather than by search: an anchor whose line no rewrite
-    /// left intact is dropped, because the alternative is putting a real value
+    /// found by that line's identity and never by what any line says: a body can
+    /// hold any number of byte-identical lines, and an anchor still resolves to
+    /// the one it was captured on. An anchor whose line no rewrite left intact is
+    /// rejected with a reason, because the alternative is putting a real value
     /// beside a read that never lost it.
     pub(super) fn append_call_annotations(&mut self) {
         if self.call_annotation_anchors.is_empty() {
             return;
         }
-        let mapping = Self::align_rendered_lines(&self.render_lines, &self.lines);
+        self.debug_assert_line_identity();
+        let placed = self.finished_line_positions();
         let mut inserts: Vec<(usize, usize, String, usize)> = Vec::new();
         let mut omissions: Vec<(u64, String, String, &'static str, usize, usize)> = Vec::new();
+        let mut rejections: Vec<(u64, String, &'static str, String)> = Vec::new();
         // Snapshotted before insertion, so an annotation cannot vouch for its own
         // identifiers. Same reason as the join site.
         let live = live_identifier_tokens(&self.lines);
         for (anchor_index, anchor) in self.call_annotation_anchors.iter().enumerate() {
-            let Some(Some(line_index)) = mapping.get(anchor.line_index).copied() else {
+            // Counted here, where the candidate exists, so that every path out
+            // of this loop owes an outcome. A `continue` that skipped one would
+            // leave it unaccounted rather than invisible.
+            self.call_provenance.candidates_considered += 1;
+            let Some(line_index) = self.finished_line_of_render(anchor.line_index, &placed) else {
+                // The line the read was rendered on is not in the artifact: a
+                // rewrite consumed it, or it was never part of the rendered
+                // body. Either way this annotation has no site, and saying so is
+                // what keeps it from being reattached to a line that merely
+                // reads the same.
+                rejections.push((
+                    anchor.call_va,
+                    anchor.register.clone(),
+                    "anchor_line_dropped",
+                    anchor.value.clone(),
+                ));
                 continue;
             };
             let line = &self.lines[line_index];
             let Some(token_end) = Self::first_register_token_end(line, &anchor.register) else {
+                // The line survived but the read did not, so there is nothing on
+                // it for the value to describe.
+                rejections.push((
+                    anchor.call_va,
+                    anchor.register.clone(),
+                    "register_absent_from_line",
+                    anchor.value.clone(),
+                ));
                 continue;
             };
             // The join pass ran first. Two annotations on one register spelling
             // would read as a chain of independently valid values, so the site
             // that got there first keeps it.
-            if annotation_at(&line.as_bytes()[token_end..]).is_some() {
-                continue;
-            }
-            if inserts
-                .iter()
-                .any(|(existing, at, _, _)| *existing == line_index && *at == token_end)
+            if annotation_at(&line.as_bytes()[token_end..]).is_some()
+                || inserts
+                    .iter()
+                    .any(|(existing, at, _, _)| *existing == line_index && *at == token_end)
             {
+                rejections.push((
+                    anchor.call_va,
+                    anchor.register.clone(),
+                    "coordinate_already_claimed",
+                    anchor.value.clone(),
+                ));
                 continue;
             }
             // Same capture-before-naming gap as the join and loop sites: bring the
@@ -1100,6 +1037,18 @@ impl<'a> FuncEmitter<'a> {
             }
             inserts.push((line_index, token_end, annotation, anchor_index));
         }
+        for (call_va, register, reason, rendered) in rejections {
+            record_filter_rejection(
+                &mut self.call_provenance,
+                FilterRejection {
+                    loss_site: CALL_LOSS_SITE,
+                    site_key: SiteKey(CALL_LOSS_SITE, call_va),
+                    register,
+                    reason,
+                    rendered,
+                },
+            );
+        }
         for (call_va, register, rendered, reason, line_len, planned_len) in omissions {
             record_cap_omission(
                 &mut self.call_provenance,
@@ -1122,12 +1071,17 @@ impl<'a> FuncEmitter<'a> {
         });
         for (line_index, at, annotation, anchor_index) in &inserts {
             self.lines[*line_index].insert_str(*at, annotation);
+            self.call_provenance.annotations_emitted += 1;
             if !audit_enabled() {
                 continue;
             }
             let anchor = &self.call_annotation_anchors[*anchor_index];
             self.call_provenance.records.push(PendingAnnotationRecord {
                 loss_site: CALL_LOSS_SITE,
+                // The line this insertion wrote to, not a line that reads like
+                // it. Nothing after this pass moves a line, so the coordinate the
+                // audit publishes is the one the annotation occupies.
+                output_line: *line_index,
                 // Both keys come off the anchor that produced this insertion,
                 // never off a second walk of the IR, so the record cannot name a
                 // real site that is not the site this annotation was emitted at.

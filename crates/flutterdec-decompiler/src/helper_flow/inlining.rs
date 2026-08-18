@@ -140,7 +140,7 @@ impl<'a> FuncEmitter<'a> {
                 replacement.push(format!("{}return null;", " ".repeat(call_indent)));
             }
 
-            self.lines.splice(i..=i, replacement.clone());
+            self.replace_body_line(i, replacement.clone());
             i += replacement.len();
         }
     }
@@ -182,7 +182,7 @@ impl<'a> FuncEmitter<'a> {
         }
         remove_ranges.sort_unstable_by(|a, b| b.0.cmp(&a.0));
         for (start, end) in remove_ranges {
-            self.lines.drain(start..=end);
+            self.drain_body_lines(start..=end);
         }
     }
 
@@ -265,7 +265,7 @@ impl<'a> FuncEmitter<'a> {
                 }
                 break;
             }
-            self.lines.insert(insert_idx, summary);
+            self.insert_body_line(insert_idx, summary);
         }
 
         self.drop_unreferenced_helpers();
@@ -299,7 +299,7 @@ impl<'a> FuncEmitter<'a> {
             }
             remove_ranges.sort_unstable_by(|a, b| b.0.cmp(&a.0));
             for (start, end) in remove_ranges {
-                self.lines.drain(start..=end);
+                self.drain_body_lines(start..=end);
             }
         }
     }

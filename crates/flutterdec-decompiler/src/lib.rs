@@ -100,10 +100,44 @@ struct JoinAnnotationAnchor {
     join: usize,
     /// Canonical registers with recorded candidates, sorted before output.
     candidate_regs: Vec<String>,
-    /// Render-time lines. Later passes only modify or add surrounding lines;
-    /// final insertion finds surviving body lines in their render order.
+    /// Render-time lines, kept for the register spellings the capture saw. The
+    /// line an annotation goes on is *not* found by matching this text: the
+    /// identity of each line lives in `join_anchor_line_ids`, position for
+    /// position with this Vec.
     lines: Vec<String>,
 }
+
+/// Lines taken out of the body and put back later, carrying their identities.
+///
+/// The structured walk renders each arm of a branch into one of these and can
+/// put them back in the other order, so an arm's lines move as a unit. Their
+/// identities move with them: the id is issued once, at the push, and no later
+/// move re-issues it.
+#[derive(Debug, Default)]
+struct BodyBuffer {
+    lines: Vec<String>,
+    ids: Vec<LineId>,
+}
+
+impl BodyBuffer {
+    fn push(&mut self, id: LineId, line: String) {
+        self.lines.push(line);
+        self.ids.push(id);
+    }
+
+    fn is_empty(&self) -> bool {
+        self.lines.is_empty()
+    }
+}
+
+/// The identity of one emitted line.
+///
+/// Issued when the line enters the body and carried by every later pass, so an
+/// annotation captured at render time can name the finished line it belongs to
+/// without asking what any line says. Two blocks that render byte-identical text
+/// hold two different ids, which is the whole point: content cannot tell those
+/// lines apart and this can.
+type LineId = u64;
 
 /// One unresolved read of a register an ordinary call clobbered.
 ///
@@ -119,8 +153,8 @@ struct CallAnnotationAnchor {
     value: String,
     snapshot_id: String,
     /// Index of the line carrying the read, in the body as it was rendered. The
-    /// finished line is found by aligning that body against the finished one,
-    /// never by searching the finished text for something that looks like it.
+    /// finished line is the one still holding that line's identity, never a line
+    /// of the finished text that looks like it.
     line_index: usize,
 }
 
@@ -152,6 +186,16 @@ struct FuncEmitter<'a> {
     /// Join bodies in deterministic render order. Final insertion uses their
     /// pre-sorted candidate keys to avoid any side-table iteration.
     join_annotation_anchors: Vec<JoinAnnotationAnchor>,
+    /// The identity of each line of each join anchor, one entry per anchor and
+    /// in the same order.
+    ///
+    /// Beside the anchors rather than inside them because an anchor is also
+    /// built by hand in this crate's fixtures, which assemble a body without
+    /// ever pushing a line through the emitter and so have no identity to give.
+    /// A missing entry means exactly that, and those lines are then taken at
+    /// their position, which is what a hand-assembled body means. No production
+    /// anchor is ever missing one.
+    join_anchor_line_ids: Vec<Vec<LineId>>,
     /// One per unresolved read of a call-clobbered register, in render order.
     /// The rendering anchor is the only source of this site's key, so the
     /// audit cannot name a site the annotation was not emitted at.
@@ -160,6 +204,9 @@ struct FuncEmitter<'a> {
     /// followed through the rewrites that come after. Taken once, when emission
     /// ends.
     render_lines: Vec<String>,
+    /// `line_ids` as it stood when `render_lines` was taken, so a render index
+    /// resolves to the identity of the line it named.
+    render_line_ids: Vec<LineId>,
     /// Monotonic within the function; names one pre-call snapshot.
     snapshot_index: usize,
     /// Set while a call statement is being rendered, so its own line is not
@@ -206,6 +253,21 @@ struct FuncEmitter<'a> {
     dfs_preds: Option<HashMap<usize, Vec<usize>>>,
     dfs_block_writes: HashMap<usize, HashSet<String>>,
     lines: Vec<String>,
+    /// The identity of each line in `lines`, position for position.
+    ///
+    /// Empty when the body was assembled by hand rather than pushed through the
+    /// emitter; otherwise the two Vecs are the same length, which
+    /// `debug_assert_line_identity` states at every pass boundary.
+    line_ids: Vec<LineId>,
+    /// Monotonic for the whole function and deliberately not restored by a
+    /// rollback.
+    ///
+    /// The rollback puts back the lines and every anchor that named them, so
+    /// re-issuing the discarded ids would be sound. Not re-issuing them is the
+    /// fail-safe: if some anchor ever outlives the body it was captured in, it
+    /// resolves to no line at all and is recorded as dropped, instead of
+    /// resolving to whichever line of the second body took its number.
+    next_line_id: LineId,
     /// Identifier renames the naming pass applied to the body, longest key first.
     ///
     /// Annotation candidates are captured while a line is rendered, which is
@@ -387,8 +449,10 @@ impl<'a> FuncEmitter<'a> {
             join_candidates: HashMap::new(),
             join_candidate_regs: HashMap::new(),
             join_annotation_anchors: Vec::new(),
+            join_anchor_line_ids: Vec::new(),
             call_annotation_anchors: Vec::new(),
             render_lines: Vec::new(),
+            render_line_ids: Vec::new(),
             snapshot_index: 0,
             rendering_call: false,
             call_provenance: FunctionProvenance {
@@ -419,6 +483,8 @@ impl<'a> FuncEmitter<'a> {
             dfs_preds: None,
             dfs_block_writes: HashMap::new(),
             lines: Vec::new(),
+            line_ids: Vec::new(),
+            next_line_id: 0,
             identifier_renames: Vec::new(),
             state: init_state(),
             placeholder_ifs: 0,
@@ -441,16 +507,15 @@ impl<'a> FuncEmitter<'a> {
     /// The artifact plus the audit rows its annotations owe, one set per loss
     /// site.
     ///
-    /// The rows leave here without an output coordinate. A program-level rewrite
-    /// still runs over the finished source and can move text on an annotated
-    /// line, so the coordinate is derived from the artifact after that, by
-    /// finding the annotation span itself.
+    /// Each row carries the line its annotation was inserted into. The column is
+    /// left to the audit writer, because the two annotation passes insert into a
+    /// line in turn and an insertion to the left of a span moves it - but no pass
+    /// after them adds, removes or reorders a line, so the line itself is final
+    /// here.
     ///
-    /// One set per site rather than one merged list, because that search is
-    /// monotonic: it resumes where the previous record was found, so identical
-    /// spans are told apart by order. Two sites' records interleave in the
-    /// output, so merging them into one list would leave the second site's rows
-    /// searching from a cursor already past their own annotations.
+    /// One set per site rather than one merged list, because the three sites are
+    /// three ledgers: each is counted, checked and reconciled on its own, and a
+    /// merged list would have to be split again to say which site dropped what.
     fn emit_with_provenance(self) -> (PseudocodeArtifact, Vec<FunctionProvenance>) {
         self.emit_with_plan(EmissionPlan::Auto)
     }
@@ -474,12 +539,13 @@ impl<'a> FuncEmitter<'a> {
             .map(|i| format!("dynamic arg{i}"))
             .collect::<Vec<_>>()
             .join(", ");
-        self.lines.push(format!("dynamic {fn_name}({params}) {{"));
-        for name in self.locals.values() {
-            self.lines.push(format!("  var {};", name));
+        self.push_body_line(format!("dynamic {fn_name}({params}) {{"));
+        let local_names: Vec<String> = self.locals.values().cloned().collect();
+        for name in local_names {
+            self.push_body_line(format!("  var {};", name));
         }
         if !self.locals.is_empty() {
-            self.lines.push(String::new());
+            self.push_body_line(String::new());
         }
 
         let body_start = self.lines.len();
@@ -519,27 +585,51 @@ impl<'a> FuncEmitter<'a> {
         // The rendered body, before a single rewrite touches it. Every call
         // anchor indexes into this.
         self.render_lines = self.lines.clone();
+        self.render_line_ids = self.line_ids.clone();
 
-        self.lines.push("}".to_string());
+        self.push_body_line("}".to_string());
         if !self.omitted_blocks.is_empty() {
-            self.lines.push(String::new());
+            self.push_body_line(String::new());
             self.append_helper_functions();
             self.inline_trivial_helpers();
             self.resolve_remaining_helpers();
         }
         self.insert_loop_summary_comment();
+        self.debug_assert_line_identity();
         self.compact_lines();
+        self.debug_assert_line_identity();
         for line in &mut self.lines {
             *line = Self::clean_expr(line.clone());
         }
         self.apply_name_and_type_hints(&fn_name);
         self.extract_minus_one_aliases();
+        self.debug_assert_line_identity();
         // Before the appenders: they replay the renames onto candidates, and the
         // audit's snapshot rule compares a candidate against the snapshot it cites,
         // so both sides have to be in the same namespace.
         self.normalize_provenance_namespace();
         self.append_join_annotations();
         self.append_call_annotations();
+        // Every candidate each site considered is now an emitted annotation, a
+        // recorded rejection or a recorded budget drop. Stated here rather than
+        // left to the fixtures because it holds for every function, not only for
+        // the shapes a test happens to build - and it is only an assertion
+        // because the counters it reads are ungated, so a release run still
+        // reports them.
+        for stream in [
+            &self.call_provenance,
+            &self.join_provenance,
+            &self.loop_provenance,
+        ] {
+            debug_assert_eq!(
+                stream.unaccounted_candidates(),
+                0,
+                "{} considered {} candidates and accounted for {}",
+                stream.loss_site,
+                stream.candidates_considered,
+                stream.accounted_candidates()
+            );
+        }
 
         let artifact = PseudocodeArtifact {
             function_id: self.ir.function_id,
@@ -575,7 +665,136 @@ impl<'a> FuncEmitter<'a> {
         // register state as it stood when the read was rendered: after the push
         // the emitter may bind, drop or restore any of it.
         self.record_call_annotation_anchors(&line);
+        self.push_body_line(line);
+    }
+
+    /// The identity for one new line.
+    ///
+    /// Monotonic and never restored, so an id retired by a rollback is not
+    /// handed to a different line later.
+    fn fresh_line_id(&mut self) -> LineId {
+        let id = self.next_line_id;
+        self.next_line_id += 1;
+        id
+    }
+
+    /// Append one line and give it its identity.
+    fn push_body_line(&mut self, line: String) {
+        let id = self.fresh_line_id();
         self.lines.push(line);
+        self.line_ids.push(id);
+    }
+
+    /// Insert one line, shifting the identities after it along with the text.
+    fn insert_body_line(&mut self, index: usize, line: String) {
+        let id = self.fresh_line_id();
+        self.lines.insert(index, line);
+        if self.line_ids.len() + 1 == self.lines.len() {
+            self.line_ids.insert(index, id);
+        }
+    }
+
+    /// Insert several lines at `index`, all of them new.
+    fn splice_body_lines(&mut self, index: usize, lines: Vec<String>) {
+        let ids: Vec<LineId> = (0..lines.len()).map(|_| self.fresh_line_id()).collect();
+        let added = lines.len();
+        self.lines.splice(index..index, lines);
+        if self.line_ids.len() + added == self.lines.len() {
+            self.line_ids.splice(index..index, ids);
+        }
+    }
+
+    /// Replace the single line at `index` with `lines`, all of them new. The
+    /// replaced line's identity is retired, so an anchor that named it resolves
+    /// to nothing rather than to whichever line took its place.
+    fn replace_body_line(&mut self, index: usize, lines: Vec<String>) {
+        let ids: Vec<LineId> = (0..lines.len()).map(|_| self.fresh_line_id()).collect();
+        let added = lines.len();
+        self.lines.splice(index..=index, lines);
+        if self.line_ids.len() + added == self.lines.len() + 1 {
+            self.line_ids.splice(index..=index, ids);
+        }
+    }
+
+    /// Drop the lines in `range` and the identities that went with them.
+    fn drain_body_lines(&mut self, range: std::ops::RangeInclusive<usize>) {
+        if self.line_ids.len() == self.lines.len() {
+            self.line_ids.drain(range.clone());
+        }
+        self.lines.drain(range);
+    }
+
+    /// Give every line that has none an identity, in order.
+    ///
+    /// Only a hand-assembled body needs this; a body the emitter pushed has one
+    /// per line already, and then this does nothing.
+    fn sync_line_ids(&mut self) {
+        while self.line_ids.len() < self.lines.len() {
+            let id = self.fresh_line_id();
+            self.line_ids.push(id);
+        }
+        self.line_ids.truncate(self.lines.len());
+    }
+
+    /// Take the body from `at` onwards, identities included.
+    fn split_off_body(&mut self, at: usize) -> BodyBuffer {
+        self.sync_line_ids();
+        BodyBuffer {
+            lines: self.lines.split_off(at),
+            ids: self.line_ids.split_off(at),
+        }
+    }
+
+    /// Put a taken-out run back at the end of the body, keeping its identities.
+    fn extend_body(&mut self, buffer: BodyBuffer) {
+        self.sync_line_ids();
+        self.lines.extend(buffer.lines);
+        self.line_ids.extend(buffer.ids);
+    }
+
+    /// Every line identity in the finished body, mapped to where it ended up.
+    ///
+    /// One line, one identity: the id is issued once and only ever moved, so a
+    /// duplicate here would be a bookkeeping fault rather than a duplicated
+    /// line, and the assertion says so.
+    fn finished_line_positions(&self) -> HashMap<LineId, usize> {
+        let mut placed: HashMap<LineId, usize> = HashMap::with_capacity(self.line_ids.len());
+        for (index, id) in self.line_ids.iter().enumerate() {
+            let previous = placed.insert(*id, index);
+            debug_assert!(previous.is_none(), "one line identity denotes one line");
+        }
+        placed
+    }
+
+    /// The finished line one rendered line became, or `None` when no pass left
+    /// it intact.
+    ///
+    /// Identity, never text: the rendered body and the finished body can hold
+    /// any number of byte-identical lines and this still answers with the one
+    /// line the anchor was captured on. A body assembled by hand carries no
+    /// identities, and its rendered lines are then taken at their position.
+    fn finished_line_of_render(
+        &self,
+        render_index: usize,
+        placed: &HashMap<LineId, usize>,
+    ) -> Option<usize> {
+        if self.render_line_ids.len() == self.render_lines.len() && !self.render_line_ids.is_empty()
+        {
+            let id = self.render_line_ids.get(render_index)?;
+            return placed.get(id).copied();
+        }
+        (render_index < self.lines.len()).then_some(render_index)
+    }
+
+    /// State the identity invariant at a pass boundary: every line carries one,
+    /// or the body was assembled by hand and none does.
+    fn debug_assert_line_identity(&self) {
+        debug_assert!(
+            self.line_ids.is_empty() || self.line_ids.len() == self.lines.len(),
+            "line identities and lines must stay in step: {} ids for {} lines",
+            self.line_ids.len(),
+            self.lines.len()
+        );
     }
 
     fn emit_omitted_path(&mut self, indent: usize, block_id: Option<usize>) {

@@ -27,6 +27,10 @@ pub(super) struct Counters {
 
 /// Everything a structuring attempt can write, saved before it starts.
 ///
+#[cfg(test)]
+#[path = "annotation_anchor_tests.rs"]
+mod annotation_anchor_tests;
+
 /// One value per mutable family rather than a list of the fields the walk was
 /// believed to touch: a family left out of that list is invisible until an
 /// artifact carries a name, an anchor or an audit row from a body that was never
@@ -35,7 +39,9 @@ pub(super) struct Counters {
 /// measuring.
 pub(super) struct EmitterSnapshot {
     lines: Vec<String>,
+    line_ids: Vec<LineId>,
     render_lines: Vec<String>,
+    render_line_ids: Vec<LineId>,
     state: LiftState,
     counters: Counters,
     locals: BTreeMap<i64, String>,
@@ -48,6 +54,7 @@ pub(super) struct EmitterSnapshot {
     join_candidates: HashMap<(usize, String), JoinCandidates>,
     join_candidate_regs: HashMap<usize, Vec<String>>,
     join_annotation_anchors: Vec<JoinAnnotationAnchor>,
+    join_anchor_line_ids: Vec<Vec<LineId>>,
     call_annotation_anchors: Vec<CallAnnotationAnchor>,
     loop_annotation_sites: HashSet<usize>,
     block_snapshots: Vec<BlockSnapshot>,
@@ -697,7 +704,9 @@ impl<'a> FuncEmitter<'a> {
     pub(super) fn emitter_snapshot(&self) -> EmitterSnapshot {
         EmitterSnapshot {
             lines: self.lines.clone(),
+            line_ids: self.line_ids.clone(),
             render_lines: self.render_lines.clone(),
+            render_line_ids: self.render_line_ids.clone(),
             state: self.state.clone(),
             counters: self.counter_snapshot(),
             locals: self.locals.clone(),
@@ -710,6 +719,7 @@ impl<'a> FuncEmitter<'a> {
             join_candidates: self.join_candidates.clone(),
             join_candidate_regs: self.join_candidate_regs.clone(),
             join_annotation_anchors: self.join_annotation_anchors.clone(),
+            join_anchor_line_ids: self.join_anchor_line_ids.clone(),
             call_annotation_anchors: self.call_annotation_anchors.clone(),
             loop_annotation_sites: self.loop_annotation_sites.clone(),
             block_snapshots: self.block_snapshots.clone(),
@@ -739,7 +749,9 @@ impl<'a> FuncEmitter<'a> {
     pub(super) fn restore_emitter(&mut self, snapshot: EmitterSnapshot) {
         let EmitterSnapshot {
             lines,
+            line_ids,
             render_lines,
+            render_line_ids,
             state,
             counters,
             locals,
@@ -752,6 +764,7 @@ impl<'a> FuncEmitter<'a> {
             join_candidates,
             join_candidate_regs,
             join_annotation_anchors,
+            join_anchor_line_ids,
             call_annotation_anchors,
             loop_annotation_sites,
             block_snapshots,
@@ -771,7 +784,9 @@ impl<'a> FuncEmitter<'a> {
             events,
         } = snapshot;
         self.lines = lines;
+        self.line_ids = line_ids;
         self.render_lines = render_lines;
+        self.render_line_ids = render_line_ids;
         self.state = state;
         self.restore_counters(counters);
         self.locals = locals;
@@ -784,6 +799,7 @@ impl<'a> FuncEmitter<'a> {
         self.join_candidates = join_candidates;
         self.join_candidate_regs = join_candidate_regs;
         self.join_annotation_anchors = join_annotation_anchors;
+        self.join_anchor_line_ids = join_anchor_line_ids;
         self.call_annotation_anchors = call_annotation_anchors;
         self.loop_annotation_sites = loop_annotation_sites;
         self.block_snapshots = block_snapshots;
@@ -951,6 +967,13 @@ impl<'a> FuncEmitter<'a> {
             // anchor too would leave the candidates with nothing to attach to.
             if annotatable_join || self.loop_annotation_sites.contains(&id) {
                 let candidate_regs = self.join_candidate_regs.remove(&id).unwrap_or_default();
+                // Identities beside the text, captured from the same slice.
+                // The lines of a block that renders twice are byte-identical
+                // and their ids are not, which is what keeps the second copy's
+                // annotation off the first copy's lines.
+                self.sync_line_ids();
+                self.join_anchor_line_ids
+                    .push(self.line_ids[annotation_start..].to_vec());
                 self.join_annotation_anchors.push(JoinAnnotationAnchor {
                     join: id,
                     candidate_regs,
@@ -1010,7 +1033,7 @@ impl<'a> FuncEmitter<'a> {
                         }
                     }
                     let taken_state = self.state.clone();
-                    let taken_lines: Vec<String> = self.lines.split_off(buffer_start);
+                    let mut taken_lines = self.split_off_body(buffer_start);
                     if let Some(arm) = taken {
                         arm_ends.push((arm, taken_state));
                     }
@@ -1024,7 +1047,7 @@ impl<'a> FuncEmitter<'a> {
                         }
                     }
                     let else_state = self.state.clone();
-                    let else_lines: Vec<String> = self.lines.split_off(buffer_start);
+                    let mut else_lines = self.split_off_body(buffer_start);
                     if let Some(arm) = not_taken {
                         arm_ends.push((arm, else_state));
                     }
@@ -1032,20 +1055,32 @@ impl<'a> FuncEmitter<'a> {
                     // An arm can also be empty because the lifter does not model
                     // its instructions. Eliding then deletes real computation, so
                     // an empty arm carrying unmodelled work says so instead.
-                    let mut taken_lines = taken_lines;
-                    let mut else_lines = else_lines;
-                    for (lines, arm) in [(&mut taken_lines, taken), (&mut else_lines, not_taken)] {
-                        if !lines.is_empty() {
+                    for slot in 0..2 {
+                        let taken_slot = slot == 0;
+                        let empty = if taken_slot {
+                            taken_lines.is_empty()
+                        } else {
+                            else_lines.is_empty()
+                        };
+                        if !empty {
                             continue;
                         }
+                        let arm = if taken_slot { taken } else { not_taken };
                         let unlifted = self.unlifted_on_arm(arm, region_follow);
-                        if unlifted > 0 {
-                            self.unlifted_instructions += unlifted;
-                            lines.push(format!(
-                                "{}// {} instructions not lifted",
-                                "  ".repeat(indent + 1),
-                                unlifted
-                            ));
+                        if unlifted == 0 {
+                            continue;
+                        }
+                        self.unlifted_instructions += unlifted;
+                        let id = self.fresh_line_id();
+                        let line = format!(
+                            "{}// {} instructions not lifted",
+                            "  ".repeat(indent + 1),
+                            unlifted
+                        );
+                        if taken_slot {
+                            taken_lines.push(id, line);
+                        } else {
+                            else_lines.push(id, line);
                         }
                     }
 
@@ -1057,25 +1092,25 @@ impl<'a> FuncEmitter<'a> {
                         // rather than as an empty `if` with an `else`.
                         (true, false) => {
                             self.push_line(indent, &format!("if (!({})) {{", condition));
-                            self.lines.extend(else_lines);
+                            self.extend_body(else_lines);
                             self.push_line(indent, "}");
                         }
                         (false, true) => {
                             self.push_line(indent, &format!("if ({}) {{", condition));
-                            self.lines.extend(taken_lines);
+                            self.extend_body(taken_lines);
                             self.push_line(indent, "}");
                         }
                         (false, false) if else_lines.is_empty() => {
                             self.push_line(indent, &format!("if ({}) {{", condition));
-                            self.lines.extend(taken_lines);
+                            self.extend_body(taken_lines);
                             self.push_line(indent, "}");
                         }
                         (false, false) => {
                             self.push_line(indent, &format!("if ({}) {{", condition));
-                            self.lines.extend(taken_lines);
+                            self.extend_body(taken_lines);
                             self.push_line(indent, "}");
                             self.push_line(indent, "else {");
-                            self.lines.extend(else_lines);
+                            self.extend_body(else_lines);
                             self.push_line(indent, "}");
                         }
                     }
@@ -1689,31 +1724,66 @@ impl<'a> FuncEmitter<'a> {
         }
     }
 
+    /// The finished line one anchor line became, or `None` when no pass left it
+    /// intact.
+    ///
+    /// The anchor's own line identities decide it. A block rendered twice
+    /// produces two anchors whose lines are byte-identical and whose identities
+    /// are not, which is what keeps the second copy's annotation off the first
+    /// copy's lines. An anchor assembled by hand carries no identities - only
+    /// this crate's fixtures build one - and its lines are then taken at their
+    /// position, which is what a hand-assembled body means.
+    fn finished_line_of_anchor(
+        &self,
+        anchor_index: usize,
+        offset: usize,
+        placed: &HashMap<LineId, usize>,
+    ) -> Option<usize> {
+        match self.join_anchor_line_ids.get(anchor_index) {
+            Some(ids) => placed.get(ids.get(offset)?).copied(),
+            None => (offset < self.lines.len()).then_some(offset),
+        }
+    }
+
     pub(crate) fn append_join_annotations(&mut self) {
         // Before the loop, so a later annotation cannot make an identifier look live.
         let live = live_identifier_tokens(&self.lines);
         let mut inserts: Vec<PlannedJoinAnnotation> = Vec::new();
         let mut omissions: Vec<PlannedCapOmission> = Vec::new();
-        for anchor in &self.join_annotation_anchors {
-            let mut next_line = 0usize;
-            for original in &anchor.lines {
+        self.debug_assert_line_identity();
+        let placed = self.finished_line_positions();
+        for (anchor_index, anchor) in self.join_annotation_anchors.iter().enumerate() {
+            for (offset, original) in anchor.lines.iter().enumerate() {
                 let original_tokens = register_tokens(original);
                 if original_tokens.is_empty() {
                     continue;
                 }
-                let Some(relative) = self.lines[next_line..].iter().position(|line| {
+                // This anchor line, resolved by identity. Never a search for a
+                // line that carries the same registers: one `if (reg2 <= 0) {`
+                // reads like every other, and a search found the first of them
+                // and annotated a read whose register was dropped somewhere
+                // else entirely.
+                let resolved = self.finished_line_of_anchor(anchor_index, offset, &placed);
+                let carries_registers = resolved.is_some_and(|line_index| {
                     original_tokens.iter().all(|reg| {
                         unrecovered_value_spellings(reg).iter().any(|spelling| {
-                            contains_identifier_token(line, spelling)
+                            contains_identifier_token(&self.lines[line_index], spelling)
                         })
                     })
-                }) else {
-                    // No emitted line carries this anchor's registers, so a candidate
-                    // set that exists is never offered to any gate. This is the only
-                    // loss on this path that happens before the gates, and it was the
-                    // last silent one: the gates below record every drop they take, so
-                    // without this row "every drop is accounted" was a claim about one
-                    // branch rather than about the function.
+                });
+                if !carries_registers {
+                    // Either no pass left this line intact, or it survived
+                    // without the unresolved read the candidate describes. A
+                    // candidate set that exists is then never offered to any
+                    // gate, so it is counted and rejected here rather than
+                    // dropped: the gates below record every drop they take, and
+                    // without this row "every drop is accounted" would be a
+                    // claim about one branch rather than about the function.
+                    let reason = if resolved.is_some() {
+                        "no_line_carries_register"
+                    } else {
+                        "anchor_line_dropped"
+                    };
                     let lost: Vec<(String, String)> = original_tokens
                         .iter()
                         .filter_map(|reg| {
@@ -1734,21 +1804,21 @@ impl<'a> FuncEmitter<'a> {
                         } else {
                             &mut self.join_provenance
                         };
+                        provenance.candidates_considered += 1;
                         record_filter_rejection(
                             provenance,
                             FilterRejection {
                                 loss_site,
                                 site_key: SiteKey(site_tag, anchor.join as u64),
                                 register: reg,
-                                reason: "no_line_carries_register",
+                                reason,
                                 rendered,
                             },
                         );
                     }
                     continue;
-                };
-                let line_index = next_line + relative;
-                next_line = line_index + 1;
+                }
+                let line_index = resolved.expect("a line that carries registers is a line");
                 let line = &self.lines[line_index];
                 let bytes = line.as_bytes();
                 let mut index = 0usize;
@@ -1770,10 +1840,20 @@ impl<'a> FuncEmitter<'a> {
                     if !anchor.candidate_regs.iter().any(|candidate| candidate == &reg) {
                         continue;
                     }
-                    let Some(candidates) = self.join_candidates.get(&(anchor.join, reg.clone()))
-                    else {
+                    if !self.join_candidates.contains_key(&(anchor.join, reg.clone())) {
                         continue;
-                    };
+                    }
+                    // A candidate exists for this register on this line, so
+                    // every path below owes it an outcome.
+                    if self.loop_annotation_sites.contains(&anchor.join) {
+                        self.loop_provenance.candidates_considered += 1;
+                    } else {
+                        self.join_provenance.candidates_considered += 1;
+                    }
+                    let candidates = self
+                        .join_candidates
+                        .get(&(anchor.join, reg.clone()))
+                        .expect("the candidate set just checked for");
                     if let Some(raw) = candidates
                         .values
                         .iter()
@@ -1959,6 +2039,11 @@ impl<'a> FuncEmitter<'a> {
         });
         for planned in &inserts {
             self.lines[planned.line].insert_str(planned.at, &planned.text);
+            if self.loop_annotation_sites.contains(&planned.join) {
+                self.loop_provenance.annotations_emitted += 1;
+            } else {
+                self.join_provenance.annotations_emitted += 1;
+            }
         }
         self.record_join_annotation_provenance(&inserts);
         self.record_loop_entry_annotation_provenance(&inserts);
@@ -2012,10 +2097,10 @@ impl<'a> FuncEmitter<'a> {
     /// real drop of the same register while the annotation it labels was emitted at
     /// another block entirely, and every check that reads only the audit passes.
     ///
-    /// The coordinate is deliberately not recorded here, for the same reason the
-    /// join rows do not carry one: a program-level rewrite still runs over the
-    /// finished source and can move text on an annotated line. Rows go out in
-    /// ascending output order, which is what lets that search stay monotonic.
+    /// The line comes off the planned insertion, so the row names the line the
+    /// annotation is on rather than a line that reads like it. Rows go out in
+    /// ascending output order, which is what lets the column search inside that
+    /// one line stay monotonic when two annotations share it.
     fn record_loop_entry_annotation_provenance(&mut self, inserts: &[PlannedJoinAnnotation]) {
         if !annotation_provenance_wanted() {
             return;
@@ -2044,6 +2129,9 @@ impl<'a> FuncEmitter<'a> {
                     .get(&(planned.join, planned.register.clone()))?;
                 Some(PendingAnnotationRecord {
                     loss_site: LOOP_LOSS_SITE,
+                    // The line this insertion wrote to, carried from the
+                    // insertion rather than searched for afterwards.
+                    output_line: planned.line,
                     site_key: SiteKey(LOOP_SITE_TAG, planned.join as u64),
                     // The block whose rendered body this annotation was placed
                     // in, from the same planned insertion the key above comes
@@ -2083,11 +2171,9 @@ impl<'a> FuncEmitter<'a> {
     /// that reads only the audit passes. Taken off the anchor, that mismatch
     /// cannot be expressed.
     ///
-    /// The coordinate is deliberately not recorded here. A program-level rewrite
-    /// still runs over the finished source and can move text on an annotated
-    /// line, so it is derived from the artifact afterwards by locating the
-    /// rendered span. Records go out in ascending output order, which is what lets
-    /// that search stay monotonic.
+    /// The line comes off the planned insertion, as at the loop site. Records go
+    /// out in ascending output order, which is what lets the column search inside
+    /// that one line stay monotonic when two annotations share it.
     fn record_join_annotation_provenance(&mut self, inserts: &[PlannedJoinAnnotation]) {
         if !annotation_provenance_wanted() {
             return;
@@ -2122,6 +2208,8 @@ impl<'a> FuncEmitter<'a> {
                     .get(&(planned.join, planned.register.clone()))?;
                 Some(PendingAnnotationRecord {
                     loss_site: JOIN_LOSS_SITE,
+                    // Same as the loop site: the line comes off the insertion.
+                    output_line: planned.line,
                     site_key: SiteKey(JOIN_LOSS_SITE, planned.join as u64),
                     // Same anchor the key above is read off, recorded so the
                     // derivation is inspectable: the IR says whether that block

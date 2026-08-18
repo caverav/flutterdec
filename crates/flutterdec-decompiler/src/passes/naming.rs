@@ -81,7 +81,7 @@ impl<'a> FuncEmitter<'a> {
         }
 
         if !inserts.is_empty() {
-            self.lines.splice(insert_idx..insert_idx, inserts);
+            self.splice_body_lines(insert_idx, inserts);
         }
     }
 
@@ -144,7 +144,7 @@ impl<'a> FuncEmitter<'a> {
         }
 
         if !inserts.is_empty() {
-            self.lines.splice(insert_idx..insert_idx, inserts);
+            self.splice_body_lines(insert_idx, inserts);
         }
     }
 
@@ -349,7 +349,7 @@ impl<'a> FuncEmitter<'a> {
         }
 
         if !inserts.is_empty() {
-            self.lines.splice(insert_idx..insert_idx, inserts);
+            self.splice_body_lines(insert_idx, inserts);
         }
     }
 

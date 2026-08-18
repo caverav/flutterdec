@@ -24,7 +24,7 @@ impl<'a> FuncEmitter<'a> {
             }
             break;
         }
-        self.lines.insert(insert_idx, summary);
+        self.insert_body_line(insert_idx, summary);
     }
 
     pub(super) fn visit_limit(&self, id: usize) -> usize {
@@ -81,12 +81,17 @@ impl<'a> FuncEmitter<'a> {
                 .capped_reg_value("x0")
                 .unwrap_or_else(|| "null".to_string());
 
-            self.lines.push(format!("dynamic _block_{}() {{", id));
-            self.lines.extend(helper.lines);
+            self.push_body_line(format!("dynamic _block_{}() {{", id));
+            // A helper body is rendered by its own emitter, so these lines are
+            // new to this body and carry new identities. No anchor of this
+            // function's render was ever on one of them.
+            for line in helper.lines {
+                self.push_body_line(line);
+            }
             if !has_terminator {
                 self.push_line(1, &format!("return {};", fallback_return));
             }
-            self.lines.push("}".to_string());
+            self.push_body_line("}".to_string());
 
             // The helper walked its own edges, so its omissions are this
             // function's omissions: they name the same blocks and their events

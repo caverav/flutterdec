@@ -23,6 +23,12 @@
 // by `(function_id, output_line, output_col)`, so a three-predecessor join must
 // be one record with three attributions rather than three records at one
 // coordinate.
+//
+// The line in that coordinate is the emitter's own, carried on the record from
+// the insertion that wrote it, and only the column is located in the finished
+// text. A function can hold any number of byte-identical lines, so a coordinate
+// searched for across the whole source is a coordinate that can belong to
+// another line entirely - with every other field in the record still true.
 
 use std::fs::{File, OpenOptions};
 use std::io::Write;
@@ -92,14 +98,19 @@ pub(super) struct CapOmission {
     pub(super) rendered: String,
 }
 
-/// One emitted annotation, before its output coordinate is known.
+/// One emitted annotation and the line it was inserted into.
 ///
-/// The coordinate is deliberately not filled in by the emitter: a later
-/// program-level rewrite can still move text on the line, so it is derived from
-/// the finished artifact by locating the annotation span itself.
+/// The line is the emitter's own, not a search result: the insertion knows which
+/// line it wrote to, and nothing after the annotation passes adds, removes or
+/// reorders a line. Only the column is derived from the finished text, because
+/// the two annotation passes insert into one line in turn and each insertion
+/// moves whatever sits to its right.
 #[derive(Debug, Clone)]
 pub(super) struct PendingAnnotationRecord {
     pub(super) loss_site: &'static str,
+    /// Index of the finished line this annotation was inserted into, counted
+    /// from zero as the body holds it.
+    pub(super) output_line: usize,
     pub(super) site_key: SiteKey,
     /// The rendering anchor this annotation was inserted from, named in terms
     /// the emitted IR can resolve on its own: `["block", id]` for a merge,
@@ -149,6 +160,39 @@ pub(super) struct FunctionProvenance {
     /// The same rejections as a running total, for the reason given above the
     /// cap counter.
     pub(super) rejected_at_filter: usize,
+    /// Every candidate this site offered to its gates, counted the moment the
+    /// candidate exists and before any gate can decline it.
+    ///
+    /// Counted early on purpose. Counted at the outcome instead, the figure
+    /// would agree with the outcomes by construction and a `continue` that
+    /// skipped a candidate entirely would still read as a perfect ledger. From
+    /// here, that same `continue` leaves a candidate with no outcome and
+    /// `unaccounted_candidates` is what says so.
+    pub(super) candidates_considered: usize,
+    /// Candidates that became an annotation in the artifact.
+    ///
+    /// Ungated like the drop counters, and for the same reason: a figure that
+    /// only exists under an environment variable is one no fixture can assert
+    /// on.
+    pub(super) annotations_emitted: usize,
+}
+
+impl FunctionProvenance {
+    /// Candidates this site can account for: emitted, filtered, or dropped by a
+    /// budget.
+    pub(super) fn accounted_candidates(&self) -> usize {
+        self.annotations_emitted + self.rejected_at_filter + self.omitted_at_insertion
+    }
+
+    /// Candidates with no outcome at all, as a signed difference.
+    ///
+    /// Signed because both directions are faults. A positive value is a
+    /// candidate that vanished between the capture and the gates; a negative one
+    /// is an outcome recorded for a candidate that was never counted, which
+    /// means the two sides are not describing the same population.
+    pub(super) fn unaccounted_candidates(&self) -> i64 {
+        self.candidates_considered as i64 - self.accounted_candidates() as i64
+    }
 }
 
 /// One annotation dropped by the liveness filter rather than by a budget.
@@ -354,13 +398,15 @@ fn audit_file() -> Option<&'static Mutex<File>> {
     .as_ref()
 }
 
-/// Locate each record's annotation in the finished source and append the audit
-/// lines for one function.
+/// Append the audit lines for one function, giving each record the coordinate
+/// its annotation occupies.
 ///
-/// The coordinate comes from the output itself: the span is searched for in
-/// render order and must match the record's own rendered text, so a record whose
-/// annotation did not survive to the artifact is dropped rather than given a
-/// coordinate it does not occupy.
+/// The line is the emitter's, carried on the record from the insertion that
+/// wrote it. Only the column is searched for, and only inside that one line: the
+/// two annotation passes insert into a line in turn, so a span can be pushed
+/// right by another insertion, but it cannot move to a different line. Confining
+/// the search is what stops a line that reads the same somewhere else in the
+/// function from taking a record's coordinate.
 pub(super) fn write_function_provenance(source: &str, provenance: &FunctionProvenance) {
     if provenance.records.is_empty() && provenance.cap_omissions.is_empty() {
         return;
@@ -369,14 +415,24 @@ pub(super) fn write_function_provenance(source: &str, provenance: &FunctionProve
         return;
     };
 
+    let lines: Vec<&str> = source.lines().collect();
     let mut placed: Vec<(usize, usize, &PendingAnnotationRecord)> = Vec::new();
-    let mut cursor = (0usize, 0usize);
+    // One cursor per line, so two annotations on one line are told apart by the
+    // order they were inserted in rather than by their text.
+    let mut cursors: Vec<usize> = vec![0; lines.len()];
     for record in &provenance.records {
-        let Some(position) = find_span(source, &record.rendered, cursor) else {
+        let Some(line) = lines.get(record.output_line) else {
             continue;
         };
-        cursor = (position.0, position.1 + 1);
-        placed.push((position.0, position.1, record));
+        let cursor = cursors[record.output_line];
+        if cursor > line.len() {
+            continue;
+        }
+        let Some(offset) = line[cursor..].find(&record.rendered) else {
+            continue;
+        };
+        cursors[record.output_line] = cursor + offset + 1;
+        placed.push((record.output_line + 1, cursor + offset + 1, record));
     }
     if placed.is_empty() && provenance.cap_omissions.is_empty() {
         return;
@@ -500,25 +556,3 @@ pub(super) fn write_function_provenance(source: &str, provenance: &FunctionProve
     }
 }
 
-/// The first `(line, column)` of `needle` at or after `from`, both 1-based and
-/// counted in bytes, as the emitted file is read.
-fn find_span(source: &str, needle: &str, from: (usize, usize)) -> Option<(usize, usize)> {
-    for (index, line) in source.lines().enumerate() {
-        let number = index + 1;
-        if number < from.0 {
-            continue;
-        }
-        let start = if number == from.0 {
-            from.1.saturating_sub(1)
-        } else {
-            0
-        };
-        if start > line.len() {
-            continue;
-        }
-        if let Some(offset) = line[start..].find(needle) {
-            return Some((number, start + offset + 1));
-        }
-    }
-    None
-}
