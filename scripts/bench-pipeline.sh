@@ -11,16 +11,21 @@ usage() {
   cat <<'EOF'
 Usage:
   scripts/bench-pipeline.sh --reference REF --candidate REF --patch FILE --out DIR
-                            [--pairs N] [--warmups N] [--label TEXT]
+                            [--pairs N] [--warmups N] [--label TEXT] [--clear]
                             [--matrix disclosed|held-out] [--held-out-seed HEX]
 
   --reference REF     Product revision measured as the baseline
   --candidate REF     Product revision measured against it. Pass the same
                       revision twice to measure the noise floor.
   --patch FILE        Harness patch applied byte-identically to both worktrees
-  --out DIR           Output directory, created if absent
+  --out DIR           Output directory, created if absent. Held under an
+                      exclusive lock for the whole run, and refused outright if
+                      it already holds raw samples unless --clear is given.
   --pairs N           Interleaved measured pairs (default 15)
-  --warmups N         Unmeasured passes before each measured run (default 3)
+  --warmups N         Preliminary unmeasured warmup passes per binary, run once
+                      before any measured pair (default 3). Every measured pair
+                      itself runs at zero warmups.
+  --clear             Delete an existing raw sample directory before measuring
   --label TEXT        Recorded in both result documents
   --matrix            Case set (default disclosed)
   --held-out-seed HEX 128-bit hex seed, required for --matrix held-out
@@ -38,9 +43,11 @@ warmups=3
 label=""
 matrix="disclosed"
 held_out_seed=""
+clear_raw="0"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --clear) clear_raw="1"; shift ;;
     --reference) reference="$2"; shift 2 ;;
     --candidate) candidate="$2"; shift 2 ;;
     --patch) patch_file="$2"; shift 2 ;;
@@ -70,6 +77,34 @@ cd "$repo_root"
 nix_flags=(--extra-experimental-features 'nix-command flakes')
 mkdir -p "$out_dir"
 out_dir="$(cd "$out_dir" && pwd)"
+
+# One measurement per output directory at a time. Two pipelines sharing an
+# output directory interleave their raw files and, worse, compete for the same
+# CPUs, so every sample either side collects is contaminated. Non-blocking on
+# purpose: a second run should fail immediately and visibly rather than queue up
+# and start measuring later under conditions nobody recorded.
+exec 9>"$out_dir/.bench-pipeline.lock"
+if ! flock -n 9; then
+  echo "[bench] another bench-pipeline run holds $out_dir/.bench-pipeline.lock; refusing to measure" >&2
+  exit 1
+fi
+echo "[bench] holding exclusive lock on $out_dir (pid $$)"
+
+# Raw samples from an earlier run are never mixed with this one's. Either the
+# directory is empty, or it is emptied completely, or the run refuses: a partial
+# overwrite would leave one side's pairs from an older binary in place.
+raw_dir="$out_dir/raw"
+if [[ -d "$raw_dir" ]] && [[ -n "$(ls -A "$raw_dir" 2>/dev/null)" ]]; then
+  if [[ "$clear_raw" == "1" ]]; then
+    echo "[bench] clearing existing raw samples in $raw_dir"
+    rm -rf "$raw_dir"
+  else
+    echo "[bench] $raw_dir already holds raw samples; pass --clear to discard them" >&2
+    exit 1
+  fi
+fi
+mkdir -p "$raw_dir"
+
 patch_file="$(cd "$(dirname "$patch_file")" && pwd)/$(basename "$patch_file")"
 patch_digest="$(sha256sum "$patch_file" | cut -d' ' -f1)"
 
@@ -139,11 +174,27 @@ if ! diff -q "$out_dir/manifest-reference.json" "$out_dir/manifest-candidate.jso
   exit 1
 fi
 
+# Warmups are preliminary and per binary, not per pair. Re-warming before every
+# one of the 30 measured passes spent four times the wall clock on warmups alone,
+# which is what made a run long enough to overlap the next one. The measured
+# pairs stay interleaved, so any drift that does survive hits both sides in the
+# same order.
+warmup() {
+  local side="$1" binary="$2"
+  echo "[bench] warming $side with $warmups unmeasured pass(es)"
+  "$binary" run \
+    "${matrix_args[@]}" \
+    --warmups "$warmups" \
+    --runs 0 \
+    --label "${label}${label:+ }${side} warmup" \
+    --out "$out_dir/warmup-${side}.json"
+}
+
 measure() {
   local side="$1" binary="$2" product="$3" binary_digest="$4" pair="$5"
   "$binary" run \
     "${matrix_args[@]}" \
-    --warmups "$warmups" \
+    --warmups 0 \
     --runs 1 \
     --product-ref "$product" \
     --harness-ref "$harness_head" \
@@ -154,8 +205,10 @@ measure() {
     --samples "$out_dir/raw/${side}-${pair}.tsv"
 }
 
-mkdir -p "$out_dir/raw"
-echo "[bench] $pairs interleaved pairs, $warmups warmups before each measured run"
+warmup reference "$reference_bin"
+warmup candidate "$candidate_bin"
+
+echo "[bench] $pairs interleaved pairs at zero per-pair warmups"
 for (( pair = 0; pair < pairs; pair++ )); do
   measure reference "$reference_bin" "$reference_head" "$reference_binary_digest" "$pair"
   measure candidate "$candidate_bin" "$candidate_head" "$candidate_binary_digest" "$pair"
@@ -189,7 +242,8 @@ reference_binary_sha256    $reference_binary_digest
 candidate_binary_sha256    $candidate_binary_digest
 matrix                     $matrix
 pairs                      $pairs
-warmups_per_measured_run   $warmups
+preliminary_warmups        $warmups
+warmups_per_measured_pair  0
 EOF
 
 echo "[bench] wrote $out_dir/analysis.json"

@@ -59,7 +59,10 @@ run options
   --held-out-seed HEX           128-bit hex seed, required for --matrix held-out
   --seed N                      Disclosed seed, recorded only (default 1592614637)
   --warmups N                   Unmeasured passes (default 3)
-  --runs N                      Measured passes (default 15)
+  --runs N                      Measured passes (default 15). 0 runs the
+                                warmups and the correctness pass only, which is
+                                how a binary is warmed once before interleaving
+                                measured pairs at --warmups 0.
   --timeout-seconds N           Per measured run (default 120)
   --memory-limit-bytes N        Peak resident set (default 2 GiB)
   --product-ref REF             Recorded binding
@@ -435,9 +438,6 @@ fn run(argv: &[String]) -> Result<(), String> {
     let timeout_seconds = args.number("timeout-seconds", DEFAULT_TIMEOUT_SECONDS)?;
     let memory_limit = args.number("memory-limit-bytes", DEFAULT_MEMORY_LIMIT_BYTES)?;
     let seed = args.number("seed", DISCLOSED_SEED)?;
-    if runs == 0 {
-        return Err("--runs must be at least 1".to_string());
-    }
 
     // Fixture state, all built before any span opens.
     let symbols: HashMap<u64, String> = HashMap::new();
