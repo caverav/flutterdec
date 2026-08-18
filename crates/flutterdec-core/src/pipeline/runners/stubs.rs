@@ -533,6 +533,11 @@ pub(super) struct NoreturnPrune {
     pub(super) functions: usize,
     pub(super) blocks_cut: usize,
     pub(super) instructions_cut: usize,
+    /// Functions skipped because their graph failed the shared identity ruler.
+    /// Should stay zero: the builder is the only producer, so a nonzero count is a
+    /// builder regression and must be visible rather than silently leaving a
+    /// fabricated fall-through in place.
+    pub(super) skipped_invalid_ir: usize,
 }
 
 /// Removes the control flow that follows a call which never returns.
@@ -562,6 +567,14 @@ pub(super) fn prune_calls_that_never_return(
         return stats;
     }
     for f in ir {
+        // Before the reachability walk below, which indexes blocks by id: on a
+        // graph with a duplicate id or an edge to a block that does not exist the
+        // walk reads another block's successors, and the count it produces is what
+        // the report publishes as blocks removed.
+        if flutterdec_ir::validate_block_identity(f).is_err() {
+            stats.skipped_invalid_ir += 1;
+            continue;
+        }
         // Measured as reachable-before minus reachable-after. The IR already
         // contains blocks no path reaches, so counting every unreachable block
         // after the cut would credit this pass with them: on one sample that
@@ -1041,7 +1054,80 @@ mod prune_tests {
         }];
         let stats = prune_calls_that_never_return(&mut ir, &HashSet::from([0x9000]));
         assert_eq!(stats.functions, 0);
+        assert_eq!(stats.skipped_invalid_ir, 0, "the fixture is well formed");
         assert_eq!(ir[0].blocks[0].succs, vec![1], "a returning call falls through");
+    }
+
+    /// The identity gate at the prune's own boundary. The reachability walk below
+    /// it indexes blocks by id and its result is published as blocks removed, so a
+    /// graph that cannot be indexed must not be walked at all -- and must not be
+    /// silently mutated either.
+    #[test]
+    fn a_graph_that_fails_the_ruler_is_never_pruned() {
+        let fixture = || {
+            let mut ir = vec![FunctionIr {
+                function_id: 1,
+                name: "sub_1000".to_string(),
+                entry_va: 0x1000,
+                blocks: vec![
+                    blk(0, 0x1000, vec![other(0x1000, "mov x0, x1")], vec![1]),
+                    blk(1, 0x1004, vec![call(0x1004, "#0x9000")], vec![2]),
+                    blk(2, 0x1008, vec![other(0x1008, "ret")], vec![]),
+                ],
+            }];
+            for b in 0..ir[0].blocks.len() {
+                let succs = ir[0].blocks[b].succs.clone();
+                let id = ir[0].blocks[b].id;
+                for s in succs {
+                    ir[0].blocks[s].preds.push(id);
+                }
+            }
+            ir
+        };
+
+        // Control row: on the well-formed graph the prune does its work.
+        let mut ir = fixture();
+        let stats = prune_calls_that_never_return(&mut ir, &HashSet::from([0x9000]));
+        assert_eq!(stats.functions, 1);
+        assert_eq!(stats.skipped_invalid_ir, 0);
+        assert!(ir[0].blocks[1].succs.is_empty());
+
+        /// One named way to break the fixture's block identity.
+        type Breaker = (&'static str, Box<dyn Fn(&mut FunctionIr)>);
+        let breakers: Vec<Breaker> = vec![
+            ("duplicate id", Box::new(|f: &mut FunctionIr| f.blocks[2].id = 1)),
+            ("non-dense id", Box::new(|f: &mut FunctionIr| f.blocks[2].id = 9)),
+            (
+                "duplicate start address",
+                Box::new(|f: &mut FunctionIr| f.blocks[2].start_va = 0x1004),
+            ),
+            (
+                "successor names no block",
+                Box::new(|f: &mut FunctionIr| f.blocks[1].succs = vec![9]),
+            ),
+            (
+                "predecessor names no block",
+                Box::new(|f: &mut FunctionIr| f.blocks[2].preds = vec![9]),
+            ),
+        ];
+        for (label, break_it) in breakers {
+            let mut ir = fixture();
+            break_it(&mut ir[0]);
+            let before = ir.clone();
+            let stats = prune_calls_that_never_return(&mut ir, &HashSet::from([0x9000]));
+            assert_eq!(
+                stats.skipped_invalid_ir, 1,
+                "{label}: the skip must be reported, not silent"
+            );
+            assert_eq!(stats.functions, 0, "{label}");
+            assert_eq!(stats.blocks_cut, 0, "{label}: nothing was walked");
+            assert_eq!(stats.instructions_cut, 0, "{label}");
+            for (was, now) in before[0].blocks.iter().zip(&ir[0].blocks) {
+                assert_eq!(was.succs, now.succs, "{label}: block {} mutated", was.id);
+                assert_eq!(was.preds, now.preds, "{label}: block {} mutated", was.id);
+                assert_eq!(was.instrs.len(), now.instrs.len(), "{label}");
+            }
+        }
     }
 
     /// Every row of both vendored tables must agree with the SDK's `allow_return`

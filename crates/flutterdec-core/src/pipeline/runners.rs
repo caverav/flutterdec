@@ -2111,7 +2111,8 @@ pub fn run_decompile(
             "functions_recovered": split_stats.functions_recovered,
             "rejected_branch_target": split_stats.rejected_branch_target,
             "rejected_not_contained": split_stats.rejected_not_contained,
-            "rejected_no_block": split_stats.rejected_no_block
+            "rejected_no_block": split_stats.rejected_no_block,
+            "rejected_invalid_ir": split_stats.rejected_invalid_ir
         },
         "selector_fallback": {
             "total": selector_fallback.total,
@@ -2130,6 +2131,7 @@ pub fn run_decompile(
             "noreturn_pruned_functions": noreturn_prune.functions,
             "noreturn_pruned_blocks": noreturn_prune.blocks_cut,
             "noreturn_pruned_instructions": noreturn_prune.instructions_cut,
+            "noreturn_skipped_invalid_ir": noreturn_prune.skipped_invalid_ir,
             "model": model.adapter_kind.clone(),
             "snapshot_dart_version": bundle.dart_profile.as_ref().map(|p| p.dart_version.clone()),
             "compressed_pointers": bundle.compressed_pointers

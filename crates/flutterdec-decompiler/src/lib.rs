@@ -1,4 +1,4 @@
-use flutterdec_ir::{BasicBlock, FunctionIr, IROp};
+use flutterdec_ir::{validate_block_identity, BasicBlock, CfgDefect, FunctionIr, IROp};
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
@@ -401,10 +401,6 @@ impl<'a> FuncEmitter<'a> {
         }
     }
 
-    fn emit(self) -> PseudocodeArtifact {
-        self.emit_with_provenance().0
-    }
-
     /// The artifact plus the audit rows its annotations owe, one set per loss
     /// site.
     ///
@@ -552,8 +548,72 @@ pub struct RuntimeStubEffect {
     pub preserves_registers: bool,
 }
 
+/// The marker the one diagnostic of an unusable CFG carries.
+///
+/// Public so a consumer can recognise the artifact for what it is instead of
+/// matching on prose, and so a fixture cannot drift from what the emitter writes.
+pub const INVALID_CFG_NOTE: &str = "invalid CFG";
+
+/// The whole artifact for a `FunctionIr` no consumer may index.
+///
+/// Nothing here reads `blocks`, so no relation is computed off a graph whose
+/// identity does not hold and neither emitter runs: a body would have to invent
+/// the flow the graph failed to state. The single diagnostic names the defect,
+/// and the unresolved-control-flow counter reports the whole body as one
+/// unresolved site, which is what it is.
+fn invalid_cfg_artifact(ir: &FunctionIr, defect: &CfgDefect) -> PseudocodeArtifact {
+    let function_name = sanitize_name(&ir.name);
+    let params = (0..DART_ARGUMENT_REGISTERS.len())
+        .map(|i| format!("dynamic arg{i}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    PseudocodeArtifact {
+        function_id: ir.function_id,
+        source: format!(
+            "dynamic {function_name}({params}) {{\n  // {INVALID_CFG_NOTE}: {defect}: control flow not recovered\n}}"
+        ),
+        function_name,
+        placeholder_ifs: 0,
+        unresolved_cf: 1,
+        raw_register_calls: 0,
+        total_calls: 0,
+        indirect_calls: 0,
+        semantic_direct_calls: 0,
+        semantic_indirect_calls: 0,
+        dispatch_selector_calls: 0,
+        dispatch_table_calls: 0,
+        repeated_blocks: 0,
+        unlifted_instructions: 0,
+        target_va_symbol_calls: 0,
+    }
+}
+
+/// The one entry every public emission function funnels through, so the
+/// validation gate cannot be reached around.
+///
+/// Validation runs before `FuncEmitter::new`, which is where `block_by_id` and
+/// `va_to_id` are built: after those maps exist the duplicate the check is
+/// looking for has already been collapsed into one entry.
+fn emit_one(
+    ir: &FunctionIr,
+    symbol_names: &HashMap<u64, String>,
+    pool_value_hints: &HashMap<u64, String>,
+    pool_semantic_hints: &HashMap<u64, PoolSemanticHint>,
+    runtime_stubs: &HashMap<u64, RuntimeStubEffect>,
+) -> (PseudocodeArtifact, Vec<FunctionProvenance>) {
+    if let Err(defect) = validate_block_identity(ir) {
+        return (invalid_cfg_artifact(ir, &defect), Vec::new());
+    }
+    let mut emitter = FuncEmitter::new(ir, symbol_names);
+    emitter.pool_value_hints = pool_value_hints.clone();
+    emitter.pool_semantic_hints = pool_semantic_hints.clone();
+    emitter.runtime_stubs = runtime_stubs.clone();
+    emitter.emit_with_provenance()
+}
+
 pub fn emit_pseudocode(ir: &FunctionIr, symbol_names: &HashMap<u64, String>) -> PseudocodeArtifact {
-    FuncEmitter::new(ir, symbol_names).emit()
+    let empty = HashMap::new();
+    emit_pseudocode_with_pool_context(ir, symbol_names, &empty, &HashMap::new())
 }
 
 pub fn emit_pseudocode_with_pool_hints(
@@ -571,10 +631,14 @@ pub fn emit_pseudocode_with_pool_context(
     pool_value_hints: &HashMap<u64, String>,
     pool_semantic_hints: &HashMap<u64, PoolSemanticHint>,
 ) -> PseudocodeArtifact {
-    let mut emitter = FuncEmitter::new(ir, symbol_names);
-    emitter.pool_value_hints = pool_value_hints.clone();
-    emitter.pool_semantic_hints = pool_semantic_hints.clone();
-    emitter.emit()
+    emit_one(
+        ir,
+        symbol_names,
+        pool_value_hints,
+        pool_semantic_hints,
+        &HashMap::new(),
+    )
+    .0
 }
 
 pub fn emit_program(
@@ -624,11 +688,13 @@ pub fn emit_program_with_runtime_stubs(
     let (mut artifacts, provenance): (Vec<_>, Vec<_>) = ir
         .iter()
         .map(|f| {
-            let mut emitter = FuncEmitter::new(f, symbol_names);
-            emitter.pool_value_hints = pool_value_hints.clone();
-            emitter.pool_semantic_hints = pool_semantic_hints.clone();
-            emitter.runtime_stubs = runtime_stubs.clone();
-            emitter.emit_with_provenance()
+            emit_one(
+                f,
+                symbol_names,
+                pool_value_hints,
+                pool_semantic_hints,
+                runtime_stubs,
+            )
         })
         .unzip();
     apply_program_level_generic_call_rewrites(&mut artifacts);

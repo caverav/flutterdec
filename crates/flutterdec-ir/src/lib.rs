@@ -2,6 +2,9 @@ use flutterdec_disasm_arm64::{AsmInstruction, FunctionDisassembly};
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 
+mod validate;
+pub use validate::{validate_block_identity, CfgDefect};
+
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub enum IROp {
     Call,
@@ -398,12 +401,22 @@ pub fn build_function_ir(d: &FunctionDisassembly) -> FunctionIr {
         b.preds.dedup();
     }
 
-    FunctionIr {
+    let ir = FunctionIr {
         function_id: d.function_id,
         name: d.function_name.clone(),
         entry_va: d.entry_va,
         blocks,
-    }
+    };
+    // The builder is the origin of every graph the pipeline analyses, including
+    // after the slow-path prune above has removed blocks and remapped every id,
+    // so its own output is held to the ruler its consumers apply. Costs nothing
+    // in a release build; fires in every test and every debug run.
+    debug_assert_eq!(
+        validate_block_identity(&ir),
+        Ok(()),
+        "the builder produced a graph its consumers cannot index"
+    );
+    ir
 }
 
 pub fn build_program_ir(disasm: &[FunctionDisassembly]) -> Vec<FunctionIr> {

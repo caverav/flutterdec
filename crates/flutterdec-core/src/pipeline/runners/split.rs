@@ -16,6 +16,11 @@ pub(super) struct SplitStats {
     /// Candidates abandoned because the preceding piece had no block. Should stay
     /// zero: it is reported so that a regression is visible rather than silent.
     pub(super) rejected_no_block: usize,
+    /// Records abandoned because the graph built from them failed the shared
+    /// identity ruler. Should stay zero for the same reason as `rejected_no_block`:
+    /// the builder is the only producer here, so a nonzero count is a builder
+    /// regression and must be visible rather than silently changing what is split.
+    pub(super) rejected_invalid_ir: usize,
 }
 
 /// Splits a function record that spans more than one real function.
@@ -86,8 +91,33 @@ fn split_points(record: &FunctionDisassembly, stats: &mut SplitStats) -> Vec<usi
         return Vec::new();
     }
 
-    let ir = build_function_ir(record);
-    let branch_targets = branch_targets(&ir);
+    accepted_splits(record, &build_function_ir(record), candidates, stats)
+}
+
+/// Clauses 3 and 4 against a built graph.
+///
+/// Split out from `split_points` so the identity gate below can be exercised
+/// against a graph that fails it. `build_function_ir` is the only producer in
+/// production, and it is held to that ruler itself, so nothing else can reach
+/// this with a malformed graph -- which is exactly why the gate needs a test that
+/// can.
+fn accepted_splits(
+    record: &FunctionDisassembly,
+    ir: &flutterdec_ir::FunctionIr,
+    candidates: Vec<usize>,
+    stats: &mut SplitStats,
+) -> Vec<usize> {
+    let instrs = &record.instructions;
+    // Before the two maps below, both of which are keyed on a block identity: a
+    // duplicate id or start address collapses an entry and the containment clause
+    // would then measure the reach of a block it never meant to walk, cutting a
+    // record in a place nothing justifies. Refusing to split is the conservative
+    // answer: the record still emits exactly as it does with splitting disabled.
+    if flutterdec_ir::validate_block_identity(ir).is_err() {
+        stats.rejected_invalid_ir += 1;
+        return Vec::new();
+    }
+    let branch_targets = branch_targets(ir);
     // Every instruction address to the block that contains it, not just block
     // starts. `build_function_ir` opens a new block only after a terminator, so
     // a candidate that follows anything else is mid-block and has no leader of
@@ -393,6 +423,90 @@ mod tests {
             let (out, stats) = split_inflated_records(vec![record]);
             assert_eq!(out.len(), 1, "`{mnemonic} {op_str}` must not split: {out:?}");
             assert_eq!(stats.functions_recovered, 0, "`{mnemonic} {op_str}`");
+        }
+    }
+
+    /// The splitter is a producer as well as a consumer: every piece it hands back
+    /// is built into its own graph downstream, so a piece whose graph fails the
+    /// shared ruler would push a function onto the fallback emitter or worse.
+    #[test]
+    fn the_record_and_every_piece_build_a_graph_the_ruler_accepts() {
+        let (out, stats) = split_inflated_records(vec![two_functions()]);
+        assert_eq!(out.len(), 2);
+        assert_eq!(
+            stats.rejected_invalid_ir, 0,
+            "the builder must not produce a graph the splitter refuses"
+        );
+        assert_eq!(
+            flutterdec_ir::validate_block_identity(&build_function_ir(&two_functions())),
+            Ok(()),
+            "the pre-split record's own graph"
+        );
+        for piece in &out {
+            assert_eq!(
+                flutterdec_ir::validate_block_identity(&build_function_ir(piece)),
+                Ok(()),
+                "piece at {:#x} must build an indexable graph",
+                piece.entry_va
+            );
+        }
+    }
+
+    /// The identity gate at the splitter's own map construction. Reached through
+    /// `accepted_splits` because `build_function_ir` cannot produce a graph that
+    /// fails the ruler; the gate exists for the day some other producer does.
+    #[test]
+    fn a_graph_that_fails_the_ruler_is_never_split_on() {
+        let record = two_functions();
+        let clean = build_function_ir(&record);
+        let candidates = vec![3usize];
+
+        let mut stats = SplitStats::default();
+        assert_eq!(
+            accepted_splits(&record, &clean, candidates.clone(), &mut stats),
+            vec![3],
+            "the control row: this candidate is accepted on the real graph"
+        );
+        assert_eq!(stats.rejected_invalid_ir, 0);
+
+        for (label, break_it) in [
+            (
+                "duplicate id",
+                Box::new(|ir: &mut flutterdec_ir::FunctionIr| ir.blocks[1].id = 0)
+                    as Box<dyn Fn(&mut flutterdec_ir::FunctionIr)>,
+            ),
+            (
+                "duplicate start address",
+                Box::new(|ir: &mut flutterdec_ir::FunctionIr| {
+                    let first = ir.blocks[0].start_va;
+                    ir.blocks[1].start_va = first;
+                }),
+            ),
+            (
+                "non-dense id",
+                Box::new(|ir: &mut flutterdec_ir::FunctionIr| ir.blocks[1].id = 9),
+            ),
+            (
+                "successor names no block",
+                Box::new(|ir: &mut flutterdec_ir::FunctionIr| ir.blocks[0].succs = vec![9]),
+            ),
+        ] {
+            let mut broken = clean.clone();
+            break_it(&mut broken);
+            let mut stats = SplitStats::default();
+            assert!(
+                accepted_splits(&record, &broken, candidates.clone(), &mut stats).is_empty(),
+                "{label}: no candidate may be accepted off a graph that cannot be indexed"
+            );
+            assert_eq!(
+                stats.rejected_invalid_ir, 1,
+                "{label}: the refusal must be reported, not silent"
+            );
+            assert_eq!(
+                stats.rejected_branch_target + stats.rejected_not_contained + stats.rejected_no_block,
+                0,
+                "{label}: no clause may have been evaluated off the broken graph"
+            );
         }
     }
 }
