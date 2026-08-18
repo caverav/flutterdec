@@ -15,7 +15,40 @@ pub(super) fn indirect_branch_note(target: &str) -> String {
     }
 }
 
+/// What an edge into a block the walk already rendered says.
+///
+/// The DFS fallback emits a block once per path that reaches it, and Dart has no
+/// `goto`, so an edge back into a block already written above cannot be rendered
+/// where it occurs. Naming the block keeps the edge in the artifact; emitting
+/// nothing dropped it, and a `return` or a `tailCall_` there would state an exit
+/// the graph does not contain.
+pub(super) fn rejoin_note(id: usize) -> String {
+    format!("control rejoins block {id}: already emitted above")
+}
+
 impl<'a> FuncEmitter<'a> {
+    /// The one rendering of a successor this walk cannot emit at this site.
+    ///
+    /// Every reason is stated rather than skipped: a back edge to the loop being
+    /// rendered as `continue;`, a back edge to any other active block as a
+    /// recorded back edge plus a rejoin note, a block not yet emitted as its
+    /// omission helper, and a block already emitted as a rejoin note. Falling
+    /// through with no statement is what silently dropped the edge.
+    pub(super) fn emit_unrenderable_successor(&mut self, indent: usize, id: usize) {
+        if self.loop_context.contains(&id) {
+            self.push_line(indent, "continue;");
+            return;
+        }
+        if self.active_stack.contains(&id) {
+            self.loop_back_edges.insert(id);
+        }
+        if self.emitted.contains(&id) {
+            self.push_line(indent, &format!("// {}", rejoin_note(id)));
+        } else {
+            self.emit_omitted_path(indent, Some(id));
+        }
+    }
+
     pub(super) fn branch_condition(&self, mnemonic: &str, ops: &[String]) -> Option<String> {
         if mnemonic.starts_with("b.") {
             if let Some(cmp) = &self.state.last_cmp {

@@ -202,6 +202,56 @@ impl<'a> FuncEmitter<'a> {
         false
     }
 
+    /// The `break;` and `continue;` lines inside a loop body that bind to that
+    /// loop, which is every one not enclosed by a nested loop or `switch` within
+    /// the body.
+    ///
+    /// Unwrapping a loop dedents its body, so a statement named here would be
+    /// left with no enclosing loop at all. That is not Dart, and it no longer
+    /// states the transfer it was emitted for: the edge it stood for disappears
+    /// from the artifact while the word for it stays.
+    pub(super) fn loop_bound_control_lines(
+        lines: &[String],
+        start: usize,
+        end: usize,
+    ) -> Vec<usize> {
+        let mut bound = Vec::new();
+        if start >= end || end > lines.len() {
+            return bound;
+        }
+
+        // Depth each still-open nested breakable construct was opened at,
+        // innermost last. Empty means a control statement binds to the loop whose
+        // body this is.
+        let mut nested: Vec<i32> = Vec::new();
+        let mut depth = 0i32;
+        for (index, line) in lines.iter().enumerate().take(end).skip(start) {
+            let t = line.trim();
+            if nested.is_empty() && (t == "break;" || t == "continue;") {
+                bound.push(index);
+            }
+            let opens = line.chars().filter(|&c| c == '{').count() as i32;
+            let closes = line.chars().filter(|&c| c == '}').count() as i32;
+            if opens > 0 && Self::opens_breakable_construct(t) {
+                nested.push(depth);
+            }
+            depth += opens - closes;
+            while nested.last().is_some_and(|opened| depth <= *opened) {
+                nested.pop();
+            }
+        }
+        bound
+    }
+
+    /// Whether a line opens a construct that owns a `break;` of its own, so a
+    /// `break;` under it does not belong to the loop being considered.
+    fn opens_breakable_construct(trimmed: &str) -> bool {
+        trimmed.starts_with("while (")
+            || trimmed.starts_with("for (")
+            || trimmed.starts_with("switch (")
+            || trimmed == "do {"
+    }
+
     pub(super) fn block_terminates_at_top_level(
         lines: &[String],
         start: usize,

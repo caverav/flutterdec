@@ -19,7 +19,15 @@ impl<'a> FuncEmitter<'a> {
                             if let Some(loop_end) = Self::find_block_end(&self.lines, i + 1) {
                                 let has_continue = (i + 2..loop_end)
                                     .any(|idx| self.lines[idx].trim() == "continue;");
-                                if !has_continue {
+                                // Unwrapping dedents the body, so a `break;` that
+                                // binds to this loop would end up outside every
+                                // loop and stop naming the edge it stands for.
+                                let bound_control = Self::loop_bound_control_lines(
+                                    &self.lines,
+                                    i + 2,
+                                    loop_end,
+                                );
+                                if !has_continue && bound_control.is_empty() {
                                     for idx in i + 2..loop_end {
                                         let t = self.lines[idx].trim();
                                         if t == format!("{var} = false;")
@@ -78,7 +86,17 @@ impl<'a> FuncEmitter<'a> {
                             }
                         }
 
-                        if !has_continue
+                        // Every `break;` and `continue;` in the body that binds to
+                        // this loop. Dedenting the body leaves each of them
+                        // outside every loop, where the statement is not Dart and
+                        // the edge it was emitted for is gone from the artifact,
+                        // so the wrapper stays unless the body owns none of them -
+                        // or, below, unless the only one is the wrapper's own
+                        // trailing `break;`, which is removed with it.
+                        let bound_control = Self::loop_bound_control_lines(&self.lines, i + 1, j);
+
+                        if bound_control.is_empty()
+                            && !has_continue
                             && Self::block_terminates_at_top_level(&self.lines, i + 1, j)
                         {
                             for idx in i + 1..j {
@@ -89,7 +107,11 @@ impl<'a> FuncEmitter<'a> {
                             continue;
                         }
 
-                        if break_at_top_level && !has_continue {
+                        if break_at_top_level
+                            && !has_continue
+                            && bound_control.len() == 1
+                            && Some(bound_control[0]) == last_non_empty
+                        {
                             for idx in i + 1..j {
                                 if Some(idx) == last_non_empty && self.lines[idx].trim() == "break;"
                                 {

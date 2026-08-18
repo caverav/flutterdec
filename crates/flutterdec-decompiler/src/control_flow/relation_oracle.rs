@@ -90,6 +90,22 @@ mod relation_oracle {
         /// Extra copies of a block the structured walk made, which must equal the
         /// artifact's own `repeated_blocks` count.
         repeated: usize,
+        /// `while (` statements the body must hold. The structured walk emits one
+        /// per natural loop; the fallback wraps a block entered by both a back
+        /// edge and a forward edge, which a declined graph can still contain, and
+        /// the wrapper is what keeps that body's `break;` and `continue;` inside a
+        /// loop.
+        loop_statements: usize,
+        /// Conditionals the emitter renders in its negated form, which is the only
+        /// form it has for a branch whose taken arm has nothing to say. Pinned
+        /// separately from `branches` because the rendered arm is the not-taken
+        /// side there.
+        negated_branches: &'static [ExpectedNegatedBranch],
+        /// The whole artifact body, for cases where every line is a control
+        /// decision: an inverted guard, a dropped edge, a dedented `break;` and an
+        /// invented alternative all move it, and none of them can hide in a
+        /// counter.
+        source: Option<&'static str>,
     }
 
     /// One conditional's taken and not-taken mapping.
@@ -106,6 +122,24 @@ mod relation_oracle {
         taken: &'static [usize],
         /// Blocks whose markers must not, ascending.
         not_taken: &'static [usize],
+    }
+
+    /// One conditional rendered as `if (!(cond)) { not-taken }`, with its polarity
+    /// pinned as the pair it is.
+    ///
+    /// The negation and the condition inside it are one statement about the
+    /// machine branch: dropping the negation and negating the condition are the
+    /// same inversion, so a fixture that names only one of them cannot see the
+    /// other. `condition` is therefore the literal text the guard must hold, with
+    /// `$` standing for whatever name the block's own call binds.
+    struct ExpectedNegatedBranch {
+        block: usize,
+        condition: &'static str,
+        /// Blocks whose markers must appear in the rendered arm, which here is the
+        /// not-taken side, ascending.
+        arm: &'static [usize],
+        /// Blocks whose markers must not, ascending.
+        outside: &'static [usize],
     }
 
     fn va(id: usize) -> u64 {
@@ -187,12 +221,20 @@ mod relation_oracle {
                 }
             })
             .collect();
-        FunctionIr {
+        let mut ir = FunctionIr {
             function_id: 7000,
             name: graph.name.replace('-', "_"),
             entry_va: va(0),
             blocks,
-        }
+        };
+        // Production IR is canonical: `build_function_ir` ends in `rebuild_edges`,
+        // so every block carries the predecessors its successor lists imply. The
+        // DFS fallback reads `preds` directly - `should_wrap_loop_header` needs a
+        // back edge and a forward edge into the same block - so a fixture left
+        // with empty preds exercises a walk production never runs, and no loop the
+        // fallback would wrap ever appears.
+        flutterdec_ir::rebuild_edges(&mut ir.blocks);
+        ir
     }
 
     /// Straight line, one exit.
@@ -219,6 +261,9 @@ mod relation_oracle {
         returns: 1,
         tail_calls: &[],
         repeated: 0,
+        loop_statements: 0,
+        negated_branches: &[],
+        source: None,
     };
 
     /// Two arms that rejoin: the join is the follow node of the branch.
@@ -249,6 +294,9 @@ mod relation_oracle {
         returns: 1,
         tail_calls: &[],
         repeated: 0,
+        loop_statements: 0,
+        negated_branches: &[],
+        source: None,
     };
 
     /// Three predecessors on one block, reached from arms of different depths.
@@ -286,6 +334,9 @@ mod relation_oracle {
         returns: 1,
         tail_calls: &[],
         repeated: 0,
+        loop_statements: 0,
+        negated_branches: &[],
+        source: None,
     };
 
     /// One arm returns immediately, so the branch has no follow node at all.
@@ -316,6 +367,9 @@ mod relation_oracle {
         returns: 2,
         tail_calls: &[],
         repeated: 0,
+        loop_statements: 0,
+        negated_branches: &[],
+        source: None,
     };
 
     /// Block 2 has no predecessor, so no relation holds of it.
@@ -342,6 +396,9 @@ mod relation_oracle {
         returns: 1,
         tail_calls: &[],
         repeated: 0,
+        loop_statements: 0,
+        negated_branches: &[],
+        source: None,
     };
 
     /// An inner loop 2 <-> 3 inside an outer loop headed at 1, one exit each.
@@ -410,6 +467,9 @@ mod relation_oracle {
         returns: 1,
         tail_calls: &[],
         repeated: 0,
+        loop_statements: 2,
+        negated_branches: &[],
+        source: None,
     };
 
     /// One loop leaving from two body blocks to two different targets, which is
@@ -471,6 +531,9 @@ mod relation_oracle {
         returns: 1,
         tail_calls: &[],
         repeated: 0,
+        loop_statements: 1,
+        negated_branches: &[],
+        source: None,
     };
 
     /// A cycle with no return anywhere, the shape post-dominance has no exit to
@@ -508,6 +571,9 @@ mod relation_oracle {
         returns: 0,
         tail_calls: &[],
         repeated: 0,
+        loop_statements: 1,
+        negated_branches: &[],
+        source: None,
     };
 
     /// One arm returns and the other enters a loop that never can, so the two
@@ -560,6 +626,9 @@ mod relation_oracle {
         returns: 1,
         tail_calls: &[],
         repeated: 0,
+        loop_statements: 1,
+        negated_branches: &[],
+        source: None,
     };
 
     /// Two entries into the 1 <-> 2 cycle, so neither cycle block dominates the
@@ -587,11 +656,47 @@ mod relation_oracle {
         structured: false,
         covered: &[0, 1, 2, 3],
         branches: &[],
-        continues: 0,
+        continues: 1,
         breaks: 0,
         returns: 4,
         tail_calls: &[],
         repeated: 0,
+        loop_statements: 1,
+        negated_branches: &[],
+        source: Some(concat!(
+            "dynamic irreducible(dynamic slot0, dynamic slot1, dynamic slot2, dynamic slot3, dynamic slot4, dynamic slot5) {\n",
+            "  // loop back-edges: block 2\n",
+            "  final t1 = mark0();\n",
+            "  if (t1 == 0) {\n",
+            "    final t2 = mark2();\n",
+            "    if (t2 == 0) {\n",
+            "      final t3 = mark3();\n",
+            "      return t3;\n",
+            "    }\n",
+            "    final t4 = mark1();\n",
+            "    if (t4 == 0) {\n",
+            "      final t5 = mark3();\n",
+            "      return t5;\n",
+            "    }\n",
+            "    // control rejoins block 2: already emitted above\n",
+            "  }\n",
+            "  else {\n",
+            "    while (true) {\n",
+            "      final t6 = mark1();\n",
+            "      if (t6 == 0) {\n",
+            "        final t7 = mark3();\n",
+            "        return t7;\n",
+            "      }\n",
+            "      final t8 = mark2();\n",
+            "      if (t8 == 0) {\n",
+            "        final t9 = mark3();\n",
+            "        return t9;\n",
+            "      }\n",
+            "      continue;\n",
+            "    }\n",
+            "  }\n",
+            "}",
+        )),
     };
 
     /// One arm jumps to an address outside the function, which is a tail call and
@@ -623,6 +728,9 @@ mod relation_oracle {
         returns: 1,
         tail_calls: &["return tailCall_0x50000();"],
         repeated: 0,
+        loop_statements: 0,
+        negated_branches: &[],
+        source: None,
     };
 
     /// Block 3 is the shared slow path two conditionals reach and neither one
@@ -676,6 +784,135 @@ mod relation_oracle {
         returns: 4,
         tail_calls: &[],
         repeated: 2,
+        loop_statements: 0,
+        negated_branches: &[],
+        source: None,
+    };
+
+    /// The taken edge goes straight to the branch's own follow node, so the taken
+    /// arm has nothing to say and only the fallthrough side does.
+    ///
+    /// This is the one shape that produces the emitter's negated rendering, which
+    /// no other fixture reaches: without it, dropping the negation - stating the
+    /// opposite of the machine branch - changes no expected value anywhere.
+    const EMPTY_TAKEN: Graph = Graph {
+        name: "empty-taken",
+        succs: &[&[1, 2], &[2], &[]],
+        external_jumps: &[],
+    };
+    const EMPTY_TAKEN_EXPECTED: Expected = Expected {
+        reachable: &[0, 1, 2],
+        dom: &[&[0], &[0, 1], &[0, 2]],
+        pdom: &[&[0, 2], &[1, 2], &[2]],
+        ipdom: &[Some(2), Some(2), None],
+        loops: &[],
+        reducible: true,
+    };
+
+    const EMPTY_TAKEN_EMITTED: Emitted = Emitted {
+        structured: true,
+        covered: &[0, 1, 2],
+        // The taken arm is empty, so this conditional has no `branches` row: the
+        // form it is rendered in is a negated one, pinned below.
+        branches: &[],
+        continues: 0,
+        breaks: 0,
+        returns: 1,
+        tail_calls: &[],
+        repeated: 0,
+        loop_statements: 0,
+        negated_branches: &[ExpectedNegatedBranch {
+            block: 0,
+            // `cbz` tests for zero and the rendering negates it, so the guard the
+            // reader sees is "block 1 runs when the value is not zero", which is
+            // what the machine branch says. Either half alone flips it.
+            condition: "$ == 0",
+            arm: &[1],
+            outside: &[2],
+        }],
+        source: Some(concat!(
+            "dynamic empty_taken(dynamic slot0, dynamic slot1, dynamic slot2, dynamic slot3, \
+             dynamic slot4, dynamic slot5) {\n",
+            "  final t1 = mark0();\n",
+            "  if (!(t1 == 0)) {\n",
+            "    final t2 = mark1();\n",
+            "  }\n",
+            "  final t3 = mark2();\n",
+            "  return t3;\n",
+            "}"
+        )),
+    };
+
+    /// A second irreducible shape, written so the conditional's taken edge is its
+    /// *first* successor: `rebuild_edges` sorts successor lists, so an emitter that
+    /// read the arm off the slot order instead of off the branch target would
+    /// exchange both arms here and nowhere else.
+    ///
+    /// Declined by structuring, so the DFS fallback owns the whole artifact and
+    /// this case is where its condition polarity, its arm contents, its loop
+    /// wrapper and its markers for edges it cannot render are all pinned.
+    const DECLINED_FALLBACK: Graph = Graph {
+        name: "declined-fallback",
+        succs: &[&[2, 1], &[3, 2], &[1], &[]],
+        external_jumps: &[],
+    };
+    const DECLINED_FALLBACK_EXPECTED: Expected = Expected {
+        reachable: &[0, 1, 2, 3],
+        dom: &[&[0], &[0, 1], &[0, 2], &[0, 1, 3]],
+        pdom: &[&[0, 1, 3], &[1, 3], &[1, 2, 3], &[3]],
+        ipdom: &[Some(1), Some(3), Some(1), None],
+        // 2 -> 1 retreats to a block that does not dominate it, so it is not a back
+        // edge and the cycle is no natural loop.
+        loops: &[],
+        reducible: false,
+    };
+
+    const DECLINED_FALLBACK_EMITTED: Emitted = Emitted {
+        structured: false,
+        covered: &[0, 1, 2, 3],
+        branches: &[],
+        continues: 1,
+        breaks: 0,
+        returns: 2,
+        tail_calls: &[],
+        repeated: 0,
+        loop_statements: 1,
+        negated_branches: &[],
+        // The whole fallback body, which is where this contract's fallback clauses
+        // are actually pinned: block 0's guard is un-negated `== 0` with its
+        // branch target - block 1, the *first* successor after sorting - inside the
+        // arm; the wrapper keeps block 1's back edge to itself expressible as
+        // `continue;`; and the second copy of block 1 states its taken edge to the
+        // already-emitted block 2 as a rejoin note instead of ending the function
+        // there.
+        source: Some(concat!(
+            "dynamic declined_fallback(dynamic slot0, dynamic slot1, dynamic slot2, dynamic slot3, dynamic slot4, dynamic slot5) {\n",
+            "  // loop back-edges: block 2\n",
+            "  final t1 = mark0();\n",
+            "  if (t1 == 0) {\n",
+            "    while (true) {\n",
+            "      final t2 = mark1();\n",
+            "      if (t2 == 0) {\n",
+            "        final t3 = mark2();\n",
+            "        continue;\n",
+            "      }\n",
+            "      final t4 = mark3();\n",
+            "      return t4;\n",
+            "    }\n",
+            "  }\n",
+            "  else {\n",
+            "    final t5 = mark2();\n",
+            "    final t6 = mark1();\n",
+            "    if (t6 == 0) {\n",
+            "      // control rejoins block 2: already emitted above\n",
+            "    }\n",
+            "    else {\n",
+            "      final t7 = mark3();\n",
+            "      return t7;\n",
+            "    }\n",
+            "  }\n",
+            "}",
+        )),
     };
 
     /// Every case, so a shape cannot be dropped from the table unnoticed.
@@ -692,6 +929,12 @@ mod relation_oracle {
         (&TRAPPED_LOOP, &TRAPPED_LOOP_EXPECTED, &TRAPPED_LOOP_EMITTED),
         (&TAIL_CALL, &TAIL_CALL_EXPECTED, &TAIL_CALL_EMITTED),
         (&REPEATED_REGION, &REPEATED_REGION_EXPECTED, &REPEATED_REGION_EMITTED),
+        (&EMPTY_TAKEN, &EMPTY_TAKEN_EXPECTED, &EMPTY_TAKEN_EMITTED),
+        (
+            &DECLINED_FALLBACK,
+            &DECLINED_FALLBACK_EXPECTED,
+            &DECLINED_FALLBACK_EMITTED,
+        ),
     ];
 
     /// The symbol each block's opening call names.
@@ -1061,6 +1304,129 @@ mod relation_oracle {
             .collect()
     }
 
+    /// The value a block's own call binds, which every guard on that block names.
+    fn bound_value(body: &str, block: usize) -> String {
+        let marker = format!("mark{block}()");
+        let line = body
+            .lines()
+            .find(|line| line.contains(&marker))
+            .unwrap_or_else(|| panic!("block {block} does not call its own marker:\n{body}"));
+        line.trim()
+            .strip_prefix("final ")
+            .and_then(|rest| rest.split(" = ").next())
+            .unwrap_or_else(|| panic!("block {block}'s call binds no value:\n{body}"))
+            .to_string()
+    }
+
+    /// The lines inside `if (!(cond)) {` on `block`, with the guard's exact text
+    /// required first.
+    ///
+    /// Asserting the literal line is what pins polarity here: the arm contents
+    /// alone cannot tell "the not-taken side under a negated test" - which is what
+    /// the machine branch says - from "the taken side under the plain test", which
+    /// is its opposite and holds the same blocks.
+    fn negated_arm(body: &str, block: usize, condition: &str) -> Vec<String> {
+        let value = bound_value(body, block);
+        let expected = format!("if (!({})) {{", condition.replace('$', &value));
+        let lines: Vec<&str> = body.lines().collect();
+        let open = lines
+            .iter()
+            .position(|line| line.trim() == expected)
+            .unwrap_or_else(|| {
+                panic!("block {block} must be guarded by `{expected}`:\n{body}")
+            });
+        let indent = lines[open].len() - lines[open].trim_start().len();
+        lines[open + 1..]
+            .iter()
+            .take_while(|line| {
+                line.trim() != "}" || line.len() - line.trim_start().len() != indent
+            })
+            .map(|line| line.to_string())
+            .collect()
+    }
+
+    /// The `break;` and `continue;` lines of a body that sit outside every loop.
+    ///
+    /// Such a statement is not Dart, and it is worse than a syntax error here: it
+    /// is the word for an edge the artifact no longer contains, left behind when
+    /// the loop it belonged to was removed from around it. The scan is over the
+    /// rendered text because that is where the reader meets it, and because the
+    /// passes that run after emission are what can strand one.
+    fn control_statements_outside_a_loop(body: &str) -> Vec<String> {
+        let mut stranded = Vec::new();
+        let mut open_loops: Vec<i32> = Vec::new();
+        let mut depth = 0i32;
+        for line in body.lines() {
+            let t = line.trim();
+            if open_loops.is_empty() && (t == "break;" || t == "continue;") {
+                stranded.push(t.to_string());
+            }
+            let opens = line.chars().filter(|&c| c == '{').count() as i32;
+            let closes = line.chars().filter(|&c| c == '}').count() as i32;
+            if opens > 0
+                && (t.starts_with("while (")
+                    || t.starts_with("for (")
+                    || t.starts_with("switch (")
+                    || t == "do {")
+            {
+                open_loops.push(depth);
+            }
+            depth += opens - closes;
+            while open_loops.last().is_some_and(|opened| depth <= *opened) {
+                open_loops.pop();
+            }
+        }
+        stranded
+    }
+
+    /// Conditionals in a fallback body that state only one of their two edges.
+    ///
+    /// The DFS walk has no follow node: it renders a block once per path, so the
+    /// not-taken edge of a two-successor block has nowhere else to be stated. An
+    /// `if` with no `else` there is exactly the shape a silently dropped successor
+    /// leaves behind, and it reads as "control ends here" on a graph that says it
+    /// continues. What fills the arm may be the block, its omission helper or a
+    /// rejoin note - but the arm has to exist.
+    fn conditionals_missing_an_arm(graph: &Graph, body: &str) -> Vec<String> {
+        let lines: Vec<&str> = body.lines().collect();
+        let mut missing = Vec::new();
+        for (block, succs) in graph.succs.iter().enumerate() {
+            if succs.len() != 2 {
+                continue;
+            }
+            let marker = format!("mark{block}()");
+            for (index, _) in lines
+                .iter()
+                .enumerate()
+                .filter(|(_, line)| line.contains(&marker))
+            {
+                // The branch is this block's terminator, so its guard is the next
+                // `if` the walk writes after the block's own call.
+                let Some(open) = (index + 1..lines.len()).find(|i| {
+                    let t = lines[*i].trim();
+                    t.starts_with("if (") && t.ends_with(") {")
+                }) else {
+                    missing.push(format!("block {block} renders no conditional"));
+                    continue;
+                };
+                let indent = lines[open].len() - lines[open].trim_start().len();
+                let close = (open + 1..lines.len()).find(|i| {
+                    lines[*i].trim() == "}"
+                        && lines[*i].len() - lines[*i].trim_start().len() == indent
+                });
+                let has_else = close
+                    .and_then(|c| lines.get(c + 1))
+                    .is_some_and(|line| line.trim() == "else {");
+                if !has_else {
+                    missing.push(format!(
+                        "block {block}'s conditional at line {open} states one edge of two"
+                    ));
+                }
+            }
+        }
+        missing
+    }
+
     /// One case's artifact against its hand-written expectations.
     fn assert_emitted(graph: &Graph, expected: &Expected, emitted: &Emitted) {
         let ir = lift(graph);
@@ -1098,32 +1464,44 @@ mod relation_oracle {
             .iter()
             .map(|block| marker_count(body, *block) - 1)
             .sum();
+        // The repeatable-region policy is bounded and reported, so the accounting
+        // is asserted exactly, in both directions and on both walks: the copies the
+        // artifact holds, the count it publishes, and the budget it was allowed.
+        assert_eq!(
+            artifact.repeated_blocks, emitted.repeated,
+            "{case}: the artifact must report exactly the copies it made:\n{body}"
+        );
         if emitted.structured {
             assert_eq!(
                 copies, emitted.repeated,
                 "{case}: extra copies of a block the structured walk made:\n{body}"
             );
-            assert_eq!(
-                artifact.repeated_blocks, emitted.repeated,
-                "{case}: the artifact must report every copy it made:\n{body}"
+            assert!(
+                emitted.repeated == 0 || emitted.repeated < graph.succs.len(),
+                "{case}: a repeated region is bounded, so it cannot repeat every block"
             );
-            let loops = expected.loops.len();
             assert_eq!(
-                body.matches("while (").count(),
-                loops,
-                "{case}: one loop statement per natural-loop header:\n{body}"
+                emitted.loop_statements,
+                expected.loops.len(),
+                "{case}: the structured walk emits one loop statement per natural-loop header"
             );
         } else {
             assert!(
                 copies > 0,
                 "{case}: the fallback renders a block once per path that reaches it:\n{body}"
             );
-            assert_eq!(
-                body.matches("while (").count(),
-                0,
-                "{case}: a declined graph has no structured loop:\n{body}"
-            );
         }
+        assert_eq!(
+            body.matches("while (").count(),
+            emitted.loop_statements,
+            "{case}: loop statements in the artifact:\n{body}"
+        );
+        assert_eq!(
+            control_statements_outside_a_loop(body),
+            Vec::<String>::new(),
+            "{case}: a `break;` or `continue;` outside every loop names an edge the \
+             artifact no longer holds:\n{body}"
+        );
 
         for branch in emitted.branches {
             let arm = taken_arm(body, branch.block).join("\n");
@@ -1176,10 +1554,37 @@ mod relation_oracle {
             tail_calls, emitted.tail_calls,
             "{case}: tail calls, spelled as calls and reclassified as nothing else:\n{body}"
         );
+        for branch in emitted.negated_branches {
+            let arm = negated_arm(body, branch.block, branch.condition).join("\n");
+            for block in branch.arm {
+                assert!(
+                    arm.contains(&format!("mark{block}()")),
+                    "{case}: block {block} belongs to the arm the negated test on block {} \
+                     guards:\n{arm}",
+                    branch.block
+                );
+            }
+            for block in branch.outside {
+                assert!(
+                    !arm.contains(&format!("mark{block}()")),
+                    "{case}: block {block} is on the other side of block {}'s test:\n{arm}",
+                    branch.block
+                );
+            }
+        }
+
         assert!(
             !body.contains("goto"),
             "{case}: no walk may invent a jump Dart cannot express:\n{body}"
         );
+
+        if let Some(source) = emitted.source {
+            assert_eq!(
+                body, source,
+                "{case}: every line of this artifact is a control decision, so the whole \
+                 body is the expectation"
+            );
+        }
     }
 
     /// The same graph through both walks, at the same level: the structured walk's
@@ -1220,6 +1625,27 @@ mod relation_oracle {
                 "{case}: the fallback invented `{fabricated}`:\n{fallback_body}"
             );
         }
+        // Both walks, at the level they emit at: a `break;` or `continue;` the walk
+        // writes must be inside the loop it means, and the fallback must state both
+        // edges of every conditional it renders. Checked here as well as on the
+        // artifact because a pass that runs later can only strand a statement the
+        // walk already emitted, and the two failures read very differently.
+        assert_eq!(
+            control_statements_outside_a_loop(&fallback_body),
+            Vec::<String>::new(),
+            "{case}: the fallback wrote a control statement outside every loop:\n{fallback_body}"
+        );
+        assert_eq!(
+            control_statements_outside_a_loop(&structured_body),
+            Vec::<String>::new(),
+            "{case}: the structured walk wrote a control statement outside every \
+             loop:\n{structured_body}"
+        );
+        assert_eq!(
+            conditionals_missing_an_arm(graph, &fallback_body),
+            Vec::<String>::new(),
+            "{case}: the fallback dropped a successor instead of naming it:\n{fallback_body}"
+        );
         assert_eq!(
             named(&fallback_body),
             expected_blocks,
@@ -1269,6 +1695,8 @@ mod relation_oracle {
                 "trapped-loop",
                 "tail-call",
                 "repeated-region",
+                "empty-taken",
+                "declined-fallback",
             ],
             "a case may not be dropped from the table without the list saying so"
         );
@@ -1332,6 +1760,16 @@ mod relation_oracle {
     #[test]
     fn repeated_region_relations_match_the_expected_graph() {
         assert_case(&REPEATED_REGION, &REPEATED_REGION_EXPECTED);
+    }
+
+    #[test]
+    fn empty_taken_relations_match_the_expected_graph() {
+        assert_case(&EMPTY_TAKEN, &EMPTY_TAKEN_EXPECTED);
+    }
+
+    #[test]
+    fn declined_fallback_relations_match_the_expected_graph() {
+        assert_case(&DECLINED_FALLBACK, &DECLINED_FALLBACK_EXPECTED);
     }
 
     #[test]
@@ -1404,5 +1842,21 @@ mod relation_oracle {
     fn repeated_region_emits_the_expected_artifact_and_both_walks_agree() {
         assert_emitted(&REPEATED_REGION, &REPEATED_REGION_EXPECTED, &REPEATED_REGION_EMITTED);
         assert_walks_agree(&REPEATED_REGION, &REPEATED_REGION_EMITTED);
+    }
+
+    #[test]
+    fn empty_taken_emits_the_expected_artifact_and_both_walks_agree() {
+        assert_emitted(&EMPTY_TAKEN, &EMPTY_TAKEN_EXPECTED, &EMPTY_TAKEN_EMITTED);
+        assert_walks_agree(&EMPTY_TAKEN, &EMPTY_TAKEN_EMITTED);
+    }
+
+    #[test]
+    fn declined_fallback_emits_the_expected_artifact_and_both_walks_agree() {
+        assert_emitted(
+            &DECLINED_FALLBACK,
+            &DECLINED_FALLBACK_EXPECTED,
+            &DECLINED_FALLBACK_EMITTED,
+        );
+        assert_walks_agree(&DECLINED_FALLBACK, &DECLINED_FALLBACK_EMITTED);
     }
 }

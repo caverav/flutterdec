@@ -1358,7 +1358,7 @@ impl<'a> FuncEmitter<'a> {
                             self.emit_block(tid, indent + 1, depth + 1);
                             self.state = saved;
                         } else {
-                            self.emit_omitted_path(indent + 1, Some(tid));
+                            self.emit_unrenderable_successor(indent + 1, tid);
                         }
                     } else {
                         let target = normalize_target(&ins.target);
@@ -1371,18 +1371,19 @@ impl<'a> FuncEmitter<'a> {
                     }
                     self.push_line(indent, "}");
 
+                    // The not-taken edge is stated whatever it is. Skipping the arm
+                    // when the successor was already emitted read as "control ends
+                    // here", which is the one thing the graph does not say.
                     if let Some(fid) = false_id {
+                        self.push_line(indent, "else {");
                         if self.can_inline(fid, depth + 1) {
-                            self.push_line(indent, "else {");
                             let saved = self.state.clone();
                             self.emit_block(fid, indent + 1, depth + 1);
                             self.state = saved;
-                            self.push_line(indent, "}");
-                        } else if !self.emitted.contains(&fid) {
-                            self.push_line(indent, "else {");
-                            self.emit_omitted_path(indent + 1, Some(fid));
-                            self.push_line(indent, "}");
+                        } else {
+                            self.emit_unrenderable_successor(indent + 1, fid);
                         }
+                        self.push_line(indent, "}");
                     }
 
                     self.active_stack.pop();
@@ -1393,14 +1394,8 @@ impl<'a> FuncEmitter<'a> {
                     if let Some(tid) = target_id {
                         if self.can_inline(tid, depth + 1) {
                             self.emit_block(tid, indent, depth + 1);
-                        } else if self.active_stack.contains(&tid) {
-                            if self.loop_context.contains(&tid) {
-                                self.push_line(indent, "continue;");
-                            } else {
-                                self.loop_back_edges.insert(tid);
-                            }
-                        } else if !self.emitted.contains(&tid) {
-                            self.emit_omitted_path(indent, Some(tid));
+                        } else {
+                            self.emit_unrenderable_successor(indent, tid);
                         }
                     } else {
                         let target = normalize_target(&ins.target);
@@ -1454,14 +1449,8 @@ impl<'a> FuncEmitter<'a> {
             if block.succs.len() == 1 {
                 if self.can_inline(next, depth + 1) {
                     self.emit_block(next, indent, depth + 1);
-                } else if self.active_stack.contains(&next) {
-                    if self.loop_context.contains(&next) {
-                        self.push_line(indent, "continue;");
-                    } else {
-                        self.loop_back_edges.insert(next);
-                    }
-                } else if !self.emitted.contains(&next) {
-                    self.emit_omitted_path(indent, Some(next));
+                } else {
+                    self.emit_unrenderable_successor(indent, next);
                 }
             }
         }
