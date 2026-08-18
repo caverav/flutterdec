@@ -2099,3 +2099,238 @@ the collapse.
    and reverting it reverts nothing else.
 6. L5 re-run in full after the change: `scripts/ci-check.sh` exit 0, 21 result
    lines, 520 tests, including the three goldens and the oracle inventory lane.
+
+## 17. Adjudication record: executable section 7 digests
+
+Section 7 has recorded a sha256 for every protected path since `1371e42`, and
+until this record nothing recomputed one. Every earlier adjudication treats those
+digests as the ruler that decides whether a protected file changed, and section
+13's checker says so in as many words - "a digest proves only that a file's bytes
+are unchanged" - but no CI lane, no test, and no script ever hashed a protected
+file. The table was a claim about the worktree that only a human comparing it by
+hand could falsify.
+
+That gap is the exact complement of the one section 13 closed. Section 13 proved
+that a protected file is still *compiled*, because a digest cannot see the
+loader. This record proves that the file the compiler saw is still the file the
+table protects, because the compiled inventory cannot see the bytes: gut a
+protected oracle down to a one-line stub that keeps nothing but its sentinel's
+name, and the inventory reports it compiled and exits 0. Both halves are needed,
+and neither substitutes for the other.
+
+Commit `0a33d6f` moves `scripts/check-oracle-inventory.py`, which is a protected
+row itself. This record is the section 9 adjudication for that move.
+
+### 17.1 What the checker now does before any Cargo work
+
+`scripts/check-oracle-inventory.py` gained two functions and one hardcoded
+inventory, and its `main` runs them ahead of `cargo metadata`:
+
+- `parse_digest_rows` reads every `| path | sha256 |` row of section 7 and of no
+  other section. It is bounded by the `## 7. Protected paths and digests`
+  heading and the next `## ` heading, so the before-and-after digest chains in
+  sections 10.1 through 16.3, and section 8's recorded evidence, are the same
+  table shape and are correctly invisible to it. A row moved out of section 7
+  into one of those records therefore reads as a deleted row.
+- `PROTECTED_PATHS` is the hardcoded expected inventory, all 56 paths, in the
+  order the five tables list them. It is the ruler for the table rather than a
+  copy of it: parsing the protocol alone cannot notice a deleted row, because a
+  deleted row leaves nothing behind to check.
+- `check_digests` requires, in this order, that no path is listed twice, that the
+  parsed row set and `PROTECTED_PATHS` are equal in both directions, that every
+  digest is exactly 64 lowercase hex characters, that every path is an existing
+  regular file, and that every file's sha256 equals its row. Its failures are
+  fatal and the run returns 1 before a single Cargo invocation.
+
+The compiled-inventory pass is unchanged. Nothing was removed from it, no row
+lost its sentinel, and extra tests are still expected work.
+
+`scripts/check-oracle-inventory.py` is row 6 of the Checkers table, so this pass
+verifies its own bytes. A change to the checker that is not recorded in section 7
+fails the checker.
+
+### 17.2 The exact expected inventory
+
+56 rows, which is every digest row of section 7 and no other row of this
+document:
+
+| Table | Rows |
+| --- | --- |
+| Fixed reference emission artifacts | 3 |
+| Checkers, scanners, and their plant tests | 12 |
+| Gate and harness scripts | 6 |
+| Fixtures and sample data | 2 |
+| Oracle test files | 33 |
+| Total | 56 |
+
+The 33 Oracle test files rows are exactly the 33 keys of `SENTINELS`, so every
+one of them is now proved twice: its bytes here, and its compilation by the pass
+section 13 records. The other 23 rows - the three goldens, the twelve checkers
+and scanners, the six gate and harness scripts, and the two fixtures - had no
+executable protection of any kind before this record, because `SENTINELS` does
+not map them and nothing else read them.
+
+The clean run reports both counts:
+
+```
+[oracle-inventory] 56 digest rows in docs/oracle-protocol-ir-cfg-emitter.md section 7
+[oracle-inventory] ok, 56 protected paths match their section 7 digests
+[oracle-inventory] 33 protected oracle rows in docs/oracle-protocol-ir-cfg-emitter.md
+[oracle-inventory] ok, 33 protected oracles are compiled
+```
+
+### 17.3 Digest chain
+
+Column order matches sections 10.1 through 16.3, state before digest.
+
+`scripts/check-oracle-inventory.py`:
+
+| Commit | State | sha256 |
+| --- | --- | --- |
+| `1c7507b` | new, added by section 13 | `d882132e87cb4625ebdac88ab310e405b00133bd546e172db282be7e1bbf47bf` |
+| `439ebc8` | three targets and nine rows added, section 15 | `b8e06c148c0268f23acbb9547e5b9248b3f4ebc6903a48e8d21112be41e3ef49` |
+| `0a33d6f` | current, recorded in section 7 | `98e7f29f8ebebaf68dc28c82ec465eb359cf3b91280f808ce1dfb3d17221bbf0` |
+
+The first two values are re-derived here with
+`git show <commit>:scripts/check-oracle-inventory.py | sha256sum`; the second is
+the value section 7 carried at `3d259ec`.
+
+No other protected file changed. `git diff --name-only` for `0a33d6f` is two
+paths, `scripts/check-oracle-inventory.py` and this document, and the second is
+not protected.
+
+### 17.4 Code before ruler, and why the order is forced here
+
+Section 9 asks for the ruler change to be separable from the behavior change.
+Here they are the same file. The checker *is* the ruler, and its own digest row
+is one of the rows it verifies, so:
+
+1. At `3d259ec`, the parent, the table said
+   `b8e06c148c0268f23acbb9547e5b9248b3f4ebc6903a48e8d21112be41e3ef49` and the
+   checker did not hash anything. Both were consistent and the run exited 0.
+2. The intermediate state - new checker code, old digest row - is a knowingly
+   failing revision. It was reached and observed during the work: the checker
+   rejects itself by name, `scripts/check-oracle-inventory.py does not match its
+   ... section 7 digest`, and returns 1 before any Cargo work. That is the
+   correct behavior, and it is why the code and its digest row cannot land in two
+   commits on a branch that forbids force push.
+3. `0a33d6f` therefore carries both. The code was written first and the row was
+   computed from its final bytes with `sha256sum`, which is the only order that
+   terminates: any edit to the checker after the row is written invalidates the
+   row.
+
+The ruler is still separable for review. `git show 0a33d6f --
+scripts/check-oracle-inventory.py` is the whole executable change, and reverting
+that path together with the one-line row in section 7 restores `3d259ec`'s
+behavior exactly.
+
+### 17.5 The CI change is additive, and there is none
+
+Neither `scripts/ci-check.sh` nor `.github/workflows/ci.yml` was edited. Both
+already run the checker as a lane of their own, as the byte-identical command
+`nix develop -c python3 scripts/check-oracle-inventory.py`, which
+`the_protected_oracle_loader_chain_is_intact` asserts verbatim in
+`crates/flutterdec-decompiler/tests/provenance_audit.rs`. The digest pass is
+inside that invocation, so both lanes exercise it with no new lane, no new
+command, and no move of `scripts/ci-check.sh`'s own digest.
+
+Additive in the strict sense: every check those lanes made at `3d259ec` is still
+made, in the same order, and the digest pass runs ahead of them. Proved by
+running both surfaces verbatim.
+
+| Surface | Clean | With one byte appended to a protected golden |
+| --- | --- | --- |
+| The `Compiled oracle inventory` step of `.github/workflows/ci.yml`, extracted verbatim | exit 0 | exit 1, naming `structured_loop_emit.dartpseudo` |
+| `scripts/ci-check.sh --skip-tests` | exit 0 | exit 1 at the `[ci-check] scripts/check-oracle-inventory.py` lane, same message |
+
+A full `scripts/ci-check.sh` on the clean tree at `0a33d6f` exits 0 with 14
+lanes, 22 result lines and 556 tests, and reports both inventory counts above.
+`cargo test --workspace` exits 0 with 17 result lines and 509 tests.
+
+### 17.6 Planted silencings
+
+Every plant is one edit against a clean `0a33d6f`, restored between rows. All
+seventeen are rejected with exit 1, and each names the row or path it broke.
+Plants 1 through 15 never reach Cargo: the digest pass returns first.
+
+| # | Plant | Rejected by |
+| --- | --- | --- |
+| 1 | A section 7 row deleted (`scripts/lint-shell.sh`) | `is a protected path with no digest row` |
+| 2 | A row added for an unprotected path (`scripts/bench-identity-gate-test.sh`) | `is not in this checker's protected inventory` |
+| 3 | An existing row duplicated verbatim | `is listed twice` |
+| 4 | A path listed twice with a different second digest | `is listed twice` |
+| 5 | A digest rewritten in uppercase hex | `is not 64 lowercase hex characters` |
+| 6 | A digest truncated to 8 characters | `is not 64 lowercase hex characters` |
+| 7 | A digest of 64 non-hex characters | `is not 64 lowercase hex characters` |
+| 8 | A protected file deleted from the worktree | `is not an existing regular file` |
+| 9 | A protected file replaced by a directory of the same name | `is not an existing regular file` |
+| 10 | One line appended to a protected golden | `does not match its ... digest` |
+| 11 | Whitespace-only change to a protected golden | `does not match its ... digest` |
+| 12 | A protected oracle gutted to its sentinel, `structuring.rs` | `does not match its ... digest` |
+| 13 | The checker's own bytes changed | `scripts/check-oracle-inventory.py does not match its ... digest` |
+| 14 | A row moved out of section 7 into section 8, bytes intact | `is a protected path with no digest row` |
+| 15 | All 36 `crates/` rows deleted from section 7 | 36 problems, one per path |
+| 16 | `crates/flutterdec-ir/src/validate/tests.rs` gutted to its sentinel | `does not match its ... digest` |
+| 17 | Plant 10 run through both real CI surfaces | Both lanes, section 17.5 |
+
+Plant 16 is the one that measures what this record adds, because it is
+sentinel-preserving and otherwise green. The file goes from its full ruler to
+
+```rust
+#[test]
+fn every_planted_identity_failure_is_named() {}
+```
+
+and under that plant:
+
+- The checker at `3d259ec` exits **0**. It prints
+  `compiled crates/flutterdec-ir/src/validate/tests.rs -> ir-lib ::
+  validate::tests::every_planted_identity_failure_is_named` and
+  `ok, 33 protected oracles are compiled`. The only visible trace is
+  `ir-lib listed 11 tests` where the clean tree lists 20, and a smaller listing
+  is not a failure: adding and removing cases both change it, and extras are
+  expected work.
+- `cargo test --workspace` exits **0**, with the same 17 result lines, at 500
+  passed instead of 509. Nine assertions of the IR well-formedness ruler are
+  gone and every gate is green.
+- The checker at `0a33d6f` exits **1** and names the file and both digests.
+
+Plant 12 is the same silencing applied to a file other code depends on, so it
+also fails to compile; it is recorded for completeness, not as the measure. Plant
+16 is the measure.
+
+### 17.7 What this does not close
+
+- The digest pass proves bytes, not meaning. A protected file rewritten to assert
+  something weaker fails here as a byte change and must go through section 9,
+  which is the intended outcome, but the protocol still relies on adjudication to
+  judge whether the new assertions are as strong.
+- `PROTECTED_PATHS` and section 7 must be edited together. That is deliberate -
+  it is what makes adding or dropping a protected path visible in review - but
+  neither side can add a path the other lacks, so a genuinely new protected file
+  is two edits, not one.
+- `#[ignore]` on a sentinel is still invisible to the compiled inventory, as
+  section 15 recorded. The digest pass does not change that: an `#[ignore]` added
+  to a protected file is caught as a byte change, but one added to an unprotected
+  test is not.
+- `crates/flutterdec-decompiler/src/control_flow/emission_taxonomy_tests.rs` has
+  no section 7 row and no sentinel, so neither pass reaches it.
+
+### 17.8 Section 9 steps
+
+1. Invariant: section 7's digests are the ruler that decides whether a protected
+   file changed. A ruler nothing recomputes is not a ruler; section 17.1 makes it
+   executable.
+2. Tests: the checker's own `--self-test`, extended with `digest_self_test`,
+   which covers the section-bounded parser and each failure class against a
+   temporary tree, standard library only. The default invocation runs it first,
+   so both CI lanes run it.
+3. Diff and digests: sections 17.1 and 17.3.
+4. Reference preserved: `1371e42` is untouched, and every digest in section 7
+   except the checker's own is byte-identical to what it was at `3d259ec`.
+5. **Not followed as written**, for the reason in section 17.4: the ruler and the
+   code are the same file, so they land in one commit. The revert path is
+   recorded there.
+6. L5 re-run in full after the change: `scripts/ci-check.sh` exit 0, 14 lanes, 22
+   result lines, 556 tests, including the three goldens, the named integration
+   targets, and both passes of the oracle inventory lane.
