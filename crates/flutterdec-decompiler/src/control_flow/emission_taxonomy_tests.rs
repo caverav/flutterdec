@@ -273,6 +273,30 @@ fn helper_calls_above_the_budget_become_explicit_omissions() {
         refused.len(),
         "one marker per refused call site, and one event per marker"
     );
+
+    // The output around the first omitted helper, read line by line: the marker
+    // sits where the call was, at the call's indentation, inside a body, and the
+    // lines on either side of it are not a fabricated exit.
+    let lines = source_lines(&artifact);
+    let first = lines
+        .iter()
+        .position(|l| l.trim_start().starts_with("// omitted path to block"))
+        .expect("an omission marker");
+    let marker = &lines[first];
+    assert!(
+        marker.starts_with("  ") && marker.trim_start().starts_with("//"),
+        "the marker is an indented comment, not a statement: {marker:?}"
+    );
+    let before = &lines[first - 1];
+    let after = lines.get(first + 1).map(String::as_str).unwrap_or("");
+    assert!(
+        before.trim() != "return null;" && after.trim() != "return null;",
+        "the omission must not be padded with the return it replaced:\n{before}\n{marker}\n{after}"
+    );
+    assert!(
+        lines[..first].iter().any(|l| l.starts_with("dynamic ")),
+        "the marker is inside a function body"
+    );
 }
 
 /// A visit omission is not a block disposition: the block it names is emitted
