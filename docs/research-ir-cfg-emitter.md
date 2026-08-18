@@ -560,12 +560,21 @@ Four facts fall out:
 - `serialization` scales with the artifact, so it goes negative where the
   artifact shrinks as the graph grows.
 
-Extrapolating the fitted `cfg` and `emission_exclusive` exponents per topology
-gives the block count at which region analysis would overtake emission on a
-reducible graph: about 1500 blocks for `nested-loop`, 2100 for `no-exit`, 2400
-for `linear`, 4700 for `diamond-chain`. Inside the frozen matrix that crossover
-is never reached, so a CFG algorithm change is a claim about larger functions
-than the matrix contains, not about the matrix.
+Fitting each phase as `t = k * n^e` through the 64 and 1024 block medians of one
+topology and solving for the block count where the two curves meet gives the
+size at which region analysis would overtake emission on a reducible graph. The
+inputs, aa-1 reference medians in milliseconds:
+
+| Topology | cfg at 64 | cfg at 1024 | emission at 64 | emission at 1024 | crossover blocks |
+| --- | --- | --- | --- | --- | --- |
+| `nested-loop` | 0.183 | 40.415 | 4.011 | 59.175 | 1513 |
+| `no-exit` | 0.122 | 28.126 | 3.636 | 56.641 | 2103 |
+| `linear` | 0.114 | 23.420 | 3.485 | 53.012 | 2445 |
+| `diamond-chain` | 0.107 | 20.816 | 5.259 | 82.889 | 4694 |
+
+Inside the frozen matrix that crossover is never reached, so a CFG algorithm
+change is a claim about larger functions than the matrix contains, not about the
+matrix. Treat the four numbers as an order of magnitude, per confound 10.
 
 ### 12.5 Allocation shape
 
@@ -606,9 +615,12 @@ case is stark: `irreducible/1024/base` performs 106.3 million allocations for
 `linear/1024/base` performs 1025 per emitted line. Neither is a good number, and
 the ratio between them is the duplicate work.
 
-By contrast `ir` runs at a median 52.9 nanoseconds per allocation and
-`serialization` at 100.6, so those phases do real work between allocations and
-emission largely does not.
+The other phases are not allocation bound in the same way. Dividing each phase's
+total workload time by its allocation count, both taken from the two tables
+above, gives 122.8 nanoseconds per allocation for `ir` (121.5 ms over 989907)
+and 138.2 for `serialization` (365.8 ms over 2646648), against 26.7 for
+emission (7364.3 ms over 275498776). Those phases do real work between
+allocations and emission largely does not.
 
 ## 13. Ceiling
 
