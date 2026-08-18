@@ -376,11 +376,505 @@ Restating the charter so that a later commit cannot quietly widen scope:
 
 ## 11. What this document does not establish
 
-- No performance number. There is no benchmark harness in the repository at
-  `1371e42`, so nothing here quantifies R4. The harness lands as a separate
-  later commit, before any baseline is collected.
+- No performance number in sections 1 to 10. There is no benchmark harness in
+  the repository at `1371e42`, so nothing in those sections quantifies R4. The
+  harness landed as a separate later commit and the measured attribution is in
+  section 12, which supersedes this bullet for R4 specifically: R4 is now
+  measured, and the answer is that it is not the dominant cost.
 - No claim about real binary behavior beyond the input validation path in
   section 8.
 - R1, R2, R3, R8, and R9 are inspection findings. Each becomes a failing test
   first, under the case matrix in the companion protocol, before any fix is
   written.
+
+## 12. Measured cost attribution, from the accepted baseline
+
+Everything in sections 12 to 16 is derived from the accepted A/A artifacts
+under `docs/baseline/`, described in
+[baseline-ir-cfg-emitter.md](baseline-ir-cfg-emitter.md), at product reference
+`1371e42` and harness `8e7f080`. No product source, test, fixture, golden,
+threshold, workload, or benchmark file changes in the commit that adds these
+sections.
+
+Reproduce every number here with:
+
+```
+python3 docs/baseline/phase-attribution.py docs/baseline/aa-1 docs/baseline/aa-2
+```
+
+Committed output: `docs/baseline/phase-attribution.txt`. The script reads only
+the four committed sample streams (`aa-*/samples-{reference,candidate}.tsv`),
+the case manifest, and the warmup correctness documents. It writes nothing but
+stdout. Section numbers below refer to its output blocks.
+
+| File | sha256 |
+| --- | --- |
+| `docs/baseline/phase-attribution.py` | `3fad0f287af98ee2657333d3f5889a26b7df66e063b05fd68ba418f9e58120d8` |
+| `docs/baseline/phase-attribution.txt` | `820b5f77345a025b0ac3ba7fa597b4b536d66dbbac3f56c64ea52c6b1ccb73a5` |
+
+Neither file is a protected ruler under
+[oracle-protocol-ir-cfg-emitter.md](oracle-protocol-ir-cfg-emitter.md) section 7,
+and neither moves an existing digest: both are new paths, and no accepted
+baseline artifact is touched by this analysis.
+
+### 12.1 Phase share of the workload
+
+Time-weighted share of the whole 33 case workload, per binary. Each cell is the
+sum over cases of that case's median phase nanoseconds, divided by the same sum
+over `combined` (output block 1).
+
+| Binary | total (ms) | ir | cfg | emission_exclusive | serialization |
+| --- | --- | --- | --- | --- | --- |
+| aa-1 reference | 8106.3 | 0.01499 | 0.03126 | 0.90847 | 0.04513 |
+| aa-1 candidate | 8099.8 | 0.01495 | 0.03114 | 0.90869 | 0.04520 |
+| aa-2 reference | 8116.8 | 0.01485 | 0.03103 | 0.90899 | 0.04509 |
+| aa-2 candidate | 8093.7 | 0.01499 | 0.03124 | 0.90809 | 0.04582 |
+| mean | | 0.01494 | 0.03117 | 0.90856 | 0.04531 |
+
+The four binaries agree to within 0.001 on every phase, which is expected: they
+are two builds of one revision to one digest.
+
+This is not the same statistic as the per-phase table in
+[baseline-ir-cfg-emitter.md](baseline-ir-cfg-emitter.md) section 7. There the
+pooled medians give `emission_exclusive` 40.3 ms against `combined` 60.8 ms, a
+ratio of 0.663. That is the median case. The 0.909 above is the share of total
+time, and the two differ because the workload is extremely skewed. Both are
+correct; the time-weighted one is the one an Amdahl argument needs, and it is
+the one used below.
+
+**Dominant term: `emission_exclusive`, 90.9 percent of workload time.** The
+whole of IR construction, region analysis, and artifact serialization together
+are 9.1 percent.
+
+### 12.2 Where the time sits, by case
+
+Per case share of total workload time, descending (output block 2). The full 33
+row table is in the committed output; the head of it is the entire story.
+
+| Case | blocks | combined (ms) | share | cumulative | emission share of the case |
+| --- | --- | --- | --- | --- | --- |
+| `irreducible/1024/base` | 1024 | 3018.3 | 0.37233 | 0.37233 | 0.98934 |
+| `irreducible/256/base` | 256 | 1085.0 | 0.13385 | 0.50618 | 0.99368 |
+| `multi-exit/1024/base` | 1024 | 905.5 | 0.11170 | 0.61788 | 0.97612 |
+| `fan-in/1024/base` | 1024 | 798.6 | 0.09851 | 0.71640 | 0.97599 |
+| `irreducible/64/base` | 64 | 376.0 | 0.04639 | 0.76278 | 0.98718 |
+| `diamond-chain/1024/heavy` | 1024 | 339.1 | 0.04183 | 0.80461 | 0.66587 |
+
+Five of 33 cases carry 76.3 percent of the workload. One case carries 37.2
+percent.
+
+By topology (output block 2b):
+
+| Topology | combined (ms) | share of total | share of emission | share of emission allocations |
+| --- | --- | --- | --- | --- |
+| `irreducible` | 4479.3 | 0.55257 | 0.60228 | 0.57729 |
+| `multi-exit` | 1049.9 | 0.12952 | 0.13857 | 0.15691 |
+| `fan-in` | 904.4 | 0.11157 | 0.11937 | 0.12782 |
+| `diamond-chain` | 773.4 | 0.09541 | 0.07065 | 0.07240 |
+| `linear` | 609.7 | 0.07521 | 0.04839 | 0.04424 |
+| `nested-loop` | 154.0 | 0.01899 | 0.01063 | 0.01093 |
+| `no-exit` | 135.6 | 0.01673 | 0.01010 | 0.01042 |
+| `irreducible` + `multi-exit` + `fan-in` | 6433.6 | 0.79366 | 0.86022 | 0.86202 |
+
+The per case phase share spread (output block 3) shows how little of this is
+uniform: `emission_exclusive` runs from 0.472 of a case (`nested-loop/1024/base`)
+to 0.994 (`irreducible/256/base`), and `cfg` from 0.00024 to 0.322.
+
+### 12.3 What the dominant cases actually do
+
+The three topologies that carry 79.4 percent of the time are the three whose
+emitted output does not track the graph. From the warmup correctness documents
+(`aa-*/warmup-reference.json`, output block 5):
+
+| Case | blocks | emitted lines | helper definitions | helper references |
+| --- | --- | --- | --- | --- |
+| `linear/64/base` | 64 | 131 | 0 | 0 |
+| `linear/256/base` | 256 | 515 | 0 | 0 |
+| `linear/1024/base` | 1024 | 2051 | 0 | 0 |
+| `fan-in/64/base` | 64 | 255 | 0 | 0 |
+| `fan-in/256/base` | 256 | 88 | 0 | 0 |
+| `fan-in/1024/base` | 1024 | 88 | 0 | 0 |
+| `multi-exit/64/base` | 64 | 506 | 0 | 0 |
+| `multi-exit/256/base` | 256 | 88 | 0 | 0 |
+| `multi-exit/1024/base` | 1024 | 88 | 0 | 0 |
+| `irreducible/64/base` | 64 | 663 | 0 | 0 |
+| `irreducible/256/base` | 256 | 663 | 0 | 0 |
+| `irreducible/1024/base` | 1024 | 663 | 0 | 0 |
+
+Three readings, in increasing strength of evidence:
+
+1. Structured emission did not run on `fan-in` or `multi-exit` at 256 blocks or
+   above. Structured emission emits every reachable block exactly once and
+   verifies the count rather than assuming it (`structured.rs:530-539`). Every
+   block in these graphs is entry reachable and carries nine instructions, so 88
+   lines, which also has to hold the signature, the local declarations, the
+   closing brace and the omitted-path summary, cannot be an emit-once rendering
+   of 256 blocks. The 64 block rows point the same way from the other side:
+   `multi-exit/64/base` emits 506 lines for 64 blocks, about four times the
+   density of the structured topologies, which is the DFS inlining signature.
+2. `irreducible` is declined by design and the harness asserts it
+   (`the_matrix_exercises_both_emitters` in the bench workload module, which
+   requires the irreducible body to be more than twice a structured body at 64
+   blocks and to stay flat from 64 to 256). Region analysis rejects irreducible
+   graphs at `regions.rs:75-77`, so all of that time is DFS fallback.
+3. All 33 cases report zero helper definitions and zero helper references, so
+   every omitted path that the DFS fallback produced was rewritten to
+   `return null;` and every helper definition dropped, by
+   `collapse_remaining_helpers` (`inlining.rs:189-206`). That is risk R2's
+   silent path loss, now observed rather than inferred, on a quarter of the
+   matrix.
+
+So the dominant term is not analysis and not text volume. It is the DFS fallback
+searching graphs whose result is then largely discarded. `fan-in/1024/base`
+spends 779 ms of emission to produce 88 lines.
+
+### 12.4 How each phase scales
+
+Log ratio of the 1024 block cost to the 64 block cost, base 16, so 1.0 is linear
+in block count and 2.0 is quadratic (output block 4).
+
+| Topology | load | ir | cfg | emission_exclusive | serialization | combined |
+| --- | --- | --- | --- | --- | --- | --- |
+| `linear` | base | 1.342 | 1.920 | 0.982 | 1.004 | 1.090 |
+| `linear` | heavy | 1.453 | 1.978 | 0.989 | 1.007 | 1.051 |
+| `diamond-chain` | base | 1.404 | 1.902 | 0.995 | 0.992 | 1.063 |
+| `nested-loop` | base | 1.409 | 1.947 | 0.971 | 0.992 | 1.122 |
+| `no-exit` | base | 1.406 | 1.963 | 0.990 | 0.995 | 1.106 |
+| `fan-in` | base | 1.446 | 1.794 | 1.308 | -0.254 | 1.254 |
+| `multi-exit` | base | 1.471 | 1.814 | 1.277 | -0.394 | 1.213 |
+| `irreducible` | base | 1.434 | 1.948 | 0.752 | 0.118 | 0.751 |
+
+Four facts fall out:
+
+- `cfg` is quadratic, 1.79 to 1.99 everywhere. This is the measured form of risk
+  R4: the set based dominator and post-dominator solvers at `regions.rs:136-172`
+  and `regions.rs:206-274`. R4 is real and it is quadratic, and it is also 3.1
+  percent of the workload.
+- `ir` is superlinear at 1.34 to 1.49, consistent with the per block rescan at
+  `ir/src/lib.rs:224-247` and the `position` and `find` successor resolution at
+  `ir/src/lib.rs:321-327` and `ir/src/lib.rs:354-362`. Also real, also 1.5
+  percent.
+- `emission_exclusive` is linear on the structured topologies and superlinear
+  (1.28 to 1.31) on `fan-in` and `multi-exit`, where the output is constant. Cost
+  grows with the graph while the result does not.
+- `serialization` scales with the artifact, so it goes negative where the
+  artifact shrinks as the graph grows.
+
+Extrapolating the fitted `cfg` and `emission_exclusive` exponents per topology
+gives the block count at which region analysis would overtake emission on a
+reducible graph: about 1500 blocks for `nested-loop`, 2100 for `no-exit`, 2400
+for `linear`, 4700 for `diamond-chain`. Inside the frozen matrix that crossover
+is never reached, so a CFG algorithm change is a claim about larger functions
+than the matrix contains, not about the matrix.
+
+### 12.5 Allocation shape
+
+Allocation counters, summed over the 33 cases, reference side of aa-1 (output
+block 6):
+
+| Phase | allocations | bytes | share of count | share of bytes |
+| --- | --- | --- | --- | --- |
+| ir | 989907 | 82613383 | 0.00355 | 0.01745 |
+| cfg | 0 | 0 | 0 | 0 |
+| emission_exclusive | 275498776 | 4539361232 | 0.98697 | 0.95900 |
+| serialization | 2646648 | 111449076 | 0.00948 | 0.02355 |
+| combined | 279135331 | 4733423691 | 1.0 | 1.0 |
+
+The `cfg` row is zero by instrumentation, not by behavior: region analysis runs
+inside the emission span and shares its counter, because reading the counter
+inside the CFG span is the one place the harness deliberately does not reach
+(comment on `Measurement` in the bench crate, quoted in
+[baseline-ir-cfg-emitter.md](baseline-ir-cfg-emitter.md) section 11). Every
+`HashSet` clone in `dominators` is charged to `emission_exclusive` here.
+
+The strongest single result in this analysis is that emission time is almost
+exactly proportional to emission allocation count across the entire matrix
+(output block 7):
+
+- nanoseconds per allocation: 22.3 minimum, 34.0 maximum on 32 of 33 cases,
+  median 25.8, with one outlier at 57.5 (`fan-in/64/base`, the smallest case of
+  the group).
+- Pearson correlation of emission nanoseconds against emission allocation count
+  over the 33 cases: 0.9984. Least squares fit through the origin: 27.4
+  nanoseconds per allocation.
+- The spread of the per allocation rate is a factor of 1.5 while emission time
+  itself spans a factor of 850, from 3.5 ms to 2986 ms.
+
+Bytes per allocation are 10.3 to 62.9, so these are small allocations. The worst
+case is stark: `irreducible/1024/base` performs 106.3 million allocations for
+1.10 GB to emit 663 lines, which is 160398 allocations per emitted line.
+`linear/1024/base` performs 1025 per emitted line. Neither is a good number, and
+the ratio between them is the duplicate work.
+
+By contrast `ir` runs at a median 52.9 nanoseconds per allocation and
+`serialization` at 100.6, so those phases do real work between allocations and
+emission largely does not.
+
+## 13. Ceiling
+
+Round ceilings for the frozen disclosed matrix, from the mean phase shares
+(output block 8). Each column is the fraction of total workload time recovered
+if the target phase were made that much cheaper.
+
+| Target | share | -10 percent | -25 percent | -50 percent | removed entirely |
+| --- | --- | --- | --- | --- | --- |
+| `ir` | 0.01499 | 0.00150 | 0.00375 | 0.00750 | 0.01499 |
+| `cfg` | 0.03126 | 0.00313 | 0.00781 | 0.01563 | 0.03126 |
+| `emission_exclusive` | 0.90847 | 0.09085 | 0.22712 | 0.45424 | 0.90847 |
+| `serialization` | 0.04513 | 0.00451 | 0.01128 | 0.02256 | 0.04513 |
+| `ir` + `cfg` | 0.04625 | 0.00462 | 0.01156 | 0.02312 | 0.04625 |
+| everything except emission | 0.09138 | 0.00914 | 0.02285 | 0.04569 | 0.09138 |
+
+Three consequences, and they decide the experiment plan more than any preference
+does.
+
+1. **The round 1 ceiling on `combined` is 0.908.** No candidate can beat that on
+   this matrix, and the practical ceiling of the largest single opportunity, the
+   declined structuring group's emission, is 0.86022 x 0.90847 = 0.781 of total
+   workload time.
+2. **`ir`, `cfg`, and `serialization` cannot be promoted on the `combined`
+   span.** Each is below the 5 percent MDE floor even if made free: 0.015, 0.031,
+   0.045. Even all three removed together is 0.091, which clears the floor only
+   in the impossible limit. A change to those phases must therefore be judged on
+   its own phase cells, where the same MDE rule applies to that phase's own
+   paired deltas, or on correctness and determinism merits under the mission's
+   milestone 4 rule. This is a measured conclusion, not a preference: it is the
+   reason risk R4 is not the first performance target despite being genuinely
+   quadratic.
+3. **The ceiling is exhausted by cases, not by phases.** Because five cases hold
+   76.3 percent of the time, a candidate that improves the other 28 cases by 20
+   percent moves the workload by 4.7 percent and does not clear the floor.
+
+## 14. Ranked opportunities
+
+Leverage is the measured share of workload time the family can address. Risk is
+about the rulers the change has to pass, not about difficulty. Trial cost is what
+one measured comparison of a first cut costs, on a 394 second A/A run plus the
+implementation.
+
+| Rank | Family | Leverage | Risk | Trial cost | Evidence |
+| --- | --- | --- | --- | --- | --- |
+| 1 | F1: remove duplicate per block work in the DFS fallback on graphs where structuring declines | 0.781 of workload, 0.860 of emission, 0.862 of emission allocations | High: it is the emitter, so it is one step from the goldens, the quality counters, and R2's collapse behavior | Medium to high | 12.2, 12.3, 12.4 |
+| 2 | F2: cut per line and per instruction allocation churn in the shared emission text path | 0.908 ceiling, hits all 33 cases including the five dominant ones | Medium: can be made byte identical, and then the artifact digests prove it | Low to medium | 12.5 |
+| 3 | F3: replace the set based dominator and post-dominator solvers (R4) | 0.031 now, quadratic, 0.322 of one case, crossover at 1500 to 4700 blocks | Medium: no independent CFG oracle exists yet, which is R5 | Low | 12.4 |
+| 4 | F4: IR construction rescan and linear successor resolution | 0.015, superlinear at 1.34 to 1.49 | Low | Low | 12.4 |
+| 5 | F5: serialization | 0.045, linear, tracks artifact size | Low | Low | 12.1, 12.4 |
+
+F1 and F2 are distinct families even though both land in emission: F1 changes how
+many times a block is rendered, F2 changes what one rendering costs. They are
+separable in the measurement because F2 must leave all 33 artifact digests
+unchanged and F1 need not.
+
+Families considered and rejected before round 1, recorded so a later round does
+not rediscover them as new:
+
+- **Emit less work by tightening the DFS caps.** Rejected as metric gaming. It
+  would cut the dominant term enormously and pass every gate the harness has
+  today, while making the silent path loss in 12.3 worse. The artifact digest
+  guard in section 15 exists to make this fail rather than pass.
+- **Parallelism.** Rejected as out of scope. The metric is a single threaded per
+  function span by contract and the harness pins one thread, so threading inside
+  a function cannot be measured by this ruler. Threading across functions is not
+  an optimization of the measured span at all: a search for `rayon`, `par_iter`,
+  `thread::spawn` and `num_threads` over
+  `crates/flutterdec-core/src/pipeline/` and `crates/flutterdec-cli/src/main.rs`
+  returns nothing, so it would be new architecture, which the mission's
+  non-functional requirements exclude.
+- **A different allocator or an arena.** Rejected for round 1. A global allocator
+  swap needs a dependency, which the benchmark protocol forbids, and it would
+  move all four phases at once, which destroys attribution against a per phase
+  ruler. A crate local arena is a real option but it is an architecture change
+  with no measured need yet. Reducing the number of allocations is the in scope
+  version of the same idea and is F2.
+- **Caching region analysis across cases.** Rejected: it would be harness
+  specific, since the product analyses each function once.
+- **F5 as a round 1 candidate.** Rejected on ceiling: 0.045 is below the MDE
+  floor on `combined` and the phase is already linear in artifact size.
+
+Correctness defects, ranked independently of speed. These may be prioritized on
+their own merits under mission milestones 3 and 5, and no performance argument
+is needed to justify them.
+
+| Rank | Defect | Evidence class | Where |
+| --- | --- | --- | --- |
+| D1 | Coverage collapse on large declined graphs: `fan-in` and `multi-exit` emit 88 lines at 256 and 1024 blocks, `irreducible` emits 663 lines at every size, with zero helper definitions and zero helper references, so every omitted path was rewritten to `return null;` | Measured, from the committed warmup documents; the mechanism is R2 | 12.3, `inlining.rs:189-206`, `helper_flow/summary.rs:48-55` |
+| D2 | R1, `br` and `brk` get an invented fallthrough edge | Inspection | Section 7 |
+| D3 | R3, `omitted_blocks` is not part of the structured rollback | Inspection | Section 7 |
+
+D1 is new to this document and outranks the performance work in importance: the
+current gates cannot see it. All 33 cases pass the harness correctness pass, and
+the four quality gates (`quality.rs:106-118`) do not count emitted blocks against
+graph blocks.
+
+## 15. Frozen experiment plan
+
+Frozen before any product edit. A later commit may record an outcome against
+these rules; it may not restate the rules to fit a result.
+
+### 15.1 Target and scope
+
+- **Target phase: `emission_exclusive`.** Chosen by 12.1 and 13, not by
+  preference.
+- **Target cases, disclosed:** `irreducible/1024/base`, `irreducible/256/base`,
+  `multi-exit/1024/base`, `fan-in/1024/base`, `irreducible/64/base`. These are
+  the five cases holding 76.278 percent of workload time.
+- **Guard set:** the remaining 28 disclosed cases, all five phases. A candidate
+  must not pay for the target with them.
+- **Held-out:** drawn by an independent validator after the candidate commit
+  exists, per the mission metric protocol. Nothing in this plan may be tuned to
+  it, and no worker may hold its seed or manifest.
+
+### 15.2 Protected paths
+
+Unchanged from the companion protocol section 7, restated here so the experiment
+plan carries them: the three golden snapshots, the quality thresholds and gate
+logic, the provenance checkers and their plant tests, the benchmark workload
+definitions and case matrix, the harness patch and its digest, the accepted
+baseline artifacts under `docs/baseline/`, and `scripts/ci-check.sh`. A candidate
+that needs one of these to move uses the adjudication path in protocol section 9,
+in its own commit, before the measured comparison.
+
+### 15.3 First round candidates, at most three
+
+| Id | Family | What it changes | Judged on |
+| --- | --- | --- | --- |
+| E1 | F2 | Allocation churn in the shared emission text path, required to be byte identical | `emission_exclusive`, pooled and on the five target cases |
+| E2 | F1 | Duplicate per block rendering in the DFS fallback on declined graphs | `emission_exclusive` on the five target cases |
+| E3 | F3 | Dominator and post-dominator solvers | `cfg` phase cells only, plus determinism and correctness |
+
+E3 is in the round because its trial cost is low and its phase cells are its own
+bar. It is not in the round as a `combined` span claim; by 13 it cannot be one.
+
+### 15.4 The MDE rule
+
+Frozen as a rule, not as a number.
+
+For any comparison, take that comparison's own 15 paired runs. For each pair
+form the relative delta `d_i = (candidate_i - reference_i) / reference_i`. Then:
+
+```
+delta = median(d_i)
+noise = median(|d_i - delta|)
+MDE   = max(0.05, 3 * noise)
+```
+
+Recompute `delta`, `noise` and `MDE` separately for every comparison, every
+phase, and every case cell that a decision is taken on. Do not carry a number
+across comparisons.
+
+No numeric MDE from [baseline-ir-cfg-emitter.md](baseline-ir-cfg-emitter.md) is
+a threshold for any candidate, and none is reproduced here as one. That document
+reports what its own two runs measured; an independent pair of A/A runs of the
+same binding on the same host measured noise of 0.027 to 0.029 on `ir`, `cfg`
+and `serialization` against the 0.017 to 0.026 published there, giving MDEs of
+0.081 to 0.088 rather than 0.050 to 0.079. Quoting the published numbers would
+understate the bar by up to 0.038 on exactly the phases where the floor does not
+bind. The A/A figures are noise floor evidence for the ruler, not thresholds for
+a candidate.
+
+### 15.5 Accept
+
+A performance candidate is accepted only when all of these hold in one measured
+comparison:
+
+- A1: pooled `emission_exclusive` over the 33 disclosed cases has
+  `delta <= -MDE`, with `MDE` recomputed from that comparison's own 495 paired
+  deltas.
+- A2: each of the five target cases has `delta <= -MDE` on
+  `emission_exclusive`, with `MDE` recomputed from that cell's own 15 paired
+  deltas.
+- A3: no disclosed case and phase cell slows by more than
+  `max(0.10, MDE_cell)`, with `MDE_cell` recomputed per cell.
+- A4: the held-out matrix, drawn after the candidate commit, clears its own
+  recomputed pooled `MDE` on `emission_exclusive` in the same direction.
+- A5: all 33 `artifact_sha256` values equal the accepted baseline values for a
+  candidate that claims performance only; 33 of 33 correctness cases pass with
+  `correctness_failures` empty; emission allocation count does not rise on any
+  target case; `within_memory_limit` true and `runs_over_timeout` empty for both
+  binaries; span reconciliation stays inside the 2 percent tolerance with every
+  residue positive.
+- A6: `scripts/ci-check.sh` exits 0, the workspace suite passes, the three golden
+  digests are unchanged, and every protected digest in protocol section 7 is
+  unchanged or adjudicated under section 9 in its own earlier commit.
+
+For E3, replace A1 and A2 with the `cfg` phase pooled cell and the `cfg` cells of
+the cases where `cfg` is largest (`nested-loop/1024/base` at 0.322 of its case,
+`linear/1024/base` at 0.232), and keep A3 to A6 as written.
+
+### 15.6 Kill
+
+Any one of these kills the candidate for the round:
+
+- K1: the target phase delta fails to reach `-MDE` after at most two measured
+  comparisons of that candidate.
+- K2: any `artifact_sha256` moves while the candidate claims performance only.
+- K3: any cell slows beyond `max(0.10, MDE_cell)`.
+- K4: any correctness case fails, any golden or protected digest moves without
+  adjudication, or any lane of `scripts/ci-check.sh` fails.
+- K5: reconciliation exceeds 2 percent on any measured pass, or any residue goes
+  negative.
+- K6: emission allocation count rises on a target case while the delta does not
+  clear `MDE`, which is churn moved rather than removed.
+
+A killed candidate is recorded with its measured numbers. It is not retried in
+the same round.
+
+### 15.7 Stop
+
+Stop the performance track when either holds:
+
+- S1: no candidate in the round clears its own recomputed `MDE` on the frozen
+  target phase, and no untried family has a leverage above 0.05 of workload time,
+  which is the MDE floor. By section 13 that is already true of F4 and F5, so
+  after F1, F2 and F3 the untried set is empty by construction.
+- S2: the ceiling is exhausted: the residual share of `emission_exclusive` on the
+  target cases falls below 0.05 of workload time, so no further candidate could
+  clear the floor on `combined`.
+
+Correctness work under D1, D2 and D3 does not stop with the performance track. It
+lands on its own merits with its own failing test first, per the companion
+protocol.
+
+## 16. Confounds
+
+Recorded because each one can make a candidate look better or worse than it is.
+
+1. **Workload skew.** One case is 37.2 percent of the workload and five are 76.3
+   percent. Any pooled statistic over the 33 cases is mostly a statement about
+   `irreducible`. The per case cells are the honest unit, which is why A2 and A3
+   are per cell.
+2. **Two different phase shares.** The pooled per phase medians in the baseline
+   document give emission 0.663 of `combined`; the time-weighted share is 0.909.
+   Quoting one where the other belongs changes every ceiling in section 13.
+3. **`cfg` allocations are charged to emission.** The counter is read at the
+   emission boundaries only, so every allocation in `Regions::build`, including
+   the `HashSet` clones of R4, appears in the `emission_exclusive` allocation
+   column. An allocation guardrail therefore cannot separate F2 from F3, and A5
+   is written per case rather than per subsystem for that reason.
+4. **`cfg` is not all control flow analysis.** The span covers `Regions::build`
+   alone. The structured emitter's own region walking, the DFS back edge tests at
+   `graph.rs:52-78`, and the visit accounting are all inside
+   `emission_exclusive`. "CFG cost is 3.1 percent" is a statement about
+   `Regions::build`, not about control flow analysis in general.
+5. **Emission time is not proportional to emitted output.** `fan-in/1024/base`
+   spends 779 ms to emit 88 lines. A candidate that emits less would look like a
+   large win. A5 and K2 exist to reject that.
+6. **Residual A/A skew.** The build layout bias is gone, but `emission_exclusive`
+   still read +0.07 percent in one A/A run and -0.31 percent in the other. Any
+   claim smaller than a few tenths of a percent on one phase is not separable in
+   a single run of this size.
+7. **Noise is run specific.** See 15.4. The independent A/A pair measured 0.027
+   to 0.029 where the published runs measured 0.017 to 0.026.
+8. **Fifteen pairs is odd.** The alternating schedule leaves one pair of position
+   imbalance, quantified in the baseline document section 8.
+9. **Single host, single session.** Nothing here characterises cross machine
+   variance or a loaded machine.
+10. **The exponents in 12.4 are two point fits.** They are computed from the 64
+    and 1024 block cases only, with no intermediate check beyond the 256 block
+    case being present in the same table. The crossover block counts derived from
+    them are an extrapolation past the matrix and are used only to argue that F3
+    matters later, never as an accept criterion.
+11. **The matrix is synthetic.** It is deterministic generated ARM64, not a real
+    Flutter snapshot. No real binary or baseline is committed (section 8), so the
+    share of real work that looks like `irreducible` is unknown. The ranking
+    above is a ranking on this matrix.
