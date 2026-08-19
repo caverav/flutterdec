@@ -1241,15 +1241,7 @@ impl<'a> FuncEmitter<'a> {
                 continue;
             }
             if let Some(w) = self.dfs_block_writes.get(&block) {
-                // `HashSet::extend(w.iter().cloned())` allocates every register
-                // name before the set can discard duplicates. Dense predecessor
-                // walks see the same small register set in hundreds of blocks,
-                // so only clone names that actually grow the union.
-                for reg in w {
-                    if !written.contains(reg) {
-                        written.insert(reg.clone());
-                    }
-                }
+                written.extend(w.iter().cloned());
             }
             if let Some(ps) = preds.get(&block) {
                 stack.extend(ps.iter().copied());
