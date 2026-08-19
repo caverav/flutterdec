@@ -1,15 +1,56 @@
 use flutterdec_decompiler::{
     emit_pseudocode, BlockDisposition, BlockDispositionRecord, BlockEdge, BlockIdentity,
-    BlockLedger, BlockRemap, BlockStage, ReachableUnemittedExplanation, StageBlock, TraversalEvent,
-    TraversalEventKind, TraversalTarget,
+    BlockLedger, BlockRemap, BlockStage, InvalidCfgRawGraph, InvalidCfgRejected,
+    ReachableUnemittedExplanation, StageBlock, TraversalEvent, TraversalEventKind, TraversalTarget,
 };
-use flutterdec_ir::{BasicBlock, FunctionIr, IROp, LlirInstr};
+use flutterdec_ir::{validate_block_identity, BasicBlock, FunctionIr, IROp, LlirInstr};
 use std::collections::HashMap;
 
 fn identity(n: u64) -> BlockIdentity {
     BlockIdentity {
         function_id: 7,
         start_va: 0x1000 + n * 0x10,
+    }
+}
+
+fn raw_graph_digest(graph: &InvalidCfgRawGraph) -> String {
+    let raw = serde_json::to_vec(graph).unwrap();
+    let digest = raw.iter().fold(0xcbf29ce484222325u64, |hash, byte| {
+        (hash ^ u64::from(*byte)).wrapping_mul(0x100000001b3)
+    });
+    format!("fnv1a64:{digest:016x}")
+}
+
+fn rejected_witness_ledger(ir: &FunctionIr) -> BlockLedger {
+    let witness = InvalidCfgRawGraph::from(ir);
+    BlockLedger {
+        function_id: ir.function_id,
+        invalid_cfg_rejected: Some(InvalidCfgRejected {
+            function_id: ir.function_id,
+            raw_graph_digest: raw_graph_digest(&witness),
+            raw_graph_witness: Some(witness),
+        }),
+        ..BlockLedger::default()
+    }
+}
+
+fn block(id: usize, start_va: u64, succs: Vec<usize>, preds: Vec<usize>) -> BasicBlock {
+    let op = match succs.len() {
+        0 => IROp::Return,
+        1 => IROp::Jump,
+        _ => IROp::Branch,
+    };
+    BasicBlock {
+        id,
+        start_va,
+        instrs: vec![LlirInstr {
+            va: start_va,
+            op,
+            src: "control".to_string(),
+            target: String::new(),
+        }],
+        succs,
+        preds,
     }
 }
 
@@ -253,6 +294,126 @@ fn split_remap_rekeys_identity_without_reusing_dense_id() {
 }
 
 #[test]
+fn self_certified_valid_graphs_are_not_invalid_outcomes() {
+    let cases = [
+        FunctionIr {
+            function_id: 81,
+            name: "one_block".to_string(),
+            entry_va: 0x1000,
+            blocks: vec![block(0, 0x1000, vec![], vec![])],
+        },
+        FunctionIr {
+            function_id: 82,
+            name: "linear".to_string(),
+            entry_va: 0x2000,
+            blocks: vec![
+                block(0, 0x2000, vec![1], vec![]),
+                block(1, 0x2010, vec![], vec![0]),
+            ],
+        },
+        FunctionIr {
+            function_id: 83,
+            name: "branch".to_string(),
+            entry_va: 0x3000,
+            blocks: vec![
+                block(0, 0x3000, vec![1, 2], vec![]),
+                block(1, 0x3010, vec![], vec![0]),
+                block(2, 0x3020, vec![], vec![0]),
+            ],
+        },
+        FunctionIr {
+            function_id: 84,
+            name: "loop".to_string(),
+            entry_va: 0x4000,
+            blocks: vec![
+                block(0, 0x4000, vec![1], vec![1]),
+                block(1, 0x4010, vec![0], vec![0]),
+            ],
+        },
+    ];
+
+    for ir in cases {
+        assert_eq!(validate_block_identity(&ir), Ok(()), "{}", ir.name);
+        assert!(
+            emit_pseudocode(&ir, &HashMap::new())
+                .emission
+                .block_ledger()
+                .invalid_cfg_rejected
+                .is_none(),
+            "production rejected valid {}",
+            ir.name
+        );
+        assert!(
+            rejected_witness_ledger(&ir)
+                .validate(&[])
+                .unwrap_err()
+                .contains("raw graph witness is a valid graph"),
+            "public validation accepted self-certified valid {}",
+            ir.name
+        );
+    }
+}
+
+#[test]
+fn every_production_admission_defect_is_a_valid_invalid_witness() {
+    let valid = FunctionIr {
+        function_id: 90,
+        name: "admission_defect".to_string(),
+        entry_va: 0x5000,
+        blocks: vec![
+            block(0, 0x5000, vec![1, 2], vec![]),
+            block(1, 0x5010, vec![], vec![0]),
+            block(2, 0x5020, vec![], vec![0]),
+        ],
+    };
+    let mut cases = Vec::new();
+
+    let mut duplicate_id = valid.clone();
+    duplicate_id.blocks[2].id = 1;
+    cases.push(("duplicate id", duplicate_id));
+
+    let mut missing_entry = valid.clone();
+    for block in &mut missing_entry.blocks {
+        block.id += 1;
+    }
+    cases.push(("missing entry", missing_entry));
+
+    let mut non_dense = valid.clone();
+    non_dense.blocks[2].id = 9;
+    cases.push(("non-dense ordering", non_dense));
+
+    let mut duplicate_start = valid.clone();
+    duplicate_start.blocks[2].start_va = duplicate_start.blocks[1].start_va;
+    cases.push(("duplicate start", duplicate_start));
+
+    let mut missing_successor = valid.clone();
+    missing_successor.blocks[0].succs.push(9);
+    cases.push(("missing successor", missing_successor));
+
+    let mut bad_predecessor_range = valid;
+    bad_predecessor_range.blocks[1].preds.push(9);
+    cases.push(("bad predecessor range", bad_predecessor_range));
+
+    for (label, ir) in cases {
+        assert!(
+            validate_block_identity(&ir).is_err(),
+            "canonical admission accepted {label}"
+        );
+        let artifact = emit_pseudocode(&ir, &HashMap::new());
+        let ledger = artifact.emission.block_ledger();
+        assert!(
+            ledger.invalid_cfg_rejected.is_some(),
+            "production did not reject {label}"
+        );
+        assert_eq!(
+            ledger.validate(artifact.emission.events()),
+            Ok(()),
+            "public validation disagreed with production for {label}"
+        );
+    }
+}
+
+#[test]
 fn invalid_graph_has_one_digest_outcome_and_no_partition() {
     let invalid = FunctionIr {
         function_id: 91,
@@ -290,6 +451,15 @@ fn invalid_graph_has_one_digest_outcome_and_no_partition() {
         .expect("invalid outcome");
     assert_eq!(outcome.function_id, 91);
     assert!(outcome.raw_graph_digest.starts_with("fnv1a64:"));
+    let legacy_raw = serde_json::to_vec(&invalid).unwrap();
+    let legacy_digest = legacy_raw.iter().fold(0xcbf29ce484222325u64, |hash, byte| {
+        (hash ^ u64::from(*byte)).wrapping_mul(0x100000001b3)
+    });
+    assert_eq!(
+        outcome.raw_graph_digest,
+        format!("fnv1a64:{legacy_digest:016x}"),
+        "the additive witness must preserve the pre-existing content digest"
+    );
     assert_eq!(
         first.emission.block_ledger(),
         second.emission.block_ledger(),

@@ -1,4 +1,4 @@
-use flutterdec_ir::{validate_block_identity, BasicBlock, CfgDefect, FunctionIr, IROp};
+use flutterdec_ir::{validate_block_identity, BasicBlock, CfgDefect, FunctionIr, IROp, LlirInstr};
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
@@ -1153,10 +1153,7 @@ fn invalid_cfg_artifact(ir: &FunctionIr, defect: &CfgDefect) -> PseudocodeArtifa
         .collect::<Vec<_>>()
         .join(", ");
     let raw_graph_witness = InvalidCfgRawGraph::from(ir);
-    let raw = serde_json::to_vec(ir).expect("FunctionIr serialization cannot fail");
-    let raw_graph_digest = raw.iter().fold(0xcbf29ce484222325u64, |hash, byte| {
-        (hash ^ u64::from(*byte)).wrapping_mul(0x100000001b3)
-    });
+    let raw_graph_digest = control_flow::raw_graph_digest(&raw_graph_witness);
     let mut emission = EmissionAccounting::default();
     *emission.block_ledger_mut() = BlockLedger {
         function_id: ir.function_id,
@@ -1167,7 +1164,7 @@ fn invalid_cfg_artifact(ir: &FunctionIr, defect: &CfgDefect) -> PseudocodeArtifa
         reachable_unemitted_explanations: Vec::new(),
         invalid_cfg_rejected: Some(InvalidCfgRejected {
             function_id: ir.function_id,
-            raw_graph_digest: format!("fnv1a64:{raw_graph_digest:016x}"),
+            raw_graph_digest,
             raw_graph_witness: Some(raw_graph_witness),
         }),
     };

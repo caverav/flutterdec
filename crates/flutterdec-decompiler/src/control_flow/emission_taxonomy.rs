@@ -273,7 +273,40 @@ impl From<&FunctionIr> for InvalidCfgRawGraph {
     }
 }
 
-fn raw_graph_digest(graph: &InvalidCfgRawGraph) -> String {
+impl InvalidCfgRawGraph {
+    /// Reconstruct the exact raw graph presented to production admission.
+    /// Public validation must run that same ruler rather than infer validity
+    /// from the witness digest or maintain a second set of graph rules.
+    fn to_function_ir(&self) -> FunctionIr {
+        FunctionIr {
+            function_id: self.function_id,
+            name: self.name.clone(),
+            entry_va: self.entry_va,
+            blocks: self
+                .blocks
+                .iter()
+                .map(|block| BasicBlock {
+                    id: block.id,
+                    start_va: block.start_va,
+                    instrs: block
+                        .instrs
+                        .iter()
+                        .map(|instr| LlirInstr {
+                            va: instr.va,
+                            op: instr.op.clone(),
+                            src: instr.src.clone(),
+                            target: instr.target.clone(),
+                        })
+                        .collect(),
+                    succs: block.succs.clone(),
+                    preds: block.preds.clone(),
+                })
+                .collect(),
+        }
+    }
+}
+
+pub(super) fn raw_graph_digest(graph: &InvalidCfgRawGraph) -> String {
     let raw = serde_json::to_vec(graph).expect("raw graph witness serialization cannot fail");
     // FNV-1a is the existing stable content binding. This is an identity
     // digest, not a cryptographic authenticity claim.
@@ -354,6 +387,12 @@ impl BlockLedger {
             if raw_graph_digest(witness) != invalid.raw_graph_digest {
                 return Err(format!(
                     "invalid function {} raw graph digest does not match its witness",
+                    invalid.function_id
+                ));
+            }
+            if validate_block_identity(&witness.to_function_ir()).is_ok() {
+                return Err(format!(
+                    "invalid function {} raw graph witness is a valid graph",
                     invalid.function_id
                 ));
             }
