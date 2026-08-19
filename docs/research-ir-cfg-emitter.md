@@ -1408,3 +1408,26 @@ workload time rather than 0.908828. The emission target prefix is now four cases
 and reaches 0.781781 of emission. Candidate MDE remains a rule evaluated from
 each later comparison's own 15 paired deltas; no number measured during this
 refresh is carried into a candidate decision.
+
+## 21. Final performance disposition and rollback
+
+The checksum-bound final signoff in
+[`final-performance/`](final-performance/README.md) is an honest no-win and does
+not satisfy `VAL-CFG-003`. Held-out emission-exclusive was `-0.0113209874` and
+held-out combined was `-0.0063290226`, each against MDE `0.05`. Six disclosed
+serialization cells were also above the positive `0.10` case bound:
+`linear/64/base` at `+0.1003255880`, `linear/256/heavy` at `+0.1047375370`,
+`diamond-chain/64/heavy` at `+0.1051061363`,
+`diamond-chain/256/heavy` at `+0.1071999275`,
+`diamond-chain/1024/light` at `+0.1025175223`, and `multi-exit/64/base` at
+`+0.1008626704`.
+
+A later fresh draw had no per-case violations, but it is not the bound final
+draw and does not replace that evidence. No sealed sample, seed, threshold,
+ruler, audit, or checksum was changed. No speed candidate was accepted.
+
+E1 object `9b82e07`, E2 object `b2f6b503`, E3 object `63390e15`, and their
+ledgers remain historical evidence. The frozen final protocol did not accept
+E1, so forward commit `ecca9e6` removes its performance-only product change
+while preserving the later resource-accounting, performance-harness, and block
+ledger work. The historical E1 allocation reduction is not claimed as shipped.

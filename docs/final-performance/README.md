@@ -2,9 +2,10 @@
 
 ## Decision
 
-The final decision is **honest no-win**. Candidate
-`9b82e07fa62f97654aea5153d9fb6a2ef57a377a` remains the immutable E1 product
-revision, but it is not promoted as a speed win over frozen post-correctness
+The final decision is **honest no-win**, and the bound final signoff does not
+satisfy `VAL-CFG-003`. Candidate
+`9b82e07fa62f97654aea5153d9fb6a2ef57a377a` remains the immutable E1 evidence
+object, but no speed candidate was accepted over frozen post-correctness
 reference `630ec442d951aac5704ae80287367912bfbfc388`.
 
 The disclosed four-case target repeated E1's strong result: emission-exclusive
@@ -12,15 +13,38 @@ improved 15.0589 percent and combined improved 11.7943 percent. Both estimates
 cleared their comparison-specific 5 percent MDE. The independently generated
 six-case held-out comparison did not generalize: emission-exclusive improved
 only 1.1321 percent and combined improved only 0.6329 percent. Both estimates
-were inside their own 5 percent MDE and therefore count as zero. Six disclosed
-serialization cells also exceeded their positive 10 percent per-cell guard by
-0.03 through 0.72 percentage points. Either condition forbids a speed claim.
+were inside their own 5 percent MDE and therefore miss the promotion rule. Six
+disclosed serialization cells also exceeded their positive 10 percent per-cell
+guard. These are failures of the frozen `VAL-CFG-003` contract, not merely
+reasons to withhold a speed claim.
 
-This disposition does not undo the candidate's correctness-neutral allocation
-improvement. All disclosed and held-out artifacts are byte-identical between
-reference and candidate, all correctness cases pass, and no allocation count,
-total-byte, or per-phase peak-live cell regresses. The code may remain without
-a performance claim.
+The E1 allocation measurements remain historical evidence only. All disclosed
+and held-out artifacts are byte-identical between reference and candidate, all
+correctness cases pass, and no allocation count, total-byte, or per-phase
+peak-live cell regresses. The frozen final protocol did not accept E1, so its
+product change was removed by forward commit `ecca9e6`. The historical E1, E2,
+and E3 objects and ledgers remain available for audit. The allocation result is
+not shipped and is not an accepted product win.
+
+## Frozen VAL-CFG-003 failures
+
+The bound held-out emission-exclusive estimate is `-0.0113209874` and the bound
+held-out combined estimate is `-0.0063290226`. Each has MDE `0.05`; neither
+clears MDE. The disclosed final audit also records these six serialization
+cells above their positive `0.10` bounds:
+
+| Case | Estimate | Bound |
+| --- | ---: | ---: |
+| `linear/64/base` | +0.1003255880 | +0.10 |
+| `linear/256/heavy` | +0.1047375370 | +0.10 |
+| `diamond-chain/64/heavy` | +0.1051061363 | +0.10 |
+| `diamond-chain/256/heavy` | +0.1071999275 | +0.10 |
+| `diamond-chain/1024/light` | +0.1025175223 | +0.10 |
+| `multi-exit/64/base` | +0.1008626704 | +0.10 |
+
+A later fresh run reported no per-case violation, but it is not the sealed final
+draw and cannot replace or repair this checksum-bound result. The frozen
+samples, seed, thresholds, rulers, audits, and checksums remain unchanged.
 
 ## Frozen bindings and chronology
 
@@ -86,20 +110,21 @@ held-out, below 2 GiB. Worst timing-span residue was 0.000594 disclosed and
 0.000007 held-out, below 0.02. No timeout, correctness, artifact, resource, or
 protected-ruler failure occurred.
 
-After E1 the disclosed candidate emission share is 0.794612, giving an updated
-remove-all-emission Amdahl ceiling of 4.869x, down from the frozen
-post-correctness 5.483x ceiling. The held-out workload-specific share is
-0.880360 and its analogous ceiling is 8.358x; it is reported as characterization,
-not used to move the frozen target.
+For the historical E1 object, the disclosed candidate emission share is
+0.794612, giving a remove-all-emission Amdahl ceiling of 4.869x, down from the
+frozen post-correctness 5.483x ceiling. The held-out workload-specific share is
+0.880360 and its analogous ceiling is 8.358x. Both are historical
+characterization, not shipped results and not used to move the frozen target.
 
 ## Candidate-family disposition
 
 Exactly the frozen first-round families were attempted, in order:
 
-- E1 retained immutable candidate `9b82e07`: disclosed emission/combined
+- E1 preserved immutable evidence object `9b82e07`: disclosed emission/combined
   estimates were -16.074/-14.757 percent in its ledger, all target cases
   cleared MDE, artifacts and guards passed, and allocations fell. Final
-  held-out evidence does not support a speed claim.
+  held-out evidence failed MDE, and the final protocol did not accept the
+  product change. Forward commit `ecca9e6` removes it from the shipped branch.
 - E2 rejected immutable comparison object
   `b2f6b503cc7351fce2cf1820b67081688eac16fa`: pooled disclosed scores
   improved, but `irreducible/64/base` emission was +1.458 percent and failed
