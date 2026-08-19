@@ -263,7 +263,7 @@ ruler change and requires section 9, whether or not a test still passes.
 
 Every digest below is the current worktree value, and since section 17 it is
 recomputed on every CI run rather than only whenever this table is touched.
-`scripts/check-oracle-inventory.py` verifies all 68 rows below before it does any
+`scripts/check-oracle-inventory.py` verifies all 70 rows below before it does any
 Cargo work, against a hardcoded inventory of exactly these paths, so a row
 deleted from this table, a row added to it, a duplicated path, a digest that is
 not 64 lowercase hex characters, a protected path that is no longer an existing
@@ -274,11 +274,11 @@ bytes.
 Six previously protected rows have moved since `1371e42`. `scripts/ci-check.sh`
 is adjudicated in
 section 10, with its full chain from the original fixed reference, its second
-move in section 12, its third in section 13, its fourth in section 15, and its
-fifth in section 19.
+move in section 12, its third in section 13, its fourth in section 15, its
+fifth in section 19, and its sixth in section 22.
 `crates/flutterdec-decompiler/tests/provenance_audit.rs` is adjudicated in
 section 11, its second move in section 12, its third in section 13, and its
-fourth in section 15, and its fifth in section 19.
+fourth in section 15, its fifth in section 19, and its sixth in section 22.
 `crates/flutterdec-decompiler/src/tests/cfg_and_stack/omitted_path_and_stack.rs`
 and `crates/flutterdec-core/src/pipeline/runners/tests.rs` each moved once, in
 section 16. `scripts/prov_cross_audit_reconcile.py` moved once, in section 18.
@@ -286,7 +286,7 @@ section 16. `scripts/prov_cross_audit_reconcile.py` moved once, in section 18.
 in section 19.
 One row was new rather than moved,
 `scripts/check-oracle-inventory.py`, added by section 13 and moved twice, in
-section 15 and in section 17, then moved again in section 19. Nine rows are new
+section 15 and in section 17, then moved again in section 19 and in section 22. Nine rows are new
 in section 15, the IR and CFG boundary oracles. Eleven emitter repair rulers are
 new in section 19. Every other row is byte-identical to `1371e42`. A row that
 does not match the current worktree is a failure of this table, not of the file.
@@ -305,7 +305,7 @@ Checkers, scanners, and their plant tests:
 | --- | --- |
 | `scripts/check-annotation-provenance.py` | `c4e40e0122f1d87c82b5b587d8ed1ac6c74f550bed114463765f2568ea6b6f93` |
 | `scripts/check-candidate-whitelist.py` | `d8c67c8565c372c2044f6749bfe2a7b092a374c9758930c7e2ef5b45d3a6cac5` |
-| `scripts/check-oracle-inventory.py` | `5101f7e48b890da0124154611a18517ce29432d3bcf11fe9928e12dfb94ddf52` |
+| `scripts/check-oracle-inventory.py` | `21bea1f4fa438b0aae70b5477a1ec026f13007c0bf569d6f37435089999b47df` |
 | `scripts/prov_cross_audit_reconcile.py` | `f7a21d2c497ff2c47e118cf3df208d869265eb11a561605f4f14d9c50febe870` |
 | `scripts/prov_join_audit_check.py` | `99a80ec27496b76737df08ae457838512495ec2e3e82668ac5ba5d73c1c5e995` |
 | `scripts/prov_join_audit_plant_test.py` | `d3e9e885878db0b6e752ab421dd9bc851b6142f4a995307d2a7763029c88374a` |
@@ -320,7 +320,7 @@ Gate and harness scripts:
 
 | Path | sha256 |
 | --- | --- |
-| `scripts/ci-check.sh` | `6cb19f223bde0510e2c70eac4c7b759b6fe04d57e74dce9e17ffcb1ce89c6389` |
+| `scripts/ci-check.sh` | `94cc9b90e935bb1ecdce4280a31315337d5345b5c74b165e395c74de6dd608f5` |
 | `scripts/test-suite.sh` | `b1d2efd5cda5794dbb9e60c41f92eede0cc65996d66f6c73c19e905be451c38a` |
 | `scripts/lint-python.sh` | `eef80907146b5d1b3d662ad823372a8b6a33df99b458582077b0c1578680e2d7` |
 | `scripts/lint-shell.sh` | `4554f41d5dbeeadf4d2478ce97af416392b14a78cfa417673b35914877d316ab` |
@@ -411,7 +411,7 @@ false` would switch any crate's targets off wholesale.
 | Path | sha256 |
 | --- | --- |
 | `crates/flutterdec-decompiler/src/tests.rs` | `a19fe0015869fbfeb259e28f6d4344e18a630edab92b2a7aef2a58811e3ef56b` |
-| `crates/flutterdec-decompiler/tests/provenance_audit.rs` | `1309c838ea03cdf3299b84dccbc45fe29d9ef4bb6a3d3389a3da713a2f57f1fb` |
+| `crates/flutterdec-decompiler/tests/provenance_audit.rs` | `ea5e8087b6940bb41dfffeb6e5aef0c86b669553e745d761b19f24d9f2ff88f8` |
 | `crates/flutterdec-decompiler/tests/loop_entry_provenance_audit.rs` | `02626ee1ba1b4b1b9905654a6254319ee413169341e43ddb74387813f7ecbfc7` |
 | `crates/flutterdec-decompiler/src/tests/shared.rs` | `30ef9ef9d6b55acac8d41f5e557d38a78e5a60d2c28ac612e75ccfe80e376d3e` |
 | `crates/flutterdec-decompiler/src/tests/golden_and_parser.rs` | `73a74b04ba294f1efc7faa5b067fdbd3c4cedc892c6d15068a07a98d656235ca` |
@@ -456,6 +456,7 @@ false` would switch any crate's targets off wholesale.
 | `crates/flutterdec-decompiler/tests/arm64_control_effects.rs` | `c50439b4e6157d6d8e5321a6c49c22a1a74a9405d7c7924b6235c84db8ca3617` |
 | `crates/flutterdec-decompiler/tests/cfg_identity.rs` | `a5e0177808c50050bfd3517a7f89a234f650ae9ec01cc75b413ba8e2b4014ac8` |
 | `crates/flutterdec-decompiler/tests/dfs_loop_address_invariance.rs` | `1c2c0403303e619de9fe840f62f61c1af92dbec77fe554fd66d3505755b37db3` |
+| `crates/flutterdec-decompiler/tests/entry_loop_state_merge.rs` | `d562cc31ddd244e11d83a0a1bb6e3e4b3d76bf6a052417170496da4198d80dd9` |
 
 Threshold rulers, protected by value rather than by digest because they live in
 files this mission may legitimately touch:
@@ -2630,3 +2631,75 @@ irreducible ascending layout invents one. Removing the plant restores both
 profiles. The new ruler, checker mapping, loader guard, explicit CI invocation,
 section 7 digest row, and this record land with the product fix in one atomic
 commit; no golden, threshold, benchmark, or unrelated structure changes.
+
+## 22. Adjudication record: entry loops merge the implicit entry path
+
+No successor list names the path a call takes into a function's entry block, so
+the DFS fallback's predecessor map showed one incoming path for an entry block a
+back edge also targets. The one-predecessor fast path then skipped the merge, and
+every value the function was entered with kept describing the first iteration:
+argument bindings, the pre-call values provenance annotations cite, the last
+compare, and the selector hints. The fallback now records that implicit path as
+the distinct incoming path it is, so an entry block with any explicit incoming
+edge merges through the same `merge_state_at_join` every other join uses. An
+entry block no edge targets still shows one path, so it and every ordinary block
+keep the fast path.
+
+### 22.1 Public ruler and loader protection
+
+`crates/flutterdec-decompiler/tests/entry_loop_state_merge.rs` builds public
+`FunctionIr` fixtures and reads only public artifacts from
+`emit_pseudocode_direct_dfs` and `emit_pseudocode`. Its four tests cover an entry
+self-loop, a lower-address latch, two latches with conflicting writes, two
+latches with compatible writes, a conditional exit, a loop that rewrites the
+register a pre-call provenance value was read through, an entry block no edge
+targets, ordinary one-predecessor blocks, a depth-budget loop whose helper
+definitions re-render the merged entry block, and an irreducible entry loop whose
+production decline must equal direct DFS. Each case pins the complete artifact
+source, the IR predecessor relations it claims, the call, placeholder,
+unresolved, repeated and rollback counters, the block ledger and its
+reconciliation against the traversal events, and the absence of any annotation
+span claiming a first-iteration value.
+
+The new file is a protected Cargo integration target. Both CI lanes invoke it by
+name, the protected loader guard records its Cargo autotest hook, and the
+compiled inventory requires its merge sentinel. The clean inventory
+reports 70 matching digests and 47 compiled oracle rows.
+
+### 22.2 Detection plant
+
+Removing the implicit-entry predecessor from the fallback predecessor map makes
+the target exit 101 in both debug and optimized release: three of four tests
+fail. The entry self-loop, lower-address latch, conditional exit and annotated
+fixtures render the entry value `slot0` where the merged artifact renders `reg1`,
+two helper copies of the deep loop render it too, and the declined irreducible
+artifact renders it once. The one-predecessor fast-path test stays green under
+the plant, which is what shows it is not coupled to the merge. Restoring the
+predecessor restores 4 of 4 in both profiles.
+
+### 22.3 Digest chains
+
+Column order keeps this history outside the section 7 path-and-digest parser.
+
+| Protected ruler | Prior sha256 | Current sha256 in section 7 |
+| --- | --- | --- |
+| `scripts/ci-check.sh` | `6cb19f223bde0510e2c70eac4c7b759b6fe04d57e74dce9e17ffcb1ce89c6389` | `94cc9b90e935bb1ecdce4280a31315337d5345b5c74b165e395c74de6dd608f5` |
+| `scripts/check-oracle-inventory.py` | `5101f7e48b890da0124154611a18517ce29432d3bcf11fe9928e12dfb94ddf52` | `21bea1f4fa438b0aae70b5477a1ec026f13007c0bf569d6f37435089999b47df` |
+| `crates/flutterdec-decompiler/tests/provenance_audit.rs` | `1309c838ea03cdf3299b84dccbc45fe29d9ef4bb6a3d3389a3da713a2f57f1fb` | `ea5e8087b6940bb41dfffeb6e5aef0c86b669553e745d761b19f24d9f2ff88f8` |
+| `crates/flutterdec-decompiler/tests/entry_loop_state_merge.rs` | new | `d562cc31ddd244e11d83a0a1bb6e3e4b3d76bf6a052417170496da4198d80dd9` |
+
+The only change in the three existing rulers is the new protected path, target,
+sentinel, loader-map row and named CI invocation. No threshold, golden fixture, benchmark
+definition, frozen expected value, or unrelated emitter behavior changed, and no
+existing digest row other than these two moved.
+
+### 22.4 Verification
+
+The public target passed 4 of 4 in both debug and optimized release. The whole
+decompiler package, including every existing emitter and CFG oracle, passed
+unchanged. The oracle inventory reported 70 matching digests and 47 compiled
+rows, the auxiliary resource inventory reported 9 matching digests with intact
+loaders, and a full `scripts/ci-check.sh` run exited 0, including the flake
+check, both fmt lanes, shell and Python lint, workspace clippy, the named
+protected targets, the workspace suite, the release CLI build, and the excluded
+benchmark harness.

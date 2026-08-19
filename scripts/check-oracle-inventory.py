@@ -142,6 +142,7 @@ PROTECTED_PATHS = (
     "crates/flutterdec-decompiler/tests/arm64_control_effects.rs",
     "crates/flutterdec-decompiler/tests/cfg_identity.rs",
     "crates/flutterdec-decompiler/tests/dfs_loop_address_invariance.rs",
+    "crates/flutterdec-decompiler/tests/entry_loop_state_merge.rs",
 )
 
 HEX = frozenset("0123456789abcdef")
@@ -261,6 +262,17 @@ TARGETS = {
         "kind": "test",
         "name": "pipeline_determinism",
         "select": ["-p", "flutterdec-core", "--test", "pipeline_determinism"],
+    },
+    "entry-loop-state-merge": {
+        "package": "flutterdec-decompiler",
+        "kind": "test",
+        "name": "entry_loop_state_merge",
+        "select": [
+            "-p",
+            "flutterdec-decompiler",
+            "--test",
+            "entry_loop_state_merge",
+        ],
     },
 }
 
@@ -477,6 +489,10 @@ SENTINELS = {
     "crates/flutterdec-decompiler/tests/dfs_loop_address_invariance.rs": (
         "dfs-loop-address-invariance",
         "public_dfs_loop_artifacts_ignore_block_address_order",
+    ),
+    "crates/flutterdec-decompiler/tests/entry_loop_state_merge.rs": (
+        "entry-loop-state-merge",
+        "an_entry_loop_merges_the_implicit_path_with_every_back_edge",
     ),
 }
 

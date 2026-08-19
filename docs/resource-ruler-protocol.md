@@ -76,7 +76,7 @@ digest, extra/missing row, duplicate row, and loader bypass all fail closed.
 | `scripts/bench-resource.sh` | `93a6932301bb37452c41149b237d3c46b4244d2b3ee2d76a60ca11dd35c101db` |
 | `scripts/audit-resource-evidence.py` | `4cea4c88f15144a5cdf34a724751a173d11e91f7d7cda5641c156cd48faaf220` |
 | `scripts/check-resource-ruler.py` | `c99345bea216e0c8f42eb854d826d5d040230f37bf571b81eda81c80d6fe2716` |
-| `scripts/ci-check.sh` | `6cb19f223bde0510e2c70eac4c7b759b6fe04d57e74dce9e17ffcb1ce89c6389` |
+| `scripts/ci-check.sh` | `94cc9b90e935bb1ecdce4280a31315337d5345b5c74b165e395c74de6dd608f5` |
 
 ## Ruler-change adjudication
 
@@ -159,3 +159,14 @@ new protected public fixture target. Resource allocator code, phase ownership,
 clone plants, thresholds, timing selection, candidate order, scores, samples,
 seed, accepted harness, frozen reference, and immutable candidate are unchanged.
 The resource ruler and full CI were refreshed; timing selection was not rerun.
+
+The 2026-08-19 entry-loop merge adjudication changes
+`scripts/ci-check.sh` from
+`6cb19f223bde0510e2c70eac4c7b759b6fe04d57e74dce9e17ffcb1ce89c6389` to
+`94cc9b90e935bb1ecdce4280a31315337d5345b5c74b165e395c74de6dd608f5`.
+The only change names the new protected decompiler integration target in the
+existing oracle-loader phase. The resource checker invocation, resource files,
+feature-gated allocator, phase ownership, clone plants, thresholds, timing
+selection, candidate order, scores, samples, seed, accepted harness, frozen
+reference, and immutable candidate are unchanged. The resource ruler and full CI
+were refreshed; timing selection was not rerun.

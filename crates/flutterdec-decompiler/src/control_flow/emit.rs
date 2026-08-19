@@ -1,3 +1,10 @@
+/// The implicit path into the entry block: the call that entered the function.
+///
+/// Not a block id. It stands in the DFS predecessor map for an incoming path no
+/// `succs` list can name, so a loop back into the entry block is two paths there
+/// rather than one.
+pub(super) const IMPLICIT_ENTRY_PRED: usize = usize::MAX;
+
 impl<'a> FuncEmitter<'a> {
     fn strip_wrapped_expr(expr: &str) -> &str {
         let mut cur = expr.trim();
@@ -1197,20 +1204,21 @@ impl<'a> FuncEmitter<'a> {
                 }
             }
         }
-        // The map records only edges a `succs` list names, so the implicit path
-        // into the entry block is absent. That would matter if the entry block
-        // were also the target of a back edge: it would show one predecessor, the
-        // merge below would decline, and bindings written by the loop body would
-        // describe the header on the first iteration only.
+        // A `succs` list names no edge into the entry block from outside the
+        // function, so the implicit path the call itself takes is recorded here as
+        // the distinct incoming path it is. Without it an entry block that is also
+        // the target of a back edge shows one predecessor, the merge below
+        // declines, and a register the loop body writes keeps the binding it had
+        // on the first iteration: the entry state, which describes the first pass
+        // and no other.
         //
-        // It does not occur. Across 14,129 functions on the two sample binaries,
-        // the entry block is the target of a branch or jump exactly zero times,
-        // because a Dart AOT prologue -- the frame push and the stack-limit check
-        // -- always precedes any loop header, so a header is never block 0. The
-        // structured emitter also merges at a loop header before rendering the
-        // body regardless of predecessor count, so only this fallback would be
-        // affected. Adding a sentinel predecessor here would be untestable
-        // against real input; if the shape ever appears, this is where to add it.
+        // The sentinel is not a block id, writes nothing and has no predecessors
+        // of its own, so it adds a path without adding state. An entry block no
+        // edge targets therefore still shows exactly one path and keeps the
+        // one-predecessor fast path, as does every ordinary block.
+        if let Some(entry) = self.ir.blocks.first().map(|b| b.id) {
+            preds.entry(entry).or_default().push(IMPLICIT_ENTRY_PRED);
+        }
         self.dfs_preds = Some(preds);
     }
 
