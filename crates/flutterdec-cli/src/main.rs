@@ -62,6 +62,9 @@ struct InfoCmd {
     /// Print the full report as JSON instead of plain text
     #[arg(long)]
     json: bool,
+    /// Which snapshot adapter backend to use
+    #[arg(long, value_enum, default_value_t = AdapterBackendArg::Auto, value_name = "BACKEND")]
+    adapter_backend: AdapterBackendArg,
 }
 
 #[derive(Args, Debug)]
@@ -484,7 +487,7 @@ fn main() -> Result<()> {
 }
 
 fn handle_info(repo_root: &Path, cmd: InfoCmd) -> Result<()> {
-    let out = run_info(repo_root, &cmd.input)?;
+    let out = run_info(repo_root, &cmd.input, cmd.adapter_backend.to_core())?;
     if cmd.json {
         println!("{}", serde_json::to_string_pretty(&out)?);
     } else {
@@ -1013,6 +1016,32 @@ mod tests {
         .expect("parse");
         let Command::Decompile(cmd) = cli.command else {
             panic!("expected decompile command");
+        };
+        assert!(matches!(cmd.adapter_backend, AdapterBackendArg::R2Flutter));
+        assert_eq!(cmd.adapter_backend.to_core().as_str(), "r2flutter");
+    }
+
+    #[test]
+    fn info_adapter_backend_defaults_to_auto() {
+        let cli = Cli::try_parse_from(["flutterdec", "info", "sample.apk"]).expect("parse");
+        let Command::Info(cmd) = cli.command else {
+            panic!("expected info command");
+        };
+        assert!(matches!(cmd.adapter_backend, AdapterBackendArg::Auto));
+    }
+
+    #[test]
+    fn info_adapter_backend_accepts_r2flutter() {
+        let cli = Cli::try_parse_from([
+            "flutterdec",
+            "info",
+            "in.apk",
+            "--adapter-backend",
+            "r2-flutter",
+        ])
+        .expect("parse");
+        let Command::Info(cmd) = cli.command else {
+            panic!("expected info command");
         };
         assert!(matches!(cmd.adapter_backend, AdapterBackendArg::R2Flutter));
         assert_eq!(cmd.adapter_backend.to_core().as_str(), "r2flutter");
