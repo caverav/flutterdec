@@ -106,23 +106,54 @@ pub struct IrBuildAccounting {
     pub guard_remaps: Vec<(usize, u64, usize)>,
 }
 
-fn parse_target_hex(s: &str) -> Option<u64> {
-    let mut last = None;
-    for token in s.split(|c: char| c.is_whitespace() || c == ',') {
-        let t = token.trim().trim_start_matches('#');
-        if let Some(hex) = t.strip_prefix("0x") {
-            if let Ok(v) = u64::from_str_radix(hex, 16) {
-                last = Some(v);
-                continue;
-            }
-        }
-        if t.chars().all(|c| c.is_ascii_hexdigit()) && t.len() > 6 {
-            if let Ok(v) = u64::from_str_radix(t, 16) {
-                last = Some(v);
-            }
-        }
+fn parse_target_literal(token: &str) -> Option<u64> {
+    let value = token.trim().strip_prefix('#').unwrap_or(token.trim());
+    if let Some(hex) = value
+        .strip_prefix("0x")
+        .or_else(|| value.strip_prefix("0X"))
+    {
+        return u64::from_str_radix(hex, 16).ok();
     }
-    last
+    if value.chars().all(|c| c.is_ascii_digit()) {
+        return value.parse().ok();
+    }
+    if value.chars().all(|c| c.is_ascii_hexdigit())
+        && value.chars().any(|c| c.is_ascii_alphabetic())
+    {
+        return u64::from_str_radix(value, 16).ok();
+    }
+    None
+}
+
+fn is_branch_register(token: &str) -> bool {
+    if matches!(token, "xzr" | "wzr") {
+        return true;
+    }
+    token
+        .strip_prefix('x')
+        .or_else(|| token.strip_prefix('w'))
+        .and_then(|digits| digits.parse::<u8>().ok())
+        .is_some_and(|register| register <= 31)
+}
+
+fn parse_direct_target(operands: &str) -> Option<u64> {
+    let mut operands = operands.split(',').map(str::trim);
+    let target = match (
+        operands.next(),
+        operands.next(),
+        operands.next(),
+        operands.next(),
+    ) {
+        (Some(target), None, None, None) => target,
+        (Some(register), Some(target), None, None) if is_branch_register(register) => target,
+        (Some(register), Some(bit), Some(target), None)
+            if is_branch_register(register) && parse_target_literal(bit).is_some() =>
+        {
+            target
+        }
+        _ => return None,
+    };
+    parse_target_literal(target)
 }
 
 fn llir_from_disasm(d: &FunctionDisassembly) -> Vec<LlirInstr> {
@@ -190,7 +221,7 @@ fn llir_from_disasm(d: &FunctionDisassembly) -> Vec<LlirInstr> {
                 }
                 // The register is kept as provenance for the emitters, which
                 // report which value control left through. It is never parsed as
-                // an address: `parse_target_hex` rejects a register name, and no
+                // an address: `parse_direct_target` rejects a register name, and no
                 // edge is derived from it.
                 "br" => {
                     op = IROp::IndirectBranch;
@@ -237,7 +268,7 @@ fn build_function_ir_accounted(d: &FunctionDisassembly) -> (FunctionIr, IrBuildA
         // resurrecting the edge the check elision removed.
         match ins.op {
             IROp::Branch | IROp::Jump => {
-                if let Some(t) = parse_target_hex(&ins.target) {
+                if let Some(t) = parse_direct_target(&ins.target) {
                     leaders.insert(t);
                 }
                 if let Some(next) = llir.get(idx + 1) {
@@ -298,7 +329,7 @@ fn build_function_ir_accounted(d: &FunctionDisassembly) -> (FunctionIr, IrBuildA
         if let Some(last) = last {
             match last.op {
                 IROp::Branch => {
-                    if let Some(t) = parse_target_hex(&last.target) {
+                    if let Some(t) = parse_direct_target(&last.target) {
                         if let Some(id) = start_to_id.get(&t) {
                             succs.push(*id);
                         }
@@ -308,7 +339,7 @@ fn build_function_ir_accounted(d: &FunctionDisassembly) -> (FunctionIr, IrBuildA
                     }
                 }
                 IROp::Jump => {
-                    if let Some(t) = parse_target_hex(&last.target) {
+                    if let Some(t) = parse_direct_target(&last.target) {
                         if let Some(id) = start_to_id.get(&t) {
                             succs.push(*id);
                         }
@@ -356,7 +387,7 @@ fn build_function_ir_accounted(d: &FunctionDisassembly) -> (FunctionIr, IrBuildA
                 // The guard edge as it was before elision.
                 for ins in &blocks[i].instrs {
                     if ins.op == IROp::RuntimeCheck {
-                        if let Some(t) = parse_target_hex(&ins.target) {
+                        if let Some(t) = parse_direct_target(&ins.target) {
                             if let Some(id) = start_to_id.get(&t) {
                                 targets.push(*id);
                             }

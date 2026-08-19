@@ -83,6 +83,7 @@ behavior.
 | IR-10 | duplicate `start_va` or duplicate ids in a constructed `FunctionIr` | A | rejected or exposed, never silently overwritten in a map | not covered |
 | IR-11 | block unreachable for a reason other than the guard | A | retained and reported, not deleted | asserted only by the comment at `ir/src/lib.rs:291-299` |
 | IR-12 | 1024 blocks, representative mix | S | successor and predecessor sets stay sorted, unique, and reciprocal | not covered |
+| IR-13 | direct target radix spellings | A | prefixed hex and bare hex containing `a`-`f` select hexadecimal; all-digit operands select decimal at every length; malformed or ambiguous operands remain unknown | covered through public CFG construction, `crates/flutterdec-ir/tests/branch_target_radix.rs` |
 
 ### CFG and region analysis (L2)
 
@@ -262,7 +263,7 @@ ruler change and requires section 9, whether or not a test still passes.
 
 Every digest below is the current worktree value, and since section 17 it is
 recomputed on every CI run rather than only whenever this table is touched.
-`scripts/check-oracle-inventory.py` verifies all 67 rows below before it does any
+`scripts/check-oracle-inventory.py` verifies all 68 rows below before it does any
 Cargo work, against a hardcoded inventory of exactly these paths, so a row
 deleted from this table, a row added to it, a duplicated path, a digest that is
 not 64 lowercase hex characters, a protected path that is no longer an existing
@@ -304,7 +305,7 @@ Checkers, scanners, and their plant tests:
 | --- | --- |
 | `scripts/check-annotation-provenance.py` | `c4e40e0122f1d87c82b5b587d8ed1ac6c74f550bed114463765f2568ea6b6f93` |
 | `scripts/check-candidate-whitelist.py` | `d8c67c8565c372c2044f6749bfe2a7b092a374c9758930c7e2ef5b45d3a6cac5` |
-| `scripts/check-oracle-inventory.py` | `4af2d9445f2cf43413c8d70f12a673b8536750ded8a6d8bc19ff206331acfb26` |
+| `scripts/check-oracle-inventory.py` | `78ed3b4f1d3e1c30102474f57205725aaf60648a4f20c39f65a37a43016c8cd6` |
 | `scripts/prov_cross_audit_reconcile.py` | `f7a21d2c497ff2c47e118cf3df208d869265eb11a561605f4f14d9c50febe870` |
 | `scripts/prov_join_audit_check.py` | `99a80ec27496b76737df08ae457838512495ec2e3e82668ac5ba5d73c1c5e995` |
 | `scripts/prov_join_audit_plant_test.py` | `d3e9e885878db0b6e752ab421dd9bc851b6142f4a995307d2a7763029c88374a` |
@@ -319,7 +320,7 @@ Gate and harness scripts:
 
 | Path | sha256 |
 | --- | --- |
-| `scripts/ci-check.sh` | `b1600c29ccbda98b751e8a337c6aa875dfc56eef3dc66efb9edb00952c78188c` |
+| `scripts/ci-check.sh` | `354a21e6ecdfef30e9bc8ea91dbdfd7a33ca8062c4d537c81648328c7e5aeb43` |
 | `scripts/test-suite.sh` | `b1d2efd5cda5794dbb9e60c41f92eede0cc65996d66f6c73c19e905be451c38a` |
 | `scripts/lint-python.sh` | `eef80907146b5d1b3d662ad823372a8b6a33df99b458582077b0c1578680e2d7` |
 | `scripts/lint-shell.sh` | `4554f41d5dbeeadf4d2478ce97af416392b14a78cfa417673b35914877d316ab` |
@@ -403,14 +404,14 @@ loaders, the eight `#[cfg(test)] #[path = ...]` module declarations in
 modules beside its single oracle and so cannot have its include count pinned, and
 the three emitter-repair module declarations in `emission_taxonomy.rs`,
 `structured.rs`, and the decompiler `lib.rs`. Cargo automatically discovers the
-protected integration targets under both `crates/flutterdec-decompiler/tests/`
-and `crates/flutterdec-core/tests/`; `autotests = false` would switch either
-crate's targets off wholesale.
+protected integration targets under `crates/flutterdec-decompiler/tests/`,
+`crates/flutterdec-core/tests/`, and `crates/flutterdec-ir/tests/`; `autotests =
+false` would switch any crate's targets off wholesale.
 
 | Path | sha256 |
 | --- | --- |
 | `crates/flutterdec-decompiler/src/tests.rs` | `a19fe0015869fbfeb259e28f6d4344e18a630edab92b2a7aef2a58811e3ef56b` |
-| `crates/flutterdec-decompiler/tests/provenance_audit.rs` | `469e3e98ae2a6002e5f5a75f99972df230375848cc82e79e8744c3ab47127c84` |
+| `crates/flutterdec-decompiler/tests/provenance_audit.rs` | `e9f0e28379c364c9bca72e85d8ca47e73f2d4f9cbe10d292aa0eaa7fc9788f61` |
 | `crates/flutterdec-decompiler/tests/loop_entry_provenance_audit.rs` | `02626ee1ba1b4b1b9905654a6254319ee413169341e43ddb74387813f7ecbfc7` |
 | `crates/flutterdec-decompiler/src/tests/shared.rs` | `30ef9ef9d6b55acac8d41f5e557d38a78e5a60d2c28ac612e75ccfe80e376d3e` |
 | `crates/flutterdec-decompiler/src/tests/golden_and_parser.rs` | `73a74b04ba294f1efc7faa5b067fdbd3c4cedc892c6d15068a07a98d656235ca` |
@@ -434,6 +435,7 @@ crate's targets off wholesale.
 | `crates/flutterdec-core/src/pipeline/runners/tests.rs` | `7d1d87fa9401d07ab19b4bbb190edf1c53538a6da83ccd0e891b851b63200e63` |
 | `crates/flutterdec-core/src/pipeline/symbol_map/tests.rs` | `019220e1a5915365e1663a36353ff3ba2177f567bb5e1094e6575b47f01b39f5` |
 | `crates/flutterdec-ir/src/tests/control_effects.rs` | `9d6755a0001bfc839cd814fd326648e8cb8ccc186eeb3b30f3551dc8384fdf59` |
+| `crates/flutterdec-ir/tests/branch_target_radix.rs` | `989b28c3c64a271eec2afc26eb4373e3325ac1f9b5d5d477a96a472d14c37af0` |
 | `crates/flutterdec-ir/src/validate/tests.rs` | `2e3e3b3bd980c1edd2de99da166e09d5bf154cbed390e87f701a50f8316e8470` |
 | `crates/flutterdec-core/src/pipeline/quality/control_effect_tests.rs` | `2dd80c63de5919b45de14a89259f90824d827c37ab7b7d943e58221587ed8c69` |
 | `crates/flutterdec-core/src/pipeline/runners/split/identity_tests.rs` | `6de85f091ee07dd84c2469784f8f4288d982b83cf38ebffa1ae3691d28fdc4d2` |
@@ -2540,3 +2542,63 @@ and the clean inventory returned 67 matching digests and 44 compiled oracles.
 6. L5 was re-run in full: focused relation and ruler targets, loader guard,
    oracle inventory, provenance audit, protected digests, and
    `scripts/ci-check.sh` all exited 0.
+
+## 20. Adjudication record: explicit branch-target radix
+
+The shared IR target parser used token length to decide that any bare
+hexadecimal-looking token longer than six characters was hexadecimal. That made
+the observed all-digit operand `1000000` select `0x1000000` rather than decimal
+1000000. The accepted grammar now parses `0x` and `0X` prefixes as hexadecimal,
+bare spellings containing `a` through `f` as hexadecimal, and every all-digit
+spelling as decimal. Operand shapes outside a direct target, register plus
+target, or register plus bit plus target remain unknown.
+
+### 20.1 Public CFG ruler and loader protection
+
+`crates/flutterdec-ir/tests/branch_target_radix.rs` constructs public
+`FunctionDisassembly` values and observes only public `build_function_ir` CFG
+blocks and edges. Its five tests cover short and long decimal, the observed
+`1000000`, leading-zero decimal, lower and upper prefixed hexadecimal, lower and
+upper bare hexadecimal containing a letter, zero and `u64::MAX - 1`, conditional
+taken plus fallthrough edges, call fallthrough without a callee edge, overflow,
+malformed, and ambiguous operand forms.
+
+The new file is a protected Cargo integration target. Both CI lanes invoke it by
+name, the protected provenance loader guard maps it to the IR manifest, and the
+compiled inventory requires its public-CFG sentinel. The clean inventory reports
+68 matching digests and 45 compiled oracle rows.
+
+### 20.2 Detection plant
+
+Planting the historical `all hex digits and len > 6` branch immediately before
+decimal parsing makes the public CFG target exit 101: three of five tests fail.
+The observed `1000000` case loses its target edge, the conditional case loses
+its taken edge but keeps fallthrough, and the decimal upper-bound case loses its
+target edge. Removing the plant restores all five tests. This demonstrates that
+the ruler detects the old heuristic through public CFG behavior rather than a
+private parser assertion.
+
+### 20.3 Digest chains
+
+Column order keeps this history outside the section 7 path-and-digest parser.
+
+| Protected ruler | Prior sha256 | Current sha256 in section 7 |
+| --- | --- | --- |
+| `scripts/check-oracle-inventory.py` | `4af2d9445f2cf43413c8d70f12a673b8536750ded8a6d8bc19ff206331acfb26` | `78ed3b4f1d3e1c30102474f57205725aaf60648a4f20c39f65a37a43016c8cd6` |
+| `scripts/ci-check.sh` | `b1600c29ccbda98b751e8a337c6aa875dfc56eef3dc66efb9edb00952c78188c` | `354a21e6ecdfef30e9bc8ea91dbdfd7a33ca8062c4d537c81648328c7e5aeb43` |
+| `crates/flutterdec-decompiler/tests/provenance_audit.rs` | `469e3e98ae2a6002e5f5a75f99972df230375848cc82e79e8744c3ab47127c84` | `e9f0e28379c364c9bca72e85d8ca47e73f2d4f9cbe10d292aa0eaa7fc9788f61` |
+| `crates/flutterdec-ir/tests/branch_target_radix.rs` | new | `989b28c3c64a271eec2afc26eb4373e3325ac1f9b5d5d477a96a472d14c37af0` |
+
+Only the expected protected path, target, sentinel, named CI invocation, and
+loader mapping changed in the three existing rulers. No threshold, golden
+fixture, benchmark definition, or unrelated parser changed.
+
+### 20.4 Verification
+
+The public CFG target passed 5 of 5 in both debug and optimized release. The
+full IR package passed 25 tests including the integration target. The protected
+loader guard passed, the oracle inventory reported 68 matching digests and 45
+compiled rows, and the auxiliary resource inventory reported 9 matching
+digests and intact loaders. A clean full `scripts/ci-check.sh` run exited 0,
+including workspace clippy and tests, the release CLI build, and all 38 excluded
+benchmark-harness tests.

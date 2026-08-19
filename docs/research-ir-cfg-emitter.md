@@ -302,11 +302,12 @@ runs.
 inspection of `.github/workflows/ci.yml` and `scripts/ci-check.sh`. The python
 plant tests and self tests only run in the local parity script.
 
-**R8. `parse_target_hex` accepts a bare token of more than six hex digits.**
-Evidence: inspection, `ir/src/lib.rs:85-102`. A decimal immediate of seven or
-more digits parses as hexadecimal and becomes the last candidate target. Low
-severity, listed because branch target parsing is on the path this mission
-touches.
+**R8. Direct branch target radix is syntax-driven.** The shared IR parser now
+accepts prefixed hexadecimal, bare hexadecimal containing `a` through `f`, and
+all-digit decimal without a token-length rule. The public CFG ruler at
+`crates/flutterdec-ir/tests/branch_target_radix.rs` covers the observed bare
+decimal `1000000`, boundaries, calls, conditional fallthrough, and malformed or
+ambiguous operands. Restoring the old length heuristic makes that ruler fail.
 
 **R9. Back edge detection in the DFS emitter uses address order.** Evidence:
 inspection, `graph.rs:52-64` and `graph.rs:66-78` compare `start_va` to decide

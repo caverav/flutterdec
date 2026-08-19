@@ -121,6 +121,7 @@ PROTECTED_PATHS = (
     "crates/flutterdec-core/src/pipeline/runners/tests.rs",
     "crates/flutterdec-core/src/pipeline/symbol_map/tests.rs",
     "crates/flutterdec-ir/src/tests/control_effects.rs",
+    "crates/flutterdec-ir/tests/branch_target_radix.rs",
     "crates/flutterdec-ir/src/validate/tests.rs",
     "crates/flutterdec-core/src/pipeline/quality/control_effect_tests.rs",
     "crates/flutterdec-core/src/pipeline/runners/split/identity_tests.rs",
@@ -182,6 +183,12 @@ TARGETS = {
         "kind": "lib",
         "name": "flutterdec_ir",
         "select": ["-p", "flutterdec-ir", "--lib"],
+    },
+    "branch-target-radix": {
+        "package": "flutterdec-ir",
+        "kind": "test",
+        "name": "branch_target_radix",
+        "select": ["-p", "flutterdec-ir", "--test", "branch_target_radix"],
     },
     "arm64-control-effects": {
         "package": "flutterdec-decompiler",
@@ -368,6 +375,10 @@ SENTINELS = {
     "crates/flutterdec-ir/src/tests/control_effects.rs": (
         "ir-lib",
         "control_effect_tests::every_arm64_control_effect_has_exactly_the_documented_edges",
+    ),
+    "crates/flutterdec-ir/tests/branch_target_radix.rs": (
+        "branch-target-radix",
+        "public_cfg_distinguishes_decimal_and_explicit_hex_targets",
     ),
     "crates/flutterdec-ir/src/validate/tests.rs": (
         "ir-lib",

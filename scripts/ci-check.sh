@@ -13,7 +13,7 @@ Runs the same checks as CI from the local workspace:
   4) scripts/lint-python.sh
   5) scripts/bench-identity-gate-test.sh
   6) cargo clippy --workspace --all-targets -- -D warnings
-  7) the decompiler oracle integration targets, by name
+  7) the protected oracle integration targets, by crate and name
   8) scripts/check-oracle-inventory.py
   9) scripts/check-resource-ruler.py
  10) cargo test --workspace            (unless --skip-tests)
@@ -86,6 +86,9 @@ nix develop -c cargo test -p flutterdec-decompiler --test provenance_audit --tes
 
 echo "[ci-check] protected core integration targets"
 nix develop -c cargo test -p flutterdec-core --test pipeline_determinism
+
+echo "[ci-check] protected IR integration targets"
+nix develop -c cargo test -p flutterdec-ir --test branch_target_radix
 
 # The compiled inventory, not the loader source text: this is what fails when a
 # protected oracle stops being compiled while its digest still matches.

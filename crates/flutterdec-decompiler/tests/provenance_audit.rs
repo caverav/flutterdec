@@ -252,6 +252,12 @@ fn loader_map() -> Vec<(String, Hook)> {
                 manifest: CORE_MANIFEST,
             },
         ),
+        (
+            "crates/flutterdec-ir/tests/branch_target_radix.rs".to_string(),
+            Hook::Autotest {
+                manifest: IR_MANIFEST,
+            },
+        ),
         // The IR and CFG boundary oracles. Each was an inline module in the
         // product file beside it until it was moved out: a digest can only
         // protect a file later work is not expected to edit, and `lib.rs`,
@@ -555,6 +561,7 @@ fn the_protected_oracle_loader_chain_is_intact() {
             let package = match *manifest {
                 DECOMPILER_MANIFEST => "flutterdec-decompiler",
                 CORE_MANIFEST => "flutterdec-core",
+                IR_MANIFEST => "flutterdec-ir",
                 _ => panic!("{manifest} has no named integration-test lane"),
             };
             let prefix = format!("nix develop -c cargo test -p {package}");

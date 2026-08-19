@@ -57,6 +57,9 @@ jobs:
       - name: Core oracle loader guard
         run: nix develop -c cargo test -p flutterdec-core --test pipeline_determinism
 
+      - name: IR oracle loader guard
+        run: nix develop -c cargo test -p flutterdec-ir --test branch_target_radix
+
       # The compiled inventory, not the loader source text. A comment, a `cfg`
       # that is never true, or a macro that swallows its argument leaves a hook
       # byte-identical while removing the oracle it loads from the build.

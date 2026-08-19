@@ -76,7 +76,7 @@ digest, extra/missing row, duplicate row, and loader bypass all fail closed.
 | `scripts/bench-resource.sh` | `93a6932301bb37452c41149b237d3c46b4244d2b3ee2d76a60ca11dd35c101db` |
 | `scripts/audit-resource-evidence.py` | `4cea4c88f15144a5cdf34a724751a173d11e91f7d7cda5641c156cd48faaf220` |
 | `scripts/check-resource-ruler.py` | `c99345bea216e0c8f42eb854d826d5d040230f37bf571b81eda81c80d6fe2716` |
-| `scripts/ci-check.sh` | `b1600c29ccbda98b751e8a337c6aa875dfc56eef3dc66efb9edb00952c78188c` |
+| `scripts/ci-check.sh` | `354a21e6ecdfef30e9bc8ea91dbdfd7a33ca8062c4d537c81648328c7e5aeb43` |
 
 ## Ruler-change adjudication
 
@@ -134,3 +134,15 @@ panic cleanup, retained no-op, and both phase-isolated clone-plant checks were
 refreshed in Nix. No timing selection, candidate order, score, threshold,
 sample, seed, accepted harness, frozen reference, or immutable candidate was
 rerun or changed.
+
+The 2026-08-19 branch-target oracle adjudication changes
+`scripts/ci-check.sh` from
+`b1600c29ccbda98b751e8a337c6aa875dfc56eef3dc66efb9edb00952c78188c` to
+`354a21e6ecdfef30e9bc8ea91dbdfd7a33ca8062c4d537c81648328c7e5aeb43`.
+The only change names the new protected `flutterdec-ir` integration target in
+the existing oracle-loader phase. The resource checker invocation, resource
+files, feature-gated allocator, phase ownership, clone plants, thresholds,
+timing selection, candidate order, scores, samples, seed, accepted harness,
+frozen reference, and immutable candidate are unchanged. The resource ruler
+self-test and clean loader check were refreshed in Nix; timing selection was not
+rerun.
