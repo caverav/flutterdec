@@ -27,7 +27,7 @@ mod workload;
 use flutterdec_decompiler::{emit_pseudocode, PseudocodeArtifact};
 use flutterdec_ir::{build_function_ir, FunctionIr};
 use json::Json;
-use measure::{Allocations, Host};
+use measure::{Allocations, Host, ResourceMetrics, ResourceSnapshot};
 use std::collections::HashMap;
 use std::process::ExitCode;
 use std::time::Instant;
@@ -53,6 +53,7 @@ flutterdec-bench - disjoint phase timing for the decompile pipeline
   run        Time the matrix and write a result document plus a sample stream
   manifest   Describe the matrix and its digests without timing anything
   aggregate  Pair two sample streams into medians, deviations and MDE
+  resource   Measure allocation resources separately from timing selection
 
 run options
   --matrix disclosed|held-out   Case set (default disclosed)
@@ -88,6 +89,12 @@ aggregate options
   --reference PATH              Sample stream from the reference revision
   --candidate PATH              Sample stream from the candidate revision
   --out PATH                    Analysis document (default stdout)
+
+resource options
+  --matrix, --held-out-seed, --warmups, and binding options as above
+  --plant none|cfg-graph-clone|emitter-block-clone (default none)
+  --out PATH                    Resource JSON document (default stdout)
+  --samples PATH                Per-case/per-phase resource TSV
 ";
 
 fn main() -> ExitCode {
@@ -96,6 +103,7 @@ fn main() -> ExitCode {
         Some("run") => run(&args[1..]),
         Some("manifest") => manifest(&args[1..]),
         Some("aggregate") => aggregate(&args[1..]),
+        Some("resource") => resource(&args[1..]),
         Some("--help") | Some("-h") | None => {
             print!("{USAGE}");
             return ExitCode::SUCCESS;
@@ -427,6 +435,172 @@ fn run_case(
         emission_allocations: allocations_2.since(allocations_1),
         serialization_allocations: allocations_3.since(allocations_2),
         serialized_bytes,
+    }
+}
+
+fn resource_case(
+    case: &Case,
+    symbols: &HashMap<u64, String>,
+    model: &flutterdec_adapter::ProgramModel,
+    options: &flutterdec_core::DecompileOptions,
+) -> ResourceSnapshot {
+    use flutterdec_decompiler::bench_spans::{enter_resource_phase, ResourcePhase};
+
+    measure::reset_resources();
+    let ir: FunctionIr = {
+        let _phase = enter_resource_phase(ResourcePhase::Ir);
+        build_function_ir(&case.disasm)
+    };
+    let artifact: PseudocodeArtifact = {
+        let _phase = enter_resource_phase(ResourcePhase::EmissionExclusive);
+        emit_pseudocode(&ir, symbols)
+    };
+    let serialized_bytes = {
+        let _phase = enter_resource_phase(ResourcePhase::Serialization);
+        flutterdec_core::bench_spans::serialize_artifacts(
+            std::slice::from_ref(&ir),
+            std::slice::from_ref(&artifact),
+            model,
+            options,
+            1,
+        )
+    };
+    std::hint::black_box(serialized_bytes);
+    measure::resource_snapshot()
+}
+
+fn resource_metrics_json(metrics: ResourceMetrics) -> Json {
+    Json::o(vec![
+        ("allocation_count", Json::U(metrics.allocation_count)),
+        (
+            "total_allocated_bytes",
+            Json::U(metrics.total_allocated_bytes),
+        ),
+        ("peak_live_bytes", Json::U(metrics.peak_live_bytes)),
+        ("live_bytes_at_snapshot", Json::U(metrics.live_bytes)),
+    ])
+}
+
+fn resource(argv: &[String]) -> Result<(), String> {
+    use flutterdec_decompiler::bench_spans::{set_resource_plant, ResourcePlant};
+
+    let args = Args::parse(argv)?;
+    let (cases, matrix, held_out_seed) = cases_for(&args)?;
+    let warmups = args.number("warmups", DEFAULT_WARMUPS as u64)? as usize;
+    let plant_name = args.text("plant", "none");
+    let plant = match plant_name.as_str() {
+        "none" => ResourcePlant::None,
+        "cfg-graph-clone" => ResourcePlant::CfgGraphClone,
+        "emitter-block-clone" => ResourcePlant::EmitterBlockClone,
+        other => return Err(format!("unknown resource plant {other}")),
+    };
+    set_resource_plant(ResourcePlant::None);
+
+    let symbols: HashMap<u64, String> = HashMap::new();
+    let model = flutterdec_core::bench_spans::synthetic_model(1);
+    let options = flutterdec_core::bench_spans::balanced_options();
+    for _ in 0..warmups {
+        for case in &cases {
+            std::hint::black_box(run_case(case, &symbols, &model, &options).serialized_bytes);
+        }
+    }
+
+    set_resource_plant(plant);
+    let mut rows = Vec::with_capacity(cases.len());
+    let mut sample_text = String::from(
+        "case\tphase\tallocation_count\ttotal_allocated_bytes\tpeak_live_bytes\tprocess_peak_rss_bytes\n",
+    );
+    let phase_names = ["ir", "cfg", "emission_exclusive", "serialization"];
+    let mut failures = Vec::new();
+    for case in &cases {
+        let snapshot = resource_case(case, &symbols, &model, &options);
+        let rss = measure::peak_rss_bytes();
+        if snapshot.instrumentation_recursions != 0 {
+            failures.push(format!(
+                "{}: {} allocator instrumentation recursion(s)",
+                case.name, snapshot.instrumentation_recursions
+            ));
+        }
+        let mut phases = Vec::new();
+        for (name, metrics) in phase_names.iter().zip(snapshot.phases) {
+            phases.push(Json::o(vec![
+                ("phase", Json::s(*name)),
+                ("metrics", resource_metrics_json(metrics)),
+            ]));
+            sample_text.push_str(&format!(
+                "{}\t{}\t{}\t{}\t{}\t{}\n",
+                case.name,
+                name,
+                metrics.allocation_count,
+                metrics.total_allocated_bytes,
+                metrics.peak_live_bytes,
+                rss.map(|value| value.to_string())
+                    .unwrap_or_else(|| "null".to_string())
+            ));
+        }
+        sample_text.push_str(&format!(
+            "{}\tcombined\t{}\t{}\t{}\t{}\n",
+            case.name,
+            snapshot.combined.allocation_count,
+            snapshot.combined.total_allocated_bytes,
+            snapshot.combined.peak_live_bytes,
+            rss.map(|value| value.to_string())
+                .unwrap_or_else(|| "null".to_string())
+        ));
+        rows.push(Json::o(vec![
+            ("case", Json::s(case.name.clone())),
+            ("epoch", Json::U(snapshot.epoch)),
+            (
+                "instrumentation_recursions",
+                Json::U(snapshot.instrumentation_recursions),
+            ),
+            (
+                "process_peak_rss_bytes",
+                rss.map(Json::U).unwrap_or(Json::Null),
+            ),
+            ("phases", Json::A(phases)),
+            ("combined", resource_metrics_json(snapshot.combined)),
+        ]));
+    }
+    set_resource_plant(ResourcePlant::None);
+
+    let document = Json::o(vec![
+        ("schema", Json::s("flutterdec-bench/resource/1")),
+        (
+            "binding",
+            Json::o(vec![
+                ("label", Json::s(args.text("label", ""))),
+                ("product_ref", Json::s(args.text("product-ref", "unset"))),
+                ("harness_ref", Json::s(args.text("harness-ref", "unset"))),
+                ("patch_sha256", Json::s(args.text("patch-sha256", "unset"))),
+                (
+                    "binary_sha256",
+                    Json::s(args.text("binary-sha256", "unset")),
+                ),
+                ("matrix", Json::s(matrix)),
+                ("matrix_sha256", Json::s(matrix_digest(&cases))),
+                (
+                    "held_out_seed_hex",
+                    held_out_seed
+                        .map(|seed| Json::s(format!("{seed:032x}")))
+                        .unwrap_or(Json::Null),
+                ),
+                ("warmups", Json::U(warmups as u64)),
+                ("threads", Json::U(1)),
+                ("plant", Json::s(plant_name)),
+                ("profile", Json::s(build_profile())),
+            ]),
+        ),
+        ("cases", Json::A(rows)),
+    ]);
+    emit(args.path("out"), &document.to_pretty())?;
+    if let Some(path) = args.path("samples") {
+        std::fs::write(path, sample_text).map_err(|e| format!("write {path}: {e}"))?;
+    }
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(failures.join("; "))
     }
 }
 

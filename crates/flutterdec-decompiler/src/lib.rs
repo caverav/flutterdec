@@ -1326,8 +1326,93 @@ fn is_generic_call_name(name: &str) -> bool {
 pub mod bench_spans {
     use std::cell::Cell;
 
+    /// Mutually exclusive resource phases used only by the protected auxiliary
+    /// ruler. The timing ruler remains independent of these values.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    #[repr(u8)]
+    pub enum ResourcePhase {
+        Ir = 0,
+        Cfg = 1,
+        EmissionExclusive = 2,
+        Serialization = 3,
+    }
+
+    #[derive(Clone, Copy)]
+    struct PhaseStack {
+        values: [ResourcePhase; 8],
+        len: u8,
+    }
+
+    impl PhaseStack {
+        const fn new() -> Self {
+            Self {
+                values: [ResourcePhase::Ir; 8],
+                len: 0,
+            }
+        }
+    }
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    #[repr(u8)]
+    pub enum ResourcePlant {
+        None = 0,
+        CfgGraphClone = 1,
+        EmitterBlockClone = 2,
+    }
+
     thread_local! {
         static CFG_NANOS: Cell<u64> = const { Cell::new(0) };
+        static RESOURCE_PHASES: Cell<PhaseStack> = const { Cell::new(PhaseStack::new()) };
+        static RESOURCE_PLANT: Cell<ResourcePlant> = const { Cell::new(ResourcePlant::None) };
+    }
+
+    /// Allocation-free phase entry. A fixed stack makes nested CFG accounting
+    /// restore emission-exclusive accounting on every normal or panic unwind.
+    pub fn enter_resource_phase(phase: ResourcePhase) -> ResourcePhaseGuard {
+        RESOURCE_PHASES.with(|cell| {
+            let mut stack = cell.get();
+            assert!(
+                (stack.len as usize) < stack.values.len(),
+                "resource phase stack overflow"
+            );
+            stack.values[stack.len as usize] = phase;
+            stack.len += 1;
+            cell.set(stack);
+        });
+        ResourcePhaseGuard { active: true }
+    }
+
+    pub struct ResourcePhaseGuard {
+        active: bool,
+    }
+
+    impl Drop for ResourcePhaseGuard {
+        fn drop(&mut self) {
+            if !self.active {
+                return;
+            }
+            RESOURCE_PHASES.with(|cell| {
+                let mut stack = cell.get();
+                assert!(stack.len > 0, "resource phase stack underflow");
+                stack.len -= 1;
+                cell.set(stack);
+            });
+        }
+    }
+
+    pub fn current_resource_phase() -> Option<ResourcePhase> {
+        RESOURCE_PHASES.with(|cell| {
+            let stack = cell.get();
+            (stack.len > 0).then(|| stack.values[stack.len as usize - 1])
+        })
+    }
+
+    pub fn set_resource_plant(plant: ResourcePlant) {
+        RESOURCE_PLANT.with(|cell| cell.set(plant));
+    }
+
+    pub(crate) fn resource_plant() -> ResourcePlant {
+        RESOURCE_PLANT.with(Cell::get)
     }
 
     /// Nanoseconds charged to region analysis on this thread since the last
@@ -1339,6 +1424,33 @@ pub mod bench_spans {
 
     pub(crate) fn add_cfg_nanos(nanos: u64) {
         CFG_NANOS.with(|c| c.set(c.get().saturating_add(nanos)));
+    }
+
+    #[cfg(test)]
+    mod resource_phase_tests {
+        use super::*;
+
+        #[test]
+        fn resource_phase_stack_restores_on_nesting_and_panic() {
+            assert_eq!(current_resource_phase(), None);
+            let outer = enter_resource_phase(ResourcePhase::EmissionExclusive);
+            assert_eq!(
+                current_resource_phase(),
+                Some(ResourcePhase::EmissionExclusive)
+            );
+            let panicked = std::panic::catch_unwind(|| {
+                let _inner = enter_resource_phase(ResourcePhase::Cfg);
+                assert_eq!(current_resource_phase(), Some(ResourcePhase::Cfg));
+                panic!("plant");
+            });
+            assert!(panicked.is_err());
+            assert_eq!(
+                current_resource_phase(),
+                Some(ResourcePhase::EmissionExclusive)
+            );
+            drop(outer);
+            assert_eq!(current_resource_phase(), None);
+        }
     }
 }
 

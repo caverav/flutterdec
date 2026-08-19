@@ -6,8 +6,12 @@
 //! time to a per-thread counter under the `bench-spans` feature and the
 //! emission-exclusive span is what remains after subtracting it.
 
+use flutterdec_decompiler::bench_spans::{current_resource_phase, ResourcePhase};
 use std::alloc::{GlobalAlloc, Layout, System};
-use std::cell::Cell;
+use std::cell::{Cell, UnsafeCell};
+use std::cmp;
+use std::mem::{align_of, size_of};
+use std::ptr;
 use std::time::Instant;
 
 // Allocation counters, per thread and without synchronisation.
@@ -19,6 +23,184 @@ use std::time::Instant;
 thread_local! {
     static ALLOC_COUNT: Cell<u64> = const { Cell::new(0) };
     static ALLOC_BYTES: Cell<u64> = const { Cell::new(0) };
+    static RESOURCE_STATE: UnsafeCell<ResourceState> = const { UnsafeCell::new(ResourceState::new()) };
+    static IN_INSTRUMENTATION: Cell<bool> = const { Cell::new(false) };
+    static RECURSION_COUNT: Cell<u64> = const { Cell::new(0) };
+}
+
+const RESOURCE_PHASE_COUNT: usize = 4;
+const INACTIVE_PHASE: u8 = u8::MAX;
+const HEADER_MAGIC: u64 = 0x4652_4445_4352_5343;
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ResourceMetrics {
+    pub allocation_count: u64,
+    pub total_allocated_bytes: u64,
+    pub live_bytes: u64,
+    pub peak_live_bytes: u64,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ResourceSnapshot {
+    pub phases: [ResourceMetrics; RESOURCE_PHASE_COUNT],
+    pub combined: ResourceMetrics,
+    pub epoch: u64,
+    pub instrumentation_recursions: u64,
+}
+
+#[derive(Clone, Copy)]
+struct ResourceState {
+    phases: [ResourceMetrics; RESOURCE_PHASE_COUNT],
+    combined: ResourceMetrics,
+    epoch: u64,
+}
+
+impl ResourceState {
+    const fn new() -> Self {
+        Self {
+            phases: [ResourceMetrics {
+                allocation_count: 0,
+                total_allocated_bytes: 0,
+                live_bytes: 0,
+                peak_live_bytes: 0,
+            }; RESOURCE_PHASE_COUNT],
+            combined: ResourceMetrics {
+                allocation_count: 0,
+                total_allocated_bytes: 0,
+                live_bytes: 0,
+                peak_live_bytes: 0,
+            },
+            epoch: 1,
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct AllocationHeader {
+    magic: u64,
+    epoch: u64,
+    size: usize,
+    phase: u8,
+}
+
+fn phase_index(phase: ResourcePhase) -> usize {
+    phase as usize
+}
+
+fn augmented_layout(layout: Layout, size: usize) -> (Layout, usize) {
+    let alignment = cmp::max(layout.align(), align_of::<AllocationHeader>());
+    let offset = size_of::<AllocationHeader>().next_multiple_of(alignment);
+    let total = offset
+        .checked_add(size)
+        .expect("allocation layout overflow in resource ruler");
+    // Safety: alignment is the maximum of two valid powers of two and total is
+    // checked. The caller supplied a valid Layout.
+    (
+        unsafe { Layout::from_size_align_unchecked(total, alignment) },
+        offset,
+    )
+}
+
+fn with_resource_state(f: impl FnOnce(&mut ResourceState)) {
+    let entered = IN_INSTRUMENTATION.try_with(|flag| flag.replace(true));
+    let Ok(was_inside) = entered else {
+        return;
+    };
+    if was_inside {
+        let _ = RECURSION_COUNT.try_with(|count| count.set(count.get().saturating_add(1)));
+        return;
+    }
+    let _ = RESOURCE_STATE.try_with(|state| {
+        // Safety: this thread-local cell is only reached while the reentrancy
+        // flag is held, so no two mutable references can coexist.
+        f(unsafe { &mut *state.get() });
+    });
+    let _ = IN_INSTRUMENTATION.try_with(|flag| flag.set(false));
+}
+
+fn record_alloc(header: AllocationHeader) {
+    if header.phase == INACTIVE_PHASE {
+        return;
+    }
+    with_resource_state(|state| {
+        if header.epoch != state.epoch {
+            return;
+        }
+        let phase = &mut state.phases[header.phase as usize];
+        phase.allocation_count = phase.allocation_count.saturating_add(1);
+        phase.total_allocated_bytes = phase
+            .total_allocated_bytes
+            .saturating_add(header.size as u64);
+        phase.live_bytes = phase.live_bytes.saturating_add(header.size as u64);
+        phase.peak_live_bytes = phase.peak_live_bytes.max(phase.live_bytes);
+        state.combined.allocation_count = state.combined.allocation_count.saturating_add(1);
+        state.combined.total_allocated_bytes = state
+            .combined
+            .total_allocated_bytes
+            .saturating_add(header.size as u64);
+        state.combined.live_bytes = state.combined.live_bytes.saturating_add(header.size as u64);
+        state.combined.peak_live_bytes = state
+            .combined
+            .peak_live_bytes
+            .max(state.combined.live_bytes);
+    });
+}
+
+fn record_dealloc(header: AllocationHeader) {
+    if header.phase == INACTIVE_PHASE {
+        return;
+    }
+    with_resource_state(|state| {
+        if header.epoch != state.epoch {
+            return;
+        }
+        let phase = &mut state.phases[header.phase as usize];
+        phase.live_bytes = phase.live_bytes.saturating_sub(header.size as u64);
+        state.combined.live_bytes = state.combined.live_bytes.saturating_sub(header.size as u64);
+    });
+}
+
+fn header_for(size: usize) -> AllocationHeader {
+    let phase = current_resource_phase()
+        .map(|phase| phase_index(phase) as u8)
+        .unwrap_or(INACTIVE_PHASE);
+    let epoch = RESOURCE_STATE
+        .try_with(|state| {
+            // Safety: a plain Copy read of thread-local state; the allocator is
+            // single-threaded by construction.
+            unsafe { (*state.get()).epoch }
+        })
+        .unwrap_or(0);
+    AllocationHeader {
+        magic: HEADER_MAGIC,
+        epoch,
+        size,
+        phase,
+    }
+}
+
+pub fn reset_resources() {
+    with_resource_state(|state| {
+        state.epoch = state.epoch.wrapping_add(1).max(1);
+        state.phases = [ResourceMetrics::default(); RESOURCE_PHASE_COUNT];
+        state.combined = ResourceMetrics::default();
+    });
+    RECURSION_COUNT.with(|count| count.set(0));
+}
+
+pub fn resource_snapshot() -> ResourceSnapshot {
+    let (phases, combined, epoch) = RESOURCE_STATE.with(|state| {
+        // Safety: the snapshot is taken outside allocator instrumentation.
+        let state = unsafe { *state.get() };
+        (state.phases, state.combined, state.epoch)
+    });
+    ResourceSnapshot {
+        phases,
+        combined,
+        epoch,
+        instrumentation_recursions: RECURSION_COUNT.with(Cell::get),
+    }
 }
 
 pub struct CountingAllocator;
@@ -31,17 +213,60 @@ unsafe impl GlobalAlloc for CountingAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         let _ = ALLOC_COUNT.try_with(|c| c.set(c.get().wrapping_add(1)));
         let _ = ALLOC_BYTES.try_with(|c| c.set(c.get().wrapping_add(layout.size() as u64)));
-        System.alloc(layout)
+        let (system_layout, offset) = augmented_layout(layout, layout.size());
+        let base = System.alloc(system_layout);
+        if base.is_null() {
+            return base;
+        }
+        let header = header_for(layout.size());
+        ptr::write(base.cast::<AllocationHeader>(), header);
+        record_alloc(header);
+        base.add(offset)
+    }
+
+    unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
+        let _ = ALLOC_COUNT.try_with(|c| c.set(c.get().wrapping_add(1)));
+        let _ = ALLOC_BYTES.try_with(|c| c.set(c.get().wrapping_add(layout.size() as u64)));
+        let (system_layout, offset) = augmented_layout(layout, layout.size());
+        let base = System.alloc_zeroed(system_layout);
+        if base.is_null() {
+            return base;
+        }
+        let header = header_for(layout.size());
+        ptr::write(base.cast::<AllocationHeader>(), header);
+        record_alloc(header);
+        base.add(offset)
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        System.dealloc(ptr, layout)
+        let (system_layout, offset) = augmented_layout(layout, layout.size());
+        let base = ptr.sub(offset);
+        let header = ptr::read(base.cast::<AllocationHeader>());
+        debug_assert_eq!(header.magic, HEADER_MAGIC);
+        record_dealloc(header);
+        System.dealloc(base, system_layout)
     }
 
     unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
         let _ = ALLOC_COUNT.try_with(|c| c.set(c.get().wrapping_add(1)));
         let _ = ALLOC_BYTES.try_with(|c| c.set(c.get().wrapping_add(new_size as u64)));
-        System.realloc(ptr, layout, new_size)
+        let (old_system_layout, old_offset) = augmented_layout(layout, layout.size());
+        let (new_system_layout, new_offset) = augmented_layout(layout, new_size);
+        debug_assert_eq!(old_system_layout.align(), new_system_layout.align());
+        debug_assert_eq!(old_offset, new_offset);
+        let old_base = ptr.sub(old_offset);
+        let old_header = ptr::read(old_base.cast::<AllocationHeader>());
+        debug_assert_eq!(old_header.magic, HEADER_MAGIC);
+        let new_base = System.realloc(old_base, old_system_layout, new_system_layout.size());
+        if new_base.is_null() {
+            ptr::write(old_base.cast::<AllocationHeader>(), old_header);
+            return new_base;
+        }
+        record_dealloc(old_header);
+        let new_header = header_for(new_size);
+        ptr::write(new_base.cast::<AllocationHeader>(), new_header);
+        record_alloc(new_header);
+        new_base.add(new_offset)
     }
 }
 
@@ -136,6 +361,7 @@ pub fn host() -> Host {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use flutterdec_decompiler::bench_spans::{enter_resource_phase, ResourcePhase};
 
     /// The counters must move on a real allocation and stay put on arithmetic,
     /// otherwise the per-phase allocation numbers are noise.
@@ -183,5 +409,89 @@ mod tests {
         assert!(!host.hostname.is_empty());
         assert!(host.logical_cpus > 0);
         assert!(peak_rss_bytes().is_some_and(|b| b > 0), "linux VmHWM");
+    }
+
+    #[test]
+    fn resource_allocator_covers_full_lifecycle_without_misattribution() {
+        unsafe {
+            let layout = Layout::from_size_align(64, 16).unwrap();
+            reset_resources();
+            let ir = enter_resource_phase(ResourcePhase::Ir);
+            let first = CountingAllocator.alloc(layout);
+            assert!(!first.is_null());
+            drop(ir);
+
+            let cfg = enter_resource_phase(ResourcePhase::Cfg);
+            CountingAllocator.dealloc(first, layout);
+            let zeroed = CountingAllocator.alloc_zeroed(layout);
+            assert!(!zeroed.is_null());
+            assert!((0..64).all(|index| *zeroed.add(index) == 0));
+            let grown = CountingAllocator.realloc(zeroed, layout, 160);
+            assert!(!grown.is_null());
+            drop(cfg);
+
+            let snapshot = resource_snapshot();
+            assert_eq!(
+                snapshot.phases[ResourcePhase::Ir as usize].allocation_count,
+                1
+            );
+            assert_eq!(
+                snapshot.phases[ResourcePhase::Ir as usize].total_allocated_bytes,
+                64
+            );
+            assert_eq!(snapshot.phases[ResourcePhase::Ir as usize].live_bytes, 0);
+            assert_eq!(
+                snapshot.phases[ResourcePhase::Ir as usize].peak_live_bytes,
+                64
+            );
+            assert_eq!(
+                snapshot.phases[ResourcePhase::Cfg as usize].allocation_count,
+                2
+            );
+            assert_eq!(
+                snapshot.phases[ResourcePhase::Cfg as usize].total_allocated_bytes,
+                224
+            );
+            assert_eq!(snapshot.phases[ResourcePhase::Cfg as usize].live_bytes, 160);
+            assert_eq!(
+                snapshot.phases[ResourcePhase::Cfg as usize].peak_live_bytes,
+                160
+            );
+            assert_eq!(snapshot.combined.allocation_count, 3);
+            assert_eq!(snapshot.combined.total_allocated_bytes, 288);
+            assert_eq!(snapshot.combined.peak_live_bytes, 160);
+            assert_eq!(snapshot.instrumentation_recursions, 0);
+            CountingAllocator.dealloc(grown, Layout::from_size_align(160, 16).unwrap());
+        }
+    }
+
+    #[test]
+    fn reset_ignores_old_lifetimes_and_thread_state_is_private() {
+        unsafe {
+            let layout = Layout::from_size_align(32, 8).unwrap();
+            reset_resources();
+            let phase = enter_resource_phase(ResourcePhase::Serialization);
+            let old = CountingAllocator.alloc(layout);
+            drop(phase);
+            reset_resources();
+            CountingAllocator.dealloc(old, layout);
+            assert_eq!(resource_snapshot().combined, ResourceMetrics::default());
+
+            let child = std::thread::spawn(|| {
+                reset_resources();
+                let phase = enter_resource_phase(ResourcePhase::EmissionExclusive);
+                let layout = Layout::from_size_align(48, 8).unwrap();
+                let ptr = CountingAllocator.alloc(layout);
+                drop(phase);
+                let snapshot = resource_snapshot();
+                CountingAllocator.dealloc(ptr, layout);
+                snapshot
+            })
+            .join()
+            .unwrap();
+            assert_eq!(child.combined.allocation_count, 1);
+            assert_eq!(child.combined.total_allocated_bytes, 48);
+            assert_eq!(resource_snapshot().combined, ResourceMetrics::default());
+        }
     }
 }
