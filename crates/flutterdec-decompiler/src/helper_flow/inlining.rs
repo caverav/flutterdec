@@ -9,19 +9,21 @@ impl<'a> FuncEmitter<'a> {
             return None;
         }
 
+        // Every structural read below is of the emitter's own code. A helper
+        // body carries recovered pool strings and emitter comments, and a brace
+        // or a `_block_` spelling inside one is data being quoted, not a nested
+        // block or a nested helper call.
         for line in &non_empty {
-            let t = line.trim();
-            if t.contains("_block_") {
+            if code_contains(line, "_block_") {
                 return None;
             }
         }
 
         let last = non_empty.last()?.trim();
         let linear_last_return = last.starts_with("return ") && last.ends_with(';');
-        let linear_no_braces = non_empty.iter().all(|l| {
-            let t = l.trim();
-            !t.contains('{') && !t.contains('}')
-        });
+        let linear_no_braces = non_empty
+            .iter()
+            .all(|l| !code_contains(l, "{") && !code_contains(l, "}"));
         if linear_last_return && linear_no_braces {
             return Some(InlineHelperPlan {
                 lines: meta.body_lines.clone(),
@@ -39,8 +41,7 @@ impl<'a> FuncEmitter<'a> {
             let mut depth = 0i32;
             let mut if_end = None;
             for (idx, line) in trimmed.iter().enumerate() {
-                depth += line.chars().filter(|&c| c == '{').count() as i32;
-                depth -= line.chars().filter(|&c| c == '}').count() as i32;
+                depth += code_brace_delta(line);
                 if depth == 0 {
                     if_end = Some(idx);
                     break;
@@ -51,8 +52,7 @@ impl<'a> FuncEmitter<'a> {
                     depth = 0;
                     let mut else_end = None;
                     for (idx, line) in trimmed.iter().enumerate().skip(if_end + 1) {
-                        depth += line.chars().filter(|&c| c == '{').count() as i32;
-                        depth -= line.chars().filter(|&c| c == '}').count() as i32;
+                        depth += code_brace_delta(line);
                         if depth == 0 {
                             else_end = Some(idx);
                             break;
@@ -85,8 +85,7 @@ impl<'a> FuncEmitter<'a> {
         let mut depth = 0i32;
         let mut balanced = true;
         for line in &trimmed {
-            depth += line.chars().filter(|&c| c == '{').count() as i32;
-            depth -= line.chars().filter(|&c| c == '}').count() as i32;
+            depth += code_brace_delta(line);
             if depth < 0 {
                 balanced = false;
                 break;

@@ -8,20 +8,20 @@
 /// `/*` protects the rest of the line instead of exposing it.
 fn non_code_span_len(bytes: &[u8], i: usize, comments_too: bool) -> Option<usize> {
     match bytes.get(i)? {
-        b'"' => {
-            let mut j = i + 1;
-            while j < bytes.len() {
-                match bytes[j] {
-                    b'\\' => j += 2,
-                    b'"' => return Some((j + 1).min(bytes.len()) - i),
-                    _ => j += 1,
-                }
-            }
-            Some(bytes.len() - i)
-        }
+        b'"' => Some(string_literal_len(bytes, i)),
         b'/' if comments_too && bytes.get(i + 1) == Some(&b'*') => {
             let mut j = i + 2;
             while j + 1 < bytes.len() {
+                // A recovered value is rendered inside a comment as a quoted
+                // literal (`pool[7 /* "..." */]`), so its bytes are the one
+                // place a `*/` can appear that the emitter did not write.
+                // Skipping the literal keeps the comment ending where the
+                // emitter ended it, instead of letting recovered data spill the
+                // rest of the annotation onto the line as code.
+                if bytes[j] == b'"' {
+                    j += string_literal_len(bytes, j);
+                    continue;
+                }
                 if bytes[j] == b'*' && bytes[j + 1] == b'/' {
                     return Some(j + 2 - i);
                 }
@@ -33,6 +33,20 @@ fn non_code_span_len(bytes: &[u8], i: usize, comments_too: bool) -> Option<usize
         b'/' if comments_too && bytes.get(i + 1) == Some(&b'/') => Some(bytes.len() - i),
         _ => None,
     }
+}
+
+/// Length of the string literal starting at `i`, escapes honoured. An
+/// unterminated one runs to the end of the text.
+fn string_literal_len(bytes: &[u8], i: usize) -> usize {
+    let mut j = i + 1;
+    while j < bytes.len() {
+        match bytes[j] {
+            b'\\' => j += 2,
+            b'"' => return (j + 1).min(bytes.len()) - i,
+            _ => j += 1,
+        }
+    }
+    bytes.len() - i
 }
 
 fn rewrite_spans(text: &str, comments_too: bool, rewrite: impl Fn(&str) -> String) -> String {
@@ -75,6 +89,59 @@ pub(super) fn rewrite_outside_string_literals(
     rewrite: impl Fn(&str) -> String,
 ) -> String {
     rewrite_spans(text, false, rewrite)
+}
+
+/// Pass each run of code in `text` to `f`, skipping every string literal and
+/// every comment.
+///
+/// The read-only half of `rewrite_code_spans`, for the analyses that read
+/// structure instead of editing it. A recovered pool string is program data and
+/// a comment is the emitter's own prose, so a brace in either closes no block
+/// and an identifier in either names no helper. Runs per code span rather than
+/// once over the whole text, so a token straddling a literal does not match.
+fn for_each_code_span(text: &str, mut f: impl FnMut(&str)) {
+    let bytes = text.as_bytes();
+    let mut code_start = 0usize;
+    let mut i = 0usize;
+    while i < bytes.len() {
+        let Some(span) = non_code_span_len(bytes, i, true) else {
+            i += 1;
+            continue;
+        };
+        f(&text[code_start..i]);
+        let end = (i + span).min(bytes.len());
+        code_start = end;
+        i = end;
+    }
+    f(&text[code_start..]);
+}
+
+/// How many `{` and how many `}` the code of `text` carries.
+pub(super) fn code_brace_counts(text: &str) -> (i32, i32) {
+    let (mut opens, mut closes) = (0i32, 0i32);
+    for_each_code_span(text, |code| {
+        for byte in code.bytes() {
+            match byte {
+                b'{' => opens += 1,
+                b'}' => closes += 1,
+                _ => {}
+            }
+        }
+    });
+    (opens, closes)
+}
+
+/// How much the code of `text` opens minus how much it closes.
+pub(super) fn code_brace_delta(text: &str) -> i32 {
+    let (opens, closes) = code_brace_counts(text);
+    opens - closes
+}
+
+/// Whether `needle` occurs in the code of `text`.
+pub(super) fn code_contains(text: &str, needle: &str) -> bool {
+    let mut found = false;
+    for_each_code_span(text, |code| found |= code.contains(needle));
+    found
 }
 
 pub(super) fn parse_int(token: &str) -> Option<i64> {

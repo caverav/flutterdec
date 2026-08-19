@@ -79,10 +79,7 @@ impl<'a> FuncEmitter<'a> {
                                     continue_count += 1;
                                 }
                             }
-                            rel_depth +=
-                                self.lines[idx].chars().filter(|&c| c == '{').count() as i32;
-                            rel_depth -=
-                                self.lines[idx].chars().filter(|&c| c == '}').count() as i32;
+                            rel_depth += code_brace_delta(&self.lines[idx]);
                         }
 
                         if let Some(last_idx) = last_non_empty {
@@ -91,12 +88,7 @@ impl<'a> FuncEmitter<'a> {
                             if self.lines[last_idx].trim() == "break;" {
                                 let mut depth_at_break = 1i32;
                                 for idx in i + 1..last_idx {
-                                    depth_at_break +=
-                                        self.lines[idx].chars().filter(|&c| c == '{').count()
-                                            as i32;
-                                    depth_at_break -=
-                                        self.lines[idx].chars().filter(|&c| c == '}').count()
-                                            as i32;
+                                    depth_at_break += code_brace_delta(&self.lines[idx]);
                                 }
                                 break_at_top_level = depth_at_break == 1;
                             }
@@ -717,9 +709,7 @@ impl<'a> FuncEmitter<'a> {
                             let mut depth = 0i32;
                             let mut m = None;
                             for idx in k..self.lines.len() {
-                                let line = &self.lines[idx];
-                                depth += line.chars().filter(|&c| c == '{').count() as i32;
-                                depth -= line.chars().filter(|&c| c == '}').count() as i32;
+                                depth += code_brace_delta(&self.lines[idx]);
                                 if depth == 0 {
                                     m = Some(idx);
                                     break;

@@ -230,8 +230,7 @@ impl<'a> FuncEmitter<'a> {
             if nested.is_empty() && (t == "break;" || t == "continue;") {
                 bound.push(index);
             }
-            let opens = line.chars().filter(|&c| c == '{').count() as i32;
-            let closes = line.chars().filter(|&c| c == '}').count() as i32;
+            let (opens, closes) = code_brace_counts(line);
             if opens > 0 && Self::opens_breakable_construct(t) {
                 nested.push(depth);
             }
@@ -268,8 +267,7 @@ impl<'a> FuncEmitter<'a> {
             if rel_depth == 1 && !t.is_empty() {
                 last_top_level_stmt = Some(t.to_string());
             }
-            rel_depth += line.chars().filter(|&c| c == '{').count() as i32;
-            rel_depth -= line.chars().filter(|&c| c == '}').count() as i32;
+            rel_depth += code_brace_delta(line);
         }
 
         let Some(stmt) = last_top_level_stmt else {
@@ -307,8 +305,7 @@ impl<'a> FuncEmitter<'a> {
             if rel_depth == 1 && !t.is_empty() {
                 top_level.push(t.to_string());
             }
-            rel_depth += line.chars().filter(|&c| c == '{').count() as i32;
-            rel_depth -= line.chars().filter(|&c| c == '}').count() as i32;
+            rel_depth += code_brace_delta(line);
         }
 
         if top_level.len() != 1 {
