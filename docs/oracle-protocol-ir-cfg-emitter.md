@@ -9,6 +9,19 @@ Reference commit: `1371e42`. Branch: `research/ir-cfg-emitter`. The pipeline map
 and the risk list this protocol tests against are in
 [research-ir-cfg-emitter.md](research-ir-cfg-emitter.md).
 
+Scope of the sections, because the two halves of this document are read
+differently. Sections 1 through 9 are the standing sections: every path, symbol,
+count, and digest in them describes the tree at `HEAD` unless the sentence names
+a commit, and each is kept true as the tree moves. Two parts of them are pinned
+to `1371e42` instead, by their own headings and again where they are used: the
+Status column of the case matrix in section 2, and the recorded evidence in
+section 8. Every section from 10 on is an adjudication record for one commit and
+describes that commit's tree only; section 9 gives the mechanical rule for
+reading those. Within the standing sections a line-number citation is used only
+for a file section 7 pins by digest, whose bytes cannot move without a section 9
+record of their own; product source, which ordinary work renumbers, is cited by
+symbol.
+
 One rule sits above the rest: candidate output cannot define its own expected
 result. Every expected value in section 2 is either written by hand from an
 external specification, or is a fixed reference artifact recorded before the
@@ -30,7 +43,7 @@ is a hand-built `FunctionIr` with the full expected relation set written out as
 literals: reachable set, dominator sets, immediate post-dominator per block, join
 set, natural loop bodies, loop follow, and the reducibility verdict. Expected
 values are derived from the graph on paper. `Regions` is `pub(super)`
-(`crates/flutterdec-decompiler/src/control_flow/regions.rs:17`), so the assertions
+(`crates/flutterdec-decompiler/src/control_flow/regions.rs`), so the assertions
 live inside the decompiler crate, next to
 `crates/flutterdec-decompiler/src/tests/cfg_and_stack/`.
 
@@ -74,21 +87,30 @@ Class: A adversarial, E edge, S stress, C cap. Status is the state at `1371e42`.
 "Expected" is the invariant the case must prove, not a description of current
 behavior.
 
+Every citation in a Status cell is a location in the `1371e42` tree and is read
+there, with `git show 1371e42:<path>`, never against `HEAD`. Each resolves at that
+commit to the first line of the test the cell describes, or to the comment a cell
+calls a comment. A Status cell is therefore history and makes no claim about the
+current tree: `crates/flutterdec-ir/src/lib.rs` is product source and has been
+renumbered many times since, and
+`crates/flutterdec-decompiler/src/tests/cfg_and_stack/omitted_path_and_stack.rs`
+was moved by section 16. Expected cells cite current code, by symbol.
+
 ### Instruction classification and block construction (L1)
 
 | Case | Shape | Class | Expected | Status at `1371e42` |
 | --- | --- | --- | --- | --- |
 | IR-01 | `b` to a known target | E | block ends, one successor, no fallthrough | covered indirectly, `crates/flutterdec-ir/src/lib.rs:400-445` |
-| IR-02 | `b.<cond>` | E | block ends, successors are target and fallthrough | covered, `ir/src/lib.rs:542-577` |
-| IR-03 | `tbnz` with three operands | A | target parsed from the last operand token | covered, `ir/src/lib.rs:580-615` |
-| IR-04 | `bl` and `blr` | E | call, block continues, fallthrough preserved | partially covered, `ir/src/lib.rs:400-445` asserts the elided case only |
+| IR-02 | `b.<cond>` | E | block ends, successors are target and fallthrough | covered, `crates/flutterdec-ir/src/lib.rs:542-577` |
+| IR-03 | `tbnz` with three operands | A | target parsed from the last operand token | covered, `crates/flutterdec-ir/src/lib.rs:580-615` |
+| IR-04 | `bl` and `blr` | E | call, block continues, fallthrough preserved | partially covered, `crates/flutterdec-ir/src/lib.rs:400-445` asserts the elided case only |
 | IR-05 | `br xN` | A | block ends, no fallthrough, no invented target | fails by inspection, risk R1 |
 | IR-06 | `brk` | A | block ends, no successors | fails by inspection, risk R1 |
-| IR-07 | `ret` followed by more code | E | block ends, next instruction is a leader | covered, `ir/src/lib.rs:522-539` |
-| IR-08 | stack overflow guard group, several SDK offsets and both scratch registers | A | three `RuntimeCheck` ops, no call, no guard edge, slow path pruned | covered, `ir/src/lib.rs:400-489` |
-| IR-09 | `cmp x15` against a non `THR` load | A | not recognized as the guard | covered, `ir/src/lib.rs:494-517` |
+| IR-07 | `ret` followed by more code | E | block ends, next instruction is a leader | covered, `crates/flutterdec-ir/src/lib.rs:522-539` |
+| IR-08 | stack overflow guard group, several SDK offsets and both scratch registers | A | three `RuntimeCheck` ops, no call, no guard edge, slow path pruned | covered, `crates/flutterdec-ir/src/lib.rs:400-489` |
+| IR-09 | `cmp x15` against a non `THR` load | A | not recognized as the guard | covered, `crates/flutterdec-ir/src/lib.rs:494-517` |
 | IR-10 | duplicate `start_va` or duplicate ids in a constructed `FunctionIr` | A | rejected or exposed, never silently overwritten in a map | not covered |
-| IR-11 | block unreachable for a reason other than the guard | A | retained and reported, not deleted | asserted only by the comment at `ir/src/lib.rs:291-299` |
+| IR-11 | block unreachable for a reason other than the guard | A | retained and reported, not deleted | asserted only by the comment at `crates/flutterdec-ir/src/lib.rs:291-299` |
 | IR-12 | 1024 blocks, representative mix | S | successor and predecessor sets stay sorted, unique, and reciprocal | not covered |
 | IR-13 | direct target radix spellings | A | prefixed hex and bare hex containing `a`-`f` select hexadecimal; all-digit operands select decimal at every length; malformed or ambiguous operands remain unknown | covered through public CFG construction, `crates/flutterdec-ir/tests/branch_target_radix.rs` |
 
@@ -102,12 +124,12 @@ Every case asserts the full literal relation set, not one relation.
 | CFG-02 | diamond | E | follow of the branch is the join, join set is exactly the merge block | not covered directly |
 | CFG-03 | fan in with three predecessors | A | `predecessors` ascending, `is_join` true, follow correct | predecessors covered indirectly, `src/tests/cfg_and_stack/join_capture.rs:69` |
 | CFG-04 | nested natural loops | E | inner body subset of outer body, one header each | emission covered, `src/tests/cfg_and_stack/structuring.rs:538` |
-| CFG-05 | loop with several exits | A | loop follow is the header immediate post-dominator outside the body (`regions.rs:322-331`) | not covered directly |
+| CFG-05 | loop with several exits | A | loop follow is the header immediate post-dominator outside the body (`natural_loops` in `control_flow/regions.rs`) | not covered directly |
 | CFG-06 | loop with no exit | E | loop follow is `None`, no panic, emission still terminates | not covered |
 | CFG-07 | irreducible, two entries into one loop | A | `Regions::build` returns `None`, emitter declines and still emits | emission covered, `src/tests/cfg_and_stack/structuring.rs:586` |
 | CFG-08 | unreachable block present | A | unreachable excluded from analysis, `reachable_count` unchanged by it, successor list cleared not deleted | not covered |
 | CFG-09 | self loop | E | header is its own body member, back edge detected | not covered |
-| CFG-10 | two exit blocks, equal sized post-dominator sets | A | immediate post-dominator identical across process hash seeds (`regions.rs:260-272`) | in process only, `src/tests/cfg_and_stack/order_totality.rs:221` |
+| CFG-10 | two exit blocks, equal sized post-dominator sets | A | immediate post-dominator identical across process hash seeds (the size-then-index tie-break in `immediate_post_dominators`, `control_flow/regions.rs`) | in process only, `src/tests/cfg_and_stack/order_totality.rs:221` |
 | CFG-11 | 64, 256, and 1024 blocks, each shape above that scales | S | relations unchanged from the small case, within run limits | not covered |
 
 ### Emission (L3)
@@ -115,15 +137,15 @@ Every case asserts the full literal relation set, not one relation.
 | Case | Shape | Class | Expected | Status at `1371e42` |
 | --- | --- | --- | --- | --- |
 | EM-01 | join reachable from two arms | E | emitted exactly once | covered, `structuring.rs:42` |
-| EM-02 | irreducible graph | A | DFS fallback runs, body non empty, no structured provenance survives (`structured.rs:541-562`) | covered, `structuring.rs:586` |
+| EM-02 | irreducible graph | A | DFS fallback runs, body non empty, no structured provenance survives (`restore_emitter`, `control_flow/structured.rs`) | covered, `structuring.rs:586` |
 | EM-03 | small shared region that is nobody's follow node | A | repeated within 16 blocks and 96 instructions, `repeated_blocks` incremented | covered, `structuring.rs:708` |
 | EM-04 | arm that returns | A | its bindings do not leak past the branch | covered, `structuring.rs:617` |
 | EM-05 | more than 64 distinct omitted blocks | C | every emitted `_block_N()` either resolves to a definition or is collapsed to an explicit omission that the summary comment names, and `quality.json` `block_helper_refs` is 0 | not covered, risk R2 |
-| EM-06 | block visited past its visit limit (48, 24, 14 at `helper_flow/summary.rs:30-41`) | C | omitted path emitted, id recorded once | covered for the collapse half only, `src/tests/cfg_and_stack/omitted_path_and_stack.rs:2` |
+| EM-06 | block visited past its visit limit (48, 24, 14 in `FuncEmitter::visit_limit`, `helper_flow/summary.rs`) | C | omitted path emitted, id recorded once | covered for the collapse half only, `src/tests/cfg_and_stack/omitted_path_and_stack.rs:2` |
 | EM-07 | annotation at and one byte past the 3000 character line budget | C | whole annotation omitted, counted against its site | covered, `src/tests/cfg_and_stack/annotation_caps.rs:185` |
-| EM-08 | nesting deeper than the structured depth cap of 64 (`structured.rs:624`) | C | decline, not truncation | not covered |
+| EM-08 | nesting deeper than the structured depth cap of 64 (`STRUCTURED_MAX_DEPTH`, `control_flow/structured.rs`) | C | decline, not truncation | not covered |
 | EM-09 | same synthetic input, three separate processes | A | byte identical artifact set after section 6 normalization | not covered |
-| EM-10 | function whose entry block has no instructions | E | last resort path at `crates/flutterdec-decompiler/src/lib.rs:451-468` does not double emit | not covered, unreachable on current samples |
+| EM-10 | function whose entry block has no instructions | E | the empty-body last resort in `FuncEmitter::emit_with_plan` (`crates/flutterdec-decompiler/src/lib.rs`) does not double emit | not covered, unreachable on current samples |
 
 ### Provenance and integration (L4, L5)
 
@@ -140,8 +162,8 @@ Every case asserts the full literal relation set, not one relation.
 ## 3. ARM64 control effect table (L1 expected values)
 
 Written from `DDI 0487` C6.2 and, for the guard group, from the Dart AOT shape
-already documented at `crates/flutterdec-ir/src/lib.rs:19-32`. "Ends block" means
-the following instruction must become a leader.
+already documented on `IROp::RuntimeCheck` in `crates/flutterdec-ir/src/lib.rs`.
+"Ends block" means the following instruction must become a leader.
 
 | Instruction | Architectural effect | Required class | Ends block | Required edges | Forbidden edges |
 | --- | --- | --- | --- | --- | --- |
@@ -159,26 +181,37 @@ the following instruction must become a leader.
 Repository evidence for the two indirect-control rows, `BR Xn` and `BRK #imm`.
 Both were classified as `IROp::Other` with an invented fallthrough at `1371e42`,
 which is the state the section 2 rows IR-05 and IR-06 record, and both were
-brought to the values this table demands at `ac544ca`. In the current tree,
-`crates/flutterdec-ir/src/lib.rs:185-191` classifies `br` as
-`IROp::IndirectBranch` and `brk` as `IROp::Trap`, `:242-246` makes the
-instruction after each of them a leader, and `:310` gives a block ending in
-either one an empty successor list, so neither can take a fallthrough and
-neither can take a guessed target. The register operand of `br` is kept only as
-provenance for the emitters (`:181-188`); `parse_target_hex` rejects a register
-name, so no edge is derived from it. The same expectation is stated as data in
-the twelve-row control-effect table at `:451-540`, whose `br` row asserts
-`IROp::IndirectBranch` with `succ_starts: &[]` and whose `brk` row asserts
-`IROp::Trap` with `succ_starts: &[]`, and that table is driven by two tests:
-`every_arm64_control_effect_has_exactly_the_documented_edges` (`:563`) for the
+brought to the values this table demands at `ac544ca`. In the current tree, all
+four of those mechanisms live in `crates/flutterdec-ir/src/lib.rs`, and each is
+named here by symbol rather than by line, because that file is product source
+this mission keeps editing. The `"br"` and `"brk"` arms of the mnemonic match in
+`llir_from_disasm` classify `br` as `IROp::IndirectBranch` and `brk` as
+`IROp::Trap`. In `build_function_ir_accounted`, the
+`IROp::Return | IROp::IndirectBranch | IROp::Trap` arm of the leader loop makes
+the instruction after either one a leader, and the arm of the same three classes
+in that function's successor loop leaves the successor list empty, so neither can
+take a fallthrough and neither can take a guessed target. The register operand of
+`br` is kept only as provenance for the emitters, in the `"br"` arm that copies
+`op_str` into the instruction's `target` field; `parse_direct_target`, which
+replaced `parse_target_hex` in section 20, rejects a register name, so no edge is
+derived from it. The same expectation is stated as data in the twelve-row
+`CONTROL_EFFECTS` table, which section 15 moved out of that file into
+`crates/flutterdec-ir/src/tests/control_effects.rs`: its `br` row asserts
+`IROp::IndirectBranch` with `succ_starts: &[]` and its `brk` row asserts
+`IROp::Trap` with `succ_starts: &[]`. That table is driven by two tests in the
+same file, `every_arm64_control_effect_has_exactly_the_documented_edges` for the
 edges and
 `only_a_control_effect_that_ends_a_block_makes_the_next_instruction_a_leader`
-(`:637`) for the block-ending column. Downstream evidence is unchanged from
+for the block-ending column, and two more tests there,
+`an_indirect_branch_keeps_its_register_and_takes_no_edge` and
+`a_trap_ends_the_block_with_no_successors`, assert the two rows on their own.
+That file is a digest-pinned row of section 7, so those four names cannot be
+weakened without a section 9 record. Downstream evidence is unchanged from
 `1371e42` and still corroborates the same reading:
-`crates/flutterdec-core/src/pipeline/runners/split.rs:174-183` treats `ret`,
-`brk`, `b`, and `br` as path enders, and
-`crates/flutterdec-core/src/pipeline/runners/stubs.rs:461` reads `br` as the tail
-of a dispatch stub. Section 14 adjudicates the class name in the `BR Xn` row.
+`is_terminator` in `crates/flutterdec-core/src/pipeline/runners/split.rs` treats
+`ret`, `brk`, `b`, and `br` as path enders, and `tail_calls_immediately` in
+`crates/flutterdec-core/src/pipeline/runners/stubs.rs` reads `br` as the tail of a
+dispatch stub. Section 14 adjudicates the class name in the `BR Xn` row.
 
 ## 4. Exact invariants
 
@@ -255,13 +288,16 @@ may be normalized are:
    search for `elapsed`, `duration`, `_ms`, `timestamp`, `generated_at`,
    `Instant::now`, and `SystemTime` across
    `crates/flutterdec-core/src/pipeline/*.rs` and
-   `crates/flutterdec-cli/src/main.rs` finds nothing. The allowance therefore
-   applies only to timing fields that the later benchmark harness emits into its
-   own output, never into `quality.json` or `report.json`.
+   `crates/flutterdec-cli/src/main.rs` finds nothing, and the same search over
+   the same paths still finds nothing at `HEAD`. The allowance therefore applies
+   only to timing fields that the later benchmark harness emits into its own
+   output, never into `quality.json` or `report.json`.
 
 Everything else is compared verbatim. In particular `quality.json` has no path
-or time field at all (`crates/flutterdec-core/src/lib.rs:248-275`), so it is
-compared byte for byte.
+or time field at all: it is `QualityReport` in
+`crates/flutterdec-core/src/lib.rs`, whose every field, and every field of the
+`EmissionReport` it nests, is a mode string, a boolean, a failure list, a count,
+or a ratio. So it is compared byte for byte.
 
 ## 7. Protected paths and digests
 
@@ -442,11 +478,13 @@ unrecorded `include!`, neither manifest disables a test target, and both CI lane
 really invoke the named integration targets and the inventory checker.
 
 Section 13 records the compiled inventory, its first 24 row-to-sentinel mappings,
-and the twenty-two planted silencings that prove it fires. Section 12 records the
+and the twenty-two plants that prove it fires, thirteen of which leave `cargo test
+--workspace` green with a quietly smaller suite. Section 12 records the
 source-text guard it replaced, and section 11 that guard's narrower first
 version. Section 15 records the nine IR and CFG boundary rows, the two new hook
-families, the three new targets, and the twenty-eight planted silencings across
-every new family.
+families, the three new targets, and the thirty-two plants across every new
+family, twenty-six of which silence a protected ruler while `cargo test
+--workspace` still exits 0.
 
 The loader families are `#[cfg(test)] mod tests;` in
 `crates/flutterdec-decompiler/src/lib.rs`, the five `include!` lines in
@@ -457,7 +495,7 @@ loaders, the eight `#[cfg(test)] #[path = ...]` module declarations in
 `pipeline/runners/split.rs`, `pipeline/runners/stubs.rs`,
 `crates/flutterdec-ir/src/lib.rs`, `crates/flutterdec-ir/src/validate.rs` and
 `crates/flutterdec-decompiler/src/control_flow/regions.rs`, the one `include!` in
-`crates/flutterdec-decompiler/src/control_flow.rs`, which loads five product
+`crates/flutterdec-decompiler/src/control_flow.rs`, which loads six product
 modules beside its single oracle and so cannot have its include count pinned, and
 the three emitter-repair module declarations in `emission_taxonomy.rs`,
 `structured.rs`, and the decompiler `lib.rs`. Cargo automatically discovers the
@@ -519,12 +557,19 @@ false` would switch any crate's targets off wholesale.
 Threshold rulers, protected by value rather than by digest because they live in
 files this mission may legitimately touch:
 
-- `--max-placeholder-ifs` default 0, `crates/flutterdec-cli/src/main.rs:201-208`.
-- `--max-unresolved-cf` default 0, `main.rs:209-216`.
-- `--max-indirect-call-ratio` default 0.30, `main.rs:217-224`.
-- `--min-disassembly-ratio` default 0.80, `main.rs:225-232`.
-- The four gate comparisons, `crates/flutterdec-core/src/pipeline/quality.rs:106-118`.
-- The six per line counters and their fixed order, `quality.rs:1-34`.
+Each is named by the symbol that carries it, not by a line, because both files
+are product source:
+
+- `--max-placeholder-ifs` default 0, the `max_placeholder_ifs` field of
+  `DecompileCmd` in `crates/flutterdec-cli/src/main.rs`.
+- `--max-unresolved-cf` default 0, the `max_unresolved_cf` field of the same
+  struct.
+- `--max-indirect-call-ratio` default 0.30, its `max_indirect_call_ratio` field.
+- `--min-disassembly-ratio` default 0.80, its `min_disassembly_ratio` field.
+- The four gate comparisons that read those four values into `failures`, in
+  `quality_from_artifacts`, `crates/flutterdec-core/src/pipeline/quality.rs`.
+- The six per line counters and their fixed order, `source_text_counters` in the
+  same file.
 
 ## 8. Evidence recorded at `1371e42`
 
@@ -547,7 +592,11 @@ Planted failures, run individually:
   success, then plants a value taken from the other call's snapshot and requires
   `violations snapshot 1` and `violations total 1`, then plants a swapped
   snapshot id and requires a non zero exit
-  (`crates/flutterdec-decompiler/tests/provenance_audit.rs:185-252`).
+  (`crates/flutterdec-decompiler/tests/provenance_audit.rs:185-252` at `1371e42`;
+  that file has moved ten times since, so read the range with
+  `git show 1371e42:<path>`. The test is
+  `the_pre_call_audit_traces_each_candidate_and_its_checker_catches_a_wrong_path`,
+  which still carries those three plants at `HEAD`).
 - `cargo test -p flutterdec-decompiler --test loop_entry_provenance_audit`: 1
   passed.
 - `python3 scripts/prov_join_audit_plant_test.py`: exit 0, `PASS`. Three observed
@@ -610,6 +659,16 @@ carries says where it was superseded, and every reproduce instruction for such a
 row is a `git show <commit>:<path> | sha256sum`, never a `sha256sum` of the
 worktree. A history row labelled current, or reproduced from worktree bytes, is a
 defect of this document.
+
+The same rule decides how to check a count. A number in a record from 10 on is
+read at that record's own commit, so `git show <commit>:<path>` and the section 7
+table as it stood there are what confirm or refute it, and a number that is right
+today but was not right there is still a defect. The standing sections named at
+the top of this document, 1 through 9, are the mirror image: their counts are
+read at `HEAD`, except the `1371e42` state that section 2's Status column and
+section 8 record. Every record from 10 on that needs to state where the table
+stands today says so in a sentence of its own that points at section 7, rather
+than letting a historical count be read as current.
 
 ## 10. Adjudication record: `scripts/ci-check.sh`
 
@@ -1611,8 +1670,11 @@ behavioral column already fixed, it is a reconciliation.
 | `b2ed966` | 2026-08-18T10:27:41-04:00 | 1, all docs | research doc section 18, risk R1 closed |
 | this commit | after `b2ed966` | 1, all docs | section 3 reconciliation and this record |
 
-Reproduce with `git log --format='%h %cI %s' c95daa6..HEAD` and
-`git diff-tree -r --no-commit-id --name-only <commit>`.
+Reproduce with `git log --format='%h %cI %s' c95daa6..fe4b31c`, which lists the six
+rows below `282a1b3` and nothing else, and
+`git diff-tree -r --no-commit-id --name-only <commit>` for the path counts. The
+range ends at this record's own commit, not at `HEAD`, so it stays the six rows
+above as the branch grows.
 
 The behavioral columns of both rows predate all of it: they were written at
 `282a1b3` from `DDI 0487` C6.2, before any of this code existed, and 14.1 shows
@@ -1685,13 +1747,24 @@ and nothing else: no product source, no test, no fixture, no golden, no manifest
 no script and no CI lane.
 
 Every protected digest row was exact. The 47 rows section 7 held at this commit
-all matched the worktree, and the intersection of those 47 paths with the 14
-paths changed by the whole IR work, `git diff --name-only c95daa6 HEAD`, was
-empty. So none of the five commits this record reconciles against moved a
-protected digest either, and the three rows that had moved since `1371e42` were
-still the three adjudicated in sections 10 through 13. Four more rows have left
-their first pinned digest since, first in section 16, then in sections 18 and 19;
-section 7 carries the standing count of seven.
+all matched the worktree, and the intersection of those 47 paths with the 14 paths
+changed by the whole IR work, `git diff --name-only c95daa6 fe4b31c^`, was empty.
+So none of the five commits this record reconciles against moved a protected
+digest either, and at this commit exactly two rows had moved since `1371e42`:
+`scripts/ci-check.sh`, adjudicated in sections 10, 12 and 13, and
+`crates/flutterdec-decompiler/tests/provenance_audit.rs`, adjudicated in sections
+11, 12 and 13. Section 13's third mover is not one of them:
+`scripts/check-oracle-inventory.py` did not exist at `1371e42` and joined section 7
+there as a new row, at the first pinned digest it still carried here, which is the
+distinction section 13 draws when it names that row as a new one.
+
+Five more rows have left their first pinned digest since this commit, first
+`scripts/check-oracle-inventory.py` in section 15, then
+`crates/flutterdec-core/src/pipeline/runners/tests.rs` and
+`crates/flutterdec-decompiler/src/tests/cfg_and_stack/omitted_path_and_stack.rs`
+in section 16, `scripts/prov_cross_audit_reconcile.py` in section 18, and
+`crates/flutterdec-decompiler/src/control_flow/relation_oracle.rs` in section 19.
+Two plus five is the standing count of seven that section 7 carries.
 
 That is also the honest limit of this record. Nothing under `crates/flutterdec-ir/`
 carries a section 7 digest row or an oracle-inventory sentinel, so the twelve-row
@@ -2830,8 +2903,11 @@ Column order keeps this history outside the section 7 path-and-digest parser.
 | `crates/flutterdec-decompiler/src/control_flow/relation_oracle.rs` | `c0558822e6f33e8201b26617d38c448adb78795d9d4325f1dc49e7dd99904cfe` | `e53dd455ddbbdf2c0b00d184f1f2d788833cbfd6a0db070ad69b9372297da849` |
 | `crates/flutterdec-decompiler/tests/dfs_loop_address_invariance.rs` | new | `1c2c0403303e619de9fe840f62f61c1af92dbec77fe554fd66d3505755b37db3` |
 
-Those are the only five section 7 rows this commit moved. The first three moved on
-afterwards and their later links are unbroken. `scripts/ci-check.sh` continues
+Those are the only five section 7 rows this commit touched: the first four moved,
+and `crates/flutterdec-decompiler/tests/dfs_loop_address_invariance.rs` joined the
+table as a new row, which is why its prior cell reads `new` rather than a digest.
+The first three moved on afterwards and their later links are unbroken.
+`scripts/ci-check.sh` continues
 into section 22 and then into section 23, which leaves it at its current
 `9dac174b...`; section 24 leaves it byte-unchanged.
 `scripts/check-oracle-inventory.py` continues into section 22 and then into
