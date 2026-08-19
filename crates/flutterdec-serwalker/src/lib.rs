@@ -35,6 +35,7 @@ pub fn walk_snapshot_and_produce_model(
         classes: Vec::new(),
         functions: Vec::new(),
         object_pool: Vec::new(),
+        pool_geometry: Option::None
     };
 
     let mut isolate_data_stream = Stream::new(adapter_input.isolate_data);
