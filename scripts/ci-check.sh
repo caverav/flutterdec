@@ -15,9 +15,10 @@ Runs the same checks as CI from the local workspace:
   6) cargo clippy --workspace --all-targets -- -D warnings
   7) the decompiler oracle integration targets, by name
   8) scripts/check-oracle-inventory.py
-  9) cargo test --workspace            (unless --skip-tests)
- 10) cargo build -p flutterdec-cli --release
- 11) fmt, clippy and tests for the excluded benchmark harness
+  9) scripts/check-resource-ruler.py
+ 10) cargo test --workspace            (unless --skip-tests)
+ 11) cargo build -p flutterdec-cli --release
+ 12) fmt, clippy and tests for the excluded benchmark harness
 
 The benchmark harness is not a workspace member, so --workspace does not reach
 it and it is linted and tested through its own manifest. That exclusion is what
@@ -90,6 +91,9 @@ nix develop -c cargo test -p flutterdec-core --test pipeline_determinism
 # protected oracle stops being compiled while its digest still matches.
 echo "[ci-check] scripts/check-oracle-inventory.py"
 nix develop -c python3 scripts/check-oracle-inventory.py
+
+echo "[ci-check] scripts/check-resource-ruler.py"
+nix develop -c python3 scripts/check-resource-ruler.py
 
 if [[ "$skip_tests" != "1" ]]; then
   echo "[ci-check] cargo test --workspace"

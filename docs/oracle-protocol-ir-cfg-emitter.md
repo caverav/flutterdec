@@ -319,7 +319,7 @@ Gate and harness scripts:
 
 | Path | sha256 |
 | --- | --- |
-| `scripts/ci-check.sh` | `b75bcdfbae8562785e174c1d360319ff83d72fbd4bdcbe1659e6d71d375a79e9` |
+| `scripts/ci-check.sh` | `b1600c29ccbda98b751e8a337c6aa875dfc56eef3dc66efb9edb00952c78188c` |
 | `scripts/test-suite.sh` | `b1d2efd5cda5794dbb9e60c41f92eede0cc65996d66f6c73c19e905be451c38a` |
 | `scripts/lint-python.sh` | `eef80907146b5d1b3d662ad823372a8b6a33df99b458582077b0c1578680e2d7` |
 | `scripts/lint-shell.sh` | `4554f41d5dbeeadf4d2478ce97af416392b14a78cfa417673b35914877d316ab` |

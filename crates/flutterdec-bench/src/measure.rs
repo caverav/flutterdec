@@ -494,4 +494,28 @@ mod tests {
             assert_eq!(resource_snapshot().combined, ResourceMetrics::default());
         }
     }
+
+    #[test]
+    fn nested_phase_exit_and_panic_cleanup_restore_the_parent() {
+        use flutterdec_decompiler::bench_spans::current_resource_phase;
+
+        assert_eq!(current_resource_phase(), None);
+        let outer = enter_resource_phase(ResourcePhase::EmissionExclusive);
+        assert_eq!(
+            current_resource_phase(),
+            Some(ResourcePhase::EmissionExclusive)
+        );
+        let panicked = std::panic::catch_unwind(|| {
+            let _inner = enter_resource_phase(ResourcePhase::Cfg);
+            assert_eq!(current_resource_phase(), Some(ResourcePhase::Cfg));
+            panic!("phase cleanup plant");
+        });
+        assert!(panicked.is_err());
+        assert_eq!(
+            current_resource_phase(),
+            Some(ResourcePhase::EmissionExclusive)
+        );
+        drop(outer);
+        assert_eq!(current_resource_phase(), None);
+    }
 }

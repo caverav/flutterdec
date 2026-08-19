@@ -1,0 +1,90 @@
+# Auxiliary phase resource ruler
+
+This ruler closes VAL-METRIC-002 without changing the accepted timing ruler,
+candidate order, target selection, or scores. Timing remains bound to
+`4c127aba4e74fb6f8d486c4cb066586bb0d74846`. Resource scoring is a separate
+command over frozen reference `630ec442d951aac5704ae80287367912bfbfc388`
+and immutable final candidate `9b82e07fa62f97654aea5153d9fb6a2ef57a377a`.
+
+## Allocator semantics
+
+The resource allocator prefixes every system allocation with an aligned,
+fixed-size header holding magic, reset epoch, requested size, and owner phase.
+The prefix preserves the caller's alignment and is not visible to the caller.
+Instrumentation uses only constant-initialized thread-local cells, fixed arrays,
+integer operations, and the system allocator call already required by the
+program. It performs no allocation, lock, formatting, IO, or recursion. Every
+case reports an instrumentation recursion count and fails if it is nonzero.
+
+- `alloc` and successful `alloc_zeroed` each add one event and the requested
+  bytes to the current leaf phase; live bytes rise by requested size.
+- `alloc_zeroed` zeroes the caller-visible region. The private header is written
+  after the system call and does not change those bytes.
+- Successful `realloc` ends the old owner lifetime and records one allocation
+  event of `new_size` owned by the current leaf phase. Failure preserves the old
+  allocation and records nothing. System `realloc` preserves caller bytes.
+- `dealloc` records no allocation event. It subtracts the header's requested
+  size from the allocation's original owner and current combined live value,
+  even if deallocation occurs in another phase.
+- Peak live bytes are the maximum outstanding requested bytes owned by a phase
+  during the current reset epoch. Combined peak is the maximum sum of all four
+  owners, not the sum of phase peaks.
+- Reset increments an epoch and zeroes all metrics. Later destruction of an
+  allocation from an older epoch is ignored, so setup and previous cases cannot
+  subtract from a new case. Epoch wrapping skips zero.
+- State is thread-local. The runner records one thread; another thread has its
+  own phase stack, epoch, metrics, and recursion counter.
+- Phase entry pushes onto a fixed eight-entry stack. The active leaf alone owns
+  allocations. CFG entry temporarily replaces emission-exclusive ownership;
+  RAII exit restores its parent during normal return and panic unwinding.
+
+The four disjoint owners are IR, CFG, emission-exclusive, and serialization.
+Every allocation made while a protected phase is active belongs to exactly one
+owner. The combined row is derived concurrently from those owners; it is not a
+fifth allocation owner. Allocations outside a protected phase are deliberately
+unscored and cannot be charged to a case.
+
+## Execution and guards
+
+`scripts/bench-resource.sh OUT_DIR` reconstructs the accepted `4c127ab` timing
+harness tree first, verifies its Git tree object, overlays the four fixed
+resource files by Git blob identity, and builds both products sequentially at
+one canonical path. It runs every disclosed case after three warmups, separately
+from timing, and emits JSON plus TSV count, total bytes, peak live bytes, and
+process peak RSS for each case and phase. Workload manifests must match.
+
+The audit rejects a missing/zero/duplicate cell, non-positive RSS, a candidate
+count/bytes/peak regression above 5 percent, or a non-repeatable no-op control.
+The CFG graph clone and emitter block-vector clone must each add count and bytes,
+raise their own phase peak above 5 percent on at least one case, and leave every
+other exclusive phase byte-identical. This last rule makes a nested CFG charge
+to emission, a dropped charge, or any other phase misattribution fail.
+
+## Protected digest inventory
+
+The checker requires this exact ordered set. Digests are filled by the atomic
+protocol adjudication commit and recomputed before Cargo work. Deletion, stale
+digest, extra/missing row, duplicate row, and loader bypass all fail closed.
+
+| Path | sha256 |
+| --- | --- |
+| `crates/flutterdec-bench/Cargo.toml` | `98dbc4b430302d76c4cf4716dfdd781ea354f26195514d1f9b844e79f97a7040` |
+| `crates/flutterdec-bench/src/main.rs` | `c8fefa460ecc3dd7a919f6577367d5e967386c277630fd3e1493d4dd53b6ac34` |
+| `crates/flutterdec-bench/src/measure.rs` | `49dfc3fcb2a33fa2903f9f19ec0c02915fb15cc2cba86a9d4f8e6d72535570b8` |
+| `crates/flutterdec-decompiler/src/lib.rs` | `1b5c12d8cd0669e73867b1115986a11d191bc416d1fdbd3a393e394aa2611df5` |
+| `crates/flutterdec-decompiler/src/control_flow/structured.rs` | `5d748ff24c73049402db3511c9346bfeba8730002757c228da6bc4bb809b4d02` |
+| `scripts/bench-resource.sh` | `93a6932301bb37452c41149b237d3c46b4244d2b3ee2d76a60ca11dd35c101db` |
+| `scripts/audit-resource-evidence.py` | `4cea4c88f15144a5cdf34a724751a173d11e91f7d7cda5641c156cd48faaf220` |
+| `scripts/check-resource-ruler.py` | `4b4da7f81c5ae35fbd060883052520a627b092d9676c9a981cd581bfe259f2c7` |
+| `scripts/ci-check.sh` | `b1600c29ccbda98b751e8a337c6aa875dfc56eef3dc66efb9edb00952c78188c` |
+
+## Ruler-change adjudication
+
+This is a protected auxiliary measurement, not a new timing selector. It does
+not alter the disclosed matrix, seed, timing spans, estimator, MDE, candidate
+order, accepted timing harness, frozen product refs, or any product behavior
+without `bench-spans`. The only product-source additions are feature-gated
+phase ownership and explicit clone plants. The resource command is never called
+by timing selection. Any future byte change in the inventory requires an atomic
+adjudication with old/new digests, refreshed lifecycle and plant evidence, and
+an explicit statement that timing selection was not rerun.
