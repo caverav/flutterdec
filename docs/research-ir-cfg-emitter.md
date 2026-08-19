@@ -1392,3 +1392,19 @@ One further hardening came out of writing those fixtures: the coverage check
 compared `structured_emitted.len()` against the reachable count, so anything
 already in that set masked a block the walk never emitted. It now asks whether
 every reachable block is in the set.
+
+## 20. Post-correctness performance reference
+
+Sections 12 through 16 are the historical pre-correctness attribution. They do
+not define targets for E1, E2, or E3 after the accepted correctness work.
+[Post-correctness performance reference](post-correctness/README.md) freezes
+exact HEAD `630ec442d951aac5704ae80287367912bfbfc388`, records the fresh 15-pair
+comparison to fixed scoring reference `1371e42`, and recomputes the phase and
+case shares, allocation shape, Amdahl ceiling, deterministic target prefixes,
+candidate leverage, trial order, and decision inputs.
+
+The refreshed dominant phase is still `emission_exclusive`, now 0.816574 of
+workload time rather than 0.908455. The emission target prefix is now four cases
+and reaches 0.782641 of emission. Candidate MDE remains a rule evaluated from
+each later comparison's own 15 paired deltas; no number measured during this
+refresh is carried into a candidate decision.

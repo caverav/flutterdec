@@ -9,4 +9,5 @@
 - IR, CFG, and emitter baseline: [research-ir-cfg-emitter.md](research-ir-cfg-emitter.md)
 - IR, CFG, and emitter correctness protocol: [oracle-protocol-ir-cfg-emitter.md](oracle-protocol-ir-cfg-emitter.md)
 - Pipeline phase A/A noise floor and its artifacts: [baseline-ir-cfg-emitter.md](baseline-ir-cfg-emitter.md)
+- Post-correctness performance reference and evidence: [post-correctness/README.md](post-correctness/README.md)
 - Project context/history: [../context.md](../context.md)
