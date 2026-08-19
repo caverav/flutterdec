@@ -42,6 +42,20 @@ pub struct PoolSemanticHint {
 #[derive(Debug, Default, Clone)]
 struct LiftState {
     reg_values: HashMap<String, String>,
+    /// Registers whose bound value came from a 32-bit destination.
+    ///
+    /// A `w` write computes in 32 bits and zero-extends, so the register holds
+    /// nothing above bit 31 and a later `w` read of it produces exactly the
+    /// bound value. Every other producer leaves the high half live, and a `w`
+    /// read of one of those is the low half of a value this lifter has no
+    /// expression for: `lsl x3, x2, #32` then `mov w0, w3` reads zero while the
+    /// binding says otherwise.
+    ///
+    /// A set rather than a width per binding, because that is the whole
+    /// question a read asks. Absence is the conservative answer, so a binding
+    /// written without its width degrades a read to `regN` rather than
+    /// resolving it wrongly.
+    narrow_bindings: HashSet<String>,
     selector_hints: HashMap<String, String>,
     last_cmp: Option<(String, String)>,
     /// Per register, the value the most recent call dropped from it, and the
@@ -52,6 +66,24 @@ struct LiftState {
     /// side table would keep an arm's clobber after the arm was rolled back and
     /// annotate the fall-through path with a value that path never held.
     call_clobbers: HashMap<String, CallClobber>,
+}
+
+impl LiftState {
+    /// Bind `reg`, recording whether the producer's width proves the value is
+    /// what a 32-bit read of the register yields.
+    ///
+    /// Every write to `reg_values` goes through here, so the two halves of a
+    /// binding cannot disagree. A binding dropped elsewhere may leave its width
+    /// behind, which is harmless: the value is what a read looks up first, and
+    /// the next binding of that register rewrites both.
+    fn bind(&mut self, reg: String, value: String, narrow: bool) {
+        if narrow {
+            self.narrow_bindings.insert(reg.clone());
+        } else {
+            self.narrow_bindings.remove(&reg);
+        }
+        self.reg_values.insert(reg, value);
+    }
 }
 
 /// What one call took from one register.

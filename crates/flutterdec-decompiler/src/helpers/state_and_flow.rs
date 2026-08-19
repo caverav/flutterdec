@@ -88,15 +88,15 @@ pub(super) fn init_state() -> LiftState {
     // `receiver`. Confirmed on 14,129 functions, where entry blocks read x1
     // before writing it in 55% of cases against 3.4% for x0.
     for (i, reg) in DART_ARGUMENT_REGISTERS.iter().enumerate() {
-        s.reg_values.insert((*reg).to_string(), format!("arg{i}"));
+        s.bind((*reg).to_string(), format!("arg{i}"), false);
     }
     for (reg, value) in PINNED_REGISTERS {
-        s.reg_values.insert((*reg).to_string(), (*value).to_string());
+        s.bind((*reg).to_string(), (*value).to_string(), false);
     }
     // SPREG on entry. Seeded but not pinned: the prologue's `sub x15, x15, #N`
     // must rebind it so slot addresses account for the frame, while the entry
     // value is what makes an unadjusted `[x15, #N]` read as `sp[N]`.
-    s.reg_values.insert("x15".to_string(), "sp".to_string());
+    s.bind("x15".to_string(), "sp".to_string(), false);
     s
 }
 

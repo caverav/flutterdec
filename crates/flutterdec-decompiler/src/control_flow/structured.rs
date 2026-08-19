@@ -1177,7 +1177,7 @@ impl<'a> FuncEmitter<'a> {
                         // A pool load rebinds the register, so whatever a call
                         // took from it earlier no longer describes it.
                         self.state.call_clobbers.remove(&dst);
-                        self.state.reg_values.insert(dst, Self::clean_expr(rhs));
+                        self.state.bind(dst, Self::clean_expr(rhs), false);
                     }
                 }
                 IROp::RuntimeCheck => {}

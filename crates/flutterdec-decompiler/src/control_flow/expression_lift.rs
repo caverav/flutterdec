@@ -61,11 +61,10 @@ impl<'a> FuncEmitter<'a> {
     /// is therefore not what that access produces, and `mov w0, w1` after
     /// `mov x1, #0x100000000` rendered `0x100000000` where the register holds 0.
     ///
-    /// Only a literal is narrowed. Its truncation is exact and costs nothing to
-    /// render, while a non-literal expression would need a mask on every 32-bit
-    /// access to say the same thing; for those the arms keep the documented
-    /// premise that a `w` form's operands are already 32-bit values, and the ones
-    /// whose halves always differ - `neg`, `mvn`, `movk` - mask themselves.
+    /// A literal is narrowed here because its truncation is exact and costs
+    /// nothing to render. A non-literal expression cannot be truncated in
+    /// place, so what a 32-bit access of it produces is decided by the width of
+    /// the write that bound it, which `LiftState::narrow_bindings` records.
     fn narrowed_to_token_width(value: String, token: &str) -> String {
         if !is_w_register(token) {
             return value;
@@ -76,20 +75,64 @@ impl<'a> FuncEmitter<'a> {
         }
     }
 
+    /// What a read of `reg` through `token` produces, or `None` when the bound
+    /// value is not that.
+    ///
+    /// A 64-bit token reads the whole register, so any binding answers it. A
+    /// 32-bit token reads the low half: a literal narrows exactly, and a
+    /// non-literal is the value only when a 32-bit write bound it, because that
+    /// write zero-extended and left nothing above bit 31. Anything else -
+    /// arguments, pool values, loads through an `x` destination, computed
+    /// expressions - has a live high half, and rendering it whole would state a
+    /// 64-bit value where the access yields 32 bits. `lsl x3, x2, #32` then
+    /// `mov w0, w3` is the extreme case: the access is zero for every input
+    /// while the binding says `(slot0.f8 << 32)`.
+    ///
+    /// Masking the expression instead would say the same thing, but every
+    /// 32-bit access in the function would carry the mask, including the
+    /// compressed-pointer and complement forms that already narrow themselves.
+    /// Unresolved is the honest rendering and is what the unresolved counters
+    /// account for.
+    fn readable_at_token_width(&self, reg: &str, value: String, token: &str) -> Option<String> {
+        if !is_w_register(token) {
+            return Some(value);
+        }
+        match parse_expr_int(&value) {
+            Some(_) => Some(Self::narrowed_to_token_width(value, token)),
+            None => self.state.narrow_bindings.contains(reg).then_some(value),
+        }
+    }
+
     /// Bind `dst` to what the write actually leaves in it, at the width the
     /// destination operand is spelled at.
     ///
     /// Every modelled write goes through here, so the width rule has one site
     /// rather than one per arm.
     fn bind_reg_value(&mut self, dst_token: &str, dst: String, value: String) {
+        let narrow = is_w_register(dst_token);
         let value = Self::narrowed_to_token_width(value, dst_token);
-        self.state.reg_values.insert(dst, value);
+        self.state.bind(dst, value, narrow);
+    }
+
+    /// Bind `dst` through a whole-value copy, which carries the source's width
+    /// provenance as well as its value.
+    ///
+    /// `mov x3, x2` leaves x3 holding exactly what x2 held, so a 32-bit read of
+    /// x3 produces whatever the same read of x2 would have. Recording only the
+    /// destination's own width would lose a proven 32-bit value at every move
+    /// that widens the spelling, which is the readability the narrowing rule is
+    /// meant to keep rather than take.
+    fn bind_moved_reg_value(&mut self, dst_token: &str, dst: String, src: &str, value: String) {
+        let narrow = is_w_register(dst_token)
+            || canonical_reg(src).is_some_and(|src| self.state.narrow_bindings.contains(&src));
+        let value = Self::narrowed_to_token_width(value, dst_token);
+        self.state.bind(dst, value, narrow);
     }
 
     fn resolved_reg_value(&self, reg: &str, token: &str) -> String {
         let raw = Self::clean_expr(
             self.capped_reg_value(reg)
-                .map(|value| Self::narrowed_to_token_width(value, token))
+                .and_then(|value| self.readable_at_token_width(reg, value, token))
                 .unwrap_or_else(|| reg.to_string()),
         );
         self.annotate_pool_refs(&raw)
@@ -103,6 +146,20 @@ impl<'a> FuncEmitter<'a> {
             return self.resolved_reg_value(&reg, token);
         }
         Self::clean_expr(token.trim().trim_start_matches('#').to_string())
+    }
+
+    /// An operand read at the full width of its register.
+    ///
+    /// For a form whose rendering re-narrows what it read - an extend, a
+    /// complement, a negation - the operand's `w` spelling says nothing the
+    /// rendered expression does not already say, so reading it at 32 bits would
+    /// drop a binding this emitter can state exactly. Everything else reads at
+    /// the width it is spelled at.
+    fn whole_register_expr(&self, token: &str) -> String {
+        match canonical_reg(token) {
+            Some(reg) => self.operand_expr(&reg),
+            None => self.operand_expr(token),
+        }
     }
 
     pub(super) fn operand_expr(&self, token: &str) -> String {
@@ -239,14 +296,24 @@ impl<'a> FuncEmitter<'a> {
     /// `a == (b >> 1)`, and that is a condition, so the structurer sees it too.
     /// `lsr` is Dart's `>>>`, because `>>` is arithmetic.
     fn shifted_operand_expr(&self, ops: &[String], index: usize) -> String {
-        let base = self.operand_expr(&ops[index]);
         let Some(modifier) = ops.get(index + 1) else {
-            return base;
+            return self.operand_expr(&ops[index]);
         };
         let modifier = modifier.trim().to_ascii_lowercase();
         let (kind, amount) = match modifier.split_once('#') {
             Some((kind, amount)) => (kind.trim(), Some(amount.trim().to_string())),
             None => (modifier.as_str(), None),
+        };
+        // An extend states its own narrowing - `sxtw` renders
+        // `signExtend(v, 32)` and `uxtw` renders `(v & 0xffffffff)` - so the
+        // `w` spelling of its operand is notation, not a claim about the value,
+        // and the whole register is what those functions are applied to. A
+        // shift carries no such statement, so its operand keeps the width it is
+        // spelled at.
+        let base = if is_extend_modifier(kind) {
+            self.whole_register_expr(&ops[index])
+        } else {
+            self.operand_expr(&ops[index])
         };
         // An extend narrows first, then shifts. Dropping the shift amount would
         // render a scaled index as unscaled, which is a wrong value rather than
@@ -339,7 +406,7 @@ impl<'a> FuncEmitter<'a> {
             "mov" if ops.len() >= 2 => {
                 if let Some(dst) = canonical_reg(&ops[0]) {
                     let rhs = self.operand_expr(&ops[1]);
-                    self.bind_reg_value(&ops[0], dst, rhs);
+                    self.bind_moved_reg_value(&ops[0], dst, &ops[1], rhs);
                 }
             }
             // `movk` replaces one 16-bit lane and leaves the rest, which is why
@@ -396,7 +463,18 @@ impl<'a> FuncEmitter<'a> {
             // product; `msub` is a fused multiply-subtract.
             "sxtw" | "neg" | "mvn" if ops.len() >= 2 => {
                 if let Some(dst) = canonical_reg(&ops[0]) {
-                    let src = self.shifted_operand_expr(&ops, 1);
+                    // All three re-narrow what they read: `sxtw` names the 32
+                    // bits it extends, and the `w` forms of `neg` and `mvn` mask
+                    // their result, which is exact because negation and
+                    // complement are homomorphic mod 2^32. So a `w` operand
+                    // here is a spelling, not a claim, and the whole binding is
+                    // readable through it. A modifier is a shift or an extend
+                    // and decides its own operand width.
+                    let src = if ops.len() > 2 {
+                        self.shifted_operand_expr(&ops, 1)
+                    } else {
+                        self.whole_register_expr(&ops[1])
+                    };
                     let value = match mnemonic.as_str() {
                         "sxtw" => format!("signExtend({src}, 32)"),
                         // Bracketed for the same reason as the conditionals: a
@@ -837,7 +915,7 @@ impl<'a> FuncEmitter<'a> {
         // lose the one thing known about the register.
         for reg in written_registers(&mnemonic, &ops) {
             if let Some(value) = pinned_value(&reg) {
-                self.state.reg_values.insert(reg, value.to_string());
+                self.state.bind(reg, value.to_string(), false);
             }
         }
     }

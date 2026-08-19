@@ -450,7 +450,7 @@ impl<'a> FuncEmitter<'a> {
                     ),
                 );
                 self.clobber_call_registers(va);
-                self.state.reg_values.insert("x0".to_string(), tname);
+                self.state.bind("x0".to_string(), tname, false);
                 return;
             }
             let named_target = named_indirect_target(&target);
@@ -728,7 +728,7 @@ impl<'a> FuncEmitter<'a> {
             );
         }
         self.clobber_call_registers(va);
-        self.state.reg_values.insert("x0".to_string(), tname);
+        self.state.bind("x0".to_string(), tname, false);
     }
 
     /// Emits a call into a known runtime stub, modelled from the SDK rather than
@@ -761,9 +761,7 @@ impl<'a> FuncEmitter<'a> {
             self.clobber_call_registers(call_va);
         }
         if effect.writes_result {
-            self.state
-                .reg_values
-                .insert("x0".to_string(), tname.to_string());
+            self.state.bind("x0".to_string(), tname.to_string(), false);
         }
     }
 
@@ -1289,7 +1287,7 @@ impl<'a> FuncEmitter<'a> {
                         // A pool load rebinds the register, so whatever a call
                         // took from it earlier no longer describes it.
                         self.state.call_clobbers.remove(&dst);
-                        self.state.reg_values.insert(dst, Self::clean_expr(rhs));
+                        self.state.bind(dst, Self::clean_expr(rhs), false);
                     }
                 }
                 IROp::Branch => {
