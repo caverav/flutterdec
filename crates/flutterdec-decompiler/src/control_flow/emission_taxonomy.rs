@@ -145,6 +145,201 @@ pub struct TraversalEvent {
     pub ordinal: usize,
 }
 
+/// Immutable identity of a block across every dense-id rewrite.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+pub struct BlockIdentity {
+    pub function_id: u64,
+    pub start_va: u64,
+}
+
+/// A named point at which dense block ids were assigned.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+pub enum BlockStage {
+    Built,
+    GuardPruned,
+    Split,
+    NoreturnPruned,
+    Emission,
+}
+
+/// One stage-local dense id and the immutable block it names.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct StageBlock {
+    pub stage: BlockStage,
+    pub dense_id: usize,
+    pub identity: BlockIdentity,
+}
+
+/// An identity transition. `None` means the block was removed by this stage.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct BlockRemap {
+    pub stage: BlockStage,
+    pub from: BlockIdentity,
+    pub to: Option<BlockIdentity>,
+}
+
+/// The one final outcome of a block from a valid source graph.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+pub enum BlockDisposition {
+    StructuredEmitted,
+    DfsEmitted,
+    GuardPruned,
+    NoreturnPruned,
+    RetainedUnreachable,
+    ReachableUnemitted,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct BlockDispositionRecord {
+    pub identity: BlockIdentity,
+    pub disposition: BlockDisposition,
+}
+
+/// Invalid graphs never enter the block partition. The digest binds the outcome
+/// to the raw graph that was rejected rather than to a partially indexed view.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct InvalidCfgRejected {
+    pub function_id: u64,
+    pub raw_graph_digest: String,
+}
+
+/// Proof that a reachable-unemitted block lies on the path rooted at one keyed
+/// traversal event. The event remains a separate fact, never a disposition.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct ReachableUnemittedExplanation {
+    pub identity: BlockIdentity,
+    pub event_ordinal: usize,
+}
+
+/// Cross-stage block accounting carried by the IR and pseudocode surfaces.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+pub struct BlockLedger {
+    pub stages: Vec<StageBlock>,
+    pub remaps: Vec<BlockRemap>,
+    pub dispositions: Vec<BlockDispositionRecord>,
+    pub reachable_unemitted_explanations: Vec<ReachableUnemittedExplanation>,
+    pub invalid_cfg_rejected: Option<InvalidCfgRejected>,
+}
+
+impl BlockLedger {
+    /// Check the reconciliation rules without trusting report counters.
+    pub fn validate(&self, events: &[TraversalEvent]) -> Result<(), String> {
+        if let Some(invalid) = &self.invalid_cfg_rejected {
+            if !self.dispositions.is_empty() {
+                return Err(format!(
+                    "invalid function {} entered the block partition",
+                    invalid.function_id
+                ));
+            }
+            return Ok(());
+        }
+
+        let mut stage_ids = BTreeSet::new();
+        for block in &self.stages {
+            if !stage_ids.insert((block.stage, block.dense_id)) {
+                return Err(format!(
+                    "stage {:?} reused dense id {}",
+                    block.stage, block.dense_id
+                ));
+            }
+        }
+
+        let known_identities: BTreeSet<_> = self.stages.iter().map(|block| block.identity).collect();
+        for block in self.stages.iter().filter(|block| block.stage != BlockStage::Built) {
+            if !self.remaps.iter().any(|remap| {
+                remap.stage == block.stage && remap.to == Some(block.identity)
+            }) {
+                return Err(format!(
+                    "stage {:?} identity {:?} has no remap",
+                    block.stage, block.identity
+                ));
+            }
+        }
+        for remap in &self.remaps {
+            if !known_identities.contains(&remap.from) {
+                return Err(format!("remap names unknown source {:?}", remap.from));
+            }
+            if let Some(target) = remap.to {
+                if !self
+                    .stages
+                    .iter()
+                    .any(|block| block.stage == remap.stage && block.identity == target)
+                {
+                    return Err(format!("remap target {target:?} is absent from its stage"));
+                }
+            }
+        }
+
+        let source: BTreeSet<_> = self
+            .stages
+            .iter()
+            .filter(|b| b.stage == BlockStage::Built)
+            .map(|b| b.identity)
+            .collect();
+        let mut disposition_count = BTreeMap::<BlockIdentity, usize>::new();
+        for row in &self.dispositions {
+            *disposition_count.entry(row.identity).or_default() += 1;
+        }
+        let mut terminal = BTreeSet::new();
+        for identity in &source {
+            let mut current = *identity;
+            for stage in [
+                BlockStage::Split,
+                BlockStage::GuardPruned,
+                BlockStage::NoreturnPruned,
+                BlockStage::Emission,
+            ] {
+                if let Some(remap) = self
+                    .remaps
+                    .iter()
+                    .find(|remap| remap.stage == stage && remap.from == current)
+                {
+                    match remap.to {
+                        Some(next) => current = next,
+                        None => break,
+                    }
+                }
+            }
+            terminal.insert(current);
+            match disposition_count.get(&current).copied().unwrap_or(0) {
+                1 => {}
+                n => return Err(format!("identity {current:?} has {n} dispositions")),
+            }
+        }
+        if let Some(extra) = disposition_count.keys().find(|id| !terminal.contains(id)) {
+            return Err(format!("disposition names unknown identity {extra:?}"));
+        }
+
+        for row in self
+            .dispositions
+            .iter()
+            .filter(|r| r.disposition == BlockDisposition::ReachableUnemitted)
+        {
+            let explained = self.reachable_unemitted_explanations.iter().any(|explanation| {
+                explanation.identity == row.identity
+                    && events.iter().any(|event| {
+                        event.function_id == row.identity.function_id
+                            && event.ordinal == explanation.event_ordinal
+                    })
+            });
+            if !explained {
+                return Err(format!(
+                    "reachable-unemitted identity {:?} has no traversal event",
+                    row.identity
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    pub fn disposition_count(&self, disposition: BlockDisposition) -> usize {
+        self.dispositions
+            .iter()
+            .filter(|row| row.disposition == disposition)
+            .count()
+    }
+}
+
 /// Everything one function's emission declined or omitted.
 ///
 /// Only primary facts are stored. The generic decline count and the rollback
@@ -154,9 +349,47 @@ pub struct TraversalEvent {
 pub struct EmissionAccounting {
     decline: Option<StructuredDecline>,
     events: Vec<TraversalEvent>,
+    block_ledger: BlockLedger,
 }
 
 impl EmissionAccounting {
+    /// Fail closed when auditing a serialized artifact whose enum vocabulary
+    /// has not yet been decoded into the closed Rust types.
+    pub fn validate_serialized_vocabulary(value: &serde_json::Value) -> Result<(), String> {
+        if let Some(cause) = value
+            .pointer("/decline/cause")
+            .and_then(serde_json::Value::as_str)
+        {
+            let known = [
+                "Irreducible",
+                "UnsupportedRegion",
+                "RepeatBudget",
+                "StructuredDepthBudget",
+                "CoverageMismatch",
+            ];
+            if !known.contains(&cause) {
+                return Err(format!("unknown structured decline cause {cause}"));
+            }
+        }
+        if let Some(events) = value.get("events").and_then(serde_json::Value::as_array) {
+            for event in events {
+                let Some(kind) = event.get("kind").and_then(serde_json::Value::as_str) else {
+                    return Err("traversal event has no kind".to_string());
+                };
+                if ![
+                    "DfsDepthOmission",
+                    "DfsVisitOmission",
+                    "HelperCapOmission",
+                ]
+                .contains(&kind)
+                {
+                    return Err(format!("unknown traversal event kind {kind}"));
+                }
+            }
+        }
+        Ok(())
+    }
+
     pub fn decline(&self) -> Option<StructuredDecline> {
         self.decline
     }
@@ -188,6 +421,14 @@ impl EmissionAccounting {
 
     pub fn events(&self) -> &[TraversalEvent] {
         &self.events
+    }
+
+    pub fn block_ledger(&self) -> &BlockLedger {
+        &self.block_ledger
+    }
+
+    pub fn block_ledger_mut(&mut self) -> &mut BlockLedger {
+        &mut self.block_ledger
     }
 
     pub fn event_count(&self, kind: TraversalEventKind) -> usize {

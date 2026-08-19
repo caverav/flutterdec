@@ -72,6 +72,10 @@ impl<'a> FuncEmitter<'a> {
             // on one sample keep the Dart-call model and bind a throw.
             helper.runtime_stubs = self.runtime_stubs.clone();
             helper.emit_block(id, 1, 0);
+            // A helper is part of this function's final artifact. Preserve the
+            // blocks its nested walk emitted so the final disposition ledger
+            // does not mistake helper-rendered blocks for omissions.
+            self.emitted.extend(helper.emitted.iter().copied());
             self.call_index = helper.call_index;
             let has_terminator = helper.lines.iter().any(|line| {
                 let t = line.trim_start();

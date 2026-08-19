@@ -1310,13 +1310,27 @@ pub fn run_decompile(
     // Records that span several real functions are split before the IR is built, so
     // each piece gets dense block ids and an entry at block 0, which is what
     // `Regions::build` requires. Opt-in, because it multiplies the function count.
+    let split_source_by_va: HashMap<u64, u64> = if opt.split_records {
+        build_program_ir_with_accounting(&disasm)
+            .into_iter()
+            .flat_map(|(function, accounting)| {
+                accounting
+                    .built
+                    .into_iter()
+                    .map(move |(_, start_va)| (start_va, function.function_id))
+            })
+            .collect()
+    } else {
+        HashMap::new()
+    };
     let pre_split_disassembled = disasm.len();
     let (disasm, split_stats) = if opt.split_records {
         split_inflated_records(disasm)
     } else {
         (disasm, SplitStats::default())
     };
-    let mut ir: Vec<FunctionIr> = build_program_ir(&disasm);
+    let built_ir = build_program_ir_with_accounting(&disasm);
+    let (mut ir, build_accounting): (Vec<FunctionIr>, Vec<_>) = built_ir.into_iter().unzip();
     let mut symbol_names: HashMap<u64, String> = HashMap::new();
     let mut symbol_quality: HashMap<u64, SymbolNameQuality> = HashMap::new();
     let mut symbol_merge_stats = SymbolMergeStats::default();
@@ -1507,13 +1521,96 @@ pub fn run_decompile(
         );
     }
     let symbol_quality_counts = collect_symbol_quality_counts(&symbol_quality);
-    let pseudo = emit_program_with_runtime_stubs(
+    let mut pseudo = emit_program_with_runtime_stubs(
         &ir,
         &symbol_names,
         &pool_value_hints,
         &pool_semantic_hints,
         &stub_naming.effects,
     );
+    for ((function, accounting), artifact) in
+        ir.iter().zip(&build_accounting).zip(pseudo.iter_mut())
+    {
+        assert_eq!(function.function_id, artifact.function_id, "IR/artifact order");
+        let function_id = function.function_id;
+        let events = artifact.emission.events().to_vec();
+        let ledger = artifact.emission.block_ledger_mut();
+        ledger.stages.retain(|row| row.stage != flutterdec_decompiler::BlockStage::Built);
+        ledger.stages.extend(accounting.built.iter().map(|(dense_id, start_va)| flutterdec_decompiler::StageBlock {
+            stage: flutterdec_decompiler::BlockStage::Built,
+            dense_id: *dense_id,
+            identity: flutterdec_decompiler::BlockIdentity { function_id, start_va: *start_va },
+        }));
+        if opt.split_records {
+            let split_rows: Vec<_> = ledger
+                .stages
+                .iter()
+                .filter(|row| row.stage == flutterdec_decompiler::BlockStage::Built)
+                .filter_map(|row| {
+                    let old_function_id = split_source_by_va.get(&row.identity.start_va).copied()?;
+                    (old_function_id != function_id).then_some((row.dense_id, old_function_id, row.identity))
+                })
+                .collect();
+            for (dense_id, old_function_id, to) in split_rows {
+                let from = flutterdec_decompiler::BlockIdentity { function_id: old_function_id, start_va: to.start_va };
+                if let Some(row) = ledger.stages.iter_mut().find(|row| row.stage == flutterdec_decompiler::BlockStage::Built && row.identity == to) {
+                    row.identity = from;
+                }
+                ledger.stages.push(flutterdec_decompiler::StageBlock {
+                    stage: flutterdec_decompiler::BlockStage::Split,
+                    dense_id,
+                    identity: to,
+                });
+                ledger.remaps.push(flutterdec_decompiler::BlockRemap {
+                    stage: flutterdec_decompiler::BlockStage::Split,
+                    from,
+                    to: Some(to),
+                });
+            }
+        }
+        ledger.stages.extend(accounting.guard_remaps.iter().map(|(_, start_va, dense_id)| flutterdec_decompiler::StageBlock {
+            stage: flutterdec_decompiler::BlockStage::GuardPruned,
+            dense_id: *dense_id,
+            identity: flutterdec_decompiler::BlockIdentity { function_id, start_va: *start_va },
+        }));
+        ledger.remaps.extend(accounting.guard_remaps.iter().map(|(_, start_va, _)| flutterdec_decompiler::BlockRemap {
+            stage: flutterdec_decompiler::BlockStage::GuardPruned,
+            from: flutterdec_decompiler::BlockIdentity { function_id, start_va: *start_va },
+            to: Some(flutterdec_decompiler::BlockIdentity { function_id, start_va: *start_va }),
+        }));
+        for (_, start_va) in &accounting.guard_pruned {
+            let identity = flutterdec_decompiler::BlockIdentity { function_id, start_va: *start_va };
+            ledger.remaps.push(flutterdec_decompiler::BlockRemap {
+                stage: flutterdec_decompiler::BlockStage::GuardPruned,
+                from: identity,
+                to: None,
+            });
+            ledger.dispositions.push(flutterdec_decompiler::BlockDispositionRecord {
+                identity,
+                disposition: flutterdec_decompiler::BlockDisposition::GuardPruned,
+            });
+        }
+        for identity in &noreturn_prune.pruned {
+            if identity.function_id != function_id { continue; }
+            if let Some(row) = ledger.dispositions.iter_mut().find(|row| row.identity == *identity) {
+                row.disposition = flutterdec_decompiler::BlockDisposition::NoreturnPruned;
+            }
+            ledger.remaps.push(flutterdec_decompiler::BlockRemap {
+                stage: flutterdec_decompiler::BlockStage::NoreturnPruned,
+                from: *identity,
+                to: Some(*identity),
+            });
+            if let Some(block) = function.blocks.iter().find(|block| block.start_va == identity.start_va) {
+                ledger.stages.push(flutterdec_decompiler::StageBlock {
+                    stage: flutterdec_decompiler::BlockStage::NoreturnPruned,
+                    dense_id: block.id,
+                    identity: *identity,
+                });
+            }
+        }
+        let ledger_result = ledger.validate(&events);
+        assert_eq!(ledger_result, Ok(()), "pipeline block ledger did not reconcile");
+    }
 
     let asm_dir = opt.out_dir.join("asm");
     let ir_dir = opt.out_dir.join("ir");
@@ -1527,12 +1624,12 @@ pub fn run_decompile(
     }
 
     for p in &pseudo {
-        let filename = format!(
+        let stem = format!(
             "{:05}_{}.dartpseudo",
             p.function_id,
             normalize_file_name(&p.function_name)
         );
-        fs::write(pseudo_dir.join(filename), terminated(&p.source))?;
+        fs::write(pseudo_dir.join(&stem), terminated(&p.source))?;
     }
 
     if opt.emit_asm {
@@ -1553,7 +1650,22 @@ pub fn run_decompile(
     if opt.emit_ir {
         for f in &ir {
             let filename = format!("{:05}_{}.json", f.function_id, normalize_file_name(&f.name));
-            let mut body = serde_json::to_vec_pretty(f)?;
+            let mut value = serde_json::to_value(f)?;
+            if let Some(accounting) = pseudo
+                .iter()
+                .find(|artifact| artifact.function_id == f.function_id)
+                .map(|artifact| &artifact.emission)
+            {
+                let object = value
+                    .as_object_mut()
+                    .expect("FunctionIr serializes as an object");
+                object.insert(
+                    "block_ledger".to_string(),
+                    serde_json::to_value(accounting.block_ledger())?,
+                );
+                object.insert("emission".to_string(), serde_json::to_value(accounting)?);
+            }
+            let mut body = serde_json::to_vec_pretty(&value)?;
             body.push(b'\n');
             fs::write(ir_dir.join(filename), body)?;
         }

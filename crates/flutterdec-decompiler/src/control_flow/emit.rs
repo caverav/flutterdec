@@ -1393,6 +1393,20 @@ impl<'a> FuncEmitter<'a> {
                         self.push_line(indent, "}");
                     }
 
+                    // A malformed/extended branch may carry more successors
+                    // than the instruction can render as taken/not-taken arms.
+                    // Preserve every additional path as a helper request; the
+                    // helper ledger will either emit it or record the cap event
+                    // that explains why it remains reachable-unemitted.
+                    for extra in block
+                        .succs
+                        .iter()
+                        .copied()
+                        .filter(|succ| Some(*succ) != true_id && Some(*succ) != false_id)
+                    {
+                        self.emit_omitted_path(indent, Some(extra));
+                    }
+
                     self.active_stack.pop();
                     return;
                 }
@@ -1411,6 +1425,13 @@ impl<'a> FuncEmitter<'a> {
                         } else {
                             self.unresolved_cf += 1;
                             self.push_line(indent, "// unresolved jump");
+                        }
+                        // The graph is the partition authority. If it still
+                        // names successors while the instruction target cannot
+                        // be resolved to one of them, retain those paths as
+                        // helpers instead of silently losing reachable blocks.
+                        for successor in &block.succs {
+                            self.emit_omitted_path(indent, Some(*successor));
                         }
                     }
                     self.active_stack.pop();
@@ -1458,6 +1479,13 @@ impl<'a> FuncEmitter<'a> {
                     self.emit_block(next, indent, depth + 1);
                 } else {
                     self.emit_unrenderable_successor(indent, next, depth + 1);
+                }
+            } else {
+                // No instruction supplied a condition for these graph edges.
+                // They cannot be rendered as invented arms, but each path must
+                // remain explicit and auditable rather than disappearing.
+                for successor in &block.succs {
+                    self.emit_omitted_path(indent, Some(*successor));
                 }
             }
         }

@@ -92,6 +92,26 @@ fn quality_from_artifacts(
         // are sums of the same primary facts and not a second tally.
         emission.structured_declines += p.emission.structured_declines();
         emission.structured_rollbacks += p.emission.rollbacks();
+        emission.structured_emitted_blocks += p
+            .emission.block_ledger()
+            .disposition_count(BlockDisposition::StructuredEmitted);
+        emission.dfs_emitted_blocks += p
+            .emission.block_ledger()
+            .disposition_count(BlockDisposition::DfsEmitted);
+        emission.guard_pruned_blocks += p
+            .emission.block_ledger()
+            .disposition_count(BlockDisposition::GuardPruned);
+        emission.noreturn_pruned_blocks += p
+            .emission.block_ledger()
+            .disposition_count(BlockDisposition::NoreturnPruned);
+        emission.retained_unreachable_blocks += p
+            .emission.block_ledger()
+            .disposition_count(BlockDisposition::RetainedUnreachable);
+        emission.reachable_unemitted_blocks += p
+            .emission.block_ledger()
+            .disposition_count(BlockDisposition::ReachableUnemitted);
+        emission.invalid_cfg_rejected_functions +=
+            usize::from(p.emission.block_ledger().invalid_cfg_rejected.is_some());
         total_calls += p.total_calls;
         indirect_calls += p.indirect_calls;
         placeholder_ifs += p.placeholder_ifs;
@@ -545,6 +565,32 @@ mod quality_tests {
             TraversalEventKind::ALL.map(sum_event),
             "each event counter is that event kind, summed over the artifacts"
         );
+        let sum_disposition = |disposition| {
+            pseudo
+                .iter()
+                .map(|p| p.emission.block_ledger().disposition_count(disposition))
+                .sum::<usize>()
+        };
+        assert_eq!(
+            [
+                emission.structured_emitted_blocks,
+                emission.dfs_emitted_blocks,
+                emission.guard_pruned_blocks,
+                emission.noreturn_pruned_blocks,
+                emission.retained_unreachable_blocks,
+                emission.reachable_unemitted_blocks,
+            ],
+            [
+                BlockDisposition::StructuredEmitted,
+                BlockDisposition::DfsEmitted,
+                BlockDisposition::GuardPruned,
+                BlockDisposition::NoreturnPruned,
+                BlockDisposition::RetainedUnreachable,
+                BlockDisposition::ReachableUnemitted,
+            ]
+            .map(sum_disposition),
+            "each disposition counter is derived from the artifact partition"
+        );
     }
 
     /// The report's generic decline count and rollback count are sums of the
@@ -585,6 +631,34 @@ mod quality_tests {
             events,
             "every traversal event is counted under exactly one kind"
         );
+    }
+
+    #[test]
+    fn an_invalid_function_is_counted_once_and_never_enters_the_partition() {
+        let mut ir = graph(9999, &[vec![1], Vec::new()]);
+        ir.blocks[1].id = 0;
+        let artifact = flutterdec_decompiler::emit_pseudocode(&ir, &HashMap::new());
+        let report = quality_from_artifacts(
+            &empty_model(),
+            std::slice::from_ref(&artifact),
+            &default_options(),
+            0,
+        );
+        assert_eq!(report.emission.invalid_cfg_rejected_functions, 1);
+        assert_eq!(
+            report.emission.structured_emitted_blocks
+                + report.emission.dfs_emitted_blocks
+                + report.emission.guard_pruned_blocks
+                + report.emission.noreturn_pruned_blocks
+                + report.emission.retained_unreachable_blocks
+                + report.emission.reachable_unemitted_blocks,
+            0
+        );
+        assert!(artifact
+            .emission
+            .block_ledger()
+            .invalid_cfg_rejected
+            .is_some());
     }
 
     #[test]

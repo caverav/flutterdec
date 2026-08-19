@@ -96,6 +96,16 @@ pub struct FunctionIr {
     pub blocks: Vec<BasicBlock>,
 }
 
+/// Stage-local identity facts produced while building one function. Kept out of
+/// `FunctionIr` so its public schema remains unchanged; artifact writers may
+/// attach the additive ledger explicitly.
+#[derive(Debug, Clone, Default)]
+pub struct IrBuildAccounting {
+    pub built: Vec<(usize, u64)>,
+    pub guard_pruned: Vec<(usize, u64)>,
+    pub guard_remaps: Vec<(usize, u64, usize)>,
+}
+
 fn parse_target_hex(s: &str) -> Option<u64> {
     let mut last = None;
     for token in s.split(|c: char| c.is_whitespace() || c == ',') {
@@ -210,7 +220,7 @@ fn llir_from_disasm(d: &FunctionDisassembly) -> Vec<LlirInstr> {
         .collect()
 }
 
-pub fn build_function_ir(d: &FunctionDisassembly) -> FunctionIr {
+fn build_function_ir_accounted(d: &FunctionDisassembly) -> (FunctionIr, IrBuildAccounting) {
     let llir = llir_from_disasm(d);
     let mut leaders = BTreeSet::new();
     let mut by_va = BTreeMap::new();
@@ -367,11 +377,14 @@ pub fn build_function_ir(d: &FunctionDisassembly) -> FunctionIr {
     };
     let with_guard = reach(&blocks, true);
     let without_guard = reach(&blocks, false);
+    let built = blocks.iter().map(|b| (b.id, b.start_va)).collect();
 
     let mut remap = BTreeMap::new();
     let mut kept = Vec::with_capacity(blocks.len());
+    let mut guard_pruned = Vec::new();
     for (i, b) in blocks.into_iter().enumerate() {
         if with_guard[i] && !without_guard[i] {
+            guard_pruned.push((b.id, b.start_va));
             continue;
         }
         remap.insert(b.id, kept.len());
@@ -409,7 +422,35 @@ pub fn build_function_ir(d: &FunctionDisassembly) -> FunctionIr {
         Ok(()),
         "the builder produced a graph its consumers cannot index"
     );
-    ir
+    let guard_remaps = ir
+        .blocks
+        .iter()
+        .map(|block| {
+            let old_id = remap
+                .iter()
+                .find_map(|(old, new)| (*new == block.id).then_some(*old))
+                .expect("every retained block was remapped");
+            (old_id, block.start_va, block.id)
+        })
+        .collect();
+    (
+        ir,
+        IrBuildAccounting {
+            built,
+            guard_pruned,
+            guard_remaps,
+        },
+    )
+}
+
+pub fn build_function_ir(d: &FunctionDisassembly) -> FunctionIr {
+    build_function_ir_accounted(d).0
+}
+
+pub fn build_program_ir_with_accounting(
+    disasm: &[FunctionDisassembly],
+) -> Vec<(FunctionIr, IrBuildAccounting)> {
+    disasm.iter().map(build_function_ir_accounted).collect()
 }
 
 pub fn build_program_ir(disasm: &[FunctionDisassembly]) -> Vec<FunctionIr> {

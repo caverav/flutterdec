@@ -373,8 +373,9 @@ use control_flow::{JOIN_LOSS_SITE, LOOP_LOSS_SITE};
 use helpers::*;
 
 pub use control_flow::{
-    EmissionAccounting, StructuredDecline, StructuredDeclineCause, TraversalEvent,
-    TraversalEventKind, TraversalTarget,
+    BlockDisposition, BlockDispositionRecord, BlockIdentity, BlockLedger, BlockRemap, BlockStage,
+    EmissionAccounting, InvalidCfgRejected, ReachableUnemittedExplanation, StageBlock,
+    StructuredDecline, StructuredDeclineCause, TraversalEvent, TraversalEventKind, TraversalTarget,
 };
 
 pub use helpers::{
@@ -695,6 +696,13 @@ impl<'a> FuncEmitter<'a> {
             );
         }
 
+        let block_ledger = self.block_ledger(structured);
+        assert_eq!(
+            block_ledger.validate(self.accounting.events()),
+            Ok(()),
+            "emission block ledger did not reconcile"
+        );
+        *self.accounting.block_ledger_mut() = block_ledger;
         let artifact = PseudocodeArtifact {
             function_id: self.ir.function_id,
             function_name: fn_name,
@@ -931,6 +939,150 @@ impl<'a> FuncEmitter<'a> {
         self.accounting
             .record_event(kind, function_id, source_start_va, target);
     }
+
+    fn block_ledger(&self, structured: bool) -> BlockLedger {
+        let identities: Vec<_> = self
+            .ir
+            .blocks
+            .iter()
+            .map(|block| BlockIdentity {
+                function_id: self.ir.function_id,
+                start_va: block.start_va,
+            })
+            .collect();
+        let stages = self
+            .ir
+            .blocks
+            .iter()
+            .zip(&identities)
+            .map(|(block, identity)| StageBlock {
+                stage: BlockStage::Emission,
+                dense_id: block.id,
+                identity: *identity,
+            })
+            .chain(
+                self.ir
+                    .blocks
+                    .iter()
+                    .zip(&identities)
+                    .map(|(block, identity)| StageBlock {
+                        stage: BlockStage::Built,
+                        dense_id: block.id,
+                        identity: *identity,
+                    }),
+            )
+            .collect();
+
+        let mut reachable = HashSet::new();
+        let mut stack = self
+            .ir
+            .blocks
+            .first()
+            .map(|b| vec![b.id])
+            .unwrap_or_default();
+        while let Some(id) = stack.pop() {
+            if !reachable.insert(id) {
+                continue;
+            }
+            if let Some(block) = self.block_by_id.get(&id) {
+                stack.extend(block.succs.iter().copied());
+            }
+        }
+        let dispositions: Vec<_> = self
+            .ir
+            .blocks
+            .iter()
+            .zip(identities)
+            .map(|(block, identity)| {
+                let disposition = if structured && reachable.contains(&block.id) {
+                    BlockDisposition::StructuredEmitted
+                } else if self.emitted.contains(&block.id) {
+                    BlockDisposition::DfsEmitted
+                } else if reachable.contains(&block.id) {
+                    BlockDisposition::ReachableUnemitted
+                } else {
+                    BlockDisposition::RetainedUnreachable
+                };
+                BlockDispositionRecord {
+                    identity,
+                    disposition,
+                }
+            })
+            .collect();
+        let mut reachable_unemitted_explanations = Vec::new();
+        for row in dispositions
+            .iter()
+            .filter(|row| row.disposition == BlockDisposition::ReachableUnemitted)
+        {
+            let Some(target_id) = self
+                .ir
+                .blocks
+                .iter()
+                .find(|block| block.start_va == row.identity.start_va)
+                .map(|block| block.id)
+            else {
+                continue;
+            };
+            for event in self.accounting.events() {
+                let root = match event.target {
+                    TraversalTarget::Block { start_va } => self
+                        .ir
+                        .blocks
+                        .iter()
+                        .find(|block| block.start_va == start_va)
+                        .map(|block| block.id),
+                    TraversalTarget::Helper { id } => Some(id),
+                };
+                let Some(root) = root else { continue };
+                let mut seen = HashSet::new();
+                let mut path = vec![root];
+                while let Some(id) = path.pop() {
+                    if !seen.insert(id) {
+                        continue;
+                    }
+                    if id == target_id {
+                        reachable_unemitted_explanations.push(ReachableUnemittedExplanation {
+                            identity: row.identity,
+                            event_ordinal: event.ordinal,
+                        });
+                        path.clear();
+                        break;
+                    }
+                    if let Some(block) = self.block_by_id.get(&id) {
+                        path.extend(block.succs.iter().copied());
+                    }
+                }
+                if reachable_unemitted_explanations
+                    .last()
+                    .is_some_and(|explanation| explanation.identity == row.identity)
+                {
+                    break;
+                }
+            }
+        }
+        BlockLedger {
+            stages,
+            remaps: self
+                .ir
+                .blocks
+                .iter()
+                .map(|block| {
+                    let identity = BlockIdentity {
+                        function_id: self.ir.function_id,
+                        start_va: block.start_va,
+                    };
+                    BlockRemap {
+                        stage: BlockStage::Emission,
+                        from: identity,
+                        to: Some(identity),
+                    }
+                })
+                .collect(),
+            dispositions,
+            reachable_unemitted_explanations,
+            invalid_cfg_rejected: None,
+        }
+    }
 }
 
 /// What a call to a known runtime stub does, read from the SDK per stub slot.
@@ -966,6 +1118,23 @@ fn invalid_cfg_artifact(ir: &FunctionIr, defect: &CfgDefect) -> PseudocodeArtifa
         .map(|i| format!("dynamic arg{i}"))
         .collect::<Vec<_>>()
         .join(", ");
+    let raw = serde_json::to_vec(ir).expect("FunctionIr serialization cannot fail");
+    // FNV-1a is used as a stable content digest here. This is an identity
+    // binding, not a cryptographic authenticity claim.
+    let raw_graph_digest = raw.iter().fold(0xcbf29ce484222325u64, |hash, byte| {
+        (hash ^ u64::from(*byte)).wrapping_mul(0x100000001b3)
+    });
+    let mut emission = EmissionAccounting::default();
+    *emission.block_ledger_mut() = BlockLedger {
+        stages: Vec::new(),
+        remaps: Vec::new(),
+        dispositions: Vec::new(),
+        reachable_unemitted_explanations: Vec::new(),
+        invalid_cfg_rejected: Some(InvalidCfgRejected {
+            function_id: ir.function_id,
+            raw_graph_digest: format!("fnv1a64:{raw_graph_digest:016x}"),
+        }),
+    };
     PseudocodeArtifact {
         function_id: ir.function_id,
         source: format!(
@@ -986,7 +1155,7 @@ fn invalid_cfg_artifact(ir: &FunctionIr, defect: &CfgDefect) -> PseudocodeArtifa
         target_va_symbol_calls: 0,
         // Neither emitter ran, so there is no decline to attribute and no
         // traversal to omit anything.
-        emission: EmissionAccounting::default(),
+        emission,
     }
 }
 

@@ -528,7 +528,7 @@ fn immediate(op_str: &str) -> Option<u64> {
 }
 
 /// How much unreachable code a prune removed, for the report.
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Default, Clone)]
 pub(super) struct NoreturnPrune {
     pub(super) functions: usize,
     pub(super) blocks_cut: usize,
@@ -538,6 +538,7 @@ pub(super) struct NoreturnPrune {
     /// builder regression and must be visible rather than silently leaving a
     /// fabricated fall-through in place.
     pub(super) skipped_invalid_ir: usize,
+    pub(super) pruned: Vec<flutterdec_decompiler::BlockIdentity>,
 }
 
 /// Removes the control flow that follows a call which never returns.
@@ -579,7 +580,7 @@ pub(super) fn prune_calls_that_never_return(
         // contains blocks no path reaches, so counting every unreachable block
         // after the cut would credit this pass with them: on one sample that
         // reads 162,081 instead of the 13,696 it actually removes.
-        let reachable_before = reachable_block_count(f);
+        let reachable_before = reachable_block_ids(f);
         let mut cut_any = false;
         // Which blocks terminate, and after which instruction.
         let terminators: Vec<(usize, usize)> = f
@@ -623,15 +624,24 @@ pub(super) fn prune_calls_that_never_return(
             "the noreturn prune left a graph its consumers cannot index"
         );
         stats.functions += 1;
-        stats.blocks_cut += reachable_before.saturating_sub(reachable_block_count(f));
+        let reachable_after = reachable_block_ids(f);
+        for id in reachable_before.difference(&reachable_after) {
+            if let Some(block) = f.blocks.iter().find(|block| block.id == *id) {
+                stats.pruned.push(flutterdec_decompiler::BlockIdentity {
+                    function_id: f.function_id,
+                    start_va: block.start_va,
+                });
+            }
+        }
+        stats.blocks_cut += reachable_before.len().saturating_sub(reachable_after.len());
     }
     stats
 }
 
 /// Blocks reachable from the entry along successor edges.
-fn reachable_block_count(f: &FunctionIr) -> usize {
+fn reachable_block_ids(f: &FunctionIr) -> HashSet<usize> {
     let Some(entry) = f.blocks.first().map(|b| b.id) else {
-        return 0;
+        return HashSet::new();
     };
     let mut seen = HashSet::new();
     let mut stack = vec![entry];
@@ -643,7 +653,7 @@ fn reachable_block_count(f: &FunctionIr) -> usize {
             stack.extend(b.succs.iter().copied());
         }
     }
-    seen.len()
+    seen
 }
 
 /// The VA a `Call` target names, e.g. `"#0x17368d0"`.

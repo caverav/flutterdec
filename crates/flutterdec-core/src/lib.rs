@@ -5,13 +5,14 @@ use flutterdec_adapter::{
     list_adapters, resolve_adapter_exec, run_adapter, AdapterInput, ProgramModel,
 };
 use flutterdec_decompiler::{
-    emit_program_with_runtime_stubs, PseudocodeArtifact, StructuredDeclineCause, TraversalEventKind,
+    emit_program_with_runtime_stubs, BlockDisposition, PseudocodeArtifact, StructuredDeclineCause,
+    TraversalEventKind,
 };
 use flutterdec_disasm_arm64::{
     disassemble_program_with_priorities_and_package_hints, FunctionDisassembly,
     FunctionPriorityBreakdown,
 };
-use flutterdec_ir::{build_program_ir, FunctionIr};
+use flutterdec_ir::{build_program_ir_with_accounting, FunctionIr};
 use flutterdec_loader::{
     load_snapshot_bundle, load_snapshot_bundle_from_apk_session, ApkSession, SnapshotBundle,
 };
@@ -296,6 +297,13 @@ pub struct EmissionReport {
     pub dfs_depth_omissions: usize,
     pub dfs_visit_omissions: usize,
     pub helper_cap_omissions: usize,
+    pub structured_emitted_blocks: usize,
+    pub dfs_emitted_blocks: usize,
+    pub guard_pruned_blocks: usize,
+    pub noreturn_pruned_blocks: usize,
+    pub retained_unreachable_blocks: usize,
+    pub reachable_unemitted_blocks: usize,
+    pub invalid_cfg_rejected_functions: usize,
 }
 
 #[derive(Debug, Clone, Serialize)]
