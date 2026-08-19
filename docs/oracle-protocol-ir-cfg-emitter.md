@@ -278,10 +278,19 @@ regular file, and a protected file whose bytes changed are each a hard CI
 failure. That checker is itself one of the rows below, so it verifies its own
 bytes.
 
-Six rows now hold a digest other than the one first pinned for them. Five were
-already protected at `1371e42`; the sixth,
-`crates/flutterdec-decompiler/src/control_flow/relation_oracle.rs`, became a row
-in section 15 and has moved twice since, in section 19 and in section 21.
+Seven rows now hold a digest other than the one first pinned for them. The rule
+is the same for every row, whenever it joined this table: a row's first pinned
+digest is the digest it carried in the commit that added it here, and the row
+counts if its current digest differs from that one. Five of the seven were
+already protected at `1371e42`. The other two joined later and have moved since,
+so they count under exactly that rule: `scripts/check-oracle-inventory.py`,
+which became a row in section 13 at
+`d882132e87cb4625ebdac88ab310e405b00133bd546e172db282be7e1bbf47bf`, and
+`crates/flutterdec-decompiler/src/control_flow/relation_oracle.rs`, which became
+a row in section 15 at
+`75fe720e04cfa6bbb859981f1b39ebba0e0ed932e8973d3bab730058cedcfa96` and has moved
+twice since, in section 19 and in section 21. A row that joined after `1371e42`
+and still carries its first pinned digest is not one of the seven.
 
 `scripts/ci-check.sh` has moved twelve times. Section 10 adjudicates the first
 three as one chain from the original fixed reference. The fourth is in section
@@ -304,16 +313,24 @@ tenth in section 24.
 and `crates/flutterdec-core/src/pipeline/runners/tests.rs` each moved once, in
 section 16. `scripts/prov_cross_audit_reconcile.py` moved once, in section 18.
 
-One row was new rather than moved, `scripts/check-oracle-inventory.py`, added by
-section 13 and moved seven times since: in section 15, section 17, section 19,
-section 20, section 21, section 22, and section 23.
+`scripts/check-oracle-inventory.py` became a row in section 13, and has moved
+seven times since: in section 15, section 17, section 19, section 20,
+section 21, section 22, and section 23.
 
-Nine rows are new in section 15, the IR and CFG boundary oracles. Eleven emitter
-repair rulers are new in section 19. One row is new in each of section 20,
+Forty-five rows were pinned at `1371e42`, and twenty-six were added afterwards,
+which is every one of the 71. The twenty-six are: one in section 10,
+`crates/flutterdec-decompiler/src/tests.rs`, the decompiler test loader that
+section 10's commit protects alongside the `scripts/ci-check.sh` chain that
+record is named for; one in section 13, `scripts/check-oracle-inventory.py`;
+nine in section 15, the IR and CFG boundary oracles; eleven emitter repair
+rulers in section 19; and one in each of section 20,
 `crates/flutterdec-ir/tests/branch_target_radix.rs`, section 21,
 `crates/flutterdec-decompiler/tests/dfs_loop_address_invariance.rs`, section 22,
 `crates/flutterdec-decompiler/tests/entry_loop_state_merge.rs`, and section 23,
-the block-ledger contract row. Section 24 adds no row.
+the block-ledger contract row. Section 24 adds no row. The section 10 row has
+never moved since it was added; its file already existed at `1371e42` with the
+same bytes it has today, but it was not a protected row until section 10, which
+is why it is counted here and not among the forty-five.
 
 Every other row currently holds its `1371e42` bytes. One of them,
 `crates/flutterdec-decompiler/src/tests/cfg_and_stack/call_and_loops.rs`, left
@@ -2538,7 +2555,7 @@ false-pass path.
 
 Column order keeps this history outside the section 7 path-and-digest parser.
 
-| Protected ruler | Prior sha256 at `5fa97f2` | Current sha256 in section 7 |
+| Protected ruler | Prior sha256 at `5fa97f2` | New sha256 at `7b8628a` |
 | --- | --- | --- |
 | `scripts/check-oracle-inventory.py` | `98e7f29f8ebebaf68dc28c82ec465eb359cf3b91280f808ce1dfb3d17221bbf0` | `4af2d9445f2cf43413c8d70f12a673b8536750ded8a6d8bc19ff206331acfb26` |
 | `scripts/ci-check.sh` | `ec5e015bc65317c8b477c582b52a9a6d91c618e6becfe31da019b4bb34995401` | `b75bcdfbae8562785e174c1d360319ff83d72fbd4bdcbe1659e6d71d375a79e9` |
@@ -2549,8 +2566,10 @@ The checker changes only the expected paths, test targets, and sentinels. The CI
 script and workflow add explicit named invocations. The provenance guard adds
 the same module and Cargo-discovery hooks in both directions and checks the core
 and decompiler lanes independently. The relation ruler changes only its brace
-reader and the old-versus-new plant. Reproduce prior bytes with
-`git show 5fa97f2:<path> | sha256sum` and current bytes with `sha256sum <path>`.
+reader and the old-versus-new plant. Reproduce either column with
+`git show <commit>:<path> | sha256sum`. All four rulers have moved again since
+`7b8628a`, so none of these values is the current section 7 digest; for that,
+use `sha256sum <path>` against the table in section 7.
 
 ### 19.4 Deletion and bypass plants
 
@@ -2620,7 +2639,7 @@ private parser assertion.
 
 Column order keeps this history outside the section 7 path-and-digest parser.
 
-| Protected ruler | Prior sha256 | Current sha256 in section 7 |
+| Protected ruler | Prior sha256 | New sha256 at `7acb5ae` |
 | --- | --- | --- |
 | `scripts/check-oracle-inventory.py` | `4af2d9445f2cf43413c8d70f12a673b8536750ded8a6d8bc19ff206331acfb26` | `78ed3b4f1d3e1c30102474f57205725aaf60648a4f20c39f65a37a43016c8cd6` |
 | `scripts/ci-check.sh` | `b1600c29ccbda98b751e8a337c6aa875dfc56eef3dc66efb9edb00952c78188c` | `354a21e6ecdfef30e9bc8ea91dbdfd7a33ca8062c4d537c81648328c7e5aeb43` |
@@ -2754,11 +2773,15 @@ Column order keeps this history outside the section 7 path-and-digest parser.
 | `crates/flutterdec-decompiler/tests/dfs_loop_address_invariance.rs` | new | `1c2c0403303e619de9fe840f62f61c1af92dbec77fe554fd66d3505755b37db3` |
 
 Those are the only five section 7 rows this commit moved. The first three moved on
-afterwards and their later links are unbroken: `scripts/ci-check.sh`,
-`scripts/check-oracle-inventory.py` and
-`crates/flutterdec-decompiler/tests/provenance_audit.rs` all continue into section
-22, and `provenance_audit.rs` continues again into sections 23 and 24. The last
-two rows are still the current section 7 values.
+afterwards and their later links are unbroken. `scripts/ci-check.sh` continues
+into section 22 and then into section 23, which leaves it at its current
+`9dac174b...`; section 24 leaves it byte-unchanged.
+`scripts/check-oracle-inventory.py` continues into section 22 and then into
+section 23, which leaves it at its current `3900f505...`; section 24 leaves it
+byte-unchanged too.
+`crates/flutterdec-decompiler/tests/provenance_audit.rs` continues into section
+22, section 23, and then section 24, which leaves it at its current
+`1627b7b9...`. The last two rows are still the current section 7 values.
 
 Outside those five, the commit changes only product source
 (`control_flow/graph.rs`, `control_flow/regions.rs`, and the `dfs_dominators`
@@ -2858,7 +2881,7 @@ predecessor restores 4 of 4 in both profiles.
 
 Column order keeps this history outside the section 7 path-and-digest parser.
 
-| Protected ruler | Prior sha256 | Current sha256 in section 7 |
+| Protected ruler | Prior sha256 | New sha256 at `00e6115` |
 | --- | --- | --- |
 | `scripts/ci-check.sh` | `6cb19f223bde0510e2c70eac4c7b759b6fe04d57e74dce9e17ffcb1ce89c6389` | `94cc9b90e935bb1ecdce4280a31315337d5345b5c74b165e395c74de6dd608f5` |
 | `scripts/check-oracle-inventory.py` | `5101f7e48b890da0124154611a18517ce29432d3bcf11fe9928e12dfb94ddf52` | `21bea1f4fa438b0aae70b5477a1ec026f13007c0bf569d6f37435089999b47df` |
@@ -2868,7 +2891,7 @@ Column order keeps this history outside the section 7 path-and-digest parser.
 The only change in the three existing rulers is the new protected path, target,
 sentinel, loader-map row and named CI invocation. No threshold, golden fixture, benchmark
 definition, frozen expected value, or unrelated emitter behavior changed, and no
-existing digest row other than these two moved.
+existing digest row other than those three moved.
 
 ### 22.4 Verification
 
@@ -2945,7 +2968,7 @@ legitimate change and rules nothing.
 
 Column order keeps this history outside the section 7 path-and-digest parser.
 
-| Protected ruler | Prior sha256 | Current sha256 in section 7 |
+| Protected ruler | Prior sha256 | New sha256 at `addec19` |
 | --- | --- | --- |
 | `scripts/ci-check.sh` | `94cc9b90e935bb1ecdce4280a31315337d5345b5c74b165e395c74de6dd608f5` | `9dac174b7a2a4e3a0d14d182d292dac0dbc8b6c63679e859da7cc8dad21ea45e` |
 | `scripts/check-oracle-inventory.py` | `21bea1f4fa438b0aae70b5477a1ec026f13007c0bf569d6f37435089999b47df` | `3900f505ea8aea59500c99fcf598013cffac55e9128ec9498f7811738bcbf71a` |
