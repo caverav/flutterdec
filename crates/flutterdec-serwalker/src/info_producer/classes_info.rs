@@ -21,6 +21,7 @@ pub fn produce_classes_info(snapshot: &DataSnapshot) -> anyhow::Result<Vec<Class
     for class in &class_cluster.objs {
         let cls_id = class.id;
         let cls_name = string_or_placeholder(snapshot, class.name);
+        println!("<< class: [{}] >>", cls_name);
 
         let cls_super_name = match find_object_by_id::<Type>(snapshot, class.super_type) {
             Ok(cls_super) => {
