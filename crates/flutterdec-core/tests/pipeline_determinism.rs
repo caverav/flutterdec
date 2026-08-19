@@ -115,6 +115,10 @@ mod asm {
     pub fn mov(rd: u32, rm: u32) -> Ins {
         word(0xAA00_03E0 | (rm << 16) | rd)
     }
+    /// `mov w<rd>, w<rm>` (`orr wd, wzr, wm`)
+    pub fn mov_w(rd: u32, rm: u32) -> Ins {
+        word(0x2A00_03E0 | (rm << 16) | rd)
+    }
     /// `add x<rd>, x<rn>, #imm12`
     pub fn add_imm(rd: u32, rn: u32, imm12: u32) -> Ins {
         word(0x9100_0000 | (imm12 << 10) | (rn << 5) | rd)
@@ -374,9 +378,14 @@ mod fixture {
     }
     pub const POOL_ENTRIES_OFFSET: u64 = 0x10;
     pub const POOL_WORD_SIZE: u64 = 8;
+    pub const RECOVERED_BAIT_INDEX: u64 = 4;
+    pub const COLLIDING_SELECTOR_INDEX: u64 = 10;
+    pub const RECOVERED_BAIT: &str = "x = sub_1110(y) } ${ arg0 x28 _block_999 */ //";
 
-    /// A join reached from two arms that bind the same register differently, so
-    /// the value read at the join has more than one candidate.
+    /// A join reached from two arms that bind the same register differently.
+    /// Its first `0x11` value is also a deliberate liveness-filter rejection:
+    /// it resembles the absent register token `x11`, while the duplicate-line
+    /// fixture below supplies an accepted provenance candidate.
     fn ambiguous_fan_in() -> Vec<Ins> {
         vec![
             asm::label("fanIn"),
@@ -483,8 +492,14 @@ mod fixture {
         out.push(asm::b("helperCap.tail"));
         for branch in 0..HELPER_CAP_BRANCHES {
             out.push(asm::label(&format!("helperCap.chain{branch}")));
-            for _ in 0..HELPER_CAP_CHAIN / HELPER_CAP_BRANCHES {
+            for step in 0..HELPER_CAP_CHAIN / HELPER_CAP_BRANCHES {
                 out.push(asm::cbz(0, "helperCap.tail"));
+                // Past the first helper boundary, put unmatched recovered braces
+                // and rewrite bait in a helper body, not only in the outer body.
+                if branch == 0 && step == 24 {
+                    out.push(asm::ldr_pp(7, pool_displacement(RECOVERED_BAIT_INDEX)));
+                    out.push(asm::stur(7, 19, 7));
+                }
             }
             out.push(asm::b("helperCap.tail"));
         }
@@ -552,6 +567,46 @@ mod fixture {
         ]
     }
 
+    /// A wide producer followed by a narrow consumer. Substituting the `x8`
+    /// expression through the `w9` read would claim the high half survived.
+    fn width_boundary() -> Vec<Ins> {
+        vec![
+            asm::label("widthBoundary"),
+            asm::prologue(),
+            asm::mov(9, 8),
+            asm::mov_w(10, 9),
+            asm::stur(10, 19, 7),
+            asm::epilogue(),
+            asm::ret(),
+            asm::label("widthBoundary.end"),
+        ]
+    }
+
+    /// Recovered selector text collides with the generated helper namespace.
+    fn helper_namespace_collision() -> Vec<Ins> {
+        vec![
+            asm::label("helperNamespaceCollision"),
+            asm::prologue(),
+            asm::ldr_pp(1, pool_displacement(COLLIDING_SELECTOR_INDEX)),
+            asm::bl("collisionTarget"),
+            asm::mov(5, 0),
+            asm::epilogue(),
+            asm::ret(),
+            asm::label("helperNamespaceCollision.end"),
+        ]
+    }
+
+    fn collision_target() -> Vec<Ins> {
+        vec![
+            asm::label("collisionTarget"),
+            asm::prologue(),
+            asm::add_imm(0, 1, 1),
+            asm::epilogue(),
+            asm::ret(),
+            asm::label("collisionTarget.end"),
+        ]
+    }
+
     /// Two unresolved registers each decremented the same number of times, so
     /// both clear the aliasing threshold with an identical count.
     ///
@@ -614,7 +669,7 @@ mod fixture {
 
     /// Label of each fixture function's entry and one past its last word, in the
     /// order the functions appear in the blob.
-    pub const FUNCTIONS: [(&str, &str, &str); 11] = [
+    pub const FUNCTIONS: [(&str, &str, &str); 14] = [
         ("fanIn", "fanIn.end", "fanInJoin"),
         ("loop", "loop.end", "countedLoop"),
         ("dupLine", "dupLine.end", "duplicateLineProvenance"),
@@ -625,6 +680,14 @@ mod fixture {
         // callee whose own name is a placeholder.
         ("aliasTarget", "aliasTarget.end", ""),
         ("stringVictim", "stringVictim.end", "stringVictim"),
+        ("widthBoundary", "widthBoundary.end", "widthBoundary"),
+        (
+            "helperNamespaceCollision",
+            "helperNamespaceCollision.end",
+            "helperNamespaceCollision",
+        ),
+        // Placeholder-named so the recovered `_block_999` selector renames it.
+        ("collisionTarget", "collisionTarget.end", ""),
         ("poolNamedCaller", "poolNamedCaller.end", "poolNamedCaller"),
         // Also placeholder-named, so the pool claims decide its symbol.
         ("poolTarget", "poolTarget.end", ""),
@@ -641,6 +704,9 @@ mod fixture {
         out.extend(alias_consumer());
         out.extend(alias_target());
         out.extend(string_victim());
+        out.extend(width_boundary());
+        out.extend(helper_namespace_collision());
+        out.extend(collision_target());
         out.extend(pool_named_caller());
         out.extend(pool_named_target());
         out.extend(alias_order());
@@ -1074,9 +1140,9 @@ fn plant_workspace(root: &Path) -> PathBuf {
                 "source": "synthetic"
             },
             {
-                "index": 4,
+                "index": fixture::RECOVERED_BAIT_INDEX,
                 "kind": "string",
-                "value": "x = sub_1110(y)"
+                "value": fixture::RECOVERED_BAIT
             },
             // Two entries claiming one target, with different owners and
             // selectors. The lower index has to win, whatever order the hint map
@@ -1101,6 +1167,17 @@ fn plant_workspace(root: &Path) -> PathBuf {
                 "owner_class": "Omega",
                 "library_uri": "package:flutter/src/widgets/framework.dart",
                 "target_va": pool_target_va,
+                "source": "synthetic"
+            },
+            {
+                "index": fixture::COLLIDING_SELECTOR_INDEX,
+                "kind": "string",
+                "value": "_block_999",
+                "decoded_kind": "selector",
+                "selector": "_block_999",
+                "owner_class": "AppState",
+                "library_uri": "package:flutter/src/widgets/framework.dart",
+                "confidence": 0.9,
                 "source": "synthetic"
             }
         ],
@@ -1198,6 +1275,7 @@ fn read_tree(dir: &Path) -> Vec<(String, Vec<u8>)> {
     out
 }
 
+#[derive(Clone)]
 struct Run {
     /// Everything the run wrote except the two JSON reports: pseudocode, emitted
     /// IR and the symbol scripts, relative path and bytes.
@@ -1276,9 +1354,30 @@ fn assert_fixture_covers_every_shape(run: &Run) {
         .lines()
         .map(|line| flutterdec_decompiler::count_code_matches(line, "_block_"))
         .sum::<usize>() as u64;
+    let helper_source = sources
+        .iter()
+        .find(|source| source.contains("helperBudgetChain"))
+        .expect("helper-cap artifact is missing");
+    let (helper_calls, helper_definitions) = helper_symbols(helper_source);
+    let call_set: BTreeSet<&str> = helper_calls.iter().map(String::as_str).collect();
+    let definition_set: BTreeSet<&str> = helper_definitions.iter().map(String::as_str).collect();
     assert_eq!(count("/raw_arg_name_refs"), raw_args);
     assert_eq!(count("/raw_register_name_refs"), raw_registers);
     assert_eq!(count("/block_helper_refs"), helper_refs);
+    assert_eq!(
+        call_set, definition_set,
+        "helper calls and definitions differ"
+    );
+    assert_eq!(
+        helper_definitions.len(),
+        definition_set.len(),
+        "a helper was defined more than once"
+    );
+    assert_eq!(
+        helper_refs,
+        (helper_calls.len() + helper_definitions.len()) as u64,
+        "recovered data was counted as helper syntax"
+    );
     assert!(
         pseudocode.contains("flutter.widgets.AppState.recovered_arg0("),
         "the recovered selector did not stay disjoint from the slot0 local"
@@ -1292,12 +1391,53 @@ fn assert_fixture_covers_every_shape(run: &Run) {
         "the local rename entered the recovered selector"
     );
     assert!(
-        pseudocode.contains("\"x = sub_1110(y)\" /* pool[4] */"),
+        pseudocode.contains(
+            "\"x = sub_1110(y) } \\${ arg0 x28 _block_999 *\\u{2f} \\u{2f}/\" /* pool[4] */"
+        ),
         "the recovered literal did not retain its exact decoded value"
     );
     assert!(
         !pseudocode.contains("\"x = flutter."),
         "the generic-call rewrite entered recovered literal bait"
+    );
+    let bait_line = helper_source
+        .lines()
+        .position(|line| line.contains("x = sub_1110(y) }"))
+        .expect("brace-bearing recovered data is absent from the helper fixture");
+    let helper_line = helper_source
+        .lines()
+        .take(bait_line)
+        .enumerate()
+        .filter_map(|(index, line)| {
+            line.trim_start()
+                .starts_with("dynamic _block_")
+                .then_some(index)
+        })
+        .last()
+        .expect("brace-bearing recovered data stayed outside every helper body");
+    assert!(
+        helper_line < bait_line,
+        "the brace-bearing recovered data is not inside a helper"
+    );
+    assert!(
+        pseudocode.contains("flutter.widgets.AppState.block_999("),
+        "the helper-namespace collision did not use a disjoint recovered name"
+    );
+    assert!(
+        pseudocode.contains("\"_block_999\" /* pool[10] */"),
+        "the colliding selector's exact recovered spelling is absent"
+    );
+    assert!(
+        !pseudocode.contains("AppState._block_999("),
+        "recovered selector text entered the generated helper namespace"
+    );
+    assert!(
+        sources.iter().any(|source| {
+            source.contains("widthBoundary")
+                && source.contains("reg9")
+                && !source.contains("= reg8;")
+        }),
+        "the x-producer to w-consumer boundary was not preserved"
     );
 
     assert!(
@@ -1312,6 +1452,30 @@ fn assert_fixture_covers_every_shape(run: &Run) {
         count("/emission/helper_cap_omissions") > 0,
         "the helper budget was never crossed: the helper-cap shape is not covered"
     );
+    assert!(count("/emission/dfs_depth_omissions") > 0);
+    assert!(count("/emission/dfs_visit_omissions") > 0);
+    assert_eq!(
+        count("/emission/structured_declines"),
+        count("/emission/irreducible")
+            + count("/emission/unsupported_region")
+            + count("/emission/repeat_budget")
+            + count("/emission/structured_depth_budget")
+            + count("/emission/coverage_mismatch"),
+        "structured decline accounting is not derived from its causes"
+    );
+    assert_eq!(
+        count("/emission/structured_rollbacks"),
+        count("/emission/repeat_budget")
+            + count("/emission/structured_depth_budget")
+            + count("/emission/coverage_mismatch"),
+        "rollback accounting is not derived from post-mutation causes"
+    );
+    assert_eq!(
+        count("/emission/helper_cap_omissions"),
+        count("/omitted_path_markers"),
+        "helper-cap events and emitted omission markers differ"
+    );
+    assert_provenance_accounting(run);
     assert!(
         count("/block_helper_refs") > 0,
         "no block helper reference: helper order is not covered"
@@ -1348,6 +1512,107 @@ fn assert_fixture_covers_every_shape(run: &Run) {
         !pseudocode.contains(fixture::POOL_TIE_LOSER),
         "the contested pool target was emitted under the higher claiming index's \
          name, so map order decided it"
+    );
+}
+
+fn helper_symbols(source: &str) -> (Vec<String>, Vec<String>) {
+    let mut calls = Vec::new();
+    let mut definitions = Vec::new();
+    for line in source.lines().map(str::trim_start) {
+        if let Some(rest) = line.strip_prefix("return _block_") {
+            if let Some(id) = rest.strip_suffix("();") {
+                calls.push(format!("_block_{id}"));
+            }
+        }
+        if let Some(rest) = line.strip_prefix("dynamic _block_") {
+            if let Some(id) = rest.strip_suffix("() {") {
+                definitions.push(format!("_block_{id}"));
+            }
+        }
+    }
+    (calls, definitions)
+}
+
+fn assert_provenance_accounting(run: &Run) {
+    let bytes = run
+        .artifacts
+        .iter()
+        .find(|(name, _)| name == "provenance.jsonl")
+        .map(|(_, bytes)| bytes)
+        .expect("provenance audit artifact is missing");
+    let mut actual: std::collections::BTreeMap<(u64, String), (u64, u64)> =
+        std::collections::BTreeMap::new();
+    let mut accounting: std::collections::BTreeMap<(u64, String), (u64, u64, u64, i64)> =
+        std::collections::BTreeMap::new();
+    let mut filter_rejections = 0u64;
+    let mut saw_filter_plant = false;
+
+    for line in bytes
+        .split(|byte| *byte == b'\n')
+        .filter(|line| !line.is_empty())
+    {
+        let row: serde_json::Value = serde_json::from_slice(line).expect("provenance row parses");
+        let record = row["record"]
+            .as_str()
+            .expect("provenance row has a record kind");
+        let Some(loss_site) = row["loss_site"].as_str() else {
+            continue;
+        };
+        let function_id = row["function_id"]
+            .as_u64()
+            .expect("provenance row has a function id");
+        let key = (function_id, loss_site.to_string());
+        match record {
+            "annotation" => actual.entry(key.clone()).or_default().0 += 1,
+            "cap_omission" => actual.entry(key.clone()).or_default().1 += 1,
+            "filter_rejection" => {
+                actual.entry(key.clone()).or_default().1 += 1;
+                filter_rejections += 1;
+                saw_filter_plant |= function_id == 0
+                    && row["reason"] == "names_absent_identifier"
+                    && row["rendered"] == "0x11";
+            }
+            _ => {}
+        }
+        if matches!(record, "annotation" | "cap_summary") {
+            let summary = (
+                row["candidates_considered"]
+                    .as_u64()
+                    .expect("considered count"),
+                row["accepted"].as_u64().expect("accepted count"),
+                row["rejected"].as_u64().expect("rejected count"),
+                row["unaccounted_candidates"]
+                    .as_i64()
+                    .expect("unaccounted count"),
+            );
+            if let Some(previous) = accounting.insert(key, summary) {
+                assert_eq!(
+                    previous, summary,
+                    "one provenance stream disagrees with itself"
+                );
+            }
+        }
+    }
+
+    let mut accepted = 0u64;
+    let mut rejected = 0u64;
+    for (key, (considered, expected_accepted, expected_rejected, unaccounted)) in accounting {
+        let observed = actual.get(&key).copied().unwrap_or_default();
+        assert_eq!(unaccounted, 0, "{key:?}: unaccounted provenance candidate");
+        assert_eq!(considered, expected_accepted + expected_rejected, "{key:?}");
+        assert_eq!(observed, (expected_accepted, expected_rejected), "{key:?}");
+        accepted += expected_accepted;
+        rejected += expected_rejected;
+    }
+    assert!(accepted > 0, "the provenance fixture accepted no candidate");
+    assert!(rejected > 0, "the provenance fixture rejected no candidate");
+    assert!(
+        filter_rejections > 0,
+        "the provenance fixture reached no filter rejection"
+    );
+    assert!(
+        saw_filter_plant,
+        "the named filter-rejection provenance plant was not recorded"
     );
 }
 
@@ -1494,6 +1759,8 @@ fn the_whole_artifact_set_is_byte_identical_in_twenty_processes() {
         let child = std::process::Command::new(&exe)
             .args(["--exact", "--nocapture", "--test-threads=1", CHILD_TEST])
             .env(CHILD_REQUEST, &root)
+            .env("FLUTTERDEC_PROV_AUDIT", root.join("out/provenance.jsonl"))
+            .env("FLUTTERDEC_PROV_SAMPLE", "pipeline-determinism")
             .env_remove("FLUTTERDEC_PIPELINE_DETERMINISM_KEEP")
             .output()
             .expect("re-execute the test binary");
@@ -1532,7 +1799,13 @@ fn the_whole_artifact_set_is_byte_identical_in_twenty_processes() {
     );
 
     let runs: Vec<Run> = roots.iter().map(|r| read_run(&r.join("out"))).collect();
-    assert_fixture_covers_every_shape(&runs[0]);
+    for (index, run) in runs.iter().enumerate() {
+        assert_fixture_covers_every_shape(run);
+        assert!(
+            !run.artifacts.is_empty(),
+            "process {index} produced no artifacts before byte comparison"
+        );
+    }
 
     let first = &runs[0];
     assert!(
