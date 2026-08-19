@@ -71,7 +71,7 @@ while the paired aggregate gives each of 495 case-pairs equal weight.
 | serialization | 0.044990 | 0.155538 |
 
 Emission remains dominant at 81.762 percent. Removing it entirely gives an
-Amdahl speedup ceiling of 5.483x, down from 10.967x before correctness because
+Amdahl speedup ceiling of 5.483x, down from 10.968x before correctness because
 serialization now owns 15.554 percent. The full 33-case shares are in
 `evidence/attribution.txt`.
 
