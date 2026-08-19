@@ -141,6 +141,7 @@ PROTECTED_PATHS = (
     "crates/flutterdec-core/tests/pipeline_determinism.rs",
     "crates/flutterdec-decompiler/tests/arm64_control_effects.rs",
     "crates/flutterdec-decompiler/tests/cfg_identity.rs",
+    "crates/flutterdec-decompiler/tests/dfs_loop_address_invariance.rs",
 )
 
 HEX = frozenset("0123456789abcdef")
@@ -201,6 +202,17 @@ TARGETS = {
         "kind": "test",
         "name": "cfg_identity",
         "select": ["-p", "flutterdec-decompiler", "--test", "cfg_identity"],
+    },
+    "dfs-loop-address-invariance": {
+        "package": "flutterdec-decompiler",
+        "kind": "test",
+        "name": "dfs_loop_address_invariance",
+        "select": [
+            "-p",
+            "flutterdec-decompiler",
+            "--test",
+            "dfs_loop_address_invariance",
+        ],
     },
     "helper-syntax-boundaries": {
         "package": "flutterdec-decompiler",
@@ -461,6 +473,10 @@ SENTINELS = {
     "crates/flutterdec-decompiler/tests/cfg_identity.rs": (
         "cfg-identity",
         "every_planted_identity_failure_emits_one_diagnostic_and_no_body",
+    ),
+    "crates/flutterdec-decompiler/tests/dfs_loop_address_invariance.rs": (
+        "dfs-loop-address-invariance",
+        "public_dfs_loop_artifacts_ignore_block_address_order",
     ),
 }
 

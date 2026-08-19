@@ -52,7 +52,7 @@ jobs:
       # Named targets, not --workspace: `autotests = false` or a deleted file
       # would leave --workspace passing with a quietly smaller suite.
       - name: Oracle loader guard
-        run: nix develop -c cargo test -p flutterdec-decompiler --test provenance_audit --test loop_entry_provenance_audit --test arm64_control_effects --test cfg_identity --test helper_syntax_boundaries --test rewrite_boundaries --test unmodelled_write_effects --test register_width_provenance --test atomic_rmw_effects --test annotation_anchor_identity --test provenance_accounting
+        run: nix develop -c cargo test -p flutterdec-decompiler --test provenance_audit --test loop_entry_provenance_audit --test arm64_control_effects --test cfg_identity --test dfs_loop_address_invariance --test helper_syntax_boundaries --test rewrite_boundaries --test unmodelled_write_effects --test register_width_provenance --test atomic_rmw_effects --test annotation_anchor_identity --test provenance_accounting
 
       - name: Core oracle loader guard
         run: nix develop -c cargo test -p flutterdec-core --test pipeline_determinism

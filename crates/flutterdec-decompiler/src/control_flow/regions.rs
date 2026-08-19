@@ -169,7 +169,9 @@ impl Regions {
 /// place with exactly the inputs the emitter's own run gives them. A graph the
 /// analysis declines still has these three, which is the only way to say anything
 /// about an irreducible graph's relations at all.
-fn reachable_edges(ir: &FunctionIr) -> (Vec<Vec<usize>>, Vec<Vec<usize>>, Vec<bool>) {
+pub(super) fn reachable_edges(
+    ir: &FunctionIr,
+) -> (Vec<Vec<usize>>, Vec<Vec<usize>>, Vec<bool>) {
     let n = ir.blocks.len();
     let mut succs = vec![Vec::new(); n];
     for b in &ir.blocks {
@@ -206,7 +208,11 @@ fn reachable_edges(ir: &FunctionIr) -> (Vec<Vec<usize>>, Vec<Vec<usize>>, Vec<bo
     (succs, preds, reachable)
 }
 
-fn dominators(succs: &[Vec<usize>], preds: &[Vec<usize>], reachable: &[bool]) -> Vec<HashSet<usize>> {
+pub(super) fn dominators(
+    succs: &[Vec<usize>],
+    preds: &[Vec<usize>],
+    reachable: &[bool],
+) -> Vec<HashSet<usize>> {
     let n = succs.len();
     let all: HashSet<usize> = (0..n).filter(|i| reachable[*i]).collect();
     let mut dom: Vec<HashSet<usize>> = (0..n)

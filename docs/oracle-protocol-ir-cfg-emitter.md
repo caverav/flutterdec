@@ -305,7 +305,7 @@ Checkers, scanners, and their plant tests:
 | --- | --- |
 | `scripts/check-annotation-provenance.py` | `c4e40e0122f1d87c82b5b587d8ed1ac6c74f550bed114463765f2568ea6b6f93` |
 | `scripts/check-candidate-whitelist.py` | `d8c67c8565c372c2044f6749bfe2a7b092a374c9758930c7e2ef5b45d3a6cac5` |
-| `scripts/check-oracle-inventory.py` | `78ed3b4f1d3e1c30102474f57205725aaf60648a4f20c39f65a37a43016c8cd6` |
+| `scripts/check-oracle-inventory.py` | `5101f7e48b890da0124154611a18517ce29432d3bcf11fe9928e12dfb94ddf52` |
 | `scripts/prov_cross_audit_reconcile.py` | `f7a21d2c497ff2c47e118cf3df208d869265eb11a561605f4f14d9c50febe870` |
 | `scripts/prov_join_audit_check.py` | `99a80ec27496b76737df08ae457838512495ec2e3e82668ac5ba5d73c1c5e995` |
 | `scripts/prov_join_audit_plant_test.py` | `d3e9e885878db0b6e752ab421dd9bc851b6142f4a995307d2a7763029c88374a` |
@@ -320,7 +320,7 @@ Gate and harness scripts:
 
 | Path | sha256 |
 | --- | --- |
-| `scripts/ci-check.sh` | `354a21e6ecdfef30e9bc8ea91dbdfd7a33ca8062c4d537c81648328c7e5aeb43` |
+| `scripts/ci-check.sh` | `6cb19f223bde0510e2c70eac4c7b759b6fe04d57e74dce9e17ffcb1ce89c6389` |
 | `scripts/test-suite.sh` | `b1d2efd5cda5794dbb9e60c41f92eede0cc65996d66f6c73c19e905be451c38a` |
 | `scripts/lint-python.sh` | `eef80907146b5d1b3d662ad823372a8b6a33df99b458582077b0c1578680e2d7` |
 | `scripts/lint-shell.sh` | `4554f41d5dbeeadf4d2478ce97af416392b14a78cfa417673b35914877d316ab` |
@@ -411,7 +411,7 @@ false` would switch any crate's targets off wholesale.
 | Path | sha256 |
 | --- | --- |
 | `crates/flutterdec-decompiler/src/tests.rs` | `a19fe0015869fbfeb259e28f6d4344e18a630edab92b2a7aef2a58811e3ef56b` |
-| `crates/flutterdec-decompiler/tests/provenance_audit.rs` | `e9f0e28379c364c9bca72e85d8ca47e73f2d4f9cbe10d292aa0eaa7fc9788f61` |
+| `crates/flutterdec-decompiler/tests/provenance_audit.rs` | `1309c838ea03cdf3299b84dccbc45fe29d9ef4bb6a3d3389a3da713a2f57f1fb` |
 | `crates/flutterdec-decompiler/tests/loop_entry_provenance_audit.rs` | `02626ee1ba1b4b1b9905654a6254319ee413169341e43ddb74387813f7ecbfc7` |
 | `crates/flutterdec-decompiler/src/tests/shared.rs` | `30ef9ef9d6b55acac8d41f5e557d38a78e5a60d2c28ac612e75ccfe80e376d3e` |
 | `crates/flutterdec-decompiler/src/tests/golden_and_parser.rs` | `73a74b04ba294f1efc7faa5b067fdbd3c4cedc892c6d15068a07a98d656235ca` |
@@ -441,7 +441,7 @@ false` would switch any crate's targets off wholesale.
 | `crates/flutterdec-core/src/pipeline/runners/split/identity_tests.rs` | `6de85f091ee07dd84c2469784f8f4288d982b83cf38ebffa1ae3691d28fdc4d2` |
 | `crates/flutterdec-core/src/pipeline/runners/stubs/identity_tests.rs` | `a13fd1a26bafc8224edfbc9d1e8e1aa6441e935e50a5a4021315c119973e120d` |
 | `crates/flutterdec-decompiler/src/control_flow/regions/identity_boundary_tests.rs` | `84b619616bab352c6e49fab1190d80a1df4606b691811c72835266003dfcf42d` |
-| `crates/flutterdec-decompiler/src/control_flow/relation_oracle.rs` | `c0558822e6f33e8201b26617d38c448adb78795d9d4325f1dc49e7dd99904cfe` |
+| `crates/flutterdec-decompiler/src/control_flow/relation_oracle.rs` | `e53dd455ddbbdf2c0b00d184f1f2d788833cbfd6a0db070ad69b9372297da849` |
 | `crates/flutterdec-decompiler/src/control_flow/emission_taxonomy_tests.rs` | `35263822b004ebe7083c9a2f7c0fdfff94202be641c46174e30161893fa9df94` |
 | `crates/flutterdec-decompiler/src/control_flow/annotation_anchor_tests.rs` | `b7b4e4553fa93614ed7277c76a79a77c19884be64448a0c0192bcbc589252b7e` |
 | `crates/flutterdec-decompiler/src/line_identity_tests.rs` | `cbc8bc9be4e84e90a3e1f52302c3bcdd16d4ec4b8c69ee7291f8324177b8e178` |
@@ -455,6 +455,7 @@ false` would switch any crate's targets off wholesale.
 | `crates/flutterdec-core/tests/pipeline_determinism.rs` | `0e278f988febcec7701881f4058ab98d9afe3cb67caabd73564e182886a763c8` |
 | `crates/flutterdec-decompiler/tests/arm64_control_effects.rs` | `c50439b4e6157d6d8e5321a6c49c22a1a74a9405d7c7924b6235c84db8ca3617` |
 | `crates/flutterdec-decompiler/tests/cfg_identity.rs` | `a5e0177808c50050bfd3517a7f89a234f650ae9ec01cc75b413ba8e2b4014ac8` |
+| `crates/flutterdec-decompiler/tests/dfs_loop_address_invariance.rs` | `1c2c0403303e619de9fe840f62f61c1af92dbec77fe554fd66d3505755b37db3` |
 
 Threshold rulers, protected by value rather than by digest because they live in
 files this mission may legitimately touch:
@@ -2602,3 +2603,30 @@ compiled rows, and the auxiliary resource inventory reported 9 matching
 digests and intact loaders. A clean full `scripts/ci-check.sh` run exited 0,
 including workspace clippy and tests, the release CLI build, and all 38 excluded
 benchmark-harness tests.
+
+## 21. Adjudication record: DFS loop relations ignore addresses
+
+The DFS fallback now reuses the reachable CFG dominators from region analysis.
+An edge is a back edge exactly when its target dominates its source; the entry
+that permits a wrapper is the current active predecessor on a non-back edge.
+Block addresses remain only in stable presentation and accounting identities.
+
+The protected public fixture target builds simple, nested, multi-exit, and
+irreducible graphs under ascending, descending, and permuted address layouts.
+The permutation includes a lower-address latch entering a higher-address header.
+It compares exact pseudocode and every serialized artifact and accounting field
+after mapping immutable addresses back to block ids, and separately pins loop,
+follow, break, continue, decline, and accounting validity. The inventory now has
+69 matching digests and 46 compiled oracle rows.
+
+The existing hand-derived relation oracle still passes all reducible cases. Its
+two irreducible artifact records now pin explicit rejoin notes and zero loop
+statements instead of preserving the address heuristic's invented wrappers.
+
+Planting the old `pred.start_va >= header.start_va` and complementary forward
+comparison makes the public target fail in both debug and release: the permuted
+simple, nested, and multi-exit layouts lose their loop wrapper, while the
+irreducible ascending layout invents one. Removing the plant restores both
+profiles. The new ruler, checker mapping, loader guard, explicit CI invocation,
+section 7 digest row, and this record land with the product fix in one atomic
+commit; no golden, threshold, benchmark, or unrelated structure changes.

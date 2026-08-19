@@ -71,12 +71,12 @@ digest, extra/missing row, duplicate row, and loader bypass all fail closed.
 | `crates/flutterdec-bench/Cargo.toml` | `98dbc4b430302d76c4cf4716dfdd781ea354f26195514d1f9b844e79f97a7040` |
 | `crates/flutterdec-bench/src/main.rs` | `c8fefa460ecc3dd7a919f6577367d5e967386c277630fd3e1493d4dd53b6ac34` |
 | `crates/flutterdec-bench/src/measure.rs` | `49dfc3fcb2a33fa2903f9f19ec0c02915fb15cc2cba86a9d4f8e6d72535570b8` |
-| `crates/flutterdec-decompiler/src/lib.rs` | `7c30a534afa55197e87e220d05baed1807008cf7d512789fd4c22ac6529c154b` |
+| `crates/flutterdec-decompiler/src/lib.rs` | `bfaec5e3c54488f60cc6057fb8743847bed1fb0c8f1db11743a400d9c76d3cd7` |
 | `crates/flutterdec-decompiler/src/control_flow/structured.rs` | `5d748ff24c73049402db3511c9346bfeba8730002757c228da6bc4bb809b4d02` |
 | `scripts/bench-resource.sh` | `93a6932301bb37452c41149b237d3c46b4244d2b3ee2d76a60ca11dd35c101db` |
 | `scripts/audit-resource-evidence.py` | `4cea4c88f15144a5cdf34a724751a173d11e91f7d7cda5641c156cd48faaf220` |
 | `scripts/check-resource-ruler.py` | `c99345bea216e0c8f42eb854d826d5d040230f37bf571b81eda81c80d6fe2716` |
-| `scripts/ci-check.sh` | `354a21e6ecdfef30e9bc8ea91dbdfd7a33ca8062c4d537c81648328c7e5aeb43` |
+| `scripts/ci-check.sh` | `6cb19f223bde0510e2c70eac4c7b759b6fe04d57e74dce9e17ffcb1ce89c6389` |
 
 ## Ruler-change adjudication
 
@@ -146,3 +146,16 @@ timing selection, candidate order, scores, samples, seed, accepted harness,
 frozen reference, and immutable candidate are unchanged. The resource ruler
 self-test and clean loader check were refreshed in Nix; timing selection was not
 rerun.
+
+The 2026-08-19 DFS loop-relation adjudication changes
+`crates/flutterdec-decompiler/src/lib.rs` from
+`7c30a534afa55197e87e220d05baed1807008cf7d512789fd4c22ac6529c154b` to
+`bfaec5e3c54488f60cc6057fb8743847bed1fb0c8f1db11743a400d9c76d3cd7`, and
+`scripts/ci-check.sh` from
+`354a21e6ecdfef30e9bc8ea91dbdfd7a33ca8062c4d537c81648328c7e5aeb43` to
+`6cb19f223bde0510e2c70eac4c7b759b6fe04d57e74dce9e17ffcb1ce89c6389`.
+The product change adds only the DFS dominance cache; the CI change names the
+new protected public fixture target. Resource allocator code, phase ownership,
+clone plants, thresholds, timing selection, candidate order, scores, samples,
+seed, accepted harness, frozen reference, and immutable candidate are unchanged.
+The resource ruler and full CI were refreshed; timing selection was not rerun.

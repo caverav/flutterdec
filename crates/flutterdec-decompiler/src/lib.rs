@@ -1,6 +1,7 @@
 use flutterdec_ir::{validate_block_identity, BasicBlock, CfgDefect, FunctionIr, IROp, LlirInstr};
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::sync::OnceLock;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct PseudocodeArtifact {
@@ -279,6 +280,10 @@ struct FuncEmitter<'a> {
     helper_cap_omitted: BTreeSet<usize>,
     loop_back_edges: BTreeSet<usize>,
     loop_context: Vec<usize>,
+    /// Reachable CFG dominance, built lazily for the DFS walk from the same
+    /// graph source as region recovery. This is a semantic cache, not emitter
+    /// state: rollback cannot change it.
+    dfs_dominators: OnceLock<Vec<HashSet<usize>>>,
     /// Built once on first use by the DFS emitter, which has no `Regions` to ask.
     /// Predecessors, per-block written registers, and which blocks have more
     /// than one predecessor, for merging state where paths converge.
@@ -546,6 +551,7 @@ impl<'a> FuncEmitter<'a> {
             helper_cap_omitted: BTreeSet::new(),
             loop_back_edges: BTreeSet::new(),
             loop_context: Vec::new(),
+            dfs_dominators: OnceLock::new(),
             dfs_preds: None,
             dfs_block_writes: HashMap::new(),
             lines: Vec::new(),

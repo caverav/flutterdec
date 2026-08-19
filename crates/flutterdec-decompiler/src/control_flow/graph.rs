@@ -153,13 +153,22 @@ impl<'a> FuncEmitter<'a> {
         self.inline_refusal(to, depth).is_none()
     }
 
+    fn dfs_dominates(&self, dominator: usize, block: usize) -> bool {
+        let dom = self.dfs_dominators.get_or_init(|| {
+            let (succs, preds, reachable) = reachable_edges(self.ir);
+            dominators(&succs, &preds, &reachable)
+        });
+        dom.get(block)
+            .is_some_and(|dominators| dominators.contains(&dominator))
+    }
+
     pub(super) fn has_backedge_pred(&self, id: usize) -> bool {
         let Some(block) = self.block_by_id.get(&id) else {
             return false;
         };
         for pred in &block.preds {
             if let Some(pb) = self.block_by_id.get(pred) {
-                if pb.succs.contains(&id) && pb.start_va >= block.start_va {
+                if pb.succs.contains(&id) && self.dfs_dominates(id, *pred) {
                     return true;
                 }
             }
@@ -168,17 +177,13 @@ impl<'a> FuncEmitter<'a> {
     }
 
     pub(super) fn has_forward_pred(&self, id: usize) -> bool {
-        let Some(block) = self.block_by_id.get(&id) else {
+        let Some(pred) = self.active_stack.last().copied() else {
             return false;
         };
-        for pred in &block.preds {
-            if let Some(pb) = self.block_by_id.get(pred) {
-                if pb.succs.contains(&id) && pb.start_va < block.start_va {
-                    return true;
-                }
-            }
-        }
-        false
+        self.block_by_id
+            .get(&pred)
+            .is_some_and(|block| block.succs.contains(&id))
+            && !self.dfs_dominates(id, pred)
     }
 
     pub(super) fn should_wrap_loop_header(&self, id: usize, depth: usize) -> bool {

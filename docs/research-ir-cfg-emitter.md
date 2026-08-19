@@ -309,11 +309,11 @@ all-digit decimal without a token-length rule. The public CFG ruler at
 decimal `1000000`, boundaries, calls, conditional fallthrough, and malformed or
 ambiguous operands. Restoring the old length heuristic makes that ruler fail.
 
-**R9. Back edge detection in the DFS emitter uses address order.** Evidence:
-inspection, `graph.rs:52-64` and `graph.rs:66-78` compare `start_va` to decide
-whether a predecessor is behind or ahead. That is a proxy for dominance and can
-disagree with the region analysis on a graph whose layout is not in address
-order.
+**R9. DFS back edges now follow graph relations.** The fallback reuses the
+region analysis dominators and the active traversal predecessor; virtual
+addresses remain presentation identities only. Protocol section 21 binds the
+ascending, descending, permuted, nested, multi-exit, irreducible, lower-latch,
+and higher-header public fixtures and the old-comparison plant.
 
 ## 8. Real inputs that are not available
 
@@ -402,7 +402,7 @@ Restating the charter so that a later commit cannot quietly widen scope:
   measured, and the answer is that it is not the dominant cost.
 - No claim about real binary behavior beyond the input validation path in
   section 8.
-- R2, R3, R8, and R9 are inspection findings. Each becomes a failing test
+- R2, R3, and R8 are inspection findings. Each becomes a failing test
   first, under the case matrix in the companion protocol, before any fix is
   written. R1 was the first through that path and is closed at `ac544ca`;
   section 18 records what landed and what it is asserted by.
@@ -1570,8 +1570,8 @@ hypothesis. Its rejection is measured evidence and does not invalidate
 was implemented here.
 
 Remaining risks are concrete. There is no committed real-golden oracle. R8's
-permissive hexadecimal target parser and R9's address-order DFS back-edge proxy
-remain open. The synthetic matrix does not establish the topology distribution
+permissive hexadecimal target parser remains open. The synthetic matrix does
+not establish the topology distribution
 of real Flutter programs. The disclosed regression cells and held-out MDE misses
 remain part of the record. The performance track stops here without a win; a
 later attempt needs a newly declared candidate family, a new sealed held-out

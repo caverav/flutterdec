@@ -328,6 +328,12 @@ fn loader_map() -> Vec<(String, Hook)> {
                 manifest: DECOMPILER_MANIFEST,
             },
         ),
+        (
+            "crates/flutterdec-decompiler/tests/dfs_loop_address_invariance.rs".to_string(),
+            Hook::Autotest {
+                manifest: DECOMPILER_MANIFEST,
+            },
+        ),
     ];
 
     // Loader file, then every protected file it includes. A loader's include
