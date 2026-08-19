@@ -1285,6 +1285,14 @@ fn reconcile_block_ledger(
         .iter()
         .filter(|identity| identity.function_id == function_id)
     {
+        ledger.stages.retain(|row| {
+            !(row.stage == flutterdec_decompiler::BlockStage::Emission
+                && row.identity == *identity)
+        });
+        ledger.remaps.retain(|remap| {
+            !(remap.stage == flutterdec_decompiler::BlockStage::Emission
+                && remap.from == *identity)
+        });
         if let Some(row) = ledger
             .dispositions
             .iter_mut()

@@ -374,7 +374,8 @@ use helpers::*;
 
 pub use control_flow::{
     BlockDisposition, BlockDispositionRecord, BlockEdge, BlockIdentity, BlockLedger, BlockRemap,
-    BlockStage, EmissionAccounting, InvalidCfgRejected, ReachableUnemittedExplanation, StageBlock,
+    BlockStage, EmissionAccounting, InvalidCfgRawBlock, InvalidCfgRawGraph,
+    InvalidCfgRawInstruction, InvalidCfgRejected, ReachableUnemittedExplanation, StageBlock,
     StructuredDecline, StructuredDeclineCause, TraversalEvent, TraversalEventKind, TraversalTarget,
 };
 
@@ -1151,9 +1152,8 @@ fn invalid_cfg_artifact(ir: &FunctionIr, defect: &CfgDefect) -> PseudocodeArtifa
         .map(|i| format!("dynamic arg{i}"))
         .collect::<Vec<_>>()
         .join(", ");
+    let raw_graph_witness = InvalidCfgRawGraph::from(ir);
     let raw = serde_json::to_vec(ir).expect("FunctionIr serialization cannot fail");
-    // FNV-1a is used as a stable content digest here. This is an identity
-    // binding, not a cryptographic authenticity claim.
     let raw_graph_digest = raw.iter().fold(0xcbf29ce484222325u64, |hash, byte| {
         (hash ^ u64::from(*byte)).wrapping_mul(0x100000001b3)
     });
@@ -1168,6 +1168,7 @@ fn invalid_cfg_artifact(ir: &FunctionIr, defect: &CfgDefect) -> PseudocodeArtifa
         invalid_cfg_rejected: Some(InvalidCfgRejected {
             function_id: ir.function_id,
             raw_graph_digest: format!("fnv1a64:{raw_graph_digest:016x}"),
+            raw_graph_witness: Some(raw_graph_witness),
         }),
     };
     assert_eq!(

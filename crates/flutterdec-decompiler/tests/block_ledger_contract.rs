@@ -178,6 +178,28 @@ fn complete_partition_reconciles_and_plants_fail_closed() {
         .validate(&events)
         .unwrap_err()
         .contains("ambiguous remaps"));
+
+    for reverse in [false, true] {
+        let mut removal_and_emission = ledger.clone();
+        let removal = BlockRemap {
+            stage: BlockStage::GuardPruned,
+            from: identity(0),
+            to: None,
+        };
+        if reverse {
+            removal_and_emission.remaps.push(removal);
+        } else {
+            removal_and_emission.remaps.insert(0, removal);
+        }
+        removal_and_emission.dispositions[0].disposition = BlockDisposition::GuardPruned;
+        assert!(
+            removal_and_emission
+                .validate(&events)
+                .unwrap_err()
+                .contains("live terminal chain"),
+            "GuardPruned removal plus Emission retention was accepted (reverse={reverse})"
+        );
+    }
 }
 
 #[test]
@@ -317,6 +339,77 @@ fn invalid_graph_has_one_digest_outcome_and_no_partition() {
         .validate(first.emission.events())
         .unwrap_err()
         .contains("does not match ledger function"));
+
+    let mut stale_digest = first.emission.block_ledger().clone();
+    let digest = &mut stale_digest
+        .invalid_cfg_rejected
+        .as_mut()
+        .unwrap()
+        .raw_graph_digest;
+    let replacement = if digest.ends_with('0') { '1' } else { '0' };
+    digest.pop();
+    digest.push(replacement);
+    assert!(stale_digest
+        .validate(first.emission.events())
+        .unwrap_err()
+        .contains("does not match its witness"));
+
+    let mut missing_witness = first.emission.block_ledger().clone();
+    missing_witness
+        .invalid_cfg_rejected
+        .as_mut()
+        .unwrap()
+        .raw_graph_witness = None;
+    assert!(missing_witness
+        .validate(first.emission.events())
+        .unwrap_err()
+        .contains("no raw graph witness"));
+
+    let mut mutated_witness = first.emission.block_ledger().clone();
+    mutated_witness
+        .invalid_cfg_rejected
+        .as_mut()
+        .unwrap()
+        .raw_graph_witness
+        .as_mut()
+        .unwrap()
+        .blocks[0]
+        .instrs[0]
+        .src
+        .push('x');
+    assert!(mutated_witness
+        .validate(first.emission.events())
+        .unwrap_err()
+        .contains("does not match its witness"));
+
+    let mut reordered_witness = first.emission.block_ledger().clone();
+    reordered_witness
+        .invalid_cfg_rejected
+        .as_mut()
+        .unwrap()
+        .raw_graph_witness
+        .as_mut()
+        .unwrap()
+        .blocks
+        .swap(0, 1);
+    assert!(reordered_witness
+        .validate(first.emission.events())
+        .unwrap_err()
+        .contains("does not match its witness"));
+
+    let mut cross_function_witness = first.emission.block_ledger().clone();
+    cross_function_witness
+        .invalid_cfg_rejected
+        .as_mut()
+        .unwrap()
+        .raw_graph_witness
+        .as_mut()
+        .unwrap()
+        .function_id = 92;
+    assert!(cross_function_witness
+        .validate(first.emission.events())
+        .unwrap_err()
+        .contains("witness function 92 does not match invalid function 91"));
 
     let dirty = ["stage row", "valid edge", "remap", "explanation"];
     for field in dirty {

@@ -216,9 +216,81 @@ pub struct BlockDispositionRecord {
 /// Invalid graphs never enter the block partition. The digest binds the outcome
 /// to the raw graph that was rejected rather than to a partially indexed view.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct InvalidCfgRawInstruction {
+    pub va: u64,
+    pub op: IROp,
+    pub src: String,
+    pub target: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct InvalidCfgRawBlock {
+    pub id: usize,
+    pub start_va: u64,
+    pub instrs: Vec<InvalidCfgRawInstruction>,
+    pub succs: Vec<usize>,
+    pub preds: Vec<usize>,
+}
+
+/// Canonically field-ordered copy of the rejected `FunctionIr`. Every field is
+/// required because the stable digest predates this witness and covers the full
+/// serialized function, including instruction text and raw edge order.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct InvalidCfgRawGraph {
+    pub function_id: u64,
+    pub name: String,
+    pub entry_va: u64,
+    pub blocks: Vec<InvalidCfgRawBlock>,
+}
+
+impl From<&FunctionIr> for InvalidCfgRawGraph {
+    fn from(ir: &FunctionIr) -> Self {
+        Self {
+            function_id: ir.function_id,
+            name: ir.name.clone(),
+            entry_va: ir.entry_va,
+            blocks: ir
+                .blocks
+                .iter()
+                .map(|block| InvalidCfgRawBlock {
+                    id: block.id,
+                    start_va: block.start_va,
+                    instrs: block
+                        .instrs
+                        .iter()
+                        .map(|instr| InvalidCfgRawInstruction {
+                            va: instr.va,
+                            op: instr.op.clone(),
+                            src: instr.src.clone(),
+                            target: instr.target.clone(),
+                        })
+                        .collect(),
+                    succs: block.succs.clone(),
+                    preds: block.preds.clone(),
+                })
+                .collect(),
+        }
+    }
+}
+
+fn raw_graph_digest(graph: &InvalidCfgRawGraph) -> String {
+    let raw = serde_json::to_vec(graph).expect("raw graph witness serialization cannot fail");
+    // FNV-1a is the existing stable content binding. This is an identity
+    // digest, not a cryptographic authenticity claim.
+    let digest = raw.iter().fold(0xcbf29ce484222325u64, |hash, byte| {
+        (hash ^ u64::from(*byte)).wrapping_mul(0x100000001b3)
+    });
+    format!("fnv1a64:{digest:016x}")
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct InvalidCfgRejected {
     pub function_id: u64,
     pub raw_graph_digest: String,
+    /// `None` represents a legacy or incomplete outcome and is rejected by
+    /// validation. Keeping it optional makes the serialized schema additive.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub raw_graph_witness: Option<InvalidCfgRawGraph>,
 }
 
 /// Proof that a reachable-unemitted block lies on the path rooted at one keyed
@@ -267,6 +339,24 @@ impl BlockLedger {
                     invalid.function_id
                 ));
             }
+            let witness = invalid.raw_graph_witness.as_ref().ok_or_else(|| {
+                format!(
+                    "invalid function {} has no raw graph witness",
+                    invalid.function_id
+                )
+            })?;
+            if witness.function_id != invalid.function_id {
+                return Err(format!(
+                    "raw graph witness function {} does not match invalid function {}",
+                    witness.function_id, invalid.function_id
+                ));
+            }
+            if raw_graph_digest(witness) != invalid.raw_graph_digest {
+                return Err(format!(
+                    "invalid function {} raw graph digest does not match its witness",
+                    invalid.function_id
+                ));
+            }
             if !self.stages.is_empty()
                 || !self.valid_edges.is_empty()
                 || !self.remaps.is_empty()
@@ -311,6 +401,7 @@ impl BlockLedger {
             }
         }
         let mut remap_keys = BTreeSet::new();
+        let mut remap_targets = BTreeSet::new();
         for remap in &self.remaps {
             if remap.stage == BlockStage::Built {
                 return Err("Built stage cannot contain a remap".to_string());
@@ -325,6 +416,12 @@ impl BlockLedger {
                 return Err(format!("remap names unknown source {:?}", remap.from));
             }
             if let Some(target) = remap.to {
+                if !remap_targets.insert((remap.stage, target)) {
+                    return Err(format!(
+                        "stage {:?} has ambiguous remaps to {target:?}",
+                        remap.stage
+                    ));
+                }
                 if !self
                     .stages
                     .iter()
@@ -413,34 +510,61 @@ impl BlockLedger {
         for row in &self.dispositions {
             *disposition_count.entry(row.identity).or_default() += 1;
         }
-        let mut terminal = BTreeSet::new();
-        for identity in &source {
-            let mut current = *identity;
-            for stage in [
-                BlockStage::Split,
-                BlockStage::GuardPruned,
-                BlockStage::NoreturnPruned,
-                BlockStage::Emission,
-            ] {
-                if let Some(remap) = self
-                    .remaps
-                    .iter()
-                    .find(|remap| remap.stage == stage && remap.from == current)
-                {
-                    match remap.to {
-                        Some(next) => current = next,
-                        None => break,
+        let mut active: BTreeMap<BlockIdentity, BlockIdentity> =
+            source.iter().map(|identity| (*identity, *identity)).collect();
+        let mut terminal_by_source: BTreeMap<_, _> =
+            source.iter().map(|identity| (*identity, *identity)).collect();
+        for stage in [
+            BlockStage::Split,
+            BlockStage::GuardPruned,
+            BlockStage::NoreturnPruned,
+            BlockStage::Emission,
+        ] {
+            let stage_remaps: Vec<_> = self
+                .remaps
+                .iter()
+                .filter(|remap| remap.stage == stage)
+                .collect();
+            for remap in &stage_remaps {
+                if !active.contains_key(&remap.from) {
+                    return Err(format!(
+                        "stage {stage:?} remap from {:?} does not continue one live terminal chain",
+                        remap.from
+                    ));
+                }
+                if let Some(target) = remap.to {
+                    if target != remap.from
+                        && stage_remaps.iter().any(|other| other.from == target)
+                    {
+                        return Err(format!(
+                            "stage {stage:?} remap target {target:?} is also a source"
+                        ));
                     }
                 }
             }
-            terminal.insert(current);
+            for remap in stage_remaps {
+                let origin = active
+                    .remove(&remap.from)
+                    .expect("stage remap sources were checked against the live set");
+                if let Some(target) = remap.to {
+                    if active.insert(target, origin).is_some() {
+                        return Err(format!(
+                            "stage {stage:?} remap converges ambiguously on {target:?}"
+                        ));
+                    }
+                    terminal_by_source.insert(origin, target);
+                }
+            }
+        }
+        let terminal: BTreeSet<_> = terminal_by_source.values().copied().collect();
+        for current in &terminal {
             if current.function_id != self.function_id {
                 return Err(format!(
                     "terminal identity {current:?} does not match ledger function {}",
                     self.function_id
                 ));
             }
-            match disposition_count.get(&current).copied().unwrap_or(0) {
+            match disposition_count.get(current).copied().unwrap_or(0) {
                 1 => {}
                 n => return Err(format!("identity {current:?} has {n} dispositions")),
             }
