@@ -332,7 +332,15 @@ never moved since it was added; its file already existed at `1371e42` with the
 same bytes it has today, but it was not a protected row until section 10, which
 is why it is counted here and not among the forty-five.
 
-Every other row currently holds its `1371e42` bytes. One of them,
+The other sixty-four rows hold the digest first pinned for them, and they split
+the same way the forty-five and the twenty-six do. Forty of the forty-five rows
+pinned at `1371e42` still hold their `1371e42` bytes; the other five are the five
+movers named above. Twenty-four of the twenty-six later rows still hold the
+digest they joined with; the other two are the two later joiners named above. No
+claim is made here about `1371e42` bytes for the twenty-five paths that did not
+exist at `1371e42`: every later row except the section 10 loader is such a path,
+and that loader is the one whose file did exist there, unchanged since. One of
+the forty,
 `crates/flutterdec-decompiler/src/tests/cfg_and_stack/call_and_loops.rs`, left
 them for exactly one commit and came back: `0e8b7d6` moved it to
 `ed336192386451a0db795918530a63eece3e0367f251b43b4a82d5a3a416c9fc` and `6b79f0e`
@@ -591,11 +599,28 @@ reference is allowed only through all of these steps, in order:
 A ruler change discovered without steps 1 through 4 is a failure of the change,
 not of the ruler.
 
+How to read the records that follow. Every section from 10 on is an adjudication
+record for one commit, and its counts, its gate output and its narrative describe
+the tree at that commit, not the tree today. Only section 7 states the current
+digests, and only a row that names no commit at all is claiming to be current. So
+that this is mechanically checkable rather than a reading convention: every row
+of every digest chain in sections 10 through 24 names the commit or the commit
+interval that held its value, every one of those values that section 7 no longer
+carries says where it was superseded, and every reproduce instruction for such a
+row is a `git show <commit>:<path> | sha256sum`, never a `sha256sum` of the
+worktree. A history row labelled current, or reproduced from worktree bytes, is a
+defect of this document.
+
 ## 10. Adjudication record: `scripts/ci-check.sh`
 
-This is the section 9 record for the one protected path whose digest has moved
-since `1371e42`. It is landed as its own documentation commit, with no product or
-harness change alongside it.
+This is the section 9 record for the first three moves of `scripts/ci-check.sh`,
+which at `e3d7d2f`, where this record was written, was the only protected path
+whose digest had moved since `1371e42`. It is landed as its own documentation
+commit, with no product or harness change alongside it. The chain in 10.1 was
+carried one row further at `65abbf0`, whose move section 12 adjudicates. That is
+no longer the standing of the table: section 7 records seven rows away from their
+first pinned digest and twelve moves of this file, and names the section that
+adjudicates each of the later ones.
 
 ### 10.1 Digest chain
 
@@ -611,13 +636,16 @@ backticked digest, does not read these history rows as protected-path rows.
 | `61e89fd` | intermediate | `675099447f611dcfc89cd26046ba6e6a7fd04f3ff94be54113e3c787ed21e412` |
 | `5bf6595` | intermediate | `6ee0cdf976f4fe02c1b3bebb4495bd2dfe34dc1fbd431b1ce9b52201eebbf878` |
 | `059c7b1`, `e2e66a7` | unchanged | `6ee0cdf976f4fe02c1b3bebb4495bd2dfe34dc1fbd431b1ce9b52201eebbf878` |
-| `5f6a39f` | current | `2f76a8b9abac96db026386c0626d248ade81e9690e563cbaaa901b86472b4457` |
+| `5f6a39f` | third move, the value this record was written against | `2f76a8b9abac96db026386c0626d248ade81e9690e563cbaaa901b86472b4457` |
 | `4c127ab` through `9757328` | unchanged, docs-only and harness-only commits | `2f76a8b9abac96db026386c0626d248ade81e9690e563cbaaa901b86472b4457` |
-| this commit, worktree | current, recorded in section 7, adjudicated in section 12 | `171aa8894675ed2c90ff40c9d6a136bd791c3ae0d51c7965617e682b31d2f067` |
+| `65abbf0` | fourth move, adjudicated in section 12, superseded at `c95daa6` | `171aa8894675ed2c90ff40c9d6a136bd791c3ae0d51c7965617e682b31d2f067` |
 
-Reproduce any row with
-`git show <commit>:scripts/ci-check.sh | sha256sum`, and the last row with
-`sha256sum scripts/ci-check.sh`.
+Reproduce any row with `git show <commit>:scripts/ci-check.sh | sha256sum`,
+against the commit that row names. Every value in this chain is historical: the
+last of them was held by `65abbf0` alone, and section 7 records
+`9dac174b7a2a4e3a0d14d182d292dac0dbc8b6c63679e859da7cc8dad21ea45e` today,
+adjudicated in section 23. `sha256sum scripts/ci-check.sh` therefore reproduces
+no row of this table.
 
 The fixed reference is preserved two ways: the `1371e42` digest is recorded above
 and in section 7, and the file itself is recoverable verbatim from the reference
@@ -739,10 +767,13 @@ untouched by this diff, which changes no file other than
 
 ## 11. Adjudication record: `crates/flutterdec-decompiler/tests/provenance_audit.rs`
 
-This is the section 9 record for the second protected path whose digest has moved
-since `1371e42`. It is landed as its own commit, carrying only this file and the
-protected test file, with no product change alongside it, and before any product
-source edit of this mission.
+This is the section 9 record for the first move of
+`crates/flutterdec-decompiler/tests/provenance_audit.rs`, which at `9757328`,
+where this record was written, was the second protected path whose digest had
+moved since `1371e42`. Section 7 records ten moves of this file and names the
+section that adjudicates each of the later nine. It is landed as its own commit,
+carrying only this file and the protected test file, with no product change
+alongside it, and before any product source edit of this mission.
 
 ### 11.1 Digest chain
 
@@ -753,12 +784,14 @@ the section 7 row shape does not read these history rows as protected-path rows.
 | --- | --- | --- |
 | `1371e42` | fixed reference, preserved | `e0b5c675b2510d8c17c05b15a4a33341ba6a24cbec4336512cf63028527ff3b8` |
 | `282a1b3` through `02bc42c` | unchanged, docs-only and harness-only commits | `e0b5c675b2510d8c17c05b15a4a33341ba6a24cbec4336512cf63028527ff3b8` |
-| this commit, worktree | current, recorded in section 7 | `8124346801612c56e9580d293c16a4e24593df175f8e7e376f16748a26560c0e` |
+| `9757328` | first move, adjudicated here, superseded at `65abbf0` | `8124346801612c56e9580d293c16a4e24593df175f8e7e376f16748a26560c0e` |
 
 Reproduce any row with
 `git show <commit>:crates/flutterdec-decompiler/tests/provenance_audit.rs | sha256sum`,
-and the last row with
-`sha256sum crates/flutterdec-decompiler/tests/provenance_audit.rs`.
+against the commit that row names. Both values are historical: `9757328` alone
+held the second, and section 7 records
+`1627b7b9a0b5634fa3d76c9aa71c0d12dbb386371e26783b251b565467a3a34d` today,
+adjudicated in section 24. `sha256sum` on the worktree file reproduces neither.
 
 The fixed reference is preserved two ways: the `1371e42` digest is recorded above,
 and the file itself is recoverable verbatim from the reference commit, which is
@@ -905,14 +938,14 @@ protected-path rows.
 | `1371e42` | fixed reference, preserved | `e0b5c675b2510d8c17c05b15a4a33341ba6a24cbec4336512cf63028527ff3b8` |
 | `282a1b3` through `02bc42c` | unchanged | `e0b5c675b2510d8c17c05b15a4a33341ba6a24cbec4336512cf63028527ff3b8` |
 | `9757328` | first, narrow guard, adjudicated in section 11 | `8124346801612c56e9580d293c16a4e24593df175f8e7e376f16748a26560c0e` |
-| `65abbf0`, that commit's worktree | superseded, adjudicated in section 13 | `b5712a66b0f6472a726d4d253555272b54322cd69c3fdb1a3bed514de8cb9765` |
+| `65abbf0` | second move, superseded at `c95daa6`, adjudicated in section 13 | `b5712a66b0f6472a726d4d253555272b54322cd69c3fdb1a3bed514de8cb9765` |
 
 `scripts/ci-check.sh`, continuing the chain in section 10.1:
 
 | Commit | State | sha256 |
 | --- | --- | --- |
 | `5f6a39f` through `9757328` | prior, adjudicated in section 10 | `2f76a8b9abac96db026386c0626d248ade81e9690e563cbaaa901b86472b4457` |
-| `65abbf0`, that commit's worktree | superseded, adjudicated in section 13 | `171aa8894675ed2c90ff40c9d6a136bd791c3ae0d51c7965617e682b31d2f067` |
+| `65abbf0` | fourth move, superseded at `c95daa6`, adjudicated in section 13 | `171aa8894675ed2c90ff40c9d6a136bd791c3ae0d51c7965617e682b31d2f067` |
 
 `.github/workflows/ci.yml` is not a section 7 row and does not become one: it is CI
 configuration that later work may legitimately edit, exactly like the threshold
@@ -922,11 +955,13 @@ through `9757328`, `c51642b043cfa254c454282aee5d14b24d899d29bcda83d8e42a9e1da996
 in this commit. Its one load-bearing line is asserted by value by the guard, not
 by digest.
 
-Reproduce any row with `git show <commit>:<path> | sha256sum`, and the last row of
-each chain with `sha256sum <path>`. The fixed reference is preserved two ways: the
-`1371e42` digests are recorded above and in section 7, and both files are
-recoverable verbatim from the reference commit, which is never rewritten, force
-pushed, or rebased.
+Reproduce any row with `git show <commit>:<path> | sha256sum`, against the commit
+that row names. Both chains end at `65abbf0` and both of those values were
+superseded at `c95daa6`, so `sha256sum <path>` reproduces neither: section 7
+records `1627b7b9...` and `9dac174b...` today. The fixed reference is preserved
+two ways: the `1371e42` digests are recorded above and in section 7, and both
+files are recoverable verbatim from the reference commit, which is never
+rewritten, force pushed, or rebased.
 
 ### 12.2 Exact diff intent
 
@@ -1175,20 +1210,24 @@ protected-path rows.
 | Commit | State | sha256 |
 | --- | --- | --- |
 | `65abbf0` | prior, source-text guard, adjudicated in section 12 | `b5712a66b0f6472a726d4d253555272b54322cd69c3fdb1a3bed514de8cb9765` |
-| this commit, worktree | current, recorded in section 7 | `1bda72504e7ada1c8a2e7798ca314b3843ebc6cf8b8202851de42dd542573abd` |
+| `c95daa6` through `af32bb1` | third move, adjudicated here, superseded at `6d501c8` | `1bda72504e7ada1c8a2e7798ca314b3843ebc6cf8b8202851de42dd542573abd` |
 
 `scripts/ci-check.sh`, continuing 12.1:
 
 | Commit | State | sha256 |
 | --- | --- | --- |
 | `65abbf0` | prior, adjudicated in section 12 | `171aa8894675ed2c90ff40c9d6a136bd791c3ae0d51c7965617e682b31d2f067` |
-| this commit, worktree | current, recorded in section 7 | `386e0f2a22a25c774ff43da8621e947d9c3a4137e57a5d8ee6bbad973eb25c48` |
+| `c95daa6` through `af32bb1` | fifth move, adjudicated here, superseded at `6d501c8` | `386e0f2a22a25c774ff43da8621e947d9c3a4137e57a5d8ee6bbad973eb25c48` |
 
 `scripts/check-oracle-inventory.py` is new in this commit and has no prior state.
-Its digest is `d882132e87cb4625ebdac88ab310e405b00133bd546e172db282be7e1bbf47bf`,
-recorded in section 7 with the other checkers. It is protected because it is now
-the ruler: weakening it, for instance by dropping a sentinel or by accepting a
-target it failed to list, would make the inventory pass over a silenced oracle.
+Its digest at `c95daa6` is
+`d882132e87cb4625ebdac88ab310e405b00133bd546e172db282be7e1bbf47bf`, which is the
+value section 7 carried for it from `c95daa6` through `af32bb1`; it has moved
+seven times since, the first of them at `6d501c8` in section 15, and section 7
+records `3900f505ea8aea59500c99fcf598013cffac55e9128ec9498f7811738bcbf71a`
+today. It is protected because it is now the ruler: weakening it, for instance by
+dropping a sentinel or by accepting a target it failed to list, would make the
+inventory pass over a silenced oracle.
 
 `.github/workflows/ci.yml` is still not a section 7 row, for the reason 12.1
 gives. Recorded for reproducibility only:
@@ -1197,8 +1236,9 @@ gives. Recorded for reproducibility only:
 commit. Both of its load-bearing lines are asserted by value by the guard, not by
 digest.
 
-Reproduce any row with `git show <commit>:<path> | sha256sum`, and the last row of
-each chain with `sha256sum <path>`.
+Reproduce any row with `git show <commit>:<path> | sha256sum`, against the commit
+that row names. Every value in both chains is historical: both were superseded at
+`6d501c8` in section 15, so `sha256sum <path>` reproduces neither.
 
 ### 13.2 Exact diff intent
 
@@ -1582,7 +1622,8 @@ the candidate, which is the section 5 rule this edit is most exposed to.
 
 ### 14.5 Accepted gate evidence
 
-Run at the current worktree, with the section 3 edit and this record in place.
+Run at this record's own worktree, with the section 3 edit and this record in
+place. The counts below are that commit's, not today's.
 
 - `NIX_CONFIG='experimental-features = nix-command flakes' scripts/ci-check.sh`
   exits 0 and prints `[ci-check] all checks passed`. All thirteen lanes are
@@ -1600,9 +1641,10 @@ Run at the current worktree, with the section 3 edit and this record in place.
   Oracle test files table, so it is what proves an edit to section 3 and an
   appended section 14 leave the table it reads undisturbed. The same is true of
   `the_protected_oracle_loader_chain_is_intact`, which passes in lane 7.
-- The 47 section 7 rows all match the worktree, 0 mismatches, recomputed with
-  `sha256sum` per row. A doc-wide scan for the section 7 row shape also returns
-  47, so neither of the two tables added by this record leaks into that count.
+- The 47 section 7 rows all matched the worktree at this commit, 0 mismatches,
+  recomputed with `sha256sum` per row. A doc-wide scan for the section 7 row
+  shape also returned 47, so neither of the two tables added by this record leaks
+  into that count.
 
 The tests named in 14.2 fail on the old behavior, which is section 9 step 2 and
 is measured rather than argued. In a disposable worktree at this commit's tree,
@@ -1642,12 +1684,14 @@ This commit changes one file and it is a document. `git diff-tree -r
 and nothing else: no product source, no test, no fixture, no golden, no manifest,
 no script and no CI lane.
 
-Every protected digest row is exact. The 47 rows of section 7 all match the
-worktree, and the intersection of those 47 paths with the 14 paths changed by the
-whole IR work, `git diff --name-only c95daa6 HEAD`, is empty. So none of the five
-commits this record reconciles against moved a protected digest either, and the
-three rows that have moved since `1371e42` are still the three adjudicated in
-sections 10 through 13.
+Every protected digest row was exact. The 47 rows section 7 held at this commit
+all matched the worktree, and the intersection of those 47 paths with the 14
+paths changed by the whole IR work, `git diff --name-only c95daa6 HEAD`, was
+empty. So none of the five commits this record reconciles against moved a
+protected digest either, and the three rows that had moved since `1371e42` were
+still the three adjudicated in sections 10 through 13. Four more rows have left
+their first pinned digest since, first in section 16, then in sections 18 and 19;
+section 7 carries the standing count of seven.
 
 That is also the honest limit of this record. Nothing under `crates/flutterdec-ir/`
 carries a section 7 digest row or an oracle-inventory sentinel, so the twelve-row
@@ -1722,7 +1766,7 @@ protected-path rows.
 | --- | --- | --- |
 | `c95daa6` | prior, adjudicated in section 13 | `1bda72504e7ada1c8a2e7798ca314b3843ebc6cf8b8202851de42dd542573abd` |
 | `ac544ca` through `af32bb1` | unchanged, eleven commits of product and oracle work | `1bda72504e7ada1c8a2e7798ca314b3843ebc6cf8b8202851de42dd542573abd` |
-| this commit, worktree | current, recorded in section 7 | `e93e04f71f67dc57379fcca164af80d58a403889095bcc4aced48de990b44c59` |
+| `6d501c8` through `5fa97f2` | fourth move, adjudicated here, superseded at `7b8628a` | `e93e04f71f67dc57379fcca164af80d58a403889095bcc4aced48de990b44c59` |
 
 `scripts/ci-check.sh`, continuing 13.1:
 
@@ -1730,7 +1774,7 @@ protected-path rows.
 | --- | --- | --- |
 | `c95daa6` | prior, adjudicated in section 13 | `386e0f2a22a25c774ff43da8621e947d9c3a4137e57a5d8ee6bbad973eb25c48` |
 | `ac544ca` through `af32bb1` | unchanged | `386e0f2a22a25c774ff43da8621e947d9c3a4137e57a5d8ee6bbad973eb25c48` |
-| this commit, worktree | current, recorded in section 7 | `ec5e015bc65317c8b477c582b52a9a6d91c618e6becfe31da019b4bb34995401` |
+| `6d501c8` through `5fa97f2` | sixth move, adjudicated here, superseded at `7b8628a` | `ec5e015bc65317c8b477c582b52a9a6d91c618e6becfe31da019b4bb34995401` |
 
 `scripts/check-oracle-inventory.py`, first move since section 13 created it:
 
@@ -1738,7 +1782,7 @@ protected-path rows.
 | --- | --- | --- |
 | `c95daa6` | as created, adjudicated in section 13 | `d882132e87cb4625ebdac88ab310e405b00133bd546e172db282be7e1bbf47bf` |
 | `ac544ca` through `af32bb1` | unchanged | `d882132e87cb4625ebdac88ab310e405b00133bd546e172db282be7e1bbf47bf` |
-| this commit, worktree | current, recorded in section 7 | `b8e06c148c0268f23acbb9547e5b9248b3f4ebc6903a48e8d21112be41e3ef49` |
+| `6d501c8` through `b396a62` | first move since section 13, adjudicated here, superseded at `c58013d` | `b8e06c148c0268f23acbb9547e5b9248b3f4ebc6903a48e8d21112be41e3ef49` |
 
 The nine new rows have no prior digest state. Six are files this commit creates by
 moving an inline module out of the product file named beside them; three already
@@ -1757,7 +1801,13 @@ given so the moved text is recoverable from history:
 | `crates/flutterdec-decompiler/tests/arm64_control_effects.rs` | already test-only, added at `ac544ca` | unprotected, not named by any lane |
 | `crates/flutterdec-decompiler/tests/cfg_identity.rs` | already test-only, added at `dff08ac` | unprotected, not named by any lane |
 
-Their digests are the nine new rows of the section 7 Oracle test files table.
+Their digests at `6d501c8` are the nine rows this commit adds to the section 7
+Oracle test files table. Eight of the nine still hold that first pinned digest.
+The exception is
+`crates/flutterdec-decompiler/src/control_flow/relation_oracle.rs`, which joined
+at `75fe720e04cfa6bbb859981f1b39ebba0e0ed932e8973d3bab730058cedcfa96` and has
+moved twice since, in section 19 and in section 21, which is why section 7 counts
+it among the seven.
 
 `.github/workflows/ci.yml` is still not a section 7 row, for the reason 12.1
 gives. Recorded for reproducibility only:
@@ -1765,8 +1815,10 @@ gives. Recorded for reproducibility only:
 `479cd6f7ea7e0cbdce791244f9e3c2560b536d62cfcddc3d4a43601c379920eb` in this
 commit. Its load-bearing lines are asserted by value by the guard, not by digest.
 
-Reproduce any row with `git show <commit>:<path> | sha256sum`, and the last row of
-each chain with `sha256sum <path>`.
+Reproduce any row with `git show <commit>:<path> | sha256sum`, against the commit
+that row names. Every value in the three chains is historical: the two moved at
+`7b8628a` in section 19 and the third at `c58013d` in section 17, so
+`sha256sum <path>` reproduces none of them.
 
 ### 15.2 Exact diff intent
 
@@ -2206,13 +2258,14 @@ inventory, and its `main` runs them ahead of `cargo metadata`:
 - `parse_digest_rows` reads every `| path | sha256 |` row of section 7 and of no
   other section. It is bounded by the `## 7. Protected paths and digests`
   heading and the next `## ` heading, so the before-and-after digest chains in
-  sections 10.1 through 16.3, and section 8's recorded evidence, are the same
-  table shape and are correctly invisible to it. A row moved out of section 7
-  into one of those records therefore reads as a deleted row.
-- `PROTECTED_PATHS` is the hardcoded expected inventory, all 56 paths, in the
-  order the five tables list them. It is the ruler for the table rather than a
-  copy of it: parsing the protocol alone cannot notice a deleted row, because a
-  deleted row leaves nothing behind to check.
+  sections 10.1 through 16.3 at this commit, and every chain table added after
+  it, and section 8's recorded evidence, are the same table shape and are
+  correctly invisible to it. A row moved out of section 7 into one of those
+  records therefore reads as a deleted row.
+- `PROTECTED_PATHS` is the hardcoded expected inventory, all 56 paths at this
+  commit, in the order the five tables list them. It is the ruler for the table
+  rather than a copy of it: parsing the protocol alone cannot notice a deleted
+  row, because a deleted row leaves nothing behind to check.
 - `check_digests` requires, in this order, that no path is listed twice, that the
   parsed row set and `PROTECTED_PATHS` are equal in both directions, that every
   digest is exactly 64 lowercase hex characters, that every path is an existing
@@ -2228,8 +2281,9 @@ fails the checker.
 
 ### 17.2 The exact expected inventory
 
-56 rows, which is every digest row of section 7 and no other row of this
-document:
+56 rows at `c58013d`, which was every digest row of section 7 and no other row of
+this document at that commit. The table has grown since, one adjudicated record
+at a time, to the 71 rows section 7 lists today:
 
 | Table | Rows |
 | --- | --- |
@@ -2240,12 +2294,12 @@ document:
 | Oracle test files | 33 |
 | Total | 56 |
 
-The 33 Oracle test files rows are exactly the 33 keys of `SENTINELS`, so every
-one of them is now proved twice: its bytes here, and its compilation by the pass
-section 13 records. The other 23 rows - the three goldens, the twelve checkers
-and scanners, the six gate and harness scripts, and the two fixtures - had no
-executable protection of any kind before this record, because `SENTINELS` does
-not map them and nothing else read them.
+Those 33 Oracle test files rows were exactly the 33 keys of `SENTINELS` at this
+commit, so every one of them became proved twice: its bytes here, and its
+compilation by the pass section 13 records. The other 23 rows - the three
+goldens, the twelve checkers and scanners, the six gate and harness scripts, and
+the two fixtures - had no executable protection of any kind before this record,
+because `SENTINELS` does not map them and nothing else read them.
 
 The clean run reports both counts:
 
@@ -2266,11 +2320,15 @@ Column order matches sections 10.1 through 16.3, state before digest.
 | --- | --- | --- |
 | `c95daa6` | new, added by section 13 | `d882132e87cb4625ebdac88ab310e405b00133bd546e172db282be7e1bbf47bf` |
 | `6d501c8` | three targets and nine rows added, section 15 | `b8e06c148c0268f23acbb9547e5b9248b3f4ebc6903a48e8d21112be41e3ef49` |
-| `c58013d` | current, recorded in section 7 | `98e7f29f8ebebaf68dc28c82ec465eb359cf3b91280f808ce1dfb3d17221bbf0` |
+| `c58013d` through `5fa97f2` | second move, adjudicated here, superseded at `7b8628a` | `98e7f29f8ebebaf68dc28c82ec465eb359cf3b91280f808ce1dfb3d17221bbf0` |
 
-The first two values are re-derived here with
-`git show <commit>:scripts/check-oracle-inventory.py | sha256sum`; the second is
-the value section 7 carried at `b396a62`.
+All three values are re-derived here with
+`git show <commit>:scripts/check-oracle-inventory.py | sha256sum`, against the
+commit each row names; the second is the value section 7 carried at `b396a62`,
+and the third is the value it carried from `c58013d` through `5fa97f2`. All three
+are historical: this file moved four more times after `7b8628a`, and section 7
+records `3900f505ea8aea59500c99fcf598013cffac55e9128ec9498f7811738bcbf71a`
+today, adjudicated in section 23.
 
 No other protected file changed. `git diff --name-only` for `c58013d` is two
 paths, `scripts/check-oracle-inventory.py` and this document, and the second is
