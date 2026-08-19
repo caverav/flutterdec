@@ -317,6 +317,7 @@ dependencies = [
  "flutterdec-disasm-arm64",
  "flutterdec-ir",
  "flutterdec-loader",
+ "flutterdec-serwalker",
  "goblin",
  "serde",
  "serde_json",

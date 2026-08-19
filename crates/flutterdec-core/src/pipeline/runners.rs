@@ -129,7 +129,11 @@ fn resolved_backend_from_adapter_kind(adapter_kind: &str) -> Option<AdapterBacke
     if lowered.contains("blutter") {
         return Some(AdapterBackend::Blutter);
     }
-    if lowered.contains("snapshot") || lowered.contains("internal") || lowered.contains("dynamic") {
+    if lowered.contains("snapshot")
+        || lowered.contains("internal")
+        || lowered.contains("dynamic")
+        || lowered.contains("serwalker")
+    {
         return Some(AdapterBackend::Internal);
     }
     None
@@ -907,7 +911,10 @@ fn apply_function_scope_filter(
 pub fn run_info(repo_root: &Path, input_path: &Path) -> Result<InfoOutput> {
     let apk_session = open_apk_session_if_input_is_apk(input_path)?;
     let bundle = load_snapshot_bundle_with_optional_apk_session(input_path, apk_session.as_ref())?;
-    let adapter_installed = resolve_adapter_exec(repo_root, &bundle.snapshot_hash).is_ok();
+    let serwalker_supported =
+        bundle.snapshot_hash == flutterdec_serwalker::SUPPORTED_SNAPSHOT_HASH;
+    let external_adapter_installed = resolve_adapter_exec(repo_root, &bundle.snapshot_hash).is_ok();
+    let adapter_installed = serwalker_supported || external_adapter_installed;
     let manifest_inspection = if let Some(apk) = apk_session.as_ref() {
         inspect_android_manifest_from_apk_session(apk)
     } else {
@@ -947,7 +954,14 @@ pub fn run_info(repo_root: &Path, input_path: &Path) -> Result<InfoOutput> {
     };
 
     if adapter_installed {
-        if let Ok(loaded) = load_model(repo_root, &bundle, AdapterBackend::Auto) {
+        let loaded = if serwalker_supported {
+            Some(load_model(repo_root, &bundle, AdapterBackend::Internal)?)
+        } else if external_adapter_installed {
+            load_model(repo_root, &bundle, AdapterBackend::Auto).ok()
+        } else {
+            None
+        };
+        if let Some(loaded) = loaded {
             let manifest_entry_present = loaded.manifest_entry_adapter.is_some();
             let model = loaded.model;
             let snapshot_hash_match = bundle.snapshot_hash == model.snapshot_hash;

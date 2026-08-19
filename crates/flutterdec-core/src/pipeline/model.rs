@@ -11,6 +11,29 @@ fn load_model(
     bundle: &SnapshotBundle,
     backend: AdapterBackend,
 ) -> Result<LoadedModel> {
+    let adapter_input = AdapterInput {
+        input_path: Some(&bundle.input_path),
+        libapp_path: Some(&bundle.libapp_path),
+        vm_data: &bundle.vm_data,
+        isolate_data: &bundle.isolate_data,
+        vm_instr: &bundle.vm_instr,
+        isolate_instr: &bundle.isolate_instr,
+        vm_instr_va: bundle.vm_instr_va,
+        isolate_instr_va: bundle.isolate_instr_va,
+        backend: Some(backend.as_str()),
+    };
+
+    if backend == AdapterBackend::Internal {
+        let model = flutterdec_serwalker::walk_snapshot_and_produce_model(&adapter_input)
+            .context("deserialize snapshot with Serwalker")?;
+        return Ok(LoadedModel {
+            model,
+            adapter_exec: PathBuf::from("flutterdec-serwalker"),
+            manifest_entry_version: None,
+            manifest_entry_adapter: None,
+        });
+    }
+
     let manifest = flutterdec_adapter::load_manifest(repo_root)?;
     let manifest_entry = manifest
         .entries
@@ -19,17 +42,7 @@ fn load_model(
     let adapter_exec = resolve_adapter_exec(repo_root, &bundle.snapshot_hash)?;
     let model = run_adapter(
         &adapter_exec,
-        &AdapterInput {
-            input_path: Some(&bundle.input_path),
-            libapp_path: Some(&bundle.libapp_path),
-            vm_data: &bundle.vm_data,
-            isolate_data: &bundle.isolate_data,
-            vm_instr: &bundle.vm_instr,
-            isolate_instr: &bundle.isolate_instr,
-            vm_instr_va: bundle.vm_instr_va,
-            isolate_instr_va: bundle.isolate_instr_va,
-            backend: Some(backend.as_str()),
-        },
+        &adapter_input,
     )?;
     Ok(LoadedModel {
         model,

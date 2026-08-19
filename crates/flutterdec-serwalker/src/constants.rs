@@ -33,6 +33,8 @@ pub const DART_3_11_1_SNAPSHOT_HASH: &str = "78da37fed6bf1489361a312568249f3f";
 
 pub const OBJECT_START_ALIGNMENT: usize = 64;
 
+pub type Cid = u32;
+
 macro_rules! DEFINE_CLASS_ID {
     ( $( $name:ident = $val:expr ),* ) => {
         #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
@@ -238,7 +240,6 @@ DEFINE_CLASS_ID! {
 macro_rules! FFI_TYPES_LIST {
     ($callback:ident) => {
         $callback! {
-            FfiNativeFunctionCid,
             FfiInt8Cid,
             FfiInt16Cid,
             FfiInt32Cid,
@@ -251,9 +252,7 @@ macro_rules! FFI_TYPES_LIST {
             FfiDoubleCid,
             FfiVoidCid,
             FfiHandleCid,
-            FfiBoolCid,
-            FfiNativeTypeCid,
-            FfiStructCid
+            FfiBoolCid
         }
     };
 }

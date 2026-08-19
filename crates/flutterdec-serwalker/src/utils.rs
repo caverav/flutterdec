@@ -1,4 +1,4 @@
-use crate::constants::ClassId;
+use crate::constants::{Cid, ClassId};
 
 pub(crate) trait SnapshotObject: std::any::Any {
     const CID: ClassId;
@@ -83,7 +83,7 @@ macro_rules! DECLARE_FIXED_LENGTH_CLUSTER {
         #[derive(Default)]
         pub struct $cluster_name {
             tags: u32,
-            cid: ClassId,
+            cid: Cid,
             is_immutable: bool,
             is_canonical: bool,
             pub obj_count: u64,
@@ -118,7 +118,7 @@ macro_rules! DECLARE_FIXED_LENGTH_CLUSTER {
             fn set_metadata(
                 &mut self,
                 tags: u32,
-                cid: ClassId,
+                cid: Cid,
                 is_immutable: bool,
                 is_canonical: bool,
             ) {
@@ -178,7 +178,7 @@ macro_rules! DECLARE_VARIABLE_LENGTH_CLUSTER {
         #[derive(Default)]
         pub struct $cluster_name {
             tags: u32,
-            cid: ClassId,
+            cid: Cid,
             is_immutable: bool,
             is_canonical: bool,
             pub obj_count: u64,
@@ -197,13 +197,13 @@ macro_rules! DECLARE_VARIABLE_LENGTH_CLUSTER {
 }
 
 pub struct DecodedTags {
-    class_id: ClassId,
+    class_id: Cid,
     is_immutable: bool,
     is_canonical: bool,
 }
 
 impl DecodedTags {
-    pub fn new(cid: ClassId, immut: bool, canonical: bool) -> Self {
+    pub fn new(cid: Cid, immut: bool, canonical: bool) -> Self {
         Self {
             class_id: cid,
             is_immutable: immut,
@@ -211,7 +211,7 @@ impl DecodedTags {
         }
     }
 
-    pub fn get_cid(&self) -> ClassId {
+    pub fn get_cid(&self) -> Cid {
         self.class_id
     }
 
@@ -226,7 +226,7 @@ impl DecodedTags {
 
 macro_rules! DECODE_CID {
     ($tags:expr) => {
-        ClassId::try_from(($tags >> 12) & 0xFFFFF)
+        (($tags >> 12) & 0xFFFFF) as Cid
     };
 }
 macro_rules! DECODE_IS_IMMUTABLE {
@@ -242,18 +242,12 @@ macro_rules! DECODE_IS_CANONICAL {
     };
 }
 
-pub fn decode_tags(tags: u32) -> anyhow::Result<DecodedTags> {
-    let class_id = DECODE_CID!(tags).map_err(|_| {
-        anyhow::anyhow!(
-            "unknown class id {} in tags {tags:#x}",
-            (tags >> 12) & 0xFFFFF
-        )
-    })?;
-    Ok(DecodedTags::new(
-        class_id,
+pub fn decode_tags(tags: u32) -> DecodedTags {
+    DecodedTags::new(
+        DECODE_CID!(tags),
         DECODE_IS_IMMUTABLE!(tags),
         DECODE_IS_CANONICAL!(tags),
-    ))
+    )
 }
 
 #[cfg(test)]
@@ -262,9 +256,9 @@ mod tests {
     use crate::constants::ClassId;
 
     /// UntaggedObject::TagBits, raw_object.h: ClassIdTag at bit 12 and 20 wide,
-    /// CanonicalBit at 1, ImmutableBit at 7.
+    /// CanonicalBit at 1, ImmutableBit at 6.
     fn encode_tags(cid: u32, canonical: bool, immutable: bool) -> u32 {
-        (cid << 12) | ((immutable as u32) << 7) | ((canonical as u32) << 1)
+        (cid << 12) | ((immutable as u32) << 6) | ((canonical as u32) << 1)
     }
 
     #[test]
@@ -275,14 +269,10 @@ mod tests {
             (ClassId::_StringCid, false, true),
             (ClassId::ClassCid, true, true),
         ] {
-            let d = decode_tags(encode_tags(cid as u32, canonical, immutable)).unwrap();
-            assert_eq!(d.get_cid(), cid);
+            let d = decode_tags(encode_tags(cid as u32, canonical, immutable));
+            assert_eq!(d.get_cid(), cid as u32);
             assert_eq!(d.is_canonical(), canonical, "canonical bit for {cid:?}");
-            assert_eq!(
-                d.is_immutable(),
-                immutable,
-                "immutable bit for {cid:?}"
-            );
+            assert_eq!(d.is_immutable(), immutable, "immutable bit for {cid:?}");
         }
     }
 
@@ -290,33 +280,24 @@ mod tests {
     /// catches an off-by-one in any of the three shifts.
     #[test]
     fn the_flag_bits_do_not_overlap() {
-        let only_canonical =
-            decode_tags(encode_tags(ClassId::FunctionCid as u32, true, false)).unwrap();
+        let only_canonical = decode_tags(encode_tags(ClassId::FunctionCid as u32, true, false));
         assert!(only_canonical.is_canonical() && !only_canonical.is_immutable());
 
-        let only_immutable =
-            decode_tags(encode_tags(ClassId::FunctionCid as u32, false, true)).unwrap();
+        let only_immutable = decode_tags(encode_tags(ClassId::FunctionCid as u32, false, true));
         assert!(!only_immutable.is_canonical() && only_immutable.is_immutable());
 
         // Neither flag may disturb the class id.
         for (c, i) in [(false, false), (true, false), (false, true), (true, true)] {
-            let d = decode_tags(encode_tags(ClassId::LibraryCid as u32, c, i)).unwrap();
-            assert_eq!(d.get_cid(), ClassId::LibraryCid);
+            let d = decode_tags(encode_tags(ClassId::LibraryCid as u32, c, i));
+            assert_eq!(d.get_cid(), ClassId::LibraryCid as u32);
         }
     }
 
-    /// A cid we do not know almost always means the stream desynced upstream,
-    /// so it has to surface rather than defaulting to IllegalCid.
     #[test]
-    fn an_unknown_class_id_is_an_error() {
-        let bogus = encode_tags(0xfffff, false, false);
-        match decode_tags(bogus) {
-            Ok(_) => panic!("an unknown class id must not decode"),
-            Err(e) => assert!(
-                e.to_string().contains("unknown class id"),
-                "unexpected message: {e}"
-            ),
-        }
+    fn application_class_ids_remain_valid_raw_cids() {
+        let application_cid = ClassId::NumPredefinedCids as u32 + 37;
+        let decoded = decode_tags(encode_tags(application_cid, false, false));
+        assert_eq!(decoded.get_cid(), application_cid);
     }
 
     /// Real headers observed on the wire: the class id occupies bits 12..32, so
@@ -327,8 +308,7 @@ mod tests {
             ClassId::NumPredefinedCids as u32 - 1,
             false,
             false,
-        ))
-        .unwrap();
-        assert_eq!(d.get_cid() as u32, ClassId::NumPredefinedCids as u32 - 1);
+        ));
+        assert_eq!(d.get_cid(), ClassId::NumPredefinedCids as u32 - 1);
     }
 }

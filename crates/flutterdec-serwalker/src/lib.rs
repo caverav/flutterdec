@@ -20,6 +20,8 @@ use crate::{
     stream::Stream,
 };
 
+pub const SUPPORTED_SNAPSHOT_HASH: &str = DART_3_11_1_SNAPSHOT_HASH;
+
 pub fn walk_snapshot_and_produce_model(
     adapter_input: &AdapterInput,
 ) -> anyhow::Result<ProgramModel> {

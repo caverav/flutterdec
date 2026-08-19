@@ -7,7 +7,7 @@ use crate::info_producer::utils::string_or_placeholder;
 use crate::raw_object::{Library, Type};
 use crate::snapshot::DataSnapshot;
 
-pub fn produce_class_info(snapshot: &DataSnapshot) -> anyhow::Result<Vec<ClassInfo>> {
+pub fn produce_classes_info(snapshot: &DataSnapshot) -> anyhow::Result<Vec<ClassInfo>> {
     let mut classes_info = Vec::new();
     // obtain all class clusters (there should only be one)
     let class_cluster = snapshot

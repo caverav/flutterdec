@@ -3,19 +3,18 @@ mod base_objects_pseudocluster;
 use std::collections::HashMap;
 use std::u64;
 
-use crate::constants::{ClassId, ClassId::*};
+use crate::constants::{Cid, ClassId, ClassId::*};
 use crate::instruction_table::{get_pc_offset_from_code_cluster_index, InstructionTable};
 use crate::raw_object::*;
 use crate::stream::Stream;
 use crate::DECLARE_FIXED_LENGTH_CLUSTER;
 use crate::DECLARE_VARIABLE_LENGTH_CLUSTER;
-use crate::FFI_TYPES_LIST;
 
 pub trait Cluster {
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
     fn as_any(&self) -> &dyn std::any::Any;
     fn object_by_ref_id(&self, id: u32) -> Option<&dyn std::any::Any>;
-    fn set_metadata(&mut self, tags: u32, cid: ClassId, is_immutable: bool, is_canonical: bool);
+    fn set_metadata(&mut self, tags: u32, cid: Cid, is_immutable: bool, is_canonical: bool);
     fn is_fixed_len(&self) -> bool;
     fn read_alloc(&mut self, last_ref_id: &mut u64, stream: &mut Stream) -> anyhow::Result<usize>;
     fn read_fill(&mut self, stream: &mut Stream) -> anyhow::Result<usize>;
@@ -27,18 +26,84 @@ pub fn read_smi(stream: &mut Stream) -> anyhow::Result<Smi> {
     Ok(raw_smi as Smi)
 }
 
-macro_rules! FFI_CASE_PATTERN {
-    ( $( $ffi_type:ident ),* ) => {
-        $( $ffi_type )|*
-    };
+fn is_typed_data_cid(cid: Cid, remainder: Cid) -> bool {
+    let first = TypedDataInt8ArrayCid as Cid;
+    let last = UnmodifiableTypedDataFloat64x2ArrayViewCid as Cid;
+    (first..=last).contains(&cid) && (cid - first) % 4 == remainder
 }
 
-pub fn decide_cluster(class_id: ClassId) -> Result<Box<dyn Cluster>, &'static str> {
-    match class_id {
-        // we assume compressed pointers, it supports only Android for now...
-        IllegalCid => Err("Not a supported class (illegal class)..."),
-        FFI_TYPES_LIST!(FFI_CASE_PATTERN) => Err("To do..."),
-        _ => Err("Not a supported class..."),
+pub fn decide_cluster(cid: Cid) -> Result<Box<dyn Cluster>, &'static str> {
+    if cid == NativePointer as Cid {
+        return Ok(Box::new(DeltaEncodedTypedDataCluster::default()));
+    }
+    if cid >= NumPredefinedCids as Cid || cid == InstanceCid as Cid {
+        return Ok(Box::new(InstanceCluster::default()));
+    }
+    if is_typed_data_cid(cid, 1) || cid == ByteDataViewCid as Cid {
+        return Ok(Box::new(TypedDataViewCluster::default()));
+    }
+    if is_typed_data_cid(cid, 2) {
+        return Ok(Box::new(ExternalTypedDataCluster::default()));
+    }
+    if is_typed_data_cid(cid, 0) {
+        return Ok(Box::new(TypedDataCluster::default()));
+    }
+
+    match ClassId::try_from(cid).map_err(|_| "CID is neither predefined nor an application CID")? {
+        ClassCid => Ok(Box::new(ClassCluster::default())),
+        TypeParametersCid => Ok(Box::new(TypeParametersCluster::default())),
+        TypeArgumentsCid => Ok(Box::new(TypeArgumentsCluster::default())),
+        PatchClassCid => Ok(Box::new(PatchClassCluster::default())),
+        FunctionCid => Ok(Box::new(FunctionCluster::default())),
+        ClosureDataCid => Ok(Box::new(ClosureDataCluster::default())),
+        FfiTrampolineDataCid => Ok(Box::new(FfiTrampolineDataCluster::default())),
+        FieldCid => Ok(Box::new(FieldCluster::default())),
+        ScriptCid => Ok(Box::new(ScriptCluster::default())),
+        LibraryCid => Ok(Box::new(LibraryCluster::default())),
+        NamespaceCid => Ok(Box::new(NamespaceCluster::default())),
+        CodeCid => Ok(Box::new(CodeCluster::default())),
+        ObjectPoolCid => Ok(Box::new(ObjectPoolCluster::default())),
+        PcDescriptorsCid => Ok(Box::new(PcDescriptorsCluster::default())),
+        CodeSourceMapCid => Ok(Box::new(CodeSourceMapCluster::default())),
+        CompressedStackMapsCid => Ok(Box::new(CompressedStackMapsCluster::default())),
+        ExceptionHandlersCid => Ok(Box::new(ExceptionHandlersCluster::default())),
+        ContextCid => Ok(Box::new(ContextCluster::default())),
+        ContextScopeCid => Ok(Box::new(ContextScopeCluster::default())),
+        UnlinkedCallCid => Ok(Box::new(UnlinkedCallCluster::default())),
+        ICDataCid => Ok(Box::new(ICDataCluster::default())),
+        MegamorphicCacheCid => Ok(Box::new(MegamorphicCacheCluster::default())),
+        SubtypeTestCacheCid => Ok(Box::new(SubtypeTestCacheCluster::default())),
+        LoadingUnitCid => Ok(Box::new(LoadingUnitCluster::default())),
+        LanguageErrorCid => Ok(Box::new(LanguageErrorCluster::default())),
+        UnhandledExceptionCid => Ok(Box::new(UnhandledExceptionCluster::default())),
+        LibraryPrefixCid => Ok(Box::new(LibraryPrefixCluster::default())),
+        TypeCid => Ok(Box::new(TypeCluster::default())),
+        FunctionTypeCid => Ok(Box::new(FunctionTypeCluster::default())),
+        RecordTypeCid => Ok(Box::new(RecordTypeCluster::default())),
+        TypeParameterCid => Ok(Box::new(TypeParameterCluster::default())),
+        ClosureCid => Ok(Box::new(ClosureCluster::default())),
+        MintCid => Ok(Box::new(MintCluster::default())),
+        DoubleCid => Ok(Box::new(DoubleCluster::default())),
+        Int32x4Cid => Ok(Box::new(Int32x4Cluster::default())),
+        Float32x4Cid => Ok(Box::new(Float32x4Cluster::default())),
+        Float64x2Cid => Ok(Box::new(Float64x2Cluster::default())),
+        GrowableObjectArrayCid => Ok(Box::new(GrowableObjectArrayCluster::default())),
+        RecordCid => Ok(Box::new(RecordCluster::default())),
+        StackTraceCid => Ok(Box::new(StackTraceCluster::default())),
+        RegExpCid => Ok(Box::new(RegExpCluster::default())),
+        WeakPropertyCid => Ok(Box::new(WeakPropertyCluster::default())),
+        ConstMapCid => Ok(Box::new(ConstMapCluster::default())),
+        ConstSetCid => Ok(Box::new(ConstSetCluster::default())),
+        ArrayCid => Ok(Box::new(ArrayCluster::default())),
+        ImmutableArrayCid => Ok(Box::new(ImmutableArrayCluster::default())),
+        WeakArrayCid => Ok(Box::new(WeakArrayCluster::default())),
+        _StringCid => Ok(Box::new(_StringCluster::default())),
+        FfiInt8Cid | FfiInt16Cid | FfiInt32Cid | FfiInt64Cid | FfiUint8Cid | FfiUint16Cid
+        | FfiUint32Cid | FfiUint64Cid | FfiFloatCid | FfiDoubleCid | FfiVoidCid | FfiHandleCid
+        | FfiBoolCid => Ok(Box::new(InstanceCluster::default())),
+        IllegalCid => Err("illegal CID cannot identify a serialized cluster"),
+        MapCid | SetCid => Err("mutable Map and Set clusters are unreachable in snapshots"),
+        _ => Err("no FullAOT compressed-pointer cluster exists for this predefined CID"),
     }
 }
 
@@ -448,7 +513,7 @@ macro_rules! IMPLEMENT_VARIABLE_LENGTH_CLUSTER {
             fn set_metadata(
                 &mut self,
                 tags: u32,
-                cid: ClassId,
+                cid: Cid,
                 is_immutable: bool,
                 is_canonical: bool,
             ) {
@@ -493,8 +558,10 @@ macro_rules! IMPLEMENT_VARIABLE_LENGTH_CLUSTER {
     };
 }
 
-fn typed_data_element_size(cid: ClassId) -> anyhow::Result<usize> {
-    let size = match cid {
+fn typed_data_element_size(cid: Cid) -> anyhow::Result<usize> {
+    let class_id = ClassId::try_from(cid)
+        .map_err(|_| anyhow::anyhow!("application CID {cid} is not a TypedData class"))?;
+    let size = match class_id {
         TypedDataInt8ArrayCid
         | TypedDataUint8ArrayCid
         | TypedDataUint8ClampedArrayCid
@@ -523,14 +590,15 @@ fn typed_data_element_size(cid: ClassId) -> anyhow::Result<usize> {
         | ExternalTypedDataFloat32x4ArrayCid
         | ExternalTypedDataInt32x4ArrayCid
         | ExternalTypedDataFloat64x2ArrayCid => 16,
-        _ => anyhow::bail!("class {:?} is not a supported TypedData class", cid),
+        _ => anyhow::bail!("class {:?} is not a supported TypedData class", class_id),
     };
     Ok(size)
 }
 
+#[derive(Default)]
 pub struct CodeCluster {
     tags: u32,
-    cid: ClassId,
+    cid: Cid,
     is_immutable: bool,
     is_canonical: bool,
     obj_count: u64,
@@ -948,6 +1016,58 @@ IMPLEMENT_VARIABLE_LENGTH_CLUSTER!(
                 } else {
                     obj.fields
                         .push(InstanceField::Reference(stream.read_ref_id()?));
+                }
+            }
+        }
+    }
+);
+
+DECLARE_VARIABLE_LENGTH_CLUSTER!(TypedData, DeltaEncodedTypedDataCluster);
+IMPLEMENT_VARIABLE_LENGTH_CLUSTER!(
+    DeltaEncodedTypedDataCluster,
+    |cluster, stream| {
+        cluster.obj_count = stream.read_unsigned()?;
+        for _ in 0..cluster.obj_count {
+            let length_in_bytes = usize::try_from(stream.read_unsigned()?).map_err(|_| {
+                anyhow::anyhow!("delta-encoded TypedData length does not fit usize")
+            })?;
+            cluster.objs.push(Box::new(TypedData {
+                length: length_in_bytes,
+                ..TypedData::default()
+            }));
+        }
+    },
+    |cluster, stream| {
+        for obj in &mut cluster.objs {
+            let allocated_length_in_bytes = obj.length;
+            let encoded_length = stream.read_unsigned()?;
+            let length = usize::try_from(encoded_length >> 1).map_err(|_| {
+                anyhow::anyhow!("delta-encoded TypedData length does not fit usize")
+            })?;
+            let element_size = if encoded_length & 1 == 0 { 2 } else { 4 };
+            let length_in_bytes = length
+                .checked_mul(element_size)
+                .ok_or_else(|| anyhow::anyhow!("delta-encoded TypedData byte length overflow"))?;
+            anyhow::ensure!(
+                length_in_bytes == allocated_length_in_bytes,
+                "delta-encoded TypedData alloc/fill length mismatch"
+            );
+
+            obj.length = length;
+            obj.data = Vec::with_capacity(length_in_bytes);
+            let mut value = 0_u64;
+            for _ in 0..length {
+                value = value
+                    .checked_add(stream.read_unsigned()?)
+                    .ok_or_else(|| anyhow::anyhow!("delta-encoded TypedData value overflow"))?;
+                if element_size == 2 {
+                    let value = u16::try_from(value)
+                        .map_err(|_| anyhow::anyhow!("delta-encoded Uint16 value overflow"))?;
+                    obj.data.extend_from_slice(&value.to_le_bytes());
+                } else {
+                    let value = u32::try_from(value)
+                        .map_err(|_| anyhow::anyhow!("delta-encoded Uint32 value overflow"))?;
+                    obj.data.extend_from_slice(&value.to_le_bytes());
                 }
             }
         }

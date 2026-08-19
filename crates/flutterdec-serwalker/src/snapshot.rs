@@ -129,11 +129,11 @@ impl DataSnapshot {
         self.start_of_alloc_area = stream.get_current_pos();
         for _cluster_idx in 0..self.num_clusters {
             let tags: u32 = stream.read()? as u32;
-            let decoded_tags: DecodedTags = decode_tags(tags)?;
+            let decoded_tags: DecodedTags = decode_tags(tags);
             let cid = decoded_tags.get_cid();
 
-            let mut cluster = decide_cluster(cid).map_err(|_| {
-                anyhow::anyhow!("Couldn't find cluster implementation for class {:?}", cid)
+            let mut cluster = decide_cluster(cid).map_err(|reason| {
+                anyhow::anyhow!("Couldn't find cluster implementation for CID {cid}: {reason}")
             })?;
 
             cluster.set_metadata(
@@ -145,7 +145,7 @@ impl DataSnapshot {
             cluster.read_alloc(&mut curr_ref_id, stream)?;
 
             // Composite key exactly as suggested to PR reviewer
-            let key = (cid as u32) << 2
+            let key = cid << 2
                 | ((decoded_tags.is_canonical() as u32) << 1)
                 | (decoded_tags.is_immutable() as u32);
             self.clusters.insert(key, cluster);
@@ -307,8 +307,8 @@ mod tests {
         fn default() -> Self {
             Self {
                 kind: 3, // kFullAOT
-                version: "b3d0d9d1c1e8b57e9b31f8e0e4a5c7d2".into(),
-                features: "product no-code_comments arm64".into(),
+                version: DART_3_11_1_SNAPSHOT_HASH.into(),
+                features: "product no-code_comments arm64 compressed-pointers".into(),
                 num_base_objects: 42,
                 num_objects: 1000,
                 num_clusters: 7,
@@ -320,7 +320,7 @@ mod tests {
         fn encode(&self, magic: u32) -> Vec<u8> {
             let mut b = Vec::new();
             b.extend_from_slice(&magic.to_le_bytes());
-            b.extend_from_slice(&0u64.to_le_bytes()); // length, unused by the parser
+            b.extend_from_slice(&0u64.to_le_bytes());
             b.extend_from_slice(&self.kind.to_le_bytes());
             b.extend_from_slice(self.version.as_bytes());
             b.extend_from_slice(self.features.as_bytes());
