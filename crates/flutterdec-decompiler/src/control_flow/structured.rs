@@ -911,7 +911,6 @@ impl<'a> FuncEmitter<'a> {
                     self.decline_with(StructuredDeclineCause::RepeatBudget, id);
                     return false;
                 }
-                self.repeated_blocks += 1;
             }
 
             let regions = self.regions.as_ref().expect("regions");
@@ -943,7 +942,13 @@ impl<'a> FuncEmitter<'a> {
             // output coordinate. The merge below is unchanged for it; only capture
             // and annotation decline.
             let annotatable_join = is_join && !regions.is_loop_header(id);
-            self.structured_emitted.insert(id);
+            // Count at the operation that records this emitted copy. The earlier
+            // membership check only decides whether repetition is allowed; tying
+            // accounting to `insert` makes it impossible for an allowed copy to
+            // reach the body without incrementing exactly once.
+            if !self.structured_emitted.insert(id) {
+                self.repeated_blocks += 1;
+            }
             if is_join {
                 // Emitted once, so no single incoming path describes this
                 // block's register state. Anything a predecessor could have
