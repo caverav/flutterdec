@@ -270,7 +270,7 @@ regular file, and a protected file whose bytes changed are each a hard CI
 failure. That checker is itself one of the rows below, so it verifies its own
 bytes.
 
-Four rows have moved since `1371e42`. `scripts/ci-check.sh` is adjudicated in
+Five rows have moved since `1371e42`. `scripts/ci-check.sh` is adjudicated in
 section 10, with its full chain from the original fixed reference, its second
 move in section 12, its third in section 13, and its fourth in section 15.
 `crates/flutterdec-decompiler/tests/provenance_audit.rs` is adjudicated in
@@ -278,7 +278,8 @@ section 11, its second move in section 12, its third in section 13, and its
 fourth in section 15.
 `crates/flutterdec-decompiler/src/tests/cfg_and_stack/omitted_path_and_stack.rs`
 and `crates/flutterdec-core/src/pipeline/runners/tests.rs` each moved once, in
-section 16. One row was new rather than moved,
+section 16. `scripts/prov_cross_audit_reconcile.py` moved once, in section 18.
+One row was new rather than moved,
 `scripts/check-oracle-inventory.py`, added by section 13 and moved twice, in
 section 15 and in section 17. Nine rows are new in section 15, the IR and CFG
 boundary oracles. Every other row is byte-identical to `1371e42`. A row that does
@@ -299,7 +300,7 @@ Checkers, scanners, and their plant tests:
 | `scripts/check-annotation-provenance.py` | `c4e40e0122f1d87c82b5b587d8ed1ac6c74f550bed114463765f2568ea6b6f93` |
 | `scripts/check-candidate-whitelist.py` | `d8c67c8565c372c2044f6749bfe2a7b092a374c9758930c7e2ef5b45d3a6cac5` |
 | `scripts/check-oracle-inventory.py` | `98e7f29f8ebebaf68dc28c82ec465eb359cf3b91280f808ce1dfb3d17221bbf0` |
-| `scripts/prov_cross_audit_reconcile.py` | `0633bf7191d62859efcbd35b9b62e186a39005e58ec49efaf24d8e03c6319c41` |
+| `scripts/prov_cross_audit_reconcile.py` | `f7a21d2c497ff2c47e118cf3df208d869265eb11a561605f4f14d9c50febe870` |
 | `scripts/prov_join_audit_check.py` | `99a80ec27496b76737df08ae457838512495ec2e3e82668ac5ba5d73c1c5e995` |
 | `scripts/prov_join_audit_plant_test.py` | `d3e9e885878db0b6e752ab421dd9bc851b6142f4a995307d2a7763029c88374a` |
 | `scripts/prov_join_output_anchor_check.py` | `b015347d45986a59e2bc3a9af42689f244b3d83cb74e9dbd61ccdd352cec61b9` |
@@ -2338,3 +2339,83 @@ also fails to compile; it is recorded for completeness, not as the measure. Plan
 6. L5 re-run in full after the change: `scripts/ci-check.sh` exit 0, 14 lanes, 22
    result lines, 556 tests, including the three goldens, the named integration
    targets, and both passes of the oracle inventory lane.
+
+## 18. Adjudication record: predecessor-bound provenance reconciliation
+
+This is the section 9 record for the protected
+`scripts/prov_cross_audit_reconcile.py` ruler change. It strengthens the ruler
+after the product-side candidate accounting repair and changes no product code,
+emitted pseudocode, emitted IR, fixture, threshold, or golden.
+
+### 18.1 Invariant and exact diff intent
+
+An annotation candidate is a claim about one incoming path, not only a member of
+a rendered value set. For each join and loop-entry element, the path must be a
+real predecessor in the independently emitted IR, the cited full-register
+snapshot must be the end state of that same predecessor, and the record's
+register must have exactly the claimed value in that snapshot. Predecessor set
+membership, predecessor coverage, and first-occurrence deduplication are
+necessary but cannot replace this binding.
+
+The old ruler checked only the first half. Its `site_not_real` count established
+that every `path_key` named some real predecessor, and `rendered_disagrees`
+compared the deduplicated candidate values with the pseudocode. It never joined
+one candidate's path, register, and value to the full end-state snapshot for
+that path. The new eighth count, `predecessor_disagrees`, performs that join for
+every join and loop-entry candidate after the IR has established the path as a
+real predecessor. Missing snapshots, a snapshot for another predecessor, a
+missing register binding, and a different value all fail the same stated
+invariant.
+
+The docstring now states all eight counts and retains the prior boundary: the
+checker still does not prove that a later annotated line descends from the
+anchor block. It no longer says that no check reads emitted bookkeeping, because
+the new count deliberately reads the full-register snapshot while deriving the
+predecessor identity from emitted IR.
+
+### 18.2 Digest chain and preserved reference
+
+Column order keeps these rows outside the section 7 parser's path-and-digest
+shape.
+
+| State | sha256 |
+| --- | --- |
+| `1371e42`, preserved fixed reference | `0633bf7191d62859efcbd35b9b62e186a39005e58ec49efaf24d8e03c6319c41` |
+| `58c3269`, old seven-count ruler | `0633bf7191d62859efcbd35b9b62e186a39005e58ec49efaf24d8e03c6319c41` |
+| This commit, eight-count ruler recorded in section 7 | `f7a21d2c497ff2c47e118cf3df208d869265eb11a561605f4f14d9c50febe870` |
+
+The original bytes remain available at both named commits. Reproduce either old
+row with `git show <commit>:scripts/prov_cross_audit_reconcile.py | sha256sum`
+and the new row with `sha256sum scripts/prov_cross_audit_reconcile.py`.
+
+### 18.3 Detection evidence
+
+The checker's standard-library `--self-test` now carries three focused plants in
+addition to one plant for each count:
+
+| Plant | Legacy seven counts | New eighth count |
+| --- | --- | --- |
+| Move one join candidate from block 1 to real predecessor block 2, leaving rendered `7 | 9` unchanged | 0, accepted | nonzero, rejected |
+| Permute four real predecessors from `7, 7, 9, 9` to `7, 9, 7, 9`, preserving coverage and rendered `7 | 9` | 0, accepted | nonzero, rejected |
+| Retarget a loop-entry candidate from real entry predecessor block 1 to real entry predecessor block 2, leaving rendered `21 | 23` unchanged | 0, accepted | nonzero, rejected |
+
+Each plant assertion computes the legacy result from the same reconciliation by
+requiring all original seven counts to remain zero, then requires
+`predecessor_disagrees` to be nonzero. The clean synthetic corpus and the fresh
+22,376-function localsend corpus remain at zero for all eight counts. The latter
+contains 5,151 annotations: 4,486 join, 394 loop-entry, and 271 pre-call records.
+
+### 18.4 Atomicity and section 9 steps
+
+1. Invariant: section 18.1, independent of the deduplicated annotation output.
+2. Test: the three detection-proven plants in section 18.3, plus the existing
+   count plants and honest synthetic corpus.
+3. Diff and digests: sections 18.1 and 18.2.
+4. Reference preserved: section 18.2 records both old commits and the old digest.
+5. The checker, its embedded plant fixtures, this adjudication, and the section 7
+   digest move land in one atomic protected-ruler commit. Splitting them would
+   intentionally leave either stale protected bytes or a digest for behavior not
+   yet present.
+6. L5 was re-run in full: every provenance checker, old-versus-new plant
+   detection, the oracle inventory and digest pass, Python lint, and
+   `scripts/ci-check.sh` exited 0.
