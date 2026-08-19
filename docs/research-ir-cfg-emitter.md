@@ -223,7 +223,11 @@ Coverage gaps found while mapping the above:
 - `.github/workflows/ci.yml` does not run `scripts/lint-python.sh`, so the
   python self tests and plant tests are enforced by `scripts/ci-check.sh`
   locally, not by the GitHub CI job. `.github/workflows/test-suite.yml` runs
-  `scripts/test-suite.sh`.
+  `scripts/test-suite.sh`. Closed since: the workflow now runs the python lint,
+  the benchmark identity gate, the resource inventory and the three benchmark
+  harness lanes with the local commands verbatim, and
+  `the_protected_oracle_loader_chain_is_intact` fails if either lane drops a
+  checker command the other still runs. Protocol section 24.
 
 ## 7. Concrete risks
 
@@ -298,9 +302,18 @@ and it is also the exact shape of a fake pass, so the three files are pinned by
 digest in the companion protocol and the variable is forbidden for candidate
 runs.
 
-**R7. Ruler coverage differs between local parity and GitHub CI.** Evidence:
-inspection of `.github/workflows/ci.yml` and `scripts/ci-check.sh`. The python
-plant tests and self tests only run in the local parity script.
+**R7. Closed: ruler coverage differs between local parity and GitHub CI.**
+Evidence when recorded: inspection of `.github/workflows/ci.yml` and
+`scripts/ci-check.sh`. The python plant tests and self tests, the benchmark
+identity gate, the auxiliary resource inventory and the excluded harness's own
+fmt, clippy and tests ran only in the local parity script. The workflow now runs
+all six commands verbatim, and the divergence is guarded rather than merely
+fixed: `REQUIRED_LANE_COMMANDS` in
+`crates/flutterdec-decompiler/tests/provenance_audit.rs` matches the python
+lint, the identity-gate suite, the compiled oracle inventory and the resource
+inventory as whole command lines in both files, so deleting a step, appending
+`|| true` to one, or giving one lane a divergent flag fails the guard. Protocol
+section 24 records the eleven plants.
 
 **R8. Direct branch target radix is syntax-driven.** The shared IR parser now
 accepts prefixed hexadecimal, bare hexadecimal containing `a` through `f`, and

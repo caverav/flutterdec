@@ -52,10 +52,17 @@ plants and their observed results are recorded in section 8.
 
 **L5. Nix CI, for integration.** `scripts/ci-check.sh` is the hard gate: `nix
 flake check`, `cargo fmt --all --check`, `scripts/lint-shell.sh`,
-`scripts/lint-python.sh`, `cargo clippy --workspace --all-targets -- -D
-warnings`, `cargo test --workspace`, and a release build of the CLI. Note that
-`.github/workflows/ci.yml` omits `scripts/lint-python.sh`, so the local parity
-script is the authority for the python plant tests.
+`scripts/lint-python.sh`, `scripts/bench-identity-gate-test.sh`, `cargo clippy
+--workspace --all-targets -- -D warnings`, the three named protected-target
+lanes, `scripts/check-oracle-inventory.py`,
+`scripts/check-resource-ruler.py`, `cargo test --workspace`, a release build of
+the CLI, and fmt, clippy and tests for the excluded benchmark harness.
+`.github/workflows/ci.yml` runs every one of those commands, byte-identical, so
+neither lane is the sole authority for any guard. The single exception is the
+harness test lane, which runs on the Linux runner only because the harness reads
+its peak RSS from `/proc/self/status`; the local gate is a Linux gate too.
+Section 24 adjudicates that parity, measures that exception, and records the
+guard that now fails when one lane drops a command the other still runs.
 
 Outside the hierarchy, and not usable as an oracle here: recompiling the emitted
 pseudocode. It is deliberately not source equivalent. Emitted line count is not a
@@ -413,7 +420,7 @@ false` would switch any crate's targets off wholesale.
 | Path | sha256 |
 | --- | --- |
 | `crates/flutterdec-decompiler/src/tests.rs` | `a19fe0015869fbfeb259e28f6d4344e18a630edab92b2a7aef2a58811e3ef56b` |
-| `crates/flutterdec-decompiler/tests/provenance_audit.rs` | `56ecc65ac91a20ed3761aaecead84978aeff29ef204e38bb02e665b1220347e2` |
+| `crates/flutterdec-decompiler/tests/provenance_audit.rs` | `1627b7b9a0b5634fa3d76c9aa71c0d12dbb386371e26783b251b565467a3a34d` |
 | `crates/flutterdec-decompiler/tests/loop_entry_provenance_audit.rs` | `02626ee1ba1b4b1b9905654a6254319ee413169341e43ddb74387813f7ecbfc7` |
 | `crates/flutterdec-decompiler/src/tests/shared.rs` | `30ef9ef9d6b55acac8d41f5e557d38a78e5a60d2c28ac612e75ccfe80e376d3e` |
 | `crates/flutterdec-decompiler/src/tests/golden_and_parser.rs` | `73a74b04ba294f1efc7faa5b067fdbd3c4cedc892c6d15068a07a98d656235ca` |
@@ -2866,3 +2873,187 @@ same suite reported with this file deleted and unprotected. A full
 shell and Python lint, the benchmark identity gate, workspace clippy, all three
 named protected-target lanes, both inventories, the workspace suite, the release
 CLI build, and the excluded benchmark harness.
+
+## 24. Adjudication record: local and GitHub CI enforce the same guards
+
+Section 1's L5 named `scripts/ci-check.sh` as the hard gate and then conceded
+that `.github/workflows/ci.yml` ran a subset of it. A guard that only runs on a
+developer machine is enforced by whoever remembers to run it, so the subset was
+the real gate for anything the workflow omitted. This record closes that
+divergence in the additive direction only: the workflow gains the missing
+commands, byte-identical to the local ones, and nothing existing is removed,
+reordered into a pipeline, or allowed to fail.
+
+### 24.1 The divergence this closes
+
+Measured at `addec19`, comparing every command `scripts/ci-check.sh` runs against
+every `run:` line of `.github/workflows/ci.yml`. Present in both lanes already:
+the flake check, root `cargo fmt --all --check`, `scripts/lint-shell.sh`,
+workspace clippy, all three named protected-target lanes,
+`scripts/check-oracle-inventory.py`, `cargo test --workspace`, and the release
+CLI build. Absent from the workflow:
+
+| Local command | What went unenforced on GitHub |
+| --- | --- |
+| `nix develop -c ./scripts/lint-python.sh` | every Python checker self-test and every Python plant test, including the annotation-safety, join-audit, cross-audit and candidate-whitelist plants, plus a syntax check of every `*.py` in the tree |
+| `./scripts/bench-identity-gate-test.sh` | both directions of the pre-measurement identity gate, the only thing that refuses a benchmark comparison whose two sides cannot be compared |
+| `nix develop -c python3 scripts/check-resource-ruler.py` | the auxiliary resource inventory: 9 digests plus the allocator, phase-stack and plant loaders of `docs/resource-ruler-protocol.md` |
+| `nix develop -c cargo fmt --manifest-path crates/flutterdec-bench/Cargo.toml --all --check` | fmt for the excluded benchmark harness, which no root `--all` reaches |
+| `nix develop -c cargo clippy --manifest-path crates/flutterdec-bench/Cargo.toml --all-targets -- -D warnings` | clippy for the harness, same exclusion |
+| `nix develop -c cargo test --manifest-path crates/flutterdec-bench/Cargo.toml` | the harness's own 38 tests, including the span-disjointness and allocator-lifecycle rulers |
+
+The protected block-ledger target and the compiled oracle inventory were already
+named in both lanes by section 23, and section 24.4 re-proves both rather than
+assuming it.
+
+### 24.2 Exact lanes added
+
+Six new steps in `.github/workflows/ci.yml`, each a single `run:` line, placed in
+the local script's order: `Lint Python scripts` and `Benchmark identity gate`
+after `Lint shell scripts`, `Resource ruler inventory` after
+`Compiled oracle inventory`, and `Benchmark harness format`,
+`Benchmark harness clippy` and `Benchmark harness tests` after
+`Build release CLI`.
+
+Every command is the local one verbatim. Three consequences of that are
+deliberate, not oversights. `scripts/lint-python.sh` runs through `nix develop`
+because it needs `mapfile -d`, which the macOS runner's bash 3.2 does not have.
+`scripts/bench-identity-gate-test.sh` runs without `nix develop`, exactly as
+`scripts/ci-check.sh` invokes it: it and `scripts/bench-identity-gate.sh` are
+plain POSIX-shell-plus-`[[` bash with no `mapfile`, no associative array and no
+toolchain of their own, so wrapping it would add a divergence between the lanes
+without adding a dependency it needs. No lane repeats another lane's command with
+different options, and no path in the workflow is absolute or machine-specific.
+
+The third is the one platform condition in this record, and it is measured, not
+assumed. `Benchmark harness tests` carries `if: runner.os == 'Linux'`. The first
+push of these lanes, run `32284265246` at `b97ee86`, passed all twenty steps on
+`ubuntu-latest` and failed exactly one test on `macos-latest`:
+`measure::tests::host_identity_is_readable_on_this_platform` panicked with `linux
+VmHWM` at `crates/flutterdec-bench/src/measure.rs:411`, 37 passed and 1 failed.
+That test asserts `peak_rss_bytes()` returns a value, and `peak_rss_bytes` reads
+`VmHWM` from `/proc/self/status`, which its own doc comment at `measure.rs:310`
+already records as absent outside Linux. So the harness suite is Linux-only by
+construction, `scripts/ci-check.sh` is a Linux gate, and the condition runs the
+same command on the same platform the local gate runs it on. It is a platform
+restriction, not a relaxation: there is no `continue-on-error`, no `|| true`, and
+no `if: always()` anywhere in the workflow, and the lane fails the job on
+`ubuntu-latest`. `Benchmark harness format` and `Benchmark harness clippy` need no
+condition and run on both runners, as they did in that same run. The alternative
+would have been editing `crates/flutterdec-bench/src/measure.rs`, a protected row
+of `docs/resource-ruler-protocol.md`, to weaken a ruler over a platform question;
+that is the wrong direction and was not done.
+
+### 24.3 The guard that keeps the lanes equal
+
+`the_protected_oracle_loader_chain_is_intact` in
+`crates/flutterdec-decompiler/tests/provenance_audit.rs` already required both
+`CI_LANES` to name every discovered integration target in one command line, and
+to run `scripts/check-oracle-inventory.py` as a lane of its own. That
+single-command check is generalized to a four-entry `REQUIRED_LANE_COMMANDS`
+list - the Python lint, the identity-gate regression suite, the compiled oracle
+inventory, and the resource inventory - each matched as a complete line in both
+lanes, after trimming the YAML `run: ` prefix. Whole-line matching is what makes
+`echo`, a `|| true` suffix, and a divergent flag in one lane fail. A second
+assertion requires `INVENTORY_CHECKER`'s command to still be a member of that
+list, so moving the checker cannot silently empty the check it used to perform.
+
+The three benchmark-harness lanes are not in the list. They are ordinary lint and
+test lanes for a crate whose manifest path is ordinary work to change, and
+pinning them by value would fire on legitimate change while proving nothing about
+an oracle. `.github/workflows/ci.yml` is still not a section 7 row, for the
+reason 12.1 gives: a whole-file digest over a file ordinary work must edit rules
+nothing.
+
+### 24.4 Digest chain
+
+Column order keeps this history outside the section 7 path-and-digest parser.
+
+| Protected ruler | Prior sha256 | Current sha256 in section 7 |
+| --- | --- | --- |
+| `crates/flutterdec-decompiler/tests/provenance_audit.rs` | `56ecc65ac91a20ed3761aaecead84978aeff29ef204e38bb02e665b1220347e2` | `1627b7b9a0b5634fa3d76c9aa71c0d12dbb386371e26783b251b565467a3a34d` |
+
+That is the only moved digest. `scripts/ci-check.sh` is byte-unchanged by this
+record, so its rows in this protocol and in `docs/resource-ruler-protocol.md`
+both stand as section 23 left them: the parity is reached by adding to the
+workflow, never by weakening the local script. No product source, manifest,
+threshold, golden fixture, benchmark definition, frozen expected value, sentinel,
+protected path, or existing oracle acceptance changed, and the protected
+inventory is still 71 digests and 48 compiled oracle rows.
+
+### 24.5 Planted bypasses
+
+Eleven plants, one at a time in a disposable worktree holding this record's exact
+bytes, each restored before the next. Every command in the first table is
+extracted from `.github/workflows/ci.yml` by step name and run verbatim, so what
+is exercised is the workflow's own command line and not a restatement of it.
+`guard` is `cargo test -p flutterdec-decompiler --test provenance_audit`.
+
+| Plant | Workflow command exercised | Clean | Planted |
+| --- | --- | --- | --- |
+| p1, a disposable `docs/plant-broken.py` holding `def broken(` | `Lint Python scripts` | 0, 19 files | 1, `SyntaxError: '(' was never closed` |
+| p2, the A/A digest-mismatch abort of `scripts/bench-identity-gate.sh` turned into `if false` | `Benchmark identity gate` | 0, 9 of 9 | 1, 2 failures, both A/A mismatch directions named |
+| p3, `scripts/bench-resource.sh` deleted | `Resource ruler inventory` | 0, 9 digests | 1, exactly 1 problem, `scripts/bench-resource.sh: protected file deleted or not regular` |
+| p4, `crates/flutterdec-decompiler/tests/block_ledger_contract.rs` deleted | `Compiled oracle inventory` | 0, 48 oracles | 1, names the path as protected but absent |
+| p4, same deletion | `Oracle loader guard` | 0, 14 targets | 101, `no test target named block_ledger_contract` |
+| p5, `autotests = false` in the decompiler `[package]` | `Oracle loader guard` | 0 | 101, `no test target named provenance_audit` |
+| p5, same manifest | `Compiled oracle inventory` | 0 | 1, 14 problems |
+| p5, same manifest | `Test` | 0, 29 result lines | 0, 15 result lines, which is the fake pass the named lanes exist to remove |
+
+| Plant | guard, clean | guard, planted |
+| --- | --- | --- |
+| p6, the `Lint Python scripts` step deleted from the workflow | 0 | 101 |
+| p7, the `Benchmark identity gate` step deleted | 0 | 101 |
+| p8, the `Resource ruler inventory` step deleted | 0 | 101 |
+| p9, the `Compiled oracle inventory` step deleted | 0 | 101 |
+| p10, `|| true` appended to the `Lint Python scripts` command | 0 | 101 |
+| p11, the same command in `scripts/ci-check.sh` given a divergent `--quiet` flag | 0 | 101, and the section 7 digest pass names the stale `scripts/ci-check.sh` hash |
+
+p6 through p10 are the plants that make 24.2 durable rather than decorative:
+before this record, deleting any of those workflow steps was invisible to every
+gate. p10 is the sharper half - the step is still there, still named, and still
+runs the command, but its failure no longer fails the job, and whole-line
+matching is what catches it. p11 is the mirror direction: the guard is symmetric,
+so dropping a command from the local script fails for the same reason as
+dropping it from the workflow.
+
+### 24.6 Section 9 steps
+
+1. Invariant: every command that makes `scripts/ci-check.sh` fail closed also
+   runs in `.github/workflows/ci.yml`, byte-identical, as a step of its own, on
+   every runner whose platform the command supports, and the four checker lanes
+   are asserted in both files by value.
+2. Tests: section 24.5's eleven plants, each restored, with the clean control for
+   every exercised command.
+3. Diff and digests: sections 24.2 and 24.4. One moved digest, no product
+   behavior change, nothing removed from either lane.
+4. Reference preserved: `1371e42` and `addec19` remain addressable; all prior
+   bytes are recoverable with `git show`.
+5. The workflow steps, the generalized guard, this record, the refreshed L5, and
+   the refreshed `docs/development.md` and `docs/research-ir-cfg-emitter.md`
+   statements land in one atomic CI commit.
+6. L5 was re-run in full after the change: `scripts/ci-check.sh` exits 0, and
+   `actionlint` accepts all three workflow files.
+
+### 24.7 Verification
+
+`actionlint` 1.7.12 exits 0 on `.github/workflows/ci.yml`,
+`.github/workflows/test-suite.yml` and `.github/workflows/release.yml`. Each of
+the six added commands was run locally from the workspace root and exits 0:
+Python lint over 326 files with four checker suites, the identity gate at 9 of 9
+cases, the resource inventory at 9 digests with intact loaders, the compiled
+oracle inventory at 71 digests and 48 compiled oracles, harness fmt, harness
+clippy under `-D warnings`, and the harness's 38 tests. The full local gate,
+`scripts/ci-check.sh`, exits 0 with `all checks passed`, and the workspace suite
+is 29 result lines and 592 passed.
+
+On GitHub, run `32284265246` at `b97ee86` is the first push of these lanes and the
+proof that every one of them really executes there rather than only parsing.
+`Rust Checks (ubuntu-latest)` completed all twenty steps green, including
+`Lint Python scripts`, `Benchmark identity gate`, `Resource ruler inventory` and
+all three harness lanes. `Rust Checks (macos-latest)` completed nineteen green and
+failed only `Benchmark harness tests`, on the Linux-only RSS assertion section
+24.2 records; that runner had already passed the Python lint under `nix develop`,
+the identity gate under its own bash 3.2, the resource inventory, and harness fmt
+and clippy. The `if: runner.os == 'Linux'` condition on that one lane is the whole
+difference between that run and this record's bytes.

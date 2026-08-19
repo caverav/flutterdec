@@ -95,16 +95,31 @@ CI runs on:
 - pushes to `main`
 - Linux and macOS runners
 
-Workflow checks:
+Workflow checks, in order, all of them also run by `scripts/ci-check.sh` with the
+same commands:
 
 - `nix flake check`
 - `cargo fmt --check`
 - `scripts/lint-shell.sh`
+- `scripts/lint-python.sh`
+- `scripts/bench-identity-gate-test.sh`
 - `cargo clippy` with warnings denied
+- the protected decompiler, core and IR integration targets, by name
+- `scripts/check-oracle-inventory.py`
+- `scripts/check-resource-ruler.py`
 - `cargo test --workspace`
 - `cargo build -p flutterdec-cli --release`
+- fmt, clippy and tests for the excluded benchmark harness, the tests on the
+  Linux runner only because the harness reads its peak RSS from `/proc`
 
-See: `.github/workflows/ci.yml`
+Local and GitHub CI enforce the same surfaces on purpose: a guard that only the
+local script runs is a guard the next push can drop.
+`the_protected_oracle_loader_chain_is_intact` in
+`crates/flutterdec-decompiler/tests/provenance_audit.rs` fails if either lane
+drops a checker command the other still runs, and section 24 of
+`docs/oracle-protocol-ir-cfg-emitter.md` adjudicates that parity.
+
+See: `.github/workflows/ci.yml`, `scripts/ci-check.sh`
 Tag pushes matching `v*` build release CLI artifacts for Linux and macOS and publish them in a GitHub release via `.github/workflows/release.yml`.
 
 Issue and PR templates live under `.github/` and should be used for all external contributions.

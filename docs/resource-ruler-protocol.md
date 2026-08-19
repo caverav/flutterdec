@@ -181,3 +181,19 @@ invocation, resource files, feature-gated allocator, phase ownership, clone
 plants, thresholds, timing selection, candidate order, scores, samples, seed,
 accepted harness, frozen reference, and immutable candidate are unchanged. The
 resource ruler and full CI were refreshed; timing selection was not rerun.
+
+The 2026-08-19 CI guard parity change moves no digest in this inventory. Every
+protected path above, including `scripts/ci-check.sh`, is byte-unchanged: the
+change is additive on the GitHub side only, where
+`.github/workflows/ci.yml` gains `nix develop -c python3
+scripts/check-resource-ruler.py` as a step of its own, identical to the local
+invocation this checker already requires in `scripts/ci-check.sh`. That command
+is now also matched by value in both CI files by
+`the_protected_oracle_loader_chain_is_intact`, so a lane cannot drop the resource
+inventory while the other lane still runs it. The resource files, feature-gated
+allocator, phase ownership, clone plants, thresholds, timing selection, candidate
+order, scores, samples, seed, accepted harness, frozen reference, and immutable
+candidate are unchanged. The resource ruler self-test and clean loader check were
+refreshed in Nix, and the checker was proved fail-closed through the workflow's
+own command line by deleting `scripts/bench-resource.sh` in a disposable
+worktree; timing selection was not rerun.

@@ -97,12 +97,22 @@ fn field<'a>(row: &'a str, name: &str) -> &'a str {
 
 const PROTOCOL: &str = "docs/oracle-protocol-ir-cfg-emitter.md";
 /// The two lanes that must name the integration test targets explicitly: the
-/// local parity script and the GitHub job, which runs only a subset of it.
+/// local parity script and the GitHub job, which must enforce the same surfaces.
 const CI_LANES: [&str; 2] = ["scripts/ci-check.sh", ".github/workflows/ci.yml"];
 /// The compiled-inventory checker, which is the correctness oracle for whether a
 /// protected file is compiled at all. It has to be reached from a real lane, or
 /// it protects nothing.
 const INVENTORY_CHECKER: &str = "scripts/check-oracle-inventory.py";
+/// Whole command lines every lane in `CI_LANES` must run, byte-identical in both.
+/// A guard only a developer's machine runs is a guard the next push can drop, so
+/// each of these is matched as a complete line: an `echo` of it, a `|| true`
+/// suffix, or a divergent flag in one lane and not the other all fail.
+const REQUIRED_LANE_COMMANDS: [&str; 4] = [
+    "nix develop -c ./scripts/lint-python.sh",
+    "./scripts/bench-identity-gate-test.sh",
+    "nix develop -c python3 scripts/check-oracle-inventory.py",
+    "nix develop -c python3 scripts/check-resource-ruler.py",
+];
 const DECOMPILER_MANIFEST: &str = "crates/flutterdec-decompiler/Cargo.toml";
 const CORE_MANIFEST: &str = "crates/flutterdec-core/Cargo.toml";
 const IR_MANIFEST: &str = "crates/flutterdec-ir/Cargo.toml";
@@ -616,17 +626,29 @@ fn the_protected_oracle_loader_chain_is_intact() {
          oracles are compiled"
     );
     let inventory_lane = format!("nix develop -c python3 {INVENTORY_CHECKER}");
+    assert!(
+        REQUIRED_LANE_COMMANDS.contains(&inventory_lane.as_str()),
+        "the compiled-inventory checker moved, so `{inventory_lane}` is no longer one of the \
+         required lane commands and the loop below would pass over it"
+    );
     for lane in CI_LANES {
         let script = std::fs::read_to_string(root.join(lane))
             .unwrap_or_else(|_| panic!("{lane} is readable"));
-        assert!(
-            script
-                .lines()
-                .any(|line| line.trim().trim_start_matches("run: ") == inventory_lane),
-            "{lane} must run `{inventory_lane}` as a lane of its own. The hook checks in this \
-             test are diagnostics; that checker is the only thing that proves a protected oracle \
-             reached a compiled test target"
-        );
+        for required in REQUIRED_LANE_COMMANDS {
+            assert!(
+                script
+                    .lines()
+                    .any(|line| line.trim().trim_start_matches("run: ") == required),
+                "{lane} must run `{required}` as a lane of its own, identically to the other \
+                 lane. The hook checks in this test are diagnostics; these commands are the \
+                 checkers that decide whether a protected oracle reached a compiled test \
+                 target, whether the Python plant tests and checker self-tests ran at all, \
+                 whether the benchmark identity gate still refuses both directions of a void \
+                 comparison, and whether the auxiliary resource inventory is intact. A guard \
+                 that runs only in `scripts/ci-check.sh` is enforced by whoever remembers to \
+                 run it"
+            );
+        }
     }
 
     for (loader, expected) in expected_includes {
