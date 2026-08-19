@@ -1431,3 +1431,148 @@ ledgers remain historical evidence. The frozen final protocol did not accept
 E1, so forward commit `ecca9e6` removes its performance-only product change
 while preserving the later resource-accounting, performance-harness, and block
 ledger work. The historical E1 allocation reduction is not claimed as shipped.
+
+## 22. Final candidate and integration record
+
+This section consolidates the result without replacing the detailed records in
+[`post-correctness/`](post-correctness/README.md) and
+[`final-performance/`](final-performance/README.md). The scoring reference is
+`630ec442d951aac5704ae80287367912bfbfc388`. The accepted timing harness is
+`4c127aba4e74fb6f8d486c4cb066586bb0d74846`, with tree
+`83e06014b368736c1921a0da7949c7b6a0b76e97` and patch SHA-256
+`14413796ca8a89cc1328497b5c87629b1c55f945ec58e73eebb3838df0700460`.
+The final comparison object is
+`9b82e07fa62f97654aea5153d9fb6a2ef57a377a`. Its performance-only change is
+absent from the branch after forward rollback
+`ecca9e68ea7b7333211918b5762f2fde15d08d94`.
+
+### 22.1 Accepted correctness work
+
+The accepted result is correctness and accounting work, not a speed candidate.
+The key boundaries are exact commits: indirect terminators at
+`ac544cabff3dde7b16af7d3b8f37fe6e796f17ac`, resolvable omitted helpers at
+`92c14a815c600501a47619cb00c81b7440d286d9`, whole structured rollback at
+`f5f0b83dd17a86574abdfcf23cac2f459b1ccf13`, verified invalid-graph accounting
+at `c37b132cf100d905c61a71b8e10dbf4d22b3b273`, and total artifact ordering at
+`2a9273c162eb6f92fc30398e3fb7064c1f87e358`. Sections 18 and 19 describe the
+first three changes. The later block ledger partitions every valid function by
+immutable block identity and validates invalid graphs against a typed raw-graph
+witness. The final ordering commit makes tied APK bootstrap rows and pruned
+ledger identities deterministic.
+
+### 22.2 Performance candidates
+
+All figures in this subsection use release binaries, the disclosed synthetic
+matrix, three warmups per side, and the median of 15 alternating paired relative
+deltas. Each MDE is `max(0.05, 3 * MAD)` for the named workload and aggregation.
+
+| Candidate | Exact object and workload | Measured disposition |
+| --- | --- | --- |
+| E1, avoid duplicate register-name clones | `9b82e07fa62f97654aea5153d9fb6a2ef57a377a`; four-case disclosed emission prefix | The prefix median was -16.074 percent for emission and -14.757 percent for combined, and each target emission cell cleared its own 5 percent MDE. Ledger SHA-256: `8c583c7f797c0049b58ced3c1b0e87091c1c835e7780747f5a2b657e519d8c6d`. It advanced to held-out scoring, then failed there and was rolled back. |
+| E2, cache DFS join write closures | `b2f6b503cc7351fce2cf1820b67081688eac16fa`; four-case disclosed emission prefix | The prefix median was -25.283 percent for emission and -20.756 percent for combined, both against 5 percent MDE. The required `irreducible/64/base` emission-cell median was +1.458 percent against a required -5 percent MDE, so E2 was rejected. Ledger SHA-256: `c16bf1db6750cae608914b8943368a2e5028dc73720ba292c36ca86b55606d7c`. |
+| E3, reuse dense dominance rows | `63390e154ea0a21b09fd520b163865a6d1d0b6bb`; frozen eight-case disclosed CFG prefix | The prefix CFG median was +3.439 percent against 5 percent MDE. The three 1024-block linear CFG-cell medians were +54.189 to +58.106 percent, each beyond its comparison-specific positive guard, so E3 was rejected. Ledger SHA-256: `23ba35660e01b2e74b3da99dbac52ca6aab1a2f5229beea57f0fa0aba6551180`. |
+
+The final E1 comparison used the same aggregation on the frozen four-case
+disclosed prefix and the independently generated six-case mixed-topology
+held-out matrix. Disclosed emission and combined medians were -15.0589 and
+-11.7943 percent, each beyond its 5 percent MDE. Held-out emission and combined
+medians were only -1.1321 and -0.6329 percent, each inside its 5 percent MDE.
+The disclosed 33-case by five-phase cell aggregation also found the six
+serialization regressions listed in section 21 above the positive 10 percent
+guard. The sealed final decision is therefore an honest no-win. No speed
+candidate is accepted or shipped, and the later favorable draw does not replace
+the bound evidence.
+
+### 22.3 Correctness and allocation guards
+
+The final command, which names the output directory holding both matrices, was:
+
+```text
+TMPDIR=/home/camilo/flutterdec/.post-correctness-tmp/final-tmp \
+  docs/final-performance/run-final.sh \
+  /home/camilo/flutterdec/.post-correctness-tmp/final-performance-run
+```
+
+The retained evidence is re-audited with these exact commands:
+
+```text
+nix develop --extra-experimental-features 'nix-command flakes' -c \
+  python3 docs/final-performance/analyze-final.py \
+  docs/final-performance/evidence
+(cd docs/final-performance/evidence && sha256sum -c SHA256SUMS)
+nix develop --extra-experimental-features 'nix-command flakes' -c \
+  python3 scripts/check-resource-ruler.py
+nix develop --extra-experimental-features 'nix-command flakes' -c \
+  python3 scripts/check-oracle-inventory.py
+```
+
+On the final disclosed workload, all 33 cases passed correctness on both exact
+product refs; on the held-out workload, all six cases passed on both refs. The
+per-matrix aggregation found 33 of 33 and six of six artifact SHA-256 values
+byte-identical. The single-run, per-case, per-phase resource aggregation covers
+165 disclosed cells and 30 held-out cells. Candidate maximum delta was 0.0 for
+allocation count, total allocated bytes, and peak live bytes on each matrix, so
+none crossed the positive 5 percent allocation guard. These claims are outputs
+of `analyze-final.py` over the retained TSV and JSON files, not estimates from
+source inspection. `docs/final-performance/evidence/SHA256SUMS` binds all 30
+retained final-evidence files.
+
+### 22.4 Integrated surface and its limit
+
+At exact integrated tip `2a9273c162eb6f92fc30398e3fb7064c1f87e358`, the
+release synthetic pipeline command was:
+
+```text
+nix develop --extra-experimental-features 'nix-command flakes' -c \
+  cargo test --release -p flutterdec-core --test pipeline_determinism \
+  -- --nocapture
+```
+
+That synthetic workload compares raw artifacts across 20 separate processes;
+its four test cases passed. A validator also ran this exact real-input command
+twice, once per output directory, against external LocalSend APK SHA-256
+`2c7f5fd4872da25115bb8e5e62f92de94dda47b0f249ff387ac667b13871dc3e`:
+
+```text
+nix develop --extra-experimental-features 'nix-command flakes' -c cargo run \
+  -p flutterdec-cli -- decompile /home/camilo/.zenith/samples/localsend.apk \
+  --out OUTPUT --adapter-backend internal --function-scope all \
+  --emit-ir --emit-asm
+```
+
+For each whole-APK run, the per-run file aggregation was 5,800 pseudocode,
+5,800 IR, and 5,800 assembly artifacts, plus quality and report documents.
+Relative-path SHA-256 comparison across the two complete output trees found no
+missing or differing file. Each run exited after artifact generation because
+the unchanged default quality gates observed 530 placeholder conditions and
+517 unresolved control-flow events on that whole-APK aggregation. This is a
+determinism result and a truthful gate failure, not a quality pass.
+
+The APK and validator output are not committed, and `testdata/real-golden/`
+still has no matching quality, report, or file-list baseline. The real-golden
+matrix therefore remains unavailable for reproducible repository validation.
+The integration surface itself is green, but its contract dependency remains
+unmet because the frozen performance result in 22.2 is a no-win.
+
+### 22.5 Sources and remaining risks
+
+Section 9 lists the primary sources behind the accepted and rejected work: the
+[Arm Architecture Reference Manual](https://developer.arm.com/documentation/ddi0487/latest)
+for the control-effect model, the Dart VM
+[`constants_arm64.h`](https://github.com/dart-lang/sdk/blob/main/runtime/vm/constants_arm64.h)
+source for runtime conventions, and the
+[Capstone source repository](https://github.com/capstone-engine/capstone) for
+the decoder's mnemonic spelling. E3 tested a repository-specific dense-relation
+hypothesis. Its rejection is measured evidence and does not invalidate
+[Cooper, Harvey, and Kennedy](https://www.cs.rice.edu/~keith/EMBED/dom.pdf) or
+[Lengauer and Tarjan](https://doi.org/10.1145/357062.357071), neither of which
+was implemented here.
+
+Remaining risks are concrete. There is no committed real-golden oracle. R8's
+permissive hexadecimal target parser and R9's address-order DFS back-edge proxy
+remain open. The synthetic matrix does not establish the topology distribution
+of real Flutter programs. The disclosed regression cells and held-out MDE misses
+remain part of the record. The performance track stops here without a win; a
+later attempt needs a newly declared candidate family, a new sealed held-out
+draw, and the same correctness, artifact, allocation, resource, and protected
+ruler guards.
