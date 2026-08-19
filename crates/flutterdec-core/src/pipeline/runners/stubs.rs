@@ -636,6 +636,9 @@ pub(super) fn prune_calls_that_never_return(
         stats.blocks_cut += reachable_before.len().saturating_sub(reachable_after.len());
     }
     stats
+        .pruned
+        .sort_unstable_by_key(|identity| (identity.function_id, identity.start_va));
+    stats
 }
 
 /// Blocks reachable from the entry along successor edges.
@@ -1062,6 +1065,36 @@ mod prune_tests {
         assert!(
             blocks[2].preds.is_empty(),
             "preds must not go stale: helper_flow reads it directly"
+        );
+    }
+
+    #[test]
+    fn noreturn_pruned_identities_are_structurally_ordered() {
+        let mut blocks = vec![blk(0, 0x1000, vec![call(0x1000, "#0x9000")], vec![1])];
+        blocks.extend((1..=10).map(|id| {
+            blk(
+                id,
+                0x1000 + id as u64 * 4,
+                vec![other(0x1000 + id as u64 * 4, "mov x0, x1")],
+                (id < 10).then_some(id + 1).into_iter().collect(),
+            )
+        }));
+        let mut ir = vec![FunctionIr {
+            function_id: 7,
+            name: "sub_1000".to_string(),
+            entry_va: 0x1000,
+            blocks,
+        }];
+        flutterdec_ir::rebuild_edges(&mut ir[0].blocks);
+
+        let stats = prune_calls_that_never_return(&mut ir, &HashSet::from([0x9000]));
+        assert_eq!(
+            stats
+                .pruned
+                .iter()
+                .map(|identity| identity.start_va)
+                .collect::<Vec<_>>(),
+            (1..=10).map(|id| 0x1000 + id * 4).collect::<Vec<_>>()
         );
     }
 
