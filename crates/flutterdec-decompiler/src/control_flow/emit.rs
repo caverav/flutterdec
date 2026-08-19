@@ -920,7 +920,7 @@ impl<'a> FuncEmitter<'a> {
         if self.call_annotation_anchors.is_empty() {
             return;
         }
-        self.debug_assert_line_identity();
+        self.assert_line_identity();
         let placed = self.finished_line_positions();
         let mut inserts: Vec<(usize, usize, String, usize)> = Vec::new();
         let mut omissions: Vec<(u64, String, String, &'static str, usize, usize)> = Vec::new();

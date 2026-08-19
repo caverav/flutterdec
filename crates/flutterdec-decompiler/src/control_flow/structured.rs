@@ -1740,7 +1740,14 @@ impl<'a> FuncEmitter<'a> {
         placed: &HashMap<LineId, usize>,
     ) -> Option<usize> {
         match self.join_anchor_line_ids.get(anchor_index) {
-            Some(ids) => placed.get(ids.get(offset)?).copied(),
+            Some(ids) => {
+                assert_eq!(
+                    ids.len(),
+                    self.join_annotation_anchors[anchor_index].lines.len(),
+                    "anchor line identities and lines must stay in step"
+                );
+                placed.get(ids.get(offset)?).copied()
+            }
             None => (offset < self.lines.len()).then_some(offset),
         }
     }
@@ -1750,7 +1757,14 @@ impl<'a> FuncEmitter<'a> {
         let live = live_identifier_tokens(&self.lines);
         let mut inserts: Vec<PlannedJoinAnnotation> = Vec::new();
         let mut omissions: Vec<PlannedCapOmission> = Vec::new();
-        self.debug_assert_line_identity();
+        self.assert_line_identity();
+        if !self.join_anchor_line_ids.is_empty() {
+            assert_eq!(
+                self.join_anchor_line_ids.len(),
+                self.join_annotation_anchors.len(),
+                "anchor identity sets and anchors must stay in step"
+            );
+        }
         let placed = self.finished_line_positions();
         for (anchor_index, anchor) in self.join_annotation_anchors.iter().enumerate() {
             for (offset, original) in anchor.lines.iter().enumerate() {

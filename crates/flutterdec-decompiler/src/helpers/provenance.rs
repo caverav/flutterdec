@@ -7,7 +7,7 @@
 // assertion proves nothing about the measured output. Everything here runs in
 // release and is gated only on the environment.
 //
-// Four records live in the stream, told apart by `record`:
+// Five records live in the stream, told apart by `record`:
 //
 //   snapshot      - the register state a loss site dropped, keyed by `snapshot_id`
 //   annotation    - one emitted annotation, with `candidates[]` attributing each
@@ -16,8 +16,10 @@
 //   cap_omission  - one annotation dropped whole at insertion, with the reason
 //                   and the arithmetic that decided it. It has no coordinate,
 //                   because it is not in the artifact
-//   cap_summary   - that site's running total for the function, counted at the
-//                   drop rather than derived from the rows above
+//   filter_rejection - one candidate rejected before insertion, with its exact
+//                   reason and rendered value
+//   cap_summary   - that site's complete accounting for the function, with
+//                   accepted and rejected derived from the rows above
 //
 // The nesting is load-bearing. Completeness matches records to annotations 1:1
 // by `(function_id, output_line, output_col)`, so a three-predecessor join must
@@ -36,7 +38,7 @@ use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 
 /// Bumped whenever a field is added, removed, or re-interpreted.
-pub(super) const PROVENANCE_SCHEMA_VERSION: u32 = 1;
+pub(super) const PROVENANCE_SCHEMA_VERSION: u32 = 2;
 
 /// The tag of the ordinary-call loss site, in both `loss_site` and the key
 /// spaces. One definition, so the emitter and the audit cannot spell it apart.
@@ -236,6 +238,10 @@ struct AnnotationLine<'a> {
     anchor: &'a SiteKey,
     register: &'a str,
     candidates: &'a [CandidateAttribution],
+    candidates_considered: usize,
+    accepted: usize,
+    rejected: usize,
+    unaccounted_candidates: i64,
 }
 
 #[derive(serde::Serialize)]
@@ -278,7 +284,12 @@ struct CapSummaryLine<'a> {
     candidate_sha256: &'a str,
     function_id: u64,
     loss_site: &'a str,
+    candidates_considered: usize,
+    accepted: usize,
+    rejected: usize,
+    rejected_at_filter: usize,
     omitted_at_insertion: usize,
+    unaccounted_candidates: i64,
 }
 
 /// The facts of one dropped annotation, bundled so the recorder stays a single
@@ -408,7 +419,10 @@ fn audit_file() -> Option<&'static Mutex<File>> {
 /// the search is what stops a line that reads the same somewhere else in the
 /// function from taking a record's coordinate.
 pub(super) fn write_function_provenance(source: &str, provenance: &FunctionProvenance) {
-    if provenance.records.is_empty() && provenance.cap_omissions.is_empty() {
+    if provenance.records.is_empty()
+        && provenance.cap_omissions.is_empty()
+        && provenance.filter_rejections.is_empty()
+    {
         return;
     }
     let Some(file) = audit_file() else {
@@ -434,27 +448,20 @@ pub(super) fn write_function_provenance(source: &str, provenance: &FunctionProve
         cursors[record.output_line] = cursor + offset + 1;
         placed.push((record.output_line + 1, cursor + offset + 1, record));
     }
-    if placed.is_empty() && provenance.cap_omissions.is_empty() {
-        return;
-    }
-
-    let mut referenced: Vec<&str> = placed
-        .iter()
-        .flat_map(|(_, _, record)| {
-            record
-                .candidates
-                .iter()
-                .map(|candidate| candidate.snapshot_id.as_str())
-        })
-        .collect();
-    referenced.sort_unstable();
-    referenced.dedup();
+    let accepted = placed.len();
+    let rejected = provenance.cap_omissions.len() + provenance.filter_rejections.len();
+    assert_eq!(
+        accepted + rejected,
+        provenance.candidates_considered,
+        "{} artifact accounts for {} of {} candidates in function {}",
+        provenance.loss_site,
+        accepted + rejected,
+        provenance.candidates_considered,
+        provenance.function_id
+    );
 
     let mut out = String::new();
     for snapshot in &provenance.snapshots {
-        if !referenced.contains(&snapshot.snapshot_id.as_str()) {
-            continue;
-        }
         let line = SnapshotLine {
             schema_version: PROVENANCE_SCHEMA_VERSION,
             record: "snapshot",
@@ -484,6 +491,12 @@ pub(super) fn write_function_provenance(source: &str, provenance: &FunctionProve
             anchor: &record.anchor,
             register: &record.register,
             candidates: &record.candidates,
+            candidates_considered: provenance.candidates_considered,
+            accepted,
+            rejected,
+            unaccounted_candidates: provenance.candidates_considered as i64
+                - accepted as i64
+                - rejected as i64,
         };
         if let Ok(text) = serde_json::to_string(&line) {
             out.push_str(&text);
@@ -535,7 +548,7 @@ pub(super) fn write_function_provenance(source: &str, provenance: &FunctionProve
         }
     }
 
-    if provenance.omitted_at_insertion > 0 {
+    if rejected > 0 {
         let line = CapSummaryLine {
             schema_version: PROVENANCE_SCHEMA_VERSION,
             record: "cap_summary",
@@ -543,7 +556,14 @@ pub(super) fn write_function_provenance(source: &str, provenance: &FunctionProve
             candidate_sha256: candidate_sha256(),
             function_id: provenance.function_id,
             loss_site: provenance.loss_site,
-            omitted_at_insertion: provenance.omitted_at_insertion,
+            candidates_considered: provenance.candidates_considered,
+            accepted,
+            rejected,
+            rejected_at_filter: provenance.filter_rejections.len(),
+            omitted_at_insertion: provenance.cap_omissions.len(),
+            unaccounted_candidates: provenance.candidates_considered as i64
+                - accepted as i64
+                - rejected as i64,
         };
         if let Ok(text) = serde_json::to_string(&line) {
             out.push_str(&text);
@@ -555,4 +575,3 @@ pub(super) fn write_function_provenance(source: &str, provenance: &FunctionProve
         let _ = handle.write_all(out.as_bytes());
     }
 }
-

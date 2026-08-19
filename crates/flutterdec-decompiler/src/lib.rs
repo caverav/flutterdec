@@ -289,7 +289,7 @@ struct FuncEmitter<'a> {
     ///
     /// Empty when the body was assembled by hand rather than pushed through the
     /// emitter; otherwise the two Vecs are the same length, which
-    /// `debug_assert_line_identity` states at every pass boundary.
+    /// `assert_line_identity` states at every pass boundary.
     line_ids: Vec<LineId>,
     /// Monotonic for the whole function and deliberately not restored by a
     /// rollback.
@@ -627,15 +627,15 @@ impl<'a> FuncEmitter<'a> {
             self.resolve_remaining_helpers();
         }
         self.insert_loop_summary_comment();
-        self.debug_assert_line_identity();
+        self.assert_line_identity();
         self.compact_lines();
-        self.debug_assert_line_identity();
+        self.assert_line_identity();
         for line in &mut self.lines {
             *line = Self::clean_expr(line.clone());
         }
         self.apply_name_and_type_hints(&fn_name);
         self.extract_minus_one_aliases();
-        self.debug_assert_line_identity();
+        self.assert_line_identity();
         // Before the appenders: they replay the renames onto candidates, and the
         // audit's snapshot rule compares a candidate against the snapshot it cites,
         // so both sides have to be in the same namespace.
@@ -653,7 +653,7 @@ impl<'a> FuncEmitter<'a> {
             &self.join_provenance,
             &self.loop_provenance,
         ] {
-            debug_assert_eq!(
+            assert_eq!(
                 stream.unaccounted_candidates(),
                 0,
                 "{} considered {} candidates and accounted for {}",
@@ -719,19 +719,30 @@ impl<'a> FuncEmitter<'a> {
 
     /// Insert one line, shifting the identities after it along with the text.
     fn insert_body_line(&mut self, index: usize, line: String) {
-        let id = self.fresh_line_id();
+        let tracked = !self.line_ids.is_empty();
+        if tracked {
+            self.assert_line_identity();
+        }
         self.lines.insert(index, line);
-        if self.line_ids.len() + 1 == self.lines.len() {
+        if tracked {
+            let id = self.fresh_line_id();
             self.line_ids.insert(index, id);
         }
     }
 
     /// Insert several lines at `index`, all of them new.
     fn splice_body_lines(&mut self, index: usize, lines: Vec<String>) {
-        let ids: Vec<LineId> = (0..lines.len()).map(|_| self.fresh_line_id()).collect();
-        let added = lines.len();
+        let tracked = !self.line_ids.is_empty();
+        if tracked {
+            self.assert_line_identity();
+        }
+        let ids: Vec<LineId> = if tracked {
+            (0..lines.len()).map(|_| self.fresh_line_id()).collect()
+        } else {
+            Vec::new()
+        };
         self.lines.splice(index..index, lines);
-        if self.line_ids.len() + added == self.lines.len() {
+        if tracked {
             self.line_ids.splice(index..index, ids);
         }
     }
@@ -740,17 +751,26 @@ impl<'a> FuncEmitter<'a> {
     /// replaced line's identity is retired, so an anchor that named it resolves
     /// to nothing rather than to whichever line took its place.
     fn replace_body_line(&mut self, index: usize, lines: Vec<String>) {
-        let ids: Vec<LineId> = (0..lines.len()).map(|_| self.fresh_line_id()).collect();
-        let added = lines.len();
+        let tracked = !self.line_ids.is_empty();
+        if tracked {
+            self.assert_line_identity();
+        }
+        let ids: Vec<LineId> = if tracked {
+            (0..lines.len()).map(|_| self.fresh_line_id()).collect()
+        } else {
+            Vec::new()
+        };
         self.lines.splice(index..=index, lines);
-        if self.line_ids.len() + added == self.lines.len() + 1 {
+        if tracked {
             self.line_ids.splice(index..=index, ids);
         }
     }
 
     /// Drop the lines in `range` and the identities that went with them.
     fn drain_body_lines(&mut self, range: std::ops::RangeInclusive<usize>) {
-        if self.line_ids.len() == self.lines.len() {
+        let tracked = !self.line_ids.is_empty();
+        if tracked {
+            self.assert_line_identity();
             self.line_ids.drain(range.clone());
         }
         self.lines.drain(range);
@@ -761,11 +781,14 @@ impl<'a> FuncEmitter<'a> {
     /// Only a hand-assembled body needs this; a body the emitter pushed has one
     /// per line already, and then this does nothing.
     fn sync_line_ids(&mut self) {
-        while self.line_ids.len() < self.lines.len() {
-            let id = self.fresh_line_id();
-            self.line_ids.push(id);
+        if self.line_ids.is_empty() {
+            while self.line_ids.len() < self.lines.len() {
+                let id = self.fresh_line_id();
+                self.line_ids.push(id);
+            }
+            return;
         }
-        self.line_ids.truncate(self.lines.len());
+        self.assert_line_identity();
     }
 
     /// Take the body from `at` onwards, identities included.
@@ -790,10 +813,11 @@ impl<'a> FuncEmitter<'a> {
     /// duplicate here would be a bookkeeping fault rather than a duplicated
     /// line, and the assertion says so.
     fn finished_line_positions(&self) -> HashMap<LineId, usize> {
+        self.assert_line_identity();
         let mut placed: HashMap<LineId, usize> = HashMap::with_capacity(self.line_ids.len());
         for (index, id) in self.line_ids.iter().enumerate() {
             let previous = placed.insert(*id, index);
-            debug_assert!(previous.is_none(), "one line identity denotes one line");
+            assert!(previous.is_none(), "one line identity denotes one line");
         }
         placed
     }
@@ -810,8 +834,12 @@ impl<'a> FuncEmitter<'a> {
         render_index: usize,
         placed: &HashMap<LineId, usize>,
     ) -> Option<usize> {
-        if self.render_line_ids.len() == self.render_lines.len() && !self.render_line_ids.is_empty()
-        {
+        if !self.render_line_ids.is_empty() {
+            assert_eq!(
+                self.render_line_ids.len(),
+                self.render_lines.len(),
+                "render line identities and lines must stay in step"
+            );
             let id = self.render_line_ids.get(render_index)?;
             return placed.get(id).copied();
         }
@@ -820,8 +848,8 @@ impl<'a> FuncEmitter<'a> {
 
     /// State the identity invariant at a pass boundary: every line carries one,
     /// or the body was assembled by hand and none does.
-    fn debug_assert_line_identity(&self) {
-        debug_assert!(
+    fn assert_line_identity(&self) {
+        assert!(
             self.line_ids.is_empty() || self.line_ids.len() == self.lines.len(),
             "line identities and lines must stay in step: {} ids for {} lines",
             self.line_ids.len(),
@@ -1280,3 +1308,6 @@ pub mod bench_spans {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod line_identity_tests;
