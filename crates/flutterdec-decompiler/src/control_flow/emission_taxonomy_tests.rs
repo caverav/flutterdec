@@ -769,6 +769,117 @@ fn fingerprint(emitter: &FuncEmitter) -> String {
     )
 }
 
+/// One observable value per field in `EmitterSnapshot`. Keeping the names here
+/// makes a deletion plant report the state family it stopped protecting.
+fn snapshot_families(emitter: &FuncEmitter) -> Vec<(&'static str, String)> {
+    vec![
+        ("lines", format!("{:?}", emitter.lines)),
+        ("line_ids", format!("{:?}", emitter.line_ids)),
+        ("render_lines", format!("{:?}", emitter.render_lines)),
+        ("render_line_ids", format!("{:?}", emitter.render_line_ids)),
+        ("state", format!("{:?}", emitter.state)),
+        (
+            "counters",
+            format!(
+                "{:?}",
+                (
+                    emitter.placeholder_ifs,
+                    emitter.unresolved_cf,
+                    emitter.raw_register_calls,
+                    emitter.total_calls,
+                    emitter.indirect_calls,
+                    emitter.semantic_direct_calls,
+                    emitter.semantic_indirect_calls,
+                    emitter.dispatch_selector_calls,
+                    emitter.dispatch_table_calls,
+                    emitter.repeated_blocks,
+                    emitter.unlifted_instructions,
+                    emitter.target_va_symbol_calls,
+                )
+            ),
+        ),
+        ("locals", format!("{:?}", emitter.locals)),
+        (
+            "identifier_renames",
+            format!("{:?}", emitter.identifier_renames),
+        ),
+        ("call_index", emitter.call_index.to_string()),
+        ("snapshot_index", emitter.snapshot_index.to_string()),
+        ("rendering_call", emitter.rendering_call.to_string()),
+        (
+            "structured_emitted",
+            format!("{:?}", emitter.structured_emitted),
+        ),
+        ("loop_stack", format!("{:?}", emitter.loop_stack)),
+        (
+            "join_candidates",
+            format!("{:?}", emitter.join_candidates),
+        ),
+        (
+            "join_candidate_regs",
+            format!("{:?}", emitter.join_candidate_regs),
+        ),
+        (
+            "join_annotation_anchors",
+            format!("{:?}", emitter.join_annotation_anchors),
+        ),
+        (
+            "join_anchor_line_ids",
+            format!("{:?}", emitter.join_anchor_line_ids),
+        ),
+        (
+            "call_annotation_anchors",
+            format!("{:?}", emitter.call_annotation_anchors),
+        ),
+        (
+            "loop_annotation_sites",
+            format!("{:?}", emitter.loop_annotation_sites),
+        ),
+        (
+            "block_snapshots",
+            format!("{:?}", emitter.block_snapshots),
+        ),
+        (
+            "call_provenance",
+            format!("{:?}", emitter.call_provenance),
+        ),
+        (
+            "join_provenance",
+            format!("{:?}", emitter.join_provenance),
+        ),
+        (
+            "loop_provenance",
+            format!("{:?}", emitter.loop_provenance),
+        ),
+        ("emitted", format!("{:?}", emitter.emitted)),
+        ("active_stack", format!("{:?}", emitter.active_stack)),
+        ("inline_visits", format!("{:?}", emitter.inline_visits)),
+        (
+            "omitted_blocks",
+            format!("{:?}", emitter.omitted_blocks),
+        ),
+        (
+            "omission_sources",
+            format!("{:?}", emitter.omission_sources),
+        ),
+        (
+            "helper_cap_omitted",
+            format!("{:?}", emitter.helper_cap_omitted),
+        ),
+        (
+            "loop_back_edges",
+            format!("{:?}", emitter.loop_back_edges),
+        ),
+        ("loop_context", format!("{:?}", emitter.loop_context)),
+        ("dfs_preds", format!("{:?}", emitter.dfs_preds)),
+        (
+            "dfs_block_writes",
+            format!("{:?}", emitter.dfs_block_writes),
+        ),
+        ("events", format!("{:?}", emitter.accounting.events())),
+    ]
+}
+
 /// Write to every state family, so a rollback that misses one is visible.
 fn poison(emitter: &mut FuncEmitter) {
     emitter
@@ -791,9 +902,16 @@ fn poison(emitter: &mut FuncEmitter) {
 
     emitter.placeholder_ifs += 3;
     emitter.unresolved_cf += 5;
+    emitter.raw_register_calls += 6;
     emitter.total_calls += 7;
+    emitter.indirect_calls += 8;
+    emitter.semantic_direct_calls += 9;
+    emitter.semantic_indirect_calls += 10;
+    emitter.dispatch_selector_calls += 11;
+    emitter.dispatch_table_calls += 12;
     emitter.repeated_blocks += 11;
     emitter.unlifted_instructions += 13;
+    emitter.target_va_symbol_calls += 14;
 
     emitter.omitted_blocks.insert(0);
     emitter.omission_sources.insert(0, 0);
@@ -850,6 +968,151 @@ fn poison(emitter: &mut FuncEmitter) {
         0xfeed,
         TraversalTarget::Helper { id: usize::MAX },
     );
+}
+
+/// Poison the families that must stay neutral in the production decline
+/// fixture because the structured walk reads them while choosing its cause.
+fn poison_snapshot_families(emitter: &mut FuncEmitter) {
+    poison(emitter);
+    emitter.push_body_line("  // poison body".to_string());
+    emitter.render_line_ids.push(emitter.line_ids[0]);
+    emitter.state.narrow_bindings.insert("x9".to_string());
+    emitter.rendering_call = true;
+    emitter.loop_stack.push((usize::MAX, Some(0)));
+    emitter.join_candidates.insert(
+        (0, "x9".to_string()),
+        JoinCandidates {
+            values: vec!["poisonValue".to_string()],
+            complete: true,
+            provenance: Vec::new(),
+        },
+    );
+    emitter
+        .join_candidate_regs
+        .insert(0, vec!["x9".to_string()]);
+    emitter
+        .join_anchor_line_ids
+        .push(vec![emitter.line_ids[0]]);
+    emitter.active_stack.push(usize::MAX);
+    emitter.loop_context.push(usize::MAX);
+    emitter
+        .dfs_preds
+        .replace(HashMap::from([(usize::MAX, vec![0])]));
+}
+
+/// Move every snapshotted family away from its poisoned value. A restore field
+/// omitted independently must therefore leave exactly one named mismatch.
+fn mutate_snapshot_families(emitter: &mut FuncEmitter) {
+    emitter.lines.clear();
+    emitter.line_ids.clear();
+    emitter.render_lines.clear();
+    emitter.render_line_ids.clear();
+    emitter.state = LiftState::default();
+    emitter.placeholder_ifs = 0;
+    emitter.unresolved_cf = 0;
+    emitter.raw_register_calls = 0;
+    emitter.total_calls = 0;
+    emitter.indirect_calls = 0;
+    emitter.semantic_direct_calls = 0;
+    emitter.semantic_indirect_calls = 0;
+    emitter.dispatch_selector_calls = 0;
+    emitter.dispatch_table_calls = 0;
+    emitter.repeated_blocks = 0;
+    emitter.unlifted_instructions = 0;
+    emitter.target_va_symbol_calls = 0;
+    emitter.locals.clear();
+    emitter.identifier_renames.clear();
+    emitter.call_index = 0;
+    emitter.snapshot_index = 0;
+    emitter.rendering_call = false;
+    emitter.structured_emitted.clear();
+    emitter.loop_stack.clear();
+    emitter.join_candidates.clear();
+    emitter.join_candidate_regs.clear();
+    emitter.join_annotation_anchors.clear();
+    emitter.join_anchor_line_ids.clear();
+    emitter.call_annotation_anchors.clear();
+    emitter.loop_annotation_sites.clear();
+    emitter.block_snapshots.clear();
+    emitter.call_provenance = FunctionProvenance::default();
+    emitter.join_provenance = FunctionProvenance::default();
+    emitter.loop_provenance = FunctionProvenance::default();
+    emitter.emitted.clear();
+    emitter.active_stack.clear();
+    emitter.inline_visits.clear();
+    emitter.omitted_blocks.clear();
+    emitter.omission_sources.clear();
+    emitter.helper_cap_omitted.clear();
+    emitter.loop_back_edges.clear();
+    emitter.loop_context.clear();
+    emitter.dfs_preds = None;
+    emitter.dfs_block_writes.clear();
+    emitter.accounting.record_event(
+        TraversalEventKind::DfsDepthOmission,
+        emitter.ir.function_id,
+        0xf00d,
+        TraversalTarget::Helper { id: 0 },
+    );
+}
+
+#[test]
+fn snapshot_and_restore_cover_every_mutable_state_family() {
+    let ir = structured_fixture(9207);
+    let symbols = HashMap::new();
+    let mut emitter = FuncEmitter::new(&ir, &symbols);
+    poison_snapshot_families(&mut emitter);
+    let expected = snapshot_families(&emitter);
+    let snapshot = emitter.emitter_snapshot();
+
+    mutate_snapshot_families(&mut emitter);
+    let mutated = snapshot_families(&emitter);
+    for ((family, before), (mutated_family, after)) in expected.iter().zip(&mutated) {
+        assert_eq!(family, mutated_family);
+        assert_ne!(before, after, "{family}: poison must be non-default");
+    }
+
+    emitter.restore_emitter(snapshot);
+    let restored = snapshot_families(&emitter);
+    for ((family, expected), (restored_family, actual)) in expected.iter().zip(&restored) {
+        assert_eq!(family, restored_family);
+        assert_eq!(expected, actual, "{family}: snapshot or restore omitted this family");
+    }
+}
+
+#[test]
+fn post_mutation_fixtures_change_state_before_they_decline() {
+    let symbols = HashMap::new();
+    for (expected, ir) in declining_fixtures()
+        .into_iter()
+        .filter(|(cause, _)| cause.is_post_mutation())
+    {
+        let mut emitter = FuncEmitter::new(&ir, &symbols);
+        let regions = Regions::build(&ir).expect("a post-mutation fixture passes preflight");
+        assert_eq!(emitter.unsupported_region(&regions), None);
+        emitter.regions = Some(regions);
+        let before = snapshot_families(&emitter);
+
+        let completed = emitter.render_sequence(0, None, 1, 0);
+        let uncovered = emitter.first_uncovered_block();
+        let actual = emitter
+            .decline_site
+            .as_ref()
+            .map(|decline| decline.cause)
+            .unwrap_or(StructuredDeclineCause::CoverageMismatch);
+
+        assert!(!completed || uncovered.is_some(), "{expected:?}: fixture did not decline");
+        assert_eq!(actual, expected);
+        let after = snapshot_families(&emitter);
+        let changed: Vec<&str> = before
+            .iter()
+            .zip(&after)
+            .filter_map(|((family, before), (_, after))| (before != after).then_some(*family))
+            .collect();
+        assert!(
+            !changed.is_empty(),
+            "{expected:?}: decline was vacuous and mutated no state"
+        );
+    }
 }
 
 /// The state a structured attempt leaves behind, whatever it was handed.
@@ -923,6 +1186,11 @@ fn a_declined_function_equals_direct_dfs() {
         };
 
         assert_eq!(auto.source, direct.source, "{cause:?}: body");
+        assert_eq!(auto.function_id, direct.function_id, "{cause:?}: function id");
+        assert_eq!(
+            auto.function_name, direct.function_name,
+            "{cause:?}: function name"
+        );
         assert_eq!(
             format!("{auto_provenance:?}"),
             format!("{direct_provenance:?}"),
@@ -938,6 +1206,26 @@ fn a_declined_function_equals_direct_dfs() {
             ),
             ("total_calls", auto.total_calls, direct.total_calls),
             ("indirect_calls", auto.indirect_calls, direct.indirect_calls),
+            (
+                "semantic_direct_calls",
+                auto.semantic_direct_calls,
+                direct.semantic_direct_calls,
+            ),
+            (
+                "semantic_indirect_calls",
+                auto.semantic_indirect_calls,
+                direct.semantic_indirect_calls,
+            ),
+            (
+                "dispatch_selector_calls",
+                auto.dispatch_selector_calls,
+                direct.dispatch_selector_calls,
+            ),
+            (
+                "dispatch_table_calls",
+                auto.dispatch_table_calls,
+                direct.dispatch_table_calls,
+            ),
             ("repeated_blocks", auto.repeated_blocks, direct.repeated_blocks),
             (
                 "unlifted_instructions",
