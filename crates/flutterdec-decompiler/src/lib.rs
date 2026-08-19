@@ -1217,18 +1217,17 @@ fn semantic_name_score(name: &str) -> usize {
 }
 
 fn extract_rewrite_evidence(line: &str) -> Option<(String, String)> {
-    if !line.contains("was: ") {
-        return None;
-    }
-    let eq = line.find("= ")?;
+    let eq = find_in_code(line, "= ")?;
     let call_start = eq + 2;
-    let open = line[call_start..].find('(')? + call_start;
-    let callee = line[call_start..open].trim().to_string();
+    let call_code = code_span_from(line, call_start)?;
+    let open = call_code.find('(')?;
+    let callee = call_code[..open].trim().to_string();
     if callee.is_empty() || callee.starts_with("sub_") || callee.starts_with("fn_0x") {
         return None;
     }
-    let was_idx = line.find("was: ")? + 5;
-    let tail = &line[was_idx..];
+    let comment = &line[line_comment_start(line)? + 2..];
+    let was_idx = comment.rfind("was: ")? + 5;
+    let tail = &comment[was_idx..];
     let original = tail
         .split([',', ' ', ')'])
         .find(|s| !s.trim().is_empty())?
@@ -1241,13 +1240,17 @@ fn extract_rewrite_evidence(line: &str) -> Option<(String, String)> {
 }
 
 fn rewrite_generic_call_line(line: &str, aliases: &HashMap<String, String>) -> Option<String> {
-    if line.contains("was: ") {
+    if line_comment_start(line)
+        .and_then(|start| line[start..].find("was: "))
+        .is_some()
+    {
         return None;
     }
-    let eq = line.find("= ")?;
+    let eq = find_in_code(line, "= ")?;
     let call_start = eq + 2;
-    let open = line[call_start..].find('(')? + call_start;
-    let original = line[call_start..open].trim();
+    let call_code = code_span_from(line, call_start)?;
+    let open = call_code.find('(')?;
+    let original = call_code[..open].trim();
     if !original.starts_with("sub_") && !original.starts_with("fn_0x") {
         return None;
     }
@@ -1256,8 +1259,8 @@ fn rewrite_generic_call_line(line: &str, aliases: &HashMap<String, String>) -> O
     let mut rewritten = String::new();
     rewritten.push_str(&line[..call_start]);
     rewritten.push_str(alias);
-    rewritten.push_str(&line[open..]);
-    if let Some(comment_idx) = rewritten.find("//") {
+    rewritten.push_str(&line[call_start + open..]);
+    if let Some(comment_idx) = line_comment_start(&rewritten) {
         rewritten.insert_str(comment_idx + 2, &format!(" inferred from: {}, ", original));
     } else {
         rewritten.push_str(&format!(" // inferred from: {}", original));
@@ -1266,10 +1269,11 @@ fn rewrite_generic_call_line(line: &str, aliases: &HashMap<String, String>) -> O
 }
 
 fn extract_call_callee(line: &str) -> Option<&str> {
-    let eq = line.find("= ")?;
+    let eq = find_in_code(line, "= ")?;
     let call_start = eq + 2;
-    let open = line[call_start..].find('(')? + call_start;
-    Some(line[call_start..open].trim())
+    let call_code = code_span_from(line, call_start)?;
+    let open = call_code.find('(')?;
+    Some(call_code[..open].trim())
 }
 
 fn is_generic_call_name(name: &str) -> bool {

@@ -150,6 +150,25 @@ fn propagates_resolved_generic_direct_symbol_names_across_program() {
 }
 
 #[test]
+fn generic_call_parser_ignores_recovered_literal_bait() {
+    let mut aliases = HashMap::new();
+    aliases.insert(
+        "sub_110c".to_string(),
+        "flutter.widgets.Widget.build".to_string(),
+    );
+    let literal = r#"  return \"x = sub_110c(y)\" /* pool[9] */;"#;
+    assert_eq!(extract_rewrite_evidence(literal), None);
+    assert_eq!(extract_call_callee(literal), None);
+    assert_eq!(rewrite_generic_call_line(literal, &aliases), None);
+
+    let call = r#"  final t1 = sub_110c(\"x = sub_110c(y)\" /* pool[9] */); // indirect via: sub_110c"#;
+    assert_eq!(extract_call_callee(call), Some("sub_110c"));
+    let rewritten = rewrite_generic_call_line(call, &aliases).expect("real code call");
+    assert!(rewritten.contains("flutter.widgets.Widget.build("));
+    assert!(rewritten.contains(r#"\"x = sub_110c(y)\" /* pool[9] */"#));
+}
+
+#[test]
 fn does_not_propagate_generic_alias_when_evidence_is_sparse() {
     let ir = vec![
         FunctionIr {

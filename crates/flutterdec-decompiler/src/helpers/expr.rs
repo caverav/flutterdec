@@ -99,7 +99,7 @@ pub(super) fn rewrite_outside_string_literals(
 /// a comment is the emitter's own prose, so a brace in either closes no block
 /// and an identifier in either names no helper. Runs per code span rather than
 /// once over the whole text, so a token straddling a literal does not match.
-fn for_each_code_span(text: &str, mut f: impl FnMut(&str)) {
+fn for_each_code_span_at(text: &str, mut f: impl FnMut(usize, &str)) {
     let bytes = text.as_bytes();
     let mut code_start = 0usize;
     let mut i = 0usize;
@@ -108,12 +108,56 @@ fn for_each_code_span(text: &str, mut f: impl FnMut(&str)) {
             i += 1;
             continue;
         };
-        f(&text[code_start..i]);
+        f(code_start, &text[code_start..i]);
         let end = (i + span).min(bytes.len());
         code_start = end;
         i = end;
     }
-    f(&text[code_start..]);
+    f(code_start, &text[code_start..]);
+}
+
+fn for_each_code_span(text: &str, mut f: impl FnMut(&str)) {
+    for_each_code_span_at(text, |_, code| f(code));
+}
+
+/// Find `needle` only where it is wholly contained in emitter-owned code.
+pub(super) fn find_in_code(text: &str, needle: &str) -> Option<usize> {
+    let mut found = None;
+    for_each_code_span_at(text, |offset, code| {
+        if found.is_none() {
+            found = code.find(needle).map(|index| offset + index);
+        }
+    });
+    found
+}
+
+/// The rest of the code span containing `start`, or `None` for recovered data.
+pub(super) fn code_span_from(text: &str, start: usize) -> Option<&str> {
+    let mut span = None;
+    for_each_code_span_at(text, |offset, code| {
+        let end = offset + code.len();
+        if span.is_none() && start >= offset && start <= end {
+            span = text.get(start..end);
+        }
+    });
+    span
+}
+
+/// Start of the first line comment outside literals and block comments.
+pub(super) fn line_comment_start(text: &str) -> Option<usize> {
+    let bytes = text.as_bytes();
+    let mut i = 0usize;
+    while i < bytes.len() {
+        if bytes.get(i) == Some(&b'/') && bytes.get(i + 1) == Some(&b'/') {
+            return Some(i);
+        }
+        if let Some(span) = non_code_span_len(bytes, i, true) {
+            i += span;
+        } else {
+            i += 1;
+        }
+    }
+    None
 }
 
 /// How many `{` and how many `}` the code of `text` carries.
