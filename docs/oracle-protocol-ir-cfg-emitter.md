@@ -151,7 +151,7 @@ the following instruction must become a leader.
 Repository evidence for the two indirect-control rows, `BR Xn` and `BRK #imm`.
 Both were classified as `IROp::Other` with an invented fallthrough at `1371e42`,
 which is the state the section 2 rows IR-05 and IR-06 record, and both were
-brought to the values this table demands at `6756e71`. In the current tree,
+brought to the values this table demands at `ac544ca`. In the current tree,
 `crates/flutterdec-ir/src/lib.rs:185-191` classifies `br` as
 `IROp::IndirectBranch` and `brk` as `IROp::Trap`, `:242-246` makes the
 instruction after each of them a leader, and `:310` gives a block ending in
@@ -532,13 +532,13 @@ backticked digest, does not read these history rows as protected-path rows.
 | Commit | State | `scripts/ci-check.sh` sha256 |
 | --- | --- | --- |
 | `1371e42` | fixed reference, preserved | `9d994285d4605f77f725c1d2ba5035b2ce0ef4802bb82d33df94153a15c6d50d` |
-| `209a8fe` | unchanged, docs-only commit | `9d994285d4605f77f725c1d2ba5035b2ce0ef4802bb82d33df94153a15c6d50d` |
-| `6430765` | unchanged, harness added but not wired into the gate | `9d994285d4605f77f725c1d2ba5035b2ce0ef4802bb82d33df94153a15c6d50d` |
-| `1501bce` | intermediate | `675099447f611dcfc89cd26046ba6e6a7fd04f3ff94be54113e3c787ed21e412` |
-| `1b11f7e` | intermediate | `6ee0cdf976f4fe02c1b3bebb4495bd2dfe34dc1fbd431b1ce9b52201eebbf878` |
-| `b4b1d8c`, `3aa2fe4` | unchanged | `6ee0cdf976f4fe02c1b3bebb4495bd2dfe34dc1fbd431b1ce9b52201eebbf878` |
-| `5aa4b4e` | current | `2f76a8b9abac96db026386c0626d248ade81e9690e563cbaaa901b86472b4457` |
-| `8e7f080` through `43ef193` | unchanged, docs-only and harness-only commits | `2f76a8b9abac96db026386c0626d248ade81e9690e563cbaaa901b86472b4457` |
+| `282a1b3` | unchanged, docs-only commit | `9d994285d4605f77f725c1d2ba5035b2ce0ef4802bb82d33df94153a15c6d50d` |
+| `4e8a9b2` | unchanged, harness added but not wired into the gate | `9d994285d4605f77f725c1d2ba5035b2ce0ef4802bb82d33df94153a15c6d50d` |
+| `61e89fd` | intermediate | `675099447f611dcfc89cd26046ba6e6a7fd04f3ff94be54113e3c787ed21e412` |
+| `5bf6595` | intermediate | `6ee0cdf976f4fe02c1b3bebb4495bd2dfe34dc1fbd431b1ce9b52201eebbf878` |
+| `059c7b1`, `e2e66a7` | unchanged | `6ee0cdf976f4fe02c1b3bebb4495bd2dfe34dc1fbd431b1ce9b52201eebbf878` |
+| `5f6a39f` | current | `2f76a8b9abac96db026386c0626d248ade81e9690e563cbaaa901b86472b4457` |
+| `4c127ab` through `9757328` | unchanged, docs-only and harness-only commits | `2f76a8b9abac96db026386c0626d248ade81e9690e563cbaaa901b86472b4457` |
 | this commit, worktree | current, recorded in section 7, adjudicated in section 12 | `171aa8894675ed2c90ff40c9d6a136bd791c3ae0d51c7965617e682b31d2f067` |
 
 Reproduce any row with
@@ -551,28 +551,28 @@ commit, which is never rewritten, force pushed, or rebased.
 
 ### 10.2 Exact diff intent, per step
 
-`1371e42` to `1501bce`, digest `9d994285...` to `675099447f...`. Adds a clippy
+`1371e42` to `61e89fd`, digest `9d994285...` to `675099447f...`. Adds a clippy
 lane and a test lane for the benchmark harness, plus the usage line and the
-paragraph explaining why they are needed. From `1501bce` onward the harness is
+paragraph explaining why they are needed. From `61e89fd` onward the harness is
 deliberately not a workspace member, so `cargo clippy --workspace` and
 `cargo test --workspace` do not reach it, and that exclusion is what keeps its
 `bench-spans` instrumentation out of every existing check. Without these two
 lanes the harness would be the one part of the repository no gate covers.
 
 The qualifier is load bearing and the exclusion is not a property of the branch:
-at `6430765` the harness was a workspace member and unification did turn
+at `4e8a9b2` the harness was a workspace member and unification did turn
 `bench-spans` on for product builds. That transient is disclosed in
 [research-ir-cfg-emitter.md](research-ir-cfg-emitter.md) section 17, with the
 interval, the probes and the semantic evidence. No accepted measurement is on
 that revision.
 
-`1501bce` to `1b11f7e`, digest `675099447f...` to `6ee0cdf976...`. Adds
+`61e89fd` to `5bf6595`, digest `675099447f...` to `6ee0cdf976...`. Adds
 `cargo fmt --manifest-path crates/flutterdec-bench/Cargo.toml --all --check` for
 the same reason: `--all` means every member of the manifest's own workspace, so
 the root `cargo fmt --all` does not reach the harness either. The usage line
 changes from "clippy and tests" to "fmt, clippy and tests" to match.
 
-`1b11f7e` to `5aa4b4e`, digest `6ee0cdf976...` to `2f76a8b9...`. Adds
+`5bf6595` to `5f6a39f`, digest `6ee0cdf976...` to `2f76a8b9...`. Adds
 `scripts/bench-identity-gate-test.sh` as a gate lane, before the clippy lane, and
 renumbers the usage list from 5 through 8 to 6 through 9 to make room for it. The
 identity gate is what stops an A/A run whose two sides are different machine code
@@ -651,7 +651,7 @@ untouched by this diff, which changes no file other than
 3. Diff and digests. Recorded in 10.1 and 10.2, with the reproducing commands.
 4. Original reference preserved. Recorded in 10.1.
 5. Own commit. Not satisfied at the time: the three edits rode along inside
-   harness commits `1501bce`, `1b11f7e`, and `5aa4b4e`, rather than landing as a
+   harness commits `61e89fd`, `5bf6595`, and `5f6a39f`, rather than landing as a
    separate ruler commit, and section 7 was not updated with them. That is the
    defect this record repairs. It is recorded as a deviation rather than
    explained away. The mitigation is that this adjudication is itself an atomic
@@ -678,7 +678,7 @@ the section 7 row shape does not read these history rows as protected-path rows.
 | Commit | State | `tests/provenance_audit.rs` sha256 |
 | --- | --- | --- |
 | `1371e42` | fixed reference, preserved | `e0b5c675b2510d8c17c05b15a4a33341ba6a24cbec4336512cf63028527ff3b8` |
-| `209a8fe` through `e43b33d` | unchanged, docs-only and harness-only commits | `e0b5c675b2510d8c17c05b15a4a33341ba6a24cbec4336512cf63028527ff3b8` |
+| `282a1b3` through `02bc42c` | unchanged, docs-only and harness-only commits | `e0b5c675b2510d8c17c05b15a4a33341ba6a24cbec4336512cf63028527ff3b8` |
 | this commit, worktree | current, recorded in section 7 | `8124346801612c56e9580d293c16a4e24593df175f8e7e376f16748a26560c0e` |
 
 Reproduce any row with
@@ -740,7 +740,7 @@ of the whole file.
 
 ### 11.4 Planted deletions, both loader levels
 
-Run in disposable worktrees detached at `e43b33d` with the guard copied in, one
+Run in disposable worktrees detached at `02bc42c` with the guard copied in, one
 worktree per plant, each removed with `git worktree remove --force` afterwards.
 `--lib` is the reduced unit-test suite; `--test provenance_audit` is the
 independent guard.
@@ -829,22 +829,22 @@ protected-path rows.
 | Commit | State | sha256 |
 | --- | --- | --- |
 | `1371e42` | fixed reference, preserved | `e0b5c675b2510d8c17c05b15a4a33341ba6a24cbec4336512cf63028527ff3b8` |
-| `209a8fe` through `e43b33d` | unchanged | `e0b5c675b2510d8c17c05b15a4a33341ba6a24cbec4336512cf63028527ff3b8` |
-| `43ef193` | first, narrow guard, adjudicated in section 11 | `8124346801612c56e9580d293c16a4e24593df175f8e7e376f16748a26560c0e` |
-| `0fadd6e`, that commit's worktree | superseded, adjudicated in section 13 | `b5712a66b0f6472a726d4d253555272b54322cd69c3fdb1a3bed514de8cb9765` |
+| `282a1b3` through `02bc42c` | unchanged | `e0b5c675b2510d8c17c05b15a4a33341ba6a24cbec4336512cf63028527ff3b8` |
+| `9757328` | first, narrow guard, adjudicated in section 11 | `8124346801612c56e9580d293c16a4e24593df175f8e7e376f16748a26560c0e` |
+| `65abbf0`, that commit's worktree | superseded, adjudicated in section 13 | `b5712a66b0f6472a726d4d253555272b54322cd69c3fdb1a3bed514de8cb9765` |
 
 `scripts/ci-check.sh`, continuing the chain in section 10.1:
 
 | Commit | State | sha256 |
 | --- | --- | --- |
-| `5aa4b4e` through `43ef193` | prior, adjudicated in section 10 | `2f76a8b9abac96db026386c0626d248ade81e9690e563cbaaa901b86472b4457` |
-| `0fadd6e`, that commit's worktree | superseded, adjudicated in section 13 | `171aa8894675ed2c90ff40c9d6a136bd791c3ae0d51c7965617e682b31d2f067` |
+| `5f6a39f` through `9757328` | prior, adjudicated in section 10 | `2f76a8b9abac96db026386c0626d248ade81e9690e563cbaaa901b86472b4457` |
+| `65abbf0`, that commit's worktree | superseded, adjudicated in section 13 | `171aa8894675ed2c90ff40c9d6a136bd791c3ae0d51c7965617e682b31d2f067` |
 
 `.github/workflows/ci.yml` is not a section 7 row and does not become one: it is CI
 configuration that later work may legitimately edit, exactly like the threshold
 rulers at the end of section 7. Recorded for reproducibility only:
 `817f472151aa1553e2a25014bad95cf4418aca116cdfb7ca1fa9f2e9d6599a3c` at `1371e42`
-through `43ef193`, `c51642b043cfa254c454282aee5d14b24d899d29bcda83d8e42a9e1da9968c55`
+through `9757328`, `c51642b043cfa254c454282aee5d14b24d899d29bcda83d8e42a9e1da9968c55`
 in this commit. Its one load-bearing line is asserted by value by the guard, not
 by digest.
 
@@ -856,7 +856,7 @@ pushed, or rebased.
 
 ### 12.2 Exact diff intent
 
-`git diff --numstat 43ef193` for the three files: 322 insertions and 37 deletions
+`git diff --numstat 9757328` for the three files: 322 insertions and 37 deletions
 in `tests/provenance_audit.rs`, 14 insertions and 3 deletions in
 `scripts/ci-check.sh`, 5 insertions and 0 deletions in
 `.github/workflows/ci.yml`.
@@ -894,7 +894,7 @@ paragraph explaining why `cargo test --workspace` cannot stand in for it. The
 same mechanical proof section 10.3 uses, over the whole file:
 
 ```
-git show 43ef193:scripts/ci-check.sh > /tmp/cic-prev.sh
+git show 9757328:scripts/ci-check.sh > /tmp/cic-prev.sh
 strip() { grep -vE '^[[:space:]]*(#|$)' "$1" | sed 's/[[:space:]]*$//' | sort; }
 comm -23 <(strip /tmp/cic-prev.sh) <(strip scripts/ci-check.sh)
 ```
@@ -909,7 +909,7 @@ Three lines are reported, and all three are text inside the `usage()` heredoc:
 
 Each reappears with the same command text and a different list number, `8)`, `9)`,
 and `10)`, because the new lane took position 7. Nothing executable present at
-`43ef193` is absent now, and the same command run against `1371e42` reports only
+`9757328` is absent now, and the same command run against `1371e42` reports only
 the three renumbered usage lines section 10.3 already accounts for. The executed
 check set is a strict superset of both: one added command,
 `nix develop -c cargo test -p flutterdec-decompiler --test provenance_audit
@@ -976,7 +976,7 @@ like the threshold rulers at the end of section 7.
 
 ### 12.4 Planted silencings
 
-One disposable worktree detached at `43ef193`, with this commit's guard and both
+One disposable worktree detached at `9757328`, with this commit's guard and both
 CI lanes copied in, `git checkout -- .` between plants, removed afterwards with
 `git worktree remove --force`. Reduced suite is the target the plant silences;
 guard is `cargo test -p flutterdec-decompiler --test provenance_audit --test
@@ -1048,10 +1048,10 @@ the named-target lane errors with `no test target named provenance_audit`.
    that a protected oracle may not be silenced, extended from two hooks to the
    whole class. Satisfied in the form 12.4 demonstrates, and in the form 12.2
    proves for the gate script: the executed check set is a strict superset of
-   `43ef193` and of `1371e42`.
+   `9757328` and of `1371e42`.
 2. Test. `the_protected_oracle_loader_chain_is_intact` is itself the test, and
    `scripts/ci-check.sh` step 7 is what makes it unskippable. It fails on the old
-   behavior in the sense that matters for a guard: at `43ef193` plants 4 through
+   behavior in the sense that matters for a guard: at `9757328` plants 4 through
    14 all passed every gate with every digest in section 7 matching.
 3. Diff and digests. Recorded in 12.1 and 12.2, with the reproducing commands.
 4. Original reference preserved. Recorded in 12.1.
@@ -1100,14 +1100,14 @@ protected-path rows.
 
 | Commit | State | sha256 |
 | --- | --- | --- |
-| `0fadd6e` | prior, source-text guard, adjudicated in section 12 | `b5712a66b0f6472a726d4d253555272b54322cd69c3fdb1a3bed514de8cb9765` |
+| `65abbf0` | prior, source-text guard, adjudicated in section 12 | `b5712a66b0f6472a726d4d253555272b54322cd69c3fdb1a3bed514de8cb9765` |
 | this commit, worktree | current, recorded in section 7 | `1bda72504e7ada1c8a2e7798ca314b3843ebc6cf8b8202851de42dd542573abd` |
 
 `scripts/ci-check.sh`, continuing 12.1:
 
 | Commit | State | sha256 |
 | --- | --- | --- |
-| `0fadd6e` | prior, adjudicated in section 12 | `171aa8894675ed2c90ff40c9d6a136bd791c3ae0d51c7965617e682b31d2f067` |
+| `65abbf0` | prior, adjudicated in section 12 | `171aa8894675ed2c90ff40c9d6a136bd791c3ae0d51c7965617e682b31d2f067` |
 | this commit, worktree | current, recorded in section 7 | `386e0f2a22a25c774ff43da8621e947d9c3a4137e57a5d8ee6bbad973eb25c48` |
 
 `scripts/check-oracle-inventory.py` is new in this commit and has no prior state.
@@ -1118,7 +1118,7 @@ target it failed to list, would make the inventory pass over a silenced oracle.
 
 `.github/workflows/ci.yml` is still not a section 7 row, for the reason 12.1
 gives. Recorded for reproducibility only:
-`c51642b043cfa254c454282aee5d14b24d899d29bcda83d8e42a9e1da9968c55` at `0fadd6e`,
+`c51642b043cfa254c454282aee5d14b24d899d29bcda83d8e42a9e1da9968c55` at `65abbf0`,
 `6866ce3d8f8f96d8f8ed59c932f1002e962763635702de687cd2dabb18b68c80` in this
 commit. Both of its load-bearing lines are asserted by value by the guard, not by
 digest.
@@ -1128,7 +1128,7 @@ each chain with `sha256sum <path>`.
 
 ### 13.2 Exact diff intent
 
-`git diff --numstat 0fadd6e` for the four non-protocol files: 59 insertions and 10
+`git diff --numstat 65abbf0` for the four non-protocol files: 59 insertions and 10
 deletions in `crates/flutterdec-decompiler/tests/provenance_audit.rs`, 16 and 3 in
 `scripts/ci-check.sh`, 6 and 0 in `.github/workflows/ci.yml`, and
 `scripts/check-oracle-inventory.py` is a new file.
@@ -1160,7 +1160,7 @@ integration targets and before `cargo test --workspace`, and it also runs under
 `--skip-tests`. The same mechanical additivity proof sections 10.3 and 12.2 use:
 
 ```
-git show 0fadd6e:scripts/ci-check.sh > /tmp/cic-prev.sh
+git show 65abbf0:scripts/ci-check.sh > /tmp/cic-prev.sh
 strip() { grep -vE '^[[:space:]]*(#|$)' "$1" | sed 's/[[:space:]]*$//' | sort; }
 comm -23 <(strip /tmp/cic-prev.sh) <(strip scripts/ci-check.sh)
 ```
@@ -1175,7 +1175,7 @@ Three lines are reported, and all three are text inside the `usage()` heredoc:
 
 Each reappears with the same command text and a different list number, `9)`,
 `10)` and `11)`, because the new lane took position 8. No executable line present
-at `0fadd6e` is absent now; one command is added,
+at `65abbf0` is absent now; one command is added,
 `nix develop -c python3 scripts/check-oracle-inventory.py`.
 
 `.github/workflows/ci.yml` gains the identical command as one step before its
@@ -1244,7 +1244,7 @@ inventory before the metadata gate was added.
 
 ### 13.4 Planted silencings
 
-One disposable worktree detached at `0fadd6e` with this commit's four files copied
+One disposable worktree detached at `65abbf0` with this commit's four files copied
 in, its own `CARGO_TARGET_DIR`, `git checkout -- .` and `git clean -fd` between
 plants, removed afterwards with `git worktree remove --force`. Every row below was
 produced in a single sequential run against the final code, not accumulated across
@@ -1323,7 +1323,7 @@ not the compiler:
 2. Test. `scripts/check-oracle-inventory.py` is the test, and
    `scripts/ci-check.sh` step 8 plus the `Compiled oracle inventory` step in
    `.github/workflows/ci.yml` are what make it unskippable. It fails on the old
-   behavior in the sense that matters: at `0fadd6e` the nine text-preserving
+   behavior in the sense that matters: at `65abbf0` the nine text-preserving
    plants of 13.4 passed every gate with every digest in section 7 matching.
 3. Diff and digests. Recorded in 13.1 and 13.2, with the reproducing commands.
 4. Original reference preserved. Recorded in 13.1, continuing the chains in 10.1,
@@ -1340,7 +1340,7 @@ not the compiler:
 Section 3 is the L1 expected-value table, the highest layer in this hierarchy.
 One cell in it named the wrong class for `BR Xn`, and the paragraph beneath it
 described `BR` and `BRK` as the two rows the pipeline gets wrong, which stopped
-being true at `6756e71`. This record adjudicates both edits.
+being true at `ac544ca`. This record adjudicates both edits.
 
 This protocol carries no digest row in section 7 and no oracle-inventory
 sentinel, so no protected digest moves here and nothing mechanical fails if this
@@ -1371,7 +1371,7 @@ moving, and both rows are byte-identical to the original. Reproduce the original
 rows with
 
 ```
-git show 209a8fe:docs/oracle-protocol-ir-cfg-emitter.md \
+git show 282a1b3:docs/oracle-protocol-ir-cfg-emitter.md \
   | grep -E '^\| `(BR Xn|BRK #imm)`'
 ```
 
@@ -1417,7 +1417,7 @@ exhaustive `match` sites on `IROp` can enforce.
 So the original cell was a compromise, not a mistake: with only `jump`, `branch`,
 `call`, `return`, `trap` and `runtime check` available, `jump` was the closest
 name for behavior the table already specified correctly in its other columns.
-`6756e71` created the class that behavior deserves, `IROp::IndirectBranch`
+`ac544ca` created the class that behavior deserves, `IROp::IndirectBranch`
 (`crates/flutterdec-ir/src/lib.rs:14-20`), whose doc comment states the same
 split in the same terms, and this edit makes the table name it. Both halves of
 the split are named now: `indirect branch` for the register destination, `trap`
@@ -1439,7 +1439,7 @@ class here.
 ### 14.3 Exact diff intent
 
 One file, `docs/oracle-protocol-ir-cfg-emitter.md`, and nothing else in the
-commit. `git diff --numstat 5620242` reports 292 insertions and 5 deletions. The
+commit. `git diff --numstat b2ed966` reports 292 insertions and 5 deletions. The
 deletion count is 5 rather than 6 because the last line of the replaced
 paragraph, the one holding the `stubs.rs:461` citation, survives verbatim into
 the replacement and the diff keeps it as context.
@@ -1452,7 +1452,7 @@ Change two, replacing the five-line paragraph under the table. The old paragraph
 opened "Corroborating repository evidence for the two rows this pipeline
 currently gets wrong" and cited `split.rs:141-150` and `stubs.rs:461`. Both of
 those were downstream corroboration, not the classifier, and the sentence they
-supported has been false since `6756e71`. The replacement states the `1371e42`
+supported has been false since `ac544ca`. The replacement states the `1371e42`
 state as history, then cites the classifier itself, the leader rule, the
 successor rule, the twelve-row table and the two tests that drive it, and keeps
 both downstream citations with `split.rs` renumbered to `174-183` for its current
@@ -1472,10 +1472,10 @@ Both print
 Change three is this section, appended after section 13.
 
 No digest chain table is needed, because no protected path moves. For
-reproducibility only, this protocol's own sha256 at `5620242`, the commit
+reproducibility only, this protocol's own sha256 at `b2ed966`, the commit
 immediately before this one, is
 `904695f860a033ad099e8568f8cd2bcc13eebfaa03748f163ddab0824ccc3a88`, recoverable
-with `git show 5620242:docs/oracle-protocol-ir-cfg-emitter.md | sha256sum`. The
+with `git show b2ed966:docs/oracle-protocol-ir-cfg-emitter.md | sha256sum`. The
 post-change digest is deliberately not recorded here: this record is inside the
 file it would digest. Recompute it with
 `sha256sum docs/oracle-protocol-ir-cfg-emitter.md`.
@@ -1489,19 +1489,19 @@ behavioral column already fixed, it is a reconciliation.
 
 | Commit | Time | Paths | What |
 | --- | --- | --- | --- |
-| `209a8fe` | 2026-08-18T03:58:59Z | 3, all docs | this protocol written, section 3 table included, both indirect-control rows already forbidding fallthrough |
-| `6756e71` | 2026-08-18T09:11:58-04:00 | 7, 0 docs | `IROp::IndirectBranch` and `IROp::Trap`, the classifier, leader and successor rules, and the tests |
-| `bd1ecbf` | 2026-08-18T09:28:43-04:00 | 8, 0 docs | block-identity validation at every consumer boundary |
-| `51c129a` | 2026-08-18T09:34:35-04:00 | 4, 0 docs | one canonical edge-rebuild path |
-| `1a00f64` | 2026-08-18T09:39:05-04:00 | 1, 0 docs | guard-prune scope pinned |
-| `5620242` | 2026-08-18T10:27:41-04:00 | 1, all docs | research doc section 18, risk R1 closed |
-| this commit | after `5620242` | 1, all docs | section 3 reconciliation and this record |
+| `282a1b3` | 2026-08-18T03:58:59Z | 3, all docs | this protocol written, section 3 table included, both indirect-control rows already forbidding fallthrough |
+| `ac544ca` | 2026-08-18T09:11:58-04:00 | 7, 0 docs | `IROp::IndirectBranch` and `IROp::Trap`, the classifier, leader and successor rules, and the tests |
+| `dff08ac` | 2026-08-18T09:28:43-04:00 | 8, 0 docs | block-identity validation at every consumer boundary |
+| `325447f` | 2026-08-18T09:34:35-04:00 | 4, 0 docs | one canonical edge-rebuild path |
+| `ecc2892` | 2026-08-18T09:39:05-04:00 | 1, 0 docs | guard-prune scope pinned |
+| `b2ed966` | 2026-08-18T10:27:41-04:00 | 1, all docs | research doc section 18, risk R1 closed |
+| this commit | after `b2ed966` | 1, all docs | section 3 reconciliation and this record |
 
-Reproduce with `git log --format='%h %cI %s' 1c7507b..HEAD` and
+Reproduce with `git log --format='%h %cI %s' c95daa6..HEAD` and
 `git diff-tree -r --no-commit-id --name-only <commit>`.
 
 The behavioral columns of both rows predate all of it: they were written at
-`209a8fe` from `DDI 0487` C6.2, before any of this code existed, and 14.1 shows
+`282a1b3` from `DDI 0487` C6.2, before any of this code existed, and 14.1 shows
 they are unchanged. The one cell written afterwards is a class name that 14.2
 shows no test reads. So no expected value in this table was produced by running
 the candidate, which is the section 5 rule this edit is most exposed to.
@@ -1570,7 +1570,7 @@ no script and no CI lane.
 
 Every protected digest row is exact. The 47 rows of section 7 all match the
 worktree, and the intersection of those 47 paths with the 14 paths changed by the
-whole IR work, `git diff --name-only 1c7507b HEAD`, is empty. So none of the five
+whole IR work, `git diff --name-only c95daa6 HEAD`, is empty. So none of the five
 commits this record reconciles against moved a protected digest either, and the
 three rows that have moved since `1371e42` are still the three adjudicated in
 sections 10 through 13.
@@ -1586,7 +1586,7 @@ work.
 1. Invariant. L1, and the invariant is I5: no block whose last instruction is an
    unconditional jump, an indirect branch, a return, or a trap has a fallthrough
    successor. It is not moved by this edit; it is what the unchanged Required and
-   Forbidden edges cells state, sourced from `DDI 0487` C6.2 at `209a8fe`. No
+   Forbidden edges cells state, sourced from `DDI 0487` C6.2 at `282a1b3`. No
    product output changed here, because this commit contains no product change.
 2. Test. `every_arm64_control_effect_has_exactly_the_documented_edges` and
    `only_a_control_effect_that_ends_a_block_makes_the_next_instruction_a_leader`,
@@ -1596,8 +1596,9 @@ work.
 3. Diff and digests. Recorded in 14.3, with the reproducing commands. No
    protected digest moves, and 14.6 shows the section 7 table is exact.
 4. Original reference preserved. The original section 3 rows are quoted verbatim
-   in 14.1 and recoverable from `209a8fe`, and the pre-change whole-file digest is
-   in 14.3. `1371e42` and `209a8fe` are never rewritten, force pushed, or rebased.
+   in 14.1 and recoverable from `282a1b3`, and the pre-change whole-file digest is
+   in 14.3. `1371e42` is immutable. `282a1b3` is the fixed rewritten equivalent
+   and is not rewritten again.
 5. Own commit. Satisfied. This record and the section 3 reconciliation land as one
    documentation commit, `docs(protocol): reconcile indirect control class`, with
    no product, test or harness change in it, and after the code it reconciles
@@ -1606,7 +1607,7 @@ work.
 
 ## 15. Adjudication record: the IR and CFG boundary oracles
 
-Between `1c7507b` and `2bdac88` this mission added, in eleven commits, the ARM64
+Between `c95daa6` and `af32bb1` this mission added, in eleven commits, the ARM64
 control-effect table, the `FunctionIr` well-formedness ruler and its own
 assertions, identity gates at the region-analysis, record-splitter and no-return
 prune boundaries, a hand-derived CFG relation oracle over twelve literal graphs
@@ -1645,24 +1646,24 @@ protected-path rows.
 
 | Commit | State | sha256 |
 | --- | --- | --- |
-| `1c7507b` | prior, adjudicated in section 13 | `1bda72504e7ada1c8a2e7798ca314b3843ebc6cf8b8202851de42dd542573abd` |
-| `6756e71` through `2bdac88` | unchanged, eleven commits of product and oracle work | `1bda72504e7ada1c8a2e7798ca314b3843ebc6cf8b8202851de42dd542573abd` |
+| `c95daa6` | prior, adjudicated in section 13 | `1bda72504e7ada1c8a2e7798ca314b3843ebc6cf8b8202851de42dd542573abd` |
+| `ac544ca` through `af32bb1` | unchanged, eleven commits of product and oracle work | `1bda72504e7ada1c8a2e7798ca314b3843ebc6cf8b8202851de42dd542573abd` |
 | this commit, worktree | current, recorded in section 7 | `e93e04f71f67dc57379fcca164af80d58a403889095bcc4aced48de990b44c59` |
 
 `scripts/ci-check.sh`, continuing 13.1:
 
 | Commit | State | sha256 |
 | --- | --- | --- |
-| `1c7507b` | prior, adjudicated in section 13 | `386e0f2a22a25c774ff43da8621e947d9c3a4137e57a5d8ee6bbad973eb25c48` |
-| `6756e71` through `2bdac88` | unchanged | `386e0f2a22a25c774ff43da8621e947d9c3a4137e57a5d8ee6bbad973eb25c48` |
+| `c95daa6` | prior, adjudicated in section 13 | `386e0f2a22a25c774ff43da8621e947d9c3a4137e57a5d8ee6bbad973eb25c48` |
+| `ac544ca` through `af32bb1` | unchanged | `386e0f2a22a25c774ff43da8621e947d9c3a4137e57a5d8ee6bbad973eb25c48` |
 | this commit, worktree | current, recorded in section 7 | `ec5e015bc65317c8b477c582b52a9a6d91c618e6becfe31da019b4bb34995401` |
 
 `scripts/check-oracle-inventory.py`, first move since section 13 created it:
 
 | Commit | State | sha256 |
 | --- | --- | --- |
-| `1c7507b` | as created, adjudicated in section 13 | `d882132e87cb4625ebdac88ab310e405b00133bd546e172db282be7e1bbf47bf` |
-| `6756e71` through `2bdac88` | unchanged | `d882132e87cb4625ebdac88ab310e405b00133bd546e172db282be7e1bbf47bf` |
+| `c95daa6` | as created, adjudicated in section 13 | `d882132e87cb4625ebdac88ab310e405b00133bd546e172db282be7e1bbf47bf` |
+| `ac544ca` through `af32bb1` | unchanged | `d882132e87cb4625ebdac88ab310e405b00133bd546e172db282be7e1bbf47bf` |
 | this commit, worktree | current, recorded in section 7 | `b8e06c148c0268f23acbb9547e5b9248b3f4ebc6903a48e8d21112be41e3ef49` |
 
 The nine new rows have no prior digest state. Six are files this commit creates by
@@ -1672,21 +1673,21 @@ given so the moved text is recoverable from history:
 
 | New protected row | Origin | State before this commit |
 | --- | --- | --- |
-| `crates/flutterdec-ir/src/tests/control_effects.rs` | `crates/flutterdec-ir/src/lib.rs:434-740` at `2bdac88` | inline `mod tests`, unprotected |
-| `crates/flutterdec-ir/src/validate/tests.rs` | `crates/flutterdec-ir/src/validate.rs:241-695` at `2bdac88` | inline `mod tests`, unprotected |
-| `crates/flutterdec-core/src/pipeline/quality/control_effect_tests.rs` | `crates/flutterdec-core/src/pipeline/quality.rs:154-352` at `2bdac88` | inline `mod quality_tests`, unprotected |
-| `crates/flutterdec-core/src/pipeline/runners/split/identity_tests.rs` | `crates/flutterdec-core/src/pipeline/runners/split.rs:428-584` at `2bdac88` | inline `mod tests`, unprotected |
-| `crates/flutterdec-core/src/pipeline/runners/stubs/identity_tests.rs` | `crates/flutterdec-core/src/pipeline/runners/stubs.rs:1068-1279` at `2bdac88` | inline `mod prune_tests`, unprotected |
-| `crates/flutterdec-decompiler/src/control_flow/regions/identity_boundary_tests.rs` | `crates/flutterdec-decompiler/src/control_flow/regions.rs:442-533` at `2bdac88` | inline `mod identity_boundary_tests`, unprotected |
-| `crates/flutterdec-decompiler/src/control_flow/relation_oracle.rs` | already test-only, added at `5ff948b` | unprotected, no sentinel |
-| `crates/flutterdec-decompiler/tests/arm64_control_effects.rs` | already test-only, added at `6756e71` | unprotected, not named by any lane |
-| `crates/flutterdec-decompiler/tests/cfg_identity.rs` | already test-only, added at `bd1ecbf` | unprotected, not named by any lane |
+| `crates/flutterdec-ir/src/tests/control_effects.rs` | `crates/flutterdec-ir/src/lib.rs:434-740` at `af32bb1` | inline `mod tests`, unprotected |
+| `crates/flutterdec-ir/src/validate/tests.rs` | `crates/flutterdec-ir/src/validate.rs:241-695` at `af32bb1` | inline `mod tests`, unprotected |
+| `crates/flutterdec-core/src/pipeline/quality/control_effect_tests.rs` | `crates/flutterdec-core/src/pipeline/quality.rs:154-352` at `af32bb1` | inline `mod quality_tests`, unprotected |
+| `crates/flutterdec-core/src/pipeline/runners/split/identity_tests.rs` | `crates/flutterdec-core/src/pipeline/runners/split.rs:428-584` at `af32bb1` | inline `mod tests`, unprotected |
+| `crates/flutterdec-core/src/pipeline/runners/stubs/identity_tests.rs` | `crates/flutterdec-core/src/pipeline/runners/stubs.rs:1068-1279` at `af32bb1` | inline `mod prune_tests`, unprotected |
+| `crates/flutterdec-decompiler/src/control_flow/regions/identity_boundary_tests.rs` | `crates/flutterdec-decompiler/src/control_flow/regions.rs:442-533` at `af32bb1` | inline `mod identity_boundary_tests`, unprotected |
+| `crates/flutterdec-decompiler/src/control_flow/relation_oracle.rs` | already test-only, added at `5ec63ef` | unprotected, no sentinel |
+| `crates/flutterdec-decompiler/tests/arm64_control_effects.rs` | already test-only, added at `ac544ca` | unprotected, not named by any lane |
+| `crates/flutterdec-decompiler/tests/cfg_identity.rs` | already test-only, added at `dff08ac` | unprotected, not named by any lane |
 
 Their digests are the nine new rows of the section 7 Oracle test files table.
 
 `.github/workflows/ci.yml` is still not a section 7 row, for the reason 12.1
 gives. Recorded for reproducibility only:
-`6866ce3d8f8f96d8f8ed59c932f1002e962763635702de687cd2dabb18b68c80` at `2bdac88`,
+`6866ce3d8f8f96d8f8ed59c932f1002e962763635702de687cd2dabb18b68c80` at `af32bb1`,
 `479cd6f7ea7e0cbdce791244f9e3c2560b536d62cfcddc3d4a43601c379920eb` in this
 commit. Its load-bearing lines are asserted by value by the guard, not by digest.
 
@@ -1695,7 +1696,7 @@ each chain with `sha256sum <path>`.
 
 ### 15.2 Exact diff intent
 
-`git diff --numstat 2bdac88` for the non-protocol files: 10 insertions and 308
+`git diff --numstat af32bb1` for the non-protocol files: 10 insertions and 308
 deletions in `crates/flutterdec-ir/src/lib.rs`, 7 and 454 in
 `crates/flutterdec-ir/src/validate.rs`, 9 and 199 in
 `crates/flutterdec-core/src/pipeline/quality.rs`, 11 and 159 in
@@ -1708,7 +1709,7 @@ in `.github/workflows/ci.yml`. Six files are new.
 **The moved assertions are the same text.** Every deletion in the six product
 files is a line that reappears verbatim in the test-only file beside it. Proved by
 token stream rather than claimed: take the cut range out of the pre-move file at
-`2bdac88`, take the new file from its first item onward, collapse every run of
+`af32bb1`, take the new file from its first item onward, collapse every run of
 whitespace in both, and compare. `cargo fmt` legitimately rejoins one wrapped line
 in `control_effects.rs`, which gained four columns of room when the block was
 dedented out of its `mod` block, and that is the only formatting difference in the
@@ -1766,7 +1767,7 @@ the matching `echo` and two usage lines that count the targets. Additivity by th
 13.2 command:
 
 ```
-git show 2bdac88:scripts/ci-check.sh > /tmp/cic-prev.sh
+git show af32bb1:scripts/ci-check.sh > /tmp/cic-prev.sh
 strip() { grep -vE '^[[:space:]]*(#|$)' "$1" | sed 's/[[:space:]]*$//' | sort; }
 comm -23 <(strip /tmp/cic-prev.sh) <(strip scripts/ci-check.sh)
 ```
@@ -1779,7 +1780,7 @@ other change. The remaining four are prose inside the `usage()` heredoc: the
 changes `the two decompiler integration test targets` to `the four` and `either
 file deleted` to `any of the files deleted`. No lane is removed, reordered, or
 made conditional. The two executable lines that changed are the only ones, and
-each new form is a strict superset of the old: every target `2bdac88` named is
+each new form is a strict superset of the old: every target `af32bb1` named is
 still named, plus two more.
 
 ### 15.3 The nine new row-to-sentinel mappings
@@ -1936,7 +1937,7 @@ commit, verified by `sha256sum` per row.
    thirty-three rows and three new targets, and `scripts/ci-check.sh` step 8 plus
    the `Compiled oracle inventory` step in `.github/workflows/ci.yml` are what
    make it unskippable. It fails on the old behavior in the sense that matters:
-   at `2bdac88` every one of the twenty-six silencings in 15.4 passed every gate
+   at `af32bb1` every one of the twenty-six silencings in 15.4 passed every gate
    in this protocol with every digest in section 7 matching, because none of the
    nine files had a digest or a sentinel.
 3. Diff and digests. Recorded in 15.1 and 15.2, with the reproducing commands. All
@@ -1944,7 +1945,7 @@ commit, verified by `sha256sum` per row.
    per row, 0 mismatches.
 4. Original reference preserved. Recorded in 15.1, continuing the chains in 10.1,
    11.1, 12.1 and 13.1. The nine new rows record their pre-move location at
-   `2bdac88`, so the text is recoverable from history. `1371e42` is untouched.
+   `af32bb1`, so the text is recoverable from history. `1371e42` is untouched.
 5. Own commit. Satisfied. This record, the six moves and their hooks, the guard
    extension, the checker extension and the two CI lane changes land as one
    commit, `test(oracle): protect IR and CFG boundary tests`, with no product
@@ -1958,7 +1959,7 @@ commit, verified by `sha256sum` per row.
 
 ## 16. Adjudication record: the omitted-path collapse
 
-Commit `68f1353` changed what a `_block_N()` call means in a finished artifact,
+Commit `92c14a8` changed what a `_block_N()` call means in a finished artifact,
 which moves two protected test files. This record is the section 9 adjudication
 for that change.
 
@@ -2022,16 +2023,16 @@ Column order matches sections 10.1 through 15.1, state before digest.
 | Commit | State | sha256 |
 | --- | --- | --- |
 | `1371e42` | reference | `e5e53a705aa16f6b27df6d99375da0d76106fc6f16f462301ab858d5e77a21ad` |
-| `439ebc8` | unchanged through every prior mission commit | `e5e53a705aa16f6b27df6d99375da0d76106fc6f16f462301ab858d5e77a21ad` |
-| `68f1353` | current, recorded in section 7 | `9b8d3117e3e1c510fbbf6a1a8217ac795968aba1661d938a02ffd0abedeaf79c` |
+| `6d501c8` | unchanged through every prior mission commit | `e5e53a705aa16f6b27df6d99375da0d76106fc6f16f462301ab858d5e77a21ad` |
+| `92c14a8` | current, recorded in section 7 | `9b8d3117e3e1c510fbbf6a1a8217ac795968aba1661d938a02ffd0abedeaf79c` |
 
 `crates/flutterdec-core/src/pipeline/runners/tests.rs`:
 
 | Commit | State | sha256 |
 | --- | --- | --- |
 | `1371e42` | reference | `a65298cde1ed807a838199162397bd51ff7f35e38941a0bd274872116b8c4668` |
-| `439ebc8` | unchanged through every prior mission commit | `a65298cde1ed807a838199162397bd51ff7f35e38941a0bd274872116b8c4668` |
-| `68f1353` | current, recorded in section 7 | `7d1d87fa9401d07ab19b4bbb190edf1c53538a6da83ccd0e891b851b63200e63` |
+| `6d501c8` | unchanged through every prior mission commit | `a65298cde1ed807a838199162397bd51ff7f35e38941a0bd274872116b8c4668` |
+| `92c14a8` | current, recorded in section 7 | `7d1d87fa9401d07ab19b4bbb190edf1c53538a6da83ccd0e891b851b63200e63` |
 
 ### 16.4 Exact diff intent, per file
 
@@ -2091,11 +2092,13 @@ the collapse.
 4. Reference preserved: `1371e42` is untouched, both prior digests are recorded
    above, and every recorded benchmark reference keeps its pre-change values.
 5. **Not followed as written.** The two protected test files changed in
-   `68f1353`, the same commit as the product change, rather than in a commit of
+   `92c14a8`, the same commit as the product change, rather than in a commit of
    their own. Both assert behavior that does not exist before that commit, so a
-   separate ruler commit would have been a knowingly failing revision on a branch
-   that forbids force push. The diff is recorded here instead, and the two files
-   are separable: `git show 68f1353 -- <the two paths>` is the whole ruler change
+   separate ruler commit would have been a knowingly failing revision under the
+   then-current no-rewrite policy. The later one-time sole-author rewrite
+   preserved the commit tree. The diff is recorded here instead, and the two
+   files are separable: `git show 92c14a8 -- <the two paths>` is the whole ruler
+   change
    and reverting it reverts nothing else.
 6. L5 re-run in full after the change: `scripts/ci-check.sh` exit 0, 21 result
    lines, 520 tests, including the three goldens and the oracle inventory lane.
@@ -2118,7 +2121,7 @@ protected oracle down to a one-line stub that keeps nothing but its sentinel's
 name, and the inventory reports it compiled and exits 0. Both halves are needed,
 and neither substitutes for the other.
 
-Commit `0a33d6f` moves `scripts/check-oracle-inventory.py`, which is a protected
+Commit `c58013d` moves `scripts/check-oracle-inventory.py`, which is a protected
 row itself. This record is the section 9 adjudication for that move.
 
 ### 17.1 What the checker now does before any Cargo work
@@ -2187,15 +2190,15 @@ Column order matches sections 10.1 through 16.3, state before digest.
 
 | Commit | State | sha256 |
 | --- | --- | --- |
-| `1c7507b` | new, added by section 13 | `d882132e87cb4625ebdac88ab310e405b00133bd546e172db282be7e1bbf47bf` |
-| `439ebc8` | three targets and nine rows added, section 15 | `b8e06c148c0268f23acbb9547e5b9248b3f4ebc6903a48e8d21112be41e3ef49` |
-| `0a33d6f` | current, recorded in section 7 | `98e7f29f8ebebaf68dc28c82ec465eb359cf3b91280f808ce1dfb3d17221bbf0` |
+| `c95daa6` | new, added by section 13 | `d882132e87cb4625ebdac88ab310e405b00133bd546e172db282be7e1bbf47bf` |
+| `6d501c8` | three targets and nine rows added, section 15 | `b8e06c148c0268f23acbb9547e5b9248b3f4ebc6903a48e8d21112be41e3ef49` |
+| `c58013d` | current, recorded in section 7 | `98e7f29f8ebebaf68dc28c82ec465eb359cf3b91280f808ce1dfb3d17221bbf0` |
 
 The first two values are re-derived here with
 `git show <commit>:scripts/check-oracle-inventory.py | sha256sum`; the second is
-the value section 7 carried at `3d259ec`.
+the value section 7 carried at `b396a62`.
 
-No other protected file changed. `git diff --name-only` for `0a33d6f` is two
+No other protected file changed. `git diff --name-only` for `c58013d` is two
 paths, `scripts/check-oracle-inventory.py` and this document, and the second is
 not protected.
 
@@ -2205,7 +2208,7 @@ Section 9 asks for the ruler change to be separable from the behavior change.
 Here they are the same file. The checker *is* the ruler, and its own digest row
 is one of the rows it verifies, so:
 
-1. At `3d259ec`, the parent, the table said
+1. At `b396a62`, the parent, the table said
    `b8e06c148c0268f23acbb9547e5b9248b3f4ebc6903a48e8d21112be41e3ef49` and the
    checker did not hash anything. Both were consistent and the run exited 0.
 2. The intermediate state - new checker code, old digest row - is a knowingly
@@ -2213,15 +2216,16 @@ is one of the rows it verifies, so:
    rejects itself by name, `scripts/check-oracle-inventory.py does not match its
    ... section 7 digest`, and returns 1 before any Cargo work. That is the
    correct behavior, and it is why the code and its digest row cannot land in two
-   commits on a branch that forbids force push.
-3. `0a33d6f` therefore carries both. The code was written first and the row was
+   commits under the then-current no-rewrite policy. The later one-time
+   sole-author rewrite preserved this commit tree.
+3. `c58013d` therefore carries both. The code was written first and the row was
    computed from its final bytes with `sha256sum`, which is the only order that
    terminates: any edit to the checker after the row is written invalidates the
    row.
 
-The ruler is still separable for review. `git show 0a33d6f --
+The ruler is still separable for review. `git show c58013d --
 scripts/check-oracle-inventory.py` is the whole executable change, and reverting
-that path together with the one-line row in section 7 restores `3d259ec`'s
+that path together with the one-line row in section 7 restores `b396a62`'s
 behavior exactly.
 
 ### 17.5 The CI change is additive, and there is none
@@ -2234,7 +2238,7 @@ already run the checker as a lane of their own, as the byte-identical command
 inside that invocation, so both lanes exercise it with no new lane, no new
 command, and no move of `scripts/ci-check.sh`'s own digest.
 
-Additive in the strict sense: every check those lanes made at `3d259ec` is still
+Additive in the strict sense: every check those lanes made at `b396a62` is still
 made, in the same order, and the digest pass runs ahead of them. Proved by
 running both surfaces verbatim.
 
@@ -2243,13 +2247,13 @@ running both surfaces verbatim.
 | The `Compiled oracle inventory` step of `.github/workflows/ci.yml`, extracted verbatim | exit 0 | exit 1, naming `structured_loop_emit.dartpseudo` |
 | `scripts/ci-check.sh --skip-tests` | exit 0 | exit 1 at the `[ci-check] scripts/check-oracle-inventory.py` lane, same message |
 
-A full `scripts/ci-check.sh` on the clean tree at `0a33d6f` exits 0 with 14
+A full `scripts/ci-check.sh` on the clean tree at `c58013d` exits 0 with 14
 lanes, 22 result lines and 556 tests, and reports both inventory counts above.
 `cargo test --workspace` exits 0 with 17 result lines and 509 tests.
 
 ### 17.6 Planted silencings
 
-Every plant is one edit against a clean `0a33d6f`, restored between rows. All
+Every plant is one edit against a clean `c58013d`, restored between rows. All
 seventeen are rejected with exit 1, and each names the row or path it broke.
 Plants 1 through 15 never reach Cargo: the digest pass returns first.
 
@@ -2283,7 +2287,7 @@ fn every_planted_identity_failure_is_named() {}
 
 and under that plant:
 
-- The checker at `3d259ec` exits **0**. It prints
+- The checker at `b396a62` exits **0**. It prints
   `compiled crates/flutterdec-ir/src/validate/tests.rs -> ir-lib ::
   validate::tests::every_planted_identity_failure_is_named` and
   `ok, 33 protected oracles are compiled`. The only visible trace is
@@ -2293,7 +2297,7 @@ and under that plant:
 - `cargo test --workspace` exits **0**, with the same 17 result lines, at 500
   passed instead of 509. Nine assertions of the IR well-formedness ruler are
   gone and every gate is green.
-- The checker at `0a33d6f` exits **1** and names the file and both digests.
+- The checker at `c58013d` exits **1** and names the file and both digests.
 
 Plant 12 is the same silencing applied to a file other code depends on, so it
 also fails to compile; it is recorded for completeness, not as the measure. Plant
@@ -2327,7 +2331,7 @@ also fails to compile; it is recorded for completeness, not as the measure. Plan
    so both CI lanes run it.
 3. Diff and digests: sections 17.1 and 17.3.
 4. Reference preserved: `1371e42` is untouched, and every digest in section 7
-   except the checker's own is byte-identical to what it was at `3d259ec`.
+   except the checker's own is byte-identical to what it was at `b396a62`.
 5. **Not followed as written**, for the reason in section 17.4: the ruler and the
    code are the same file, so they land in one commit. The revert path is
    recorded there.

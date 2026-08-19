@@ -67,7 +67,7 @@ Two structural facts matter for later work:
 | Dart stack-overflow guard group | `RuntimeCheck` | no | guard edge suppressed, slow path pruned (`ir/src/lib.rs:291-352`) |
 | everything else | `Other` | no | fallthrough to the next block |
 
-The `br` and `brk` rows are the state after `6756e71`, which closed risk R1. At
+The `br` and `brk` rows are the state after `ac544ca`, which closed risk R1. At
 `1371e42` both mnemonics had no arm of their own and fell into the last row, so
 both took an invented fallthrough edge. Their arms are now at
 `ir/src/lib.rs:185-191`, the block end at `ir/src/lib.rs:242-246`, and the empty
@@ -209,9 +209,9 @@ Coverage gaps found while mapping the above:
   file, `src/tests/cfg_and_stack/structuring.rs:155`, and only to drive
   emission. Reachability, the dominator and post-dominator relations, follow
   nodes, loop membership, loop follow, and reducibility are therefore only
-  observed through emitted text. Partly closed since: `6756e71` asserts the full
-  per-mnemonic edge set against a literal table, and `bd1ecbf`, `51c129a` and
-  `1a00f64` assert block identity and edge reciprocity directly. The dominance
+  observed through emitted text. Partly closed since: `ac544ca` asserts the full
+  per-mnemonic edge set against a literal table, and `dff08ac`, `325447f` and
+  `ecc2892` assert block identity and edge reciprocity directly. The dominance
   and loop relations in this bullet are still only observed through emitted text.
   See 18.5.
 - No test crosses the 64 helper cap at `helper_flow/summary.rs:53`. The helper
@@ -230,7 +230,7 @@ Coverage gaps found while mapping the above:
 Each risk states its evidence class: proven by a repository test, proven by
 inspection of cited code, or open.
 
-**R1. Closed at `6756e71`: `br` and `brk` got an invented fallthrough edge.**
+**R1. Closed at `ac544ca`: `br` and `brk` got an invented fallthrough edge.**
 Evidence when recorded: inspection. At `1371e42`, `ir/src/lib.rs:139-176` had no
 arm for either mnemonic, so both became `IROp::Other`. `Other` did not create a
 leader (`ir/src/lib.rs:203-218`) and took the default successor arm, which pushed
@@ -403,7 +403,7 @@ Restating the charter so that a later commit cannot quietly widen scope:
   section 8.
 - R2, R3, R8, and R9 are inspection findings. Each becomes a failing test
   first, under the case matrix in the companion protocol, before any fix is
-  written. R1 was the first through that path and is closed at `6756e71`;
+  written. R1 was the first through that path and is closed at `ac544ca`;
   section 18 records what landed and what it is asserted by.
 
 ## 12. Measured cost attribution, from the accepted baseline
@@ -411,7 +411,7 @@ Restating the charter so that a later commit cannot quietly widen scope:
 Everything in sections 12 to 16 is derived from the accepted A/A artifacts
 under `docs/baseline/`, described in
 [baseline-ir-cfg-emitter.md](baseline-ir-cfg-emitter.md), at product reference
-`1371e42` and harness `8e7f080`. No product source, test, fixture, golden,
+`1371e42` and harness `4c127ab`. No product source, test, fixture, golden,
 threshold, workload, or benchmark file changes in the commit that adds these
 sections.
 
@@ -728,17 +728,17 @@ is needed to justify them.
 
 | Rank | Defect | Evidence class | Where |
 | --- | --- | --- | --- |
-| D1 | Closed at `68f1353`: coverage collapse on large declined graphs, every omitted path rewritten to `return null;` with every helper definition deleted | Closed, measured before and after on all 33 benchmark cases | Sections 12.3 and 19 |
-| D2 | Closed at `6756e71`: R1, `br` and `brk` got an invented fallthrough edge | Closed, asserted by test in three crates | Sections 7 and 18 |
-| D3 | Closed at `fbe0d99`: `omitted_blocks` was not part of the structured rollback, and neither were the helper set, the names, several anchors or the traversal bookkeeping | Closed, asserted by a poisoned-state differential against direct DFS | Sections 7 and 19 |
+| D1 | Closed at `92c14a8`: coverage collapse on large declined graphs, every omitted path rewritten to `return null;` with every helper definition deleted | Closed, measured before and after on all 33 benchmark cases | Sections 12.3 and 19 |
+| D2 | Closed at `ac544ca`: R1, `br` and `brk` got an invented fallthrough edge | Closed, asserted by test in three crates | Sections 7 and 18 |
+| D3 | Closed at `f5f0b83`: `omitted_blocks` was not part of the structured rollback, and neither were the helper set, the names, several anchors or the traversal bookkeeping | Closed, asserted by a poisoned-state differential against direct DFS | Sections 7 and 19 |
 
 D1 was new to this document when it was written and outranked the performance
 work in importance, because the gates in place then could not see it: all 33
 cases passed the harness correctness pass, and the four quality gates
 (`quality.rs:106-118`) do not count emitted blocks against graph blocks. It is
-closed at `68f1353` and section 19 records the fix, the tests that now fail on
+closed at `92c14a8` and section 19 records the fix, the tests that now fail on
 the old behavior, and the seven benchmark cases that moved. D3 is closed at
-`fbe0d99`, which replaced the hand-listed rollback with a whole snapshot.
+`f5f0b83`, which replaced the hand-listed rollback with a whole snapshot.
 
 ## 15. Frozen experiment plan
 
@@ -868,7 +868,7 @@ Stop the performance track when either holds:
 Correctness work under D1, D2 and D3 does not stop with the performance track. It
 lands on its own merits with its own failing test first, per the companion
 protocol. Outcome recorded against that rule, not a change to it: D2 was the first
-to land, at `6756e71`, and is closed in section 18. D1 and D3 are open.
+to land, at `ac544ca`, and is closed in section 18. D1 and D3 are open.
 
 ## 16. Confounds
 
@@ -914,7 +914,7 @@ Recorded because each one can make a candidate look better or worse than it is.
     share of real work that looks like `irreducible` is unknown. The ranking
     above is a ranking on this matrix.
 
-## 17. Harness activation transient at `6430765`
+## 17. Harness activation transient at `4e8a9b2`
 
 Disclosure, recorded after the fact. The first harness commit put the benchmark
 crate inside the product workspace, and Cargo feature unification then turned the
@@ -923,16 +923,16 @@ isolated, no accepted evidence was measured on the affected revision, and the
 semantic suite passes with the instrumentation active. What was wrong is the
 earlier structural argument, which was stated without a from-when qualifier: the
 `exclude` line is what forbids unification, and that line does not exist before
-`1501bce`.
+`61e89fd`.
 
 ### 17.1 The defect
 
-At `6430765` the root manifest listed the harness as a workspace member, and the
+At `4e8a9b2` the root manifest listed the harness as a workspace member, and the
 harness manifest asks for the feature on both product crates:
 
 ```
-git show 6430765:Cargo.toml
-git show 6430765:crates/flutterdec-bench/Cargo.toml
+git show 4e8a9b2:Cargo.toml
+git show 4e8a9b2:crates/flutterdec-bench/Cargo.toml
 ```
 
 ```
@@ -965,7 +965,7 @@ declares no `default-members`.
 
 What was compiled in is the timing instrumentation and nothing else, and the
 whole of it is three `cfg` gates added by the same commit
-(`git diff 209a8fe 6430765 -- crates/flutterdec-core crates/flutterdec-decompiler`,
+(`git diff 282a1b3 4e8a9b2 -- crates/flutterdec-core crates/flutterdec-decompiler`,
 223 insertions and 1 deletion over 5 files):
 
 - `control_flow/structured.rs`, in `try_emit_structured`: two
@@ -980,7 +980,7 @@ whole of it is three `cfg` gates added by the same commit
 
 Both `[features]` blocks are empty by default. The comment above them reads "Off
 in every product build", which is true at the tip and was not true at
-`6430765`.
+`4e8a9b2`.
 
 ### 17.2 Exact interval
 
@@ -989,18 +989,18 @@ Committer dates from the GitHub API, not from local clocks
 
 | Revision | Committed (UTC) | State |
 | --- | --- | --- |
-| `209a8fe` | 2026-08-18T03:58:59Z | no harness in the tree |
-| `6430765` | 2026-08-18T04:59:03Z | opened: harness added as a workspace member |
-| `1501bce` | 2026-08-18T05:32:32Z | closed: `exclude = ["crates/flutterdec-bench"]` |
+| `282a1b3` | 2026-08-18T03:58:59Z | no harness in the tree |
+| `4e8a9b2` | 2026-08-18T04:59:03Z | opened: harness added as a workspace member |
+| `61e89fd` | 2026-08-18T05:32:32Z | closed: `exclude = ["crates/flutterdec-bench"]` |
 
-Elapsed 33 minutes 29 seconds. `6430765` is the parent of `1501bce`
-(`git rev-parse 1501bce^` is `6430765`), so the affected set is exactly one
-revision of one branch, and no commit on the branch other than `6430765` has the
+Elapsed 33 minutes 29 seconds. `4e8a9b2` is the parent of `61e89fd`
+(`git rev-parse 61e89fd^` is `4e8a9b2`), so the affected set is exactly one
+revision of one branch, and no commit on the branch other than `4e8a9b2` has the
 harness in `members`.
 
 ### 17.3 Files that opened and closed it
 
-`git show --stat 1501bce`, 8 files. One of them is the fix and four follow from
+`git show --stat 61e89fd`, 8 files. One of them is the fix and four follow from
 it. The commit also carries harness changes that have nothing to do with the
 isolation, which is recorded here rather than smoothed over.
 
@@ -1010,32 +1010,33 @@ isolation, which is recorded here rather than smoothed over.
 | `.gitignore` | follows: ignores `crates/flutterdec-bench/target`, which the harness now builds into |
 | `Cargo.lock`, `crates/flutterdec-bench/Cargo.lock` | follows: 11 lines leave the product lock, the harness gets its own 799-line lock |
 | `crates/flutterdec-bench/Cargo.toml` | follows: own `[workspace]` table, and version, edition and license spelled out, because an excluded crate inherits nothing |
-| `scripts/ci-check.sh` | follows: 14 lines adding the harness clippy and test lanes, since `--workspace` no longer reaches it; the fmt lane arrives at `1b11f7e` |
+| `scripts/ci-check.sh` | follows: 14 lines adding the harness clippy and test lanes, since `--workspace` no longer reaches it; the fmt lane arrives at `5bf6595` |
 | `crates/flutterdec-bench/src/main.rs`, `scripts/bench-pipeline.sh` | unrelated to the isolation: `--runs 0` becomes valid, plus the output-directory lock, the raw-sample refusal and the per-binary warmup schedule |
 
-The commit message of `1501bce` states the defect and the fix in its own words.
-This section exists because the message is not where a reader looks for it, and
-because the branch forbids force push, so history cannot be amended.
+The commit message of `61e89fd` states the defect and the fix in its own words.
+This section exists because the message is not where a reader looks for it. A
+later one-time sole-author rewrite preserved every commit tree and did not change
+the interval or the evidence below.
 
 ### 17.4 Symbol and binary probes
 
 All three columns below were built in one disposable worktree at the single path
-`/tmp/pb-6430765`: first at `6430765` as committed, then in the same worktree
+`/tmp/pb-4e8a9b2`: first at `4e8a9b2` as committed, then in the same worktree
 with only the `members` line replaced by `exclude`, then with the tip checked out
 into that same worktree. The build path is therefore identical across the three
 columns and cannot enter the comparison:
 
 ```
-git worktree add --detach /tmp/pb-6430765 6430765
+git worktree add --detach /tmp/pb-4e8a9b2 4e8a9b2
 nix develop -c cargo tree --workspace -e features | grep -c bench-spans
 nix develop -c cargo build --release --workspace
 strings target/release/libflutterdec_decompiler.rlib | grep -c take_cfg_nanos
 strings target/release/libflutterdec_core.rlib | grep -c serialize_artifacts
 sha256sum target/release/flutterdec
-git checkout --force --detach 70b2feb
+git checkout --force --detach 058b120
 ```
 
-| Probe | `6430765` as committed | same tree, `exclude` instead of `members` | tip `70b2feb`, same worktree |
+| Probe | `4e8a9b2` as committed | same tree, `exclude` instead of `members` | tip `058b120`, same worktree |
 | --- | --- | --- | --- |
 | `cargo tree --workspace -e features`, `bench-spans` activations | 3 | 0 | 0 |
 | `take_cfg_nanos` in the release decompiler rlib | 3 | 0 | 0 |
@@ -1056,7 +1057,7 @@ the code.
 
 Two readings matter here. Flipping that one manifest line changes the shipped CLI
 binary, which is the strongest available statement that the product build was
-genuinely different. And at this one path the corrected `6430765` tree and the
+genuinely different. And at this one path the corrected `4e8a9b2` tree and the
 tip produce a byte-identical CLI, 17393976 bytes under one digest, which is what
 places the whole product delta of this branch inside the `cfg` gates.
 
@@ -1067,7 +1068,7 @@ positive.
 
 ### 17.5 Semantics at the transient revision
 
-`nix develop -c cargo test --workspace` at `6430765`: 466 passed, 0 failed, exit
+`nix develop -c cargo test --workspace` at `4e8a9b2`: 466 passed, 0 failed, exit
 0, over 16 targets. The tip is 432 passed, 0 failed, over 15 targets. The
 difference is the harness's own 34 tests, which `--workspace` reached only while
 the harness was a member; the 432 product tests are the same 432, and they passed
@@ -1080,34 +1081,34 @@ revision returns 14 hits for `add_cfg_nanos` and 13 for `take_cfg_nanos`.
 
 ### 17.6 No baseline or accepted artifact is on the transient revision
 
-- The first commit that adds anything under `docs/baseline/` is `3aa2fe4` at
-  2026-08-18T06:16:26Z, which is 43 minutes 54 seconds after `1501bce`. There is
+- The first commit that adds anything under `docs/baseline/` is `e2e66a7` at
+  2026-08-18T06:16:26Z, which is 43 minutes 54 seconds after `61e89fd`. There is
   no earlier measurement record in the branch:
   `git log --diff-filter=A -- docs/baseline` has four commits, all later.
 - Exactly two harness patches were ever committed, the invalidated
-  `harness-b4b1d8c.patch` (added by `3aa2fe4`, deleted by `bf9a0eb`) and the
+  `harness-b4b1d8c.patch` (added by `e2e66a7`, deleted by `af0bd4f`) and the
   accepted `harness-8e7f080.patch`. Both contain
   `exclude = ["crates/flutterdec-bench"]`, so every worktree either patch ever
   produced was isolated. `grep -c 'exclude = \["crates/flutterdec-bench"\]'` is 1
   on each.
-- The two committed A/A runs bind `harness_ref 8e7f080`
+- The two committed A/A runs bind `harness_ref 4c127ab`
   (`docs/baseline/aa-*/binding.txt`) and produced one binary digest `bc06f2bf...`
   for both sides. The two validator runs held under the mission evidence
-  directory bind `harness_ref bf9a0eb` instead, which is the docs-only commit
+  directory bind `harness_ref af0bd4f` instead, which is the docs-only commit
   that recorded the accepted baseline;
-  `git diff 8e7f080 bf9a0eb -- . ':!docs'` is empty, so that is a label
+  `git diff 4c127ab af0bd4f -- . ':!docs'` is empty, so that is a label
   difference and not a different harness. All four runs bind product `1371e42` on
   both sides and the same `patch_sha256 14413796...`, which is the binding that
   actually holds across the four.
 - No measured artifact references the transient revision:
-  `grep -rl 6430765 docs/baseline/` matches zero files. Under `docs/` the
+  `grep -rl 4e8a9b2 docs/baseline/` matches zero files. Under `docs/` the
   revision appears only in disclosure prose, this section included, and in the
   companion protocol's digest-chain table.
 
 ### 17.7 The probe that cannot see this
 
 `cargo build -p flutterdec-decompiler -p flutterdec-core` returns zero symbol
-hits at `6430765`, at the exact revision where `--workspace` returns three,
+hits at `4e8a9b2`, at the exact revision where `--workspace` returns three,
 because unification applies only to the packages selected in one invocation. Any
 future claim that the instrumentation is absent from a product build has to use
 `--workspace`, or workspace membership from `cargo metadata`, and never `-p`.
@@ -1116,7 +1117,7 @@ future claim that the instrumentation is absent from a product build has to use
 
 The structural argument used in earlier notes on this branch, that the root
 manifest's `exclude` makes it impossible for feature unification to turn
-`bench-spans` on, holds from `1501bce` onward and not before it. It is a
+`bench-spans` on, holds from `61e89fd` onward and not before it. It is a
 commit-scoped property of the manifest, not a property of the branch, and it must
 be cited with the revision it applies to.
 
@@ -1124,8 +1125,8 @@ be cited with the revision it applies to.
 
 Separate from the above and disclosed here so the two are not conflated. The
 harness commits also changed a protected ruler: `scripts/ci-check.sh` moved at
-`1501bce`, `1b11f7e` and `5aa4b4e`, all before baseline acceptance. That change
-is adjudicated in the companion protocol section 10, landed in `bcdc017` under
+`61e89fd`, `5bf6595` and `5f6a39f`, all before baseline acceptance. That change
+is adjudicated in the companion protocol section 10, landed in `e3d7d2f` under
 VAL-ORACLE-002, with the digest chain `9d994285...` to `675099447f...` to
 `6ee0cdf976...` to `2f76a8b9...`, and the additivity proof: 26 insertions and 3
 deletions against `1371e42`, and the only three lines the diff removes are the
@@ -1136,7 +1137,7 @@ lanes were added.
 ### 17.10 What this leaves open
 
 No gate detects a members-versus-`exclude` regression, and the instrumentation is
-invisible to every check the repository runs. At `6430765`, with the
+invisible to every check the repository runs. At `4e8a9b2`, with the
 instrumentation active, `cargo fmt --all --check` exits 0,
 `cargo clippy --workspace --all-targets -- -D warnings` exits 0, and
 `cargo test --workspace` is 466 passed and 0 failed. A green check is exactly
@@ -1145,12 +1146,12 @@ asserting zero `bench-spans` activations in `cargo tree --workspace -e features`
 would close it in one line; it is not written, because it is a checker change and
 this record is docs-only.
 
-## 18. Indirect control terminators, implemented at `6756e71`
+## 18. Indirect control terminators, implemented at `ac544ca`
 
-`6756e71` ("fix(ir): model indirect control terminators") is a code-only commit,
+`ac544ca` ("fix(ir): model indirect control terminators") is a code-only commit,
 7 paths and 0 docs, so this section is the docs-only synchronization that follows
 it. It closes R1 in section 7 and D2 in section 14. Line numbers in this section
-are as of `1a00f64`, the branch tip when it was written, not `1371e42`.
+are as of `ecc2892`, the branch tip when it was written, not `1371e42`.
 
 ### 18.1 Implemented semantics
 
@@ -1270,16 +1271,16 @@ with `unresolved_cf` equal to 1, `total_calls` 1 and `indirect_calls` 0, since a
   the serialized IR artifact, and the gate test in 18.3 (`quality.rs:307`) for
   disassembly through IR through pseudocode through the quality report.
 
-Suite at `1a00f64`: `nix develop -c cargo test --workspace` is 466 passed, 0
+Suite at `ecc2892`: `nix develop -c cargo test --workspace` is 466 passed, 0
 failed, exit 0, over 17 result lines (11 test binaries and 6 doc-test targets),
 against 432 at `1371e42` in section 6.
 
 ### 18.5 Status of the CFG invariant commits
 
 Three later code-only commits on the same branch, recorded here because sections 3
-and 6 predate them: `bd1ecbf` added `crates/flutterdec-ir/src/validate.rs` and
-gated the consumer boundaries on it, `51c129a` made edge rebuilding go through one
-canonical path, and `1a00f64` pinned that only guard-stranded blocks are pruned.
+and 6 predate them: `dff08ac` added `crates/flutterdec-ir/src/validate.rs` and
+gated the consumer boundaries on it, `325447f` made edge rebuilding go through one
+canonical path, and `ecc2892` pinned that only guard-stranded blocks are pruned.
 All three are accepted and pushed; nothing about them is open in this document.
 
 What they change about section 3: the invariants listed there are still the
@@ -1298,11 +1299,11 @@ now asserted directly rather than only through emitted text. The dominator,
 post-dominator, follow-node, loop and reducibility relations named in that bullet
 are still observed through emitted text only, so that part of the gap is open.
 
-## 19. Emission omissions and declines, implemented at `68f1353` and `fbe0d99`
+## 19. Emission omissions and declines, implemented at `92c14a8` and `f5f0b83`
 
-Two commits close D1 and D3 and give both of them a vocabulary. `68f1353` stops
+Two commits close D1 and D3 and give both of them a vocabulary. `92c14a8` stops
 the omitted-path collapse and reports every traversal omission as an event;
-`fbe0d99` gives every structured decline one primary cause and makes its
+`f5f0b83` gives every structured decline one primary cause and makes its
 rollback whole. The protocol's section 16 is the adjudication for the two
 protected test files the first of them moves.
 
