@@ -373,8 +373,8 @@ use control_flow::{JOIN_LOSS_SITE, LOOP_LOSS_SITE};
 use helpers::*;
 
 pub use control_flow::{
-    BlockDisposition, BlockDispositionRecord, BlockIdentity, BlockLedger, BlockRemap, BlockStage,
-    EmissionAccounting, InvalidCfgRejected, ReachableUnemittedExplanation, StageBlock,
+    BlockDisposition, BlockDispositionRecord, BlockEdge, BlockIdentity, BlockLedger, BlockRemap,
+    BlockStage, EmissionAccounting, InvalidCfgRejected, ReachableUnemittedExplanation, StageBlock,
     StructuredDecline, StructuredDeclineCause, TraversalEvent, TraversalEventKind, TraversalTarget,
 };
 
@@ -950,6 +950,26 @@ impl<'a> FuncEmitter<'a> {
                 start_va: block.start_va,
             })
             .collect();
+        let valid_edges = self
+            .ir
+            .blocks
+            .iter()
+            .flat_map(|block| {
+                block.succs.iter().filter_map(move |successor| {
+                    let target = self.block_by_id.get(successor)?;
+                    Some(BlockEdge {
+                        from: BlockIdentity {
+                            function_id: self.ir.function_id,
+                            start_va: block.start_va,
+                        },
+                        to: BlockIdentity {
+                            function_id: self.ir.function_id,
+                            start_va: target.start_va,
+                        },
+                    })
+                })
+            })
+            .collect();
         let stages = self
             .ir
             .blocks
@@ -1035,8 +1055,8 @@ impl<'a> FuncEmitter<'a> {
                 };
                 let Some(root) = root else { continue };
                 let mut seen = HashSet::new();
-                let mut path = vec![root];
-                while let Some(id) = path.pop() {
+                let mut pending = vec![(root, vec![root])];
+                while let Some((id, path)) = pending.pop() {
                     if !seen.insert(id) {
                         continue;
                     }
@@ -1044,12 +1064,23 @@ impl<'a> FuncEmitter<'a> {
                         reachable_unemitted_explanations.push(ReachableUnemittedExplanation {
                             identity: row.identity,
                             event_ordinal: event.ordinal,
+                            path: path
+                                .iter()
+                                .filter_map(|id| self.block_by_id.get(id))
+                                .map(|block| BlockIdentity {
+                                    function_id: self.ir.function_id,
+                                    start_va: block.start_va,
+                                })
+                                .collect(),
                         });
-                        path.clear();
                         break;
                     }
                     if let Some(block) = self.block_by_id.get(&id) {
-                        path.extend(block.succs.iter().copied());
+                        pending.extend(block.succs.iter().map(|successor| {
+                            let mut next_path = path.clone();
+                            next_path.push(*successor);
+                            (*successor, next_path)
+                        }));
                     }
                 }
                 if reachable_unemitted_explanations
@@ -1061,7 +1092,9 @@ impl<'a> FuncEmitter<'a> {
             }
         }
         BlockLedger {
+            function_id: self.ir.function_id,
             stages,
+            valid_edges,
             remaps: self
                 .ir
                 .blocks
@@ -1126,7 +1159,9 @@ fn invalid_cfg_artifact(ir: &FunctionIr, defect: &CfgDefect) -> PseudocodeArtifa
     });
     let mut emission = EmissionAccounting::default();
     *emission.block_ledger_mut() = BlockLedger {
+        function_id: ir.function_id,
         stages: Vec::new(),
+        valid_edges: Vec::new(),
         remaps: Vec::new(),
         dispositions: Vec::new(),
         reachable_unemitted_explanations: Vec::new(),
@@ -1135,6 +1170,11 @@ fn invalid_cfg_artifact(ir: &FunctionIr, defect: &CfgDefect) -> PseudocodeArtifa
             raw_graph_digest: format!("fnv1a64:{raw_graph_digest:016x}"),
         }),
     };
+    assert_eq!(
+        emission.validate(),
+        Ok(()),
+        "invalid CFG outcome did not reconcile"
+    );
     PseudocodeArtifact {
         function_id: ir.function_id,
         source: format!(

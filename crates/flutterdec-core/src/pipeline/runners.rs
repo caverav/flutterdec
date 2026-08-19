@@ -1181,6 +1181,130 @@ fn apply_target_function_filter(
     ))
 }
 
+fn reconcile_block_ledger(
+    function: &FunctionIr,
+    accounting: &flutterdec_ir::IrBuildAccounting,
+    split_source_by_va: &HashMap<u64, u64>,
+    split_records: bool,
+    noreturn_pruned: &[flutterdec_decompiler::BlockIdentity],
+    artifact: &mut PseudocodeArtifact,
+) {
+    assert_eq!(function.function_id, artifact.function_id, "IR/artifact order");
+    let function_id = function.function_id;
+    let ledger = artifact.emission.block_ledger_mut();
+    ledger
+        .stages
+        .retain(|row| row.stage != flutterdec_decompiler::BlockStage::Built);
+    ledger.stages.extend(accounting.built.iter().map(
+        |(dense_id, start_va)| flutterdec_decompiler::StageBlock {
+            stage: flutterdec_decompiler::BlockStage::Built,
+            dense_id: *dense_id,
+            identity: flutterdec_decompiler::BlockIdentity {
+                function_id,
+                start_va: *start_va,
+            },
+        },
+    ));
+    if split_records {
+        let split_rows: Vec<_> = ledger
+            .stages
+            .iter()
+            .filter(|row| row.stage == flutterdec_decompiler::BlockStage::Built)
+            .filter_map(|row| {
+                let old_function_id = split_source_by_va.get(&row.identity.start_va).copied()?;
+                (old_function_id != function_id).then_some((
+                    row.dense_id,
+                    old_function_id,
+                    row.identity,
+                ))
+            })
+            .collect();
+        for (dense_id, old_function_id, to) in split_rows {
+            let from = flutterdec_decompiler::BlockIdentity {
+                function_id: old_function_id,
+                start_va: to.start_va,
+            };
+            if let Some(row) = ledger.stages.iter_mut().find(|row| {
+                row.stage == flutterdec_decompiler::BlockStage::Built && row.identity == to
+            }) {
+                row.identity = from;
+            }
+            ledger.stages.push(flutterdec_decompiler::StageBlock {
+                stage: flutterdec_decompiler::BlockStage::Split,
+                dense_id,
+                identity: to,
+            });
+            ledger.remaps.push(flutterdec_decompiler::BlockRemap {
+                stage: flutterdec_decompiler::BlockStage::Split,
+                from,
+                to: Some(to),
+            });
+        }
+    }
+    ledger.stages.extend(accounting.guard_remaps.iter().map(
+        |(_, start_va, dense_id)| flutterdec_decompiler::StageBlock {
+            stage: flutterdec_decompiler::BlockStage::GuardPruned,
+            dense_id: *dense_id,
+            identity: flutterdec_decompiler::BlockIdentity {
+                function_id,
+                start_va: *start_va,
+            },
+        },
+    ));
+    ledger.remaps.extend(accounting.guard_remaps.iter().map(
+        |(_, start_va, _)| flutterdec_decompiler::BlockRemap {
+            stage: flutterdec_decompiler::BlockStage::GuardPruned,
+            from: flutterdec_decompiler::BlockIdentity {
+                function_id,
+                start_va: *start_va,
+            },
+            to: Some(flutterdec_decompiler::BlockIdentity {
+                function_id,
+                start_va: *start_va,
+            }),
+        },
+    ));
+    for (_, start_va) in &accounting.guard_pruned {
+        let identity = flutterdec_decompiler::BlockIdentity {
+            function_id,
+            start_va: *start_va,
+        };
+        ledger.remaps.push(flutterdec_decompiler::BlockRemap {
+            stage: flutterdec_decompiler::BlockStage::GuardPruned,
+            from: identity,
+            to: None,
+        });
+        ledger
+            .dispositions
+            .push(flutterdec_decompiler::BlockDispositionRecord {
+                identity,
+                disposition: flutterdec_decompiler::BlockDisposition::GuardPruned,
+            });
+    }
+    for identity in noreturn_pruned
+        .iter()
+        .filter(|identity| identity.function_id == function_id)
+    {
+        if let Some(row) = ledger
+            .dispositions
+            .iter_mut()
+            .find(|row| row.identity == *identity)
+        {
+            row.disposition = flutterdec_decompiler::BlockDisposition::NoreturnPruned;
+        }
+        ledger.remaps.push(flutterdec_decompiler::BlockRemap {
+            stage: flutterdec_decompiler::BlockStage::NoreturnPruned,
+            from: *identity,
+            to: None,
+        });
+    }
+    assert_eq!(
+        artifact.emission.validate(),
+        Ok(()),
+        "pipeline block ledger did not reconcile"
+    );
+}
+
 pub fn run_decompile(
     repo_root: &Path,
     input_path: &Path,
@@ -1531,85 +1655,14 @@ pub fn run_decompile(
     for ((function, accounting), artifact) in
         ir.iter().zip(&build_accounting).zip(pseudo.iter_mut())
     {
-        assert_eq!(function.function_id, artifact.function_id, "IR/artifact order");
-        let function_id = function.function_id;
-        let events = artifact.emission.events().to_vec();
-        let ledger = artifact.emission.block_ledger_mut();
-        ledger.stages.retain(|row| row.stage != flutterdec_decompiler::BlockStage::Built);
-        ledger.stages.extend(accounting.built.iter().map(|(dense_id, start_va)| flutterdec_decompiler::StageBlock {
-            stage: flutterdec_decompiler::BlockStage::Built,
-            dense_id: *dense_id,
-            identity: flutterdec_decompiler::BlockIdentity { function_id, start_va: *start_va },
-        }));
-        if opt.split_records {
-            let split_rows: Vec<_> = ledger
-                .stages
-                .iter()
-                .filter(|row| row.stage == flutterdec_decompiler::BlockStage::Built)
-                .filter_map(|row| {
-                    let old_function_id = split_source_by_va.get(&row.identity.start_va).copied()?;
-                    (old_function_id != function_id).then_some((row.dense_id, old_function_id, row.identity))
-                })
-                .collect();
-            for (dense_id, old_function_id, to) in split_rows {
-                let from = flutterdec_decompiler::BlockIdentity { function_id: old_function_id, start_va: to.start_va };
-                if let Some(row) = ledger.stages.iter_mut().find(|row| row.stage == flutterdec_decompiler::BlockStage::Built && row.identity == to) {
-                    row.identity = from;
-                }
-                ledger.stages.push(flutterdec_decompiler::StageBlock {
-                    stage: flutterdec_decompiler::BlockStage::Split,
-                    dense_id,
-                    identity: to,
-                });
-                ledger.remaps.push(flutterdec_decompiler::BlockRemap {
-                    stage: flutterdec_decompiler::BlockStage::Split,
-                    from,
-                    to: Some(to),
-                });
-            }
-        }
-        ledger.stages.extend(accounting.guard_remaps.iter().map(|(_, start_va, dense_id)| flutterdec_decompiler::StageBlock {
-            stage: flutterdec_decompiler::BlockStage::GuardPruned,
-            dense_id: *dense_id,
-            identity: flutterdec_decompiler::BlockIdentity { function_id, start_va: *start_va },
-        }));
-        ledger.remaps.extend(accounting.guard_remaps.iter().map(|(_, start_va, _)| flutterdec_decompiler::BlockRemap {
-            stage: flutterdec_decompiler::BlockStage::GuardPruned,
-            from: flutterdec_decompiler::BlockIdentity { function_id, start_va: *start_va },
-            to: Some(flutterdec_decompiler::BlockIdentity { function_id, start_va: *start_va }),
-        }));
-        for (_, start_va) in &accounting.guard_pruned {
-            let identity = flutterdec_decompiler::BlockIdentity { function_id, start_va: *start_va };
-            ledger.remaps.push(flutterdec_decompiler::BlockRemap {
-                stage: flutterdec_decompiler::BlockStage::GuardPruned,
-                from: identity,
-                to: None,
-            });
-            ledger.dispositions.push(flutterdec_decompiler::BlockDispositionRecord {
-                identity,
-                disposition: flutterdec_decompiler::BlockDisposition::GuardPruned,
-            });
-        }
-        for identity in &noreturn_prune.pruned {
-            if identity.function_id != function_id { continue; }
-            if let Some(row) = ledger.dispositions.iter_mut().find(|row| row.identity == *identity) {
-                row.disposition = flutterdec_decompiler::BlockDisposition::NoreturnPruned;
-            }
-            ledger.remaps.push(flutterdec_decompiler::BlockRemap {
-                stage: flutterdec_decompiler::BlockStage::NoreturnPruned,
-                from: *identity,
-                to: Some(*identity),
-            });
-            if let Some(block) = function.blocks.iter().find(|block| block.start_va == identity.start_va) {
-                ledger.stages.push(flutterdec_decompiler::StageBlock {
-                    stage: flutterdec_decompiler::BlockStage::NoreturnPruned,
-                    dense_id: block.id,
-                    identity: *identity,
-                });
-            }
-        }
-        let ledger_result = ledger.validate(&events);
-        assert_eq!(ledger_result, Ok(()), "pipeline block ledger did not reconcile");
+        reconcile_block_ledger(
+            function,
+            accounting,
+            &split_source_by_va,
+            opt.split_records,
+            &noreturn_prune.pruned,
+            artifact,
+        );
     }
 
     let asm_dir = opt.out_dir.join("asm");

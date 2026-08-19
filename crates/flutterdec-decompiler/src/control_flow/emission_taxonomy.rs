@@ -152,6 +152,13 @@ pub struct BlockIdentity {
     pub start_va: u64,
 }
 
+/// One immutable edge in the valid graph presented to the emitter.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+pub struct BlockEdge {
+    pub from: BlockIdentity,
+    pub to: BlockIdentity,
+}
+
 /// A named point at which dense block ids were assigned.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
 pub enum BlockStage {
@@ -189,6 +196,17 @@ pub enum BlockDisposition {
     ReachableUnemitted,
 }
 
+impl BlockDisposition {
+    pub const ALL: [BlockDisposition; 6] = [
+        BlockDisposition::StructuredEmitted,
+        BlockDisposition::DfsEmitted,
+        BlockDisposition::GuardPruned,
+        BlockDisposition::NoreturnPruned,
+        BlockDisposition::RetainedUnreachable,
+        BlockDisposition::ReachableUnemitted,
+    ];
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct BlockDispositionRecord {
     pub identity: BlockIdentity,
@@ -205,16 +223,22 @@ pub struct InvalidCfgRejected {
 
 /// Proof that a reachable-unemitted block lies on the path rooted at one keyed
 /// traversal event. The event remains a separate fact, never a disposition.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ReachableUnemittedExplanation {
     pub identity: BlockIdentity,
     pub event_ordinal: usize,
+    /// Inclusive path from the cited event target to `identity`.
+    pub path: Vec<BlockIdentity>,
 }
 
 /// Cross-stage block accounting carried by the IR and pseudocode surfaces.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct BlockLedger {
+    /// Function whose final partition this ledger describes. A Split remap may
+    /// name an older function key on its source side.
+    pub function_id: u64,
     pub stages: Vec<StageBlock>,
+    pub valid_edges: Vec<BlockEdge>,
     pub remaps: Vec<BlockRemap>,
     pub dispositions: Vec<BlockDispositionRecord>,
     pub reachable_unemitted_explanations: Vec<ReachableUnemittedExplanation>,
@@ -225,9 +249,33 @@ impl BlockLedger {
     /// Check the reconciliation rules without trusting report counters.
     pub fn validate(&self, events: &[TraversalEvent]) -> Result<(), String> {
         if let Some(invalid) = &self.invalid_cfg_rejected {
-            if !self.dispositions.is_empty() {
+            if invalid.function_id != self.function_id {
                 return Err(format!(
-                    "invalid function {} entered the block partition",
+                    "invalid outcome function {} does not match ledger function {}",
+                    invalid.function_id, self.function_id
+                ));
+            }
+            let digest = invalid.raw_graph_digest.as_bytes();
+            if digest.len() != 24
+                || !digest.starts_with(b"fnv1a64:")
+                || !digest[8..]
+                    .iter()
+                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(byte))
+            {
+                return Err(format!(
+                    "invalid function {} has malformed raw graph digest",
+                    invalid.function_id
+                ));
+            }
+            if !self.stages.is_empty()
+                || !self.valid_edges.is_empty()
+                || !self.remaps.is_empty()
+                || !self.dispositions.is_empty()
+                || !self.reachable_unemitted_explanations.is_empty()
+                || !events.is_empty()
+            {
+                return Err(format!(
+                    "invalid function {} carries valid-graph accounting",
                     invalid.function_id
                 ));
             }
@@ -235,11 +283,18 @@ impl BlockLedger {
         }
 
         let mut stage_ids = BTreeSet::new();
+        let mut stage_identities = BTreeSet::new();
         for block in &self.stages {
             if !stage_ids.insert((block.stage, block.dense_id)) {
                 return Err(format!(
                     "stage {:?} reused dense id {}",
                     block.stage, block.dense_id
+                ));
+            }
+            if !stage_identities.insert((block.stage, block.identity)) {
+                return Err(format!(
+                    "stage {:?} reused identity {:?}",
+                    block.stage, block.identity
                 ));
             }
         }
@@ -255,7 +310,17 @@ impl BlockLedger {
                 ));
             }
         }
+        let mut remap_keys = BTreeSet::new();
         for remap in &self.remaps {
+            if remap.stage == BlockStage::Built {
+                return Err("Built stage cannot contain a remap".to_string());
+            }
+            if !remap_keys.insert((remap.stage, remap.from)) {
+                return Err(format!(
+                    "stage {:?} has ambiguous remaps from {:?}",
+                    remap.stage, remap.from
+                ));
+            }
             if !known_identities.contains(&remap.from) {
                 return Err(format!("remap names unknown source {:?}", remap.from));
             }
@@ -267,6 +332,62 @@ impl BlockLedger {
                 {
                     return Err(format!("remap target {target:?} is absent from its stage"));
                 }
+                if remap.from.start_va != target.start_va {
+                    return Err(format!(
+                        "remap changes immutable address from {:?} to {target:?}",
+                        remap.from
+                    ));
+                }
+                if remap.stage != BlockStage::Split
+                    && remap.from.function_id != target.function_id
+                {
+                    return Err(format!(
+                        "only Split may change a function key: {:?} to {target:?}",
+                        remap.from
+                    ));
+                }
+            } else if !matches!(
+                remap.stage,
+                BlockStage::GuardPruned | BlockStage::NoreturnPruned
+            ) {
+                return Err(format!(
+                    "stage {:?} cannot remove identity {:?}",
+                    remap.stage, remap.from
+                ));
+            }
+        }
+
+        let final_identities: BTreeSet<_> = self
+            .stages
+            .iter()
+            .filter(|block| block.identity.function_id == self.function_id)
+            .map(|block| block.identity)
+            .collect();
+        let mut unique_edges = BTreeSet::new();
+        for edge in &self.valid_edges {
+            if edge.from.function_id != self.function_id
+                || edge.to.function_id != self.function_id
+                || !final_identities.contains(&edge.from)
+                || !final_identities.contains(&edge.to)
+            {
+                return Err(format!("valid graph edge has unknown endpoint {edge:?}"));
+            }
+            if !unique_edges.insert(*edge) {
+                return Err(format!("valid graph repeats edge {edge:?}"));
+            }
+        }
+        for (index, event) in events.iter().enumerate() {
+            if event.ordinal != index {
+                return Err(format!(
+                    "traversal event ordinal {} is not its position {index}",
+                    event.ordinal
+                ));
+            }
+            if event.function_id != self.function_id {
+                return Err(format!(
+                    "traversal event {} has function {}, expected {}",
+                    event.ordinal, event.function_id, self.function_id
+                ));
             }
         }
 
@@ -276,6 +397,18 @@ impl BlockLedger {
             .filter(|b| b.stage == BlockStage::Built)
             .map(|b| b.identity)
             .collect();
+        if source.is_empty() {
+            if self.stages.is_empty()
+                && self.valid_edges.is_empty()
+                && self.remaps.is_empty()
+                && self.dispositions.is_empty()
+                && self.reachable_unemitted_explanations.is_empty()
+                && events.is_empty()
+            {
+                return Ok(());
+            }
+            return Err("valid ledger has accounting without Built identities".to_string());
+        }
         let mut disposition_count = BTreeMap::<BlockIdentity, usize>::new();
         for row in &self.dispositions {
             *disposition_count.entry(row.identity).or_default() += 1;
@@ -301,6 +434,12 @@ impl BlockLedger {
                 }
             }
             terminal.insert(current);
+            if current.function_id != self.function_id {
+                return Err(format!(
+                    "terminal identity {current:?} does not match ledger function {}",
+                    self.function_id
+                ));
+            }
             match disposition_count.get(&current).copied().unwrap_or(0) {
                 1 => {}
                 n => return Err(format!("identity {current:?} has {n} dispositions")),
@@ -310,18 +449,77 @@ impl BlockLedger {
             return Err(format!("disposition names unknown identity {extra:?}"));
         }
 
+        for remap in self.remaps.iter().filter(|remap| remap.to.is_none()) {
+            let expected = match remap.stage {
+                BlockStage::GuardPruned => BlockDisposition::GuardPruned,
+                BlockStage::NoreturnPruned => BlockDisposition::NoreturnPruned,
+                _ => unreachable!("removal stages checked above"),
+            };
+            if !self.dispositions.iter().any(|row| {
+                row.identity == remap.from && row.disposition == expected
+            }) {
+                return Err(format!(
+                    "removal of {:?} at {:?} has no matching disposition",
+                    remap.from, remap.stage
+                ));
+            }
+        }
+
+        let valid_explanation = |explanation: &ReachableUnemittedExplanation| {
+            let Some(event) = events.get(explanation.event_ordinal) else {
+                return false;
+            };
+            if event.ordinal != explanation.event_ordinal
+                || event.function_id != explanation.identity.function_id
+                || explanation.path.last() != Some(&explanation.identity)
+            {
+                return false;
+            }
+            let target = match event.target {
+                TraversalTarget::Block { start_va } => Some(BlockIdentity {
+                    function_id: event.function_id,
+                    start_va,
+                }),
+                TraversalTarget::Helper { id } => self
+                    .stages
+                    .iter()
+                    .find(|block| {
+                        block.stage == BlockStage::Emission
+                            && block.dense_id == id
+                            && block.identity.function_id == event.function_id
+                    })
+                    .map(|block| block.identity),
+            };
+            explanation.path.first().copied() == target
+                && explanation.path.windows(2).all(|hop| {
+                    self.valid_edges.contains(&BlockEdge {
+                        from: hop[0],
+                        to: hop[1],
+                    })
+                })
+        };
+        for explanation in &self.reachable_unemitted_explanations {
+            if !self.dispositions.iter().any(|row| {
+                row.identity == explanation.identity
+                    && row.disposition == BlockDisposition::ReachableUnemitted
+            }) || !valid_explanation(explanation)
+            {
+                return Err(format!(
+                    "reachable-unemitted explanation for {:?} has an invalid traversal path",
+                    explanation.identity
+                ));
+            }
+        }
+
         for row in self
             .dispositions
             .iter()
             .filter(|r| r.disposition == BlockDisposition::ReachableUnemitted)
         {
-            let explained = self.reachable_unemitted_explanations.iter().any(|explanation| {
-                explanation.identity == row.identity
-                    && events.iter().any(|event| {
-                        event.function_id == row.identity.function_id
-                            && event.ordinal == explanation.event_ordinal
-                    })
-            });
+            let explained = self
+                .reachable_unemitted_explanations
+                .iter()
+                .any(|explanation| explanation.identity == row.identity);
             if !explained {
                 return Err(format!(
                     "reachable-unemitted identity {:?} has no traversal event",
@@ -353,6 +551,12 @@ pub struct EmissionAccounting {
 }
 
 impl EmissionAccounting {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.block_ledger.invalid_cfg_rejected.is_some() && self.decline.is_some() {
+            return Err("invalid function carries a structured decline".to_string());
+        }
+        self.block_ledger.validate(&self.events)
+    }
     /// Fail closed when auditing a serialized artifact whose enum vocabulary
     /// has not yet been decoded into the closed Rust types.
     pub fn validate_serialized_vocabulary(value: &serde_json::Value) -> Result<(), String> {

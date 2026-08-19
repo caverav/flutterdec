@@ -71,7 +71,7 @@ digest, extra/missing row, duplicate row, and loader bypass all fail closed.
 | `crates/flutterdec-bench/Cargo.toml` | `98dbc4b430302d76c4cf4716dfdd781ea354f26195514d1f9b844e79f97a7040` |
 | `crates/flutterdec-bench/src/main.rs` | `c8fefa460ecc3dd7a919f6577367d5e967386c277630fd3e1493d4dd53b6ac34` |
 | `crates/flutterdec-bench/src/measure.rs` | `49dfc3fcb2a33fa2903f9f19ec0c02915fb15cc2cba86a9d4f8e6d72535570b8` |
-| `crates/flutterdec-decompiler/src/lib.rs` | `e90521c07a1af522e546a93a37b4932a668c3c16cd6a04594b18e71aef79f0bb` |
+| `crates/flutterdec-decompiler/src/lib.rs` | `92c27aab0358d37bb098cbbba6f8ffac03e0a44e9f34781cbf81902da44d135f` |
 | `crates/flutterdec-decompiler/src/control_flow/structured.rs` | `5d748ff24c73049402db3511c9346bfeba8730002757c228da6bc4bb809b4d02` |
 | `scripts/bench-resource.sh` | `93a6932301bb37452c41149b237d3c46b4244d2b3ee2d76a60ca11dd35c101db` |
 | `scripts/audit-resource-evidence.py` | `4cea4c88f15144a5cdf34a724751a173d11e91f7d7cda5641c156cd48faaf220` |
@@ -99,3 +99,14 @@ emitter clone plant are byte-for-byte unchanged. Their lifecycle, nesting,
 panic cleanup, and plant checks were refreshed in Nix with the atomic product
 commit. No timing selection, candidate order, score, threshold, sample, seed,
 accepted harness, frozen reference, or immutable candidate was rerun or changed.
+
+The 2026-08-19 fail-closed ledger adjudication changes
+`crates/flutterdec-decompiler/src/lib.rs` from
+`e90521c07a1af522e546a93a37b4932a668c3c16cd6a04594b18e71aef79f0bb` to
+`92c27aab0358d37bb098cbbba6f8ffac03e0a44e9f34781cbf81902da44d135f`.
+The change stores immutable valid-graph topology and concrete traversal paths,
+and validates the invalid-CFG outcome before returning it. The feature-gated
+resource allocator, phase ownership, CFG clone plant, and emitter clone plant
+are byte-for-byte unchanged. No timing selection, candidate order, score,
+threshold, sample, seed, accepted harness, frozen reference, or immutable
+candidate was rerun or changed.

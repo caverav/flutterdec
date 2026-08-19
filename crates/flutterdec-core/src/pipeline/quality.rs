@@ -425,9 +425,8 @@ mod quality_tests {
     /// summed. With two fixtures, four cause counters and two event counters
     /// were zero on both sides of every assertion, and a report that dropped
     /// them entirely kept the whole suite green.
-    fn taxonomy_artifacts() -> Vec<PseudocodeArtifact> {
-        let symbols = HashMap::new();
-        [
+    fn taxonomy_ir() -> Vec<FunctionIr> {
+        vec![
             irreducible_fixture(1),
             unsupported_region_fixture(2),
             repeat_budget_fixture(3),
@@ -442,6 +441,11 @@ mod quality_tests {
             // Helper cap omissions.
             fan_in(8, BLOCKS_PAST_HELPER_BUDGET),
         ]
+    }
+
+    fn taxonomy_artifacts() -> Vec<PseudocodeArtifact> {
+        let symbols = HashMap::new();
+        taxonomy_ir()
         .iter()
         .map(|ir| flutterdec_decompiler::emit_pseudocode(ir, &symbols))
         .collect()
@@ -659,6 +663,220 @@ mod quality_tests {
             .block_ledger()
             .invalid_cfg_rejected
             .is_some());
+    }
+
+    /// A generated artifact bundle, through the same emitter, build-accounting,
+    /// prune-accounting, serialization and report functions used by the public
+    /// pipeline. No ledger row is authored by this fixture.
+    #[test]
+    fn generated_accounting_bundle_covers_every_taxonomy_and_reconciles_surfaces() {
+        use flutterdec_disasm_arm64::{AsmInstruction, FunctionDisassembly};
+
+        let ins = |va, mnemonic: &str, op_str: &str| AsmInstruction {
+            va,
+            word: 0,
+            mnemonic: mnemonic.to_string(),
+            op_str: op_str.to_string(),
+            annotation: String::new(),
+        };
+        let guard_disassembly = FunctionDisassembly {
+            function_id: 100,
+            function_name: "guardFixture".to_string(),
+            owner_class: "Global".to_string(),
+            entry_va: 0x8000,
+            size: 0x1010,
+            instructions: vec![
+                ins(0x8000, "ldr", "x16, [x26, #0x10]"),
+                ins(0x8004, "cmp", "x15, x16"),
+                ins(0x8008, "b.ls", "#0x9000"),
+                ins(0x800c, "ret", ""),
+                ins(0x9000, "ret", ""),
+            ],
+        };
+        let (guard_ir, guard_accounting) = flutterdec_ir::build_program_ir_with_accounting(
+            std::slice::from_ref(&guard_disassembly),
+        )
+        .pop()
+        .expect("guard IR");
+        assert_eq!(guard_accounting.guard_pruned.len(), 1, "guard plant");
+        let mut guard_artifact = flutterdec_decompiler::emit_pseudocode(&guard_ir, &HashMap::new());
+        reconcile_block_ledger(
+            &guard_ir,
+            &guard_accounting,
+            &HashMap::new(),
+            false,
+            &[],
+            &mut guard_artifact,
+        );
+
+        let mut noreturn_ir = graph(101, &[vec![1], Vec::new()]);
+        noreturn_ir.blocks[0].instrs.insert(
+            0,
+            LlirInstr {
+                va: block_va(0),
+                op: IROp::Call,
+                src: "bl #0xdead".to_string(),
+                target: "#0xdead".to_string(),
+            },
+        );
+        let noreturn_accounting = flutterdec_ir::IrBuildAccounting {
+            built: noreturn_ir
+                .blocks
+                .iter()
+                .map(|block| (block.id, block.start_va))
+                .collect(),
+            guard_pruned: Vec::new(),
+            guard_remaps: noreturn_ir
+                .blocks
+                .iter()
+                .map(|block| (block.id, block.start_va, block.id))
+                .collect(),
+        };
+        let noreturn_stats = prune_calls_that_never_return(
+            std::slice::from_mut(&mut noreturn_ir),
+            &HashSet::from([0xdead]),
+        );
+        assert_eq!(noreturn_stats.pruned.len(), 1, "noreturn plant");
+        let mut noreturn_artifact =
+            flutterdec_decompiler::emit_pseudocode(&noreturn_ir, &HashMap::new());
+        reconcile_block_ledger(
+            &noreturn_ir,
+            &noreturn_accounting,
+            &HashMap::new(),
+            false,
+            &noreturn_stats.pruned,
+            &mut noreturn_artifact,
+        );
+
+        let retained_ir = graph(102, &[Vec::new(), Vec::new()]);
+        let retained_artifact =
+            flutterdec_decompiler::emit_pseudocode(&retained_ir, &HashMap::new());
+        let mut invalid_ir = graph(103, &[vec![1], Vec::new()]);
+        invalid_ir.blocks[1].id = 0;
+        let invalid_artifact =
+            flutterdec_decompiler::emit_pseudocode(&invalid_ir, &HashMap::new());
+
+        let mut ir = taxonomy_ir();
+        let mut pseudo = taxonomy_artifacts();
+        ir.extend([guard_ir, noreturn_ir, retained_ir, invalid_ir]);
+        pseudo.extend([
+            guard_artifact,
+            noreturn_artifact,
+            retained_artifact,
+            invalid_artifact,
+        ]);
+
+        let dispositions: HashSet<_> = pseudo
+            .iter()
+            .flat_map(|artifact| artifact.emission.block_ledger().dispositions.iter())
+            .map(|row| row.disposition)
+            .collect();
+        assert_eq!(
+            dispositions,
+            HashSet::from(flutterdec_decompiler::BlockDisposition::ALL),
+            "generated bundle must cover every disposition"
+        );
+        let causes: HashSet<_> = pseudo
+            .iter()
+            .filter_map(|artifact| artifact.emission.decline().map(|decline| decline.cause))
+            .collect();
+        assert_eq!(
+            causes,
+            HashSet::from(StructuredDeclineCause::ALL),
+            "generated bundle must cover every primary cause"
+        );
+        let event_kinds: HashSet<_> = pseudo
+            .iter()
+            .flat_map(|artifact| artifact.emission.events())
+            .map(|event| event.kind)
+            .collect();
+        assert_eq!(
+            event_kinds,
+            HashSet::from(TraversalEventKind::ALL),
+            "generated bundle must cover every traversal event"
+        );
+        assert_eq!(
+            pseudo
+                .iter()
+                .filter(|artifact| artifact.emission.block_ledger().invalid_cfg_rejected.is_some())
+                .count(),
+            1
+        );
+        assert!(pseudo.iter().all(|artifact| artifact.emission.validate().is_ok()));
+
+        let report = quality_from_artifacts(&empty_model(), &pseudo, &default_options(), 0);
+        let scratch = tempfile::tempdir().expect("artifact directory");
+        let ir_dir = scratch.path().join("ir");
+        let pseudo_dir = scratch.path().join("pseudocode");
+        std::fs::create_dir_all(&ir_dir).unwrap();
+        std::fs::create_dir_all(&pseudo_dir).unwrap();
+        for (function, artifact) in ir.iter().zip(&pseudo) {
+            let mut emitted_ir = serde_json::to_value(function).unwrap();
+            let object = emitted_ir.as_object_mut().unwrap();
+            object.insert(
+                "block_ledger".to_string(),
+                serde_json::to_value(artifact.emission.block_ledger()).unwrap(),
+            );
+            object.insert(
+                "emission".to_string(),
+                serde_json::to_value(&artifact.emission).unwrap(),
+            );
+            std::fs::write(
+                ir_dir.join(format!("{:05}.json", function.function_id)),
+                serde_json::to_vec_pretty(&emitted_ir).unwrap(),
+            )
+            .unwrap();
+            std::fs::write(
+                pseudo_dir.join(format!("{:05}.dartpseudo", function.function_id)),
+                &artifact.source,
+            )
+            .unwrap();
+        }
+        let quality = serde_json::to_vec_pretty(&report).unwrap();
+        std::fs::write(scratch.path().join("quality.json"), &quality).unwrap();
+        let report_surface = serde_json::to_vec_pretty(&serde_json::json!({
+            "quality": &report,
+        }))
+        .unwrap();
+        std::fs::write(scratch.path().join("report.json"), report_surface).unwrap();
+
+        let expected_dispositions = [
+            report.emission.structured_emitted_blocks,
+            report.emission.dfs_emitted_blocks,
+            report.emission.guard_pruned_blocks,
+            report.emission.noreturn_pruned_blocks,
+            report.emission.retained_unreachable_blocks,
+            report.emission.reachable_unemitted_blocks,
+        ];
+        let artifact_dispositions: [usize; 6] =
+            flutterdec_decompiler::BlockDisposition::ALL.map(|kind| {
+            pseudo
+                .iter()
+                .map(|artifact| artifact.emission.block_ledger().disposition_count(kind))
+                .sum::<usize>()
+        });
+        assert_eq!(expected_dispositions, artifact_dispositions);
+        assert_eq!(
+            report.emission.invalid_cfg_rejected_functions,
+            1,
+            "report must reconcile the invalid function"
+        );
+        assert_eq!(
+            std::fs::read_dir(&ir_dir).unwrap().count(),
+            pseudo.len(),
+            "every pseudocode artifact has emitted IR"
+        );
+        assert_eq!(std::fs::read_dir(&pseudo_dir).unwrap().count(), pseudo.len());
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(
+                &std::fs::read(scratch.path().join("quality.json")).unwrap()
+            )
+            .unwrap(),
+            serde_json::from_slice::<serde_json::Value>(
+                &std::fs::read(scratch.path().join("report.json")).unwrap()
+            )
+            .unwrap()["quality"]
+        );
     }
 
     #[test]
