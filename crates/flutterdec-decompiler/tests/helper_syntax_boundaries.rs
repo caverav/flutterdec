@@ -338,7 +338,22 @@ fn recovered_text_changes_the_quoted_bytes_and_nothing_else() {
 /// How `escape_hint_text` renders a value, so the comparison above can blank the
 /// quoted form as well as the raw one.
 fn escaped(value: &str) -> String {
-    value.replace('\\', "\\\\").replace('"', "\\\"")
+    let chars = value.chars().collect::<Vec<_>>();
+    let mut out = String::new();
+    for (index, c) in chars.iter().copied().enumerate() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '$' => out.push_str("\\$"),
+            '/' if chars.get(index.wrapping_sub(1)) == Some(&'*')
+                || chars.get(index + 1) == Some(&'/') =>
+            {
+                out.push_str("\\u{2f}")
+            }
+            _ => out.push(c),
+        }
+    }
+    out
 }
 
 /// VAL-EMIT-002: the helper budget still refuses at the same place, and every

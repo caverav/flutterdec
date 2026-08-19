@@ -48,6 +48,39 @@ pub(super) fn sanitize_name(name: &str) -> String {
     }
     out
 }
+
+pub(super) fn is_emitter_owned_name(name: &str) -> bool {
+    let numbered = |prefix: &str| {
+        name.strip_prefix(prefix)
+            .is_some_and(|rest| !rest.is_empty() && rest.bytes().all(|b| b.is_ascii_digit()))
+    };
+    RESERVED_EMITTER_IDENTIFIERS.contains(&name)
+        || is_generated_helper_name(name)
+        || [
+            "arg",
+            "x",
+            "reg",
+            "slot",
+            "local_",
+            "tmp",
+            "resultTmp",
+            "poolVal",
+            "stackSlot",
+            "t",
+        ]
+        .iter()
+        .any(|prefix| numbered(prefix))
+}
+
+/// Sanitize a recovered symbol without letting it enter an emitter namespace.
+pub(super) fn sanitize_symbol_name(name: &str) -> String {
+    let sanitized = sanitize_name(name);
+    if is_emitter_owned_name(&sanitized) {
+        format!("recovered_{sanitized}")
+    } else {
+        sanitized
+    }
+}
 pub(super) fn named_indirect_target(token: &str) -> String {
     if let Some(reg) = canonical_reg(token) {
         if let Some(id) = reg.strip_prefix('x') {

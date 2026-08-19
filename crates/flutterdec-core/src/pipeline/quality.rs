@@ -12,7 +12,7 @@ fn source_text_counters(line: &str) -> [usize; 6] {
     let code = flutterdec_decompiler::strip_join_annotation_span(line);
     let mut arg_refs = 0usize;
     for n in 0..=7 {
-        arg_refs += count_ident_token(&code, &format!("arg{n}"));
+        arg_refs += flutterdec_decompiler::count_code_identifier_tokens(&code, &format!("arg{n}"));
     }
     let mut register_refs = 0usize;
     for n in 0..=30 {
@@ -20,11 +20,13 @@ fn source_text_counters(line: &str) -> [usize; 6] {
         // register through `named_register_alias`, which yields `regN`. Counting
         // only `xN` reported zero on every real binary while thousands of `regN`
         // were being emitted.
-        register_refs += count_ident_token(&code, &format!("x{n}"));
-        register_refs += count_ident_token(&code, &format!("reg{n}"));
+        register_refs +=
+            flutterdec_decompiler::count_code_identifier_tokens(&code, &format!("x{n}"));
+        register_refs +=
+            flutterdec_decompiler::count_code_identifier_tokens(&code, &format!("reg{n}"));
     }
     [
-        code.matches("_block_").count(),
+        flutterdec_decompiler::count_code_matches(&code, "_block_"),
         arg_refs,
         register_refs,
         code.matches("/* cond */").count(),
@@ -597,12 +599,18 @@ mod quality_tests {
             "sink(reg0{annotation}); /* cond */ // omitted complex path; loop back-edges: x1"
         );
         let code = flutterdec_decompiler::strip_join_annotation_span(&source);
-        assert_eq!(count_ident_token(&code, "reg0"), 1);
-        assert_eq!(count_ident_token(&code, "arg3"), 0);
-        assert_eq!(code.matches("_block_").count(), 0);
+        assert_eq!(flutterdec_decompiler::count_code_identifier_tokens(&code, "reg0"), 1);
+        assert_eq!(flutterdec_decompiler::count_code_identifier_tokens(&code, "arg3"), 0);
+        assert_eq!(flutterdec_decompiler::count_code_matches(&code, "_block_"), 0);
         assert_eq!(code.matches("/* cond */").count(), 1);
         assert_eq!(code.matches("omitted complex path").count(), 1);
         assert_eq!(code.matches("loop back-edges: ").count(), 1);
+    }
+
+    #[test]
+    fn recovered_data_does_not_contribute_to_raw_counters() {
+        let source = r#"sink(reg19, reg8Minus1, \"arg0 reg28 _block_999\"); // target: reg1"#;
+        assert_eq!(source_text_counters(source)[0..3], [0, 0, 1]);
     }
 
     #[test]
@@ -616,8 +624,9 @@ mod quality_tests {
     /// carries a sentinel for every source counter that reads identifiers -
     /// `arg0`, `_block_`, a bare register spelling - and the line carries an
     /// unrelated `/* cond */` outside the span. Annotation recovers nothing, so
-    /// all six counters must read exactly what the un-annotated line reads: a
-    /// delta in either direction is contamination.
+    /// all six counters must read exactly what the un-annotated code reads: a
+    /// delta in either direction is contamination. Comment spellings are not
+    /// source tokens and therefore do not contribute to the expected counts.
     #[test]
     fn no_annotation_literal_moves_a_source_counter() {
         let bare = "  sink(reg0); /* cond */ // omitted complex path; loop back-edges: x1";
@@ -639,7 +648,7 @@ mod quality_tests {
         }
         assert_eq!(
             expected,
-            [0, 0, 2, 1, 1, 1],
+            [0, 0, 1, 1, 1, 1],
             "the fixture must actually exercise the counters it pins"
         );
     }

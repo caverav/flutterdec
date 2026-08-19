@@ -116,7 +116,7 @@ fn for_each_code_span_at(text: &str, mut f: impl FnMut(usize, &str)) {
     f(code_start, &text[code_start..]);
 }
 
-fn for_each_code_span(text: &str, mut f: impl FnMut(&str)) {
+pub(super) fn for_each_code_span(text: &str, mut f: impl FnMut(&str)) {
     for_each_code_span_at(text, |_, code| f(code));
 }
 

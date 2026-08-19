@@ -176,10 +176,17 @@ impl<'a> FuncEmitter<'a> {
 
     fn escape_hint_text(value: &str) -> String {
         let mut escaped = String::new();
-        for c in value.chars() {
+        let chars = value.chars().collect::<Vec<_>>();
+        for (index, c) in chars.iter().copied().enumerate() {
             match c {
                 '\\' => escaped.push_str("\\\\"),
                 '"' => escaped.push_str("\\\""),
+                '$' => escaped.push_str("\\$"),
+                '/' if chars.get(index.wrapping_sub(1)) == Some(&'*')
+                    || chars.get(index + 1) == Some(&'/') =>
+                {
+                    escaped.push_str("\\u{2f}")
+                }
                 '\n' => escaped.push_str("\\n"),
                 '\r' => escaped.push_str("\\r"),
                 '\t' => escaped.push_str("\\t"),
@@ -187,6 +194,30 @@ impl<'a> FuncEmitter<'a> {
             }
         }
         escaped
+    }
+
+    fn recovered_comment_data(value: &str) -> String {
+        let collides = value
+            .split(|c: char| !c.is_ascii_alphanumeric() && c != '_')
+            .any(is_emitter_owned_name);
+        if collides
+            || value.contains(['"', '$', '\n', '\r', '\t'])
+            || value.contains("*/")
+            || value.contains("//")
+        {
+            format!("\"{}\"", Self::escape_hint_text(value))
+        } else {
+            value.to_string()
+        }
+    }
+
+    fn recovered_intent_comment(value: &str) -> String {
+        let rendered = Self::recovered_comment_data(value);
+        if rendered != value {
+            format!("intent: {rendered}")
+        } else {
+            value.to_string()
+        }
     }
 
     fn render_pool_value_hint(&self, expr: &str) -> String {
@@ -306,7 +337,7 @@ impl<'a> FuncEmitter<'a> {
             let Some(symbol) = self.symbol_names.get(&va) else {
                 continue;
             };
-            let call_name = sanitize_name(symbol);
+            let call_name = sanitize_symbol_name(symbol);
             if Self::is_generic_call_name(&call_name) {
                 continue;
             }
@@ -500,7 +531,7 @@ impl<'a> FuncEmitter<'a> {
                 self.semantic_indirect_calls += 1;
                 let mut comments = Vec::new();
                 if let Some(v) = intent {
-                    comments.push(v);
+                    comments.push(Self::recovered_intent_comment(&v));
                 }
                 comments.push(format!("indirect via: {}", named_target));
                 if target_value != named_target {
@@ -534,7 +565,7 @@ impl<'a> FuncEmitter<'a> {
                         .unwrap_or_else(|| target_call_name.clone());
                 let mut comments = Vec::new();
                 if let Some(v) = target_intent {
-                    comments.push(v);
+                    comments.push(Self::recovered_intent_comment(&v));
                 }
                 comments.push(format!("indirect via: {}", named_target));
                 if target_value != named_target {
@@ -556,7 +587,10 @@ impl<'a> FuncEmitter<'a> {
                 self.dispatch_selector_calls += 1;
                 let (dispatch_name, constructor_like) = fallback_call_name_from_selector(&selector);
                 let mut comments = Vec::new();
-                comments.push(format!("selector: {}", selector));
+                comments.push(format!(
+                    "selector: {}",
+                    Self::recovered_comment_data(&selector)
+                ));
                 if constructor_like {
                     comments.push("heuristic: constructor-like selector".to_string());
                 }
@@ -583,7 +617,10 @@ impl<'a> FuncEmitter<'a> {
                     &selector_context_values,
                     &self.pool_value_hints,
                 ) {
-                    comments.push(format!("selector candidate, unverified: {candidate}"));
+                    comments.push(format!(
+                        "selector candidate, unverified: {}",
+                        Self::recovered_comment_data(&candidate)
+                    ));
                 }
                 if named_target != "dispatchTarget" && target_value != named_target {
                     comments.push(format!(
@@ -681,7 +718,7 @@ impl<'a> FuncEmitter<'a> {
             let call_name = if let Some(hex) = target.strip_prefix("0x") {
                 if let Ok(va) = u64::from_str_radix(hex, 16) {
                     if let Some(name) = self.symbol_names.get(&va) {
-                        sanitize_name(name)
+                        sanitize_symbol_name(name)
                     } else {
                         format!("fn_{}", target)
                     }
@@ -706,7 +743,7 @@ impl<'a> FuncEmitter<'a> {
             }
             let mut comments = Vec::new();
             if let Some(v) = intent {
-                comments.push(v);
+                comments.push(Self::recovered_intent_comment(&v));
             }
             if emitted_call_name != call_name {
                 comments.push(format!("was: {}", call_name));
@@ -750,7 +787,7 @@ impl<'a> FuncEmitter<'a> {
         let name = self
             .symbol_names
             .get(&va)
-            .map(|n| sanitize_name(n))
+            .map(|n| sanitize_symbol_name(n))
             .unwrap_or_else(|| format!("fn_0x{va:x}"));
         if effect.writes_result {
             self.push_line(indent, &format!("final {tname} = {name}();"));

@@ -52,14 +52,51 @@ fn one_block(function_id: u64, name: &str, base_va: u64, instrs: Vec<LlirInstr>)
 /// escaped, so the expected text is escaped the same way rather than assumed.
 fn quoted(value: &str) -> String {
     let mut out = String::from("\"");
-    for c in value.chars() {
+    let chars = value.chars().collect::<Vec<_>>();
+    for (index, c) in chars.iter().copied().enumerate() {
         match c {
             '\\' => out.push_str("\\\\"),
             '"' => out.push_str("\\\""),
+            '$' => out.push_str("\\$"),
+            '/' if chars.get(index.wrapping_sub(1)) == Some(&'*')
+                || chars.get(index + 1) == Some(&'/') =>
+            {
+                out.push_str("\\u{2f}")
+            }
             _ => out.push(c),
         }
     }
     out.push('"');
+    out
+}
+
+fn decode_quoted(value: &str) -> String {
+    let inner = value
+        .strip_prefix('"')
+        .and_then(|value| value.strip_suffix('"'))
+        .expect("quoted recovered data");
+    let mut out = String::new();
+    let mut chars = inner.chars();
+    while let Some(c) = chars.next() {
+        if c != '\\' {
+            out.push(c);
+            continue;
+        }
+        match chars.next().expect("complete escape") {
+            '\\' => out.push('\\'),
+            '"' => out.push('"'),
+            '$' => out.push('$'),
+            'n' => out.push('\n'),
+            'r' => out.push('\r'),
+            't' => out.push('\t'),
+            'u' => {
+                assert_eq!(chars.next(), Some('{'));
+                let hex = chars.by_ref().take_while(|c| *c != '}').collect::<String>();
+                out.push(char::from_u32(u32::from_str_radix(&hex, 16).unwrap()).unwrap());
+            }
+            other => panic!("unknown escape {other}"),
+        }
+    }
     out
 }
 
@@ -222,6 +259,105 @@ fn an_identifier_prefix_is_not_a_rename_target() {
         !source.contains("slot0Helper") && !source.contains("Helper3"),
         "no substring of a name was replaced:\n{source}"
     );
+}
+
+#[test]
+fn recovered_data_is_safe_and_disjoint_from_emitter_names() {
+    let hostile = "*/ // ${bait} \\\"quoted\\\" Mo\u{017e}ete = sub_110c(y)";
+    let ir = one_block(
+        7005,
+        "safeRecoveredData",
+        0x5000,
+        vec![
+            ins(0x5000, IROp::LoadPool, "x1", "pool[44]"),
+            ins(0x5004, IROp::Other, "ldr x2, [x1, #0x10]", ""),
+            ins(0x5008, IROp::Other, "mov x0, x1", ""),
+            ins(0x500c, IROp::Return, "ret", ""),
+        ],
+    );
+    let mut pool = HashMap::new();
+    pool.insert(44, hostile.to_string());
+    let source = emit_pseudocode_with_pool_hints(&ir, &HashMap::new(), &pool).source;
+    assert_well_formed(&source);
+
+    let encoded = quoted(hostile);
+    assert_eq!(decode_quoted(&encoded), hostile);
+    assert!(
+        source.contains(&encoded),
+        "encoded value missing:\n{source}"
+    );
+    assert!(
+        !source.contains("\"*/"),
+        "comment terminator stayed raw:\n{source}"
+    );
+    assert!(
+        !source.contains("// ${bait}"),
+        "line comment stayed raw:\n{source}"
+    );
+
+    for recovered in ["arg0", "x28", "reg28", "slot0"] {
+        let call_ir = one_block(
+            7100,
+            "selectorCollision",
+            0x5100,
+            vec![
+                ins(0x5100, IROp::LoadPool, "x1", "pool[70]"),
+                ins(0x5104, IROp::LoadPool, "x2", "pool[70]"),
+                ins(0x5108, IROp::Call, "blr x9", "x9"),
+                ins(0x510c, IROp::Return, "ret", ""),
+            ],
+        );
+        let mut hints = HashMap::new();
+        hints.insert(70, recovered.to_string());
+        let artifact = emit_pseudocode_with_pool_hints(&call_ir, &HashMap::new(), &hints);
+        assert!(
+            artifact
+                .source
+                .contains(&format!("unverified: \"{recovered}\"")),
+            "recovered selector must stay quoted:\n{}",
+            artifact.source
+        );
+        assert!(
+            !artifact
+                .source
+                .contains(&format!("unverified: {recovered},")),
+            "local rename reached recovered selector:\n{}",
+            artifact.source
+        );
+    }
+
+    let names = ["arg0", "x28", "reg28", "slot0", "_block_999"];
+    let mut symbols = HashMap::new();
+    let mut instrs = Vec::new();
+    for (index, name) in names.iter().enumerate() {
+        let va = 0x6000 + index as u64 * 4;
+        let target = 0x7000 + index as u64 * 4;
+        instrs.push(ins(
+            va,
+            IROp::Call,
+            &format!("bl #{target:#x}"),
+            &format!("{target:#x}"),
+        ));
+        symbols.insert(target, (*name).to_string());
+    }
+    instrs.push(ins(0x6020, IROp::Return, "ret", ""));
+    let source = emit_pseudocode(
+        &one_block(7200, "symbolCollision", 0x6000, instrs),
+        &symbols,
+    )
+    .source;
+    for expected in [
+        "recovered_arg0(",
+        "recovered_x28(",
+        "recovered_reg28(",
+        "recovered_slot0(",
+        "recovered_block999(",
+    ] {
+        assert!(
+            source.contains(expected),
+            "missing collision-safe symbol {expected}:\n{source}"
+        );
+    }
 }
 
 /// Shifts, comparisons and conditional values keep the grouping the machine

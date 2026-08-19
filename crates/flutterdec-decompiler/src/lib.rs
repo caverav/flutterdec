@@ -420,6 +420,38 @@ pub fn strip_join_annotation_span(line: &str) -> String {
     out
 }
 
+/// Count a substring only in emitter-owned code spans.
+pub fn count_code_matches(line: &str, needle: &str) -> usize {
+    let mut count = 0usize;
+    for_each_code_span(line, |code| count += code.matches(needle).count());
+    count
+}
+
+/// Count a whole ASCII identifier only in emitter-owned code spans.
+pub fn count_code_identifier_tokens(line: &str, token: &str) -> usize {
+    let mut count = 0usize;
+    for_each_code_span(line, |code| {
+        let bytes = code.as_bytes();
+        let token = token.as_bytes();
+        let mut index = 0usize;
+        while index + token.len() <= bytes.len() {
+            if bytes[index..].starts_with(token)
+                && (index == 0
+                    || !bytes[index - 1].is_ascii_alphanumeric() && bytes[index - 1] != b'_')
+                && (index + token.len() == bytes.len()
+                    || !bytes[index + token.len()].is_ascii_alphanumeric()
+                        && bytes[index + token.len()] != b'_')
+            {
+                count += 1;
+                index += token.len();
+            } else {
+                index += 1;
+            }
+        }
+    });
+    count
+}
+
 /// Return the code span before a value annotation, whichever loss site emitted
 /// it. Analyses use this borrowed prefix; rewrites deliberately keep operating
 /// on complete lines.
@@ -562,7 +594,7 @@ impl<'a> FuncEmitter<'a> {
         mut self,
         plan: EmissionPlan,
     ) -> (PseudocodeArtifact, Vec<FunctionProvenance>) {
-        let fn_name = sanitize_name(&self.ir.name);
+        let fn_name = sanitize_symbol_name(&self.ir.name);
 
         // One parameter per register the Dart convention passes an argument in.
         // A lower bound, not a signature: arguments past the sixth are
@@ -929,7 +961,7 @@ pub const INVALID_CFG_NOTE: &str = "invalid CFG";
 /// and the unresolved-control-flow counter reports the whole body as one
 /// unresolved site, which is what it is.
 fn invalid_cfg_artifact(ir: &FunctionIr, defect: &CfgDefect) -> PseudocodeArtifact {
-    let function_name = sanitize_name(&ir.name);
+    let function_name = sanitize_symbol_name(&ir.name);
     let params = (0..DART_ARGUMENT_REGISTERS.len())
         .map(|i| format!("dynamic arg{i}"))
         .collect::<Vec<_>>()

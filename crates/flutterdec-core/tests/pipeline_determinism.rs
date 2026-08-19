@@ -369,6 +369,9 @@ mod fixture {
     pub fn selector_pool_displacement() -> u32 {
         (POOL_ENTRIES_OFFSET + POOL_WORD_SIZE * SELECTOR_POOL_INDEX) as u32
     }
+    pub fn pool_displacement(index: u64) -> u32 {
+        (POOL_ENTRIES_OFFSET + POOL_WORD_SIZE * index) as u32
+    }
     pub const POOL_ENTRIES_OFFSET: u64 = 0x10;
     pub const POOL_WORD_SIZE: u64 = 8;
 
@@ -500,6 +503,7 @@ mod fixture {
             asm::label("aliasEvidence"),
             asm::prologue(),
             asm::ldr_pp(1, selector_pool_displacement()),
+            asm::ldr_pp(2, pool_displacement(4)),
             asm::bl("aliasTarget"),
             asm::mov(3, 0),
             asm::ldr_pp(1, selector_pool_displacement()),
@@ -536,6 +540,15 @@ mod fixture {
             asm::epilogue(),
             asm::ret(),
             asm::label("aliasTarget.end"),
+        ]
+    }
+
+    fn string_victim() -> Vec<Ins> {
+        vec![
+            asm::label("stringVictim"),
+            asm::ldr_pp(0, pool_displacement(4)),
+            asm::ret(),
+            asm::label("stringVictim.end"),
         ]
     }
 
@@ -601,7 +614,7 @@ mod fixture {
 
     /// Label of each fixture function's entry and one past its last word, in the
     /// order the functions appear in the blob.
-    pub const FUNCTIONS: [(&str, &str, &str); 10] = [
+    pub const FUNCTIONS: [(&str, &str, &str); 11] = [
         ("fanIn", "fanIn.end", "fanInJoin"),
         ("loop", "loop.end", "countedLoop"),
         ("dupLine", "dupLine.end", "duplicateLineProvenance"),
@@ -611,6 +624,7 @@ mod fixture {
         // Placeholder-named on purpose: the generic-call pass only aliases a
         // callee whose own name is a placeholder.
         ("aliasTarget", "aliasTarget.end", ""),
+        ("stringVictim", "stringVictim.end", "stringVictim"),
         ("poolNamedCaller", "poolNamedCaller.end", "poolNamedCaller"),
         // Also placeholder-named, so the pool claims decide its symbol.
         ("poolTarget", "poolTarget.end", ""),
@@ -626,6 +640,7 @@ mod fixture {
         out.extend(alias_evidence());
         out.extend(alias_consumer());
         out.extend(alias_target());
+        out.extend(string_victim());
         out.extend(pool_named_caller());
         out.extend(pool_named_target());
         out.extend(alias_order());
@@ -1050,13 +1065,18 @@ fn plant_workspace(root: &Path) -> PathBuf {
             {
                 "index": fixture::SELECTOR_POOL_INDEX,
                 "kind": "string",
-                "value": "build",
+                "value": "arg0",
                 "decoded_kind": "selector",
-                "selector": "build",
+                "selector": "arg0",
                 "owner_class": "AppState",
                 "library_uri": "package:flutter/src/widgets/framework.dart",
                 "confidence": 0.9,
                 "source": "synthetic"
+            },
+            {
+                "index": 4,
+                "kind": "string",
+                "value": "x = sub_1110(y)"
             },
             // Two entries claiming one target, with different owners and
             // selectors. The lower index has to win, whatever order the hint map
@@ -1227,6 +1247,58 @@ fn assert_fixture_covers_every_shape(run: &Run) {
             .and_then(serde_json::Value::as_u64)
             .unwrap_or_else(|| panic!("quality.json has no counter at {pointer}"))
     };
+
+    let raw_args = (0..=7)
+        .map(|n| {
+            pseudocode
+                .lines()
+                .map(|line| {
+                    flutterdec_decompiler::count_code_identifier_tokens(line, &format!("arg{n}"))
+                })
+                .sum::<usize>()
+        })
+        .sum::<usize>() as u64;
+    let raw_registers = (0..=30)
+        .map(|n| {
+            pseudocode
+                .lines()
+                .map(|line| {
+                    flutterdec_decompiler::count_code_identifier_tokens(line, &format!("x{n}"))
+                        + flutterdec_decompiler::count_code_identifier_tokens(
+                            line,
+                            &format!("reg{n}"),
+                        )
+                })
+                .sum::<usize>()
+        })
+        .sum::<usize>() as u64;
+    let helper_refs = pseudocode
+        .lines()
+        .map(|line| flutterdec_decompiler::count_code_matches(line, "_block_"))
+        .sum::<usize>() as u64;
+    assert_eq!(count("/raw_arg_name_refs"), raw_args);
+    assert_eq!(count("/raw_register_name_refs"), raw_registers);
+    assert_eq!(count("/block_helper_refs"), helper_refs);
+    assert!(
+        pseudocode.contains("flutter.widgets.AppState.recovered_arg0("),
+        "the recovered selector did not stay disjoint from the slot0 local"
+    );
+    assert!(
+        pseudocode.contains("intent: \"framework:flutter.widgets.AppState.arg0 [selector]\""),
+        "the recovered selector's exact decoded spelling is not retained"
+    );
+    assert!(
+        !pseudocode.contains("AppState.slot0("),
+        "the local rename entered the recovered selector"
+    );
+    assert!(
+        pseudocode.contains("\"x = sub_1110(y)\" /* pool[4] */"),
+        "the recovered literal did not retain its exact decoded value"
+    );
+    assert!(
+        !pseudocode.contains("\"x = flutter."),
+        "the generic-call rewrite entered recovered literal bait"
+    );
 
     assert!(
         pseudocode.contains(" /* = ") || pseudocode.contains(" /* possible (non-exhaustive): "),
