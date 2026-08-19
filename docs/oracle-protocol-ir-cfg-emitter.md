@@ -278,27 +278,50 @@ regular file, and a protected file whose bytes changed are each a hard CI
 failure. That checker is itself one of the rows below, so it verifies its own
 bytes.
 
-Six previously protected rows have moved since `1371e42`. `scripts/ci-check.sh`
-is adjudicated in
-section 10, with its full chain from the original fixed reference, its second
-move in section 12, its third in section 13, its fourth in section 15, its
-fifth in section 19, its sixth in section 22, and its seventh in section 23.
-`crates/flutterdec-decompiler/tests/provenance_audit.rs` is adjudicated in
-section 11, its second move in section 12, its third in section 13, and its
-fourth in section 15, its fifth in section 19, its sixth in section 22, and its
-seventh in section 23.
+Six rows now hold a digest other than the one first pinned for them. Five were
+already protected at `1371e42`; the sixth,
+`crates/flutterdec-decompiler/src/control_flow/relation_oracle.rs`, became a row
+in section 15 and has moved twice since, in section 19 and in section 21.
+
+`scripts/ci-check.sh` has moved twelve times. Section 10 adjudicates the first
+three as one chain from the original fixed reference. The fourth is in section
+12, the fifth in section 13, the sixth in section 15, and the seventh in section
+19. The eighth belongs to the auxiliary resource inventory rather than to this
+protocol: `docs/resource-ruler-protocol.md` pinned this file when that inventory
+was created, at
+`b1600c29ccbda98b751e8a337c6aa875dfc56eef3dc66efb9edb00952c78188c`, which is the
+prior value section 20 starts from, and every later move is adjudicated in both
+documents. The ninth is in section 20, the tenth in section 21, the eleventh in
+section 22, and the twelfth in section 23. Section 24 leaves it byte-unchanged.
+
+`crates/flutterdec-decompiler/tests/provenance_audit.rs` has moved ten times: the
+first in section 11, the second in section 12, the third in section 13, the
+fourth in section 15, the fifth in section 19, the sixth in section 20, the
+seventh in section 21, the eighth in section 22, the ninth in section 23, and the
+tenth in section 24.
+
 `crates/flutterdec-decompiler/src/tests/cfg_and_stack/omitted_path_and_stack.rs`
 and `crates/flutterdec-core/src/pipeline/runners/tests.rs` each moved once, in
 section 16. `scripts/prov_cross_audit_reconcile.py` moved once, in section 18.
-`crates/flutterdec-decompiler/src/control_flow/relation_oracle.rs` moved once,
-in section 19.
-One row was new rather than moved,
-`scripts/check-oracle-inventory.py`, added by section 13 and moved twice, in
-section 15 and in section 17, then moved again in section 19, in section 22, and
-in section 23. Nine rows are new
-in section 15, the IR and CFG boundary oracles. Eleven emitter repair rulers are
-new in section 19. The block-ledger contract row is new in section 23. Every other row is byte-identical to `1371e42`. A row that
-does not match the current worktree is a failure of this table, not of the file.
+
+One row was new rather than moved, `scripts/check-oracle-inventory.py`, added by
+section 13 and moved seven times since: in section 15, section 17, section 19,
+section 20, section 21, section 22, and section 23.
+
+Nine rows are new in section 15, the IR and CFG boundary oracles. Eleven emitter
+repair rulers are new in section 19. One row is new in each of section 20,
+`crates/flutterdec-ir/tests/branch_target_radix.rs`, section 21,
+`crates/flutterdec-decompiler/tests/dfs_loop_address_invariance.rs`, section 22,
+`crates/flutterdec-decompiler/tests/entry_loop_state_merge.rs`, and section 23,
+the block-ledger contract row. Section 24 adds no row.
+
+Every other row currently holds its `1371e42` bytes. One of them,
+`crates/flutterdec-decompiler/src/tests/cfg_and_stack/call_and_loops.rs`, left
+them for exactly one commit and came back: `0e8b7d6` moved it to
+`ed336192386451a0db795918530a63eece3e0367f251b43b4a82d5a3a416c9fc` and `6b79f0e`
+restored `2c2b433a07a8bab0d1a0adf4c09bc9f2982c3f74ecb997361b4729b1b3612630`, the
+value in the table below, so the row reads unchanged today. A row that does not
+match the current worktree is a failure of this table, not of the file.
 
 Fixed reference emission artifacts:
 
@@ -2625,25 +2648,166 @@ An edge is a back edge exactly when its target dominates its source; the entry
 that permits a wrapper is the current active predecessor on a non-back edge.
 Block addresses remain only in stable presentation and accounting identities.
 
-The protected public fixture target builds simple, nested, multi-exit, and
-irreducible graphs under ascending, descending, and permuted address layouts.
-The permutation includes a lower-address latch entering a higher-address header.
-It compares exact pseudocode and every serialized artifact and accounting field
-after mapping immutable addresses back to block ids, and separately pins loop,
-follow, break, continue, decline, and accounting validity. At this record the
-inventory had 69 matching digests and 46 compiled oracle rows.
+### 21.1 The invariant that makes the new output correct
 
-The existing hand-derived relation oracle still passes all reducible cases. Its
-two irreducible artifact records now pin explicit rejoin notes and zero loop
-statements instead of preserving the address heuristic's invented wrappers.
+A loop is a property of the graph, not of where its blocks were laid out. The old
+`has_backedge_pred` called an edge a back edge when the predecessor's `start_va`
+was greater than or equal to the header's, and `has_forward_pred` called any
+predecessor at a lower address a forward entry. Both are address heuristics. They
+agree with dominance only when a reducible graph happens to be laid out in
+increasing address order, so the same graph under a permuted layout produced a
+different artifact, and an irreducible cycle whose latch dominates nothing was
+still wrapped in `while (true)` as though it had a real header.
 
-Planting the old `pred.start_va >= header.start_va` and complementary forward
-comparison makes the public target fail in both debug and release: the permuted
-simple, nested, and multi-exit layouts lose their loop wrapper, while the
-irreducible ascending layout invents one. Removing the plant restores both
-profiles. The new ruler, checker mapping, loader guard, explicit CI invocation,
-section 7 digest row, and this record land with the product fix in one atomic
-commit; no golden, threshold, benchmark, or unrelated structure changes.
+The accepted rule is the standard graph one, taken from L1 rather than from the
+emitter that produced the output: an edge is a back edge exactly when its target
+dominates its source in the reachable CFG, and the entry that permits a wrapper
+is the traversal's own active predecessor on an edge that is not a back edge.
+`reachable_edges` and `dominators` in `control_flow/regions.rs` become
+`pub(super)` so the DFS fallback answers from the same graph source region
+recovery uses, and `FuncEmitter` caches their result in a `OnceLock`. That cache
+is derived from the immutable `FunctionIr`, so emitter rollback cannot change it.
+
+### 21.2 Public ruler and loader protection
+
+The protected public fixture target
+`crates/flutterdec-decompiler/tests/dfs_loop_address_invariance.rs` builds simple,
+nested, multi-exit, and irreducible graphs under ascending, descending, and
+permuted address layouts. The permutation includes a lower-address latch entering
+a higher-address header. It compares exact pseudocode and every serialized
+artifact and accounting field after mapping immutable addresses back to block
+ids, and separately pins loop, follow, break, continue, decline, and accounting
+validity.
+
+The new file is a protected Cargo integration target. Both CI lanes invoke it by
+name, which is what takes the decompiler lane from eleven named targets to
+twelve; the protected loader guard records its Cargo autotest hook in
+`loader_map`; and the compiled inventory requires the sentinel
+`public_dfs_loop_artifacts_ignore_block_address_order` through a new
+`dfs-loop-address-invariance` target entry. At this record the clean inventory
+reported 69 matching digests and 46 compiled oracle rows.
+
+### 21.3 The rewritten irreducible expectations
+
+The existing hand-derived relation oracle still passes all reducible cases, and
+`crates/flutterdec-decompiler/src/control_flow/relation_oracle.rs` is the only
+file holding an expected value this record moves. Two of its irreducible artifact
+records, `irreducible` and `declined_fallback`, changed in the same direction:
+`continues` and `loop_statements` go from 1 to 0, the back-edge comment names both
+non-dominating cycle edges rather than one, and the invented `while (true)` body
+becomes an explicit `// control rejoins block N: already emitted above` note. No
+reducible expectation, counter, golden snapshot, threshold, or benchmark
+definition changed.
+
+The change is not this record's own ruler restating the product. The graph
+behavior itself is pinned independently by section 21.2's public fixture target,
+which never reads a hand-written expected artifact: it compares one graph's
+artifacts against the same graph's artifacts under a permuted layout. The prior
+bytes stay recoverable at
+`c0558822e6f33e8201b26617d38c448adb78795d9d4325f1dc49e7dd99904cfe` with `git show
+23f0127^:crates/flutterdec-decompiler/src/control_flow/relation_oracle.rs`.
+
+### 21.4 Detection plant and restoration
+
+In a disposable worktree holding this repository's exact bytes, the plant is the
+reverse of this record's own product hunk, which restores the old
+`pb.start_va >= block.start_va` back-edge test and the complementary
+`pb.start_va < block.start_va` forward-predecessor scan:
+
+```
+git worktree add <dir> HEAD
+git -C <dir> show 23f0127 -- crates/flutterdec-decompiler/src/control_flow/graph.rs \
+  | git -C <dir> apply -R
+nix develop -c cargo test -p flutterdec-decompiler --test dfs_loop_address_invariance
+nix develop -c cargo test --release -p flutterdec-decompiler --test dfs_loop_address_invariance
+git -C <dir> checkout -- crates/flutterdec-decompiler/src/control_flow/graph.rs
+```
+
+| State | Profile | Exit | Result line |
+| --- | --- | --- | --- |
+| planted | debug | 101 | `FAILED. 0 passed; 2 failed` |
+| planted | release | 101 | `FAILED. 0 passed; 2 failed` |
+| restored | debug | 0 | `ok. 2 passed; 0 failed` |
+| restored | release | 0 | `ok. 2 passed; 0 failed` |
+
+Both failures name the graph property, not a layout detail.
+`public_dfs_loop_artifacts_ignore_block_address_order` fails on `simple_loop loop
+count`, `left: 0` against `right: 1`: under the plant the permuted layout renders
+`// control rejoins block 1: already emitted above` where the ascending layout
+renders a wrapper, so the simple, nested and multi-exit fixtures lose their loop
+wrapper. `public_auto_emission_preserves_isomorphic_meaning_and_declines_irreducible_input`
+fails on `irreducible_cycle auto output changed under an address permutation`:
+one layout invents `while (true)` under `// loop back-edges: block 1` while the
+other emits the explicit rejoin under `// loop back-edges: block 2`. Restoring the
+product bytes returns both profiles to 2 of 2 and leaves the worktree clean.
+
+### 21.5 Digest chains
+
+Column order keeps this history outside the section 7 path-and-digest parser.
+
+| Protected ruler | Prior sha256 | New sha256 at `23f0127` |
+| --- | --- | --- |
+| `scripts/ci-check.sh` | `354a21e6ecdfef30e9bc8ea91dbdfd7a33ca8062c4d537c81648328c7e5aeb43` | `6cb19f223bde0510e2c70eac4c7b759b6fe04d57e74dce9e17ffcb1ce89c6389` |
+| `scripts/check-oracle-inventory.py` | `78ed3b4f1d3e1c30102474f57205725aaf60648a4f20c39f65a37a43016c8cd6` | `5101f7e48b890da0124154611a18517ce29432d3bcf11fe9928e12dfb94ddf52` |
+| `crates/flutterdec-decompiler/tests/provenance_audit.rs` | `e9f0e28379c364c9bca72e85d8ca47e73f2d4f9cbe10d292aa0eaa7fc9788f61` | `1309c838ea03cdf3299b84dccbc45fe29d9ef4bb6a3d3389a3da713a2f57f1fb` |
+| `crates/flutterdec-decompiler/src/control_flow/relation_oracle.rs` | `c0558822e6f33e8201b26617d38c448adb78795d9d4325f1dc49e7dd99904cfe` | `e53dd455ddbbdf2c0b00d184f1f2d788833cbfd6a0db070ad69b9372297da849` |
+| `crates/flutterdec-decompiler/tests/dfs_loop_address_invariance.rs` | new | `1c2c0403303e619de9fe840f62f61c1af92dbec77fe554fd66d3505755b37db3` |
+
+Those are the only five section 7 rows this commit moved. The first three moved on
+afterwards and their later links are unbroken: `scripts/ci-check.sh`,
+`scripts/check-oracle-inventory.py` and
+`crates/flutterdec-decompiler/tests/provenance_audit.rs` all continue into section
+22, and `provenance_audit.rs` continues again into sections 23 and 24. The last
+two rows are still the current section 7 values.
+
+Outside those five, the commit changes only product source
+(`control_flow/graph.rs`, `control_flow/regions.rs`, and the `dfs_dominators`
+field in the decompiler `lib.rs`), the named invocation in
+`.github/workflows/ci.yml`, and three documents: the research note, the
+resource-ruler protocol, and this one. The
+three moved existing rulers change only by the new protected path, target,
+sentinel, loader-map row, and named CI invocation; `relation_oracle.rs`'s one
+further change is section 21.3's two irreducible records. `scripts/ci-check.sh` is
+also a row of the auxiliary resource inventory in
+`docs/resource-ruler-protocol.md`, so the same one-line change is adjudicated
+there too, with the same old and new digests. No threshold, golden fixture,
+benchmark definition, frozen reference, or unrelated structure changed.
+
+### 21.6 Section 9 steps
+
+1. Invariant: section 21.1. A back edge is dominance, not address order, and the
+   wrapper-permitting entry is the traversal's active predecessor. Sourced from
+   L1's graph definitions, independent of the emitter that produced the artifact.
+2. Tests: section 21.2's public fixture target, which fails on the old behavior
+   and passes on the new one at the layer the change belongs to, with the failure
+   and the restoration recorded in section 21.4.
+3. Diff and digests: sections 21.3 and 21.5, plus the matching adjudication in
+   `docs/resource-ruler-protocol.md`.
+4. Reference preserved: `1371e42` and `23f0127^` remain addressable, and the two
+   superseded irreducible records are recoverable from the prior
+   `relation_oracle.rs` digest named in section 21.3.
+5. The product fix, the new ruler, the checker mapping, the loader-guard row, both
+   named CI invocations, the section 7 digest row, and this record land in one
+   atomic commit, `23f0127`.
+6. L5 was re-run in full: the new target on its own in both profiles, the
+   twelve-target decompiler lane, the compiled inventory, the resource inventory,
+   and a clean `scripts/ci-check.sh`.
+
+### 21.7 Verification
+
+The public target passed 2 of 2 in both debug and optimized release, and the
+hand-derived relation oracle passed with it. The compiled inventory reported 69
+matching digests and 46 compiled oracle rows, the auxiliary resource inventory
+reported 9 matching digests with intact loaders, and a full `scripts/ci-check.sh`
+run exited 0.
+
+Sections 21.1 through 21.7 were written after `23f0127` and land as a docs-only
+commit of their own, because the original record carried the reason and the plant
+but no digest chain and no section 9 steps. Nothing in that repair changes product
+source, a test, a threshold, an expected value, or a section 7 digest. Every
+digest above was recomputed from the commit range with
+`git show <commit>:<path> | sha256sum`, and every current section 7 row was
+recomputed from workspace bytes, before this text was written.
 
 ## 22. Adjudication record: entry loops merge the implicit entry path
 
