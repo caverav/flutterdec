@@ -1403,8 +1403,8 @@ comparison to fixed scoring reference `1371e42`, and recomputes the phase and
 case shares, allocation shape, Amdahl ceiling, deterministic target prefixes,
 candidate leverage, trial order, and decision inputs.
 
-The refreshed dominant phase is still `emission_exclusive`, now 0.816574 of
-workload time rather than 0.908455. The emission target prefix is now four cases
-and reaches 0.782641 of emission. Candidate MDE remains a rule evaluated from
+The refreshed dominant phase is still `emission_exclusive`, now 0.817618 of
+workload time rather than 0.908828. The emission target prefix is now four cases
+and reaches 0.781781 of emission. Candidate MDE remains a rule evaluated from
 each later comparison's own 15 paired deltas; no number measured during this
 refresh is carried into a candidate decision.
