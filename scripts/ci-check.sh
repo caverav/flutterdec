@@ -82,7 +82,7 @@ nix develop -c cargo clippy --workspace --all-targets -- -D warnings
 # Named targets, not --workspace: `autotests = false` or a deleted file would
 # leave --workspace passing with a quietly smaller suite.
 echo "[ci-check] protected decompiler integration targets"
-nix develop -c cargo test -p flutterdec-decompiler --test provenance_audit --test loop_entry_provenance_audit --test arm64_control_effects --test cfg_identity --test dfs_loop_address_invariance --test entry_loop_state_merge --test helper_syntax_boundaries --test rewrite_boundaries --test unmodelled_write_effects --test register_width_provenance --test atomic_rmw_effects --test annotation_anchor_identity --test provenance_accounting
+nix develop -c cargo test -p flutterdec-decompiler --test provenance_audit --test loop_entry_provenance_audit --test arm64_control_effects --test cfg_identity --test dfs_loop_address_invariance --test entry_loop_state_merge --test helper_syntax_boundaries --test rewrite_boundaries --test unmodelled_write_effects --test register_width_provenance --test atomic_rmw_effects --test annotation_anchor_identity --test provenance_accounting --test block_ledger_contract
 
 echo "[ci-check] protected core integration targets"
 nix develop -c cargo test -p flutterdec-core --test pipeline_determinism

@@ -143,6 +143,7 @@ PROTECTED_PATHS = (
     "crates/flutterdec-decompiler/tests/cfg_identity.rs",
     "crates/flutterdec-decompiler/tests/dfs_loop_address_invariance.rs",
     "crates/flutterdec-decompiler/tests/entry_loop_state_merge.rs",
+    "crates/flutterdec-decompiler/tests/block_ledger_contract.rs",
 )
 
 HEX = frozenset("0123456789abcdef")
@@ -272,6 +273,17 @@ TARGETS = {
             "flutterdec-decompiler",
             "--test",
             "entry_loop_state_merge",
+        ],
+    },
+    "block-ledger-contract": {
+        "package": "flutterdec-decompiler",
+        "kind": "test",
+        "name": "block_ledger_contract",
+        "select": [
+            "-p",
+            "flutterdec-decompiler",
+            "--test",
+            "block_ledger_contract",
         ],
     },
 }
@@ -493,6 +505,10 @@ SENTINELS = {
     "crates/flutterdec-decompiler/tests/entry_loop_state_merge.rs": (
         "entry-loop-state-merge",
         "an_entry_loop_merges_the_implicit_path_with_every_back_edge",
+    ),
+    "crates/flutterdec-decompiler/tests/block_ledger_contract.rs": (
+        "block-ledger-contract",
+        "complete_partition_reconciles_and_plants_fail_closed",
     ),
 }
 

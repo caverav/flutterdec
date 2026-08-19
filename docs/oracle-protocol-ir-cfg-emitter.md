@@ -263,7 +263,7 @@ ruler change and requires section 9, whether or not a test still passes.
 
 Every digest below is the current worktree value, and since section 17 it is
 recomputed on every CI run rather than only whenever this table is touched.
-`scripts/check-oracle-inventory.py` verifies all 70 rows below before it does any
+`scripts/check-oracle-inventory.py` verifies all 71 rows below before it does any
 Cargo work, against a hardcoded inventory of exactly these paths, so a row
 deleted from this table, a row added to it, a duplicated path, a digest that is
 not 64 lowercase hex characters, a protected path that is no longer an existing
@@ -275,10 +275,11 @@ Six previously protected rows have moved since `1371e42`. `scripts/ci-check.sh`
 is adjudicated in
 section 10, with its full chain from the original fixed reference, its second
 move in section 12, its third in section 13, its fourth in section 15, its
-fifth in section 19, and its sixth in section 22.
+fifth in section 19, its sixth in section 22, and its seventh in section 23.
 `crates/flutterdec-decompiler/tests/provenance_audit.rs` is adjudicated in
 section 11, its second move in section 12, its third in section 13, and its
-fourth in section 15, its fifth in section 19, and its sixth in section 22.
+fourth in section 15, its fifth in section 19, its sixth in section 22, and its
+seventh in section 23.
 `crates/flutterdec-decompiler/src/tests/cfg_and_stack/omitted_path_and_stack.rs`
 and `crates/flutterdec-core/src/pipeline/runners/tests.rs` each moved once, in
 section 16. `scripts/prov_cross_audit_reconcile.py` moved once, in section 18.
@@ -286,9 +287,10 @@ section 16. `scripts/prov_cross_audit_reconcile.py` moved once, in section 18.
 in section 19.
 One row was new rather than moved,
 `scripts/check-oracle-inventory.py`, added by section 13 and moved twice, in
-section 15 and in section 17, then moved again in section 19 and in section 22. Nine rows are new
+section 15 and in section 17, then moved again in section 19, in section 22, and
+in section 23. Nine rows are new
 in section 15, the IR and CFG boundary oracles. Eleven emitter repair rulers are
-new in section 19. Every other row is byte-identical to `1371e42`. A row that
+new in section 19. The block-ledger contract row is new in section 23. Every other row is byte-identical to `1371e42`. A row that
 does not match the current worktree is a failure of this table, not of the file.
 
 Fixed reference emission artifacts:
@@ -305,7 +307,7 @@ Checkers, scanners, and their plant tests:
 | --- | --- |
 | `scripts/check-annotation-provenance.py` | `c4e40e0122f1d87c82b5b587d8ed1ac6c74f550bed114463765f2568ea6b6f93` |
 | `scripts/check-candidate-whitelist.py` | `d8c67c8565c372c2044f6749bfe2a7b092a374c9758930c7e2ef5b45d3a6cac5` |
-| `scripts/check-oracle-inventory.py` | `21bea1f4fa438b0aae70b5477a1ec026f13007c0bf569d6f37435089999b47df` |
+| `scripts/check-oracle-inventory.py` | `3900f505ea8aea59500c99fcf598013cffac55e9128ec9498f7811738bcbf71a` |
 | `scripts/prov_cross_audit_reconcile.py` | `f7a21d2c497ff2c47e118cf3df208d869265eb11a561605f4f14d9c50febe870` |
 | `scripts/prov_join_audit_check.py` | `99a80ec27496b76737df08ae457838512495ec2e3e82668ac5ba5d73c1c5e995` |
 | `scripts/prov_join_audit_plant_test.py` | `d3e9e885878db0b6e752ab421dd9bc851b6142f4a995307d2a7763029c88374a` |
@@ -320,7 +322,7 @@ Gate and harness scripts:
 
 | Path | sha256 |
 | --- | --- |
-| `scripts/ci-check.sh` | `94cc9b90e935bb1ecdce4280a31315337d5345b5c74b165e395c74de6dd608f5` |
+| `scripts/ci-check.sh` | `9dac174b7a2a4e3a0d14d182d292dac0dbc8b6c63679e859da7cc8dad21ea45e` |
 | `scripts/test-suite.sh` | `b1d2efd5cda5794dbb9e60c41f92eede0cc65996d66f6c73c19e905be451c38a` |
 | `scripts/lint-python.sh` | `eef80907146b5d1b3d662ad823372a8b6a33df99b458582077b0c1578680e2d7` |
 | `scripts/lint-shell.sh` | `4554f41d5dbeeadf4d2478ce97af416392b14a78cfa417673b35914877d316ab` |
@@ -411,7 +413,7 @@ false` would switch any crate's targets off wholesale.
 | Path | sha256 |
 | --- | --- |
 | `crates/flutterdec-decompiler/src/tests.rs` | `a19fe0015869fbfeb259e28f6d4344e18a630edab92b2a7aef2a58811e3ef56b` |
-| `crates/flutterdec-decompiler/tests/provenance_audit.rs` | `ea5e8087b6940bb41dfffeb6e5aef0c86b669553e745d761b19f24d9f2ff88f8` |
+| `crates/flutterdec-decompiler/tests/provenance_audit.rs` | `56ecc65ac91a20ed3761aaecead84978aeff29ef204e38bb02e665b1220347e2` |
 | `crates/flutterdec-decompiler/tests/loop_entry_provenance_audit.rs` | `02626ee1ba1b4b1b9905654a6254319ee413169341e43ddb74387813f7ecbfc7` |
 | `crates/flutterdec-decompiler/src/tests/shared.rs` | `30ef9ef9d6b55acac8d41f5e557d38a78e5a60d2c28ac612e75ccfe80e376d3e` |
 | `crates/flutterdec-decompiler/src/tests/golden_and_parser.rs` | `73a74b04ba294f1efc7faa5b067fdbd3c4cedc892c6d15068a07a98d656235ca` |
@@ -457,6 +459,7 @@ false` would switch any crate's targets off wholesale.
 | `crates/flutterdec-decompiler/tests/cfg_identity.rs` | `a5e0177808c50050bfd3517a7f89a234f650ae9ec01cc75b413ba8e2b4014ac8` |
 | `crates/flutterdec-decompiler/tests/dfs_loop_address_invariance.rs` | `1c2c0403303e619de9fe840f62f61c1af92dbec77fe554fd66d3505755b37db3` |
 | `crates/flutterdec-decompiler/tests/entry_loop_state_merge.rs` | `d562cc31ddd244e11d83a0a1bb6e3e4b3d76bf6a052417170496da4198d80dd9` |
+| `crates/flutterdec-decompiler/tests/block_ledger_contract.rs` | `6dba60e7d22f129d5178f430174508d404dca297f7296984b69b3fe9ed248b21` |
 
 Threshold rulers, protected by value rather than by digest because they live in
 files this mission may legitimately touch:
@@ -2473,7 +2476,9 @@ The first three use explicit `#[cfg(test)]` module declarations. The next seven
 are separate decompiler integration targets. The last is a separate core
 integration target. Both CI lanes name every protected integration target, and
 the inventory lists every target separately before matching its sentinel.
-Section 7 now contains 67 protected digests, of which 44 are Rust oracle rows.
+At this record section 7 contained 67 protected digests, of which 44 were Rust
+oracle rows. Each later record states the counts of its own state, and the
+current exact counts are in section 23.
 
 These rulers directly preserve VAL-EMIT-001 through VAL-EMIT-007: helper
 resolution and syntax boundaries, the closed emission taxonomy and rollback
@@ -2528,7 +2533,8 @@ with a smaller suite, and the compiled inventory exited 1 naming the missing
 sentinel. Finally, `autotests = false` was planted independently in the
 decompiler and core manifests; each inventory run exited 1 because protected
 integration targets disappeared from Cargo metadata. All plants were restored
-and the clean inventory returned 67 matching digests and 44 compiled oracles.
+and the clean inventory returned the 67 matching digests and 44 compiled oracles
+of that record's state.
 
 ### 19.5 Section 9 steps
 
@@ -2567,8 +2573,8 @@ malformed, and ambiguous operand forms.
 
 The new file is a protected Cargo integration target. Both CI lanes invoke it by
 name, the protected provenance loader guard maps it to the IR manifest, and the
-compiled inventory requires its public-CFG sentinel. The clean inventory reports
-68 matching digests and 45 compiled oracle rows.
+compiled inventory requires its public-CFG sentinel. At this record the clean
+inventory reported 68 matching digests and 45 compiled oracle rows.
 
 ### 20.2 Detection plant
 
@@ -2617,8 +2623,8 @@ irreducible graphs under ascending, descending, and permuted address layouts.
 The permutation includes a lower-address latch entering a higher-address header.
 It compares exact pseudocode and every serialized artifact and accounting field
 after mapping immutable addresses back to block ids, and separately pins loop,
-follow, break, continue, decline, and accounting validity. The inventory now has
-69 matching digests and 46 compiled oracle rows.
+follow, break, continue, decline, and accounting validity. At this record the
+inventory had 69 matching digests and 46 compiled oracle rows.
 
 The existing hand-derived relation oracle still passes all reducible cases. Its
 two irreducible artifact records now pin explicit rejoin notes and zero loop
@@ -2663,8 +2669,8 @@ span claiming a first-iteration value.
 
 The new file is a protected Cargo integration target. Both CI lanes invoke it by
 name, the protected loader guard records its Cargo autotest hook, and the
-compiled inventory requires its merge sentinel. The clean inventory
-reports 70 matching digests and 47 compiled oracle rows.
+compiled inventory requires its merge sentinel. At this record the clean
+inventory reported 70 matching digests and 47 compiled oracle rows.
 
 ### 22.2 Detection plant
 
@@ -2703,3 +2709,160 @@ loaders, and a full `scripts/ci-check.sh` run exited 0, including the flake
 check, both fmt lanes, shell and Python lint, workspace clippy, the named
 protected targets, the workspace suite, the release CLI build, and the excluded
 benchmark harness.
+
+## 23. Adjudication record: block ledger contract protection
+
+`crates/flutterdec-decompiler/tests/block_ledger_contract.rs` is the public ruler
+for the block identity ledger: the stage partition and its dense-id rekeying, the
+disposition of every built block, the reconciliation of reachable-unemitted
+explanations against real traversal events, the closed cause and event
+vocabularies, and the invalid-CFG rejection outcome with its raw-graph witness and
+digest. It asserts all of that through the public `flutterdec_decompiler` API and
+plants a failure for every accepted defect class, so it is exactly the kind of
+file section 7 exists to pin.
+
+It was unprotected. It had no digest row, no compiled sentinel, no entry in the
+checker's Cargo target inventory, and no named invocation in either CI lane, so
+the entire ledger contract could be removed without any gate noticing. This
+record adds all four and nothing else.
+
+### 23.1 The bypass this closes
+
+Measured at `00e6115` before this record, in a disposable worktree, by deleting
+`crates/flutterdec-decompiler/tests/block_ledger_contract.rs` and changing
+nothing else:
+
+- `cargo test --workspace` exited 0 with 28 result lines and 586 passed tests.
+  The six ledger tests were simply absent from the reported suite.
+- `scripts/ci-check.sh --skip-tests` exited 0 through every lane: the flake
+  check, both fmt lanes, shell and Python lint, the benchmark identity gate,
+  workspace clippy, all three named protected-target lanes, the compiled oracle
+  inventory reporting 70 matching digests and 47 compiled oracle rows, and the
+  auxiliary resource inventory reporting 9 matching digests with intact loaders.
+
+That is the fail condition this record removes: a protected-oracle family whose
+deletion leaves the workspace suite green and every guard passing.
+
+### 23.2 Exact protected inventory and loader map
+
+One new section 7 row, one new Cargo integration target in the checker's target
+inventory, one new sentinel, one new loader-map row, and one new named invocation
+in each CI lane:
+
+| Protected test-only path | Target | Sentinel |
+| --- | --- | --- |
+| `crates/flutterdec-decompiler/tests/block_ledger_contract.rs` | `block-ledger-contract` | `complete_partition_reconciles_and_plants_fail_closed` |
+
+The sentinel is defined only in this file, and it is the test that both
+reconciles a complete partition and requires all eleven planted ledger defects to
+fail closed, so the sentinel cannot be satisfied by any other protected row. The
+hook is Cargo's automatic discovery of `crates/flutterdec-decompiler/tests/`, the
+same `Hook::Autotest` family the other thirteen protected decompiler integration
+targets use, so `the_protected_oracle_loader_chain_is_intact` now records
+fourteen of them and both CI lanes must name all fourteen in one command line.
+The checker's `TARGETS` entry is what makes `cargo metadata` the ruler for the
+manifest: a target dropped by `autotests = false` is absent from metadata, and
+one switched off with `test = false` is present but not testable, and neither
+reads as a missing test in a listing.
+
+No mutable product source, manifest, `.github/workflows/ci.yml`, or hook carrier
+gained a digest row. Those stay unprotected for the reason section 7 already
+gives: a whole-file digest over a file ordinary work must edit fires on
+legitimate change and rules nothing.
+
+### 23.3 Digest chains
+
+Column order keeps this history outside the section 7 path-and-digest parser.
+
+| Protected ruler | Prior sha256 | Current sha256 in section 7 |
+| --- | --- | --- |
+| `scripts/ci-check.sh` | `94cc9b90e935bb1ecdce4280a31315337d5345b5c74b165e395c74de6dd608f5` | `9dac174b7a2a4e3a0d14d182d292dac0dbc8b6c63679e859da7cc8dad21ea45e` |
+| `scripts/check-oracle-inventory.py` | `21bea1f4fa438b0aae70b5477a1ec026f13007c0bf569d6f37435089999b47df` | `3900f505ea8aea59500c99fcf598013cffac55e9128ec9498f7811738bcbf71a` |
+| `crates/flutterdec-decompiler/tests/provenance_audit.rs` | `ea5e8087b6940bb41dfffeb6e5aef0c86b669553e745d761b19f24d9f2ff88f8` | `56ecc65ac91a20ed3761aaecead84978aeff29ef204e38bb02e665b1220347e2` |
+| `crates/flutterdec-decompiler/tests/block_ledger_contract.rs` | new | `6dba60e7d22f129d5178f430174508d404dca297f7296984b69b3fe9ed248b21` |
+
+`scripts/ci-check.sh` is also a row of the auxiliary resource inventory in
+`docs/resource-ruler-protocol.md`, so the same one-line change is adjudicated
+there too, with the same old and new digests. The ledger contract file itself is
+byte-unchanged by this record: it is protected as it already stood, so no ruler
+was rewritten to make protecting it easier. The only changes in the three moved
+rulers are the new protected path, target, sentinel, loader-map row, and named CI
+invocation. No threshold, golden fixture, benchmark definition, frozen expected
+value, product behavior, or existing acceptance changed, and no digest row other
+than these moved.
+
+### 23.4 Planted bypasses
+
+Six plants, one at a time in a disposable worktree holding this record's exact
+bytes, each restored before the next. `inventory` is
+`scripts/check-oracle-inventory.py`, `guard` is
+`cargo test -p flutterdec-decompiler --test provenance_audit`, `named` is the
+fourteen-target decompiler lane both CI files run, and `workspace` is
+`cargo test --workspace`.
+
+| Plant | inventory | guard | named | workspace |
+| --- | --- | --- | --- | --- |
+| p1, the protected file deleted | 1 | 101 | 101 | 101, 494 passed, 14 of 15 ok |
+| p2, `autotests = false` in the decompiler `[package]` | 1, 14 problems | 101 | 101 | 0, 535 passed, 15 of 15 ok |
+| p3, `autotests = false` plus explicit `[[test]]` for every other target | 1, exactly 1 problem | 101 | 101 | 101, 494 passed, 14 of 15 ok |
+| p4, target declared with `test = false` | 1, exactly 1 problem | 101 | 101 | 101, 494 passed, 14 of 15 ok |
+| p5, the named invocation deleted from both CI lanes | 1 | 101 | 101 | 101, 500 passed, 15 of 16 ok |
+| p6, one assertion of the protected file weakened | 1 | 0 | 0 | 0, 592 passed, 29 of 29 ok |
+
+Every message names the exact path or target rather than a family. p1 reports
+`crates/flutterdec-decompiler/tests/block_ledger_contract.rs is protected ... but
+is not an existing regular file`, and the named lane reports `no test target named
+block_ledger_contract`. p3 and p4 report one problem, `target
+block-ledger-contract holds protected oracles and flutterdec-decompiler's
+manifest no longer builds test target block_ledger_contract for tests`, with the
+other thirteen targets still live; p4's guard adds `Cargo.toml sets test = false,
+which silences protected oracles while every digest in section 7 still matches`.
+p5 fires twice over, because `scripts/ci-check.sh` is itself a protected row: the
+digest pass names its stale hash, and the guard names the command line the lane
+must contain. p6 is the sharpest row of the table. The mutation drops the
+fail-closed check for a reachable-unemitted block with no traversal event, keeps
+the file compiling, keeps the sentinel's name, and leaves every test green - the
+whole workspace suite is byte-for-byte the control's 592 passed and 29 of 29 ok,
+and the digest pass is the only thing that fires.
+
+p2 is the fake pass the row exists to remove: `cargo test --workspace` exits 0
+while all fourteen protected decompiler integration targets, 57 tests, silently
+leave the reported suite. Nothing in `--workspace` can see that; the metadata
+half of the checker's target inventory and the named lanes are what fail.
+
+The manifest plant must go inside `[package]`. Appended at the end of the file it
+lands in `[dev-dependencies]` and is a manifest syntax error, so every command
+fails for the wrong reason and the plant proves nothing.
+
+### 23.5 Section 9 steps
+
+1. Invariant: every stable public ruler is digest-pinned, listed in the Cargo
+   target inventory, proved compiled by a sentinel, and invoked by name in both
+   CI lanes.
+2. Tests: section 23.1's before-state bypass and section 23.4's six plants, each
+   restored, with the reduced-suite counts that show what `--workspace` cannot
+   see.
+3. Diff and digests: sections 23.2 and 23.3, plus the matching adjudication in
+   `docs/resource-ruler-protocol.md`. No product behavior changes.
+4. Reference preserved: `1371e42` and `00e6115` remain addressable; all prior
+   bytes are recoverable with `git show`.
+5. The section 7 row, checker inventory, sentinel, loader-map row, both named CI
+   invocations, both adjudications, and the refreshed counts land in one atomic
+   oracle-protection commit. No product source, threshold, golden fixture,
+   benchmark definition, or existing oracle acceptance is touched.
+6. L5 was re-run in full: the ledger target on its own, the fourteen-target
+   decompiler lane, the core and IR lanes, the compiled inventory, the resource
+   inventory, and a clean `scripts/ci-check.sh`.
+
+### 23.6 Verification
+
+The clean state after this record: the compiled inventory reports 71 matching
+digests and 48 compiled oracle rows, the auxiliary resource inventory reports 9
+matching digests with intact loaders, the fourteen-target decompiler lane passes
+all fourteen targets, and the block-ledger target itself passes 6 of 6. The
+workspace suite is 29 result lines and 592 passed, exactly 6 more than the 586 the
+same suite reported with this file deleted and unprotected. A full
+`scripts/ci-check.sh` run exits 0, including the flake check, both fmt lanes,
+shell and Python lint, the benchmark identity gate, workspace clippy, all three
+named protected-target lanes, both inventories, the workspace suite, the release
+CLI build, and the excluded benchmark harness.

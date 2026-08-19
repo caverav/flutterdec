@@ -340,6 +340,12 @@ fn loader_map() -> Vec<(String, Hook)> {
                 manifest: DECOMPILER_MANIFEST,
             },
         ),
+        (
+            "crates/flutterdec-decompiler/tests/block_ledger_contract.rs".to_string(),
+            Hook::Autotest {
+                manifest: DECOMPILER_MANIFEST,
+            },
+        ),
     ];
 
     // Loader file, then every protected file it includes. A loader's include
@@ -441,7 +447,7 @@ fn oracle_test_file_rows(protocol: &str) -> Vec<String> {
 /// `src/tests/`, one more `include!` in `src/control_flow.rs`, which loads five
 /// product modules beside it, module declarations across `flutterdec-ir`,
 /// `flutterdec-core` and the decompiler's control-flow code, and Cargo's
-/// automatic discovery of the thirteen integration
+/// automatic discovery of the fourteen integration
 /// tests. Delete any one of them and the affected test binary still prints
 /// `test result: ok`, with fewer tests and a whole protected oracle silenced
 /// while its digest still matches.
