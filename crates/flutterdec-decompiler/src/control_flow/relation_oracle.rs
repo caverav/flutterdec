@@ -1361,8 +1361,7 @@ mod relation_oracle {
             if open_loops.is_empty() && (t == "break;" || t == "continue;") {
                 stranded.push(t.to_string());
             }
-            let opens = line.chars().filter(|&c| c == '{').count() as i32;
-            let closes = line.chars().filter(|&c| c == '}').count() as i32;
+            let (opens, closes) = code_brace_counts(line);
             if opens > 0
                 && (t.starts_with("while (")
                     || t.starts_with("for (")
@@ -1377,6 +1376,64 @@ mod relation_oracle {
             }
         }
         stranded
+    }
+
+    #[test]
+    fn loop_control_relations_ignore_braces_in_literals_and_comments() {
+        fn legacy_control_statements_outside_a_loop(body: &str) -> Vec<String> {
+            let mut stranded = Vec::new();
+            let mut open_loops: Vec<i32> = Vec::new();
+            let mut depth = 0i32;
+            for line in body.lines() {
+                let t = line.trim();
+                if open_loops.is_empty() && (t == "break;" || t == "continue;") {
+                    stranded.push(t.to_string());
+                }
+                let opens = line.chars().filter(|&c| c == '{').count() as i32;
+                let closes = line.chars().filter(|&c| c == '}').count() as i32;
+                if opens > 0
+                    && (t.starts_with("while (")
+                        || t.starts_with("for (")
+                        || t.starts_with("switch (")
+                        || t == "do {")
+                {
+                    open_loops.push(depth);
+                }
+                depth += opens - closes;
+                while open_loops.last().is_some_and(|opened| depth <= *opened) {
+                    open_loops.pop();
+                }
+            }
+            stranded
+        }
+
+        let body = r#"while (ready) {
+  final closeBait = "}";
+  final openBait = "{ ${ escaped: \"quote\" /* */ //";
+  /* unmatched } plus { ${ and "quotes" // stay comment data */
+  break;
+  continue;
+}"#;
+        assert_eq!(
+            legacy_control_statements_outside_a_loop(body),
+            vec!["break;".to_string(), "continue;".to_string()],
+            "the old ruler must be proved vulnerable before its replacement is trusted"
+        );
+        assert_eq!(
+            control_statements_outside_a_loop(body),
+            Vec::<String>::new(),
+            "literal and comment braces cannot close the real loop"
+        );
+
+        let stranded = r#"final bait = "{ ${ } \"quote\" /* */ //";
+// unmatched { } ${ "quotes" /* */
+break;
+continue;"#;
+        assert_eq!(
+            control_statements_outside_a_loop(stranded),
+            vec!["break;".to_string(), "continue;".to_string()],
+            "real loop control outside a loop must still fail the relation oracle"
+        );
     }
 
     /// Conditionals in a fallback body that state only one of their two edges.

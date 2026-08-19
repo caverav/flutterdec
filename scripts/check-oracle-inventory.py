@@ -127,6 +127,17 @@ PROTECTED_PATHS = (
     "crates/flutterdec-core/src/pipeline/runners/stubs/identity_tests.rs",
     "crates/flutterdec-decompiler/src/control_flow/regions/identity_boundary_tests.rs",
     "crates/flutterdec-decompiler/src/control_flow/relation_oracle.rs",
+    "crates/flutterdec-decompiler/src/control_flow/emission_taxonomy_tests.rs",
+    "crates/flutterdec-decompiler/src/control_flow/annotation_anchor_tests.rs",
+    "crates/flutterdec-decompiler/src/line_identity_tests.rs",
+    "crates/flutterdec-decompiler/tests/helper_syntax_boundaries.rs",
+    "crates/flutterdec-decompiler/tests/rewrite_boundaries.rs",
+    "crates/flutterdec-decompiler/tests/unmodelled_write_effects.rs",
+    "crates/flutterdec-decompiler/tests/register_width_provenance.rs",
+    "crates/flutterdec-decompiler/tests/atomic_rmw_effects.rs",
+    "crates/flutterdec-decompiler/tests/annotation_anchor_identity.rs",
+    "crates/flutterdec-decompiler/tests/provenance_accounting.rs",
+    "crates/flutterdec-core/tests/pipeline_determinism.rs",
     "crates/flutterdec-decompiler/tests/arm64_control_effects.rs",
     "crates/flutterdec-decompiler/tests/cfg_identity.rs",
 )
@@ -183,6 +194,54 @@ TARGETS = {
         "kind": "test",
         "name": "cfg_identity",
         "select": ["-p", "flutterdec-decompiler", "--test", "cfg_identity"],
+    },
+    "helper-syntax-boundaries": {
+        "package": "flutterdec-decompiler",
+        "kind": "test",
+        "name": "helper_syntax_boundaries",
+        "select": ["-p", "flutterdec-decompiler", "--test", "helper_syntax_boundaries"],
+    },
+    "rewrite-boundaries": {
+        "package": "flutterdec-decompiler",
+        "kind": "test",
+        "name": "rewrite_boundaries",
+        "select": ["-p", "flutterdec-decompiler", "--test", "rewrite_boundaries"],
+    },
+    "unmodelled-write-effects": {
+        "package": "flutterdec-decompiler",
+        "kind": "test",
+        "name": "unmodelled_write_effects",
+        "select": ["-p", "flutterdec-decompiler", "--test", "unmodelled_write_effects"],
+    },
+    "register-width-provenance": {
+        "package": "flutterdec-decompiler",
+        "kind": "test",
+        "name": "register_width_provenance",
+        "select": ["-p", "flutterdec-decompiler", "--test", "register_width_provenance"],
+    },
+    "atomic-rmw-effects": {
+        "package": "flutterdec-decompiler",
+        "kind": "test",
+        "name": "atomic_rmw_effects",
+        "select": ["-p", "flutterdec-decompiler", "--test", "atomic_rmw_effects"],
+    },
+    "annotation-anchor-identity": {
+        "package": "flutterdec-decompiler",
+        "kind": "test",
+        "name": "annotation_anchor_identity",
+        "select": ["-p", "flutterdec-decompiler", "--test", "annotation_anchor_identity"],
+    },
+    "provenance-accounting": {
+        "package": "flutterdec-decompiler",
+        "kind": "test",
+        "name": "provenance_accounting",
+        "select": ["-p", "flutterdec-decompiler", "--test", "provenance_accounting"],
+    },
+    "pipeline-determinism": {
+        "package": "flutterdec-core",
+        "kind": "test",
+        "name": "pipeline_determinism",
+        "select": ["-p", "flutterdec-core", "--test", "pipeline_determinism"],
     },
 }
 
@@ -338,6 +397,50 @@ SENTINELS = {
     "crates/flutterdec-decompiler/src/control_flow/relation_oracle.rs": (
         "decompiler-lib",
         "control_flow::relation_oracle::normalized_relations_are_identical_in_twenty_processes",
+    ),
+    "crates/flutterdec-decompiler/src/control_flow/emission_taxonomy_tests.rs": (
+        "decompiler-lib",
+        "control_flow::emission_taxonomy_tests::snapshot_and_restore_cover_every_mutable_state_family",
+    ),
+    "crates/flutterdec-decompiler/src/control_flow/annotation_anchor_tests.rs": (
+        "decompiler-lib",
+        "control_flow::annotation_anchor_tests::every_candidate_ends_with_a_recorded_outcome",
+    ),
+    "crates/flutterdec-decompiler/src/line_identity_tests.rs": (
+        "decompiler-lib",
+        "line_identity_tests::every_length_changing_helper_rejects_a_partial_identity_mismatch",
+    ),
+    "crates/flutterdec-decompiler/tests/helper_syntax_boundaries.rs": (
+        "helper-syntax-boundaries",
+        "recovered_text_inside_a_helper_body_never_moves_helper_structure",
+    ),
+    "crates/flutterdec-decompiler/tests/rewrite_boundaries.rs": (
+        "rewrite-boundaries",
+        "recovered_data_is_safe_and_disjoint_from_emitter_names",
+    ),
+    "crates/flutterdec-decompiler/tests/unmodelled_write_effects.rs": (
+        "unmodelled-write-effects",
+        "an_unmodelled_write_drops_the_binding_at_every_destination_width",
+    ),
+    "crates/flutterdec-decompiler/tests/register_width_provenance.rs": (
+        "register-width-provenance",
+        "an_x_produced_non_literal_is_unresolved_through_a_w_read",
+    ),
+    "crates/flutterdec-decompiler/tests/atomic_rmw_effects.rs": (
+        "atomic-rmw-effects",
+        "every_atomic_load_form_invalidates_its_second_operand",
+    ),
+    "crates/flutterdec-decompiler/tests/annotation_anchor_identity.rs": (
+        "annotation-anchor-identity",
+        "annotations_bind_their_own_line_and_the_reconciler_rejects_every_planted_defect",
+    ),
+    "crates/flutterdec-decompiler/tests/provenance_accounting.rs": (
+        "provenance-accounting",
+        "release_audit_accounts_for_accepted_and_rejection_only_streams",
+    ),
+    "crates/flutterdec-core/tests/pipeline_determinism.rs": (
+        "pipeline-determinism",
+        "the_whole_artifact_set_is_byte_identical_in_twenty_processes",
     ),
     # Integration tests, discovered by Cargo from `tests/`.
     "crates/flutterdec-decompiler/tests/arm64_control_effects.rs": (

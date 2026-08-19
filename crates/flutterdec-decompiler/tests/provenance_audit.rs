@@ -181,6 +181,77 @@ fn loader_map() -> Vec<(String, Hook)> {
                 decl: "#[cfg(test)]\n#[path = \"symbol_map/tests.rs\"]\nmod tests;",
             },
         ),
+        (
+            "crates/flutterdec-decompiler/src/control_flow/emission_taxonomy_tests.rs"
+                .to_string(),
+            Hook::Module {
+                file: "crates/flutterdec-decompiler/src/control_flow/emission_taxonomy.rs",
+                decl: "#[cfg(test)]\n#[path = \"emission_taxonomy_tests.rs\"]\nmod emission_taxonomy_tests;",
+            },
+        ),
+        (
+            "crates/flutterdec-decompiler/src/control_flow/annotation_anchor_tests.rs"
+                .to_string(),
+            Hook::Module {
+                file: "crates/flutterdec-decompiler/src/control_flow/structured.rs",
+                decl: "#[cfg(test)]\n#[path = \"annotation_anchor_tests.rs\"]\nmod annotation_anchor_tests;",
+            },
+        ),
+        (
+            "crates/flutterdec-decompiler/src/line_identity_tests.rs".to_string(),
+            Hook::Module {
+                file: "crates/flutterdec-decompiler/src/lib.rs",
+                decl: "#[cfg(test)]\nmod line_identity_tests;",
+            },
+        ),
+        (
+            "crates/flutterdec-decompiler/tests/helper_syntax_boundaries.rs".to_string(),
+            Hook::Autotest {
+                manifest: DECOMPILER_MANIFEST,
+            },
+        ),
+        (
+            "crates/flutterdec-decompiler/tests/rewrite_boundaries.rs".to_string(),
+            Hook::Autotest {
+                manifest: DECOMPILER_MANIFEST,
+            },
+        ),
+        (
+            "crates/flutterdec-decompiler/tests/unmodelled_write_effects.rs".to_string(),
+            Hook::Autotest {
+                manifest: DECOMPILER_MANIFEST,
+            },
+        ),
+        (
+            "crates/flutterdec-decompiler/tests/register_width_provenance.rs".to_string(),
+            Hook::Autotest {
+                manifest: DECOMPILER_MANIFEST,
+            },
+        ),
+        (
+            "crates/flutterdec-decompiler/tests/atomic_rmw_effects.rs".to_string(),
+            Hook::Autotest {
+                manifest: DECOMPILER_MANIFEST,
+            },
+        ),
+        (
+            "crates/flutterdec-decompiler/tests/annotation_anchor_identity.rs".to_string(),
+            Hook::Autotest {
+                manifest: DECOMPILER_MANIFEST,
+            },
+        ),
+        (
+            "crates/flutterdec-decompiler/tests/provenance_accounting.rs".to_string(),
+            Hook::Autotest {
+                manifest: DECOMPILER_MANIFEST,
+            },
+        ),
+        (
+            "crates/flutterdec-core/tests/pipeline_determinism.rs".to_string(),
+            Hook::Autotest {
+                manifest: CORE_MANIFEST,
+            },
+        ),
         // The IR and CFG boundary oracles. Each was an inline module in the
         // product file beside it until it was moved out: a digest can only
         // protect a file later work is not expected to edit, and `lib.rs`,
@@ -347,12 +418,12 @@ fn oracle_test_file_rows(protocol: &str) -> Vec<String> {
 }
 
 /// Every protected oracle file needs a live hook into a compiled test target, and
-/// every hook needs a protected file. The hooks are one `#[cfg(test)] mod tests;`
-/// line, nineteen `include!` lines across four exclusive loaders under
+/// every hook needs a protected file. The hooks are `#[cfg(test)]` module
+/// lines, nineteen `include!` lines across four exclusive loaders under
 /// `src/tests/`, one more `include!` in `src/control_flow.rs`, which loads five
-/// product modules beside it, eight `#[cfg(test)] #[path = ...]` module
-/// declarations across `flutterdec-ir`, `flutterdec-core` and the decompiler's
-/// region analysis, and Cargo's automatic discovery of the four integration
+/// product modules beside it, module declarations across `flutterdec-ir`,
+/// `flutterdec-core` and the decompiler's control-flow code, and Cargo's
+/// automatic discovery of the twelve integration
 /// tests. Delete any one of them and the affected test binary still prints
 /// `test result: ok`, with fewer tests and a whole protected oracle silenced
 /// while its digest still matches.
@@ -412,7 +483,7 @@ fn the_protected_oracle_loader_chain_is_intact() {
     );
 
     let mut expected_includes: BTreeMap<&str, usize> = BTreeMap::new();
-    let mut autotest_stems: Vec<&str> = Vec::new();
+    let mut autotest_stems: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
     // Source-text observations about the hooks. Reported, never asserted: matching
     // bytes does not mean the item compiled, so treating these as a verdict is
     // exactly the fake pass the inventory checker exists to remove.
@@ -464,12 +535,7 @@ fn the_protected_oracle_loader_chain_is_intact() {
                     .unwrap_or_else(|| {
                         panic!("{path} must sit in a crate's tests/ directory to be discovered")
                     });
-                assert_eq!(
-                    *manifest, DECOMPILER_MANIFEST,
-                    "{path} is discovered from {manifest}, which the lane check below does not \
-                     cover; extend it before mapping another crate's integration tests"
-                );
-                autotest_stems.push(stem);
+                autotest_stems.entry(manifest).or_default().push(stem);
             }
         }
     }
@@ -485,27 +551,35 @@ fn the_protected_oracle_loader_chain_is_intact() {
     for lane in CI_LANES {
         let script = std::fs::read_to_string(root.join(lane))
             .unwrap_or_else(|_| panic!("{lane} is readable"));
-        let invocations: Vec<&str> = script
-            .lines()
-            .map(|line| line.trim().trim_start_matches("run: "))
-            .filter(|line| line.starts_with("nix develop -c cargo test -p flutterdec-decompiler"))
-            .collect();
-        let covering = invocations.iter().find(|line| {
-            autotest_stems
-                .iter()
-                .all(|stem| line.contains(&format!("--test {stem}")))
-        });
-        assert!(
-            covering.is_some(),
-            "{lane} must invoke every discovered integration target in one command line, \
-             `nix develop -c cargo test -p flutterdec-decompiler{}`, so deleting one of them or \
-             setting `autotests = false` in {DECOMPILER_MANIFEST} is a hard error instead of a \
-             quietly smaller suite. Invocation lines found: {invocations:?}",
-            autotest_stems
-                .iter()
-                .map(|stem| format!(" --test {stem}"))
-                .collect::<String>()
-        );
+        for (manifest, stems) in &autotest_stems {
+            let package = match *manifest {
+                DECOMPILER_MANIFEST => "flutterdec-decompiler",
+                CORE_MANIFEST => "flutterdec-core",
+                _ => panic!("{manifest} has no named integration-test lane"),
+            };
+            let prefix = format!("nix develop -c cargo test -p {package}");
+            let invocations: Vec<&str> = script
+                .lines()
+                .map(|line| line.trim().trim_start_matches("run: "))
+                .filter(|line| line.starts_with(&prefix))
+                .collect();
+            let covering = invocations.iter().find(|line| {
+                stems
+                    .iter()
+                    .all(|stem| line.contains(&format!("--test {stem}")))
+            });
+            assert!(
+                covering.is_some(),
+                "{lane} must invoke every discovered integration target in one command line, \
+                 `{prefix}{}`, so deleting one of them or setting `autotests = false` in \
+                 {manifest} is a hard error instead of a quietly smaller suite. Invocation \
+                 lines found: {invocations:?}",
+                stems
+                    .iter()
+                    .map(|stem| format!(" --test {stem}"))
+                    .collect::<String>()
+            );
+        }
     }
 
     // The compiled-inventory checker decides whether a protected file is really

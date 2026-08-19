@@ -23,7 +23,7 @@ The benchmark harness is not a workspace member, so --workspace does not reach
 it and it is linted and tested through its own manifest. That exclusion is what
 keeps its `bench-spans` instrumentation out of every check above.
 
-Step 7 names the four decompiler integration test targets explicitly and runs even
+Step 7 names every protected integration test target explicitly and runs even
 under --skip-tests. `cargo test --workspace` cannot protect them: with
 `autotests = false`, or with any of the files deleted, it reports a smaller suite
 and still exits 0. Naming the targets turns both into a hard error.
@@ -80,8 +80,11 @@ nix develop -c cargo clippy --workspace --all-targets -- -D warnings
 
 # Named targets, not --workspace: `autotests = false` or a deleted file would
 # leave --workspace passing with a quietly smaller suite.
-echo "[ci-check] cargo test -p flutterdec-decompiler --test provenance_audit --test loop_entry_provenance_audit --test arm64_control_effects --test cfg_identity"
-nix develop -c cargo test -p flutterdec-decompiler --test provenance_audit --test loop_entry_provenance_audit --test arm64_control_effects --test cfg_identity
+echo "[ci-check] protected decompiler integration targets"
+nix develop -c cargo test -p flutterdec-decompiler --test provenance_audit --test loop_entry_provenance_audit --test arm64_control_effects --test cfg_identity --test helper_syntax_boundaries --test rewrite_boundaries --test unmodelled_write_effects --test register_width_provenance --test atomic_rmw_effects --test annotation_anchor_identity --test provenance_accounting
+
+echo "[ci-check] protected core integration targets"
+nix develop -c cargo test -p flutterdec-core --test pipeline_determinism
 
 # The compiled inventory, not the loader source text: this is what fails when a
 # protected oracle stops being compiled while its digest still matches.

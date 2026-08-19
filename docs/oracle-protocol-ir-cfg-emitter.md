@@ -262,7 +262,7 @@ ruler change and requires section 9, whether or not a test still passes.
 
 Every digest below is the current worktree value, and since section 17 it is
 recomputed on every CI run rather than only whenever this table is touched.
-`scripts/check-oracle-inventory.py` verifies all 56 rows below before it does any
+`scripts/check-oracle-inventory.py` verifies all 67 rows below before it does any
 Cargo work, against a hardcoded inventory of exactly these paths, so a row
 deleted from this table, a row added to it, a duplicated path, a digest that is
 not 64 lowercase hex characters, a protected path that is no longer an existing
@@ -270,20 +270,25 @@ regular file, and a protected file whose bytes changed are each a hard CI
 failure. That checker is itself one of the rows below, so it verifies its own
 bytes.
 
-Five rows have moved since `1371e42`. `scripts/ci-check.sh` is adjudicated in
+Six previously protected rows have moved since `1371e42`. `scripts/ci-check.sh`
+is adjudicated in
 section 10, with its full chain from the original fixed reference, its second
-move in section 12, its third in section 13, and its fourth in section 15.
+move in section 12, its third in section 13, its fourth in section 15, and its
+fifth in section 19.
 `crates/flutterdec-decompiler/tests/provenance_audit.rs` is adjudicated in
 section 11, its second move in section 12, its third in section 13, and its
-fourth in section 15.
+fourth in section 15, and its fifth in section 19.
 `crates/flutterdec-decompiler/src/tests/cfg_and_stack/omitted_path_and_stack.rs`
 and `crates/flutterdec-core/src/pipeline/runners/tests.rs` each moved once, in
 section 16. `scripts/prov_cross_audit_reconcile.py` moved once, in section 18.
+`crates/flutterdec-decompiler/src/control_flow/relation_oracle.rs` moved once,
+in section 19.
 One row was new rather than moved,
 `scripts/check-oracle-inventory.py`, added by section 13 and moved twice, in
-section 15 and in section 17. Nine rows are new in section 15, the IR and CFG
-boundary oracles. Every other row is byte-identical to `1371e42`. A row that does
-not match the current worktree is a failure of this table, not of the file.
+section 15 and in section 17, then moved again in section 19. Nine rows are new
+in section 15, the IR and CFG boundary oracles. Eleven emitter repair rulers are
+new in section 19. Every other row is byte-identical to `1371e42`. A row that
+does not match the current worktree is a failure of this table, not of the file.
 
 Fixed reference emission artifacts:
 
@@ -299,7 +304,7 @@ Checkers, scanners, and their plant tests:
 | --- | --- |
 | `scripts/check-annotation-provenance.py` | `c4e40e0122f1d87c82b5b587d8ed1ac6c74f550bed114463765f2568ea6b6f93` |
 | `scripts/check-candidate-whitelist.py` | `d8c67c8565c372c2044f6749bfe2a7b092a374c9758930c7e2ef5b45d3a6cac5` |
-| `scripts/check-oracle-inventory.py` | `98e7f29f8ebebaf68dc28c82ec465eb359cf3b91280f808ce1dfb3d17221bbf0` |
+| `scripts/check-oracle-inventory.py` | `4af2d9445f2cf43413c8d70f12a673b8536750ded8a6d8bc19ff206331acfb26` |
 | `scripts/prov_cross_audit_reconcile.py` | `f7a21d2c497ff2c47e118cf3df208d869265eb11a561605f4f14d9c50febe870` |
 | `scripts/prov_join_audit_check.py` | `99a80ec27496b76737df08ae457838512495ec2e3e82668ac5ba5d73c1c5e995` |
 | `scripts/prov_join_audit_plant_test.py` | `d3e9e885878db0b6e752ab421dd9bc851b6142f4a995307d2a7763029c88374a` |
@@ -314,7 +319,7 @@ Gate and harness scripts:
 
 | Path | sha256 |
 | --- | --- |
-| `scripts/ci-check.sh` | `ec5e015bc65317c8b477c582b52a9a6d91c618e6becfe31da019b4bb34995401` |
+| `scripts/ci-check.sh` | `b75bcdfbae8562785e174c1d360319ff83d72fbd4bdcbe1659e6d71d375a79e9` |
 | `scripts/test-suite.sh` | `b1d2efd5cda5794dbb9e60c41f92eede0cc65996d66f6c73c19e905be451c38a` |
 | `scripts/lint-python.sh` | `eef80907146b5d1b3d662ad823372a8b6a33df99b458582077b0c1578680e2d7` |
 | `scripts/lint-shell.sh` | `4554f41d5dbeeadf4d2478ce97af416392b14a78cfa417673b35914877d316ab` |
@@ -385,7 +390,7 @@ version. Section 15 records the nine IR and CFG boundary rows, the two new hook
 families, the three new targets, and the twenty-eight planted silencings across
 every new family.
 
-The seven families are `#[cfg(test)] mod tests;` in
+The loader families are `#[cfg(test)] mod tests;` in
 `crates/flutterdec-decompiler/src/lib.rs`, the five `include!` lines in
 `src/tests.rs`, the fourteen nested `include!` lines in the three second-level
 loaders, the eight `#[cfg(test)] #[path = ...]` module declarations in
@@ -396,13 +401,16 @@ loaders, the eight `#[cfg(test)] #[path = ...]` module declarations in
 `crates/flutterdec-decompiler/src/control_flow/regions.rs`, the one `include!` in
 `crates/flutterdec-decompiler/src/control_flow.rs`, which loads five product
 modules beside its single oracle and so cannot have its include count pinned, and
-Cargo's automatic discovery of `crates/flutterdec-decompiler/tests/*.rs`, which
-`autotests = false` would switch off wholesale.
+the three emitter-repair module declarations in `emission_taxonomy.rs`,
+`structured.rs`, and the decompiler `lib.rs`. Cargo automatically discovers the
+protected integration targets under both `crates/flutterdec-decompiler/tests/`
+and `crates/flutterdec-core/tests/`; `autotests = false` would switch either
+crate's targets off wholesale.
 
 | Path | sha256 |
 | --- | --- |
 | `crates/flutterdec-decompiler/src/tests.rs` | `a19fe0015869fbfeb259e28f6d4344e18a630edab92b2a7aef2a58811e3ef56b` |
-| `crates/flutterdec-decompiler/tests/provenance_audit.rs` | `e93e04f71f67dc57379fcca164af80d58a403889095bcc4aced48de990b44c59` |
+| `crates/flutterdec-decompiler/tests/provenance_audit.rs` | `469e3e98ae2a6002e5f5a75f99972df230375848cc82e79e8744c3ab47127c84` |
 | `crates/flutterdec-decompiler/tests/loop_entry_provenance_audit.rs` | `02626ee1ba1b4b1b9905654a6254319ee413169341e43ddb74387813f7ecbfc7` |
 | `crates/flutterdec-decompiler/src/tests/shared.rs` | `30ef9ef9d6b55acac8d41f5e557d38a78e5a60d2c28ac612e75ccfe80e376d3e` |
 | `crates/flutterdec-decompiler/src/tests/golden_and_parser.rs` | `73a74b04ba294f1efc7faa5b067fdbd3c4cedc892c6d15068a07a98d656235ca` |
@@ -431,7 +439,18 @@ Cargo's automatic discovery of `crates/flutterdec-decompiler/tests/*.rs`, which
 | `crates/flutterdec-core/src/pipeline/runners/split/identity_tests.rs` | `6de85f091ee07dd84c2469784f8f4288d982b83cf38ebffa1ae3691d28fdc4d2` |
 | `crates/flutterdec-core/src/pipeline/runners/stubs/identity_tests.rs` | `a13fd1a26bafc8224edfbc9d1e8e1aa6441e935e50a5a4021315c119973e120d` |
 | `crates/flutterdec-decompiler/src/control_flow/regions/identity_boundary_tests.rs` | `84b619616bab352c6e49fab1190d80a1df4606b691811c72835266003dfcf42d` |
-| `crates/flutterdec-decompiler/src/control_flow/relation_oracle.rs` | `75fe720e04cfa6bbb859981f1b39ebba0e0ed932e8973d3bab730058cedcfa96` |
+| `crates/flutterdec-decompiler/src/control_flow/relation_oracle.rs` | `c0558822e6f33e8201b26617d38c448adb78795d9d4325f1dc49e7dd99904cfe` |
+| `crates/flutterdec-decompiler/src/control_flow/emission_taxonomy_tests.rs` | `35263822b004ebe7083c9a2f7c0fdfff94202be641c46174e30161893fa9df94` |
+| `crates/flutterdec-decompiler/src/control_flow/annotation_anchor_tests.rs` | `b7b4e4553fa93614ed7277c76a79a77c19884be64448a0c0192bcbc589252b7e` |
+| `crates/flutterdec-decompiler/src/line_identity_tests.rs` | `cbc8bc9be4e84e90a3e1f52302c3bcdd16d4ec4b8c69ee7291f8324177b8e178` |
+| `crates/flutterdec-decompiler/tests/helper_syntax_boundaries.rs` | `9a2832926b7871c2fd066277dd0ec6275e3ac9378c2fde519c7905b021ee7719` |
+| `crates/flutterdec-decompiler/tests/rewrite_boundaries.rs` | `f5b4ec6ac0754bef3fb2bf6bf8b86681c8896765deabdb105a73fdee26c153e1` |
+| `crates/flutterdec-decompiler/tests/unmodelled_write_effects.rs` | `4dac7f08cec237e3a611372f2e61ba766e8b7f88b616c514cabd0e6c11a991d4` |
+| `crates/flutterdec-decompiler/tests/register_width_provenance.rs` | `e14bdeccf9337131055032444ecb4708d9a99e81cb1439f3164e47fb12585292` |
+| `crates/flutterdec-decompiler/tests/atomic_rmw_effects.rs` | `32e189118af32909ef6bcd501924f0ecc35c2c70d8fe40ce9f1ca88758cde31d` |
+| `crates/flutterdec-decompiler/tests/annotation_anchor_identity.rs` | `ed8d10588cf72adf42753152313e1795cde307eb9064a178093a18b0aa365004` |
+| `crates/flutterdec-decompiler/tests/provenance_accounting.rs` | `adf39625d5a0c222f160cb5df2e916eb1fb3a4434f7d62aebad3f24e5a9b2bbd` |
+| `crates/flutterdec-core/tests/pipeline_determinism.rs` | `0e278f988febcec7701881f4058ab98d9afe3cb67caabd73564e182886a763c8` |
 | `crates/flutterdec-decompiler/tests/arm64_control_effects.rs` | `c50439b4e6157d6d8e5321a6c49c22a1a74a9405d7c7924b6235c84db8ca3617` |
 | `crates/flutterdec-decompiler/tests/cfg_identity.rs` | `a5e0177808c50050bfd3517a7f89a234f650ae9ec01cc75b413ba8e2b4014ac8` |
 
@@ -2419,3 +2438,105 @@ contains 5,151 annotations: 4,486 join, 394 loop-entry, and 271 pre-call records
 6. L5 was re-run in full: every provenance checker, old-versus-new plant
    detection, the oracle inventory and digest pass, Python lint, and
    `scripts/ci-check.sh` exited 0.
+
+## 19. Adjudication record: emitter repair oracle protection
+
+This is the section 9 record for closing VAL-ORACLE-004 after the emitter
+repairs and their ruler refreshes. It adds no mutable product file, temporary
+probe, generated artifact, or performance fixture to section 7. It protects
+only stable test-only rulers, strengthens the existing relation oracle, and
+makes every protected file independently visible to the compiler inventory.
+
+### 19.1 Exact protected inventory and loader map
+
+The eleven new section 7 rows and their independently listed sentinels are:
+
+| Protected test-only path | Target | Sentinel |
+| --- | --- | --- |
+| `crates/flutterdec-decompiler/src/control_flow/emission_taxonomy_tests.rs` | `decompiler-lib` | `control_flow::emission_taxonomy_tests::snapshot_and_restore_cover_every_mutable_state_family` |
+| `crates/flutterdec-decompiler/src/control_flow/annotation_anchor_tests.rs` | `decompiler-lib` | `control_flow::annotation_anchor_tests::every_candidate_ends_with_a_recorded_outcome` |
+| `crates/flutterdec-decompiler/src/line_identity_tests.rs` | `decompiler-lib` | `line_identity_tests::every_length_changing_helper_rejects_a_partial_identity_mismatch` |
+| `crates/flutterdec-decompiler/tests/helper_syntax_boundaries.rs` | `helper-syntax-boundaries` | `recovered_text_inside_a_helper_body_never_moves_helper_structure` |
+| `crates/flutterdec-decompiler/tests/rewrite_boundaries.rs` | `rewrite-boundaries` | `recovered_data_is_safe_and_disjoint_from_emitter_names` |
+| `crates/flutterdec-decompiler/tests/unmodelled_write_effects.rs` | `unmodelled-write-effects` | `an_unmodelled_write_drops_the_binding_at_every_destination_width` |
+| `crates/flutterdec-decompiler/tests/register_width_provenance.rs` | `register-width-provenance` | `an_x_produced_non_literal_is_unresolved_through_a_w_read` |
+| `crates/flutterdec-decompiler/tests/atomic_rmw_effects.rs` | `atomic-rmw-effects` | `every_atomic_load_form_invalidates_its_second_operand` |
+| `crates/flutterdec-decompiler/tests/annotation_anchor_identity.rs` | `annotation-anchor-identity` | `annotations_bind_their_own_line_and_the_reconciler_rejects_every_planted_defect` |
+| `crates/flutterdec-decompiler/tests/provenance_accounting.rs` | `provenance-accounting` | `release_audit_accounts_for_accepted_and_rejection_only_streams` |
+| `crates/flutterdec-core/tests/pipeline_determinism.rs` | `pipeline-determinism` | `the_whole_artifact_set_is_byte_identical_in_twenty_processes` |
+
+The first three use explicit `#[cfg(test)]` module declarations. The next seven
+are separate decompiler integration targets. The last is a separate core
+integration target. Both CI lanes name every protected integration target, and
+the inventory lists every target separately before matching its sentinel.
+Section 7 now contains 67 protected digests, of which 44 are Rust oracle rows.
+
+These rulers directly preserve VAL-EMIT-001 through VAL-EMIT-007: helper
+resolution and syntax boundaries, the closed emission taxonomy and rollback
+state, width and unknown-write effects, exact annotation identity and complete
+provenance accounting, recovered-data rewrite boundaries, and byte-identical
+twenty-process pipeline output. Product hooks, `helpers/expr.rs`, emitter source,
+the synthetic model generated inside the determinism test, and benchmark inputs
+remain unprotected because later product and performance work may legitimately
+change them.
+
+### 19.2 Relation-oracle repair and detection
+
+`control_statements_outside_a_loop` formerly counted every `{` and `}` byte on a
+rendered line. A recovered literal or comment containing an unmatched `}` could
+therefore close the recorded loop before a real `break;` or `continue;`, falsely
+reporting both as stranded. It now uses the same `code_brace_counts` scanner as
+the repaired emitter passes, so only code spans change structural depth.
+
+The protected test plants unmatched `{`, `}`, `${`, escaped and ordinary
+quotes, `/* */`, and `//` around real loop-control statements. Its embedded
+legacy implementation reports both statements stranded. The repaired ruler
+reports neither. A second body keeps genuine `break;` and `continue;` outside a
+loop and proves both are still rejected, so syntax awareness cannot become a
+false-pass path.
+
+### 19.3 Digest chains
+
+Column order keeps this history outside the section 7 path-and-digest parser.
+
+| Protected ruler | Prior sha256 at `5fa97f2` | Current sha256 in section 7 |
+| --- | --- | --- |
+| `scripts/check-oracle-inventory.py` | `98e7f29f8ebebaf68dc28c82ec465eb359cf3b91280f808ce1dfb3d17221bbf0` | `4af2d9445f2cf43413c8d70f12a673b8536750ded8a6d8bc19ff206331acfb26` |
+| `scripts/ci-check.sh` | `ec5e015bc65317c8b477c582b52a9a6d91c618e6becfe31da019b4bb34995401` | `b75bcdfbae8562785e174c1d360319ff83d72fbd4bdcbe1659e6d71d375a79e9` |
+| `crates/flutterdec-decompiler/tests/provenance_audit.rs` | `e93e04f71f67dc57379fcca164af80d58a403889095bcc4aced48de990b44c59` | `469e3e98ae2a6002e5f5a75f99972df230375848cc82e79e8744c3ab47127c84` |
+| `crates/flutterdec-decompiler/src/control_flow/relation_oracle.rs` | `75fe720e04cfa6bbb859981f1b39ebba0e0ed932e8973d3bab730058cedcfa96` | `c0558822e6f33e8201b26617d38c448adb78795d9d4325f1dc49e7dd99904cfe` |
+
+The checker changes only the expected paths, test targets, and sentinels. The CI
+script and workflow add explicit named invocations. The provenance guard adds
+the same module and Cargo-discovery hooks in both directions and checks the core
+and decompiler lanes independently. The relation ruler changes only its brace
+reader and the old-versus-new plant. Reproduce prior bytes with
+`git show 5fa97f2:<path> | sha256sum` and current bytes with `sha256sum <path>`.
+
+### 19.4 Deletion and bypass plants
+
+Each of the eleven new protected files was moved out of the tree one at a time.
+The default inventory invocation exited 1 before Cargo work, naming that exact
+path as not an existing regular file. Each file was restored before the next
+plant. The three explicit module hooks were then disabled one at a time with an
+always-false `cfg`; digest verification stayed green, target listing succeeded
+with a smaller suite, and the compiled inventory exited 1 naming the missing
+sentinel. Finally, `autotests = false` was planted independently in the
+decompiler and core manifests; each inventory run exited 1 because protected
+integration targets disappeared from Cargo metadata. All plants were restored
+and the clean inventory returned 67 matching digests and 44 compiled oracles.
+
+### 19.5 Section 9 steps
+
+1. Invariant: every stable repair ruler is digest-pinned and independently
+   compiled, and relation depth is derived from code spans only.
+2. Tests: section 19.2 plus one deletion per new file and one bypass per new
+   loader family in section 19.4.
+3. Diff and digests: sections 19.1 and 19.3. No product behavior changes.
+4. Reference preserved: `1371e42` and `5fa97f2` remain addressable; all prior
+   bytes are recoverable with `git show`.
+5. The relation repair, inventory, sentinels, named CI lanes, section 7 rows,
+   and this adjudication land in one atomic oracle-protection commit.
+6. L5 was re-run in full: focused relation and ruler targets, loader guard,
+   oracle inventory, provenance audit, protected digests, and
+   `scripts/ci-check.sh` all exited 0.
