@@ -129,7 +129,9 @@ def main(argv=None):
         return 0
     root = workspace_root()
     rows = parse_rows((root / PROTOCOL).read_text(encoding="utf-8"))
-    failures = digest_failures(root, rows) + loader_failures(root)
+    failures = digest_failures(root, rows)
+    if not failures:
+        failures = loader_failures(root)
     if failures:
         print(f"[resource-ruler] FAILED, {len(failures)} problem(s)")
         for failure in failures:

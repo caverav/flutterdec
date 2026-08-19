@@ -75,7 +75,7 @@ digest, extra/missing row, duplicate row, and loader bypass all fail closed.
 | `crates/flutterdec-decompiler/src/control_flow/structured.rs` | `5d748ff24c73049402db3511c9346bfeba8730002757c228da6bc4bb809b4d02` |
 | `scripts/bench-resource.sh` | `93a6932301bb37452c41149b237d3c46b4244d2b3ee2d76a60ca11dd35c101db` |
 | `scripts/audit-resource-evidence.py` | `4cea4c88f15144a5cdf34a724751a173d11e91f7d7cda5641c156cd48faaf220` |
-| `scripts/check-resource-ruler.py` | `4b4da7f81c5ae35fbd060883052520a627b092d9676c9a981cd581bfe259f2c7` |
+| `scripts/check-resource-ruler.py` | `c99345bea216e0c8f42eb854d826d5d040230f37bf571b81eda81c80d6fe2716` |
 | `scripts/ci-check.sh` | `b1600c29ccbda98b751e8a337c6aa875dfc56eef3dc66efb9edb00952c78188c` |
 
 ## Ruler-change adjudication
