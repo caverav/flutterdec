@@ -186,65 +186,243 @@ mod quality_control_effect_tests;
 mod quality_tests {
     use super::*;
 
-    /// A two-block cycle entered from two sides, which the region analysis
-    /// refuses, and a diamond, which it does not. One program, one declined
-    /// function, so the report's derived counts have something to derive from.
-    fn declining_and_structured_artifacts() -> Vec<PseudocodeArtifact> {
-        use flutterdec_ir::{rebuild_edges, BasicBlock, FunctionIr, IROp, LlirInstr};
+    use flutterdec_ir::{rebuild_edges, BasicBlock, FunctionIr, IROp, LlirInstr};
 
-        let build = |function_id: u64, succs: &[Vec<usize>]| {
-            let mut blocks: Vec<BasicBlock> = succs
-                .iter()
-                .enumerate()
-                .map(|(id, succs)| {
-                    let start = 0x1000 + 0x10 * id as u64;
-                    let mut instrs = Vec::new();
-                    match succs.as_slice() {
-                        [] => instrs.push(LlirInstr {
-                            va: start,
-                            op: IROp::Return,
-                            src: "ret".to_string(),
-                            target: String::new(),
-                        }),
-                        [only] => instrs.push(LlirInstr {
-                            va: start,
-                            op: IROp::Jump,
-                            src: format!("b #{:#x}", 0x1000 + 0x10 * *only as u64),
-                            target: format!("#{:#x}", 0x1000 + 0x10 * *only as u64),
-                        }),
-                        [_fallthrough, taken] => instrs.push(LlirInstr {
-                            va: start,
-                            op: IROp::Branch,
-                            src: format!("cbz x0, #{:#x}", 0x1000 + 0x10 * *taken as u64),
-                            target: format!("#{:#x}", 0x1000 + 0x10 * *taken as u64),
-                        }),
-                        _ => unreachable!("fixtures branch at most two ways"),
-                    }
-                    BasicBlock {
-                        id,
-                        start_va: start,
-                        instrs,
-                        succs: succs.clone(),
-                        preds: Vec::new(),
-                    }
-                })
-                .collect();
-            rebuild_edges(&mut blocks);
-            FunctionIr {
-                function_id,
-                name: format!("fixture{function_id}"),
-                entry_va: 0x1000,
-                blocks,
+    /// Five instruction slots per block, so a fixture can pad one without its
+    /// instructions landing on the next block's address.
+    fn block_va(id: usize) -> u64 {
+        0x1000 + 0x20 * id as u64
+    }
+
+    /// A graph from successor lists alone: no successors is a return, one is a
+    /// jump, two is `cbz x0` whose taken edge is the second entry.
+    fn graph(function_id: u64, succs: &[Vec<usize>]) -> FunctionIr {
+        let mut blocks: Vec<BasicBlock> = succs
+            .iter()
+            .enumerate()
+            .map(|(id, succs)| {
+                let start = block_va(id);
+                let mut instrs = Vec::new();
+                match succs.as_slice() {
+                    [] => instrs.push(LlirInstr {
+                        va: start,
+                        op: IROp::Return,
+                        src: "ret".to_string(),
+                        target: String::new(),
+                    }),
+                    [only] => instrs.push(LlirInstr {
+                        va: start,
+                        op: IROp::Jump,
+                        src: format!("b #{:#x}", block_va(*only)),
+                        target: format!("#{:#x}", block_va(*only)),
+                    }),
+                    [_fallthrough, taken] => instrs.push(LlirInstr {
+                        va: start,
+                        op: IROp::Branch,
+                        src: format!("cbz x0, #{:#x}", block_va(*taken)),
+                        target: format!("#{:#x}", block_va(*taken)),
+                    }),
+                    _ => unreachable!("fixtures branch at most two ways"),
+                }
+                BasicBlock {
+                    id,
+                    start_va: start,
+                    instrs,
+                    succs: succs.clone(),
+                    preds: Vec::new(),
+                }
+            })
+            .collect();
+        rebuild_edges(&mut blocks);
+        FunctionIr {
+            function_id,
+            name: format!("fixture{function_id}"),
+            entry_va: block_va(0),
+            blocks,
+        }
+    }
+
+    /// A spine whose every block branches to one shared sink.
+    ///
+    /// The sink is nobody's follow node, so structuring declines and the DFS
+    /// walk runs. That walk exceeds its depth budget on the spine and its visit
+    /// budget on the sink, and cuts the rest of the spine into helper bodies, so
+    /// the block count is how this fixture chooses which traversal limits it
+    /// reaches.
+    fn fan_in(function_id: u64, n: usize) -> FunctionIr {
+        let sink = n - 1;
+        let succs: Vec<Vec<usize>> = (0..n)
+            .map(|id| {
+                if id == sink {
+                    Vec::new()
+                } else if id + 1 == sink {
+                    vec![sink]
+                } else {
+                    vec![id + 1, sink]
+                }
+            })
+            .collect();
+        graph(function_id, &succs)
+    }
+
+    /// A two-block cycle entered from two sides, which no dominator makes a loop.
+    fn irreducible_fixture(function_id: u64) -> FunctionIr {
+        graph(function_id, &[vec![1, 2], vec![2, 3], vec![1, 3], Vec::new()])
+    }
+
+    /// A reachable block with three successors: the walk renders a taken arm and
+    /// one not-taken arm, so the third edge has no rendering at all.
+    fn unsupported_region_fixture(function_id: u64) -> FunctionIr {
+        let mut ir = graph(function_id, &[vec![1, 2], Vec::new(), Vec::new()]);
+        if let Some(entry) = ir.blocks.iter_mut().find(|b| b.id == 0) {
+            entry.succs = vec![1, 2, 3];
+        }
+        ir.blocks.push(BasicBlock {
+            id: 3,
+            start_va: block_va(3),
+            instrs: vec![LlirInstr {
+                va: block_va(3),
+                op: IROp::Return,
+                src: "ret".to_string(),
+                target: String::new(),
+            }],
+            succs: Vec::new(),
+            preds: vec![0],
+        });
+        ir
+    }
+
+    /// A spine whose blocks all branch into one shared region larger than the
+    /// repeat budget, and whose last block returns without entering it, so the
+    /// region is nobody's follow node and would have to be repeated.
+    fn repeat_budget_fixture(function_id: u64) -> FunctionIr {
+        let spine = 6usize;
+        let region = 17usize;
+        let mut succs: Vec<Vec<usize>> = Vec::new();
+        for i in 0..spine {
+            if i + 1 < spine {
+                succs.push(vec![i + 1, spine]);
+            } else {
+                succs.push(Vec::new());
             }
-        };
+        }
+        for r in 0..region {
+            if r + 1 < region {
+                succs.push(vec![spine + r + 1]);
+            } else {
+                succs.push(Vec::new());
+            }
+        }
+        graph(function_id, &succs)
+    }
 
-        let irreducible = build(1, &[vec![1, 2], vec![2, 3], vec![1, 3], Vec::new()]);
-        let diamond = build(2, &[vec![1, 2], vec![3], vec![3], Vec::new()]);
+    /// A chain of conditionals whose arms never rejoin, so every one of them
+    /// nests inside the last: region depth grows by one per block.
+    ///
+    /// The spine is longer than the structured walk's depth budget, which is
+    /// crate-private to the decompiler. The cause assertion below is what pins
+    /// the number: a budget change fails this fixture rather than quietly
+    /// re-scoping it.
+    fn depth_budget_fixture(function_id: u64) -> FunctionIr {
+        let spine = 70usize;
+        let mut succs: Vec<Vec<usize>> = Vec::new();
+        for i in 0..spine {
+            succs.push(vec![i + 1, spine + i]);
+        }
+        succs.push(Vec::new());
+        for _ in 0..spine {
+            succs.push(Vec::new());
+        }
+        graph(function_id, &succs)
+    }
+
+    /// A complete binary tree whose leaves all reach one shared sink, with two
+    /// leaves entering a two-block cycle from different sides so the graph is
+    /// irreducible and the DFS walk is the one that runs.
+    ///
+    /// The sink is padded past the short-tail case, so its visit budget is the
+    /// 24 of a shared block rather than the 48 of a short tail, and the walk
+    /// reaches it more often than that.
+    fn visit_omission_fixture(function_id: u64) -> FunctionIr {
+        let sink = 63usize;
+        let (left, right) = (64usize, 65usize);
+        let mut succs: Vec<Vec<usize>> = Vec::new();
+        for id in 0..sink {
+            if id < 31 {
+                succs.push(vec![2 * id + 1, 2 * id + 2]);
+            } else if id == 31 {
+                succs.push(vec![left]);
+            } else if id == 32 {
+                succs.push(vec![right]);
+            } else {
+                succs.push(vec![sink]);
+            }
+        }
+        succs.push(Vec::new());
+        succs.push(vec![sink, right]);
+        succs.push(vec![sink, left]);
+        let mut ir = graph(function_id, &succs);
+        let block = ir.blocks.iter_mut().find(|b| b.id == sink).expect("sink");
+        let mut ret = block.instrs.pop().expect("terminator");
+        for offset in 0..3u64 {
+            block.instrs.push(LlirInstr {
+                va: block_va(sink) + offset * 4,
+                op: IROp::RuntimeCheck,
+                src: "cmp x0, #0".to_string(),
+                target: String::new(),
+            });
+        }
+        ret.va = block_va(sink) + 12;
+        block.instrs.push(ret);
+        ir
+    }
+
+    /// A jump that leaves the function while the graph still records a
+    /// successor: the walk ends there, so a reachable block is never emitted.
+    fn coverage_mismatch_fixture(function_id: u64) -> FunctionIr {
+        let mut ir = graph(function_id, &[vec![1], Vec::new()]);
+        if let Some(entry) = ir.blocks.iter_mut().find(|b| b.id == 0) {
+            if let Some(terminator) = entry.instrs.last_mut() {
+                terminator.src = "b #0x50000".to_string();
+                terminator.target = "#0x50000".to_string();
+            }
+        }
+        ir
+    }
+
+    /// Blocks past the helper definition budget, so the budget refuses one and
+    /// a `HelperCapOmission` is recorded. Mirrors the decompiler's own boundary
+    /// fixture; the event assertion below is what keeps it honest.
+    const BLOCKS_PAST_HELPER_BUDGET: usize = 784;
+
+    /// One program carrying a fixture for every primary decline cause and every
+    /// traversal event family.
+    ///
+    /// The report derives its counts by summing over artifacts, so a derivation
+    /// is only checked by a program that actually produces the thing being
+    /// summed. With two fixtures, four cause counters and two event counters
+    /// were zero on both sides of every assertion, and a report that dropped
+    /// them entirely kept the whole suite green.
+    fn taxonomy_artifacts() -> Vec<PseudocodeArtifact> {
         let symbols = HashMap::new();
-        vec![
-            flutterdec_decompiler::emit_pseudocode(&irreducible, &symbols),
-            flutterdec_decompiler::emit_pseudocode(&diamond, &symbols),
+        [
+            irreducible_fixture(1),
+            unsupported_region_fixture(2),
+            repeat_budget_fixture(3),
+            depth_budget_fixture(4),
+            coverage_mismatch_fixture(5),
+            // A plain diamond, which structures: the control for the causes.
+            graph(6, &[vec![1, 2], vec![3], vec![3], Vec::new()]),
+            // Depth omissions.
+            fan_in(7, 128),
+            // Visit omissions.
+            visit_omission_fixture(9),
+            // Helper cap omissions.
+            fan_in(8, BLOCKS_PAST_HELPER_BUDGET),
         ]
+        .iter()
+        .map(|ir| flutterdec_decompiler::emit_pseudocode(ir, &symbols))
+        .collect()
     }
 
     fn empty_model() -> ProgramModel {
@@ -290,11 +468,88 @@ mod quality_tests {
         }
     }
 
+    /// Every primary cause and every traversal event family reaches the report,
+    /// so no counter is checked against a zero it would hold anyway.
+    ///
+    /// Each cause is asserted against the fixture that produces it, which is
+    /// also what pins the fixtures: a fixture that stopped reaching its cause
+    /// fails here rather than turning its counter into a silent zero.
+    #[test]
+    fn the_report_counts_every_primary_cause_and_every_traversal_event() {
+        let pseudo = taxonomy_artifacts();
+        let report = quality_from_artifacts(&empty_model(), &pseudo, &default_options(), 0);
+        let emission = &report.emission;
+
+        // Stated per cause, not derived: a fixture that stopped reaching its
+        // cause has to fail here rather than turn its counter into a zero that
+        // the assertion still agrees with. The three event fixtures decline as
+        // well on their way to the traversal limits they exist for - the two
+        // fan-ins past the structured depth budget, the visit fixture on its
+        // irreducible cycle - so two counters are above one.
+        for (label, counted, expected) in [
+            ("irreducible", emission.irreducible, 2),
+            ("unsupported region", emission.unsupported_region, 1),
+            ("repeat budget", emission.repeat_budget, 1),
+            ("structured depth budget", emission.structured_depth_budget, 3),
+            ("coverage mismatch", emission.coverage_mismatch, 1),
+        ] {
+            assert_eq!(
+                counted, expected,
+                "the report must count {expected} {label} declines"
+            );
+        }
+        for (label, counted) in [
+            ("dfs depth", emission.dfs_depth_omissions),
+            ("dfs visit", emission.dfs_visit_omissions),
+            ("helper cap", emission.helper_cap_omissions),
+        ] {
+            assert!(
+                counted > 0,
+                "no fixture reaches a {label} omission, so its counter proves nothing"
+            );
+        }
+
+        // Each counter is the sum of that same fact over the artifacts, so a
+        // report that kept its own tally, or dropped a cause, disagrees here.
+        let sum_cause = |cause| {
+            pseudo
+                .iter()
+                .map(|p| p.emission.cause_count(cause))
+                .sum::<usize>()
+        };
+        let sum_event = |kind| {
+            pseudo
+                .iter()
+                .map(|p| p.emission.event_count(kind))
+                .sum::<usize>()
+        };
+        assert_eq!(
+            [
+                emission.irreducible,
+                emission.unsupported_region,
+                emission.repeat_budget,
+                emission.structured_depth_budget,
+                emission.coverage_mismatch,
+            ],
+            StructuredDeclineCause::ALL.map(sum_cause),
+            "each cause counter is that cause, summed over the artifacts"
+        );
+        assert_eq!(
+            [
+                emission.dfs_depth_omissions,
+                emission.dfs_visit_omissions,
+                emission.helper_cap_omissions,
+            ],
+            TraversalEventKind::ALL.map(sum_event),
+            "each event counter is that event kind, summed over the artifacts"
+        );
+    }
+
     /// The report's generic decline count and rollback count are sums of the
     /// primary causes, never a second tally kept beside them.
     #[test]
     fn the_report_derives_its_decline_counts_from_the_primary_causes() {
-        let pseudo = declining_and_structured_artifacts();
+        let pseudo = taxonomy_artifacts();
         let report = quality_from_artifacts(&empty_model(), &pseudo, &default_options(), 0);
         let emission = &report.emission;
 
@@ -312,14 +567,12 @@ mod quality_tests {
             emission.repeat_budget + emission.structured_depth_budget + emission.coverage_mismatch,
             "only post-mutation causes roll anything back"
         );
-        assert_eq!(emission.irreducible, 1, "one fixture is irreducible");
+        // Stated rather than derived, so a fixture that stopped declining, or a
+        // sixth one that started, moves these instead of agreeing with itself.
+        assert_eq!(emission.structured_declines, 8, "eight fixtures decline");
         assert_eq!(
-            emission.structured_declines, 1,
-            "the other fixture structures"
-        );
-        assert_eq!(
-            emission.structured_rollbacks, 0,
-            "an irreducible decline is preflight"
+            emission.structured_rollbacks, 5,
+            "the three preflight declines roll nothing back"
         );
 
         let events: usize = pseudo.iter().map(|p| p.emission.events().len()).sum();
