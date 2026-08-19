@@ -13,27 +13,61 @@ env:
 
 jobs:
   build:
-    name: Build Release (${{ matrix.os }})
+    name: Build Release (${{ matrix.target }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os:
-          - ubuntu-latest
-          - macos-latest
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+          - os: macos-latest
+            target: aarch64-apple-darwin
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
-      - name: Install Nix
-        uses: cachix/install-nix-action@v31
+      # Release artifacts are built with a plain toolchain, NOT `nix develop`.
+      # Building inside the dev shell links against /nix/store paths, which do
+      # not exist on user machines: every release up to v0.1.0-alpha.3 shipped
+      # a Linux binary whose ELF interpreter was a /nix/store glibc, and a
+      # macOS binary loading /nix/store libiconv. Both failed to start off Nix.
+      # CI checks still use Nix; only packaging is plain.
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
 
-      - name: Enable Nix cache
-        uses: DeterminateSystems/magic-nix-cache-action@v13
+      - name: Install musl tooling
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get update -qq && sudo apt-get install -y musl-tools musl-dev
 
       - name: Build release CLI
-        run: nix develop -c cargo build -p flutterdec-cli --release
+        run: cargo build -p flutterdec-cli --release --target ${{ matrix.target }}
+
+      - name: Verify artifact is portable
+        shell: bash
+        run: |
+          set -euo pipefail
+          bin="target/${{ matrix.target }}/release/flutterdec"
+          if [ "${{ runner.os }}" = "Linux" ]; then
+            # musl static-pie: `file` reports "static-pie linked". Anything
+            # dynamic would name an ELF interpreter, which is exactly the
+            # /nix/store breakage this guard exists to catch.
+            if ! file "$bin" | grep -q 'static'; then
+              echo "::error::expected a static binary"
+              file "$bin"
+              exit 1
+            fi
+          else
+            if otool -L "$bin" | grep -q '/nix/store'; then
+              echo "::error::binary links against /nix/store"
+              otool -L "$bin"
+              exit 1
+            fi
+          fi
+          "$bin" --version
 
       - name: Package artifact
         shell: bash
@@ -43,9 +77,8 @@ jobs:
           arch="${{ runner.arch }}"
           out_dir="dist"
           mkdir -p "$out_dir"
-          bin_name="flutterdec"
           archive="$out_dir/flutterdec-${{ github.ref_name }}-${os}-${arch}.tar.gz"
-          tar -C target/release -czf "$archive" "$bin_name"
+          tar -C "target/${{ matrix.target }}/release" -czf "$archive" flutterdec
           echo "archive=$archive" >> "$GITHUB_ENV"
 
       - name: Upload artifact
@@ -67,7 +100,7 @@ jobs:
           merge-multiple: true
 
       - name: Publish release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: dist/*.tar.gz
           generate_release_notes: true

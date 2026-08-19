@@ -2689,6 +2689,7 @@ mod apk_startup_tests {
                     name_kind: None,
                 },
             ],
+            pool_geometry: None,
             object_pool: Vec::new(),
         };
         let startup = AndroidStartupEvidence {

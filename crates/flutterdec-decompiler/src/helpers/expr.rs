@@ -22,7 +22,10 @@ pub(super) fn parse_expr_int(expr: &str) -> Option<i64> {
 
 pub(super) fn fmt_int(v: i64) -> String {
     if v < 0 {
-        let mag = -v;
+        // `-v` overflows for `i64::MIN`, which is reachable: a `movk` into the
+        // top lane produces exactly that value, and a panic in a formatter is a
+        // worse failure than a wide literal.
+        let mag = v.unsigned_abs();
         if mag >= 10 {
             format!("-0x{mag:x}")
         } else {
@@ -133,23 +136,27 @@ pub(super) fn simplify_bin_expr(lhs: String, op: &str, rhs: String) -> String {
             if r_int == Some(0) {
                 return lt.to_string();
             }
+            // ARM64 arithmetic wraps, so folding wraps too. Plain `+` panics in
+            // debug on overflow, which `movk` made reachable by binding full
+            // 64-bit constants, and a checked fold that bailed would silently
+            // drop a constant that is genuinely known.
             if let (Some(a), Some(b)) = (l_int, r_int) {
-                return fmt_int(a + b);
+                return fmt_int(a.wrapping_add(b));
             }
             if let (Some((stack_base, stack_off)), Some(delta)) =
                 (parse_stack_base_offset(lt), r_int)
             {
-                return format!("{stack_base}[{}]", fmt_int(stack_off + delta));
+                return format!("{stack_base}[{}]", fmt_int(stack_off.wrapping_add(delta)));
             }
             if let (Some((base, off)), Some(delta)) = (parse_base_offset_expr(lt), r_int) {
-                let sum = off + delta;
+                let sum = off.wrapping_add(delta);
                 if sum == 0 {
                     return base;
                 }
                 if sum > 0 {
                     return format!("({base} + {})", fmt_int(sum));
                 }
-                return format!("({base} - {})", fmt_int(-sum));
+                return format!("({base} - {})", fmt_int(sum.wrapping_neg()));
             }
         }
         "-" => {
@@ -157,22 +164,37 @@ pub(super) fn simplify_bin_expr(lhs: String, op: &str, rhs: String) -> String {
                 return lt.to_string();
             }
             if let (Some(a), Some(b)) = (l_int, r_int) {
-                return fmt_int(a - b);
+                return fmt_int(a.wrapping_sub(b));
             }
             if let (Some((stack_base, stack_off)), Some(delta)) =
                 (parse_stack_base_offset(lt), r_int)
             {
-                return format!("{stack_base}[{}]", fmt_int(stack_off - delta));
+                return format!("{stack_base}[{}]", fmt_int(stack_off.wrapping_sub(delta)));
             }
             if let (Some((base, off)), Some(delta)) = (parse_base_offset_expr(lt), r_int) {
-                let sum = off - delta;
+                let sum = off.wrapping_sub(delta);
                 if sum == 0 {
                     return base;
                 }
                 if sum > 0 {
                     return format!("({base} + {})", fmt_int(sum));
                 }
-                return format!("({base} - {})", fmt_int(-sum));
+                return format!("({base} - {})", fmt_int(sum.wrapping_neg()));
+            }
+        }
+        // A shift of a literal by a literal is a literal. Folding it here lets a
+        // shifted-immediate address like `add rd, pool, #0x2c, lsl #12` become
+        // `(pool + 0x2c000)` through the `+` arm above, which is the same shape
+        // an unshifted pool address already takes. Without this the shifted form
+        // needs its own recogniser downstream.
+        "<<" => {
+            if let (Some(a), Some(b)) = (l_int, r_int) {
+                if let Some(v) = u32::try_from(b).ok().filter(|b| *b < 64).and_then(|b| {
+                    // Shifting out of range is not a fold, it is a misparse.
+                    a.checked_shl(b)
+                }) {
+                    return fmt_int(v);
+                }
             }
         }
         _ => {}
@@ -193,12 +215,27 @@ fn parse_non_negative_i64_token(token: &str) -> Option<u64> {
     (parsed >= 0).then_some(parsed as u64)
 }
 
-fn try_parse_shifted_pool_field(bytes: &[u8], start: usize) -> Option<(usize, u64)> {
-    if start + 2 >= bytes.len() || bytes[start] != b'(' || bytes[start + 1] != b'(' {
+/// Recognise `((pool + <displacement>)).f<offset>` and return the PP-relative
+/// byte displacement it reads.
+///
+/// This is the residual path for pool loads the disassembler's register tracker
+/// could not follow. It has no pool geometry, so it can only report the
+/// displacement, never an entry index.
+///
+/// A shifted-immediate page address used to reach here as
+/// `((pool + <page> /* lsl #<shift> */)).f<offset>`, needing the shift parsed out
+/// of a comment. `simplify_bin_expr` folds a literal shift now, so the page
+/// arrives already added in and there is one shape rather than three.
+fn try_parse_pool_page_field(bytes: &[u8], start: usize) -> Option<(usize, u64)> {
+    let mut i = start;
+    let mut opens = 0usize;
+    while i < bytes.len() && bytes[i] == b'(' {
+        opens += 1;
+        i += 1;
+    }
+    if opens < 2 {
         return None;
     }
-
-    let mut i = start + 2;
     i = skip_ascii_ws(bytes, i);
     if i + 4 > bytes.len() || &bytes[i..i + 4] != b"pool" {
         return None;
@@ -211,63 +248,25 @@ fn try_parse_shifted_pool_field(bytes: &[u8], start: usize) -> Option<(usize, u6
     i += 1;
     i = skip_ascii_ws(bytes, i);
 
-    let page_start = i;
-    while i < bytes.len()
-        && !bytes[i].is_ascii_whitespace()
-        && bytes[i] != b'/'
-        && bytes[i] != b')'
-    {
+    let disp_start = i;
+    while i < bytes.len() && !bytes[i].is_ascii_whitespace() && bytes[i] != b')' {
         i += 1;
     }
-    if i == page_start {
+    if i == disp_start {
         return None;
     }
-    let page_token = std::str::from_utf8(&bytes[page_start..i]).ok()?;
-    let page = parse_non_negative_i64_token(page_token)?;
+    let displacement =
+        parse_non_negative_i64_token(std::str::from_utf8(&bytes[disp_start..i]).ok()?)?;
+    i = skip_ascii_ws(bytes, i);
 
-    i = skip_ascii_ws(bytes, i);
-    if i + 2 > bytes.len() || &bytes[i..i + 2] != b"/*" {
-        return None;
-    }
-    i += 2;
-    i = skip_ascii_ws(bytes, i);
-    if i + 3 > bytes.len() || &bytes[i..i + 3] != b"lsl" {
-        return None;
-    }
-    i += 3;
-    i = skip_ascii_ws(bytes, i);
-    if i < bytes.len() && bytes[i] == b'#' {
+    // Close every parenthesis this match opened, so replacing the span cannot
+    // leave an unbalanced one behind.
+    for _ in 0..opens {
+        if i >= bytes.len() || bytes[i] != b')' {
+            return None;
+        }
         i += 1;
     }
-
-    let shift_start = i;
-    while i < bytes.len()
-        && !bytes[i].is_ascii_whitespace()
-        && bytes[i] != b'*'
-        && bytes[i] != b'/'
-    {
-        i += 1;
-    }
-    if i == shift_start {
-        return None;
-    }
-    let shift_token = std::str::from_utf8(&bytes[shift_start..i]).ok()?;
-    let shift = parse_non_negative_i64_token(shift_token)?;
-    if shift > 63 {
-        return None;
-    }
-
-    i = skip_ascii_ws(bytes, i);
-    if i + 2 > bytes.len() || &bytes[i..i + 2] != b"*/" {
-        return None;
-    }
-    i += 2;
-    i = skip_ascii_ws(bytes, i);
-
-    if i + 2 > bytes.len() || bytes[i] != b')' || bytes[i + 1] != b')' {
-        return None;
-    }
-    i += 2;
     if i + 2 > bytes.len() || bytes[i] != b'.' || bytes[i + 1] != b'f' {
         return None;
     }
@@ -280,15 +279,17 @@ fn try_parse_shifted_pool_field(bytes: &[u8], start: usize) -> Option<(usize, u6
     if i == off_start {
         return None;
     }
-    let offset = std::str::from_utf8(&bytes[off_start..i]).ok()?.parse::<u64>().ok()?;
+    let offset = std::str::from_utf8(&bytes[off_start..i])
+        .ok()?
+        .parse::<u64>()
+        .ok()?;
 
-    let page_bytes = page.checked_shl(shift as u32)?;
-    let total = page_bytes.checked_add(offset)?;
-    if total % 8 != 0 {
+    let total = displacement.checked_add(offset)?;
+    if !total.is_multiple_of(8) {
         return None;
     }
 
-    Some((i, total / 8))
+    Some((i, total))
 }
 
 pub(super) fn normalize_pool_page_field_exprs(input: &str) -> String {
@@ -296,8 +297,8 @@ pub(super) fn normalize_pool_page_field_exprs(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
     let mut i = 0usize;
     while i < bytes.len() {
-        if let Some((end, idx)) = try_parse_shifted_pool_field(bytes, i) {
-            out.push_str(&format!("pool[{idx}]"));
+        if let Some((end, displacement)) = try_parse_pool_page_field(bytes, i) {
+            out.push_str(&format!("poolOff[{displacement}]"));
             i = end;
             continue;
         }

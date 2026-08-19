@@ -29,6 +29,63 @@
     }
 
     #[test]
+    fn quality_gate_failure_message_explains_strict_placeholder_rejection() {
+        let report = QualityReport {
+            mode: "strict".to_string(),
+            passed: false,
+            failures: vec!["placeholder if-count exceeded threshold".to_string()],
+            function_count: 5394,
+            disassembled_function_count: 5394,
+            disassembly_ratio: 1.0,
+            total_calls: 77037,
+            indirect_calls: 9674,
+            indirect_call_ratio: 0.12557602191154899,
+            placeholder_ifs: 1691,
+            unresolved_cf: 0,
+            raw_register_calls: 9674,
+            semantic_direct_calls: 37,
+            semantic_indirect_calls: 10,
+            dispatch_selector_calls: 1132,
+            dispatch_table_calls: 1132,
+            repeated_blocks: 0,
+            unlifted_instructions: 0,
+            target_va_symbol_calls: 0,
+            block_helper_refs: 0,
+            raw_arg_name_refs: 0,
+            raw_register_name_refs: 0,
+            placeholder_cond_markers: 1618,
+            omitted_path_markers: 827,
+            loop_backedge_markers: 1,
+        };
+        let symbol_quality_counts = SymbolQualityCounts {
+            placeholder: 5394,
+            heuristic: 0,
+            external: 0,
+            exact: 0,
+        };
+
+        let msg = format_quality_gate_failure_message(
+            &report,
+            std::path::Path::new("./out/quality.json"),
+            std::path::Path::new("./out/report.json"),
+            std::path::Path::new("libapp.so"),
+            Some(AdapterBackend::Internal),
+            "dynamic_snapshot_string_model_v1",
+            &symbol_quality_counts,
+        );
+
+        assert!(msg.contains("quality gate failed after artifact generation"));
+        assert!(msg.contains("./out/quality.json"));
+        assert!(msg.contains("./out/report.json"));
+        assert!(msg.contains("placeholder if-count exceeded threshold"));
+        assert!(msg.contains("input is not an APK"));
+        assert!(msg.contains("resolved backend is internal"));
+        assert!(msg.contains("all recovered function names are still placeholders"));
+        assert!(msg.contains("--max-placeholder-ifs 999999"));
+        assert!(msg.contains("artifacts were still written"));
+    }
+
+    #[test]
     fn builds_ghidra_symbol_script_with_sorted_entries_and_escaped_names() {
         let mut symbols = HashMap::new();
         symbols.insert(0x2000, "sub_2000".to_string());
@@ -372,6 +429,7 @@
                     name_kind: Some("placeholder".to_string()),
                 },
             ],
+            pool_geometry: None,
             object_pool: Vec::new(),
         };
 
@@ -412,6 +470,7 @@
                 code_section_va: 0x3000,
                 name_kind: Some("heuristic".to_string()),
             }],
+            pool_geometry: None,
             object_pool: Vec::new(),
         };
 
@@ -996,6 +1055,7 @@
                 name_kind: None,
                 },
             ],
+            pool_geometry: None,
             object_pool: Vec::new(),
         };
 
@@ -1046,6 +1106,7 @@
                 name_kind: None,
                 },
             ],
+            pool_geometry: None,
             object_pool: Vec::new(),
         };
 
@@ -1124,6 +1185,7 @@
                 name_kind: None,
                 },
             ],
+            pool_geometry: None,
             object_pool: Vec::new(),
         };
 
@@ -1205,6 +1267,7 @@
                 name_kind: None,
                 },
             ],
+            pool_geometry: None,
             object_pool: Vec::new(),
         };
 
@@ -1342,6 +1405,9 @@
                 semantic_direct_calls: 0,
                 semantic_indirect_calls: 0,
                 dispatch_selector_calls: 0,
+                dispatch_table_calls: 0,
+                repeated_blocks: 0,
+                unlifted_instructions: 0,
                 target_va_symbol_calls: 0,
             },
             PseudocodeArtifact {
@@ -1360,6 +1426,9 @@
                 semantic_direct_calls: 0,
                 semantic_indirect_calls: 0,
                 dispatch_selector_calls: 0,
+                dispatch_table_calls: 0,
+                repeated_blocks: 0,
+                unlifted_instructions: 0,
                 target_va_symbol_calls: 0,
             },
         ];
@@ -1393,6 +1462,9 @@
                 semantic_direct_calls: 0,
                 semantic_indirect_calls: 0,
                 dispatch_selector_calls: 2,
+                dispatch_table_calls: 2,
+                repeated_blocks: 0,
+                unlifted_instructions: 0,
                 target_va_symbol_calls: 0,
             },
             PseudocodeArtifact {
@@ -1411,6 +1483,9 @@
                 semantic_direct_calls: 0,
                 semantic_indirect_calls: 0,
                 dispatch_selector_calls: 1,
+                dispatch_table_calls: 1,
+                repeated_blocks: 0,
+                unlifted_instructions: 0,
                 target_va_symbol_calls: 0,
             },
         ];
@@ -1456,6 +1531,9 @@
             semantic_direct_calls: 0,
             semantic_indirect_calls: 0,
             dispatch_selector_calls: 0,
+            dispatch_table_calls: 0,
+            repeated_blocks: 0,
+            unlifted_instructions: 0,
             target_va_symbol_calls: 0,
         }];
 
@@ -1477,6 +1555,7 @@
             libraries: Vec::new(),
             classes: Vec::new(),
             functions: Vec::new(),
+            pool_geometry: None,
             object_pool: vec![
                 flutterdec_adapter::ObjectPoolEntry {
                     index: 1,
@@ -1564,6 +1643,7 @@
             libraries: Vec::new(),
             classes: Vec::new(),
             functions: Vec::new(),
+            pool_geometry: None,
             object_pool: vec![
                 flutterdec_adapter::ObjectPoolEntry {
                     index: 1,
@@ -1609,6 +1689,7 @@
             libraries: Vec::new(),
             classes: Vec::new(),
             functions: Vec::new(),
+            pool_geometry: None,
             object_pool: vec![
                 flutterdec_adapter::ObjectPoolEntry {
                     index: 1,
@@ -1723,6 +1804,7 @@
                 name_kind: None,
                 },
             ],
+            pool_geometry: None,
             object_pool: Vec::new(),
         };
         let signals = AndroidManifestSignals {
@@ -1799,6 +1881,7 @@
             libraries: Vec::new(),
             classes: Vec::new(),
             functions: Vec::new(),
+            pool_geometry: None,
             object_pool: vec![
                 flutterdec_adapter::ObjectPoolEntry {
                     index: 7,
@@ -1851,6 +1934,7 @@
             libraries: Vec::new(),
             classes: Vec::new(),
             functions: Vec::new(),
+            pool_geometry: None,
             object_pool: vec![
                 flutterdec_adapter::ObjectPoolEntry {
                     index: 1,
@@ -1898,6 +1982,7 @@
             libraries: Vec::new(),
             classes: Vec::new(),
             functions: Vec::new(),
+            pool_geometry: None,
             object_pool: vec![
                 flutterdec_adapter::ObjectPoolEntry {
                     index: 7,
@@ -1980,6 +2065,7 @@
                 code_section_va: 0x4000,
             name_kind: None,
             }],
+            pool_geometry: None,
             object_pool: vec![flutterdec_adapter::ObjectPoolEntry {
                 index: 21,
                 kind: "Closure".to_string(),
@@ -2030,6 +2116,7 @@
                 code_section_va: 0x1000,
                 name_kind: Some("heuristic".to_string()),
             }],
+            pool_geometry: None,
             object_pool: Vec::new(),
         };
         let scoped_model = full_model.clone();
@@ -2090,6 +2177,7 @@
                     name_kind: Some("heuristic".to_string()),
                 },
             ],
+            pool_geometry: None,
             object_pool: Vec::new(),
         };
         let (scoped_model, _) = apply_function_scope_filter(&full_model, FunctionScope::App, &[]);
@@ -2141,6 +2229,7 @@
                     name_kind: Some("heuristic".to_string()),
                 },
             ],
+            pool_geometry: None,
             object_pool: Vec::new(),
         };
         let scoped_model = full_model.clone();

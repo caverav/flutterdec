@@ -79,13 +79,13 @@ nix profile upgrade flutterdec
 
 ### Install A Release Binary
 
-Current prerelease: [`v0.1.0-alpha.2`](https://github.com/caverav/flutterdec/releases/tag/v0.1.0-alpha.2)
+Current prerelease: [`v0.1.0-alpha.4`](https://github.com/caverav/flutterdec/releases/tag/v0.1.0-alpha.4)
 
 Linux x64:
 
 ```bash
-curl -fLO https://github.com/caverav/flutterdec/releases/download/v0.1.0-alpha.2/flutterdec-v0.1.0-alpha.2-Linux-X64.tar.gz
-tar -xzf flutterdec-v0.1.0-alpha.2-Linux-X64.tar.gz
+curl -fLO https://github.com/caverav/flutterdec/releases/download/v0.1.0-alpha.4/flutterdec-v0.1.0-alpha.4-Linux-X64.tar.gz
+tar -xzf flutterdec-v0.1.0-alpha.4-Linux-X64.tar.gz
 sudo install -m 0755 flutterdec /usr/local/bin/flutterdec
 flutterdec --help
 ```
@@ -93,8 +93,8 @@ flutterdec --help
 macOS arm64:
 
 ```bash
-curl -fLO https://github.com/caverav/flutterdec/releases/download/v0.1.0-alpha.2/flutterdec-v0.1.0-alpha.2-macOS-ARM64.tar.gz
-tar -xzf flutterdec-v0.1.0-alpha.2-macOS-ARM64.tar.gz
+curl -fLO https://github.com/caverav/flutterdec/releases/download/v0.1.0-alpha.4/flutterdec-v0.1.0-alpha.4-macOS-ARM64.tar.gz
+tar -xzf flutterdec-v0.1.0-alpha.4-macOS-ARM64.tar.gz
 sudo install -m 0755 flutterdec /usr/local/bin/flutterdec
 flutterdec --help
 ```
@@ -137,6 +137,14 @@ If this is your first run, this is the shortest useful path.
 flutterdec info ./sample.apk --json
 ```
 
+`info` resolves the Dart SDK version straight from the snapshot hash, with no adapter
+installed and no disassembly:
+
+- `dart_version` (for example `3.9.2`)
+- `dart_tag_style` (`CID_INT32`, `CID_SHIFT1`, or `OBJECT_HEADER`)
+
+Both are `null` for snapshot hashes not in the bundled table (`data/dart-profiles.json`).
+
 For APK inputs, `info` reports Android startup summary fields such as:
 
 - `android_startup_present`
@@ -162,6 +170,25 @@ flutterdec adapter install --dart-hash <HASH>
 ```bash
 flutterdec decompile ./sample.apk -o ./out
 ```
+
+**Expect a non-zero exit on a real app, and expect your artifacts anyway.** The strict quality gate is on by
+default with `--max-placeholder-ifs 0`, and every real Flutter app has placeholder ifs. So the command above
+prints `reasons: placeholder if-count exceeded threshold`, exits `1`, and **still writes every artifact
+listed in step 4**. Nothing is missing - the gate is reporting a quality measurement, not a failure to
+decompile. Measured on LocalSend 1.17: 501 at the default scope, 5,800 pseudocode files written, exit 1.
+
+Read your own number rather than guessing one. It is `placeholder_ifs` in `out/quality.json`, and it grows
+with scope - the same app reports 1,178 under `--function-scope all --split-records`:
+
+```bash
+flutterdec decompile ./sample.apk -o ./out            # exits 1, writes everything
+python3 -c "import json;print(json.load(open('out/quality.json'))['placeholder_ifs'])"
+flutterdec decompile ./sample.apk -o ./out --max-placeholder-ifs <that number>
+```
+
+Setting the threshold from the measurement is the point: a huge round number silences the gate permanently,
+whereas a real one still fails when the count **rises**, which is the only thing it is useful for. Keep the
+strict default in CI. See [`docs/cli-reference.md`](docs/cli-reference.md) for the other gate flags.
 
 4. Open the main outputs first:
 
@@ -328,10 +355,33 @@ flutterdec decompile ./sample.apk -o ./out --analysis-profile light
 
 Adapter backend selection:
 
-- `--adapter-backend auto` (default): try Blutter backend if configured, otherwise fall back to the internal adapter
+- `--adapter-backend auto` (default): try r2flutter, then Blutter, then fall back to the internal adapter
 - `--adapter-backend internal`: force the internal adapter only
 - `--adapter-backend blutter`: require the Blutter backend and fail if unavailable
+- `--adapter-backend r2-flutter`: require the r2flutter backend and fail if unavailable
 - `--require-snapshot-hash-match`: fail when the adapter-reported snapshot hash does not match the loader snapshot hash
+
+What the backends actually recover:
+
+| Backend | Function names | Classes | ObjectPool |
+| --- | --- | --- | --- |
+| `internal` | none (`sub_<addr>` placeholders) | none | carved strings, no real index space |
+| `blutter` | exact, from Blutter dumps | yes | Blutter `pp.txt` entries |
+| `r2flutter` | exact, from the AOT instruction table | yes, with fields and methods | real slots, resolvable from `x27` displacements |
+
+Only backends that recover the real `ObjectPool` layout report `pool_geometry`. Without
+it `flutterdec` leaves pool references unresolved rather than attaching a value from an
+unrelated index space, and says so in `report.json.pool_metadata.hints_suppressed_reason`.
+
+r2flutter backend environment knobs:
+
+- `FLUTTERDEC_R2FLUTTER_BIN`: path to the `r2flutter` binary
+- `FLUTTERDEC_R2FLUTTER_CMD`: full command to launch it, when a wrapper is needed
+- `FLUTTERDEC_R2FLUTTER_TIMEOUT`: per-invocation timeout in seconds (default 900)
+- otherwise `r2flutter` is taken from `PATH`
+
+`r2flutter` is an external MIT tool ([radareorg/r2flutter](https://github.com/radareorg/r2flutter))
+that parses Dart AOT snapshots directly. It needs radare2 available at build time.
 
 Blutter backend environment knobs:
 
@@ -456,7 +506,9 @@ The IR stage makes the selector-bearing pool values explicit before readability 
   <img src="docs/assets/readme/zedsecure-minwidth-pseudocode.svg" alt="Recovered pseudocode with named Flutter selectors from the ZedSecure APK" width="900">
 </p>
 
-The important part is not the anonymous function name. The important part is that `flutterdec` surfaced readable Flutter selector names from the APK itself, including `dispatch.minWidth(...)`, `dispatch.messageMap(...)`, and the framework-side `flutter.foundation.invoke(...)`.
+The important part is not the anonymous function name. The important part is that `flutterdec` surfaced readable Flutter selector names from the AOT payload, including `dispatch.minWidth(...)`, `dispatch.messageMap(...)`, and the framework-side `flutter.foundation.invoke(...)`.
+
+This capture is from a target whose adapter recovered class and selector metadata. Selector naming is gated on that metadata: on a target where the adapter recovers only strings, the same run emits no selector names at all (measured zero on two release APKs). Function names, control flow, and expressions do not depend on it.
 
 This gives the README both views the tool is meant to show publicly:
 
@@ -514,6 +566,16 @@ Recover readable behavior from Flutter AOT ARM64 binaries with enough semantic s
 - Research decisions: [docs/research-decisions.md](docs/research-decisions.md)
 - Contributing: [CONTRIBUTING.md](CONTRIBUTING.md)
 - Context and project history: [context.md](context.md)
+
+## Third-Party Credits
+
+- `data/dart-profiles.json`: Dart snapshot hash-to-version and layout table imported from
+  [radareorg/r2flutter](https://github.com/radareorg/r2flutter) (MIT). Rationale in
+  [docs/research-decisions.md](docs/research-decisions.md).
+- `--adapter-backend r2-flutter` drives the same project as an external tool; it is not
+  bundled or linked.
+- `--adapter-backend blutter` drives [worawit/blutter](https://github.com/worawit/blutter)
+  as an external tool.
 
 ## Issue Types
 

@@ -85,9 +85,19 @@
           "confidence": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
           "source": {
             "type": "string",
-            "enum": ["vm", "blutter", "internal", "synthetic", "unknown"]
+            "enum": ["vm", "blutter", "r2flutter", "internal", "synthetic", "unknown"]
           }
         }
+      }
+    },
+    "pool_geometry": {
+      "description": "ObjectPool layout. Emit this only when object_pool[].index values are real ObjectPool entry indices, i.e. when a `ldr xN, [x27, #disp]` resolves to (disp - entries_offset) / word_size. Adapters that carve strings out of the snapshot must omit it; the core then declines to map pool references to values instead of guessing.",
+      "type": "object",
+      "required": ["entries_offset", "word_size"],
+      "additionalProperties": true,
+      "properties": {
+        "entries_offset": { "type": "integer", "minimum": 0 },
+        "word_size": { "type": "integer", "minimum": 1 }
       }
     }
   }

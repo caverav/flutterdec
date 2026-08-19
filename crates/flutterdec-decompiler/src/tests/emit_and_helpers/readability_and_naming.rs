@@ -129,7 +129,7 @@ fn infers_local_names_and_int_types() {
         "stack local should be renamed:\n{out}"
     );
     assert!(
-        out.contains("int intTmp"),
+        out.contains("int tmp1;"),
         "arithmetic local should get int type:\n{out}"
     );
     assert!(
@@ -158,7 +158,7 @@ fn infers_receiver_type_from_semantic_call_path() {
     emitter.apply_name_and_type_hints("typedReceiver");
     let out = emitter.lines.join("\n");
     assert!(
-        out.contains("flutter.widgets.State receiver"),
+        out.contains("flutter.widgets.State slot0"),
         "semantic call path should type receiver as flutter State:\n{out}"
     );
 }
@@ -183,7 +183,7 @@ fn infers_receiver_type_from_semantic_comment_path() {
     emitter.apply_name_and_type_hints("typedFuture");
     let out = emitter.lines.join("\n");
     assert!(
-        out.contains("dart.async.Future param1"),
+        out.contains("dart.async.Future slot1"),
         "semantic intent comment should type Future receiver:\n{out}"
     );
 }
@@ -208,7 +208,7 @@ fn infers_receiver_type_from_package_owner_semantic_comment_path() {
     emitter.apply_name_and_type_hints("typedPackageReceiver");
     let out = emitter.lines.join("\n");
     assert!(
-        out.contains("spotube.models.connect.load.ConnectService param1"),
+        out.contains("spotube.models.connect.load.ConnectService slot1"),
         "package owner semantic comment should type receiver with package owner path:\n{out}"
     );
 }
@@ -233,7 +233,7 @@ fn infers_receiver_type_from_classid_receiver_pattern() {
     emitter.apply_name_and_type_hints("typedClassIdReceiver");
     let out = emitter.lines.join("\n");
     assert!(
-        out.contains("flutter.widgets.State receiver"),
+        out.contains("flutter.widgets.State slot0"),
         "classId(receiver), receiver pattern should infer typed receiver:\n{out}"
     );
 }
@@ -258,11 +258,11 @@ fn does_not_infer_receiver_type_from_constructor_semantic_path() {
     emitter.apply_name_and_type_hints("ctorNoReceiverType");
     let out = emitter.lines.join("\n");
     assert!(
-        out.contains("dynamic receiver"),
+        out.contains("dynamic slot0"),
         "constructor semantic paths should not force receiver typing:\n{out}"
     );
     assert!(
-        !out.contains("dart.typed_data.Int64List receiver"),
+        !out.contains("dart.typed_data.Int64List slot0"),
         "constructor semantic paths should not be treated as instance receiver calls:\n{out}"
     );
 }
@@ -411,7 +411,7 @@ fn infers_bool_types_from_if_condition_context() {
     emitter.apply_name_and_type_hints("typedConditionBools");
     let out = emitter.lines.join("\n");
     assert!(
-        out.contains("bool param1"),
+        out.contains("bool slot1"),
         "if-condition use should infer bool argument type:\n{out}"
     );
     assert!(
@@ -446,7 +446,7 @@ fn aliases_repeated_pool_mapped_literals() {
         "repeated pool literal should hoist to String alias:\n{out}"
     );
     assert!(
-        out.contains("dispatch.customAction(receiver, poolStr42, param2, param3);"),
+        out.contains("dispatch.customAction(slot0, poolStr42, slot2, slot3);"),
         "repeated pool literal callsites should use hoisted alias:\n{out}"
     );
     assert_eq!(
@@ -605,12 +605,12 @@ fn renames_receiver_argument_from_field_usage() {
     emitter.apply_name_and_type_hints("receiverHints");
     let out = emitter.lines.join("\n");
     assert!(
-        out.contains("dynamic receiver"),
-        "arg0 should be renamed to receiver:\n{out}"
+        out.contains("dynamic slot0"),
+        "arg0 should be renamed to slot0:\n{out}"
     );
     assert!(
         !out.contains("arg0.f"),
-        "field access should use receiver:\n{out}"
+        "field access should use slot0:\n{out}"
     );
 }
 
@@ -634,14 +634,34 @@ fn renames_receiver_argument_without_field_usage() {
     emitter.apply_name_and_type_hints("receiverDefault");
     let out = emitter.lines.join("\n");
     assert!(
-        out.contains("dynamic receiver"),
-        "arg0 should default to receiver:\n{out}"
+        out.contains("dynamic slot0"),
+        "arg0 should default to slot0:\n{out}"
     );
     assert!(!out.contains("arg0"), "arg0 should be replaced:\n{out}");
     assert!(
-        out.contains("dynamic param1"),
-        "non-inferred args should use param naming:\n{out}"
+        out.contains("dynamic slot1"),
+        "non-inferred args should use positional naming:\n{out}"
     );
+}
+
+#[test]
+fn unrecovered_value_spellings_cover_every_register_alias() {
+    for index in 0..=30 {
+        let canonical = format!("x{index}");
+        let mut expected = vec![
+            canonical.clone(),
+            named_register_alias(index),
+            named_indirect_target(&canonical),
+        ];
+        expected.sort();
+        expected.dedup();
+        assert_eq!(
+            unrecovered_value_spellings(&canonical),
+            expected,
+            "rendered spelling list omitted an alias for {canonical}"
+        );
+    }
+    assert!(unrecovered_value_spellings("not-a-register").is_empty());
 }
 
 #[test]
@@ -699,43 +719,117 @@ fn aliases_frame_and_return_registers_with_semantic_names() {
     );
 }
 
+
 #[test]
-fn aliases_dispatch_target_slot_callable_calls() {
+fn annotation_comment_does_not_trigger_minus_one_aliasing() {
     let ir = FunctionIr {
-        function_id: 211,
-        name: "dispatchSlotAlias".to_string(),
-        entry_va: 0xf610,
+        function_id: 1018,
+        name: "annotationInert".to_string(),
+        entry_va: 0x1000,
         blocks: Vec::new(),
     };
     let symbols = HashMap::new();
     let mut emitter = FuncEmitter::new(&ir, &symbols);
     emitter.lines = vec![
-        "dynamic dispatchSlotAlias(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {".to_string(),
-        "  final t1 = reg21.f0(arg0, arg1, arg2, arg3); // indirect via: dispatchTarget".to_string(),
-        "  return t1;".to_string(),
+        "dynamic annotationInert() {".to_string(),
+        "  sink(reg1 /* = (reg1 - 1) */);".to_string(),
         "}".to_string(),
     ];
-
-    emitter.apply_name_and_type_hints("dispatchSlotAlias");
+    emitter.extract_minus_one_aliases();
     let out = emitter.lines.join("\n");
-    assert!(
-        out.contains("final dispatchTargetFn = reg21.f0;"),
-        "dispatch target slot alias declaration should be inserted:\n{out}"
-    );
-    assert!(
-        out.contains(
-            "dispatchTargetFn(receiver, param1, param2, param3); // indirect via: dispatchTarget"
-        ),
-        "dispatch target callable should use alias:\n{out}"
-    );
-    assert!(
-        !out.contains("reg21.f0("),
-        "raw dispatch slot callable should be replaced:\n{out}"
+    assert!(!out.contains("reg1Minus1"), "annotation must not create an alias:\n{out}");
+    assert!(out.contains("/* = (reg1 - 1) */"), "annotation must survive verbatim:\n{out}");
+}
+
+#[test]
+fn minus_one_aliasing_still_uses_code_beside_annotation() {
+    let ir = FunctionIr {
+        function_id: 1019,
+        name: "annotationInertCode".to_string(),
+        entry_va: 0x1000,
+        blocks: Vec::new(),
+    };
+    let symbols = HashMap::new();
+    let mut emitter = FuncEmitter::new(&ir, &symbols);
+    emitter.lines = vec![
+        "dynamic annotationInertCode() {".to_string(),
+        "  sink((reg1 - 1)); /* = obj1.f8 */".to_string(),
+        "  sink((reg1 - 1));".to_string(),
+        "  sink((reg1 - 1));".to_string(),
+        "  sink((reg1 - 1));".to_string(),
+        "}".to_string(),
+    ];
+    emitter.extract_minus_one_aliases();
+    let out = emitter.lines.join("\n");
+    assert!(out.contains("final int reg1Minus1 = (reg1 - 1);"), "code must still alias normally:\n{out}");
+    assert!(out.contains("/* = obj1.f8 */"), "annotation must remain decoration:\n{out}");
+}
+
+#[test]
+fn strip_join_annotation_span_leaves_other_comments_intact() {
+    let line = "  sink(reg0 /* cond */); // unlifted instruction: x1 { }";
+    assert_eq!(
+        crate::strip_join_annotation_span(line),
+        line,
+        "pre-existing comments must remain visible to historical consumers"
     );
 }
 
 #[test]
-fn resolves_shifted_pool_target_to_symbol_call_name() {
+fn strip_join_annotation_span_removes_only_join_annotation() {
+    let line = "  sink(reg0 /* = obj1.f8 */); // unlifted instruction: x1";
+    assert_eq!(
+        crate::strip_join_annotation_span(line),
+        "  sink(reg0); // unlifted instruction: x1",
+        "only the exact annotation opener is stripped"
+    );
+}
+
+#[test]
+fn code_before_annotation_hides_annotation_from_analysis_but_not_rewrites() {
+    let line = "  sink(reg0 /* = arg3 | sp[-16] | (reg1 - 1) */);";
+    assert_eq!(
+        crate::code_before_annotation(line),
+        "  sink(reg0",
+        "analysis must stop before the annotation"
+    );
+    assert!(
+        FuncEmitter::replace_identifier_token(line, "arg3", "receiver")
+            .contains("/* = receiver | sp[-16] | (reg1 - 1) */"),
+        "rewrites must preserve and rename candidate text"
+    );
+}
+
+#[test]
+fn annotation_comment_does_not_trigger_stack_or_pool_aliasing() {
+    let ir = FunctionIr {
+        function_id: 1020,
+        name: "annotationAliasInert".to_string(),
+        entry_va: 0x1000,
+        blocks: Vec::new(),
+    };
+    let symbols = HashMap::new();
+    let mut emitter = FuncEmitter::new(&ir, &symbols);
+    emitter.lines = vec![
+        "dynamic annotationAliasInert() {".to_string(),
+        "  sink(reg0 /* = sp[-16] | \"x\" /* pool[7] */ */);".to_string(),
+        "}".to_string(),
+    ];
+    emitter.apply_name_and_type_hints("annotationAliasInert");
+    let out = emitter.lines.join("\n");
+    assert!(
+        !out.contains("stackSlotNeg16") && !out.contains("poolStr7"),
+        "annotation must not create aliases:\n{out}"
+    );
+}
+
+/// Page-based pool loads that the disassembler's register tracker could not follow
+/// still reach the decompiler as raw `((pool + <page> /* lsl #N */)).f<off>` text.
+/// That text carries a byte displacement, not an entry index, and the decompiler has
+/// no pool geometry to convert it, so it must surface the displacement and decline
+/// to resolve, rather than divide by the stride and land on a neighbouring slot.
+#[test]
+fn residual_shifted_pool_syntax_reports_displacement_and_does_not_resolve() {
     let ir = FunctionIr {
         function_id: 215,
         name: "shiftedPoolTarget".to_string(),
@@ -747,14 +841,14 @@ fn resolves_shifted_pool_target_to_symbol_call_name() {
                 LlirInstr {
                     va: 0xf640,
                     op: IROp::Other,
-                    src: "mov x21, ((pool + 8 /* lsl #12 */)).f3640".to_string(),
+                    src: "mov x9, ((pool + 0x8000)).f3640".to_string(),
                     target: String::new(),
                 },
                 LlirInstr {
                     va: 0xf644,
                     op: IROp::Call,
-                    src: "blr x21".to_string(),
-                    target: "x21".to_string(),
+                    src: "blr x9".to_string(),
+                    target: "x9".to_string(),
                 },
                 LlirInstr {
                     va: 0xf648,
@@ -780,25 +874,25 @@ fn resolves_shifted_pool_target_to_symbol_call_name() {
     );
 
     let artifact = emit_pseudocode_with_pool_context(&ir, &symbols, &pool, &semantic);
+    // (8 << 12) + 3640 == 36408 bytes from PP.
     assert!(
-        artifact
-            .source
-            .contains("dart.core.print(receiver, param1, param2, param3);"),
-        "shifted pool target should resolve to readable symbol call:\n{}",
+        artifact.source.contains("poolOff[36408]"),
+        "residual shifted pool access should surface its byte displacement:\n{}",
         artifact.source
     );
     assert!(
-        artifact.source.contains("target: pool[4551]"),
-        "shifted pool target should normalize to pool index in comments:\n{}",
+        !artifact.source.contains("pool[4551]"),
+        "displacement 36408 must not be reported as entry index 4551; the real entry \
+         index depends on pool geometry the decompiler does not have:\n{}",
         artifact.source
     );
     assert!(
-        artifact.source.contains("target_va: 0x9100"),
-        "resolved call should report target_va from pool semantic hint:\n{}",
+        !artifact.source.contains("dart.core.print"),
+        "an unresolvable pool displacement must not pick up a semantic hint:\n{}",
         artifact.source
     );
     assert!(
-        !artifact.source.contains("pool + 8 /* lsl #12 */"),
+        !artifact.source.contains("pool + 0x8000"),
         "normalized output should not leak shifted-pool raw syntax:\n{}",
         artifact.source
     );
@@ -831,7 +925,7 @@ fn aliases_repeated_stack_slot_reads() {
         "repeated stack slot should be aliased into a prelude local:\n{out}"
     );
     assert!(
-        out.contains("fn_0x10(stackSlotNeg0x10, param1, param2, param3);"),
+        out.contains("fn_0x10(stackSlotNeg0x10, slot1, slot2, slot3);"),
         "stack slot call arguments should use alias:\n{out}"
     );
     assert_eq!(
@@ -937,7 +1031,7 @@ fn annotates_stdlib_call_intent_when_symbol_is_named() {
     assert!(
         artifact
             .source
-            .contains("final t1 = dart.core.print(receiver, param1, param2, param3); // stdlib:dart.core.print, was: dart_core_print"),
+            .contains("dart.core.print(); // stdlib:dart.core.print, was: dart_core_print"),
         "missing stdlib call intent annotation:\n{}",
         artifact.source
     );
@@ -976,7 +1070,7 @@ fn preserves_dart_patch_library_segments_in_call_intent() {
     let artifact = emit_pseudocode(&ir, &symbols);
     assert!(
         artifact.source.contains(
-            "final t1 = dart.core_patch.bool_patch.fromEnvironment(receiver, param1, param2, param3); // stdlib:dart.core_patch.bool_patch.fromEnvironment, was: dart_core_patch_bool_patch_fromEnvironment"
+            "dart.core_patch.bool_patch.fromEnvironment(); // stdlib:dart.core_patch.bool_patch.fromEnvironment, was: dart_core_patch_bool_patch_fromEnvironment"
         ),
         "dart patch library segment should be preserved in semantic direct-call rewrite:\n{}",
         artifact.source
@@ -1016,7 +1110,7 @@ fn preserves_dart_owner_segment_in_call_intent() {
     let artifact = emit_pseudocode(&ir, &symbols);
     assert!(
         artifact.source.contains(
-            "final t1 = dart.typed_data.TypedData.offsetInBytes(receiver, param1, param2, param3); // stdlib:dart.typed_data.TypedData.offsetInBytes, was: dart_typed_data_TypedData_offsetInBytes"
+            "dart.typed_data.TypedData.offsetInBytes(); // stdlib:dart.typed_data.TypedData.offsetInBytes, was: dart_typed_data_TypedData_offsetInBytes"
         ),
         "dart owner segment should be preserved in semantic direct-call rewrite:\n{}",
         artifact.source
@@ -1064,14 +1158,14 @@ fn annotates_runtime_and_native_call_intents() {
     assert!(
         artifact
             .source
-            .contains("dart_vm.invoke(receiver, param1, param2, param3); // runtime:dart_vm.invoke, was: vm_runtime_Invoke"),
+            .contains("dart_vm.invoke(); // runtime:dart_vm.invoke, was: vm_runtime_Invoke"),
         "missing runtime call intent annotation:\n{}",
         artifact.source
     );
     assert!(
         artifact
             .source
-            .contains("libc.memcpy(t1, param1, param2, param3); // native:libc.memcpy, was: native_libc_memcpy"),
+            .contains("libc.memcpy(); // native:libc.memcpy, was: native_libc_memcpy"),
         "missing native call intent annotation:\n{}",
         artifact.source
     );
@@ -1118,14 +1212,14 @@ fn annotates_flutter_framework_call_intents() {
     assert!(
         artifact
             .source
-            .contains("flutter.widgets.State.setState(receiver, param1, param2, param3); // framework:flutter.widgets.State.setState, was: flutter_widgets_State_setState"),
+            .contains("flutter.widgets.State.setState(); // framework:flutter.widgets.State.setState, was: flutter_widgets_State_setState"),
         "missing flutter setState intent annotation:\n{}",
         artifact.source
     );
     assert!(
         artifact
             .source
-            .contains("flutter.widgets.StatefulWidget.createState(t1, param1, param2, param3); // framework:flutter.widgets.StatefulWidget.createState, was: flutter_widgets_StatefulWidget_createState"),
+            .contains("flutter.widgets.StatefulWidget.createState(); // framework:flutter.widgets.StatefulWidget.createState, was: flutter_widgets_StatefulWidget_createState"),
         "missing flutter createState intent annotation:\n{}",
         artifact.source
     );
@@ -1164,7 +1258,7 @@ fn preserves_flutter_class_and_method_tokens_with_underscores() {
     let artifact = emit_pseudocode(&ir, &symbols);
     assert!(
         artifact.source.contains(
-            "flutter.widgets.Render_Flex.perform_layout(receiver, param1, param2, param3); // framework:flutter.widgets.Render_Flex.perform_layout, was: flutter_widgets_Render_Flex_perform_layout"
+            "flutter.widgets.Render_Flex.perform_layout(); // framework:flutter.widgets.Render_Flex.perform_layout, was: flutter_widgets_Render_Flex_perform_layout"
         ),
         "flutter intent parsing should preserve underscore-heavy class/method splits:\n{}",
         artifact.source
@@ -1225,9 +1319,136 @@ fn annotates_framework_from_pool_selector_when_call_name_is_generic() {
     assert!(
         artifact
             .source
-            .contains("flutter.widgets.State.setState(1, 2, \"setState\" /* pool[42] */, param3); // framework:flutter.widgets.State.setState [selector], was: sub_6100"),
+            .contains("flutter.widgets.State.setState(2, \"setState\" /* pool[42] */); // framework:flutter.widgets.State.setState [selector], was: sub_6100"),
         "missing selector-based framework annotation:\n{}",
         artifact.source
+    );
+}
+/// A resolved pool slot is a known string wherever it is used, not only where it
+/// happens to land in a call argument. Assignments, comparisons and returns used to
+/// print the bare `pool[N]` even with the value in hand.
+#[test]
+fn pool_values_render_as_literals_outside_call_arguments() {
+    let ir = FunctionIr {
+        function_id: 900,
+        name: "poolValueUses".to_string(),
+        entry_va: 0x11000,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0x11000,
+            instrs: vec![
+                LlirInstr {
+                    va: 0x11000,
+                    op: IROp::LoadPool,
+                    src: "x1".to_string(),
+                    target: "pool[40]".to_string(),
+                },
+                // store to a frame local
+                LlirInstr {
+                    va: 0x11004,
+                    op: IROp::Other,
+                    src: "stur x1, [x29, #-8]".to_string(),
+                    target: String::new(),
+                },
+                // compare against another register
+                LlirInstr {
+                    va: 0x11008,
+                    op: IROp::Other,
+                    src: "cmp x2, x1".to_string(),
+                    target: String::new(),
+                },
+                LlirInstr {
+                    va: 0x1100c,
+                    op: IROp::Other,
+                    src: "mov x0, x1".to_string(),
+                    target: String::new(),
+                },
+                LlirInstr {
+                    va: 0x11010,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+
+    let symbols = HashMap::new();
+    let mut pool = HashMap::new();
+    pool.insert(40u64, "onError".to_string());
+    let out = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool).source;
+
+    assert!(
+        out.contains("= \"onError\" /* pool[40] */;"),
+        "pool value assigned to a local should read as the string:\n{out}"
+    );
+    assert!(
+        out.contains("return \"onError\" /* pool[40] */;"),
+        "returned pool value should read as the string:\n{out}"
+    );
+    assert!(
+        !out.contains("= pool[40];"),
+        "no use should be left as a bare slot when the value is known:\n{out}"
+    );
+}
+
+/// Dereferencing a pooled object is not the same as using its value. `pool[40].f7`
+/// reads a field of the object in slot 40, so rendering the string there would claim a
+/// field access on a literal; the slot keeps its inline mapping instead.
+#[test]
+fn pool_field_access_keeps_the_slot_rather_than_the_literal() {
+    let ir = FunctionIr {
+        function_id: 901,
+        name: "poolFieldUse".to_string(),
+        entry_va: 0x12000,
+        blocks: vec![BasicBlock {
+            id: 0,
+            start_va: 0x12000,
+            instrs: vec![
+                LlirInstr {
+                    va: 0x12000,
+                    op: IROp::LoadPool,
+                    src: "x1".to_string(),
+                    target: "pool[40]".to_string(),
+                },
+                LlirInstr {
+                    va: 0x12004,
+                    op: IROp::Other,
+                    src: "ldur x2, [x1, #7]".to_string(),
+                    target: String::new(),
+                },
+                LlirInstr {
+                    va: 0x12008,
+                    op: IROp::Other,
+                    src: "stur x2, [x29, #-8]".to_string(),
+                    target: String::new(),
+                },
+                LlirInstr {
+                    va: 0x1200c,
+                    op: IROp::Return,
+                    src: "ret".to_string(),
+                    target: String::new(),
+                },
+            ],
+            succs: Vec::new(),
+            preds: Vec::new(),
+        }],
+    };
+
+    let symbols = HashMap::new();
+    let mut pool = HashMap::new();
+    pool.insert(40u64, "onError".to_string());
+    let out = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool).source;
+
+    assert!(
+        !out.contains("\"onError\" /* pool[40] */.f"),
+        "a field read must not be rendered as a field of a string literal:\n{out}"
+    );
+    assert!(
+        out.contains("pool[40 /* \"onError\" */].f8"),
+        "the field base stays a slot, and the offset is reported untagged:\n{out}"
     );
 }
 
@@ -1268,7 +1489,7 @@ fn annotates_package_call_intents_from_machine_symbol_names() {
     assert!(
         artifact
             .source
-            .contains("spotube.ConnectService.executeCommandAsync(receiver, param1, param2, param3); // package:spotube.ConnectService.executeCommandAsync, was: package_spotube_ConnectService_executeCommandAsync"),
+            .contains("spotube.ConnectService.executeCommandAsync(); // package:spotube.ConnectService.executeCommandAsync, was: package_spotube_ConnectService_executeCommandAsync"),
         "missing package call intent annotation:\n{}",
         artifact.source
     );
@@ -1310,7 +1531,7 @@ fn preserves_package_owner_and_method_tokens_with_underscores() {
     let artifact = emit_pseudocode(&ir, &symbols);
     assert!(
         artifact.source.contains(
-            "spotube.Foo_Bar.internal_init(receiver, param1, param2, param3); // package:spotube.Foo_Bar.internal_init, was: package_spotube_Foo_Bar_internal_init"
+            "spotube.Foo_Bar.internal_init(); // package:spotube.Foo_Bar.internal_init, was: package_spotube_Foo_Bar_internal_init"
         ),
         "package intent parsing should preserve underscore-heavy owner/method splits:\n{}",
         artifact.source
@@ -1364,7 +1585,7 @@ fn annotates_flutter_scheduler_selector_from_pool_string() {
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
         artifact.source.contains(
-            "flutter.scheduler.SchedulerBinding.addPostFrameCallback(1, \"addPostFrameCallback\" /* pool[7] */, param2, param3); // framework:flutter.scheduler.SchedulerBinding.addPostFrameCallback [selector], was: sub_7000"
+            "flutter.scheduler.SchedulerBinding.addPostFrameCallback(\"addPostFrameCallback\" /* pool[7] */); // framework:flutter.scheduler.SchedulerBinding.addPostFrameCallback [selector], was: sub_7000"
         ),
         "missing scheduler selector annotation:\n{}",
         artifact.source
@@ -1418,7 +1639,7 @@ fn annotates_dart_async_selector_from_pool_string() {
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
         artifact.source.contains(
-            "dart.async.Future.catchError(1, \"catchError\" /* pool[9] */, param2, param3); // stdlib:dart.async.Future.catchError [selector], was: sub_7100"
+            "dart.async.Future.catchError(\"catchError\" /* pool[9] */); // stdlib:dart.async.Future.catchError [selector], was: sub_7100"
         ),
         "missing dart async selector annotation:\n{}",
         artifact.source
@@ -1472,7 +1693,7 @@ fn annotates_dart_typed_data_selector_from_pool_string() {
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
         artifact.source.contains(
-            "dart.typed_data.TypedData.offsetInBytes(1, \"offsetInBytes\" /* pool[13] */, param2, param3); // stdlib:dart.typed_data.TypedData.offsetInBytes [selector], was: sub_7200"
+            "dart.typed_data.TypedData.offsetInBytes(\"offsetInBytes\" /* pool[13] */); // stdlib:dart.typed_data.TypedData.offsetInBytes [selector], was: sub_7200"
         ),
         "missing typed_data selector annotation:\n{}",
         artifact.source
@@ -1526,7 +1747,7 @@ fn annotates_dart_typed_data_native_set_float32x4_internal_selector_from_pool_st
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
         artifact.source.contains(
-            "dart.typed_data.ByteData.setFloat32x4(1, \"_nativeSetFloat32x4\" /* pool[28] */, param2, param3); // stdlib:dart.typed_data.ByteData.setFloat32x4 [selector], was: sub_7240"
+            "dart.typed_data.ByteData.setFloat32x4(\"_nativeSetFloat32x4\" /* pool[28] */); // stdlib:dart.typed_data.ByteData.setFloat32x4 [selector], was: sub_7240"
         ),
         "missing typed_data native setFloat32x4 selector annotation:\n{}",
         artifact.source
@@ -1580,7 +1801,7 @@ fn annotates_dart_typed_data_unmodifiable_uint8_array_view_internal_selector_fro
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
         artifact.source.contains(
-            "dart.typed_data._UnmodifiableUint8ArrayView.new(1, \"_UnmodifiableUint8ArrayView\" /* pool[29] */, param2, param3); // stdlib:dart.typed_data._UnmodifiableUint8ArrayView.new [selector], was: sub_7250"
+            "dart.typed_data._UnmodifiableUint8ArrayView.new(\"_UnmodifiableUint8ArrayView\" /* pool[29] */); // stdlib:dart.typed_data._UnmodifiableUint8ArrayView.new [selector], was: sub_7250"
         ),
         "missing typed_data unmodifiable uint8 array view selector annotation:\n{}",
         artifact.source
@@ -1634,7 +1855,7 @@ fn annotates_dart_typed_data_int32_array_view_internal_selector_from_pool_string
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
         artifact.source.contains(
-            "dart.typed_data._Int32ArrayView.new(1, \"_Int32ArrayView\" /* pool[30] */, param2, param3); // stdlib:dart.typed_data._Int32ArrayView.new [selector], was: sub_7260"
+            "dart.typed_data._Int32ArrayView.new(\"_Int32ArrayView\" /* pool[30] */); // stdlib:dart.typed_data._Int32ArrayView.new [selector], was: sub_7260"
         ),
         "missing typed_data int32 array view selector annotation:\n{}",
         artifact.source
@@ -1688,7 +1909,7 @@ fn annotates_dart_core_match_end_selector_from_pool_string() {
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
         artifact.source.contains(
-            "dart.core.Match.end(1, \"match_end_index\" /* pool[21] */, param2, param3); // stdlib:dart.core.Match.end [selector], was: sub_7280"
+            "dart.core.Match.end(\"match_end_index\" /* pool[21] */); // stdlib:dart.core.Match.end [selector], was: sub_7280"
         ),
         "missing dart core match end selector annotation:\n{}",
         artifact.source
@@ -1742,7 +1963,7 @@ fn annotates_dart_io_selector_from_pool_string() {
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
         artifact.source.contains(
-            "dart.io.Stdout.supportsAnsiEscapes(1, \"supportsAnsiEscapes\" /* pool[14] */, param2, param3); // stdlib:dart.io.Stdout.supportsAnsiEscapes [selector], was: sub_7300"
+            "dart.io.Stdout.supportsAnsiEscapes(\"supportsAnsiEscapes\" /* pool[14] */); // stdlib:dart.io.Stdout.supportsAnsiEscapes [selector], was: sub_7300"
         ),
         "missing dart:io selector annotation:\n{}",
         artifact.source
@@ -1796,7 +2017,7 @@ fn annotates_native_prefixed_typed_data_selector_from_pool_string() {
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
         artifact.source.contains(
-            "dart.typed_data.ByteData.setFloat32(1, \"nativeSetFloat32\" /* pool[15] */, param2, param3); // stdlib:dart.typed_data.ByteData.setFloat32 [selector], was: sub_7400"
+            "dart.typed_data.ByteData.setFloat32(\"nativeSetFloat32\" /* pool[15] */); // stdlib:dart.typed_data.ByteData.setFloat32 [selector], was: sub_7400"
         ),
         "missing native-prefixed typed_data selector annotation:\n{}",
         artifact.source
@@ -1850,7 +2071,7 @@ fn annotates_runtime_selector_from_pool_string() {
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
         artifact.source.contains(
-            "dart_vm.yieldStarIterable(1, \"yieldStarIterable\" /* pool[16] */, param2, param3); // runtime:dart_vm.yieldStarIterable [selector], was: sub_7500"
+            "dart_vm.yieldStarIterable(\"yieldStarIterable\" /* pool[16] */); // runtime:dart_vm.yieldStarIterable [selector], was: sub_7500"
         ),
         "missing runtime selector annotation:\n{}",
         artifact.source
@@ -1904,7 +2125,7 @@ fn annotates_flutter_internal_list_equals_selector_from_pool_string() {
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
         artifact.source.contains(
-            "flutter.foundation.listEquals(1, \"_listEquals\" /* pool[24] */, param2, param3); // framework:flutter.foundation.listEquals [selector], was: sub_7900"
+            "flutter.foundation.listEquals(\"_listEquals\" /* pool[24] */); // framework:flutter.foundation.listEquals [selector], was: sub_7900"
         ),
         "missing flutter internal listEquals selector annotation:\n{}",
         artifact.source
@@ -1958,7 +2179,7 @@ fn annotates_runtime_internal_prepend_type_arguments_selector_from_pool_string()
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
         artifact.source.contains(
-            "dart_vm.prependTypeArguments(1, \"_prependTypeArguments\" /* pool[25] */, param2, param3); // runtime:dart_vm.prependTypeArguments [selector], was: sub_7910"
+            "dart_vm.prependTypeArguments(\"_prependTypeArguments\" /* pool[25] */); // runtime:dart_vm.prependTypeArguments [selector], was: sub_7910"
         ),
         "missing runtime internal prependTypeArguments selector annotation:\n{}",
         artifact.source
@@ -2012,7 +2233,7 @@ fn annotates_dart_async_stream_controller_internal_selector_from_pool_string() {
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
         artifact.source.contains(
-            "dart.async.StreamController.new(1, \"_StreamController\" /* pool[26] */, param2, param3); // stdlib:dart.async.StreamController.new [selector], was: sub_7920"
+            "dart.async.StreamController.new(\"_StreamController\" /* pool[26] */); // stdlib:dart.async.StreamController.new [selector], was: sub_7920"
         ),
         "missing internal StreamController selector annotation:\n{}",
         artifact.source
@@ -2066,7 +2287,7 @@ fn annotates_dart_io_raw_datagram_socket_internal_selector_from_pool_string() {
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
         artifact.source.contains(
-            "dart.io.RawDatagramSocket.new(1, \"_RawDatagramSocket\" /* pool[27] */, param2, param3); // stdlib:dart.io.RawDatagramSocket.new [selector], was: sub_7930"
+            "dart.io.RawDatagramSocket.new(\"_RawDatagramSocket\" /* pool[27] */); // stdlib:dart.io.RawDatagramSocket.new [selector], was: sub_7930"
         ),
         "missing internal RawDatagramSocket selector annotation:\n{}",
         artifact.source
@@ -2120,7 +2341,7 @@ fn annotates_dart_core_compile_time_error_selector_from_pool_string() {
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
         artifact.source.contains(
-            "dart.core._CompileTimeError.new(1, \"_CompileTimeError\" /* pool[17] */, param2, param3); // stdlib:dart.core._CompileTimeError.new [selector], was: sub_7600"
+            "dart.core._CompileTimeError.new(\"_CompileTimeError\" /* pool[17] */); // stdlib:dart.core._CompileTimeError.new [selector], was: sub_7600"
         ),
         "missing compile-time-error selector annotation:\n{}",
         artifact.source
@@ -2174,7 +2395,7 @@ fn annotates_dart_io_native_socket_selector_from_pool_string() {
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
         artifact.source.contains(
-            "dart.io._NativeSocket.new(1, \"_NativeSocket\" /* pool[18] */, param2, param3); // stdlib:dart.io._NativeSocket.new [selector], was: sub_7700"
+            "dart.io._NativeSocket.new(\"_NativeSocket\" /* pool[18] */); // stdlib:dart.io._NativeSocket.new [selector], was: sub_7700"
         ),
         "missing native-socket selector annotation:\n{}",
         artifact.source
@@ -2228,7 +2449,7 @@ fn annotates_runtime_closure_selector_from_pool_string() {
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
         artifact.source.contains(
-            "dart_vm.Closure.new(1, \"_Closure\" /* pool[19] */, param2, param3); // runtime:dart_vm.Closure.new [selector], was: sub_7800"
+            "dart_vm.Closure.new(\"_Closure\" /* pool[19] */); // runtime:dart_vm.Closure.new [selector], was: sub_7800"
         ),
         "missing closure runtime selector annotation:\n{}",
         artifact.source
@@ -2282,9 +2503,128 @@ fn annotates_runtime_type_parameter_selector_from_pool_string() {
     let artifact = emit_pseudocode_with_pool_hints(&ir, &symbols, &pool);
     assert!(
         artifact.source.contains(
-            "dart_vm.TypeParameter.new(1, \"_TypeParameter\" /* pool[20] */, param2, param3); // runtime:dart_vm.TypeParameter.new [selector], was: sub_7900"
+            "dart_vm.TypeParameter.new(\"_TypeParameter\" /* pool[20] */); // runtime:dart_vm.TypeParameter.new [selector], was: sub_7900"
         ),
         "missing type-parameter runtime selector annotation:\n{}",
         artifact.source
     );
+}
+
+
+#[test]
+fn rename_order_is_total_regardless_of_map_iteration_order() {
+    let mk = |v: &[(&str, &str)]| -> Vec<(String, String)> {
+        v.iter().map(|(a, b)| ((*a).to_string(), (*b).to_string())).collect()
+    };
+    let mut forward = mk(&[("objTmp10", "buffer"), ("tmp1", "count"), ("tmp2", "index")]);
+    let mut reverse = mk(&[("tmp2", "index"), ("tmp1", "count"), ("objTmp10", "buffer")]);
+    crate::passes::sort_rename_pairs(&mut forward);
+    crate::passes::sort_rename_pairs(&mut reverse);
+    assert_eq!(forward, reverse, "rename order must not depend on map insertion order");
+}
+
+#[test]
+fn alias_candidate_order_is_total_regardless_of_map_iteration_order() {
+    // Equal counts are the case a frequency-only comparator leaves to the per-process
+    // HashMap seed, and `sort_unstable_by` does not preserve input order for them
+    // either. Building the vectors directly reproduces both orders without needing a
+    // seed, so this fails deterministically if the lexicographic tie-break is removed.
+    let mk = |v: &[(&str, usize)]| -> Vec<(String, usize)> {
+        v.iter().map(|(a, b)| ((*a).to_string(), *b)).collect()
+    };
+    let mut forward = mk(&[("reg8", 5), ("reg9", 5), ("value2", 9)]);
+    let mut reverse = mk(&[("reg9", 5), ("value2", 9), ("reg8", 5)]);
+
+    crate::passes::sort_alias_candidates(&mut forward);
+    crate::passes::sort_alias_candidates(&mut reverse);
+
+    assert_eq!(
+        forward, reverse,
+        "alias order must not depend on the order the map yielded"
+    );
+    let names: Vec<&str> = forward.iter().map(|(k, _)| k.as_str()).collect();
+    assert_eq!(
+        names,
+        vec!["value2", "reg8", "reg9"],
+        "most frequent first, then lexicographic"
+    );
+}
+
+/// `resultTmpN` claims the local was assigned from a call result, so a `t`-prefixed
+/// value that is not a numbered call temporary must not earn that name.
+///
+/// The selector used to be a `"{id} = t"` prefix test, which matched
+/// `thread.f104.f1968` and `true` - both ubiquitous in real output - so the one name
+/// kept on the grounds that it states an observed source was not enforcing it. Both
+/// negative cases here are drawn from a real corpus.
+#[test]
+fn a_t_prefixed_value_that_is_not_a_call_result_is_not_named_result_tmp() {
+    let ir = FunctionIr {
+        function_id: 9,
+        name: "tPrefix".to_string(),
+        entry_va: 0x9000,
+        blocks: Vec::new(),
+    };
+    let symbols = HashMap::new();
+    let mut emitter = FuncEmitter::new(&ir, &symbols);
+    emitter.locals.insert(-8, "local_m8".to_string());
+    emitter.locals.insert(-16, "local_m16".to_string());
+    emitter.locals.insert(-24, "local_m24".to_string());
+    emitter.locals.insert(-32, "local_m32".to_string());
+    emitter.locals.insert(-40, "local_m40".to_string());
+    emitter.locals.insert(-48, "local_m48".to_string());
+    emitter.lines = vec![
+        "dynamic tPrefix(dynamic arg0) {".to_string(),
+        "  var local_m8;".to_string(),
+        "  var local_m16;".to_string(),
+        "  var local_m24;".to_string(),
+        "  var local_m32;".to_string(),
+        "  var local_m40;".to_string(),
+        "  var local_m48;".to_string(),
+        "  local_m8 = thread.f104.f1968;".to_string(),
+        "  local_m16 = true;".to_string(),
+        "  local_m24 = t7;".to_string(),
+        // Side by side, as they appear in 00115_sub_613bb8: one local assigned the
+        // whole call temporary, a different local assigned a field of it.
+        "  local_m32 = t8;".to_string(),
+        "  local_m40 = t8.f12;".to_string(),
+        // An unnumbered `t` is not a call temporary either. This is the only case the
+        // digit half of the predicate decides on its own: the terminator half already
+        // rejects `thread` and `true`, so without this line that half tests nothing.
+        "  local_m48 = t;".to_string(),
+        "  return local_m8;".to_string(),
+        "}".to_string(),
+    ];
+    emitter.apply_name_and_type_hints("tPrefix");
+    let out = emitter.lines.join("\n");
+    // Every rejection below is a negative assertion, so an unregistered local would
+    // look like a pass: it keeps its `local_mN` spelling, contains no `resultTmp`, and
+    // the case silently tests nothing. This makes that failure loud, once, for all of
+    // them - it already caught two omissions while this fixture was being written.
+    assert!(
+        !out.contains("local_m"),
+        "every local must be registered in `emitter.locals` or its case is vacuous:\n{out}"
+    );
+    let line_with = |rhs: &str| -> String {
+        out.lines()
+            .find(|line| line.trim_end().ends_with(rhs))
+            .unwrap_or_else(|| panic!("no line ending in {rhs}:\n{out}"))
+            .to_string()
+    };
+    for claim in ["= thread.f104.f1968;", "= true;", "= t8.f12;", "= t;"] {
+        let line = line_with(claim);
+        assert!(
+            !line.contains("resultTmp"),
+            "{claim} is not a call result, so its local must not be named resultTmp: {line}"
+        );
+    }
+    // The genuine cases still earn the name, so the check is not vacuous. `t8` is the
+    // discriminating pair with `t8.f12` above: same temporary, different assignment shape.
+    for genuine in ["= t7;", "= t8;"] {
+        let line = line_with(genuine);
+        assert!(
+            line.contains("resultTmp"),
+            "an assignment from a whole numbered call temporary must be resultTmp: {line}"
+        );
+    }
 }

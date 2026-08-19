@@ -14,11 +14,37 @@ impl<'a> FuncEmitter<'a> {
             })
     }
 
+    /// Length of the string literal starting at `i`, including both quotes.
+    ///
+    /// Recovered pool strings are real program data and frequently contain the same
+    /// punctuation these rewrites look for. `"... collected (nullptr). This is ..."` reads
+    /// as a parenthesised member access to a byte scanner, and simplifying it silently
+    /// edits a string that came out of the binary. Scanners copy literals verbatim.
+    fn string_literal_len(bytes: &[u8], i: usize) -> Option<usize> {
+        if bytes.get(i) != Some(&b'"') {
+            return None;
+        }
+        let mut j = i + 1;
+        while j < bytes.len() {
+            match bytes[j] {
+                b'\\' => j += 2,
+                b'"' => return Some(j + 1 - i),
+                _ => j += 1,
+            }
+        }
+        None
+    }
+
     fn simplify_wrapped_member_access_once(input: &str) -> String {
         let bytes = input.as_bytes();
         let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
         let mut i = 0usize;
         while i < bytes.len() {
+            if let Some(len) = Self::string_literal_len(bytes, i) {
+                out.extend_from_slice(&bytes[i..i + len]);
+                i += len;
+                continue;
+            }
             if i + 3 < bytes.len() && bytes[i] == b'(' && bytes[i + 1] == b'(' {
                 let mut depth = 0i32;
                 let mut j = i;
@@ -62,6 +88,11 @@ impl<'a> FuncEmitter<'a> {
         let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
         let mut i = 0usize;
         while i < bytes.len() {
+            if let Some(len) = Self::string_literal_len(bytes, i) {
+                out.extend_from_slice(&bytes[i..i + len]);
+                i += len;
+                continue;
+            }
             if bytes[i] == b'(' {
                 let mut depth = 0i32;
                 let mut j = i;
@@ -131,11 +162,26 @@ impl<'a> FuncEmitter<'a> {
         };
 
         if off == -1 {
-            format!("{b}._tag")
-        } else if off >= 0 {
-            format!("{b}.f{off}")
+            return format!("{b}._tag");
+        }
+        if off < 0 {
+            return format!("{b}.m{}", -off);
+        }
+        // Dart object pointers carry `kHeapObjectTag`, so a field load reads
+        // `[obj + offset - 1]`. Field offsets are 4-aligned, so a displacement of
+        // 3 mod 4 is exactly a tag-adjusted one and identifies itself: no
+        // knowledge of the base is needed, and THR or pool displacements, which
+        // are aligned and untagged, never match. Measured on a real binary,
+        // 262439 of 272805 object-base displacements are 3 or 7 mod 8, and every
+        // THR displacement is 0 mod 8.
+        //
+        // Reporting the real offset makes the number readable without knowing the
+        // tagging scheme, and joinable by equality to a recovered class field
+        // table, which is keyed the same way.
+        if off % 4 == 3 {
+            format!("{b}.f{}", off + 1)
         } else {
-            format!("{b}.m{}", -off)
+            format!("{b}.f{off}")
         }
     }
 
@@ -312,15 +358,39 @@ mod expr_cleanup_utf8_tests {
 
     #[test]
     fn clean_expr_normalizes_shifted_pool_field_access() {
-        let input = "((pool + 8 /* lsl #12 */)).f3640".to_string();
+        // The shift folds in the simplifier now, so this is the shape the emitter
+        // produces: `add rD, pool, #0x8, lsl #12` reaches here already added.
+        let input = "((pool + 0x8000)).f3640".to_string();
         let out = FuncEmitter::clean_expr(input);
-        assert_eq!(out, "pool[4551]");
+        // (8 << 12) + 3640 == 36408 bytes from PP. Converting that to an entry index
+        // needs the pool's entries_offset/word_size, which this layer does not have.
+        assert_eq!(out, "poolOff[36408]");
     }
 
     #[test]
     fn clean_expr_normalizes_nested_shifted_pool_field_access() {
-        let input = "((((pool + 8 /* lsl #12 */)).f816).f7)".to_string();
+        let input = "((((pool + 0x8000)).f816).f7)".to_string();
         let out = FuncEmitter::clean_expr(input);
-        assert_eq!(out, "(pool[4198].f7)");
+        assert_eq!(out, "(poolOff[33584].f7)");
+    }
+
+    /// A Dart object pointer carries `kHeapObjectTag`, so a field load reads one
+    /// byte below the field. Field offsets are 4-aligned, so a displacement of 3
+    /// mod 4 is exactly a tag-adjusted one and identifies itself; everything else
+    /// is already in the untagged space and must not shift.
+    #[test]
+    fn field_offsets_are_reported_untagged() {
+        // Tagged: the load was `[obj + 0x10 - 1]`.
+        assert_eq!(FuncEmitter::field_expr("obj", 15), "obj.f16");
+        assert_eq!(FuncEmitter::field_expr("obj", 7), "obj.f8");
+        // Compressed slots are 4 bytes, so 3 mod 4 also covers `[obj + 4 - 1]`.
+        assert_eq!(FuncEmitter::field_expr("obj", 3), "obj.f4");
+        // Already aligned, so untagged: an object pool or THR displacement.
+        assert_eq!(FuncEmitter::field_expr("obj", 16), "obj.f16");
+        assert_eq!(FuncEmitter::field_expr("thread", 72), "thread.f72");
+        assert_eq!(FuncEmitter::field_expr("thread", 0x38), "thread.f56");
+        // The header sits below the tag and is named, not numbered.
+        assert_eq!(FuncEmitter::field_expr("obj", -1), "obj._tag");
+        assert_eq!(FuncEmitter::field_expr("obj", -8), "obj.m8");
     }
 }

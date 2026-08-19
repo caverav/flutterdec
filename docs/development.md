@@ -11,6 +11,19 @@ nix develop
 `nix develop` also exports `FLUTTERDEC_BLUTTER_CMD` to a Nix-managed `flutterdec-blutter`
 wrapper, so `--adapter-backend blutter` can run without manual Blutter path wiring.
 
+The r2flutter backend is not bundled. Build it once against radare2 and point
+`FLUTTERDEC_R2FLUTTER_BIN` at the result:
+
+```bash
+git clone https://github.com/radareorg/r2flutter && cd r2flutter
+./configure --prefix="$HOME/.local" && make
+export FLUTTERDEC_R2FLUTTER_BIN="$PWD/bin/r2flutter"
+```
+
+It is the only backend that yields exact function names and a real `ObjectPool` index
+space, so it is worth having when working on the semantic/naming passes; the internal
+adapter cannot exercise them.
+
 Common commands:
 
 ```bash

@@ -4,7 +4,7 @@ use anyhow::{bail, Context, Result};
 use flutterdec_adapter::{
     list_adapters, resolve_adapter_exec, run_adapter, AdapterInput, ProgramModel,
 };
-use flutterdec_decompiler::{emit_program_with_pool_context, PseudocodeArtifact};
+use flutterdec_decompiler::{emit_program_with_runtime_stubs, PseudocodeArtifact};
 use flutterdec_disasm_arm64::{
     disassemble_program_with_priorities_and_package_hints, FunctionDisassembly,
     FunctionPriorityBreakdown,
@@ -27,6 +27,11 @@ pub struct DecompileOptions {
     pub emit_ghidra_script: bool,
     pub emit_ida_script: bool,
     pub emit_ir: bool,
+    /// Split a function record that spans more than one real function.
+    /// Opt-in: it multiplies the emitted function count, which moves every
+    /// absolute quality counter and makes the model-derived disassembly ratio
+    /// compare unlike things.
+    pub split_records: bool,
     pub extra_symbol_elfs: Vec<PathBuf>,
     pub extra_symbol_map_targets: Vec<PathBuf>,
     pub include_nearest_symbol_map: bool,
@@ -113,9 +118,14 @@ impl DecompileAnalysisProfile {
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 pub enum AdapterBackend {
+    /// Try each snapshot-aware backend in turn, then fall back to the internal one.
     Auto,
+    /// String carving plus prologue scanning. No real names, no real ObjectPool.
     Internal,
     Blutter,
+    /// `r2flutter` (MIT, radareorg): deserializes the AOT snapshot, so it is the only
+    /// backend that supplies exact names and an authoritative ObjectPool index space.
+    R2Flutter,
 }
 
 impl AdapterBackend {
@@ -124,6 +134,7 @@ impl AdapterBackend {
             Self::Auto => "auto",
             Self::Internal => "internal",
             Self::Blutter => "blutter",
+            Self::R2Flutter => "r2flutter",
         }
     }
 }
@@ -199,6 +210,19 @@ pub struct InfoOutput {
     pub libapp_path: String,
     pub arch: String,
     pub snapshot_hash: String,
+    /// Dart SDK version behind `snapshot_hash`, when the hash is tabulated.
+    pub dart_version: Option<String>,
+    /// Object-header tag encoding for that version (`CID_INT32`, `CID_SHIFT1`,
+    /// `OBJECT_HEADER`); the layout dimension most likely to break a parser.
+    pub dart_tag_style: Option<String>,
+    /// Whether the snapshot was built with compressed pointers, read from the
+    /// features string in its header rather than inferred from the code. It
+    /// decides the width of a reference field and the value of `kSmiBits`, so it
+    /// selects which offset tables apply. `None` means the header did not parse
+    /// and nothing may be assumed.
+    pub compressed_pointers: Option<bool>,
+    /// The snapshot's features string verbatim, when the header parsed.
+    pub snapshot_features: Option<String>,
     pub adapter_installed: bool,
     pub adapter_kind: Option<String>,
     pub manifest_entry_present: Option<bool>,
@@ -238,6 +262,9 @@ pub struct QualityReport {
     pub semantic_direct_calls: usize,
     pub semantic_indirect_calls: usize,
     pub dispatch_selector_calls: usize,
+    pub dispatch_table_calls: usize,
+    pub repeated_blocks: usize,
+    pub unlifted_instructions: usize,
     pub target_va_symbol_calls: usize,
     pub block_helper_refs: usize,
     pub raw_arg_name_refs: usize,

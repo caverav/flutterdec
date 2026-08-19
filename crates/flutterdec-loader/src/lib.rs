@@ -8,6 +8,10 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use zip::ZipArchive;
 
+pub mod dart_profile;
+
+use dart_profile::ResolvedDartProfile;
+
 #[derive(Debug, Clone)]
 pub struct SnapshotBundle {
     pub input_path: PathBuf,
@@ -20,6 +24,24 @@ pub struct SnapshotBundle {
     pub isolate_instr: Vec<u8>,
     pub vm_instr_va: u64,
     pub isolate_instr_va: u64,
+    /// Dart version and layout profile for `snapshot_hash`, when the hash is known.
+    pub dart_profile: Option<ResolvedDartProfile>,
+    /// The snapshot's features string, when the header parsed.
+    ///
+    /// `WriteVersionAndFeatures` (`runtime/vm/app_snapshot.cc`) writes the
+    /// 32-character snapshot hash then this string, NUL-terminated, at
+    /// `kSnapshotHeaderSize`. It records the build flags the snapshot was
+    /// produced with.
+    pub snapshot_features: Option<String>,
+    /// Whether the snapshot was built with compressed pointers, read from the
+    /// features string rather than inferred.
+    ///
+    /// `Dart::FeaturesString` (`runtime/vm/dart.cc`) appends exactly
+    /// `compressed-pointers` or `no-compressed-pointers`, so this is a fact
+    /// about the binary. It decides the word size of a reference field, and the
+    /// value of `kSmiBits`, and therefore which offset table applies. `None`
+    /// means the header did not parse and nothing may be assumed.
+    pub compressed_pointers: Option<bool>,
 }
 
 #[derive(Debug, Clone)]
@@ -184,6 +206,65 @@ fn read_symbol_span(
     })
 }
 
+/// Snapshot hash and features string, read from the header rather than scanned.
+///
+/// `runtime/vm/snapshot.h` fixes the layout: magic `0xdcdcf5f5`, then an `int64`
+/// length and an `int64` kind, for a 20-byte header.
+/// `WriteVersionAndFeatures` (`runtime/vm/app_snapshot.cc`) then writes
+/// `Version::SnapshotString()`, which is the 32-character snapshot hash and
+/// carries no separator, followed by the NUL-terminated features string.
+fn parse_snapshot_header(bytes: &[u8]) -> Option<(String, String)> {
+    const MAGIC: [u8; 4] = [0xf5, 0xf5, 0xdc, 0xdc];
+    const HEADER_SIZE: usize = 20;
+    const HASH_LEN: usize = 32;
+
+    let start = bytes.windows(MAGIC.len()).position(|w| w == MAGIC)?;
+    // `length` counts the bytes after it, so a real header's payload fits inside
+    // the span. Checking it rejects a run of bytes that merely contains the
+    // magic, which would otherwise yield a fabricated hash.
+    let length = i64::from_le_bytes(bytes.get(start + 4..start + 12)?.try_into().ok()?);
+    let remaining = i64::try_from(bytes.len().checked_sub(start)?).ok()?;
+    if length <= 0 || length > remaining {
+        return None;
+    }
+    let hash_at = start.checked_add(HEADER_SIZE)?;
+    let features_at = hash_at.checked_add(HASH_LEN)?;
+    let hash = bytes.get(hash_at..features_at)?;
+    if !hash.iter().all(|b| b.is_ascii_hexdigit()) {
+        return None;
+    }
+    // The features string is bounded: a missing terminator means this is not a
+    // header, not that the rest of the file is one string.
+    let limit = features_at.saturating_add(1024).min(bytes.len());
+    let end = bytes
+        .get(features_at..limit)?
+        .iter()
+        .position(|b| *b == 0)?;
+    let features = bytes.get(features_at..features_at + end)?;
+    if !features.iter().all(|b| b.is_ascii_graphic() || *b == b' ') {
+        return None;
+    }
+    Some((
+        String::from_utf8_lossy(hash).to_ascii_lowercase(),
+        String::from_utf8_lossy(features).to_string(),
+    ))
+}
+
+/// Whether the features string says the snapshot uses compressed pointers.
+///
+/// `Dart::FeaturesString` appends one of the two spellings, so the negative form
+/// has to be tested first: `compressed-pointers` is a substring of
+/// `no-compressed-pointers`.
+fn compressed_pointers_from_features(features: &str) -> Option<bool> {
+    if features.contains("no-compressed-pointers") {
+        return Some(false);
+    }
+    if features.contains("compressed-pointers") {
+        return Some(true);
+    }
+    None
+}
+
 fn detect_snapshot_hash(vm_data: &[u8], isolate_data: &[u8]) -> String {
     let mut probe = Vec::new();
     probe.extend_from_slice(&vm_data[..vm_data.len().min(65536)]);
@@ -233,7 +314,22 @@ fn from_elf(path: &Path, libapp_display: PathBuf, bytes: Vec<u8>) -> Result<Snap
     let isolate_instr_bytes =
         bytes[isolate_instr.file_offset..isolate_instr.file_offset + isolate_instr.size].to_vec();
 
-    let hash = detect_snapshot_hash(&vm_data_bytes, &isolate_data_bytes);
+    // The header is exact where it is present and also yields the features
+    // string. The byte scan stays as the fallback: it tolerates a snapshot that
+    // does not begin at the start of the span, and narrowing what the loader
+    // accepts would silently degrade profile and adapter resolution instead of
+    // failing.
+    let header = parse_snapshot_header(&vm_data_bytes)
+        .or_else(|| parse_snapshot_header(&isolate_data_bytes));
+    let hash = match &header {
+        Some((hash, _)) => hash.clone(),
+        None => detect_snapshot_hash(&vm_data_bytes, &isolate_data_bytes),
+    };
+    let snapshot_features = header.map(|(_, features)| features);
+    let compressed_pointers = snapshot_features
+        .as_deref()
+        .and_then(compressed_pointers_from_features);
+    let dart_profile = dart_profile::profile_for_hash(&hash);
 
     Ok(SnapshotBundle {
         input_path: path.to_path_buf(),
@@ -246,6 +342,9 @@ fn from_elf(path: &Path, libapp_display: PathBuf, bytes: Vec<u8>) -> Result<Snap
         isolate_instr: isolate_instr_bytes,
         vm_instr_va: vm_instr.va,
         isolate_instr_va: isolate_instr.va,
+        dart_profile,
+        snapshot_features,
+        compressed_pointers,
     })
 }
 
@@ -276,7 +375,8 @@ pub fn load_snapshot_bundle(path: &Path) -> Result<SnapshotBundle> {
 #[cfg(test)]
 mod tests {
     use super::{
-        list_apk_entries, load_snapshot_bundle_from_apk_session, read_apk_entry, ApkSession,
+        compressed_pointers_from_features, list_apk_entries, load_snapshot_bundle_from_apk_session,
+        parse_snapshot_header, read_apk_entry, ApkSession,
     };
     use std::fs::File;
     use std::io::Write;
@@ -356,5 +456,84 @@ mod tests {
         let session = ApkSession::open(&apk).expect("open session");
         let err = load_snapshot_bundle_from_apk_session(&apk, &session).expect_err("non-elf fails");
         assert!(err.to_string().contains("parse ELF libapp"));
+    }
+
+    fn snapshot_blob(hash: &str, features: &str) -> Vec<u8> {
+        // Eight bytes of padding before the header, so the parser has to find the
+        // magic rather than assume offset zero.
+        let lead = 8usize;
+        let payload_len = 20 + hash.len() + features.len() + 1;
+        let mut out = vec![0u8; lead];
+        out.extend_from_slice(&[0xf5, 0xf5, 0xdc, 0xdc]);
+        // `length` has to describe a payload that fits inside the span, which is
+        // what makes the check able to reject a stray magic.
+        out.extend_from_slice(&(payload_len as i64).to_le_bytes());
+        out.extend_from_slice(&3i64.to_le_bytes());
+        out.extend_from_slice(hash.as_bytes());
+        out.extend_from_slice(features.as_bytes());
+        out.push(0);
+        out
+    }
+
+    /// A header whose length does not fit the span is not a header. This is the
+    /// check that makes a stray magic in a run of data rejectable, so it needs
+    /// its own case rather than resting on the hash and features checks.
+    #[test]
+    fn rejects_a_header_whose_length_exceeds_the_span() {
+        let mut blob = snapshot_blob(
+            "80a49c7111088100a233b2ae788e1f48",
+            "product arm64 compressed-pointers",
+        );
+        assert!(parse_snapshot_header(&blob).is_some(), "baseline parses");
+        // Only the length field changes.
+        blob[12..20].copy_from_slice(&i64::MAX.to_le_bytes());
+        assert!(parse_snapshot_header(&blob).is_none());
+    }
+
+    /// The header fixes the layout, so the hash and features come from it rather
+    /// than from a byte scan. `Version::SnapshotString()` is the 32-character
+    /// hash with no separator before the features string.
+    #[test]
+    fn parses_hash_and_features_from_the_snapshot_header() {
+        let blob = snapshot_blob(
+            "80a49c7111088100a233b2ae788e1f48",
+            "product no-code_comments arm64 android compressed-pointers",
+        );
+        let (hash, features) = parse_snapshot_header(&blob).expect("header parses");
+        assert_eq!(hash, "80a49c7111088100a233b2ae788e1f48");
+        assert!(features.ends_with("compressed-pointers"));
+        assert_eq!(compressed_pointers_from_features(&features), Some(true));
+    }
+
+    /// `compressed-pointers` is a substring of `no-compressed-pointers`, so the
+    /// negative spelling has to be tested first or every uncompressed snapshot
+    /// reads as compressed.
+    #[test]
+    fn the_negative_pointer_mode_spelling_wins() {
+        assert_eq!(
+            compressed_pointers_from_features("product arm64 no-compressed-pointers"),
+            Some(false)
+        );
+        assert_eq!(
+            compressed_pointers_from_features("product arm64 compressed-pointers"),
+            Some(true)
+        );
+        // Absent rather than false: nothing may be assumed from silence.
+        assert_eq!(compressed_pointers_from_features("product arm64"), None);
+    }
+
+    /// A run of bytes that happens to contain the magic is not a header. Without
+    /// the checks a stray match would yield a fabricated hash.
+    #[test]
+    fn rejects_a_stray_magic_that_is_not_a_header() {
+        let mut blob = vec![0xf5, 0xf5, 0xdc, 0xdc];
+        blob.extend_from_slice(&[0xffu8; 200]);
+        assert!(parse_snapshot_header(&blob).is_none());
+        // A valid hash but no terminated features string is also not a header.
+        let mut truncated = vec![0u8; 20];
+        truncated[0..4].copy_from_slice(&[0xf5, 0xf5, 0xdc, 0xdc]);
+        truncated.extend_from_slice(b"80a49c7111088100a233b2ae788e1f48");
+        truncated.extend_from_slice(&[b'x'; 2048]);
+        assert!(parse_snapshot_header(&truncated).is_none());
     }
 }

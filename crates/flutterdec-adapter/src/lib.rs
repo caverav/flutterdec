@@ -58,6 +58,38 @@ pub struct ObjectPoolEntry {
     pub source: Option<String>,
 }
 
+/// Hardware layout of the Dart `ObjectPool` object that `x27`/PP points at.
+///
+/// Presence of this record is the adapter's assertion that `ObjectPoolEntry::index`
+/// values live in the *hardware* index space, i.e. that a `ldr xN, [x27, #disp]`
+/// resolves to `(disp - entries_offset) / word_size`. Adapters that only carve
+/// strings out of the snapshot must leave it unset; without it the core refuses to
+/// map pool references onto values instead of guessing.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct PoolGeometry {
+    /// Byte offset of entry 0 from the PP base (0x10 on ARM64 AOT).
+    pub entries_offset: u64,
+    /// Stride between entries in bytes (8 on ARM64 AOT, even with compressed pointers).
+    pub word_size: u64,
+}
+
+impl PoolGeometry {
+    /// Convert a PP-relative byte displacement into a pool entry index.
+    ///
+    /// Returns `None` for displacements below the first entry or not on a stride
+    /// boundary; those are pool-object header accesses, not entry loads.
+    pub fn index_for_displacement(&self, displacement: u64) -> Option<u64> {
+        if self.word_size == 0 {
+            return None;
+        }
+        let rel = displacement.checked_sub(self.entries_offset)?;
+        if !rel.is_multiple_of(self.word_size) {
+            return None;
+        }
+        Some(rel / self.word_size)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProgramModel {
     pub schema_version: u32,
@@ -69,6 +101,9 @@ pub struct ProgramModel {
     pub classes: Vec<ClassInfo>,
     pub functions: Vec<FunctionInfo>,
     pub object_pool: Vec<ObjectPoolEntry>,
+    /// Set only by adapters that recover the real `ObjectPool`; see [`PoolGeometry`].
+    #[serde(default)]
+    pub pool_geometry: Option<PoolGeometry>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

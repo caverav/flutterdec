@@ -1,36 +1,23 @@
+/// Order the identifier renames before they are applied as sequential textual
+/// substitutions. The total secondary key protects output from HashMap seed order.
+pub(crate) fn sort_rename_pairs(pairs: &mut [(String, String)]) {
+    pairs.sort_by(|a, b| b.0.len().cmp(&a.0.len()).then_with(|| a.0.cmp(&b.0)));
+}
+
+/// Order the minus-one alias candidates before they are turned into named locals.
+///
+/// Most frequent first, so the alias budget goes to the identifiers that appear most,
+/// then lexicographic to make the order total. The second key is load-bearing for the
+/// same reason as `sort_rename_pairs`, and worse here: the candidates arrive from a
+/// `HashMap` whose iteration order is seeded per process, and `sort_unstable_by` does not
+/// even preserve that order for equal keys. With frequency as the only key, two idents
+/// sharing a count were emitted in an arbitrary order, so `reg8Minus1` and `reg9Minus1`
+/// swapped declarations between runs while every counter stayed identical.
+pub(crate) fn sort_alias_candidates(candidates: &mut [(String, usize)]) {
+    candidates.sort_unstable_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+}
+
 impl<'a> FuncEmitter<'a> {
-    fn alias_dispatch_target_slot_calls(&mut self) {
-        if self.lines.is_empty() {
-            return;
-        }
-
-        let mut replaced = false;
-        for line in &mut self.lines {
-            if !line.contains("indirect via: dispatchTarget") {
-                continue;
-            }
-            if line.contains("reg21.f0.invoke(") {
-                *line = line.replace("reg21.f0.invoke(", "dispatchTargetFn.invoke(");
-                replaced = true;
-            }
-            if line.contains("reg21.f0(") {
-                *line = line.replace("reg21.f0(", "dispatchTargetFn(");
-                replaced = true;
-            }
-        }
-
-        if !replaced {
-            return;
-        }
-
-        let alias_decl = "  final dispatchTargetFn = reg21.f0;".to_string();
-        if self.lines.iter().any(|l| l.trim() == alias_decl.trim()) {
-            return;
-        }
-        let idx = Self::prelude_insert_index(&self.lines);
-        self.lines.insert(idx, alias_decl);
-    }
-
     fn alias_repeated_stack_slots(&mut self) {
         if self.lines.len() < 3 {
             return;
@@ -38,10 +25,10 @@ impl<'a> FuncEmitter<'a> {
 
         let mut counts: HashMap<String, usize> = HashMap::new();
         for line in &self.lines {
-            for slot in Self::stack_slot_refs(line) {
-                *counts.entry(slot).or_insert(0) += 1;
-            }
-        }
+                    for slot in Self::stack_slot_refs(crate::code_before_annotation(line)) {
+                        *counts.entry(slot).or_insert(0) += 1;
+                    }
+                }
 
         let mut candidates: Vec<String> = counts
             .into_iter()
@@ -99,10 +86,10 @@ impl<'a> FuncEmitter<'a> {
 
         let mut counts: HashMap<String, usize> = HashMap::new();
         for line in &self.lines {
-            for lit in Self::pool_mapped_literals(line) {
-                *counts.entry(lit).or_insert(0) += 1;
-            }
-        }
+                    for lit in Self::pool_mapped_literals(crate::code_before_annotation(line)) {
+                        *counts.entry(lit).or_insert(0) += 1;
+                    }
+                }
 
         let mut candidates: Vec<String> = counts
             .into_iter()
@@ -178,13 +165,14 @@ impl<'a> FuncEmitter<'a> {
         let mul = format!("sp[{slot}] *=");
         let div = format!("sp[{slot}] /=");
         lines.iter().any(|line| {
-            line.contains(&spaced)
-                || line.contains(&compact)
-                || line.contains(&plus)
-                || line.contains(&minus)
-                || line.contains(&mul)
-                || line.contains(&div)
-        })
+                    let line = crate::code_before_annotation(line);
+                    line.contains(&spaced)
+                        || line.contains(&compact)
+                        || line.contains(&plus)
+                        || line.contains(&minus)
+                        || line.contains(&mul)
+                        || line.contains(&div)
+                })
     }
 
     fn is_simple_stack_slot_token(token: &str) -> bool {
@@ -294,16 +282,16 @@ impl<'a> FuncEmitter<'a> {
 
         let mut counts: HashMap<String, usize> = HashMap::new();
         for line in &self.lines {
-            for ident in Self::minus_one_idents(line) {
-                *counts.entry(ident).or_insert(0) += 1;
-            }
-        }
+                    for ident in Self::minus_one_idents(crate::code_before_annotation(line)) {
+                        *counts.entry(ident).or_insert(0) += 1;
+                    }
+                }
 
         let mut candidates: Vec<(String, usize)> = counts
             .into_iter()
             .filter(|(_, count)| *count >= 4)
             .collect();
-        candidates.sort_unstable_by(|a, b| b.1.cmp(&a.1));
+        sort_alias_candidates(&mut candidates);
         if candidates.is_empty() {
             return;
         }
@@ -355,15 +343,19 @@ impl<'a> FuncEmitter<'a> {
             return;
         }
 
-        let arg_ids: Vec<String> = (0..8).map(|i| format!("arg{i}")).collect();
+        // One identifier per register the Dart convention passes an argument
+        // in. This rewrites `lines[0]`, so a wider range here silently widens
+        // every signature regardless of what the emitter wrote.
+        let arg_ids: Vec<String> = (0..DART_ARGUMENT_REGISTERS.len())
+            .map(|i| format!("arg{i}"))
+            .collect();
         let local_ids: Vec<String> = self.locals.values().cloned().collect();
-        let mut used = HashSet::new();
-        used.insert("thread".to_string());
-        used.insert("pool".to_string());
-        used.insert("sp".to_string());
-        used.insert("null".to_string());
-        used.insert("flags".to_string());
-        used.insert("dynamic".to_string());
+        // Seeded from the one definition of these, so a local can never be given a
+        // name the emitter already renders as a global.
+        let mut used: HashSet<String> = RESERVED_EMITTER_IDENTIFIERS
+            .iter()
+            .map(|name| (*name).to_string())
+            .collect();
 
         let mut renames: HashMap<String, String> = HashMap::new();
         let mut arg_types: HashMap<String, String> = HashMap::new();
@@ -375,15 +367,23 @@ impl<'a> FuncEmitter<'a> {
         for arg in &arg_ids {
             let stats = Self::collect_ident_stats(&self.lines, arg);
             let idx = arg.trim_start_matches("arg").parse::<usize>().unwrap_or(0);
-            let base = if idx == 0 {
-                "receiver".to_string()
-            } else if stats.field_access >= 1 {
-                format!("obj{idx}")
-            } else if stats.arith_ops >= 2 && stats.field_access == 0 {
-                format!("value{idx}")
-            } else {
-                format!("param{idx}")
-            };
+            // `slot{idx}` and nothing more. The previous spelling named a
+            // parameter from usage counts - index 0 became `receiver`, one field
+            // access became `obj{idx}`, two arithmetic ops became `value{idx}` -
+            // which reads like a recovered source name while resting on evidence
+            // that cannot support it. One field access does not make a receiver
+            // an object, and no analysis here recovers a parameter's role.
+            //
+            // The index is the one earned fact: it is the position in
+            // `DART_ARGUMENT_REGISTERS`. It must survive verbatim, because a
+            // caller renders arguments from the same register file, so
+            // renumbering would relabel which register a reader is looking at.
+            //
+            // `stats` is still consumed below for the *type* hint, where a usage
+            // count is legitimate evidence: a guessed type is declared `dynamic`
+            // and stays checkable, while a guessed name is indistinguishable
+            // from a recovered one.
+            let base = format!("slot{idx}");
             let name = Self::unique_name(&base, &mut used);
             if name != *arg {
                 renames.insert(arg.clone(), name);
@@ -402,23 +402,27 @@ impl<'a> FuncEmitter<'a> {
         }
 
         let mut pool_i = 1usize;
-        let mut obj_i = 1usize;
-        let mut int_i = 1usize;
         let mut tmp_i = 1usize;
         for local in &local_ids {
             let stats = Self::collect_ident_stats(&self.lines, local);
+            // A name may describe where a value came from. It may not assert
+            // what the value *is*.
+            //
+            // `poolVal` and `resultTmp` survive because each states an observed
+            // fact about the assignment: this local was assigned from the object
+            // pool, or from a call result. `objTmp` and `intTmp` did not - they
+            // guessed a *type* from usage counts, where two field accesses made
+            // something an "obj" and two arithmetic operations made it an "int",
+            // and then rendered that guess as a name indistinguishable from a
+            // recovered one. A type guess belongs in the declared type, which is
+            // `dynamic` when unproven and stays checkable; it does not belong in
+            // an identifier, which a reader cannot check.
+            //
+            // Both collapse into the `tmp` counter, which claims nothing.
             let base = if stats.pool_assign > 0 {
                 let n = pool_i;
                 pool_i += 1;
                 format!("poolVal{n}")
-            } else if stats.field_access >= 2 {
-                let n = obj_i;
-                obj_i += 1;
-                format!("objTmp{n}")
-            } else if stats.arith_ops >= 2 && stats.field_access == 0 {
-                let n = int_i;
-                int_i += 1;
-                format!("intTmp{n}")
             } else if stats.call_assign > 0 {
                 let n = tmp_i;
                 tmp_i += 1;
@@ -446,7 +450,7 @@ impl<'a> FuncEmitter<'a> {
         }
 
         let mut rename_pairs: Vec<(String, String)> = renames.into_iter().collect();
-        rename_pairs.sort_by(|a, b| b.0.len().cmp(&a.0.len()));
+        sort_rename_pairs(&mut rename_pairs);
         for line in &mut self.lines {
             let mut cur = line.clone();
             for (from, to) in &rename_pairs {
@@ -454,6 +458,11 @@ impl<'a> FuncEmitter<'a> {
             }
             *line = cur;
         }
+        // Kept for the annotation appenders. They insert after this pass, from
+        // candidates captured before it, so they must replay these renames or emit
+        // identifiers the body no longer has.
+        self.identifier_renames = rename_pairs.clone();
+
 
         let args_sig = arg_ids
             .iter()
@@ -513,7 +522,6 @@ impl<'a> FuncEmitter<'a> {
             *line = cur;
         }
 
-        self.alias_dispatch_target_slot_calls();
         self.alias_repeated_stack_slots();
         self.alias_repeated_pool_literals();
     }

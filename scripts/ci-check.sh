@@ -10,9 +10,10 @@ Runs the same checks as CI from the local workspace:
   1) nix flake check
   2) cargo fmt --all --check
   3) scripts/lint-shell.sh
-  4) cargo clippy --workspace --all-targets -- -D warnings
-  5) cargo test --workspace            (unless --skip-tests)
-  6) cargo build -p flutterdec-cli --release
+  4) scripts/lint-python.sh
+  5) cargo clippy --workspace --all-targets -- -D warnings
+  6) cargo test --workspace            (unless --skip-tests)
+  7) cargo build -p flutterdec-cli --release
 EOF
 }
 
@@ -47,6 +48,9 @@ nix develop -c cargo fmt --all --check
 
 echo "[ci-check] scripts/lint-shell.sh"
 nix develop -c ./scripts/lint-shell.sh
+
+echo "[ci-check] scripts/lint-python.sh"
+nix develop -c ./scripts/lint-python.sh
 
 echo "[ci-check] cargo clippy --workspace --all-targets -- -D warnings"
 nix develop -c cargo clippy --workspace --all-targets -- -D warnings

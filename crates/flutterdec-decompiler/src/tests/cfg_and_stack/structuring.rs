@@ -1,0 +1,2371 @@
+fn blk(id: usize, va: u64, instrs: Vec<LlirInstr>, succs: Vec<usize>) -> BasicBlock {
+    BasicBlock {
+        id,
+        start_va: va,
+        instrs,
+        succs,
+        preds: Vec::new(),
+    }
+}
+
+fn stmt(va: u64, src: &str) -> LlirInstr {
+    LlirInstr {
+        va,
+        op: IROp::Other,
+        src: src.to_string(),
+        target: String::new(),
+    }
+}
+
+fn cbz(va: u64, reg: &str, target_va: u64) -> LlirInstr {
+    LlirInstr {
+        va,
+        op: IROp::Branch,
+        src: format!("cbz {reg}, #0x{target_va:x}"),
+        target: format!("#0x{target_va:x}"),
+    }
+}
+
+fn ret(va: u64) -> LlirInstr {
+    LlirInstr {
+        va,
+        op: IROp::Return,
+        src: "ret".to_string(),
+        target: String::new(),
+    }
+}
+
+/// A diamond is the shape the DFS emitter duplicates: it inlines both arms, so
+/// the join block is emitted once per incoming path. Structured emission renders
+/// the join once, after the `if`.
+#[test]
+fn emits_a_join_block_exactly_once() {
+    let ir = FunctionIr {
+        function_id: 1000,
+        name: "diamond".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![
+            blk(0, 0x1000, vec![cbz(0x1000, "x1", 0x2000)], vec![1, 2]),
+            // Fall-through arm.
+            blk(1, 0x1004, vec![stmt(0x1004, "stur x1, [x29, #-0x10]")], vec![3]),
+            // Taken arm.
+            blk(2, 0x2000, vec![stmt(0x2000, "stur x2, [x29, #-0x18]")], vec![3]),
+            // Join.
+            blk(
+                3,
+                0x3000,
+                vec![stmt(0x3000, "stur x0, [x29, #-0x20]"), ret(0x3004)],
+                Vec::new(),
+            ),
+        ],
+    };
+
+    let artifact = emit_pseudocode(&ir, &HashMap::new());
+    // The join block's only statement, whatever the naming pass called its slot.
+    let joins = artifact
+        .source
+        .lines()
+        .filter(|l| l.contains("= reg0;"))
+        .count();
+    assert_eq!(
+        joins, 1,
+        "the join block must be emitted once, not once per arm:\n{}",
+        artifact.source
+    );
+    assert!(
+        !artifact.source.contains("_block_"),
+        "no path should be deferred to a helper:\n{}",
+        artifact.source
+    );
+}
+
+/// A block whose value differs per path cannot carry either path's register
+/// binding once it is emitted a single time.
+#[test]
+fn does_not_attribute_one_path_value_to_a_join() {
+    let ir = FunctionIr {
+        function_id: 1001,
+        name: "joinValue".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![
+            blk(0, 0x1000, vec![cbz(0x1000, "x1", 0x2000)], vec![1, 2]),
+            blk(1, 0x1004, vec![stmt(0x1004, "mov x0, #7")], vec![3]),
+            blk(2, 0x2000, vec![stmt(0x2000, "mov x0, #9")], vec![3]),
+            blk(3, 0x3000, vec![ret(0x3000)], Vec::new()),
+        ],
+    };
+
+    let artifact = emit_pseudocode(&ir, &HashMap::new());
+    assert!(
+        !artifact.source.contains("return 7;") && !artifact.source.contains("return 9;"),
+        "neither arm's value describes the join:\n{}",
+        artifact.source
+    );
+}
+
+#[test]
+fn annotates_a_dropped_register_at_a_two_arm_join() {
+    let ir = FunctionIr {
+        function_id: 1012,
+        name: "annotatedJoin".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![
+            blk(0, 0x1000, vec![cbz(0x1000, "x1", 0x2000)], vec![1, 2]),
+            blk(1, 0x1004, vec![stmt(0x1004, "mov x0, #7")], vec![3]),
+            blk(2, 0x2000, vec![stmt(0x2000, "mov x0, #9")], vec![3]),
+            blk(
+                3,
+                0x3000,
+                vec![stmt(0x3000, "stur x0, [x29, #-0x10]"), ret(0x3004)],
+                Vec::new(),
+            ),
+        ],
+    };
+
+    let artifact = emit_pseudocode(&ir, &HashMap::new());
+    assert!(
+        artifact.source.contains("reg0"),
+        "the join must be emitted as an unresolved register:\n{}",
+        artifact.source
+    );
+    assert!(
+        artifact.source.contains("reg0 /* = 7 | 9 */"),
+        "the join read must retain both arm-end candidates in lexical order:\n{}",
+        artifact.source
+    );
+}
+
+#[test]
+fn uses_the_same_write_set_as_the_branch_merge() {
+    let ir = FunctionIr {
+        function_id: 1018,
+        name: "mergeWriteSet".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![
+            // A reachable diamond: capture enumerates the join's reachable
+            // predecessors, so an unreachable arm has none to enumerate.
+            blk(0, 0x1000, vec![cbz(0x1000, "x1", 0x1020)], vec![1, 2]),
+            blk(1, 0x1010, vec![stmt(0x1010, "mov x0, #9")], vec![3]),
+            blk(2, 0x1020, vec![stmt(0x1020, "mov x2, #1")], vec![3]),
+            blk(3, 0x1030, vec![ret(0x1030)], Vec::new()),
+        ],
+    };
+    let symbols = HashMap::new();
+    let mut emitter = FuncEmitter::new(&ir, &symbols);
+    emitter.regions = Regions::build(&ir);
+    for (block, value) in [(1usize, "9"), (2, "7")] {
+        emitter.block_snapshots.push(BlockSnapshot {
+            block,
+            reg_values: [("x0".to_string(), value.to_string())]
+                .into_iter()
+                .collect(),
+        });
+    }
+    let preds = emitter
+        .regions
+        .as_ref()
+        .expect("regions")
+        .predecessors(3)
+        .to_vec();
+    assert_eq!(preds, vec![1, 2], "the join's own predecessor set drives capture");
+    let expected = emitter.registers_written_between(&preds, Some(3));
+    emitter.record_join_candidates(3, &preds, &expected);
+    assert_eq!(expected.contains("x0"), emitter.join_candidates.contains_key(&(3, "x0".to_string())));
+    assert!(
+        emitter.join_candidates.contains_key(&(3, "x0".to_string())),
+        "a register the merge drops must have predecessor-end evidence"
+    );
+}
+
+#[test]
+fn marks_a_join_with_an_extra_predecessor_non_exhaustive() {
+    let ir = FunctionIr {
+        function_id: 1013,
+        name: "incompleteJoin".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![blk(0, 0x1000, vec![ret(0x1000)], Vec::new())],
+    };
+    let symbols = HashMap::new();
+    let mut emitter = FuncEmitter::new(&ir, &symbols);
+    let preds = [1usize, 2, 4];
+    let provenance = crate::control_flow::ordered_join_candidate_provenance([
+        crate::control_flow::JoinCandidateProvenance {
+            pred: 1,
+            value: "9".to_string(),
+            snapshot_id: String::new(),
+        },
+        crate::control_flow::JoinCandidateProvenance {
+            pred: 2,
+            value: "7".to_string(),
+            snapshot_id: String::new(),
+        },
+    ]);
+    // Coverage of the actual predecessor set, not a count of arms: block 4 also
+    // reaches the join and contributed nothing, so the list is evidence.
+    let complete = preds
+        .iter()
+        .all(|pred| provenance.iter().any(|candidate| candidate.pred == *pred));
+    assert!(!complete, "an uncovered predecessor makes the evidence non-exhaustive");
+    emitter.lines.push("  sink(x0);".to_string());
+    emitter.join_candidates.insert(
+        (3, "x0".to_string()),
+        JoinCandidates {
+            values: crate::control_flow::rendered_candidate_values(&provenance),
+            complete,
+            provenance,
+        },
+    );
+    emitter.join_annotation_anchors.push(JoinAnnotationAnchor {
+        join: 3,
+        candidate_regs: vec!["x0".to_string()],
+        lines: emitter.lines.clone(),
+    });
+    emitter.append_join_annotations();
+    assert_eq!(
+        emitter.lines.last().map(String::as_str),
+        Some("  sink(x0 /* possible (non-exhaustive): 9 | 7 */);")
+    );
+}
+
+#[test]
+fn drops_an_over_cap_join_candidate_without_truncation() {
+    let value = "a".repeat(crate::control_flow::MAX_SUBSTITUTED_EXPR + 1);
+    let ir = FunctionIr {
+        function_id: 1014,
+        name: "overCap".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![blk(0, 0x1000, vec![ret(0x1000)], Vec::new())],
+    };
+    let symbols = HashMap::new();
+    let mut emitter = FuncEmitter::new(&ir, &symbols);
+    emitter.lines.push("  sink(reg0);".to_string());
+    emitter.join_candidates.insert(
+        (0, "x0".to_string()),
+        JoinCandidates {
+            values: vec![value.clone()],
+            complete: true,
+            provenance: vec![crate::control_flow::JoinCandidateProvenance {
+                pred: 0,
+                value,
+                snapshot_id: String::new(),
+            }],
+        },
+    );
+    emitter.join_annotation_anchors.push(JoinAnnotationAnchor {
+        join: 0,
+        candidate_regs: vec!["x0".to_string()],
+        lines: emitter.lines.clone(),
+    });
+    emitter.append_join_annotations();
+
+    assert_eq!(
+        emitter.lines.last().map(String::as_str),
+        Some("  sink(reg0);"),
+        "over-cap candidates are omitted whole, never truncated into a false expression"
+    );
+}
+
+#[test]
+fn drops_structural_delimiter_candidates_before_annotation() {
+    let ir = FunctionIr {
+        function_id: 1017,
+        name: "braceCandidate".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![blk(0, 0x1000, vec![ret(0x1000)], Vec::new())],
+    };
+    let symbols = HashMap::new();
+    let mut emitter = FuncEmitter::new(&ir, &symbols);
+    emitter.lines.push("  sink(x0);".to_string());
+    emitter.join_candidates.insert(
+        (0, "x0".to_string()),
+        JoinCandidates {
+                    values: vec!["obj1.f8 { unsafe".to_string()],
+                    complete: true,
+                    provenance: vec![crate::control_flow::JoinCandidateProvenance {
+                        pred: 0,
+                        value: "obj1.f8 { unsafe".to_string(),
+                        snapshot_id: String::new(),
+                    }],
+                },
+    );
+    emitter.join_annotation_anchors.push(JoinAnnotationAnchor {
+        join: 0,
+        candidate_regs: vec!["x0".to_string()],
+        lines: emitter.lines.clone(),
+    });
+    emitter.append_join_annotations();
+    assert_eq!(
+        emitter.lines.last().map(String::as_str),
+        Some("  sink(x0);"),
+        "brace-bearing evidence must be rejected before structural compaction sees it"
+    );
+}
+
+#[test]
+fn drops_uninformative_candidates_and_marks_remaining_evidence_non_exhaustive() {
+    let ir = FunctionIr {
+        function_id: 1016,
+        name: "usefulOnlyJoin".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![blk(0, 0x1000, vec![ret(0x1000)], Vec::new())],
+    };
+    let symbols = HashMap::new();
+    let mut emitter = FuncEmitter::new(&ir, &symbols);
+    emitter.lines.push(format!(
+        "dynamic {}(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5) {{",
+        ir.name
+    ));
+    emitter.lines.push("  sink(reg0);".to_string());
+    let provenance = crate::control_flow::ordered_join_candidate_provenance([
+        crate::control_flow::JoinCandidateProvenance {
+                            pred: 0,
+                            value: "x7".to_string(),
+                            snapshot_id: String::new(),
+                        },
+        crate::control_flow::JoinCandidateProvenance {
+                            pred: 0,
+                            value: "reg7".to_string(),
+                            snapshot_id: String::new(),
+                        },
+        crate::control_flow::JoinCandidateProvenance {
+                            pred: 0,
+                            value: "cachedTarget".to_string(),
+                            snapshot_id: String::new(),
+                        },
+        crate::control_flow::JoinCandidateProvenance {
+                            pred: 0,
+                            value: "framePointer".to_string(),
+                            snapshot_id: String::new(),
+                        },
+        crate::control_flow::JoinCandidateProvenance {
+                            pred: 0,
+                            value: "returnAddress".to_string(),
+                            snapshot_id: String::new(),
+                        },
+        crate::control_flow::JoinCandidateProvenance {
+                            pred: 0,
+                            value: "dispatchTarget".to_string(),
+                            snapshot_id: String::new(),
+                        },
+        crate::control_flow::JoinCandidateProvenance {
+                            pred: 0,
+                            value: "indirectTarget9".to_string(),
+                            snapshot_id: String::new(),
+                        },
+        crate::control_flow::JoinCandidateProvenance {
+                            pred: 1,
+                            value: "arg0.f8".to_string(),
+                            snapshot_id: String::new(),
+                        },
+    ]);
+    let values = provenance
+        .iter()
+        .filter(|candidate| crate::control_flow::is_informative_annotation_candidate(&candidate.value))
+        .map(|candidate| candidate.value.clone())
+        .collect::<Vec<_>>();
+    // Every one of the seven register spellings is a bare unrecovered value, so the
+    // useful-only filter must reject all of them: the canonical `x7`, the `reg7` alias,
+    // and the five alias forms `named_register_alias`/`named_indirect_target` can emit.
+    // Only the real expression survives. Asserting the exact vector rather than
+    // membership is what catches a spelling the filter forgot.
+    assert_eq!(
+        values,
+        vec!["arg0.f8".to_string()],
+        "only a reader-usable expression may survive the useful-only filter"
+    );
+    emitter.join_candidates.insert(
+        (0, "x0".to_string()),
+        JoinCandidates {
+            complete: false,
+            values,
+            provenance,
+        },
+    );
+    emitter.join_annotation_anchors.push(JoinAnnotationAnchor {
+        join: 0,
+        candidate_regs: vec!["x0".to_string()],
+        lines: emitter.lines.clone(),
+    });
+    emitter.apply_name_and_type_hints(&ir.name);
+    emitter.append_join_annotations();
+    assert_eq!(
+        emitter.lines.last().map(String::as_str),
+        Some("  sink(reg0 /* possible (non-exhaustive): slot0.f8 */);"),
+        "the non-exhaustive annotation must retain only useful bounded arm-end evidence"
+    );
+}
+
+#[test]
+fn annotates_each_rendered_register_site_once() {
+    let ir = FunctionIr {
+        function_id: 1019,
+        name: "dedupeAnnotationSite".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![blk(0, 0x1000, vec![ret(0x1000)], Vec::new())],
+    };
+    let symbols = HashMap::new();
+    let mut emitter = FuncEmitter::new(&ir, &symbols);
+    emitter.lines.push("  sink(reg0);".to_string());
+    for join in [1usize, 2] {
+        emitter.join_candidates.insert(
+            (join, "x0".to_string()),
+            JoinCandidates {
+                values: vec!["7".to_string()],
+                complete: false,
+                provenance: vec![crate::control_flow::JoinCandidateProvenance {
+                    pred: join,
+                    value: "7".to_string(),
+                    snapshot_id: String::new(),
+                }],
+            },
+        );
+        emitter.join_annotation_anchors.push(JoinAnnotationAnchor {
+            join,
+            candidate_regs: vec!["x0".to_string()],
+            lines: emitter.lines.clone(),
+        });
+    }
+    emitter.append_join_annotations();
+    assert_eq!(
+        emitter.lines.last().map(String::as_str),
+        Some("  sink(reg0 /* possible (non-exhaustive): 7 */);"),
+        "overlapping join anchors must not stack annotations on one register token"
+    );
+}
+
+#[test]
+fn does_not_annotate_a_register_that_the_join_did_not_drop() {
+    let ir = FunctionIr {
+        function_id: 1015,
+        name: "survivingRegister".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![
+            blk(0, 0x1000, vec![stmt(0x1000, "mov x0, #7"), cbz(0x1004, "x1", 0x2000)], vec![1, 2]),
+            blk(1, 0x1008, vec![stmt(0x1008, "mov x2, #1")], vec![3]),
+            blk(2, 0x2000, vec![stmt(0x2000, "mov x2, #2")], vec![3]),
+            blk(
+                3,
+                0x3000,
+                vec![stmt(0x3000, "stur x0, [x29, #-0x10]"), ret(0x3004)],
+                Vec::new(),
+            ),
+        ],
+    };
+
+    let artifact = emit_pseudocode(&ir, &HashMap::new());
+    assert!(
+        artifact.source.contains("return 7;"),
+        "the unchanged register binding should still be used:\n{}",
+        artifact.source
+    );
+    assert!(
+        !artifact.source.contains("/* =") && !artifact.source.contains("possible (non-exhaustive)"),
+        "a register never dropped at the join must receive no annotation:\n{}",
+        artifact.source
+    );
+}
+
+#[test]
+fn join_candidate_order_ignores_source_insertion_order() {
+    let forward = crate::control_flow::ordered_join_candidate_provenance([
+        crate::control_flow::JoinCandidateProvenance {
+            pred: 0,
+            value: "taken".to_string(),
+            snapshot_id: String::new(),
+        },
+        crate::control_flow::JoinCandidateProvenance {
+            pred: 1,
+            value: "else".to_string(),
+            snapshot_id: String::new(),
+        },
+        crate::control_flow::JoinCandidateProvenance {
+            pred: 1,
+            value: "taken".to_string(),
+            snapshot_id: String::new(),
+        },
+    ]);
+    let reverse = crate::control_flow::ordered_join_candidate_provenance([
+        crate::control_flow::JoinCandidateProvenance {
+            pred: 1,
+            value: "taken".to_string(),
+            snapshot_id: String::new(),
+        },
+        crate::control_flow::JoinCandidateProvenance {
+            pred: 1,
+            value: "else".to_string(),
+            snapshot_id: String::new(),
+        },
+        crate::control_flow::JoinCandidateProvenance {
+            pred: 0,
+            value: "taken".to_string(),
+            snapshot_id: String::new(),
+        },
+    ]);
+    assert_eq!(forward, reverse, "candidate provenance ordering is total");
+    // Ascending predecessor id, every attribution kept: the duplicate value on a
+    // second predecessor is collapsed only in the rendered list, and the audit is
+    // where it survives.
+    assert_eq!(
+        forward,
+        vec![
+            crate::control_flow::JoinCandidateProvenance {
+                pred: 0,
+                value: "taken".to_string(),
+                snapshot_id: String::new(),
+            },
+            crate::control_flow::JoinCandidateProvenance {
+                pred: 1,
+                value: "else".to_string(),
+                snapshot_id: String::new(),
+            },
+            crate::control_flow::JoinCandidateProvenance {
+                pred: 1,
+                value: "taken".to_string(),
+                snapshot_id: String::new(),
+            },
+        ]
+    );
+    assert_eq!(
+        crate::control_flow::rendered_candidate_values(&forward),
+        vec!["taken".to_string(), "else".to_string()],
+        "the rendered list dedups by first occurrence over that same order"
+    );
+}
+
+/// A back edge becomes `continue` inside `while (true)`, and the loop's exit
+/// becomes `break`, with the body emitted once.
+#[test]
+fn structures_a_natural_loop_without_duplicating_its_body() {
+    let ir = FunctionIr {
+        function_id: 1002,
+        name: "counted".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![
+            blk(0, 0x1000, vec![stmt(0x1000, "mov x2, #0")], vec![1]),
+            // Loop header, exits to block 3.
+            blk(1, 0x1004, vec![cbz(0x1004, "x2", 0x3000)], vec![2, 3]),
+            // Latch.
+            blk(
+                2,
+                0x1008,
+                vec![
+                    stmt(0x1008, "sub x2, x2, #1"),
+                    stmt(0x100c, "stur x2, [x29, #-0x10]"),
+                ],
+                vec![1],
+            ),
+            blk(3, 0x3000, vec![ret(0x3000)], Vec::new()),
+        ],
+    };
+
+    let artifact = emit_pseudocode(&ir, &HashMap::new());
+    let src = &artifact.source;
+    assert!(
+        src.contains("while (true) {"),
+        "the natural loop should render as a loop:\n{src}"
+    );
+    assert_eq!(
+        src.matches("continue;").count(),
+        1,
+        "the back edge is the only continue:\n{src}"
+    );
+    assert_eq!(
+        src.lines().filter(|l| l.contains("- 1)")).count(),
+        1,
+        "the latch body must be emitted once:\n{src}"
+    );
+    assert!(
+        !src.contains("// loop back-edges:"),
+        "a structured loop needs no back-edge summary:\n{src}"
+    );
+}
+
+/// Irreducible control flow, two entries into one cycle, is declined rather than
+/// mis-structured, and the DFS emitter still produces output.
+#[test]
+fn declines_irreducible_control_flow_and_still_emits() {
+    let ir = FunctionIr {
+        function_id: 1003,
+        name: "irreducible".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![
+            blk(0, 0x1000, vec![cbz(0x1000, "x1", 0x2000)], vec![1, 2]),
+            // Two entries into the 1 <-> 2 cycle.
+            blk(1, 0x1004, vec![cbz(0x1004, "x2", 0x2000)], vec![2, 3]),
+            blk(2, 0x2000, vec![cbz(0x2000, "x3", 0x1004)], vec![1, 3]),
+            blk(3, 0x3000, vec![ret(0x3000)], Vec::new()),
+        ],
+    };
+
+    let artifact = emit_pseudocode(&ir, &HashMap::new());
+    assert!(
+        artifact.source.contains("dynamic irreducible("),
+        "output is still produced for irreducible control flow:\n{}",
+        artifact.source
+    );
+    assert!(
+        artifact.source.lines().count() > 3,
+        "the fallback emitter should render a body:\n{}",
+        artifact.source
+    );
+}
+
+/// A value defined in an arm that returns must not be referenced after it.
+/// Emitting each block once removes the per-path duplication that used to hide
+/// this, so each arm has to start from the state at the branch.
+#[test]
+fn an_arm_that_returns_does_not_leak_its_values() {
+    let call = |va: u64, target: u64| LlirInstr {
+        va,
+        op: IROp::Call,
+        src: format!("bl #0x{target:x}"),
+        target: format!("#0x{target:x}"),
+    };
+    let ir = FunctionIr {
+        function_id: 1004,
+        name: "armScope".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![
+            blk(0, 0x1000, vec![cbz(0x1000, "x1", 0x2000)], vec![1, 2]),
+            // Taken arm defines a value and returns.
+            blk(1, 0x2000, vec![call(0x2000, 0x9000), ret(0x2004)], Vec::new()),
+            // Fall-through arm must not see it.
+            blk(2, 0x1004, vec![call(0x1004, 0x9100), ret(0x1008)], Vec::new()),
+        ],
+    };
+
+    let artifact = emit_pseudocode(&ir, &HashMap::new());
+    let mut declared = Vec::new();
+    for line in artifact.source.lines() {
+        let stripped = line.trim();
+        if let Some(rest) = stripped.strip_prefix("final ") {
+            if let Some(name) = rest.split(' ').next() {
+                declared.push(name.to_string());
+            }
+        }
+        for used in stripped
+            .split(|c: char| !c.is_ascii_alphanumeric() && c != '_')
+            .filter(|t| t.len() >= 2 && t.starts_with('t') && t[1..].chars().all(|c| c.is_ascii_digit()))
+        {
+            assert!(
+                declared.iter().any(|d| d == used),
+                "{used} is referenced before any declaration:\n{}",
+                artifact.source
+            );
+        }
+    }
+}
+
+/// Per-arm state isolation must not rewind the temporary counter: two different
+/// values may never share a name, even in sibling scopes where Dart would allow
+/// it, because the later text passes substitute on those names.
+#[test]
+fn does_not_reissue_a_temporary_name_across_arms() {
+    let call = |va: u64, target: u64| LlirInstr {
+        va,
+        op: IROp::Call,
+        src: format!("bl #0x{target:x}"),
+        target: format!("#0x{target:x}"),
+    };
+    let ir = FunctionIr {
+        function_id: 1005,
+        name: "twoArms".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![
+            blk(0, 0x1000, vec![cbz(0x1000, "x1", 0x2000)], vec![1, 2]),
+            blk(1, 0x2000, vec![call(0x2000, 0x9000), ret(0x2004)], Vec::new()),
+            blk(2, 0x1004, vec![call(0x1004, 0x9100), ret(0x1008)], Vec::new()),
+        ],
+    };
+
+    let artifact = emit_pseudocode(&ir, &HashMap::new());
+    let declared: Vec<&str> = artifact
+        .source
+        .lines()
+        .filter_map(|l| l.trim().strip_prefix("final "))
+        .filter_map(|l| l.split(' ').next())
+        .collect();
+    let mut unique = declared.clone();
+    unique.sort_unstable();
+    unique.dedup();
+    assert_eq!(
+        declared.len(),
+        unique.len(),
+        "each temporary is declared once:\n{}",
+        artifact.source
+    );
+    assert_eq!(declared.len(), 2, "both arms call:\n{}", artifact.source);
+}
+
+/// A shared continuation that is not the branch's follow node cannot be named in
+/// Dart, which has no `goto`. A small one is repeated, which is bounded, rather
+/// than sending the function to the DFS emitter, whose duplication is not.
+///
+/// Here one arm can reach an exit without passing through the shared block, so
+/// the shared block is nobody's post-dominator and the follow-node rule cannot
+/// place it. It is also not terminal, so only the region budget can allow it.
+#[test]
+fn repeats_a_small_shared_region_that_is_not_a_follow_node() {
+    let ir = FunctionIr {
+        function_id: 1006,
+        name: "sharedTail".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![
+            blk(0, 0x1000, vec![cbz(0x1000, "x1", 0x2000)], vec![1, 2]),
+            blk(1, 0x1004, vec![stmt(0x1004, "stur x1, [x29, #-0x10]")], vec![3]),
+            // This arm can leave through block 5 without reaching the tail.
+            blk(2, 0x2000, vec![cbz(0x2000, "x2", 0x5000)], vec![3, 5]),
+            // Shared, two blocks long, and not terminal.
+            blk(3, 0x3000, vec![stmt(0x3000, "stur x3, [x29, #-0x18]")], vec![4]),
+            blk(4, 0x3004, vec![ret(0x3004)], Vec::new()),
+            blk(5, 0x5000, vec![ret(0x5000)], Vec::new()),
+        ],
+    };
+    let artifact = emit_pseudocode(&ir, &HashMap::new());
+    assert!(
+        artifact.repeated_blocks > 0,
+        "the shared region should be repeated under budget:\n{}",
+        artifact.source
+    );
+    assert_eq!(
+        artifact
+            .source
+            .lines()
+            .filter(|l| l.contains("= slot2;"))
+            .count(),
+        2,
+        "the shared block is emitted on both paths:\n{}",
+        artifact.source
+    );
+    assert!(
+        !artifact.source.contains("_block_"),
+        "and not deferred to a helper:\n{}",
+        artifact.source
+    );
+}
+
+/// The budget is a real limit: a shared region longer than it falls back rather
+/// than duplicating an arbitrary amount of code.
+#[test]
+fn declines_to_repeat_a_shared_region_over_budget() {
+    // Chain of 18 blocks, above the 16-block budget.
+    let mut blocks = vec![
+        blk(0, 0x1000, vec![cbz(0x1000, "x1", 0x2000)], vec![1, 2]),
+        blk(1, 0x1004, vec![stmt(0x1004, "stur x1, [x29, #-0x10]")], vec![3]),
+        blk(2, 0x2000, vec![cbz(0x2000, "x2", 0x5000)], vec![3, 21]),
+    ];
+    for i in 0..18 {
+        let id = 3 + i;
+        let va = 0x3000 + (i as u64) * 8;
+        blocks.push(blk(
+            id,
+            va,
+            vec![stmt(va, &format!("stur x{}, [x29, #-0x{:x}]", i % 4, 0x20 + i * 8))],
+            vec![id + 1],
+        ));
+    }
+    blocks.push(blk(21, 0x5000, vec![ret(0x5000)], Vec::new()));
+
+    let ir = FunctionIr {
+        function_id: 1008,
+        name: "longTail".to_string(),
+        entry_va: 0x1000,
+        blocks,
+    };
+    let artifact = emit_pseudocode(&ir, &HashMap::new());
+    assert_eq!(
+        artifact.repeated_blocks, 0,
+        "a region over budget must not be repeated:\n{}",
+        artifact.source
+    );
+}
+
+/// A ten-block shared tail used to exceed the old eight-block ceiling. The
+/// expanded limit must structure it, while the separate over-budget test keeps
+/// the ceiling real.
+#[test]
+fn repeats_a_shared_region_within_expanded_budget() {
+    let mut blocks = vec![
+        blk(0, 0x1000, vec![cbz(0x1000, "x1", 0x2000)], vec![1, 2]),
+        blk(1, 0x1004, vec![stmt(0x1004, "stur x1, [x29, #-0x10]")], vec![3]),
+        blk(2, 0x2000, vec![cbz(0x2000, "x2", 0x5000)], vec![3, 13]),
+    ];
+    for i in 0..10 {
+        let id = 3 + i;
+        let va = 0x3000 + (i as u64) * 8;
+        blocks.push(blk(
+            id,
+            va,
+            vec![stmt(va, &format!("stur x{}, [x29, #-0x{:x}]", i % 4, 0x20 + i * 8))],
+            vec![id + 1],
+        ));
+    }
+    blocks.push(blk(13, 0x5000, vec![ret(0x5000)], Vec::new()));
+
+    let artifact = emit_pseudocode(
+        &FunctionIr {
+            function_id: 1010,
+            name: "expandedTail".to_string(),
+            entry_va: 0x1000,
+            blocks,
+        },
+        &HashMap::new(),
+    );
+    assert!(
+        artifact.repeated_blocks > 0,
+        "the expanded budget should structure this shared tail:\n{}",
+        artifact.source
+    );
+}
+
+/// A loop header's merge drops the entry binding, and what the annotation may
+/// carry is the value held on **entry** - never the one the back edge brings
+/// round, which is not rendered at the header and would be a claim about a value
+/// that is not there.
+#[test]
+fn annotates_a_loop_header_with_the_entry_value_not_the_back_edge_value() {
+    let ir = FunctionIr {
+        function_id: 1020,
+        name: "loopEntryValue".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![
+            // Entry path binds 7.
+            blk(0, 0x1000, vec![stmt(0x1000, "mov x0, #7")], vec![1]),
+            // Loop header: reads x0, exits to block 3.
+            blk(
+                1,
+                0x1004,
+                vec![
+                    stmt(0x1004, "stur x0, [x29, #-0x10]"),
+                    cbz(0x1008, "x1", 0x3000),
+                ],
+                vec![2, 3],
+            ),
+            // Latch binds 9 and goes back round, so 9 is the back-edge value.
+            blk(2, 0x2000, vec![stmt(0x2000, "mov x0, #9")], vec![1]),
+            blk(3, 0x3000, vec![ret(0x3000)], Vec::new()),
+        ],
+    };
+
+    let artifact = emit_pseudocode(&ir, &HashMap::new());
+    let src = &artifact.source;
+    assert!(
+        src.contains(&format!("reg0{}", LOOP_ENTRY_ANNOTATION.render(&["7"]))),
+        "the loop header read must carry the entry value through the shared literal:\n{src}"
+    );
+    assert!(
+        !src.contains(&LOOP_ENTRY_ANNOTATION.render(&["9"]))
+            && !src.contains(&LOOP_ENTRY_ANNOTATION.render(&["7", "9"]))
+            && !src.contains(&LOOP_ENTRY_ANNOTATION.render(&["9", "7"])),
+        "the back-edge value is not rendered at the header and must not be claimed:\n{src}"
+    );
+    assert!(
+        !src.contains(EXHAUSTIVE_JOIN_ANNOTATION.open())
+            && !src.contains(NON_EXHAUSTIVE_JOIN_ANNOTATION.open()),
+        "a loop header is a loop site, so no join form may appear:\n{src}"
+    );
+}
+
+/// The precedence rule and per-predecessor capture, in one fixture. Block 3 is a
+/// loop header **and** a join - two entry arms plus a back edge, the committed
+/// `loopTail` shape - and the two arms disagree.
+///
+/// This is what a capture reading the merged pre-loop state cannot do:
+/// `render_loop` merges before the header renders, so by then the disagreeing
+/// binding is already gone and nothing would be annotated at all. It is also what
+/// the exhaustive join form must not claim here.
+#[test]
+fn annotates_a_multi_entry_loop_header_with_every_entry_value() {
+    let artifact = emit_pseudocode(&multi_entry_loop_header_ir(), &HashMap::new());
+    let src = &artifact.source;
+    assert_eq!(
+        src.matches("while (true) {").count(),
+        1,
+        "the loop must be structured for this site to exist:\n{src}"
+    );
+    assert!(
+        src.contains(&format!("reg0{}", LOOP_ENTRY_ANNOTATION.render(&["7", "9"]))),
+        "both entry arms' values must render under the N-ary loop form, \
+         in ascending predecessor order:\n{src}"
+    );
+    assert!(
+        !src.contains(EXHAUSTIVE_JOIN_ANNOTATION.open()),
+        "the exhaustive join form asserts a present value and is forbidden at a \
+         loop header, whatever its predecessor count:\n{src}"
+    );
+    assert!(
+        !src.contains(NON_EXHAUSTIVE_JOIN_ANNOTATION.open()),
+        "a loop header that is also a join is claimed by the loop site alone:\n{src}"
+    );
+    assert!(
+        !src.contains(&LOOP_ENTRY_ANNOTATION.render(&["11"])),
+        "11 is the back-edge value, which the header does not render:\n{src}"
+    );
+}
+
+/// Block 3 is reached from block 1 holding 7 and block 2 holding 9, and its loop
+/// body rebinds the same register to 11 - so the register is dropped at the
+/// header, both entry values are true, and the back-edge value is neither.
+fn multi_entry_loop_header_ir() -> FunctionIr {
+    FunctionIr {
+        function_id: 1021,
+        name: "loopTailEntryValues".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![
+            blk(0, 0x1000, vec![cbz(0x1000, "x1", 0x2000)], vec![1, 2]),
+            blk(1, 0x1004, vec![stmt(0x1004, "mov x0, #7")], vec![3]),
+            blk(2, 0x2000, vec![stmt(0x2000, "mov x0, #9")], vec![3]),
+            // Loop header reached from both arms, reading the register they wrote.
+            blk(
+                3,
+                0x3000,
+                vec![
+                    stmt(0x3000, "stur x0, [x29, #-0x10]"),
+                    cbz(0x3004, "x3", 0x5000),
+                ],
+                vec![4, 5],
+            ),
+            // Latch: rebinds the register, so the header's merge drops it.
+            blk(
+                4,
+                0x3008,
+                vec![
+                    stmt(0x3008, "mov x0, #11"),
+                    stmt(0x300c, "sub x3, x3, #1"),
+                ],
+                vec![3],
+            ),
+            blk(5, 0x5000, vec![ret(0x5000)], Vec::new()),
+        ],
+    }
+}
+
+/// Every candidate the loop site emits must be present in the recorded end state
+/// of the entry predecessor it is attributed to - not in a sibling arm's state,
+/// and not in the merged pre-loop state, which no longer holds it.
+///
+/// The audit rows are asserted in-process here. The corpus checker runs the same
+/// rule over the emitted file; this is the version that fails in CI.
+#[test]
+fn every_loop_entry_candidate_traces_to_its_own_predecessor_snapshot() {
+    let ir = multi_entry_loop_header_ir();
+    let symbols = HashMap::new();
+    let (_, provenance) = FuncEmitter::new(&ir, &symbols).emit_with_provenance();
+    let loop_site: Vec<&FunctionProvenance> = provenance
+        .iter()
+        .filter(|site| {
+            site.records
+                .iter()
+                .any(|r| r.loss_site == crate::control_flow::LOOP_LOSS_SITE)
+        })
+        .collect();
+    assert_eq!(
+        loop_site.len(),
+        1,
+        "the loop site owns exactly one audit stream"
+    );
+    let site = loop_site[0];
+    let records: Vec<&PendingAnnotationRecord> = site
+        .records
+        .iter()
+        .filter(|record| record.register == "x0")
+        .collect();
+    assert_eq!(
+        records.len(),
+        1,
+        "one record per emitted annotation, never one per candidate: {:?}",
+        site.records
+    );
+    let record = records[0];
+    assert_eq!(record.site_key, SiteKey("loop", 3));
+    assert_eq!(
+        record
+            .candidates
+            .iter()
+            .map(|c| (c.path_key.clone(), c.value.clone()))
+            .collect::<Vec<_>>(),
+        vec![
+            (SiteKey("block", 1), "7".to_string()),
+            (SiteKey("block", 2), "9".to_string()),
+        ],
+        "one attribution per entry predecessor, in ascending predecessor id"
+    );
+    for candidate in &record.candidates {
+        let snapshot = site
+            .snapshots
+            .iter()
+            .find(|snapshot| snapshot.snapshot_id == candidate.snapshot_id)
+            .unwrap_or_else(|| {
+                panic!("no recorded snapshot for {}", candidate.snapshot_id)
+            });
+        assert_eq!(
+            snapshot.site_key, candidate.path_key,
+            "the snapshot must be the end state of the path the candidate claims"
+        );
+        assert!(
+            snapshot
+                .registers
+                .iter()
+                .any(|(reg, value)| reg == &record.register && value == &candidate.value),
+            "`{}` is not the value `{}` held in {}: {:?}",
+            candidate.value,
+            record.register,
+            candidate.snapshot_id,
+            snapshot.registers
+        );
+    }
+}
+
+/// The budget exists so a loop is never duplicated.
+#[test]
+fn never_repeats_a_region_containing_a_loop() {
+    let ir = FunctionIr {
+        function_id: 1007,
+        name: "loopTail".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![
+            blk(0, 0x1000, vec![cbz(0x1000, "x1", 0x2000)], vec![1, 2]),
+            blk(1, 0x1004, vec![stmt(0x1004, "stur x1, [x29, #-0x10]")], vec![3]),
+            blk(2, 0x2000, vec![stmt(0x2000, "stur x2, [x29, #-0x18]")], vec![3]),
+            // Loop header reached from both arms.
+            blk(3, 0x3000, vec![cbz(0x3000, "x3", 0x4000)], vec![4, 5]),
+            blk(4, 0x3004, vec![stmt(0x3004, "sub x3, x3, #1")], vec![3]),
+            blk(5, 0x4000, vec![ret(0x4000)], Vec::new()),
+        ],
+    };
+    let artifact = emit_pseudocode(&ir, &HashMap::new());
+    assert_eq!(
+        artifact.source.matches("while (true) {").count(),
+        1,
+        "the loop must be emitted once, never duplicated into both arms:\n{}",
+        artifact.source
+    );
+}
+
+/// A repeated path inside a loop can end at that loop's own header. It is a
+/// `continue`, not a second loop: the shared body repeats, while the header body
+/// and `while` stay singular.
+#[test]
+fn repeats_a_shared_path_ending_at_the_enclosing_loop() {
+    let ir = FunctionIr {
+        function_id: 1011,
+        name: "continueTail".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![
+            blk(0, 0x1000, Vec::new(), vec![1]),
+            // The natural-loop header is emitted once before either shared path.
+            blk(1, 0x1004, vec![stmt(0x1004, "stur x0, [x29, #-0x10]")], vec![2]),
+            blk(2, 0x1008, vec![cbz(0x1008, "x1", 0x2000)], vec![3, 5]),
+            // Both paths reach this shared latch and then continue the outer loop.
+            blk(3, 0x2000, vec![stmt(0x2000, "stur x3, [x29, #-0x18]")], vec![4]),
+            blk(4, 0x2004, vec![stmt(0x2004, "stur x4, [x29, #-0x20]")], vec![1]),
+            // This arm can instead leave the loop, so block 3 is not a follow node.
+            blk(5, 0x3000, vec![cbz(0x3000, "x2", 0x2000)], vec![3, 6]),
+            blk(6, 0x4000, vec![ret(0x4000)], Vec::new()),
+        ],
+    };
+
+    let artifact = emit_pseudocode(&ir, &HashMap::new());
+    let src = &artifact.source;
+    assert!(
+        artifact.repeated_blocks > 0,
+        "the shared path should be structured rather than falling back:\n{src}"
+    );
+    assert_eq!(
+        src.matches("while (").count(),
+        1,
+        "the enclosing loop must not be duplicated:\n{src}"
+    );
+    assert_eq!(
+        src.lines().filter(|line| line.contains("= reg0;")).count(),
+        1,
+        "the loop-header body must be emitted once:\n{src}"
+    );
+    assert_eq!(
+        src.lines().filter(|line| line.contains("= slot2;")).count(),
+        2,
+        "the shared body must be emitted on both paths:\n{src}"
+    );
+    assert_eq!(
+        src.matches("continue;").count(),
+        2,
+        "both shared latches must continue the enclosing loop:\n{src}"
+    );
+}
+
+/// Every counter must round-trip through snapshot and restore into its own
+/// field. The first version used a positional array, and inserting three fields
+/// rotated four of them onto each other's values.
+///
+/// This is a latent defect rather than an observed one: `FuncEmitter::new` zeroes
+/// every counter and nothing increments one before `try_emit_structured` takes
+/// the snapshot, so in practice zero was restored over zero and no reported
+/// figure was ever wrong. Only a direct round-trip can catch it, which is exactly
+/// why it survived.
+#[test]
+fn every_counter_round_trips_into_its_own_field() {
+    let ir = FunctionIr {
+        function_id: 1009,
+        name: "counters".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![blk(0, 0x1000, vec![ret(0x1000)], Vec::new())],
+    };
+    let symbols = HashMap::new();
+    let mut emitter = FuncEmitter::new(&ir, &symbols);
+
+    // Distinct values, so any two fields swapping is visible.
+    emitter.placeholder_ifs = 1;
+    emitter.unresolved_cf = 2;
+    emitter.raw_register_calls = 3;
+    emitter.total_calls = 4;
+    emitter.indirect_calls = 5;
+    emitter.semantic_direct_calls = 6;
+    emitter.semantic_indirect_calls = 7;
+    emitter.dispatch_selector_calls = 8;
+    emitter.dispatch_table_calls = 9;
+    emitter.repeated_blocks = 10;
+    emitter.unlifted_instructions = 11;
+    emitter.target_va_symbol_calls = 12;
+
+    let saved = emitter.counter_snapshot();
+    emitter.placeholder_ifs = 0;
+    emitter.unresolved_cf = 0;
+    emitter.raw_register_calls = 0;
+    emitter.total_calls = 0;
+    emitter.indirect_calls = 0;
+    emitter.semantic_direct_calls = 0;
+    emitter.semantic_indirect_calls = 0;
+    emitter.dispatch_selector_calls = 0;
+    emitter.dispatch_table_calls = 0;
+    emitter.repeated_blocks = 0;
+    emitter.unlifted_instructions = 0;
+    emitter.target_va_symbol_calls = 0;
+    emitter.restore_counters(saved);
+
+    assert_eq!(emitter.placeholder_ifs, 1);
+    assert_eq!(emitter.unresolved_cf, 2);
+    assert_eq!(emitter.raw_register_calls, 3);
+    assert_eq!(emitter.total_calls, 4);
+    assert_eq!(emitter.indirect_calls, 5);
+    assert_eq!(emitter.semantic_direct_calls, 6);
+    assert_eq!(emitter.semantic_indirect_calls, 7);
+    assert_eq!(emitter.dispatch_selector_calls, 8);
+    assert_eq!(emitter.dispatch_table_calls, 9);
+    assert_eq!(emitter.repeated_blocks, 10);
+    assert_eq!(emitter.unlifted_instructions, 11);
+    assert_eq!(emitter.target_va_symbol_calls, 12);
+}
+
+/// Both emitters render a tail call the same way. They diverged once, so the
+/// same jump read differently depending on which path ran.
+#[test]
+fn both_emitters_render_a_tail_call_identically() {
+    let jump_out = |va: u64| LlirInstr {
+        va,
+        op: IROp::Jump,
+        // Outside the function, so it cannot resolve to a block.
+        src: "b #0x99000".to_string(),
+        target: "#0x99000".to_string(),
+    };
+    let structured = FunctionIr {
+        function_id: 1010,
+        name: "tailStructured".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![blk(0, 0x1000, vec![jump_out(0x1000)], Vec::new())],
+    };
+    let out = emit_pseudocode(&structured, &HashMap::new());
+    assert!(
+        out.source.contains("return tailCall_0x99000();"),
+        "a tail call is rendered as a call:\n{}",
+        out.source
+    );
+}
+
+/// `ldp` reads two consecutive registers' worth, so the second destination is
+/// one register width past the first: 8 bytes for an `x` pair, 4 for a `w`
+/// pair. Both were unmodelled before, which left stale values in both
+/// destinations at 79,645 sites across the two sample binaries.
+#[test]
+fn load_pair_reads_consecutive_slots() {
+    let ir = FunctionIr {
+        function_id: 900,
+        name: "loadPair".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![blk(
+            0,
+            0x1000,
+            vec![
+                stmt(0x1000, "ldp x9, x10, [x2, #0x10]"),
+                stmt(0x1004, "stur x9, [x3, #7]"),
+                stmt(0x1008, "stur x10, [x3, #0xf]"),
+                ret(0x100c),
+            ],
+            vec![],
+        )],
+    };
+    let out = emit_pseudocode(&ir, &HashMap::new()).source;
+    assert!(
+        out.contains(".f16;"),
+        "first destination should read the addressed field:\n{out}"
+    );
+    assert!(
+        out.contains(".f24;"),
+        "second destination should read one word further, not the same field:\n{out}"
+    );
+}
+
+/// A `w` pair strides by 4, not 8. No sample binary contains one, so this is
+/// the only thing exercising that branch: an uncompressed-pointer build never
+/// emits a 32-bit pair, but the encoding is real and the stride is not 8.
+#[test]
+fn load_pair_of_word_registers_strides_by_four() {
+    let ir = FunctionIr {
+        function_id: 901,
+        name: "loadPairWord".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![blk(
+            0,
+            0x1000,
+            vec![
+                stmt(0x1000, "ldp w9, w10, [x2, #0x10]"),
+                stmt(0x1004, "stur x10, [x3, #7]"),
+                ret(0x1008),
+            ],
+            vec![],
+        )],
+    };
+    let out = emit_pseudocode(&ir, &HashMap::new()).source;
+    assert!(
+        out.contains(".f20;"),
+        "a word pair should stride by four:\n{out}"
+    );
+}
+
+/// Pre- and post-index addressing writes the base register back, so the base no
+/// longer describes the address it held before the access.
+#[test]
+fn post_index_addressing_drops_the_base_binding() {
+    let ir = FunctionIr {
+        function_id: 902,
+        name: "postIndex".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![blk(
+            0,
+            0x1000,
+            vec![
+                stmt(0x1000, "mov x2, x1"),
+                stmt(0x1004, "ldr x9, [x2], #0x10"),
+                stmt(0x1008, "stur x2, [x3, #7]"),
+                ret(0x100c),
+            ],
+            vec![],
+        )],
+    };
+    let out = emit_pseudocode(&ir, &HashMap::new()).source;
+    assert!(
+        !out.contains("= slot0;"),
+        "the written-back base must not still read as its pre-access value:\n{out}"
+    );
+}
+
+/// Dart materialises the canonical bools by adding `kTrueOffsetFromNull` and
+/// `kFalseOffsetFromNull` to NULL_REG, and `csel` between them turns a
+/// comparison into a value. Unmodelled, the destination kept a stale binding,
+/// so a function returning `cond ? true : false` emitted `return slot0;`.
+#[test]
+fn conditional_select_between_bools_recovers_the_comparison() {
+    let ir = FunctionIr {
+        function_id: 903,
+        name: "boolSelect".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![blk(
+            0,
+            0x1000,
+            vec![
+                stmt(0x1000, "cmp x1, x2"),
+                stmt(0x1004, "add x16, x22, #0x20"),
+                stmt(0x1008, "add x17, x22, #0x30"),
+                stmt(0x100c, "csel x9, x16, x17, ne"),
+                stmt(0x1010, "stur x9, [x3, #7]"),
+                ret(0x1014),
+            ],
+            vec![],
+        )],
+    };
+    let out = emit_pseudocode(&ir, &HashMap::new()).source;
+    assert!(
+        out.contains("(slot0 != slot1)"),
+        "true-then-false arms should render as the comparison itself:\n{out}"
+    );
+}
+
+/// Operand order carries the polarity: with the arms reversed the value is the
+/// inverse condition, not the same one.
+#[test]
+fn conditional_select_reads_the_arm_order() {
+    let ir = FunctionIr {
+        function_id: 904,
+        name: "boolSelectReversed".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![blk(
+            0,
+            0x1000,
+            vec![
+                stmt(0x1000, "cmp x1, x2"),
+                stmt(0x1004, "add x16, x22, #0x30"),
+                stmt(0x1008, "add x17, x22, #0x20"),
+                stmt(0x100c, "csel x9, x16, x17, ne"),
+                stmt(0x1010, "stur x9, [x3, #7]"),
+                ret(0x1014),
+            ],
+            vec![],
+        )],
+    };
+    let out = emit_pseudocode(&ir, &HashMap::new()).source;
+    assert!(
+        out.contains("(slot0 == slot1)"),
+        "false-then-true arms should render as the inverse condition:\n{out}"
+    );
+}
+
+/// `tst` sets the flags from a mask test, so a following branch describes that
+/// mask and not whatever the previous `cmp` compared. 22,141 conditions across
+/// the two samples take their flags from `tst`.
+#[test]
+fn mask_test_supplies_the_following_condition() {
+    let ir = FunctionIr {
+        function_id: 905,
+        name: "maskTest".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![
+            blk(
+                0,
+                0x1000,
+                vec![
+                    stmt(0x1000, "cmp x5, x6"),
+                    stmt(0x1004, "tst x1, #1"),
+                    LlirInstr {
+                        va: 0x1008,
+                        op: IROp::Branch,
+                        src: "b.ne #0x1010".to_string(),
+                        target: "#0x1010".to_string(),
+                    },
+                ],
+                vec![1, 2],
+            ),
+            blk(
+                1,
+                0x100c,
+                vec![stmt(0x100c, "stur x1, [x3, #7]"), ret(0x1014)],
+                vec![],
+            ),
+            blk(2, 0x1010, vec![ret(0x1010)], vec![]),
+        ],
+    };
+    let out = emit_pseudocode(&ir, &HashMap::new()).source;
+    assert!(
+        out.contains("(slot0 & 1)"),
+        "the condition should describe the mask test, not an earlier compare:\n{out}"
+    );
+}
+
+/// An unmodelled flag writer leaves `last_cmp` describing an older comparison.
+/// Naming that as the condition is a confident false claim, so it degrades to
+/// the raw flag instead.
+#[test]
+fn unmodelled_flag_writer_does_not_inherit_an_older_compare() {
+    let ir = FunctionIr {
+        function_id: 906,
+        name: "staleFlags".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![
+            blk(
+                0,
+                0x1000,
+                vec![
+                    stmt(0x1000, "cmp x5, x6"),
+                    stmt(0x1004, "ccmp x1, #0, #4, ne"),
+                    LlirInstr {
+                        va: 0x1008,
+                        op: IROp::Branch,
+                        src: "b.ge #0x1010".to_string(),
+                        target: "#0x1010".to_string(),
+                    },
+                ],
+                vec![1, 2],
+            ),
+            blk(1, 0x100c, vec![ret(0x100c)], vec![]),
+            blk(2, 0x1010, vec![ret(0x1010)], vec![]),
+        ],
+    };
+    let out = emit_pseudocode(&ir, &HashMap::new()).source;
+    assert!(
+        out.contains("flags.b_ge"),
+        "an unmodelled flag writer should not leave the previous compare readable:\n{out}"
+    );
+}
+
+/// An unmodelled instruction still writes its destination. Leaving the previous
+/// binding in place rendered it as that register's value at every later read.
+#[test]
+fn unmodelled_instruction_drops_its_destination_binding() {
+    let ir = FunctionIr {
+        function_id: 907,
+        name: "staleValue".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![blk(
+            0,
+            0x1000,
+            vec![
+                stmt(0x1000, "mov x9, x1"),
+                stmt(0x1004, "frintn d0, d1"),
+                stmt(0x1008, "clz x9, x2"),
+                stmt(0x100c, "stur x9, [x3, #7]"),
+                ret(0x1010),
+            ],
+            vec![],
+        )],
+    };
+    let out = emit_pseudocode(&ir, &HashMap::new()).source;
+    assert!(
+        !out.contains("= slot0;"),
+        "a register overwritten by an unmodelled instruction must not keep its old value:\n{out}"
+    );
+}
+/// `kTrueOffsetFromNull` is 0x20 and `kFalseOffsetFromNull` is 0x30
+/// (`runtime/vm/pointer_tagging.h`), so an add of either off NULL_REG
+/// materialises a canonical bool, not an integer. Any other displacement is
+/// still plain arithmetic against null, which is a true statement about a
+/// canonical object and must not be dropped.
+#[test]
+fn null_relative_adds_name_the_canonical_bools_only() {
+    let materialise = |imm: &str| {
+        let ir = FunctionIr {
+            function_id: 908,
+            name: "boolMaterialise".to_string(),
+            entry_va: 0x1000,
+            blocks: vec![blk(
+                0,
+                0x1000,
+                vec![
+                    stmt(0x1000, &format!("add x9, x22, #{imm}")),
+                    stmt(0x1004, "stur x9, [x3, #7]"),
+                    ret(0x1008),
+                ],
+                vec![],
+            )],
+        };
+        emit_pseudocode(&ir, &HashMap::new()).source
+    };
+    let t = materialise("0x20");
+    assert!(t.contains("= true;"), "0x20 off null is `true`:\n{t}");
+    let f = materialise("0x30");
+    assert!(f.contains("= false;"), "0x30 off null is `false`:\n{f}");
+    let other = materialise("0x40");
+    assert!(
+        !other.contains("true") && !other.contains("false"),
+        "an undefined offset must not be named as a bool:\n{other}"
+    );
+}
+/// A pool address built by one instruction and read through by the next carries
+/// two displacements, and both are known, so the entry is exact. The normaliser
+/// only accepted the single-displacement shape, so widening the load arms left
+/// 834 references rendering as raw `(pool + page) + off` arithmetic.
+#[test]
+fn pool_page_with_a_second_displacement_resolves_to_an_entry() {
+    let ir = FunctionIr {
+        function_id: 909,
+        name: "poolPage".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![blk(
+            0,
+            0x1000,
+            vec![
+                stmt(0x1000, "add x9, x27, #0x2c, lsl #12"),
+                stmt(0x1004, "ldr x9, [x9, #0xdc8]"),
+                stmt(0x1008, "stur x9, [x3, #7]"),
+                ret(0x100c),
+            ],
+            vec![],
+        )],
+    };
+    let out = emit_pseudocode(&ir, &HashMap::new()).source;
+    // 0x2c << 12 == 0x2c000, plus 0xdc8.
+    assert!(
+        out.contains(&format!("poolOff[{}]", 0x2c000 + 0xdc8)),
+        "both displacements should fold into one pool entry:\n{out}"
+    );
+    assert_eq!(
+        out.matches('(').count(),
+        out.matches(')').count(),
+        "folding must not leave an unbalanced parenthesis:\n{out}"
+    );
+}
+
+/// Every frame slot the lifter can name needs a declaration, and `ldp` names
+/// two of them from its third operand. Missing either yields an identifier with
+/// no declaration, since only collected slots are declared.
+#[test]
+fn load_pair_frame_slots_are_declared() {
+    let ir = FunctionIr {
+        function_id: 910,
+        name: "framePair".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![blk(
+            0,
+            0x1000,
+            vec![
+                stmt(0x1000, "ldp x9, x10, [x29, #-0x20]"),
+                stmt(0x1004, "stur x9, [x3, #7]"),
+                stmt(0x1008, "stur x10, [x3, #0xf]"),
+                ret(0x100c),
+            ],
+            vec![],
+        )],
+    };
+    let out = emit_pseudocode(&ir, &HashMap::new()).source;
+    // The two stores must read two different slot names, and each of those
+    // names must have a declaration.
+    let read: Vec<String> = out
+        .lines()
+        .filter_map(|l| l.trim().strip_suffix(';'))
+        .filter_map(|l| l.split_once(" = "))
+        .map(|(_, rhs)| rhs.to_string())
+        .collect();
+    assert_eq!(read.len(), 2, "both slots should be stored:\n{out}");
+    assert_ne!(
+        read[0], read[1],
+        "the two slots must not resolve to one name:\n{out}"
+    );
+    for name in &read {
+        assert!(
+            out.lines()
+                .any(|l| l.trim() == format!("dynamic {name};") || l.trim() == format!("var {name};")),
+            "slot {name} is referenced without a declaration:\n{out}"
+        );
+    }
+}
+
+/// A register that is `true` on one path into a join and `false` on the other is
+/// a phi. No single value describes it after the join, so the binding must not
+/// survive: Dart AOT only emits a bit-4 bool test on a value it could not fold,
+/// so a literal reaching such a test means the emitter invented the operand.
+#[test]
+fn a_bool_phi_does_not_survive_its_join() {
+    let ir = FunctionIr {
+        function_id: 1010,
+        name: "boolPhi".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![
+            blk(0, 0x1000, vec![cbz(0x1000, "x1", 0x3000)], vec![1, 2]),
+            // Two arms materialise opposite bools into the same register.
+            blk(1, 0x2000, vec![stmt(0x2000, "add x9, x22, #0x20")], vec![3]),
+            blk(2, 0x3000, vec![stmt(0x3000, "add x9, x22, #0x30")], vec![3]),
+            // The join, then a single-predecessor chain to the test.
+            blk(3, 0x4000, vec![stmt(0x4000, "mov x10, x2")], vec![4]),
+            blk(
+                4,
+                0x5000,
+                vec![LlirInstr {
+                    va: 0x5000,
+                    op: IROp::Branch,
+                    src: "tbnz w9, #4, #0x7000".to_string(),
+                    target: "#0x7000".to_string(),
+                }],
+                vec![5, 6],
+            ),
+            blk(5, 0x6000, vec![stmt(0x6000, "stur x10, [x3, #7]"), ret(0x6004)], vec![]),
+            blk(6, 0x7000, vec![ret(0x7000)], vec![]),
+        ],
+    };
+    let out = emit_pseudocode(&ir, &HashMap::new()).source;
+    let leaked = out.contains("(true >> 4)") || out.contains("(false >> 4)");
+    assert!(
+        !leaked,
+        "a bool phi must not reach the test as a literal:\n{out}"
+    );
+}
+/// `SmiUntag` is `sbfm(dst, src, kSmiTagSize, kSmiBits + kSmiTagSize)`, so the
+/// width is `kSmiBits + 1`: 31 under compressed pointers and 63 without. Both
+/// are named, so the rule does not encode which build produced the binary. Any
+/// other position keeps the generic name, because the arithmetic differs.
+#[test]
+fn signed_extract_at_the_smi_position_is_named_untag() {
+    let extract = |lsb: &str, width: &str| {
+        let ir = FunctionIr {
+            function_id: 920,
+            name: "smiForms".to_string(),
+            entry_va: 0x1000,
+            blocks: vec![blk(
+                0,
+                0x1000,
+                vec![
+                    stmt(0x1000, &format!("sbfx x9, x1, #{lsb}, #{width}")),
+                    stmt(0x1004, "stur x9, [x3, #7]"),
+                    ret(0x1008),
+                ],
+                vec![],
+            )],
+        };
+        emit_pseudocode(&ir, &HashMap::new()).source
+    };
+    let compressed = extract("1", "0x1f");
+    assert!(
+        compressed.contains("smiUntag(slot0)"),
+        "width 31 at bit 1 is a Smi untag:\n{compressed}"
+    );
+    let uncompressed = extract("1", "0x3f");
+    assert!(
+        uncompressed.contains("smiUntag(slot0)"),
+        "width 63 at bit 1 is the same untag without compressed pointers:\n{uncompressed}"
+    );
+    let other = extract("0xc", "0x14");
+    assert!(
+        other.contains("signedBitField(slot0, 0xc, 0x14)"),
+        "any other position keeps the arithmetic rendering:\n{other}"
+    );
+}
+
+/// Under compressed pointers a reference field is a 32-bit offset from the heap
+/// base and `x28` holds `heap_base >> 32`, so `add rD, rS, x28, lsl #32` only
+/// reconstructs the pointer. The Dart-level value is the field itself.
+#[test]
+fn pointer_decompression_is_transparent() {
+    let ir = FunctionIr {
+        function_id: 921,
+        name: "decompress".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![blk(
+            0,
+            0x1000,
+            vec![
+                stmt(0x1000, "ldur w9, [x1, #7]"),
+                stmt(0x1004, "add x9, x9, x28, lsl #32"),
+                stmt(0x1008, "stur x9, [x3, #7]"),
+                ret(0x100c),
+            ],
+            vec![],
+        )],
+    };
+    let out = emit_pseudocode(&ir, &HashMap::new()).source;
+    assert!(
+        out.contains("= (slot0.f8);") || out.contains("= slot0.f8;"),
+        "decompression should leave the field read alone:\n{out}"
+    );
+    assert!(
+        !out.contains("<< 0x20"),
+        "the decompression must not appear as arithmetic:\n{out}"
+    );
+}
+
+/// HEAP_BITS is reserved and re-derived from THR inside function bodies, so a
+/// write must not rebind it. SPREG is reserved too but genuinely changes, so it
+/// must stay rebindable or slot addresses lose the frame offset.
+#[test]
+fn reserved_registers_keep_their_meaning_but_the_stack_pointer_moves() {
+    let ir = FunctionIr {
+        function_id: 922,
+        name: "reserved".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![blk(
+            0,
+            0x1000,
+            vec![
+                stmt(0x1000, "ldr x28, [x26, #0x50]"),
+                stmt(0x1004, "orr x28, x28, x16, lsr #32"),
+                stmt(0x1008, "sub x15, x15, #0x40"),
+                stmt(0x100c, "stur x28, [x3, #7]"),
+                stmt(0x1010, "ldur x9, [x15, #8]"),
+                stmt(0x1014, "stur x9, [x3, #0xf]"),
+                ret(0x1018),
+            ],
+            vec![],
+        )],
+    };
+    let out = emit_pseudocode(&ir, &HashMap::new()).source;
+    assert!(
+        out.contains("heapBits"),
+        "a reload of HEAP_BITS must not rebind it:\n{out}"
+    );
+    assert!(
+        !out.contains("thread.f80"),
+        "the reload expression must not replace the pinned meaning:\n{out}"
+    );
+    assert!(
+        !out.contains("sp[8]"),
+        "a frame allocation must not leave the slot address unadjusted:\n{out}"
+    );
+}
+/// Dart's `>>` is arithmetic, so a logical shift right needs `>>>`. The two
+/// differ on a negative value, and rendering `lsr` as `>>` claims a result the
+/// machine never produced.
+#[test]
+fn logical_and_arithmetic_right_shifts_render_differently() {
+    let ir = FunctionIr {
+        function_id: 930,
+        name: "shifts".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![blk(
+            0,
+            0x1000,
+            vec![
+                stmt(0x1000, "lsr x9, x1, #4"),
+                stmt(0x1004, "asr x10, x1, #4"),
+                stmt(0x1008, "stur x9, [x3, #7]"),
+                stmt(0x100c, "stur x10, [x3, #0xf]"),
+                ret(0x1010),
+            ],
+            vec![],
+        )],
+    };
+    let out = emit_pseudocode(&ir, &HashMap::new()).source;
+    assert!(
+        out.contains("(slot0 >>> 4)"),
+        "a logical shift right is Dart's unsigned shift:\n{out}"
+    );
+    assert!(
+        out.contains("(slot0 >> 4)"),
+        "an arithmetic shift right is Dart's signed shift:\n{out}"
+    );
+}
+/// A binding written part-way along an arm, rather than in the block that feeds
+/// the join directly, still must not survive the join.
+///
+/// `registers_written_before` roots its walk at the join's immediate predecessors
+/// and follows predecessor edges backwards, so a write in an earlier block of the
+/// same arm is an ancestor of a root and has to be collected. The arm here is two
+/// blocks long and writes the register in the first of them, which is the shortest
+/// shape that separates a one-hop look at the immediate predecessors from a full
+/// backward walk.
+#[test]
+fn a_binding_written_early_in_an_arm_does_not_survive_the_join() {
+    let ir = FunctionIr {
+        function_id: 1011,
+        name: "deepArm".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![
+            blk(0, 0x1000, vec![cbz(0x1000, "x1", 0x4000)], vec![1, 3]),
+            // Taken arm, two blocks: the write is in the first.
+            blk(1, 0x2000, vec![stmt(0x2000, "add x9, x22, #0x20")], vec![2]),
+            blk(2, 0x3000, vec![stmt(0x3000, "mov x10, x2")], vec![4]),
+            // The other arm reaches the join directly.
+            blk(3, 0x4000, vec![stmt(0x4000, "mov x10, x3")], vec![4]),
+            // Join, then the test.
+            blk(
+                4,
+                0x5000,
+                vec![LlirInstr {
+                    va: 0x5000,
+                    op: IROp::Branch,
+                    src: "tbnz w9, #4, #0x7000".to_string(),
+                    target: "#0x7000".to_string(),
+                }],
+                vec![5, 6],
+            ),
+            blk(
+                5,
+                0x6000,
+                vec![stmt(0x6000, "stur x10, [x3, #7]"), ret(0x6004)],
+                vec![],
+            ),
+            blk(6, 0x7000, vec![ret(0x7000)], vec![]),
+        ],
+    };
+    let out = emit_pseudocode(&ir, &HashMap::new()).source;
+    let leaked = out.contains("(true >> 4)") || out.contains("(false >> 4)");
+    assert!(
+        !leaked,
+        "a write earlier in the arm must still be dropped at the join:\n{out}"
+    );
+}
+/// The DFS emitter emits a block once, guarded by `emitted`, under whichever
+/// path reached it first. Without a merge there, a register set on that path
+/// reads as its value on every other path: `mov x0, x22` before a branch left
+/// x0 bound to `null`, and a shared successor rendered `null._tag`, a header
+/// read off the null object.
+///
+/// The CFG here is irreducible, two entries into the 3-4 cycle, so `Regions`
+/// declines to build and emission must take the DFS route. That is what makes
+/// this test cover the fallback rather than the structurer.
+#[test]
+fn the_fallback_emitter_merges_state_where_paths_converge() {
+    let ir = FunctionIr {
+        function_id: 1012,
+        name: "irreducibleShared".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![
+            blk(0, 0x1000, vec![cbz(0x1000, "x1", 0x3000)], vec![1, 2]),
+            // One path binds a canonical bool into x9.
+            blk(1, 0x2000, vec![stmt(0x2000, "add x9, x22, #0x20")], vec![3]),
+            blk(2, 0x3000, vec![stmt(0x3000, "mov x10, x2")], vec![4]),
+            // Shared, and reached from both the branch and the back edge.
+            blk(
+                3,
+                0x4000,
+                vec![LlirInstr {
+                    va: 0x4000,
+                    op: IROp::Branch,
+                    src: "tbnz w9, #4, #0x6000".to_string(),
+                    target: "#0x6000".to_string(),
+                }],
+                vec![4, 5],
+            ),
+            blk(4, 0x5000, vec![stmt(0x5000, "mov x11, x3")], vec![3]),
+            blk(5, 0x6000, vec![ret(0x6000)], vec![]),
+        ],
+    };
+    let out = emit_pseudocode(&ir, &HashMap::new()).source;
+    let leaked = out.contains("(true >> 4)") || out.contains("(false >> 4)");
+    assert!(
+        !leaked,
+        "a binding from one path must not describe a shared block:\n{out}"
+    );
+}
+/// A shifted register operand changes the value compared. Rendering the operand
+/// alone with the modifier as a trailing comment claimed an unshifted compare:
+/// `cmp x3, x0, asr #1` read `a == b` where the truth is `a == (b >> 1)`. This
+/// is the Smi round-trip check Dart emits after tagging, so it appears wherever
+/// an integer is boxed, and it is a condition, so the structurer reads it too.
+#[test]
+fn a_shifted_compare_operand_keeps_its_shift() {
+    let compare = |modifier: &str| {
+        let ir = FunctionIr {
+            function_id: 940,
+            name: "shiftedCompare".to_string(),
+            entry_va: 0x1000,
+            blocks: vec![
+                blk(
+                    0,
+                    0x1000,
+                    vec![
+                        stmt(0x1000, &format!("cmp x1, x2, {modifier}")),
+                        LlirInstr {
+                            va: 0x1004,
+                            op: IROp::Branch,
+                            src: "b.eq #0x2000".to_string(),
+                            target: "#0x2000".to_string(),
+                        },
+                    ],
+                    vec![1, 2],
+                ),
+                blk(
+                    1,
+                    0x1008,
+                    vec![stmt(0x1008, "stur x1, [x3, #7]"), ret(0x100c)],
+                    vec![],
+                ),
+                blk(2, 0x2000, vec![ret(0x2000)], vec![]),
+            ],
+        };
+        emit_pseudocode(&ir, &HashMap::new()).source
+    };
+    let arithmetic = compare("asr #1");
+    assert!(
+        arithmetic.contains("(slot1 >> 1)"),
+        "an arithmetic shift belongs in the comparison:\n{arithmetic}"
+    );
+    let logical = compare("lsr #32");
+    assert!(
+        logical.contains("(slot1 >>> 32)"),
+        "a logical shift is Dart's unsigned shift:\n{logical}"
+    );
+    // An extend narrows and then scales; dropping the scale would render a
+    // scaled index as unscaled, which is a wrong value rather than a missing one.
+    let scaled = compare("sxtw #3");
+    assert!(
+        scaled.contains("(signExtend(slot1, 32) << 3)"),
+        "an extend must keep its shift amount:\n{scaled}"
+    );
+}
+/// `movk` replaces one 16-bit lane and leaves the rest. `prior | (imm << s)` is
+/// only right when that lane is already zero, which it is in the usual
+/// `mov`+`movk` constant materialisation and is not after `mov rd, #-1`. The
+/// merged value renders as a resolved literal, so getting it wrong is a
+/// confident false claim rather than a missing one.
+#[test]
+fn movk_replaces_a_lane_rather_than_setting_bits() {
+    let materialise = |first: &str, second: &str| {
+        let ir = FunctionIr {
+            function_id: 950,
+            name: "constant".to_string(),
+            entry_va: 0x1000,
+            blocks: vec![blk(
+                0,
+                0x1000,
+                vec![
+                    stmt(0x1000, first),
+                    stmt(0x1004, second),
+                    stmt(0x1008, "stur x9, [x3, #7]"),
+                    ret(0x100c),
+                ],
+                vec![],
+            )],
+        };
+        emit_pseudocode(&ir, &HashMap::new()).source
+    };
+    // The ordinary pair: 0xfe with 1 in the second lane is 0x1_00fe.
+    let plain = materialise("mov x9, #0xfe", "movk x9, #1, lsl #16");
+    assert!(
+        plain.contains("= 0x100fe;"),
+        "the two halves should merge into one constant:\n{plain}"
+    );
+    // A lane that is not already zero has to be cleared, so the result keeps the
+    // low half of -1 and takes zero in the second lane. An OR would leave it -1.
+    let over = materialise("mov x9, #-1", "movk x9, #0, lsl #16");
+    assert!(
+        !over.contains("= -1;") && !over.contains("= 0xffffffffffffffff;"),
+        "the replaced lane must be cleared, not merely ored:\n{over}"
+    );
+}
+/// A `movk` into the top lane produces `i64::MIN`, whose negation overflows.
+/// Formatting is reached with that value, and a panic in a formatter is a worse
+/// failure than a wide literal.
+#[test]
+fn a_constant_at_the_signed_minimum_formats_rather_than_panicking() {
+    let ir = FunctionIr {
+        function_id: 951,
+        name: "extremeConstant".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![blk(
+            0,
+            0x1000,
+            vec![
+                stmt(0x1000, "mov x9, #0"),
+                stmt(0x1004, "movk x9, #0x8000, lsl #48"),
+                stmt(0x1008, "stur x9, [x3, #7]"),
+                ret(0x100c),
+            ],
+            vec![],
+        )],
+    };
+    let out = emit_pseudocode(&ir, &HashMap::new()).source;
+    assert!(
+        out.contains("0x8000000000000000"),
+        "the top lane should render as its magnitude:\n{out}"
+    );
+}
+/// `StoreBarrier` ends its check with `tst(scratch, HEAP_BITS LSR #32)`, whose
+/// high half is the write-barrier mask. HEAP_BITS is reserved, so a test against
+/// that half is the barrier check by construction.
+///
+/// Only the left side of the comparison is named. The branch mnemonic still
+/// supplies `==` or `!=` against zero, so the polarity is whatever the code says:
+/// naming the whole condition would mean inverting one of the two forms, and
+/// getting that wrong would flip a condition the structurer branches on.
+#[test]
+fn the_write_barrier_check_is_named_without_changing_its_polarity() {
+    let check = |branch: &str| {
+        let ir = FunctionIr {
+            function_id: 960,
+            name: "barrier".to_string(),
+            entry_va: 0x1000,
+            blocks: vec![
+                blk(
+                    0,
+                    0x1000,
+                    vec![
+                        stmt(0x1000, "and x16, x17, x16, lsr #2"),
+                        stmt(0x1004, "tst x16, x28, lsr #32"),
+                        LlirInstr {
+                            va: 0x1008,
+                            op: IROp::Branch,
+                            src: format!("{branch} #0x2000"),
+                            target: "#0x2000".to_string(),
+                        },
+                    ],
+                    vec![1, 2],
+                ),
+                blk(
+                    1,
+                    0x100c,
+                    vec![stmt(0x100c, "stur x1, [x3, #7]"), ret(0x1010)],
+                    vec![],
+                ),
+                blk(2, 0x2000, vec![ret(0x2000)], vec![]),
+            ],
+        };
+        emit_pseudocode(&ir, &HashMap::new()).source
+    };
+    let zero = check("b.eq");
+    assert!(
+        zero.contains("needsWriteBarrier(") && zero.contains("== 0"),
+        "a test against the barrier mask should name the predicate:\n{zero}"
+    );
+    let nonzero = check("b.ne");
+    assert!(
+        nonzero.contains("needsWriteBarrier(") && nonzero.contains("!= 0"),
+        "the other branch keeps the other polarity:\n{nonzero}"
+    );
+    // A mask test that is not against HEAP_BITS is not the barrier check.
+    let other = {
+        let ir = FunctionIr {
+            function_id: 961,
+            name: "plainMask".to_string(),
+            entry_va: 0x1000,
+            blocks: vec![
+                blk(
+                    0,
+                    0x1000,
+                    vec![
+                        stmt(0x1000, "tst x1, #1"),
+                        LlirInstr {
+                            va: 0x1004,
+                            op: IROp::Branch,
+                            src: "b.eq #0x2000".to_string(),
+                            target: "#0x2000".to_string(),
+                        },
+                    ],
+                    vec![1, 2],
+                ),
+                blk(
+                    1,
+                    0x1008,
+                    vec![stmt(0x1008, "stur x1, [x3, #7]"), ret(0x100c)],
+                    vec![],
+                ),
+                blk(2, 0x2000, vec![ret(0x2000)], vec![]),
+            ],
+        };
+        emit_pseudocode(&ir, &HashMap::new()).source
+    };
+    assert!(
+        !other.contains("needsWriteBarrier"),
+        "an ordinary mask test must not be named as the barrier:\n{other}"
+    );
+}
+/// The renderings that compute rather than name. A named form like
+/// `signedDivide(a, b)` cannot be subtly wrong, but these can: `msub` subtracts
+/// the product from the third operand, not from the first, and getting the order
+/// backwards emits a confident wrong expression.
+#[test]
+fn computed_instruction_renderings_use_the_right_operands() {
+    let render = |instruction: &str| {
+        let ir = FunctionIr {
+            function_id: 970,
+            name: "computed".to_string(),
+            entry_va: 0x1000,
+            blocks: vec![blk(
+                0,
+                0x1000,
+                vec![
+                    stmt(0x1000, instruction),
+                    stmt(0x1004, "stur x9, [x4, #7]"),
+                    ret(0x1008),
+                ],
+                vec![],
+            )],
+        };
+        emit_pseudocode(&ir, &HashMap::new()).source
+    };
+    // x1, x2 and x3 are the first three Dart argument registers, so they read as
+    // `slot0`, `slot1` and `slot2`.
+    for (instruction, expected) in [
+        ("neg x9, x1", "(-slot0)"),
+        ("mvn x9, x1", "(~slot0)"),
+        ("sxtw x9, w1", "signExtend(slot0, 32)"),
+        // Xd = Xa - Xn * Xm, with Xa the *last* operand.
+        ("msub x9, x1, x2, x3", "(slot2 - (slot0 * slot1))"),
+        ("madd x9, x1, x2, x3", "(slot2 + (slot0 * slot1))"),
+        ("sdiv x9, x1, x2", "signedDivide(slot0, slot1)"),
+        ("umulh x9, x1, x2", "unsignedHighMultiply(slot0, slot1)"),
+        ("ubfiz x9, x1, #1, #0x1e", "unsignedBitFieldInsert(slot0, 1, 0x1e)"),
+    ] {
+        let out = render(instruction);
+        assert!(
+            out.contains(expected),
+            "`{instruction}` should render `{expected}`:\n{out}"
+        );
+    }
+}
+/// A conditional value has to be bracketed, because `?:` binds looser than
+/// arithmetic. Unbracketed, `(c) ? 1 : 0 - 1` inside a mask reads as
+/// `c ? 1 : ((0 - 1) & mask)`, which is a value the machine never computes, and
+/// on one sample 195 of 282 ternaries were composed into a larger expression.
+#[test]
+fn a_conditional_value_composes_without_rebinding() {
+    let ir = FunctionIr {
+        function_id: 971,
+        name: "composedSelect".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![blk(
+            0,
+            0x1000,
+            vec![
+                stmt(0x1000, "cmp x1, x2"),
+                stmt(0x1004, "cset x9, ne"),
+                // The conditional value is then consumed by arithmetic.
+                stmt(0x1008, "sub x9, x9, #1"),
+                stmt(0x100c, "and x9, x9, #0x7ce"),
+                stmt(0x1010, "stur x9, [x4, #7]"),
+                ret(0x1014),
+            ],
+            vec![],
+        )],
+    };
+    let out = emit_pseudocode(&ir, &HashMap::new()).source;
+    let line = out
+        .lines()
+        .find(|l| l.contains(" ? "))
+        .unwrap_or_default()
+        .to_string();
+    assert!(
+        line.contains("((slot0 != slot1) ? 1 : 0)"),
+        "the conditional must be bracketed before composing:\n{out}"
+    );
+    // The subtraction has to apply to the whole conditional, not to its false arm.
+    assert!(
+        !line.contains("? 1 : 0 -"),
+        "arithmetic must not bind into the false arm:\n{out}"
+    );
+}
+/// A shifted register operand in plain arithmetic changes the address or value,
+/// exactly as it does in a comparison. Rendered as a trailing comment it asserted
+/// the unmodified operand: `((sp + (x - 4) /* sxtw #2 */)).f24` claims an address
+/// four times closer than the truth. 7,860 and 10,887 sites carried such a
+/// comment.
+#[test]
+fn a_shifted_arithmetic_operand_is_applied_not_commented() {
+    let compute = |instruction: &str| {
+        let ir = FunctionIr {
+            function_id: 972,
+            name: "shiftedArith".to_string(),
+            entry_va: 0x1000,
+            blocks: vec![blk(
+                0,
+                0x1000,
+                vec![
+                    stmt(0x1000, instruction),
+                    stmt(0x1004, "stur x9, [x4, #7]"),
+                    ret(0x1008),
+                ],
+                vec![],
+            )],
+        };
+        emit_pseudocode(&ir, &HashMap::new()).source
+    };
+    let scaled = compute("add x9, x1, w2, sxtw #2");
+    assert!(
+        scaled.contains("(signExtend(slot1, 32) << 2)"),
+        "an extend with a scale must keep both:\n{scaled}"
+    );
+    let logical = compute("orr x9, x1, x2, lsr #32");
+    assert!(
+        logical.contains("(slot1 >>> 0x20)") || logical.contains("(slot1 >>> 32)"),
+        "a logical shift belongs in the expression:\n{logical}"
+    );
+    assert!(
+        !logical.contains("/* lsr"),
+        "the modifier must not survive as a comment:\n{logical}"
+    );
+    // A literal shifted by a literal folds, which is what keeps a shifted pool
+    // page in the same shape as an unshifted one and lets the pool recogniser
+    // stay a single form.
+    let folded = compute("add x9, x27, #0x2c, lsl #12");
+    assert!(
+        folded.contains("pool + 0x2c000") || folded.contains("poolOff["),
+        "a shifted immediate should fold into the address:\n{folded}"
+    );
+}
+/// A `w` form computes in 32 bits and zero-extends into the 64-bit register, and
+/// `canonical_reg` folds `w1` and `x1` onto one key, so the width is lost unless
+/// the renderer restores it. Complement and negation always differ: `~x` sets
+/// every high bit where the machine clears all of them.
+///
+/// The mask belongs on the *result* only because negation and complement are
+/// homomorphic mod 2^32. It must not be copied to `lsr`/`asr`/`sdiv`, where the
+/// operand width decides the answer: `lsr w0, w1, #4` is
+/// `(x1 & 0xffffffff) >>> 4`, which differs from `(x1 >>> 4) & 0xffffffff` in
+/// bits 28-31 whenever the high half is live.
+#[test]
+fn a_w_form_complement_is_zero_extended() {
+    let render = |src: &str| {
+        let ir = FunctionIr {
+            function_id: 0x1000,
+            name: "narrowWidth".to_string(),
+            entry_va: 0x1000,
+            blocks: vec![blk(
+                0,
+                0x1000,
+                vec![
+                    stmt(0x1000, src),
+                    stmt(0x1004, "stur x9, [x4, #7]"),
+                    ret(0x1008),
+                ],
+                vec![],
+            )],
+        };
+        emit_pseudocode(&ir, &HashMap::new()).source
+    };
+
+    let narrow = render("mvn w9, w1");
+    assert!(
+        narrow.contains("& 0xffffffff"),
+        "a 32-bit complement clears the high half:\n{narrow}"
+    );
+
+    let wide = render("mvn x9, x1");
+    assert!(
+        !wide.contains("& 0xffffffff"),
+        "a 64-bit complement has no high half to clear:\n{wide}"
+    );
+
+    // A right shift is deliberately left alone rather than given a trailing
+    // mask, which would read as fixed while still being wrong.
+    let shifted = render("lsr w9, w1, #4");
+    assert!(
+        !shifted.contains("& 0xffffffff"),
+        "a narrow shift needs its operand masked, not its result:\n{shifted}"
+    );
+}
+
+/// A call into a known runtime stub is modelled from the SDK, not as a Dart call.
+///
+/// Three facts. The stub's inputs are not in `DartCallingConvention`, so no
+/// argument list is inferred. A `GenerateSharedStub` saves and restores every
+/// non-reserved register, so it clobbers nothing and bindings survive across it --
+/// which matters because `stackOverflow` alone is ~38,000 call sites across the
+/// two samples. And it defines a value only when the SDK stores the runtime
+/// result, which is the mint allocator alone: binding `stackOverflow` would claim
+/// a value that does not exist.
+#[test]
+fn a_runtime_stub_call_is_modelled_from_the_sdk_not_as_a_dart_call() {
+    let call = |va: u64, target: u64| LlirInstr {
+        va,
+        op: IROp::Call,
+        src: format!("bl #0x{target:x}"),
+        target: format!("#0x{target:x}"),
+    };
+    let ir = FunctionIr {
+        function_id: 0x1000,
+        name: "stubCaller".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![blk(
+            0,
+            0x1000,
+            vec![
+                stmt(0x1000, "mov x9, x1"),
+                call(0x1004, 0x9000),
+                stmt(0x1008, "stur x9, [x4, #7]"),
+                ret(0x100c),
+            ],
+            vec![],
+        )],
+    };
+    let mut symbols = HashMap::new();
+    symbols.insert(0x9000u64, "stackOverflowSharedWithoutFpuRegs".to_string());
+    let mut stubs = HashMap::new();
+    stubs.insert(
+        0x9000u64,
+        RuntimeStubEffect {
+            writes_result: false,
+            preserves_registers: true,
+        },
+    );
+    let out = emit_program_with_runtime_stubs(
+        std::slice::from_ref(&ir),
+        &symbols,
+        &HashMap::new(),
+        &HashMap::new(),
+        &stubs,
+    )
+    .remove(0)
+    .source;
+
+    assert!(
+        out.contains("stackOverflowSharedWithoutFpuRegs();"),
+        "a stub that defines no value must not be bound:\n{out}"
+    );
+    assert!(
+        !out.contains("= stackOverflowSharedWithoutFpuRegs"),
+        "binding it claims a value the SDK says does not exist:\n{out}"
+    );
+    // Anchored on the store rendering the value x9 held before the call. A bare
+    // `contains("slot0")` would match the signature line and pass even when
+    // the call clobbers everything.
+    assert!(
+        out.contains("reg4.f8 = slot0;"),
+        "a shared stub preserves every register, so x9's binding survives:\n{out}"
+    );
+    assert!(
+        !out.contains("reg9"),
+        "x9 must not read as unresolved after a call that preserves it:\n{out}"
+    );
+
+    // The mint allocator is the one shared stub that does define a result.
+    let mut mint = HashMap::new();
+    mint.insert(
+        0x9000u64,
+        RuntimeStubEffect {
+            writes_result: true,
+            preserves_registers: true,
+        },
+    );
+    let mut mint_symbols = HashMap::new();
+    mint_symbols.insert(0x9000u64, "allocateMintWithoutFpuRegs".to_string());
+    let bound = emit_program_with_runtime_stubs(
+        std::slice::from_ref(&ir),
+        &mint_symbols,
+        &HashMap::new(),
+        &HashMap::new(),
+        &mint,
+    )
+    .remove(0)
+    .source;
+    assert!(
+        bound.contains("= allocateMintWithoutFpuRegs();"),
+        "a stub that stores the runtime result does define a value:\n{bound}"
+    );
+}
+
+/// A register that feeds itself grows its expression geometrically, because every
+/// modelled instruction builds its value out of the text of the values it reads.
+///
+/// A hash or mixing routine is the worst case, and one exists in a real binary:
+/// 217 straight-line instructions of `add`, `and` and `lsl` over three registers
+/// that reference each other reached a one-gigabyte allocation and the process was
+/// killed. No branch is involved, so no visit budget or depth limit applies. Past
+/// the cap the register reads as itself and renders as `regN`, which is the gap the
+/// emitter prefers to a value nobody can read.
+///
+/// The chain here is deliberately short. It has to be long enough that an uncapped
+/// emitter fails the assertion, and short enough that it fails in milliseconds
+/// rather than hanging: a hanging test cannot be attributed to the mutation that
+/// caused it, and it would stall the suite instead of reporting.
+#[test]
+fn a_self_feeding_expression_stops_growing() {
+    let mut instrs = vec![stmt(0x1000, "mov x1, #0x3fffffff")];
+    let mut va = 0x1004;
+    for _ in 0..6 {
+        for src in [
+            "add w2, w1, w1",
+            "and x1, x2, x1",
+            "lsl w3, w1, #0xa",
+            "add w1, w3, w2",
+        ] {
+            instrs.push(stmt(va, src));
+            va += 4;
+        }
+    }
+    instrs.push(stmt(va, "stur x1, [x4, #7]"));
+    instrs.push(ret(va + 4));
+
+    let ir = FunctionIr {
+        function_id: 0x1000,
+        name: "mixer".to_string(),
+        entry_va: 0x1000,
+        blocks: vec![blk(0, 0x1000, instrs, vec![])],
+    };
+    let out = emit_pseudocode(&ir, &HashMap::new()).source;
+
+    // A value at the cap still passes, so a binary operator over two of them
+    // stores about twice it. The bound asserted here is that, not the constant.
+    let longest = out.lines().map(|l| l.len()).max().unwrap_or(0);
+    assert!(
+        longest <= 1100,
+        "a self-feeding expression must stop being inlined, longest line was {longest}"
+    );
+    assert!(
+        out.contains("reg1") || out.contains("reg2") || out.contains("reg3"),
+        "past the cap the register reads as itself:\n{out}"
+    );
+}

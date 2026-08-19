@@ -1,0 +1,141 @@
+# Thread offsets observed in a real Flutter AOT ARM64 binary, Dart 3.5
+#
+# Derived, not guessed. Each row is: occurrences, THR displacement, and the
+# symbol from the product ARM64 DART_COMPRESSED_POINTERS block of
+# runtime/vm/compiler/runtime_offsets_extracted.h in the Dart SDK at tag 3.5.
+#
+# The block is guarded by lines 20129-20130 (its #if) through 20915-20916 (its
+# #endif) in that file. Cite the whole guard range: a narrower range
+# covers most Thread constants but not all of them.
+#
+# Counts are IR instruction counts, from every direct load or store off x26 in
+# the disassembly of one sample binary. LocalSend for 3.5 (snapshot hash
+# 80a49c7111088100a233b2ae788e1f48), Immich for 3.12
+# (ace654289f5abc240509fc941453ebc5). They are not emitted-line counts.
+#
+# Classification: a name ending _entry_point_offset or _stub_offset, and the
+# write_barrier_wrappers entries, are function pointers. Everything else is a
+# data field.
+#
+# NOT YET USED, and the reason is the gate. The same displacement means
+# different things across versions: 0x68 is field_table_values on 3.5 and end on
+# 3.12; 0x238 is a stack-overflow stub on 3.5 and the slow allocation stub on
+# 3.12. 110 of 111 common offsets moved between these two versions, and only 3
+# agree between the compressed and uncompressed blocks of a single version. So
+# naming requires an exact match on both the snapshot hash and the pointer mode,
+# and anything else has to keep the numeric thread.fN form.
+#
+# Four offsets per version are DERIVED rather than exported: object_sentinel,
+# empty_array, empty_type_arguments and dynamic_type are declared contiguously
+# by CACHED_NON_VM_STUB_LIST in runtime/vm/thread.h and have no generated AOT
+# constant, so their offsets follow from object_null plus a word each. Treat
+# them as derived from the declaration order, not as table constants.
+ 3590 0x68 Thread_field_table_values_offset
+ 1208 0x238 Thread_stack_overflow_shared_without_fpu_regs_entry_point_offset
+  967 0x278 Thread_slow_type_test_entry_point_offset
+  378 0x208 Thread_call_to_runtime_entry_point_offset
+  347 0x90 Thread_empty_array_offset
+  312 0x250 Thread_switchable_call_miss_entry_offset
+  206 0x718 Thread_saved_stack_limit_offset
+  147 0x268 Thread_call_native_through_safepoint_entry_point_offset
+  140 0x458 Thread_ArgumentErrorUnboxedInt64_entry_point_
+  131 0x420 Thread_WriteError_entry_point_
+  121 0x40 Thread_write_barrier_mask_offset
+  120 0x78 Thread_object_null_offset
+  120 0x778 Thread_global_object_pool_offset
+  120 0x60 Thread_dispatch_table_array_offset
+  120 0x48 Thread_heap_base_offset
+  115 0x98 Thread_empty_type_arguments_offset
+  104 0x620 Thread_write_barrier_wrappers_entry_points_[R2]
+   82 0x710 Thread_isolate_group_offset
+   78 0xa0 Thread_dynamic_type_offset
+   64 0x518 Thread_LibcPow_entry_point_
+   54 0x618 Thread_write_barrier_wrappers_entry_points_[R1]
+   42 0x548 Thread_LibcRound_entry_point_
+   36 0x460 Thread_IntegerDivisionByZeroException_entry_point_
+   27 0x5d8 Thread_PropagateError_entry_point_
+   27 0x58 Thread_end_offset
+   27 0x50 Thread_top_offset
+   20 0x1f8 Thread_write_barrier_entry_point_offset
+   18 0x510 Thread_EnsureRememberedAndMarkingDeferred_entry_point_
+   17 0x550 Thread_LibcCos_entry_point_
+   15 0x558 Thread_LibcSin_entry_point_
+   14 0x308 Thread_AllocateTypedData_entry_point_
+   13 0x230 Thread_allocate_object_slow_entry_point_offset
+   11 0x590 Thread_LibcLog_entry_point_
+   10 0x520 Thread_DartModulo_entry_point_
+   10 0x338 Thread_AllocateSuspendState_entry_point_
+    8 0x298 Thread_predefined_symbols_address_offset
+    7 0x538 Thread_LibcCeil_entry_point_
+    5 0x580 Thread_LibcAtan2_entry_point_
+    5 0x570 Thread_LibcAsin_entry_point_
+    5 0x2e0 Thread_AllocateMint_entry_point_
+    4 0x530 Thread_LibcFloor_entry_point_
+    4 0x330 Thread_AllocateSmallRecord_entry_point_
+    4 0x310 Thread_AllocateClosure_entry_point_
+    3 0x4a8 Thread_LateFieldAssignedDuringInitializationError_entry_point_
+    2 0x70 Thread_shared_field_table_values_offset
+    2 0x588 Thread_LibcExp_entry_point_
+    2 0x4b0 Thread_LateFieldNotInitializedError_entry_point_
+    2 0x470 Thread_InterruptOrStackOverflow_entry_point_
+    2 0x440 Thread_ArgumentNullError_entry_point_
+    2 0x438 Thread_NullCastError_entry_point_
+    2 0x428 Thread_NullError_entry_point_
+    2 0x410 Thread_RangeError_entry_point_
+    2 0x1c8 Thread_slow_type_test_stub_offset
+    1 0xf8 Thread_null_cast_error_shared_without_fpu_regs_stub_offset
+    1 0xf0 Thread_null_arg_error_shared_with_fpu_regs_stub_offset
+    1 0xe8 Thread_null_arg_error_shared_without_fpu_regs_stub_offset
+    1 0xe0 Thread_null_error_shared_with_fpu_regs_stub_offset
+    1 0xd8 Thread_null_error_shared_without_fpu_regs_stub_offset
+    1 0xd0 Thread_late_initialization_error_shared_with_fpu_regs_stub_offset
+    1 0xc8 Thread_late_initialization_error_shared_without_fpu_regs_stub_offset
+    1 0x7c0 Thread_random_offset
+    1 0x740 Thread_new_marking_stack_block_offset
+    1 0x738 Thread_old_marking_stack_block_offset
+    1 0x730 Thread_store_buffer_block_offset
+    1 0x6f8 Thread_suspend_state_suspend_sync_star_at_start_entry_point_offset
+    1 0x6f0 Thread_suspend_state_init_sync_star_entry_point_offset
+    1 0x6e8 Thread_suspend_state_return_async_star_entry_point_offset
+    1 0x6e0 Thread_suspend_state_yield_async_star_entry_point_offset
+    1 0x6d8 Thread_suspend_state_init_async_star_entry_point_offset
+    1 0x6d0 Thread_suspend_state_return_async_not_future_entry_point_offset
+    1 0x6c8 Thread_suspend_state_return_async_entry_point_offset
+    1 0x6c0 Thread_suspend_state_await_with_type_check_entry_point_offset
+    1 0x6b8 Thread_suspend_state_await_entry_point_offset
+    1 0x6b0 Thread_suspend_state_init_async_entry_point_offset
+    1 0x568 Thread_LibcAcos_entry_point_
+    1 0x540 Thread_LibcTrunc_entry_point_
+    1 0x508 Thread_RememberCard_entry_point_
+    1 0x500 Thread_NewMarkingStackBlockProcess_entry_point_
+    1 0x4f8 Thread_OldMarkingStackBlockProcess_entry_point_
+    1 0x4f0 Thread_StoreBufferBlockProcess_entry_point_
+    1 0x4c0 Thread_ResumeFrame_entry_point_
+    1 0x4a0 Thread_InitStaticField_entry_point_
+    1 0x498 Thread_InitInstanceField_entry_point_
+    1 0x478 Thread_Throw_entry_point_
+    1 0x468 Thread_ReThrow_entry_point_
+    1 0x448 Thread_DispatchTableNullError_entry_point_
+    1 0x3f0 Thread_NoSuchMethodFromPrologue_entry_point_
+    1 0x3d0 Thread_NonBoolTypeError_entry_point_
+    1 0x3c8 Thread_TypeCheck_entry_point_
+    1 0x3b8 Thread_Instanceof_entry_point_
+    1 0x370 Thread_CloneSuspendState_entry_point_
+    1 0x368 Thread_CloneContext_entry_point_
+    1 0x328 Thread_AllocateRecord_entry_point_
+    1 0x318 Thread_AllocateContext_entry_point_
+    1 0x300 Thread_AllocateInt32x4_entry_point_
+    1 0x2f8 Thread_AllocateFloat64x2_entry_point_
+    1 0x2f0 Thread_AllocateFloat32x4_entry_point_
+    1 0x2e8 Thread_AllocateDouble_entry_point_
+    1 0x2d8 Thread_AllocateArray_entry_point_offset
+    1 0x220 Thread_allocate_object_entry_point_offset
+    1 0x180 Thread_stack_overflow_shared_with_fpu_regs_stub_offset
+    1 0x178 Thread_stack_overflow_shared_without_fpu_regs_stub_offset
+    1 0x130 Thread_allocate_mint_without_fpu_regs_stub_offset
+    1 0x128 Thread_allocate_mint_with_fpu_regs_stub_offset
+    1 0x120 Thread_write_error_shared_with_fpu_regs_stub_offset
+    1 0x118 Thread_write_error_shared_without_fpu_regs_stub_offset
+    1 0x110 Thread_range_error_shared_with_fpu_regs_stub_offset
+    1 0x108 Thread_range_error_shared_without_fpu_regs_stub_offset
+    1 0x100 Thread_null_cast_error_shared_with_fpu_regs_stub_offset
