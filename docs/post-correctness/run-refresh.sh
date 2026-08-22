@@ -9,7 +9,33 @@ if [[ $# -ne 1 ]]; then
 fi
 
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-out="$(mkdir -p "$1" && cd "$1" && pwd)"
+out="$(realpath -m "$1")"
+case "$out/" in
+  "$repo/"*)
+    echo "OUT_DIR must be outside the controlling repository: $out" >&2
+    exit 1
+    ;;
+esac
+controlling_head="$(git -C "$repo" rev-parse HEAD)"
+porcelain_status="$(git -C "$repo" status --porcelain=v1 --untracked-files=all)"
+if [[ -n "$porcelain_status" ]]; then
+  echo "controlling repository must be clean before refresh" >&2
+  printf '%s\n' "$porcelain_status" >&2
+  exit 1
+fi
+preflight_timestamp="$(date --iso-8601=seconds)"
+printf -v preflight_command '%q ' "$0" "$@"
+
+mkdir -p "$out"
+cat >"$out/workspace-preflight.txt" <<EOF
+schema                    flutterdec-bench/workspace-preflight/1
+head                      $controlling_head
+porcelain_status          empty
+porcelain_status_bytes    0
+porcelain_status_sha256   e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+command                   ${preflight_command% }
+timestamp                 $preflight_timestamp
+EOF
 build_root="${TMPDIR:-/tmp}/flutterdec-post-correctness-build"
 tree="$build_root/tree"
 patch="$repo/docs/baseline/harness-8e7f080.patch"
@@ -235,6 +261,7 @@ correctness                once per binary before measurement
 timeout_seconds            120
 memory_limit_bytes         2147483648
 chronology_rows            34
+controlling_repository_head $controlling_head
 EOF
 
 collect reference "$out/samples-reference.tsv"

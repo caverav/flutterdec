@@ -7,6 +7,7 @@ import json
 import statistics
 import sys
 from collections import defaultdict
+from datetime import datetime
 from pathlib import Path
 
 PHASES = ("ir", "cfg", "emission_exclusive", "serialization")
@@ -26,12 +27,16 @@ def sha256(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def binding(root):
+def key_values(path):
     return {
         fields[0]: fields[1]
-        for line in (root / "binding.txt").read_text().splitlines()
+        for line in path.read_text().splitlines()
         if len(fields := line.split(None, 1)) == 2
     }
+
+
+def binding(root):
+    return key_values(root / "binding.txt")
 
 
 def audit_checksums(root):
@@ -67,6 +72,16 @@ def sample_rows(path):
 def audit_live(root):
     audit_checksums(root)
     bind = binding(root)
+    preflight = key_values(root / "workspace-preflight.txt")
+    assert preflight["schema"] == "flutterdec-bench/workspace-preflight/1"
+    assert preflight["head"] == bind["controlling_repository_head"]
+    assert len(preflight["head"]) == 40
+    int(preflight["head"], 16)
+    assert preflight["porcelain_status"] == "empty"
+    assert preflight["porcelain_status_bytes"] == "0"
+    assert preflight["porcelain_status_sha256"] == hashlib.sha256(b"").hexdigest()
+    assert preflight["command"]
+    datetime.fromisoformat(preflight["timestamp"])
     assert bind["harness_ref"] == HARNESS
     assert bind["patch_sha256"] == PATCH
     assert bind["harness_tree_oid"] == HARNESS_TREE
@@ -196,54 +211,6 @@ def audit_live(root):
     return max_rss, worst_residue
 
 
-def audit_retained(root):
-    bind = binding(root)
-    assert bind["harness_ref"] == HARNESS and bind["patch_sha256"] == PATCH
-    assert bind["harness_tree_oid"] == HARNESS_TREE
-    assert bind["reference_product_ref"] == PRODUCTS["reference"]
-    assert bind["candidate_product_ref"] == PRODUCTS["candidate"]
-    manifests = [root / "manifest-reference.json", root / "manifest-candidate.json"]
-    assert manifests[0].read_bytes() == manifests[1].read_bytes()
-    assert sha256(manifests[0]) == MANIFEST_SHA256
-    manifest = json.loads(manifests[0].read_text())
-    assert manifest["matrix_sha256"] == MATRIX_SHA256
-    workloads = {row["workload_sha256"] for row in manifest["cases"]}
-    assert len(manifest["cases"]) == 33 and len(workloads) == 33
-    expected_order = [
-        f"{pair}\t{position}\t{side}"
-        for pair in range(15)
-        for position, side in zip(
-            ("first", "second"),
-            (("reference", "candidate") if pair % 2 == 0 else ("candidate", "reference")),
-        )
-    ]
-    assert (root / "pair-order.tsv").read_text().splitlines() == expected_order
-    assert (root / "planned-pair-order.tsv").read_text().splitlines() == expected_order
-    for side, product in PRODUCTS.items():
-        warmup = json.loads((root / f"warmup-{side}.json").read_text())
-        b = warmup["binding"]
-        assert b["product_ref"] == product and b["harness_ref"] == HARNESS
-        assert b["patch_sha256"] == PATCH and b["binary_sha256"] == bind[f"{side}_binary_sha256"]
-        assert b["warmups"] == 3 and b["measured_runs"] == 0 and b["correctness_checked"]
-        assert not warmup["correctness_failures"]
-        assert len(warmup["cases"]) == 33
-        assert all(row["correctness"]["passed"] for row in warmup["cases"])
-        assert {row["workload_sha256"] for row in warmup["cases"]} == workloads
-    for line in (root / "SHA256SUMS").read_text().splitlines():
-        digest, name = line.split("  ", 1)
-        assert sha256(root / name) == digest
-    audit = dict(
-        line.split("=", 1)
-        for line in (root / "audit-live.txt").read_text().splitlines()
-        if "=" in line
-    )
-    max_rss = int(audit["max_rss_bytes"].split()[0])
-    worst_residue = float(audit["max_rss_bytes"].split("worst_unaccounted_fraction=")[1])
-    print("PASS retained evidence audit after raw staging prune")
-    print("checksums=12/12 pair_order=30/30 correctness=33/33_both workloads=33_unique")
-    return max_rss, worst_residue
-
-
 def load(path):
     rows = defaultdict(lambda: defaultdict(list))
     with path.open(newline="") as handle:
@@ -349,12 +316,10 @@ def main():
     if len(sys.argv) != 2:
         raise SystemExit("usage: refresh-attribution.py [--audit-live] RUN_DIR")
     root = Path(sys.argv[1])
-    has_raw = (root / "raw" / "reference-0.json").exists()
-    max_rss, worst_residue = audit_live(root) if has_raw else audit_retained(root)
+    max_rss, worst_residue = audit_live(root)
     ref_rows = load(root / "samples-reference.tsv")
     cand_rows = load(root / "samples-candidate.tsv")
-    if has_raw:
-        audit_collected_samples(root)
+    audit_collected_samples(root)
     audit_analysis(root, ref_rows, cand_rows)
     ref = medians(ref_rows)
     cand = medians(cand_rows)
@@ -390,8 +355,6 @@ def main():
         expected = (("reference", "candidate") if pair % 2 == 0 else ("candidate", "reference"))
         for position, side in zip(("first", "second"), expected):
             order.append(f"{pair}\t{position}\t{side}")
-            if not has_raw:
-                continue
             document = json.loads((root / "raw" / f"{side}-{pair}.json").read_text())
             assert f"pair {pair} {position}" in document["binding"]["label"]
             assert document["binding"]["product_ref"] == PRODUCTS[side]
