@@ -26,9 +26,9 @@ prose here exists to adjudicate the differences, which a JSON file cannot do.
 | Snapshot hash | `80a49c7111088100a233b2ae788e1f48` (identical on both sides) |
 | Adapter | `--adapter-backend internal`, kind `dynamic_snapshot_string_model_v1` |
 | Reference revision | `1371e42549472ec388f58bc1fd5dbdf96e8dcdd1` |
-| Candidate revision | `22146970e5d2fd1fd223297aec0b2b06826dfbd9` |
+| Candidate revision | `0ba3a67e31e3ba16ca2020f45ad053a9feb88a96` (product source `2214697`) |
 | Reference product tree | `23165413ab8e29b08ac71bd712aaf607154aea090ae1680170472f05d3a8e6f3` (106 files) |
-| Candidate product tree | `9dae6d8258663b359fb960e3546ec84cc26a672289c4d25f0293f7213edbbc75` (142 files) |
+| Candidate product tree | `c6571c308946fe4fea99ec72480da4d047f0654c2b6006057a3ea6cca26c202e` (142 files) |
 | Reference binary sha256 | `a8eef0988e6f25c0da07ffe0dfdadad217272625c523bdaf87c95787f5ac604c` |
 | Candidate binary sha256 | `7fe12b2f592159f102616722e266ee0f399a59f9a37568a3ef86f69a8f2e61f3` |
 | CLI version | `flutterdec 0.1.0-alpha.4` on both sides |
@@ -39,9 +39,14 @@ Both sides were built clean, in separate worktrees, into separate
 workspace-backed target directories, from `rust-toolchain.toml` and
 `flake.lock` that are byte-identical at the two revisions.
 
-**What the candidate revision is, and what it is not.** `2214697` is the
-*product-state* revision: the state of the code that decides the emitted bytes,
-which is what these artifacts were built from. It is deliberately never advanced
+**What the candidate revision is, and what it is not.** `0ba3a67` is the
+*product-state* revision: the newest state of the code whose product tree these
+artifacts still match. The emitted bytes come from the release build of
+`2214697`, the commit that changed the counter; the only product-path change
+between the two is
+`crates/flutterdec-decompiler/tests/unresolved_cf_accounting.rs`, a test-only
+file the release binary does not compile, which the tree digest covers because it
+lives under `crates/`. It is deliberately never advanced
 to the docs commit that carries this evidence. Advancing it would change what the
 artifacts are claimed to come from, and no commit can name itself anyway. The
 property that has to keep holding is that the product tree has not moved since,
@@ -49,7 +54,7 @@ so it is pinned by digest: sha256 over one `<path>\t<git blob object id>\n` line
 per tracked file under `Cargo.lock`, `Cargo.toml`, `adapters/`, `crates/`,
 `flake.lock`, `flake.nix`, `rust-toolchain.toml` and `symbols/`, paths in
 ascending byte order, no header. `check-compat-baseline.py verify` recomputes it
-at `2214697`, at `1371e42`, and at the current `HEAD`, and fails if `HEAD` has any
+at `0ba3a67`, at `1371e42`, and at the current `HEAD`, and fails if `HEAD` has any
 product-path delta from the recorded candidate tree. The evidence and prose live
 outside those paths on purpose, which is what lets the record keep moving while
 the pin stays still.
@@ -134,7 +139,7 @@ failure:
 | Run | Exit | Gate reasons | Wall clock |
 | --- | --- | --- | --- |
 | reference `1371e42` | 1 | placeholder if-count exceeded | 53 s |
-| candidate `2214697` | 1 | placeholder if-count exceeded; unresolved control-flow count exceeded | 133 s |
+| candidate `2214697` build | 1 | placeholder if-count exceeded; unresolved control-flow count exceeded | 133 s |
 | candidate, second process | 1 | same two reasons | 133 s |
 | candidate, third process | 1 | same two reasons | 133 s |
 | candidate, fourth process, input copied to a different absolute path | 1 | same two reasons | 133 s |
@@ -758,6 +763,21 @@ functions. The regression test is
 `crates/flutterdec-decompiler/tests/unresolved_cf_accounting.rs`, which fails on
 the previous counter for both the helper-body case and the inlined-copy case.
 
+**Exact-function decompiles, run independently of the whole-program run.** Each
+adjudicated function was decompiled on its own with `--target id:<N>` on both
+sides, from the same pinned asset. `01540_sub_772c00` reproduces its
+whole-program numbers exactly: 18 `sel4096(` renderings and 0 unresolved
+statements on the reference, 0 and 18 on the candidate. `03119_sub_936128`
+renders four guards of the shape on each side, all four `!= 0` on the candidate.
+`00860_sub_696734` carries 17 statements against a counter of 17 on the
+candidate, and 0 against 0 on the reference. The two differences from the
+whole-program figures are the emission context, not the adjudication: a targeted
+run has no program-level callee-alias rewrite and a different helper budget, so
+`00860_sub_696734` renders 17 statements there against 4 in the whole-program
+run, and `05149_sub_bdd098` renders the `0x90b144` call under a different callee
+name entirely. What carries across every run is the invariant: the counter equals
+the statements the artifact holds.
+
 ## 7. Accounting reconciliation
 
 From [compat-evidence/accounting-reconciliation.json](compat-evidence/accounting-reconciliation.json):
@@ -913,7 +933,7 @@ The precision repair on top of it is plant-tested the same way, each exiting 1:
 | blank one row's `candidate_marker` | `<file> carries the candidate_marker '', which is not one of ('both', 'indirect_branch_only', 'trap_only', 'none')` plus the all-rows count failure |
 | change one row's `lost_edge_after_IndirectBranch` count | `the lost_edge_effects column does not sum to the recorded totals: {...}` |
 | set `reg31_tokens` in `register-counter-scopes.json` to a nonzero value | `the candidate text carries <n> reg31_tokens, so the quality.rs 0..=30 boundary drops tokens the census counts and the two scopes are not comparable` |
-| commit any change under `crates/` | `HEAD has a product-path delta from revisions.candidate (2214697): the product tree hashes <digest>, so the recorded artifacts were not produced by the product state at HEAD` |
+| commit any change under `crates/` | `HEAD has a product-path delta from revisions.candidate (0ba3a67): the product tree hashes <digest>, so the recorded artifacts were not produced by the product state at HEAD` |
 | delete the `NIX_CONFIG` export from section 8 | `the NIX_CONFIG export the build line needs is not in compat-baseline-real-binary.md` |
 | drop the exact `difflib` spelling, `n=0` argument included, from section 6.2 | `the diff implementation is not named in compat-baseline-real-binary.md` |
 
@@ -1027,7 +1047,7 @@ artifact manifest is the comparison that has to hold.
   access to the pinned GitHub release asset.
 - `check-compat-baseline.py verify` is not a CI step, for the reason in
   section 8, so nothing re-runs it automatically.
-- The product-tree check in section 1 needs `git` and needs `2214697` and
+- The product-tree check in section 1 needs `git` and needs `0ba3a67` and
   `1371e42` to be reachable objects. In a shallow or exported checkout that has
   neither, `verify` prints that it skipped the check rather than passing it
   silently; every other check still runs.
