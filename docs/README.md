@@ -10,6 +10,7 @@
 - IR, CFG, and emitter correctness protocol: [oracle-protocol-ir-cfg-emitter.md](oracle-protocol-ir-cfg-emitter.md)
 - Pipeline phase A/A noise floor and its artifacts: [baseline-ir-cfg-emitter.md](baseline-ir-cfg-emitter.md)
 - Post-correctness performance reference and evidence: [post-correctness/README.md](post-correctness/README.md)
+- Post-correctness profiler record and next candidate ledger: [performance-profile/README.md](performance-profile/README.md)
 - Final performance disposition and evidence: [final-performance/README.md](final-performance/README.md)
 - Resource evidence: [resource-evidence/README.md](resource-evidence/README.md)
 - Resource-ruler protocol: [resource-ruler-protocol.md](resource-ruler-protocol.md)
