@@ -12,9 +12,10 @@ from pathlib import Path
 PHASES = ("ir", "cfg", "emission_exclusive", "serialization")
 PRODUCTS = {
     "reference": "1371e42549472ec388f58bc1fd5dbdf96e8dcdd1",
-    "candidate": "630ec442d951aac5704ae80287367912bfbfc388",
+    "candidate": "5ba4b6d30604606c04b5b742eaf9469adc1c729d",
 }
 HARNESS = "4c127aba4e74fb6f8d486c4cb066586bb0d74846"
+RESOURCE_HARNESS = "b0e615785b28e7e58aa06dd1b929dd58acf06e53"
 PATCH = "14413796ca8a89cc1328497b5c87629b1c55f945ec58e73eebb3838df0700460"
 MATRIX_SHA256 = "76b617c62858e698710f0ab068c1a8b6d8458feedc83f3738a5f5664cfacbc43"
 MANIFEST_SHA256 = "bfb167600ee186d4e360958348cc8892e3dee2620f9dcdeaf9fcd60c20fd3bc7"
@@ -33,6 +34,26 @@ def binding(root):
     }
 
 
+def audit_checksums(root):
+    checksum_file = root / "SHA256SUMS"
+    if not checksum_file.exists():
+        return
+    listed = {}
+    for line in checksum_file.read_text().splitlines():
+        digest_value, name = line.split("  ", 1)
+        assert name.startswith("./") and name not in listed
+        listed[name] = digest_value
+    actual = {
+        f"./{path.relative_to(root)}"
+        for path in root.rglob("*")
+        if path.is_file() and path.name not in {"SHA256SUMS", ".lock"}
+    }
+    assert set(listed) == actual
+    for name, digest_value in listed.items():
+        assert sha256(root / name[2:]) == digest_value
+    print(f"checksums={len(listed)}/{len(actual)}")
+
+
 def sample_rows(path):
     rows = list(csv.DictReader(path.open(newline=""), delimiter="\t"))
     assert len(rows) == 33 * 5
@@ -44,6 +65,7 @@ def sample_rows(path):
 
 
 def audit_live(root):
+    audit_checksums(root)
     bind = binding(root)
     assert bind["harness_ref"] == HARNESS
     assert bind["patch_sha256"] == PATCH
@@ -51,8 +73,11 @@ def audit_live(root):
     assert bind["reference_product_ref"] == PRODUCTS["reference"]
     assert bind["candidate_product_ref"] == PRODUCTS["candidate"]
     for side in PRODUCTS:
-        assert sha256(root / "bin" / side / "flutterdec-bench") == bind[
+        assert sha256(root / "bin" / "timing" / side / "flutterdec-bench") == bind[
             f"{side}_binary_sha256"
+        ]
+        assert sha256(root / "bin" / "resource" / side / "flutterdec-bench") == bind[
+            f"resource_{side}_binary_sha256"
         ]
 
     manifests = [root / "manifest-reference.json", root / "manifest-candidate.json"]
@@ -106,6 +131,49 @@ def audit_live(root):
     assert (root / "pair-order.tsv").read_text().splitlines() == expected_order
     assert (root / "planned-pair-order.tsv").read_text().splitlines() == expected_order
 
+    chronology = list(csv.DictReader((root / "chronology.tsv").open(newline=""), delimiter="\t"))
+    assert len(chronology) == 34
+    assert [int(row["sequence"]) for row in chronology] == list(range(34))
+    previous_end = 0
+    for row in chronology:
+        start, end = int(row["start_epoch_ns"]), int(row["end_epoch_ns"])
+        assert previous_end <= start < end
+        assert (root / row["artifact"]).is_file()
+        previous_end = end
+    assert [row["kind"] for row in chronology] == ["warmup", "warmup"] + ["measured"] * 30 + ["resource", "resource"]
+
+    resource_rows = 0
+    for side, product in PRODUCTS.items():
+        document = json.loads((root / "resource" / f"{side}.json").read_text())
+        b = document["binding"]
+        assert b["product_ref"] == product and b["harness_ref"] == RESOURCE_HARNESS
+        assert b["warmups"] == 3 and b["threads"] == 1 and b["plant"] == "none"
+        assert b["binary_sha256"] == bind[f"resource_{side}_binary_sha256"]
+        tsv = list(csv.DictReader((root / "resource" / f"{side}.tsv").open(newline=""), delimiter="\t"))
+        assert len(tsv) == 33 * 5
+        actual = {}
+        for case in document["cases"]:
+            assert case["instrumentation_recursions"] == 0
+            for phase in case["phases"]:
+                key = (case["case"], phase["phase"])
+                actual[key] = {
+                    **{name: int(value) for name, value in phase["metrics"].items() if name != "live_bytes_at_snapshot"},
+                    "process_peak_rss_bytes": int(case["process_peak_rss_bytes"]),
+                }
+            actual[(case["case"], "combined")] = {
+                **{name: int(value) for name, value in case["combined"].items() if name != "live_bytes_at_snapshot"},
+                "process_peak_rss_bytes": int(case["process_peak_rss_bytes"]),
+            }
+        assert len(actual) == 33 * 5
+        for row in tsv:
+            key = (row["case"], row["phase"])
+            assert key in actual
+            for metric in ("allocation_count", "total_allocated_bytes", "peak_live_bytes", "process_peak_rss_bytes"):
+                assert int(row[metric]) == actual[key][metric]
+            max_rss = max(max_rss, int(row["process_peak_rss_bytes"]))
+        assert max_rss <= 2 * 1024 * 1024 * 1024
+        resource_rows += len(tsv)
+
     for side, product in PRODUCTS.items():
         warmup = json.loads((root / f"warmup-{side}.json").read_text())
         b = warmup["binding"]
@@ -122,6 +190,7 @@ def audit_live(root):
     print("PASS live raw audit before aggregation")
     print(f"raw_documents=30 sample_streams=30 measured_passes={measured_passes}")
     print(f"pair_order=30/30 alternating correctness=33/33_both workloads=33_unique")
+    print(f"chronology=34/34 non_overlapping resource_rows={resource_rows} raw_lanes_skipped=0")
     print(f"max_rss_bytes={max_rss} worst_unaccounted_fraction={worst_residue:.8f}")
     print(f"harness_tree_oid={HARNESS_TREE}")
     return max_rss, worst_residue
@@ -195,6 +264,84 @@ def medians(rows):
     }
 
 
+def median_mad(values):
+    centre = statistics.median(values)
+    return centre, statistics.median(abs(value - centre) for value in values)
+
+
+def audit_analysis(root, ref_rows, cand_rows):
+    analysis = json.loads((root / "analysis.json").read_text())
+    assert analysis["schema"] == "flutterdec-bench/analysis/1"
+    assert analysis["mde_floor"] == 0.05 and analysis["mde_noise_multiple"] == 3.0
+    assert analysis["series_count"] == 33 * 5 and analysis["unpaired_samples"] == 0
+
+    def summary(case, phase, ref, cand):
+        ref_med, ref_mad = median_mad(ref)
+        cand_med, cand_mad = median_mad(cand)
+        deltas = [0.0 if left == 0 else (right - left) / left for left, right in zip(ref, cand)]
+        delta, noise = median_mad(deltas)
+        mde = max(0.05, 3 * noise)
+        return {
+            "case": case,
+            "phase": phase,
+            "pairs": len(deltas),
+            "reference_median_nanos": ref_med,
+            "reference_mad_nanos": ref_mad,
+            "candidate_median_nanos": cand_med,
+            "candidate_mad_nanos": cand_mad,
+            "median_paired_delta": delta,
+            "noise_mad_of_deltas": noise,
+            "mde": mde,
+            "clears_mde": abs(delta) >= mde,
+            "direction": "faster" if delta < 0 else "slower",
+        }
+
+    expected = []
+    for case in sorted(ref_rows):
+        for phase in sorted(ref_rows[case]):
+            left = [value[0] for value in ref_rows[case][phase]]
+            right = [value[0] for value in cand_rows[case][phase]]
+            expected.append(summary(case, phase, left, right))
+    pooled = []
+    for phase in sorted(PHASES + ("combined",)):
+        left, right = [], []
+        for case in sorted(ref_rows):
+            left.extend(value[0] for value in ref_rows[case][phase])
+            right.extend(value[0] for value in cand_rows[case][phase])
+        pooled.append(summary("all", phase, left, right))
+
+    def same(actual, wanted):
+        assert actual.keys() == wanted.keys()
+        for key, value in wanted.items():
+            if isinstance(value, float):
+                assert abs(actual[key] - value) <= 0.00000051, (key, actual[key], value)
+            else:
+                assert actual[key] == value, (key, actual[key], value)
+
+    assert len(analysis["by_case_and_phase"]) == len(expected)
+    for actual, wanted in zip(analysis["by_case_and_phase"], expected):
+        same(actual, wanted)
+    for actual, wanted in zip(analysis["by_phase"], pooled):
+        same(actual, wanted)
+    worst = max(expected, key=lambda row: row["median_paired_delta"])
+    assert analysis["worst_regression"]["case"] == worst["case"]
+    assert analysis["worst_regression"]["phase"] == worst["phase"]
+    assert abs(analysis["worst_regression"]["median_paired_delta"] - worst["median_paired_delta"]) <= 0.00000051
+
+
+def audit_collected_samples(root):
+    for side in PRODUCTS:
+        collected = list(csv.DictReader((root / f"samples-{side}.tsv").open(newline=""), delimiter="\t"))
+        assert len(collected) == 15 * 33 * 5
+        expected = []
+        for pair in range(15):
+            rows = list(csv.DictReader((root / "raw" / f"{side}-{pair}.tsv").open(newline=""), delimiter="\t"))
+            for row in rows:
+                row["run"] = str(pair)
+                expected.append(row)
+        assert collected == expected
+
+
 def main():
     if len(sys.argv) == 3 and sys.argv[1] == "--audit-live":
         audit_live(Path(sys.argv[2]))
@@ -206,6 +353,9 @@ def main():
     max_rss, worst_residue = audit_live(root) if has_raw else audit_retained(root)
     ref_rows = load(root / "samples-reference.tsv")
     cand_rows = load(root / "samples-candidate.tsv")
+    if has_raw:
+        audit_collected_samples(root)
+    audit_analysis(root, ref_rows, cand_rows)
     ref = medians(ref_rows)
     cand = medians(cand_rows)
     manifest_text = (root / "manifest-reference.json").read_text()

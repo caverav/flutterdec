@@ -2,10 +2,10 @@
   "schema": "flutterdec-bench/result/1",
   "binding": {
     "label": "post-correctness refresh candidate warmup",
-    "product_ref": "630ec442d951aac5704ae80287367912bfbfc388",
+    "product_ref": "5ba4b6d30604606c04b5b742eaf9469adc1c729d",
     "harness_ref": "4c127aba4e74fb6f8d486c4cb066586bb0d74846",
     "patch_sha256": "14413796ca8a89cc1328497b5c87629b1c55f945ec58e73eebb3838df0700460",
-    "binary_sha256": "b729b5d681af8778f1b967b13340a1d70548a112e059d761d324816d9e9e4a91",
+    "binary_sha256": "056921b335af90da4f7b0d27556c0ba7136f8ed75841dca345f521072af9457c",
     "matrix": "disclosed",
     "matrix_sha256": "76b617c62858e698710f0ab068c1a8b6d8458feedc83f3738a5f5664cfacbc43",
     "held_out_seed_hex": null,
@@ -14,7 +14,7 @@
     "warmups": 3,
     "measured_runs": 0,
     "correctness_checked": true,
-    "command": "/home/camilo/flutterdec/docs/post-correctness/evidence/bin/candidate/flutterdec-bench run --matrix disclosed --warmups 3 --runs 0 --correctness on --product-ref 630ec442d951aac5704ae80287367912bfbfc388 --harness-ref 4c127aba4e74fb6f8d486c4cb066586bb0d74846 --patch-sha256 14413796ca8a89cc1328497b5c87629b1c55f945ec58e73eebb3838df0700460 --binary-sha256 b729b5d681af8778f1b967b13340a1d70548a112e059d761d324816d9e9e4a91 --label post-correctness refresh candidate warmup --out /home/camilo/flutterdec/docs/post-correctness/evidence/warmup-candidate.json",
+    "command": "/home/camilo/flutterdec/.post-correctness-tmp/val-metric-005-run/bin/timing/candidate/flutterdec-bench run --matrix disclosed --warmups 3 --runs 0 --correctness on --product-ref 5ba4b6d30604606c04b5b742eaf9469adc1c729d --harness-ref 4c127aba4e74fb6f8d486c4cb066586bb0d74846 --patch-sha256 14413796ca8a89cc1328497b5c87629b1c55f945ec58e73eebb3838df0700460 --binary-sha256 056921b335af90da4f7b0d27556c0ba7136f8ed75841dca345f521072af9457c --label post-correctness refresh candidate warmup --out /home/camilo/flutterdec/.post-correctness-tmp/val-metric-005-run/warmup-candidate.json",
     "threads": 1
   },
   "host": {
@@ -26,7 +26,7 @@
   "limits": {
     "timeout_seconds": 120,
     "memory_limit_bytes": 2147483648,
-    "peak_rss_bytes": 79458304,
+    "peak_rss_bytes": 80711680,
     "within_memory_limit": true,
     "runs_over_timeout": []
   },
@@ -656,7 +656,7 @@
         "no_dangling_helper_call": true,
         "emission_is_deterministic": true,
         "passed": true,
-        "artifact_sha256": "a19383d112fa9f293dc65f10dd683df4a7dacb3d15f7c30927b16a29e119732f",
+        "artifact_sha256": "d1b49316ff51aeed8b1fbc948820226dd590d1570193b9f219f9afd43b2c4ff0",
         "source_lines": 1910,
         "helper_definitions": 21,
         "helper_references": 21
@@ -680,7 +680,7 @@
         "no_dangling_helper_call": true,
         "emission_is_deterministic": true,
         "passed": true,
-        "artifact_sha256": "0f8ed40f6b97cb14d249595172ef1879e6a0d01cf7db381e7e22f2e0dc719e58",
+        "artifact_sha256": "15a1ae2d7aa487d685953663e9add9365808193502e68267ae95279ba5e44e5b",
         "source_lines": 5657,
         "helper_definitions": 64,
         "helper_references": 64
@@ -776,10 +776,10 @@
         "no_dangling_helper_call": true,
         "emission_is_deterministic": true,
         "passed": true,
-        "artifact_sha256": "3bf752b352ec109aaa0792ed0e0246c70080097b85689c2cd31ee2a924dde5a1",
-        "source_lines": 29776,
-        "helper_definitions": 45,
-        "helper_references": 45
+        "artifact_sha256": "15db3f2d6bb503622d82bdfc01ca662a85926fc07981d3d33cb8391037d4c35c",
+        "source_lines": 26846,
+        "helper_definitions": 37,
+        "helper_references": 37
       }
     },
     {
@@ -800,8 +800,8 @@
         "no_dangling_helper_call": true,
         "emission_is_deterministic": true,
         "passed": true,
-        "artifact_sha256": "3fb027b03f5092d6207ab39294e924908546ac6ee71b5324ff2cbdfebb3eee25",
-        "source_lines": 42889,
+        "artifact_sha256": "c365996f837f0a6409c887da6c558b5216c3b36655d8de9d7ccd2b0ff9138517",
+        "source_lines": 46929,
         "helper_definitions": 61,
         "helper_references": 61
       }
@@ -824,8 +824,8 @@
         "no_dangling_helper_call": true,
         "emission_is_deterministic": true,
         "passed": true,
-        "artifact_sha256": "c86e33cc0ffc1ccee52b8d9f1c22c24abfadc41779fae29e865c604d2ddb76de",
-        "source_lines": 55875,
+        "artifact_sha256": "9dcb664449820b43190935c0fea7df4ef4ccf4b38cfe582ac5df64ad45c1b977",
+        "source_lines": 54301,
         "helper_definitions": 63,
         "helper_references": 63
       }

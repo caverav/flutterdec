@@ -1,5 +1,6 @@
 PASS live raw audit before aggregation
 raw_documents=30 sample_streams=30 measured_passes=990
 pair_order=30/30 alternating correctness=33/33_both workloads=33_unique
-max_rss_bytes=73007104 worst_unaccounted_fraction=0.00065491
+chronology=34/34 non_overlapping resource_rows=330 raw_lanes_skipped=0
+max_rss_bytes=88846336 worst_unaccounted_fraction=0.00066139
 harness_tree_oid=83e06014b368736c1921a0da7949c7b6a0b76e97
