@@ -3,17 +3,18 @@
 This directory freezes the accepted performance reference before any new
 candidate work. It compares fixed product `1371e42549472ec388f58bc1fd5dbdf96e8dcdd1`
 with correctness head `5ba4b6d30604606c04b5b742eaf9469adc1c729d`.
-The evidence commit changes benchmark evidence and audit tooling only. It does
-not change product code, workloads, goldens, checkers, thresholds, or scoring.
+The preceding harness commit changes only the runner and auditor; the evidence
+commit changes only this directory. Neither changes product code, workloads,
+goldens, checkers, thresholds, or scoring.
 
 ## Reproduce
 
 Run from a clean checkout with enough space for four release builds:
 
 ```text
-TMPDIR=/home/camilo/flutterdec/.post-correctness-tmp/val-metric-005-tmp \
+TMPDIR=/home/camilo/flutterdec-metric-tmp \
 docs/post-correctness/run-refresh.sh \
-  /home/camilo/flutterdec/.post-correctness-tmp/val-metric-005-run
+  /home/camilo/flutterdec-metric-run
 ```
 
 The runner uses Nix, a single canonical build path, `CARGO_INCREMENTAL=0`,
@@ -32,8 +33,8 @@ bytes, and process peak RSS for every case and phase.
 
 ## Retained evidence
 
-`evidence/` is 9,798,051 bytes before Git compression. Its `SHA256SUMS` binds
-83 files and has SHA-256 `0b51d8cd...`. The directory retains:
+`evidence/` is 9,818,983 bytes before Git compression. Its `SHA256SUMS` binds
+84 files and has SHA-256 `e5eb7aba...`. The directory retains:
 
 - four release binaries and their binding digests;
 - 30 raw timing JSON documents and 30 raw TSV sample streams;
@@ -41,21 +42,25 @@ bytes, and process peak RSS for every case and phase.
 - two resource JSON documents and two 165-row resource TSV streams;
 - 34 start/end chronology rows proving sequential non-overlap;
 - collected sample streams, independent aggregation, audit output, environment,
-  exact commands, console transcript, harness patches, and checksums.
+  exact commands, console transcript, harness patches, and checksums;
+- a preflight record binding the exact controlling HEAD, empty porcelain status,
+  command, and timestamp before the runner created or replaced any output.
 
 The four binary SHA-256 values are:
 
 | Binary | SHA-256 |
 | --- | --- |
-| timing reference | `dd1e86fb83880b61f0a0111bc9c303f24d1a1d1d0773b95fc26f20d0e524eb38` |
-| timing correctness head | `056921b335af90da4f7b0d27556c0ba7136f8ed75841dca345f521072af9457c` |
-| resource reference | `9c11ac759ca7704ebf034a36a32f82defedc7337bd1d513610c8cda8acda0ebc` |
-| resource correctness head | `248a02e16ef61706efbbb53dd39ee9ce96ad438c925e6cccc00da11038f014c2` |
+| timing reference | `0676036bfcf58abb4f71c2e04111ef63c6506e5016e365b228886eee590d25cf` |
+| timing correctness head | `ff696e5ed2857b17f30f7524aa57c246d959aa76eb9019d799820666f59532db` |
+| resource reference | `f868a2e3b7f542f78b581a84b0405db81d4439d9873022afe182cf0b0eb23a86` |
+| resource correctness head | `557c3b19b8618df341093af965d321d11b3e78a0601d075d3deb6cd83f4963e7` |
 
-The measured window was `2026-08-22T10:04:39-04:00` through
-`2026-08-22T10:16:33-04:00`. All 33 correctness artifacts matched on both
-sides, no timeout fired, the worst phase residue was 0.00066139, and maximum
-RSS across timing and resource lanes was 88,846,336 bytes.
+The clean-clone run was `2026-08-22T10:47:52-04:00` through
+`2026-08-22T10:59:43-04:00`. All 33 correctness artifacts matched on both
+sides, no timeout fired, the worst phase residue was 0.00064561, and maximum
+RSS across timing and resource lanes was 88,940,544 bytes. The preflight binds
+controlling revision `d5d1140bf68dc26f75f1f482469808b23d6143fb` and an empty
+porcelain status.
 
 ## Metrics
 
@@ -63,14 +68,14 @@ The aggregate is descriptive correctness cost, not a candidate result.
 
 | Phase | median paired delta | MAD | MDE |
 | --- | ---: | ---: | ---: |
-| IR | +0.059337 | 0.029575 | 0.088724 |
-| CFG | +0.023608 | 0.029967 | 0.089901 |
-| emission exclusive | +0.184112 | 0.038873 | 0.116618 |
-| serialization | +0.541826 | 0.075146 | 0.225439 |
-| combined | +0.243944 | 0.058289 | 0.174867 |
+| IR | +0.063298 | 0.029494 | 0.088481 |
+| CFG | +0.020819 | 0.031048 | 0.093144 |
+| emission exclusive | +0.122142 | 0.036058 | 0.108175 |
+| serialization | +0.486564 | 0.060299 | 0.180896 |
+| combined | +0.185034 | 0.049835 | 0.149505 |
 
-Time-weighted combined cost rose 87.223 percent. At the correctness head,
-emission is 84.217 percent and serialization is 13.429 percent of combined
+Time-weighted combined cost rose 81.355 percent. At the correctness head,
+emission is 84.927 percent and serialization is 12.680 percent of combined
 time. The resource ruler reports reference/correctness-head combined allocation
 counts of 279,135,331 / 336,200,562 and allocated bytes of 4,733,423,691 /
 22,304,232,271. Maximum per-cell peak-live bytes are 32,060,411 / 32,036,915.
@@ -92,15 +97,14 @@ checks binary and workload digests, and proves chronology and pair order. The
 final output begins:
 
 ```text
-checksums=83/83
+checksums=84/84
 PASS live raw audit before aggregation
 raw_documents=30 sample_streams=30 measured_passes=990
 pair_order=30/30 alternating correctness=33/33_both workloads=33_unique
 chronology=34/34 non_overlapping resource_rows=330 raw_lanes_skipped=0
 ```
 
-The first post-run audit stopped because its new resource parser omitted the
-JSON document's separate `combined` object. The measurement processes had
-already finished and all raw documents were retained. The parser was repaired,
-the completed evidence was audited without rerunning or editing measurements,
-and the console transcript preserves that sequence.
+The committed audit has no retained-summary or raw-pruning mode. Any missing raw
+directory or document fails before attribution, and every successful audit runs
+the same binding, chronology, overlap, sample, aggregate, resource, binary, and
+checksum checks.

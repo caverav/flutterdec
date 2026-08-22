@@ -5,7 +5,7 @@
     "product_ref": "5ba4b6d30604606c04b5b742eaf9469adc1c729d",
     "harness_ref": "b0e615785b28e7e58aa06dd1b929dd58acf06e53",
     "patch_sha256": "7f1ef7a3cf0d43e839b6356bfa78cfb08502573d24677bc2e3c67cb5c469aa9e",
-    "binary_sha256": "248a02e16ef61706efbbb53dd39ee9ce96ad438c925e6cccc00da11038f014c2",
+    "binary_sha256": "557c3b19b8618df341093af965d321d11b3e78a0601d075d3deb6cd83f4963e7",
     "matrix": "disclosed",
     "matrix_sha256": "76b617c62858e698710f0ab068c1a8b6d8458feedc83f3738a5f5664cfacbc43",
     "held_out_seed_hex": null,
@@ -19,7 +19,7 @@
       "case": "linear/64/base",
       "epoch": 2,
       "instrumentation_recursions": 0,
-      "process_peak_rss_bytes": 88846336,
+      "process_peak_rss_bytes": 88731648,
       "phases": [
         {
           "phase": "ir",
@@ -69,7 +69,7 @@
       "case": "linear/64/light",
       "epoch": 3,
       "instrumentation_recursions": 0,
-      "process_peak_rss_bytes": 88846336,
+      "process_peak_rss_bytes": 88731648,
       "phases": [
         {
           "phase": "ir",
@@ -119,7 +119,7 @@
       "case": "linear/64/heavy",
       "epoch": 4,
       "instrumentation_recursions": 0,
-      "process_peak_rss_bytes": 88846336,
+      "process_peak_rss_bytes": 88731648,
       "phases": [
         {
           "phase": "ir",
@@ -169,7 +169,7 @@
       "case": "linear/256/base",
       "epoch": 5,
       "instrumentation_recursions": 0,
-      "process_peak_rss_bytes": 88846336,
+      "process_peak_rss_bytes": 88731648,
       "phases": [
         {
           "phase": "ir",
@@ -219,7 +219,7 @@
       "case": "linear/256/light",
       "epoch": 6,
       "instrumentation_recursions": 0,
-      "process_peak_rss_bytes": 88846336,
+      "process_peak_rss_bytes": 88731648,
       "phases": [
         {
           "phase": "ir",
@@ -269,7 +269,7 @@
       "case": "linear/256/heavy",
       "epoch": 7,
       "instrumentation_recursions": 0,
-      "process_peak_rss_bytes": 88846336,
+      "process_peak_rss_bytes": 88731648,
       "phases": [
         {
           "phase": "ir",
@@ -319,7 +319,7 @@
       "case": "linear/1024/base",
       "epoch": 8,
       "instrumentation_recursions": 0,
-      "process_peak_rss_bytes": 88846336,
+      "process_peak_rss_bytes": 88731648,
       "phases": [
         {
           "phase": "ir",
@@ -369,7 +369,7 @@
       "case": "linear/1024/light",
       "epoch": 9,
       "instrumentation_recursions": 0,
-      "process_peak_rss_bytes": 88846336,
+      "process_peak_rss_bytes": 88731648,
       "phases": [
         {
           "phase": "ir",
@@ -419,7 +419,7 @@
       "case": "linear/1024/heavy",
       "epoch": 10,
       "instrumentation_recursions": 0,
-      "process_peak_rss_bytes": 88846336,
+      "process_peak_rss_bytes": 88731648,
       "phases": [
         {
           "phase": "ir",
@@ -469,7 +469,7 @@
       "case": "diamond-chain/64/base",
       "epoch": 11,
       "instrumentation_recursions": 0,
-      "process_peak_rss_bytes": 88846336,
+      "process_peak_rss_bytes": 88731648,
       "phases": [
         {
           "phase": "ir",
@@ -519,7 +519,7 @@
       "case": "diamond-chain/64/light",
       "epoch": 12,
       "instrumentation_recursions": 0,
-      "process_peak_rss_bytes": 88846336,
+      "process_peak_rss_bytes": 88731648,
       "phases": [
         {
           "phase": "ir",
@@ -569,7 +569,7 @@
       "case": "diamond-chain/64/heavy",
       "epoch": 13,
       "instrumentation_recursions": 0,
-      "process_peak_rss_bytes": 88846336,
+      "process_peak_rss_bytes": 88731648,
       "phases": [
         {
           "phase": "ir",
@@ -619,7 +619,7 @@
       "case": "diamond-chain/256/base",
       "epoch": 14,
       "instrumentation_recursions": 0,
-      "process_peak_rss_bytes": 88846336,
+      "process_peak_rss_bytes": 88731648,
       "phases": [
         {
           "phase": "ir",
@@ -669,7 +669,7 @@
       "case": "diamond-chain/256/light",
       "epoch": 15,
       "instrumentation_recursions": 0,
-      "process_peak_rss_bytes": 88846336,
+      "process_peak_rss_bytes": 88731648,
       "phases": [
         {
           "phase": "ir",
@@ -719,7 +719,7 @@
       "case": "diamond-chain/256/heavy",
       "epoch": 16,
       "instrumentation_recursions": 0,
-      "process_peak_rss_bytes": 88846336,
+      "process_peak_rss_bytes": 88731648,
       "phases": [
         {
           "phase": "ir",
@@ -769,7 +769,7 @@
       "case": "diamond-chain/1024/base",
       "epoch": 17,
       "instrumentation_recursions": 0,
-      "process_peak_rss_bytes": 88846336,
+      "process_peak_rss_bytes": 88731648,
       "phases": [
         {
           "phase": "ir",
@@ -819,7 +819,7 @@
       "case": "diamond-chain/1024/light",
       "epoch": 18,
       "instrumentation_recursions": 0,
-      "process_peak_rss_bytes": 88846336,
+      "process_peak_rss_bytes": 88731648,
       "phases": [
         {
           "phase": "ir",
@@ -869,7 +869,7 @@
       "case": "diamond-chain/1024/heavy",
       "epoch": 19,
       "instrumentation_recursions": 0,
-      "process_peak_rss_bytes": 88846336,
+      "process_peak_rss_bytes": 88731648,
       "phases": [
         {
           "phase": "ir",
@@ -919,7 +919,7 @@
       "case": "fan-in/64/base",
       "epoch": 20,
       "instrumentation_recursions": 0,
-      "process_peak_rss_bytes": 88846336,
+      "process_peak_rss_bytes": 88731648,
       "phases": [
         {
           "phase": "ir",
@@ -969,7 +969,7 @@
       "case": "fan-in/256/base",
       "epoch": 21,
       "instrumentation_recursions": 0,
-      "process_peak_rss_bytes": 88846336,
+      "process_peak_rss_bytes": 88731648,
       "phases": [
         {
           "phase": "ir",
@@ -1019,7 +1019,7 @@
       "case": "fan-in/1024/base",
       "epoch": 22,
       "instrumentation_recursions": 0,
-      "process_peak_rss_bytes": 88846336,
+      "process_peak_rss_bytes": 88731648,
       "phases": [
         {
           "phase": "ir",
@@ -1069,7 +1069,7 @@
       "case": "nested-loop/64/base",
       "epoch": 23,
       "instrumentation_recursions": 0,
-      "process_peak_rss_bytes": 88846336,
+      "process_peak_rss_bytes": 88731648,
       "phases": [
         {
           "phase": "ir",
@@ -1119,7 +1119,7 @@
       "case": "nested-loop/256/base",
       "epoch": 24,
       "instrumentation_recursions": 0,
-      "process_peak_rss_bytes": 88846336,
+      "process_peak_rss_bytes": 88731648,
       "phases": [
         {
           "phase": "ir",
@@ -1169,7 +1169,7 @@
       "case": "nested-loop/1024/base",
       "epoch": 25,
       "instrumentation_recursions": 0,
-      "process_peak_rss_bytes": 88846336,
+      "process_peak_rss_bytes": 88731648,
       "phases": [
         {
           "phase": "ir",
@@ -1219,7 +1219,7 @@
       "case": "multi-exit/64/base",
       "epoch": 26,
       "instrumentation_recursions": 0,
-      "process_peak_rss_bytes": 88846336,
+      "process_peak_rss_bytes": 88731648,
       "phases": [
         {
           "phase": "ir",
@@ -1269,7 +1269,7 @@
       "case": "multi-exit/256/base",
       "epoch": 27,
       "instrumentation_recursions": 0,
-      "process_peak_rss_bytes": 88846336,
+      "process_peak_rss_bytes": 88731648,
       "phases": [
         {
           "phase": "ir",
@@ -1319,7 +1319,7 @@
       "case": "multi-exit/1024/base",
       "epoch": 28,
       "instrumentation_recursions": 0,
-      "process_peak_rss_bytes": 88846336,
+      "process_peak_rss_bytes": 88731648,
       "phases": [
         {
           "phase": "ir",
@@ -1369,7 +1369,7 @@
       "case": "no-exit/64/base",
       "epoch": 29,
       "instrumentation_recursions": 0,
-      "process_peak_rss_bytes": 88846336,
+      "process_peak_rss_bytes": 88731648,
       "phases": [
         {
           "phase": "ir",
@@ -1419,7 +1419,7 @@
       "case": "no-exit/256/base",
       "epoch": 30,
       "instrumentation_recursions": 0,
-      "process_peak_rss_bytes": 88846336,
+      "process_peak_rss_bytes": 88731648,
       "phases": [
         {
           "phase": "ir",
@@ -1469,7 +1469,7 @@
       "case": "no-exit/1024/base",
       "epoch": 31,
       "instrumentation_recursions": 0,
-      "process_peak_rss_bytes": 88846336,
+      "process_peak_rss_bytes": 88731648,
       "phases": [
         {
           "phase": "ir",
@@ -1519,7 +1519,7 @@
       "case": "irreducible/64/base",
       "epoch": 32,
       "instrumentation_recursions": 0,
-      "process_peak_rss_bytes": 88846336,
+      "process_peak_rss_bytes": 88731648,
       "phases": [
         {
           "phase": "ir",
@@ -1569,7 +1569,7 @@
       "case": "irreducible/256/base",
       "epoch": 33,
       "instrumentation_recursions": 0,
-      "process_peak_rss_bytes": 88846336,
+      "process_peak_rss_bytes": 88731648,
       "phases": [
         {
           "phase": "ir",
@@ -1619,7 +1619,7 @@
       "case": "irreducible/1024/base",
       "epoch": 34,
       "instrumentation_recursions": 0,
-      "process_peak_rss_bytes": 88846336,
+      "process_peak_rss_bytes": 88940544,
       "phases": [
         {
           "phase": "ir",

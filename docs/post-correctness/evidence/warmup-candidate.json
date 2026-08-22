@@ -5,7 +5,7 @@
     "product_ref": "5ba4b6d30604606c04b5b742eaf9469adc1c729d",
     "harness_ref": "4c127aba4e74fb6f8d486c4cb066586bb0d74846",
     "patch_sha256": "14413796ca8a89cc1328497b5c87629b1c55f945ec58e73eebb3838df0700460",
-    "binary_sha256": "056921b335af90da4f7b0d27556c0ba7136f8ed75841dca345f521072af9457c",
+    "binary_sha256": "ff696e5ed2857b17f30f7524aa57c246d959aa76eb9019d799820666f59532db",
     "matrix": "disclosed",
     "matrix_sha256": "76b617c62858e698710f0ab068c1a8b6d8458feedc83f3738a5f5664cfacbc43",
     "held_out_seed_hex": null,
@@ -14,7 +14,7 @@
     "warmups": 3,
     "measured_runs": 0,
     "correctness_checked": true,
-    "command": "/home/camilo/flutterdec/.post-correctness-tmp/val-metric-005-run/bin/timing/candidate/flutterdec-bench run --matrix disclosed --warmups 3 --runs 0 --correctness on --product-ref 5ba4b6d30604606c04b5b742eaf9469adc1c729d --harness-ref 4c127aba4e74fb6f8d486c4cb066586bb0d74846 --patch-sha256 14413796ca8a89cc1328497b5c87629b1c55f945ec58e73eebb3838df0700460 --binary-sha256 056921b335af90da4f7b0d27556c0ba7136f8ed75841dca345f521072af9457c --label post-correctness refresh candidate warmup --out /home/camilo/flutterdec/.post-correctness-tmp/val-metric-005-run/warmup-candidate.json",
+    "command": "/home/camilo/flutterdec/.worker-tmp/valmetric5-rerun/run-output/bin/timing/candidate/flutterdec-bench run --matrix disclosed --warmups 3 --runs 0 --correctness on --product-ref 5ba4b6d30604606c04b5b742eaf9469adc1c729d --harness-ref 4c127aba4e74fb6f8d486c4cb066586bb0d74846 --patch-sha256 14413796ca8a89cc1328497b5c87629b1c55f945ec58e73eebb3838df0700460 --binary-sha256 ff696e5ed2857b17f30f7524aa57c246d959aa76eb9019d799820666f59532db --label post-correctness refresh candidate warmup --out /home/camilo/flutterdec/.worker-tmp/valmetric5-rerun/run-output/warmup-candidate.json",
     "threads": 1
   },
   "host": {
@@ -26,7 +26,7 @@
   "limits": {
     "timeout_seconds": 120,
     "memory_limit_bytes": 2147483648,
-    "peak_rss_bytes": 80711680,
+    "peak_rss_bytes": 80683008,
     "within_memory_limit": true,
     "runs_over_timeout": []
   },
