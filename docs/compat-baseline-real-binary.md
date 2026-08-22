@@ -68,7 +68,13 @@ python3 scripts/check-compat-baseline.py fetch --dest /tmp/localsend-1.17.0-arm6
 
 The fetch fails unless the downloaded asset matches both the recorded byte
 size and the recorded SHA-256, so a moved or re-cut release cannot silently
-become the baseline input. Manual equivalent:
+become the baseline input. It also never leaves an unverified file at `--dest`:
+the download goes to the temporary sibling `<dest>.part`, size and digest are
+checked there, and `--dest` is replaced only once both match. The temporary file
+is removed on every failure path, including a `curl` that dies mid-transfer, so a
+bad download cannot be picked up by the next run. An existing `--dest` that
+already verifies is reused and not re-downloaded; one that does not is re-fetched
+and replaced rather than trusted. Manual equivalent:
 
 ```bash
 curl -fsSL -o /tmp/localsend-1.17.0-arm64v8.apk \
@@ -329,23 +335,43 @@ line - the same implementation caveat applies, `SequenceMatcher` opcodes and GNU
 `diff -U0` both give different splits):
 9060 gain `regN` tokens, 1984 keep the same number, and 78 lose them. All 78 are
 enumerated in
-[compat-evidence/operand-direction-losses.tsv](compat-evidence/operand-direction-losses.tsv)
-and split four ways:
+[compat-evidence/operand-direction-losses.tsv](compat-evidence/operand-direction-losses.tsv),
+one row per replacement, and every row carries its own `adjudication_class` from a
+fixed four-value vocabulary:
 
-| Class | Count | Example |
+| `adjudication_class` | Rows | Example |
 | --- | --- | --- |
-| an expression is replaced by the register that holds it | 63 | `if (((reg4 + (reg8 << 2))).f16 == reg4)` becomes `if (reg9 == reg4)` |
-| a register is named as the parameter slot it held | 11 | `smiUntag(reg5.f12)` becomes `smiUntag(slot3.f12)` |
-| the line becomes a structural line | 1 | `if (!(reg0 != 6)) {` becomes `else {` |
-| other | 3 | `(reg1 - 1)` becomes the named temporary `reg1Minus1` |
+| `expression_replaced_by_the_register_holding_it` | 63 | `if (((reg4 + (reg8 << 2))).f16 == reg4)` becomes `if (reg9 == reg4)` |
+| `register_named_as_parameter_slot` | 11 | `smiUntag(reg5.f12)` becomes `smiUntag(slot3.f12)` |
+| `line_replaced_by_structural_or_comment_line` | 1 | `if (!(reg0 != 6)) {` becomes `else {` |
+| `other` | 3 | `t16.f8 = reg2;` becomes `t16.f8 = (tmp3 + (tmp1 - 1));` |
 
-The first class is the same conservative direction as the rest of the section,
-the second is a recovery, and the third is restructuring. The `other` class
-holds the one case where the candidate prints strictly less at a call site:
-in `pseudocode/05149_sub_bdd098.dartpseudo` the reference emits
-`sub_90b144(reg0)` and the candidate emits `sub_90b144()`, declining the
-register-argument claim. It is listed in section 9 as an open item rather than
-adjudicated as a correction.
+This column is a declared reading and not a measurement, and the record says so in
+both places it is recorded:
+the four-way split of the fewer_registers rows is committed human adjudication of
+the two rendered lines, carried per row in the operand-direction-losses.tsv
+`adjudication_class` column; it is not a syntax metric inferred from the rows, so
+`verify` recounts the column against the recorded totals rather than re-deriving
+the class. What that buys is auditability rather than derivation: the counts used
+to stand only in this table, over a three-column file a reader could not recount,
+and they are now the sum of 78 individually stated readings. The vocabulary is
+closed - `verify` fails on a fifth value, on a row carrying none, and on any
+per-class count that disagrees with
+`difference-classes.json.operand_naming_fewer_register_classes`.
+
+The largest class is the same conservative direction as the rest of the section:
+the reference's compound expression is replaced by the single name the candidate
+stands behind for that value, which is the holding register on 58 of those 63
+rows and a temporary derived from one (`reg4Minus1`, `reg1Minus1`) on the other 5.
+`register_named_as_parameter_slot` is a recovery,
+`line_replaced_by_structural_or_comment_line` is restructuring, and `other` is
+the three rows that are none of the above: `01058_sub_6b17b4.dartpseudo` renders
+`reg2` as the temporary `tmp3`, `01551_sub_7781e4.dartpseudo` renders `reg2` as
+the expression `(tmp3 + (tmp1 - 1))`, and `05149_sub_bdd098.dartpseudo` is the one
+case in the 3672 differing files where the candidate prints strictly less at a
+call site: the reference emits `sub_90b144(reg0)` and the candidate emits
+`sub_90b144()`, declining the register-argument claim. That row is listed in
+section 9 as an open item rather than adjudicated as a correction.
 
 **Helper resolution.** All 27097 `_block_N` occurrences resolve: every
 referenced helper has a definition in the same file, in all 5800 candidate
@@ -451,12 +477,14 @@ tail ops, each op in snake_case, in ascending op order, joined by `_and_`; the o
 of one file need not all bound the same region.
 
 Only that reading reproduces the recorded 303 and 68. Taking the region as every
-unreachable block in the file gives 350 and 90; walking the induced subgraph
-directedly instead of undirectedly gives 29 and 35; both were re-derived from the
-same two output trees. Clause 3's second half never decides a count in this run -
+unreachable block in the file instead gives 350 and 90, re-derived from the same
+two output trees. Clause 3's second half never decides a count in this run -
 every bounding head is a block start - and clauses 1 and 2 are in code as
 `unreachable_regions` in `scripts/check-compat-baseline.py`, which `--self-test`
-runs on a graph where the readings disagree. Clause 6 is the one unit the
+runs on a graph where the whole-file and per-component readings disagree, and
+again with one successor edge reversed, which is what pins the undirected half of
+clause 2. No count is claimed here for any other reading of that clause.
+Clause 6 is the one unit the
 committed rows can settle on their own: the 85 rows carry 34 wholly vanished
 `sel<N>` callees over 14 files against 370 lost `sel<N>` renderings, and `verify`
 recounts both from `vanished_callee_names` and `lost_rendering_detail` and fails
@@ -728,6 +756,18 @@ or reworded in one copy without failing here.
 | reword `definitions.lost_edge_effects` in `difference-classes.json` | `verify`: `the lost_edge_effects unit in difference-classes.json is missing or altered` |
 | record the rendering figure 370 as `vanished_sel_callees` | `verify`: `the dispatch_selector_rendering cross-check does not match the rows: {'vanished_sel_callees': 34, ...}` |
 | drop `weakly connected component` from the script's clause 2 | `--self-test`: `AssertionError: weakly connected component` |
+
+The clarity repair on top of that is plant-tested the same way. The first three
+close the operand-direction split, which used to stand only as a prose table over
+a file that could not be recounted; the last two are the `fetch` destination:
+
+| Plant | Failure |
+| --- | --- |
+| blank one row's `adjudication_class` in `operand-direction-losses.tsv` | `verify`: `operand-direction-losses.tsv row <file> carries the adjudication_class '', which is not one of ('expression_replaced_by_the_register_holding_it', 'line_replaced_by_structural_or_comment_line', 'other', 'register_named_as_parameter_slot')` |
+| move one row from `other` to `expression_replaced_by_the_register_holding_it` | `verify`: `the adjudication_class column does not sum to operand_naming_fewer_register_classes: {...}` |
+| reword `definitions.operand_naming_fewer_register_classes` in `difference-classes.json` | `verify`: `the operand_naming_fewer_register_classes definition in difference-classes.json does not state that the split is a committed adjudication recounted from the per-row column` |
+| perturb `input.bytes` or `input.sha256` in `input-recipe.json`, then `fetch` | `fetch`: `fetched bytes do not match the recipe: <size> <digest>`, with no file left at `--dest` and no `<dest>.part` residue |
+| leave a stale file at `--dest`, then `fetch` | `fetch`: `<dest> does not match the recipe (<size> bytes, sha256 <digest>); re-fetching`, then exit 0 with the verified asset in place |
 
 `verify` is not wired into `scripts/ci-check.sh` yet. Both that script and
 `scripts/lint-python.sh` are protected paths in section 7 of

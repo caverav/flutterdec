@@ -13,7 +13,9 @@ record usable:
            schema key was dropped, both register-counter scopes reconcile, and
            every observed difference class - including every class of removed
            pseudocode - is adjudicated in the prose document.
-  fetch    download the pinned asset and fail unless size and SHA-256 match.
+  fetch    download the pinned asset to a temporary sibling of `--dest`, fail
+           unless size and SHA-256 match, and replace `--dest` only then, so a
+           mismatched download is never left where the next run would reuse it.
   replay   compare a fresh candidate output tree against the committed
            per-artifact manifest, which is what proves deterministic bytes, and
            recompute that tree's aggregate manifest digest.
@@ -41,6 +43,7 @@ INVENTORY = EVIDENCE / "function-inventory.tsv"
 MANIFEST_HEADER = "path\tref_bytes\tref_sha256\tcand_bytes\tcand_sha256"
 REPLAY_MARKER_TABLE = EVIDENCE / "marker-replay.tsv"
 LOSS_TABLE = EVIDENCE / "operand-direction-losses.tsv"
+LOSS_HEADER = "function\treference_line\tcandidate_line\tadjudication_class"
 REMOVAL_TABLE = EVIDENCE / "pseudocode-callee-removals.tsv"
 REMOVAL_AGGREGATE = EVIDENCE / "callee-removals-aggregate.json"
 REGISTER_SCOPES = EVIDENCE / "register-counter-scopes.json"
@@ -56,6 +59,22 @@ HEX64 = 64
 
 # Whole-file presence of the two candidate markers; every removal row carries one.
 MARKER_VOCABULARY = ("both", "indirect_branch_only", "trap_only", "none")
+
+# The four-way split of the operand-direction losses. The vocabulary is fixed and
+# the keys of difference-classes.json.operand_naming_fewer_register_classes are
+# exactly these four, so a renamed class fails instead of adding a fifth bucket.
+LOSS_CLASS_VOCABULARY = (
+    "expression_replaced_by_the_register_holding_it",
+    "line_replaced_by_structural_or_comment_line",
+    "other",
+    "register_named_as_parameter_slot",
+)
+LOSS_CLASS_DEFINITION = (
+    "the four-way split of the fewer_registers rows is committed human adjudication of the two "
+    "rendered lines, carried per row in the operand-direction-losses.tsv adjudication_class "
+    "column; it is not a syntax metric inferred from the rows, so verify recounts the column "
+    "against the recorded totals rather than re-deriving the class"
+)
 
 # The three candidate processes wrote the same bytes, so one derivation covers
 # all four recorded digests.
@@ -77,10 +96,11 @@ PRODUCT_TREE_DERIVATION = (
 
 # The lost_edge_effects column is re-derivable only from this algorithm. The
 # neighbouring readings of "that block's unreachable region" answer differently
-# on the same trees: every unreachable block in the file gives 350 and 90, and a
-# directed walk of the induced subgraph gives 29 and 35, against the recorded 303
-# and 68. `unreachable_regions` below is the same rule in code and `--self-test`
-# runs it on a graph where the readings disagree.
+# on the same trees: taking the region as every unreachable block in the file
+# gives 350 and 90 against the recorded 303 and 68. `unreachable_regions` below
+# is the same rule in code and `--self-test` runs it on a graph where the
+# readings disagree, including one whose edge direction is reversed, which is
+# what pins clause 2's undirected reading.
 LOST_EDGE_ALGORITHM = (
     "The entry block is the candidate block whose start_va equals the function's entry_va, "
     "and a candidate block is unreachable when no directed path of successor edges reaches "
@@ -587,6 +607,45 @@ def check_removals(classes, doc, failures):
             failures.append(f"the representative file for {name} is not named in {DOC.name}")
 
 
+def check_operand_loss_classes(classes, doc, failures):
+    """Every one of the 78 operand-direction losses carries its own adjudication.
+
+    The four class counts used to stand only as a prose table, with a three-column
+    table underneath that could not be recounted, so a reader had to take the split
+    on trust. The class is now a per-row column with a fixed vocabulary, and the
+    row-level totals are what the recorded counts are checked against - which also
+    means the record has to say out loud that the class is an adjudication of the
+    two rendered lines and not a metric derived from them.
+    """
+    rows = read_table(LOSS_TABLE, LOSS_HEADER)
+    recorded = classes["operand_naming_fewer_register_classes"]
+    fewer = classes["operand_naming_direction"]["fewer_registers"]
+    if tuple(sorted(recorded)) != LOSS_CLASS_VOCABULARY:
+        failures.append(f"operand_naming_fewer_register_classes is not keyed on "
+                        f"{LOSS_CLASS_VOCABULARY}: {tuple(sorted(recorded))}")
+    for row in rows:
+        if row[3] not in LOSS_CLASS_VOCABULARY:
+            failures.append(f"{LOSS_TABLE.name} row {row[0]} carries the adjudication_class "
+                            f"{row[3]!r}, which is not one of {LOSS_CLASS_VOCABULARY}")
+            break
+    counted = count_by(rows, 3)
+    if counted != recorded:
+        failures.append(f"the adjudication_class column does not sum to "
+                        f"operand_naming_fewer_register_classes: {counted}")
+    if len(rows) != fewer:
+        failures.append(f"{LOSS_TABLE.name} has {len(rows)} rows, {fewer} are claimed")
+    if sum(recorded.values()) != fewer:
+        failures.append(f"the four operand-direction classes sum to {sum(recorded.values())}, "
+                        f"not the {fewer} fewer_registers rows")
+    if classes["definitions"].get("operand_naming_fewer_register_classes") != LOSS_CLASS_DEFINITION:
+        failures.append("the operand_naming_fewer_register_classes definition in "
+                        "difference-classes.json does not state that the split is a committed "
+                        "adjudication recounted from the per-row column")
+    if prose(LOSS_CLASS_DEFINITION) not in prose(doc):
+        failures.append(f"the operand-direction adjudication is not declared as committed human "
+                        f"adjudication in {DOC.name}")
+
+
 def check_register_scopes(failures):
     """The census counts text; the quality counter counts a scope inside it."""
     scopes = json.loads(REGISTER_SCOPES.read_text(encoding="utf-8"))
@@ -738,11 +797,8 @@ def verify(failures):
         failures.append("a reproduced replay disagrees with its own unresolved_cf counter")
     if sum(int(row[1]) for row in [r.split("\t") for r in replay_rows]) != residue["candidate_emitted_markers"]:
         failures.append("the replay table does not account for every emitted marker")
-    losses = LOSS_TABLE.read_text(encoding="utf-8").splitlines()[1:]
-    if len(losses) != classes["operand_naming_direction"]["fewer_registers"]:
-        failures.append(f"{LOSS_TABLE.name} has {len(losses)} rows, "
-                        f"{classes['operand_naming_direction']['fewer_registers']} are claimed")
     doc = DOC.read_text(encoding="utf-8")
+    check_operand_loss_classes(classes, doc, failures)
     for name in (list(classes["ir"]["op_transitions"])
                  + list(classes["ir"]["branch_target_shape_transitions"])
                  + list(classes["ir"]["instructions_only_in_reference"])):
@@ -786,18 +842,50 @@ def verify(failures):
     return recipe
 
 
-def fetch(dest: Path):
-    recipe = json.loads(RECIPE.read_text(encoding="utf-8"))["input"]
+def asset_state(path: Path, recipe):
+    """((bytes, sha256), matches the recipe) for a file on disk."""
+    payload = path.read_bytes()
+    measured = (len(payload), hashlib.sha256(payload).hexdigest())
+    return measured, measured == (recipe["bytes"], recipe["sha256"])
+
+
+def curl_download(url, target: Path):
+    subprocess.run(["curl", "-fsSL", "-o", str(target), url], check=True)
+
+
+def fetch_verified(dest: Path, recipe, download=curl_download):
+    """Download the pinned asset, and leave nothing unverified at `dest`.
+
+    The download used to go straight to `--dest` and be checked in place, so a
+    truncated or re-cut asset stayed there after the failure and every rerun found
+    that stale file first. The asset now lands on a temporary sibling, is checked
+    there, and replaces `dest` only once size and SHA-256 both match; the
+    temporary file is removed on every path out, including the curl failure.
+    """
     dest.parent.mkdir(parents=True, exist_ok=True)
-    if not dest.exists():
-        subprocess.run(["curl", "-fsSL", "-o", str(dest), recipe["url"]], check=True)
-    size = dest.stat().st_size
-    digest = hashlib.sha256(dest.read_bytes()).hexdigest()
-    if size != recipe["bytes"] or digest != recipe["sha256"]:
-        raise SystemExit(
-            f"[compat-baseline] fetched bytes do not match the recipe: {size} {digest}"
-        )
+    if dest.exists():
+        (size, digest), matches = asset_state(dest, recipe)
+        if matches:
+            print(f"[compat-baseline] verified {dest} ({size} bytes, sha256 {digest})")
+            return
+        print(f"[compat-baseline] {dest} does not match the recipe ({size} bytes, sha256 "
+              f"{digest}); re-fetching")
+    tmp = dest.with_name(dest.name + ".part")
+    try:
+        download(recipe["url"], tmp)
+        (size, digest), matches = asset_state(tmp, recipe)
+        if not matches:
+            raise SystemExit(
+                f"[compat-baseline] fetched bytes do not match the recipe: {size} {digest}"
+            )
+        tmp.replace(dest)
+    finally:
+        tmp.unlink(missing_ok=True)
     print(f"[compat-baseline] verified {dest} ({size} bytes, sha256 {digest})")
+
+
+def fetch(dest: Path):
+    fetch_verified(dest, json.loads(RECIPE.read_text(encoding="utf-8"))["input"])
 
 
 def replay(out: Path, failures):
@@ -964,6 +1052,66 @@ def self_test():
         assert phrase in stated, phrase
     assert "not a count of distinct control-flow edges" in LOST_EDGE_UNIT
     assert prose("`a`  b\nc") == "a b c"
+
+    # The operand-direction adjudication: a fixed, sorted, four-value vocabulary
+    # recounted per row, and a definition that says the class is adjudicated.
+    assert tuple(sorted(LOSS_CLASS_VOCABULARY)) == LOSS_CLASS_VOCABULARY
+    assert len(set(LOSS_CLASS_VOCABULARY)) == 4
+    losses = [["a", "-", "-", "other"], ["b", "-", "-", "other"],
+              ["c", "-", "-", "register_named_as_parameter_slot"]]
+    assert count_by(losses, 3) == {"other": 2, "register_named_as_parameter_slot": 1}
+    for phrase in ("committed human adjudication", "adjudication_class",
+                   "not a syntax metric inferred from the rows"):
+        assert phrase in LOSS_CLASS_DEFINITION, phrase
+
+    # `fetch` must never leave an unverified asset at --dest: the download lands on
+    # a temporary sibling, is checked there, and replaces the destination only on a
+    # size and digest match. Each path below is one of the ways that can go wrong.
+    payload = b"the pinned asset"
+    recipe = {"url": "https://example.invalid/asset.apk", "bytes": len(payload),
+              "sha256": hashlib.sha256(payload).hexdigest()}
+
+    def good(url, target):
+        target.write_bytes(payload)
+
+    with tempfile.TemporaryDirectory() as scratch:
+        dest = Path(scratch) / "nested" / "asset.apk"
+        part = dest.with_name(dest.name + ".part")
+        fetch_verified(dest, recipe, good)
+        assert dest.read_bytes() == payload and not part.exists()
+
+        def refuse(url, target):  # an asset that already verifies is not re-fetched
+            raise AssertionError("a verified destination must not be downloaded again")
+
+        fetch_verified(dest, recipe, refuse)
+
+        bad = dest.with_name("bad.apk")
+        try:
+            fetch_verified(bad, recipe, lambda url, target: target.write_bytes(b"truncated"))
+        except SystemExit as reason:
+            assert "do not match the recipe" in str(reason), reason
+        else:
+            raise AssertionError("a digest mismatch must fail")
+        # nothing at the destination, no temporary residue, and the good file kept
+        assert not bad.exists() and not bad.with_name("bad.apk.part").exists()
+        assert dest.read_bytes() == payload
+
+        dest.write_bytes(b"stale")  # a rerun recovers instead of seeing the stale file
+        fetch_verified(dest, recipe, good)
+        assert dest.read_bytes() == payload and not part.exists()
+
+        def die(url, target):
+            target.write_bytes(b"half")
+            raise subprocess.CalledProcessError(1, "curl")
+
+        dead = dest.with_name("dead.apk")
+        try:
+            fetch_verified(dead, recipe, die)
+        except subprocess.CalledProcessError:
+            pass
+        else:
+            raise AssertionError("a failed download must propagate")
+        assert not dead.exists() and not dead.with_name("dead.apk.part").exists()
     print("[compat-baseline] self-test ok")
 
 
