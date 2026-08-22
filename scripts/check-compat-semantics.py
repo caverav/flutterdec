@@ -52,11 +52,14 @@ STACK_OVERFLOW_STUB = "0xd51af0"
 # rendering claims arity against. `x0` is not in it: it is the return register.
 DART_ARGUMENT_REGISTERS = ("x1", "x2", "x3", "x5", "x6", "x7")
 
-# The three statements that report unresolved control flow, by prefix.
+# The statements that report unresolved control flow, by prefix. The first three
+# are the emitters' own; the fourth is the whole body of a function whose CFG did
+# not validate, which is one unresolved site and is emitted by neither walk.
 UNRESOLVED_PREFIXES = (
     "// indirect branch",
     "// unresolved branch target",
     "// unresolved jump",
+    "// invalid CFG",
 )
 
 # A conditional branch tests flags a comparison set. `tst Xn, #imm` is

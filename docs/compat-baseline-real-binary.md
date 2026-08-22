@@ -181,11 +181,16 @@ implemented by `side_manifest_text` and `tree_manifest_digest` in
 the digest of a *fresh* tree includes `report.json`, which carries the three
 volatile workspace strings below, so it equals the recorded value only for a
 replay in the recorded workspace. The per-artifact comparison that `replay`
-performs is the check that holds from any checkout. Measured, from a cold clone
-built and run by the section 8 recipe: of the 17402 manifest lines exactly one
-differs from the recorded candidate manifest, `report.json`, and substituting the
-recorded `report.json` line into the fresh tree's manifest reproduces
-`3879e3728baffe0ec7ea58b73ddf3439dc2bf2f97d5857a5cc9af65862319a8a` exactly.
+performs is the check that holds from any checkout. Measured here, from a fresh
+run of the section 8 recipe in this workspace: `replay` reproduced the recorded
+candidate digest
+`3879e3728baffe0ec7ea58b73ddf3439dc2bf2f97d5857a5cc9af65862319a8a` exactly, all
+17402 lines included. The earlier slice measured the other half of the same
+claim from a cold clone outside this workspace, against the digest it recorded:
+exactly one of the 17402 lines differed, `report.json`, and substituting the
+recorded line reproduced that digest. Both halves say the same thing - the one
+line that follows the workspace is `report.json` - and the per-artifact
+comparison is what a different checkout should rely on.
 
 The three candidate manifests are equal, so all 17402 artifacts are byte-stable
 across three separate processes. Nothing in the emitted set carries a
@@ -830,7 +835,9 @@ emitted lines.
 **Unresolved control flow, statement by statement.** The counter is the number
 of unresolved-control-flow statements the artifacts carry, counted by the prefix
 each one starts with - `// indirect branch`, `// unresolved branch target`,
-`// unresolved jump` - and it reconciles exactly on both sides: **521** statements
+`// unresolved jump`, and `// invalid CFG`, which is the whole body of a function
+whose CFG did not validate and is one unresolved site (0 of them here) - and it
+reconciles exactly on both sides: **521** statements
 against `quality.json.unresolved_cf` 521 on the candidate, over 138 functions, and
 0 against 0 on the reference. Section 6.5 records what that took: until `2214697`
 the counter was the walk's own total, it read 517, and the four-statement

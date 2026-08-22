@@ -7,7 +7,7 @@
       "unresolved_cf_statements": 521
     },
     "conclusion": "candidate_corrected_after_this_slice",
-    "derivation": "statements are counted from the emitted pseudocode by the prefix each one starts with - `// indirect branch`, `// unresolved branch target`, `// unresolved jump` - so an annotation spliced into a marker keeps it counted, and the total is compared with quality.json.unresolved_cf and report.json.quality.unresolved_cf on each side.",
+    "derivation": "statements are counted from the emitted pseudocode by the prefix each one starts with - `// indirect branch`, `// unresolved branch target`, `// unresolved jump`, and `// invalid CFG`, the whole body of a function whose CFG did not validate - so an annotation spliced into a marker keeps it counted, and the total is compared with quality.json.unresolved_cf and report.json.quality.unresolved_cf on each side.",
     "evidence": "the residue was one function: 00860_sub_696734.dartpseudo carries 4 `// indirect branch through reg2` statements over the single reachable `br x2` at 0x6968fc, all four of them copies of one helper body, and its walk counter was 0. After the fix the candidate reports 521, which equals the 521 statements its 138 functions carry, and the reference reports 0 against 0.",
     "fix": "the artifact's unresolved_cf is recounted from the finished body in emit_with_plan, so it is the number of unresolved-control-flow statements the artifact carries whatever emission path produced them. Regression test: crates/flutterdec-decompiler/tests/unresolved_cf_accounting.rs.",
     "question": "the candidate emitted more unresolved-control-flow statements than quality.json.unresolved_cf counted: 521 statements against 517",

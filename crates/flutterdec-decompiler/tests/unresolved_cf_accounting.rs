@@ -23,10 +23,13 @@ use std::collections::HashMap;
 /// The three statements that report unresolved control flow, by prefix. Written
 /// out here rather than imported: the emitter's constants are private, and an
 /// expected value that reads the value under test proves nothing.
-const UNRESOLVED_PREFIXES: [&str; 3] = [
+const UNRESOLVED_PREFIXES: [&str; 4] = [
     "// indirect branch",
     "// unresolved branch target",
     "// unresolved jump",
+    // A function whose CFG did not validate is one unresolved site, and its
+    // whole body is this diagnostic.
+    "// invalid CFG",
 ];
 
 fn instr(va: u64, op: IROp, src: &str, target: &str) -> LlirInstr {
@@ -246,6 +249,30 @@ fn an_annotated_marker_keeps_its_prefix() {
     assert_eq!(
         statements, 1,
         "an annotation between the register and the tail must not hide the statement:\n{annotated}"
+    );
+    assert_counter_is_the_body(&artifact, 1);
+}
+
+/// The other construction site: a function whose CFG did not validate reports one
+/// unresolved site, and its body is the one diagnostic line. Neither walk runs
+/// there, so the two paths agree only if the same statement shapes are counted.
+#[test]
+fn an_invalid_cfg_reports_one_site_and_carries_one_statement() {
+    let mut ir = function(
+        "invalid_cfg",
+        vec![
+            blk(0, 0x4000, vec![instr(0x4000, IROp::Other, "mov x0, x1", "")], vec![1]),
+            blk(1, 0x4004, vec![instr(0x4004, IROp::Other, "ret", "")], vec![]),
+        ],
+    );
+    // Two blocks claiming the same id: an id-keyed map keeps one of them, so the
+    // graph cannot be walked and no body may be invented from it.
+    ir.blocks[1].id = 0;
+    let artifact = emit_pseudocode(&ir, &HashMap::new());
+    assert!(
+        artifact.source.contains("// invalid CFG"),
+        "the defect must be named in the body:\n{}",
+        artifact.source
     );
     assert_counter_is_the_body(&artifact, 1);
 }

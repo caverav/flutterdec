@@ -678,9 +678,11 @@ Metric formulas:
 - `indirect_call_ratio = indirect_calls / total_calls`
 - `unresolved_cf` = the number of unresolved-control-flow statements in the
   emitted pseudocode: lines starting with `// indirect branch`,
-  `// unresolved branch target` or `// unresolved jump`. It is counted from the
-  finished text, so a statement inside a `_block_N` helper body, or copied into
-  the caller when that helper is inlined, counts once per line you can read.
+  `// unresolved branch target`, `// unresolved jump`, or `// invalid CFG`, which
+  is the whole body of a function whose control flow did not validate. It is
+  counted from the finished text, so a statement inside a `_block_N` helper body,
+  or copied into the caller when that helper is inlined, counts once per line you
+  can read.
 
 Gate mapping to CLI options:
 

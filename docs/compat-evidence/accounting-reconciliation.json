@@ -71,7 +71,8 @@
         "statement_prefixes": [
           "// indirect branch",
           "// unresolved branch target",
-          "// unresolved jump"
+          "// unresolved jump",
+          "// invalid CFG"
         ]
       }
     },
@@ -114,7 +115,8 @@
         "statement_prefixes": [
           "// indirect branch",
           "// unresolved branch target",
-          "// unresolved jump"
+          "// unresolved jump",
+          "// invalid CFG"
         ]
       }
     }
