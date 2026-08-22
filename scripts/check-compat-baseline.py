@@ -14,8 +14,10 @@ record usable:
            every observed difference class - including every class of removed
            pseudocode - is adjudicated in the prose document.
   fetch    download the pinned asset to a temporary sibling of `--dest`, fail
-           unless size and SHA-256 match, and replace `--dest` only then, so a
-           mismatched download is never left where the next run would reuse it.
+           unless size and SHA-256 match, and replace `--dest` only then, so no
+           invocation ever writes or replaces `--dest` with unverified newly
+           downloaded bytes, and none ever reuses an existing `--dest` without
+           revalidating it first.
   replay   compare a fresh candidate output tree against the committed
            per-artifact manifest, which is what proves deterministic bytes, and
            recompute that tree's aggregate manifest digest.
@@ -43,7 +45,7 @@ INVENTORY = EVIDENCE / "function-inventory.tsv"
 MANIFEST_HEADER = "path\tref_bytes\tref_sha256\tcand_bytes\tcand_sha256"
 REPLAY_MARKER_TABLE = EVIDENCE / "marker-replay.tsv"
 LOSS_TABLE = EVIDENCE / "operand-direction-losses.tsv"
-LOSS_HEADER = "function\treference_line\tcandidate_line\tadjudication_class"
+LOSS_HEADER = "function\treference_line\tcandidate_line\tadjudication_class\tguard_polarity"
 REMOVAL_TABLE = EVIDENCE / "pseudocode-callee-removals.tsv"
 REMOVAL_AGGREGATE = EVIDENCE / "callee-removals-aggregate.json"
 REGISTER_SCOPES = EVIDENCE / "register-counter-scopes.json"
@@ -74,6 +76,33 @@ LOSS_CLASS_DEFINITION = (
     "rendered lines, carried per row in the operand-direction-losses.tsv adjudication_class "
     "column; it is not a syntax metric inferred from the rows, so verify recounts the column "
     "against the recorded totals rather than re-deriving the class"
+)
+
+# The guard-polarity flag cuts across the four adjudication classes: three of the 78
+# rows are a guard whose terminal comparison flips, and the flagged rows keep the
+# adjudication class they already carried. Unlike adjudication_class this column is
+# derived from the row bytes, so `verify` re-derives it instead of trusting it.
+GUARD_POLARITY_FLAG = "reference_eq_zero_candidate_ne_zero"
+GUARD_POLARITY_VOCABULARY = ("none", GUARD_POLARITY_FLAG)
+GUARD_POLARITY_SITES = (
+    "03119_sub_936128.dartpseudo",
+    "05530_sub_c8b9b8.dartpseudo",
+    "05548_sub_c93e0c.dartpseudo",
+)
+GUARD_POLARITY_CLASS = "expression_replaced_by_the_register_holding_it"
+GUARD_POLARITY_DEFINITION = (
+    "the operand-direction-losses.tsv column, derived from the two rendered lines and not "
+    "adjudicated: reference_eq_zero_candidate_ne_zero on a row whose reference_line and "
+    "candidate_line both start with 'if (' while the reference ends with '== 0) {' and the "
+    "candidate with '!= 0) {', and none on every other row. It cuts across adjudication_class, "
+    "which the flagged rows keep, and verify re-derives the column from the row bytes instead "
+    "of trusting it. The flip is recorded and not accepted: no committed oracle proves which "
+    "polarity is correct."
+)
+GUARD_POLARITY_OPEN_ITEM = (
+    "The sibling guards suggest the candidate corrected the polarity, but nothing committed "
+    "here is an independent semantic oracle over the machine code, so the flip is carried as "
+    "an open semantic item and is not claimed as an accepted correction."
 )
 
 # The three candidate processes wrote the same bytes, so one derivation covers
@@ -644,6 +673,109 @@ def check_operand_loss_classes(classes, doc, failures):
     if prose(LOSS_CLASS_DEFINITION) not in prose(doc):
         failures.append(f"the operand-direction adjudication is not declared as committed human "
                         f"adjudication in {DOC.name}")
+    check_guard_polarity(rows, classes, doc, failures)
+
+
+def guard_polarity_of(reference_line, candidate_line):
+    """The flag, re-derived from the two rendered lines.
+
+    A flagged row is a guard whose terminal comparison against zero flips from
+    `== 0` to `!= 0`. The direction is one-way by construction: the reverse flip
+    is a different claim and is counted separately so it cannot hide in `none`.
+    """
+    reference, candidate = reference_line.strip(), candidate_line.strip()
+    if not (reference.startswith("if (") and candidate.startswith("if (")):
+        return "none"
+    if reference.endswith("== 0) {") and candidate.endswith("!= 0) {"):
+        return GUARD_POLARITY_FLAG
+    return "none"
+
+
+def check_guard_polarity(rows, classes, doc, failures):
+    """The three guard-polarity rows, re-derived rather than trusted.
+
+    Three of the 78 rows are the same shape: the reference guard tests
+    `... == 0` where the candidate tests `... != 0`, and the guarded body is the
+    same two lines on both sides. That is a semantic difference the four operand
+    classes do not describe, so it is carried as its own per-row column, the exact
+    three sites are pinned here, and the record has to name them and carry them as
+    an open item rather than as an accepted correction.
+    """
+    recorded = classes["operand_naming_guard_polarity"]
+    for row in rows:
+        if row[4] not in GUARD_POLARITY_VOCABULARY:
+            failures.append(f"{LOSS_TABLE.name} row {row[0]} carries the guard_polarity "
+                            f"{row[4]!r}, which is not one of {GUARD_POLARITY_VOCABULARY}")
+            break
+    derived = {row[0] for row in rows if guard_polarity_of(row[1], row[2]) == GUARD_POLARITY_FLAG}
+    flagged = {row[0] for row in rows if row[4] == GUARD_POLARITY_FLAG}
+    if derived != flagged:
+        failures.append(f"the guard_polarity column does not match the direction re-derived from "
+                        f"the rendered lines: column {sorted(flagged)}, rows {sorted(derived)}")
+    if tuple(sorted(flagged)) != GUARD_POLARITY_SITES:
+        failures.append(f"the guard_polarity sites are {tuple(sorted(flagged))}, not the pinned "
+                        f"{GUARD_POLARITY_SITES}")
+    if len(flagged) != 3:
+        failures.append(f"{len(flagged)} rows carry {GUARD_POLARITY_FLAG}, 3 are claimed")
+    reverse = [row[0] for row in rows
+               if guard_polarity_of(row[2], row[1]) == GUARD_POLARITY_FLAG]
+    if len(reverse) != recorded["reverse_direction_rows"]:
+        failures.append(f"{len(reverse)} rows flip a guard the other way, "
+                        f"{recorded['reverse_direction_rows']} are recorded: {reverse}")
+    counted = count_by(rows, 4)
+    if counted != recorded["counts"]:
+        failures.append(f"the guard_polarity column does not sum to "
+                        f"operand_naming_guard_polarity.counts: {counted}")
+    if tuple(recorded["sites"]) != GUARD_POLARITY_SITES:
+        failures.append(f"operand_naming_guard_polarity.sites is not the pinned "
+                        f"{GUARD_POLARITY_SITES}")
+    for row in rows:
+        if row[4] == GUARD_POLARITY_FLAG and row[3] != GUARD_POLARITY_CLASS:
+            failures.append(f"the guard-polarity row {row[0]} carries the adjudication_class "
+                            f"{row[3]!r}; the flag is orthogonal and the class must stay "
+                            f"{GUARD_POLARITY_CLASS}")
+    siblings = recorded["sibling_guards"]
+    if siblings["reference_eq_zero"] + siblings["reference_ne_zero"] != siblings["guards_per_side"]:
+        failures.append("sibling_guards does not split guards_per_side on the reference side")
+    if siblings["candidate_ne_zero"] != siblings["guards_per_side"]:
+        failures.append("sibling_guards claims a candidate guard that is not rendered != 0")
+    if siblings["reference_eq_zero"] != len(GUARD_POLARITY_SITES):
+        failures.append("sibling_guards disagrees with the three pinned guard-polarity sites")
+    inside = siblings["reference_ne_zero_in_flagged_files"]
+    if tuple(sorted(inside)) != GUARD_POLARITY_SITES:
+        failures.append("sibling_guards.reference_ne_zero_in_flagged_files is not keyed on the "
+                        "three pinned guard-polarity sites")
+    if sum(inside.values()) > siblings["reference_ne_zero"]:
+        failures.append(f"sibling_guards puts {sum(inside.values())} of the reference's "
+                        f"{siblings['reference_ne_zero']} != 0 guards inside the flagged files")
+    if classes["definitions"].get("operand_naming_guard_polarity") != GUARD_POLARITY_DEFINITION:
+        failures.append("the operand_naming_guard_polarity definition in difference-classes.json "
+                        "does not state that the column is re-derived and the flip unaccepted")
+    flat = prose(doc)
+    if prose(siblings["reading"]) not in flat:
+        failures.append(f"the sibling-guard reading behind the {siblings['guards_per_side']}/"
+                        f"{siblings['files']} figures is missing or altered in {DOC.name}")
+    for claim in (f"occurs {siblings['guards_per_side']} times in the same {siblings['files']} "
+                  f"files",
+                  f"renders {siblings['reference_ne_zero']} of them != 0 and only these "
+                  f"{siblings['reference_eq_zero']} == 0",
+                  f"renders all {siblings['candidate_ne_zero']} != 0"):
+        if claim not in flat:
+            failures.append(f"the sibling-guard count {claim!r} is not stated in {DOC.name}")
+    if prose(GUARD_POLARITY_DEFINITION) not in flat:
+        failures.append(f"the guard_polarity definition is missing or altered in {DOC.name}")
+    if prose(GUARD_POLARITY_OPEN_ITEM) not in flat:
+        failures.append(f"the guard-polarity flip is not carried as an open semantic item in "
+                        f"{DOC.name}")
+    for row in rows:
+        if row[4] != GUARD_POLARITY_FLAG:
+            continue
+        if row[0] not in doc:
+            failures.append(f"the guard-polarity site {row[0]} is not named in {DOC.name}")
+        for line in (row[1], row[2]):
+            if line.strip() not in doc:
+                failures.append(f"the guard-polarity row for {row[0]} is not rendered verbatim "
+                                f"in {DOC.name}: {line.strip()[:60]}...")
 
 
 def check_register_scopes(failures):
@@ -854,13 +986,19 @@ def curl_download(url, target: Path):
 
 
 def fetch_verified(dest: Path, recipe, download=curl_download):
-    """Download the pinned asset, and leave nothing unverified at `dest`.
+    """Download the pinned asset; never put unverified downloaded bytes at `dest`.
 
     The download used to go straight to `--dest` and be checked in place, so a
     truncated or re-cut asset stayed there after the failure and every rerun found
     that stale file first. The asset now lands on a temporary sibling, is checked
     there, and replaces `dest` only once size and SHA-256 both match; the
     temporary file is removed on every path out, including the curl failure.
+
+    The guarantee is exactly that, and no more: an invalid file that was already at
+    `dest` before the call is re-fetched rather than trusted, but it is only
+    removed by a successful replace, so it survives a download that fails. What
+    holds unconditionally is that every invocation revalidates whatever is at
+    `dest` and never silently reuses it.
     """
     dest.parent.mkdir(parents=True, exist_ok=True)
     if dest.exists():
@@ -1063,6 +1201,37 @@ def self_test():
     for phrase in ("committed human adjudication", "adjudication_class",
                    "not a syntax metric inferred from the rows"):
         assert phrase in LOSS_CLASS_DEFINITION, phrase
+
+    # The guard-polarity flag: a closed two-value vocabulary, three pinned sites,
+    # and a direction re-derived from the row bytes in one direction only.
+    assert tuple(sorted(GUARD_POLARITY_VOCABULARY)) == GUARD_POLARITY_VOCABULARY
+    assert len(set(GUARD_POLARITY_VOCABULARY)) == 2 and "none" in GUARD_POLARITY_VOCABULARY
+    assert len(GUARD_POLARITY_SITES) == 3 and tuple(sorted(GUARD_POLARITY_SITES)) == (
+        "03119_sub_936128.dartpseudo",
+        "05530_sub_c8b9b8.dartpseudo",
+        "05548_sub_c93e0c.dartpseudo",
+    ), GUARD_POLARITY_SITES
+    guard_eq = "if ((((reg4 + reg3) + smiUntag(1)) & 0xc0000000) == 0) {"
+    guard_ne = "if ((((reg4 + reg3) + reg3) & 0xc0000000) != 0) {"
+    assert guard_polarity_of(guard_eq, guard_ne) == GUARD_POLARITY_FLAG
+    assert guard_polarity_of(guard_ne, guard_eq) == "none"  # the reverse flip is not this class
+    assert guard_polarity_of(guard_eq, guard_eq) == "none"  # an unchanged comparison is not
+    assert guard_polarity_of(guard_ne, guard_ne) == "none"
+    # `== 0` has to be the guard's own comparison, not one nested inside it
+    assert guard_polarity_of("if ((x == 0) ? 1 : 0) {", guard_ne) == "none"
+    assert guard_polarity_of("final t7 = f(a == 0);", "final t7 = f(a != 0);") == "none"
+    assert guard_polarity_of("  " + guard_eq + "  ", "\t" + guard_ne) == GUARD_POLARITY_FLAG
+    polarities = [["a", guard_eq, guard_ne, GUARD_POLARITY_CLASS, GUARD_POLARITY_FLAG],
+                  ["b", "x;", "y;", "other", "none"]]
+    assert count_by(polarities, 4) == {GUARD_POLARITY_FLAG: 1, "none": 1}
+    for phrase in ("derived from the two rendered lines and not adjudicated",
+                   "'== 0) {'", "'!= 0) {'", "cuts across adjudication_class",
+                   "recorded and not accepted"):
+        assert phrase in GUARD_POLARITY_DEFINITION, phrase
+    for phrase in ("sibling guards suggest the candidate corrected the polarity",
+                   "an independent semantic oracle over the machine code",
+                   "open semantic item", "not claimed as an accepted correction"):
+        assert phrase in GUARD_POLARITY_OPEN_ITEM, phrase
 
     # `fetch` must never leave an unverified asset at --dest: the download lands on
     # a temporary sibling, is checked there, and replaces the destination only on a

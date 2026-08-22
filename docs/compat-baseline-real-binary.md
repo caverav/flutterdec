@@ -68,13 +68,21 @@ python3 scripts/check-compat-baseline.py fetch --dest /tmp/localsend-1.17.0-arm6
 
 The fetch fails unless the downloaded asset matches both the recorded byte
 size and the recorded SHA-256, so a moved or re-cut release cannot silently
-become the baseline input. It also never leaves an unverified file at `--dest`:
-the download goes to the temporary sibling `<dest>.part`, size and digest are
-checked there, and `--dest` is replaced only once both match. The temporary file
-is removed on every failure path, including a `curl` that dies mid-transfer, so a
-bad download cannot be picked up by the next run. An existing `--dest` that
-already verifies is reused and not re-downloaded; one that does not is re-fetched
-and replaced rather than trusted. Manual equivalent:
+become the baseline input. It also never writes or replaces `--dest` with
+unverified newly downloaded bytes: the download goes to the temporary sibling
+`<dest>.part`, size and digest are checked there, and `--dest` is replaced only
+once both match. The temporary file is removed on every failure path, including a
+`curl` that dies mid-transfer, so a bad download cannot be picked up by the next
+run. An existing `--dest` that already verifies is reused and not re-downloaded;
+one that does not is re-fetched and replaced rather than trusted.
+
+That is the whole claim, and the one case it does not cover is worth stating: a
+file that was already invalid at `--dest` before the run is removed only by a
+successful replace, so if the re-fetch itself fails it is still there afterwards.
+What holds unconditionally is that every invocation revalidates whatever is at
+`--dest` against the recipe and never silently reuses it, so a surviving invalid
+file cannot be mistaken for the baseline input by any later `fetch`, and the
+decompile in section 8 runs on a path `fetch` exited 0 on. Manual equivalent:
 
 ```bash
 curl -fsSL -o /tmp/localsend-1.17.0-arm64v8.apk \
@@ -372,6 +380,47 @@ case in the 3672 differing files where the candidate prints strictly less at a
 call site: the reference emits `sub_90b144(reg0)` and the candidate emits
 `sub_90b144()`, declining the register-argument claim. That row is listed in
 section 9 as an open item rather than adjudicated as a correction.
+
+**Guard polarity.** Three of the 78 rows carry a second difference that cuts
+across the four classes above and that none of them describes, so the table
+carries a fifth column, defined once and recorded here: `guard_polarity` is
+the operand-direction-losses.tsv column, derived from the two rendered lines and
+not adjudicated: reference_eq_zero_candidate_ne_zero on a row whose
+reference_line and candidate_line both start with `'if ('` while the reference
+ends with `'== 0) {'` and the candidate with `'!= 0) {'`, and none on every other
+row. It cuts across adjudication_class, which the flagged rows keep, and verify
+re-derives the column from the row bytes instead of trusting it. The flip is
+recorded and not accepted: no committed oracle proves which polarity is correct.
+The three sites are exactly these, with the reference line above the candidate
+line that replaces it:
+
+```
+pseudocode/03119_sub_936128.dartpseudo
+- if ((((reg4 + reg3) + smiUntag((((((reg3 == (reg1 & 0xffffffff)) & 0x10) == 0) ? 1 : 0) << 1))) & 0xc0000000) == 0) {
++ if ((((reg4 + reg3) + reg3) & 0xc0000000) != 0) {
+pseudocode/05530_sub_c8b9b8.dartpseudo
+- if ((((reg2 + reg4) + smiUntag((((((reg4 == (reg3 & 0xffffffff)) & 0x10) == 0) ? 1 : 0) << 1))) & 0xc0000000) == 0) {
++ if ((((reg2 + reg4) + reg2) & 0xc0000000) != 0) {
+pseudocode/05548_sub_c93e0c.dartpseudo
+- if ((((((((reg5 & 0xffffffff) >>> 0x10) + (reg4 & 0xffffffff)) + (((reg2 & 0xffffffff) & reg3) << 0x10)) + smiUntag((((((reg7 == (reg6 & 0xffffffff)) & 0x10) == 0) ? 1 : 0) << 1))) + smiUntag((((((((reg5 & 0xffffffff) & 0xffffffff) == reg5) & 0x10) != 0) ? 1 : 0) << 0x11))) & 0xc0000000) == 0) {
++ if (((((((reg7 >>> 0x10) + reg4) + (reg4 << 0x10)) + reg2) + reg2) & 0xc0000000) != 0) {
+```
+
+In all three the guarded body is structurally identical on the two sides -
+`if (thread.f88 <= (thread.f80 + 0x10)) {` and one `sub_d51af0(...)` call, which
+is the row immediately below each guard in the table and differs only in the
+operand spellings that class already covers - so the guard's own terminal
+comparison is the whole difference. All three keep the
+`expression_replaced_by_the_register_holding_it` class they already carried. The
+vocabulary is closed at those two values and `verify` fails when a row carries a
+third, when the column and the direction re-derived from the row bytes disagree,
+when the flagged set is not exactly these three files, when a flagged row's
+`adjudication_class` moves, or when this document stops naming a site or renders
+one of its six lines differently. The reverse flip - a reference `!= 0` guard
+becoming `== 0` - does not occur in the 78 rows, and
+`difference-classes.json.operand_naming_guard_polarity.reverse_direction_rows`
+records that 0 and is recounted the same way. Section 9 carries the flip as an
+open semantic item.
 
 **Helper resolution.** All 27097 `_block_N` occurrences resolve: every
 referenced helper has a definition in the same file, in all 5800 candidate
@@ -741,7 +790,12 @@ The precision repair on top of it is plant-tested the same way, each exiting 1:
 | set `reg31_tokens` in `register-counter-scopes.json` to a nonzero value | `the candidate text carries <n> reg31_tokens, so the quality.rs 0..=30 boundary drops tokens the census counts and the two scopes are not comparable` |
 | commit any change under `crates/` | `HEAD has a product-path delta from revisions.candidate (361c922): the product tree hashes <digest>, so the recorded artifacts were not produced by the product state at HEAD` |
 | delete the `NIX_CONFIG` export from section 8 | `the NIX_CONFIG export the build line needs is not in compat-baseline-real-binary.md` |
-| drop `difflib.unified_diff(n=0)` from section 6.2 | `the diff implementation is not named in compat-baseline-real-binary.md` |
+| drop the exact `difflib` spelling, `n=0` argument included, from section 6.2 | `the diff implementation is not named in compat-baseline-real-binary.md` |
+
+That last row is worded the long way round on purpose. A plant row that quotes a
+required anchor verbatim satisfies the anchor itself, so the plant it describes
+stops failing: the row has to name the anchor without spelling it. The same rule
+applies to every row below.
 
 The definition repair on top of that is plant-tested the same way. The first four
 are the point of it: the recorded totals sum to themselves under a wrong reading
@@ -768,6 +822,25 @@ a file that could not be recounted; the last two are the `fetch` destination:
 | reword `definitions.operand_naming_fewer_register_classes` in `difference-classes.json` | `verify`: `the operand_naming_fewer_register_classes definition in difference-classes.json does not state that the split is a committed adjudication recounted from the per-row column` |
 | perturb `input.bytes` or `input.sha256` in `input-recipe.json`, then `fetch` | `fetch`: `fetched bytes do not match the recipe: <size> <digest>`, with no file left at `--dest` and no `<dest>.part` residue |
 | leave a stale file at `--dest`, then `fetch` | `fetch`: `<dest> does not match the recipe (<size> bytes, sha256 <digest>); re-fetching`, then exit 0 with the verified asset in place |
+
+The polarity disclosure on top of that is plant-tested the same way. The column
+is derived rather than adjudicated, so the first three plants are the ones that
+matter: the recorded three sites cannot be widened, narrowed, or silently
+detached from the direction the rows themselves state.
+
+| Plant | Failure |
+| --- | --- |
+| blank one row's `guard_polarity` in `operand-direction-losses.tsv` | `verify`: `operand-direction-losses.tsv row <file> carries the guard_polarity '', which is not one of ('none', 'reference_eq_zero_candidate_ne_zero')` plus the counts failure |
+| set one flagged row's `guard_polarity` to `none` | `verify`: `the guard_polarity column does not match the direction re-derived from the rendered lines: column [2 files], rows [3 files]`, plus the pinned-sites, `2 rows carry ...` and counts failures |
+| flag a fourth row | the same derivation, pinned-sites and count failures, plus `the guard-polarity site <file> is not named in compat-baseline-real-binary.md` and both `is not rendered verbatim` failures |
+| move a flagged row's `adjudication_class` to `other` | `verify`: `the guard-polarity row 03119_sub_936128.dartpseudo carries the adjudication_class 'other'; the flag is orthogonal and the class must stay expression_replaced_by_the_register_holding_it` |
+| reword `definitions.operand_naming_guard_polarity` in `difference-classes.json` | `verify`: `the operand_naming_guard_polarity definition in difference-classes.json does not state that the column is re-derived and the flip unaccepted` |
+| drop a clause of that definition from section 6.2 | `verify`: `the guard_polarity definition is missing or altered in compat-baseline-real-binary.md` |
+| change one rendered guard line in section 6.2 | `verify`: `the guard-polarity row for 05530_sub_c8b9b8.dartpseudo is not rendered verbatim in compat-baseline-real-binary.md: <line>...` |
+| turn the section 9 open item into an accepted correction | `verify`: `the guard-polarity flip is not carried as an open semantic item in compat-baseline-real-binary.md` |
+| change `sibling_guards.reference_ne_zero` in `difference-classes.json` to 10 | `verify`: `sibling_guards does not split guards_per_side on the reference side`, plus a `the sibling-guard count ... is not stated in compat-baseline-real-binary.md` failure quoting the section 9 sentence the wrong count builds |
+| drop a clause of `sibling_guards.reading` | `verify`: `the sibling-guard reading behind the 14/7 figures is missing or altered in compat-baseline-real-binary.md` |
+| let `guard_polarity_of` accept either direction | `--self-test`: `AssertionError` on `guard_polarity_of(guard_ne, guard_eq) == "none"` |
 
 `verify` is not wired into `scripts/ci-check.sh` yet. Both that script and
 `scripts/lint-python.sh` are protected paths in section 7 of
@@ -814,6 +887,24 @@ artifact manifest is the comparison that has to hold.
   replacement in the 3672 differing files where the candidate prints fewer
   call arguments than the reference, and it is a declined register-argument
   claim rather than an adjudicated correction.
+- The three `guard_polarity` rows in section 6.2 are an open semantic item. In
+  `pseudocode/03119_sub_936128.dartpseudo`,
+  `pseudocode/05530_sub_c8b9b8.dartpseudo` and
+  `pseudocode/05548_sub_c93e0c.dartpseudo` the reference guard tests
+  `& 0xc0000000) == 0` where the candidate tests `!= 0`, over a structurally
+  identical guarded body, so the two renderings enter that body under
+  complementary conditions. The same guard shape - an emitted line whose stripped
+  text ends with `'& 0xc0000000) == 0) {'` or `'& 0xc0000000) != 0) {'` and whose
+  next emitted line contains `'thread.f88 <='`, counted over
+  `pseudocode/*.dartpseudo` on each side - occurs 14 times in the same 7 files:
+  the reference renders 11 of them `!= 0` and only these 3
+  `== 0`, and the candidate renders all 14 `!= 0`. Five of the reference's 11 are
+  inside these same three files - three in `03119_sub_936128.dartpseudo` and one
+  each in the other two - so each of the three functions is a place where the
+  reference itself already renders that shape both ways. The sibling guards
+  suggest the candidate corrected the polarity, but nothing committed here is an
+  independent semantic oracle over the machine code, so the flip is carried as an
+  open semantic item and is not claimed as an accepted correction.
 - The input is fetched, never vendored, so an independent rerun needs network
   access to the pinned GitHub release asset.
 - `check-compat-baseline.py verify` is not a CI step, for the reason in
