@@ -661,11 +661,10 @@ python3 scripts/check-compat-semantics.py check \
 ```
 
 **Guard polarity: the candidate is right and the reference inverted it.** The
-seven files that render this guard shape hold 15 mask-test sites, and every one of
-them is the same three-instruction span: `tst Xn, #0xc0000000`, then `b.eq` to an
-address past the guarded body, then the body itself. `tst` is `ANDS xzr, Xn, #imm`
-(Arm ARM DDI 0487, C6.2), so it sets Z exactly when the masked bits are zero, and
-`b.eq` is taken exactly then. Every one of those sites is `tst Xn, #0xc0000000`
+seven files that render this guard shape hold 15 mask-test sites. `tst` is
+`ANDS xzr, Xn, #imm` (Arm ARM DDI 0487, C6.2), so it sets Z exactly when the
+masked bits are zero, and `b.eq` is taken exactly then. Every one of those sites
+is `tst Xn, #0xc0000000`
 followed immediately by `b.eq`, which branches past the guarded body exactly when
 the masked bits are zero, so the body runs when they are not and `!= 0` is the
 guard the machine code carries. The candidate renders all 14 emitted guards that
