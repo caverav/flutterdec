@@ -61,6 +61,18 @@
         "match": true,
         "quality_json": 690963,
         "scanned_text": 690963
+      },
+      "unresolved_cf": {
+        "evidence": "semantic-adjudication.json, scripts/check-compat-semantics.py check",
+        "match": true,
+        "quality_json": 521,
+        "scanned_text": 521,
+        "statement_bearing_functions": 138,
+        "statement_prefixes": [
+          "// indirect branch",
+          "// unresolved branch target",
+          "// unresolved jump"
+        ]
       }
     },
     "reference": {
@@ -92,19 +104,32 @@
         "match": true,
         "quality_json": 54062,
         "scanned_text": 54062
+      },
+      "unresolved_cf": {
+        "evidence": "semantic-adjudication.json, scripts/check-compat-semantics.py check",
+        "match": true,
+        "quality_json": 0,
+        "scanned_text": 0,
+        "statement_bearing_functions": 0,
+        "statement_prefixes": [
+          "// indirect branch",
+          "// unresolved branch target",
+          "// unresolved jump"
+        ]
       }
     }
   },
   "unresolved_control_flow": {
-    "candidate_emitted_markers": 520,
-    "candidate_quality_unresolved_cf": 517,
-    "evidence": "marker-replay.tsv",
-    "marker_bearing_functions": 137,
+    "candidate_quality_unresolved_cf": 521,
+    "candidate_unresolved_cf_statements": 521,
+    "evidence": "semantic-adjudication.json",
     "note": "see docs/compat-baseline-real-binary.md section 7",
-    "per_function_replay_identical": 136,
-    "per_function_replay_markers": 516,
-    "per_function_replay_unresolved_cf": 516,
+    "reference_quality_unresolved_cf": 0,
+    "reference_unresolved_cf_statements": 0,
     "residue_function": "00860_sub_696734",
-    "residue_markers": 4
+    "residue_function_statements": 4,
+    "resolution": "the artifact recounts the statements from the finished body, so the counter is the number the artifact carries on both sides. Oracle: scripts/check-compat-semantics.py check; regression test: crates/flutterdec-decompiler/tests/unresolved_cf_accounting.rs.",
+    "root_cause": "before 2214697 the counter was the walk's own total, and a block rendered into a helper body by the nested emitter in append_helper_functions was counted nowhere, while inline_helper_calls copied that body to every call site. The candidate reported 517 against 521 emitted statements, and the whole residue was 00860_sub_696734, whose four statements over one reachable br x2 were counted 0 times.",
+    "statement_bearing_functions": 138
   }
 }

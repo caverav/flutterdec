@@ -13,24 +13,24 @@
   },
   "artifacts": {
     "asm": 5800,
-    "candidate_manifest_sha256": "aa587824359452cd5af2e51b1ca18070b51ae297faf424199a1e0cc6d5b9f48b",
+    "candidate_manifest_sha256": "3879e3728baffe0ec7ea58b73ddf3439dc2bf2f97d5857a5cc9af65862319a8a",
     "candidate_processes_compared": 3,
     "files_per_run": 17402,
     "identical_between_reference_and_candidate": 7928,
     "ir": 5800,
     "manifest_digest_derivation": "sha256 over one line per emitted artifact, '<path>\\t<bytes>\\t<sha256>\\n', paths in ascending byte order, no header; see check-compat-baseline.py side_manifest_text and tree_manifest_digest",
     "pseudocode": 5800,
-    "reference_manifest_sha256": "bc70190801414e18c6c68cf4a20f3037da1b086e47484880bc47fb85943ff39a",
+    "reference_manifest_sha256": "cb156a879817b9db2e2ed416ca4715df2b7a754cf11032f968b6416c96d4cdc0",
     "reports": [
       "quality.json",
       "report.json"
     ],
-    "second_candidate_process_manifest_sha256": "aa587824359452cd5af2e51b1ca18070b51ae297faf424199a1e0cc6d5b9f48b",
-    "third_candidate_process_manifest_sha256": "aa587824359452cd5af2e51b1ca18070b51ae297faf424199a1e0cc6d5b9f48b"
+    "second_candidate_process_manifest_sha256": "3879e3728baffe0ec7ea58b73ddf3439dc2bf2f97d5857a5cc9af65862319a8a",
+    "third_candidate_process_manifest_sha256": "3879e3728baffe0ec7ea58b73ddf3439dc2bf2f97d5857a5cc9af65862319a8a"
   },
   "binaries": {
-    "candidate_sha256": "08110f952bc2c0a831aa9bb979b4f745b9607595cef6f47c1bf5bc36a4f67c31",
-    "reference_sha256": "54981d32172f8ea9cc03331eb16d8e3cfbc8f300d7ebf17bbc0b25dece8c272b"
+    "candidate_sha256": "7fe12b2f592159f102616722e266ee0f399a59f9a37568a3ef86f69a8f2e61f3",
+    "reference_sha256": "a8eef0988e6f25c0da07ffe0dfdadad217272625c523bdaf87c95787f5ac604c"
   },
   "command": {
     "args": [
@@ -68,9 +68,9 @@
     "url": "https://github.com/localsend/localsend/releases/download/v1.17.0/LocalSend-1.17.0-android-arm64v8.apk"
   },
   "revisions": {
-    "candidate": "361c922ad418da67277aea911050fdf70fe10234",
-    "candidate_product_tree_files": 141,
-    "candidate_product_tree_sha256": "43d9ecebb959e6e00514fb50d2af38d7402cb221b674df9d92a994d403c9c238",
+    "candidate": "22146970e5d2fd1fd223297aec0b2b06826dfbd9",
+    "candidate_product_tree_files": 142,
+    "candidate_product_tree_sha256": "9dae6d8258663b359fb960e3546ec84cc26a672289c4d25f0293f7213edbbc75",
     "candidate_role": "the product-state revision the candidate artifacts were built from. It is deliberately not advanced to later docs-only commits: advancing it would silently change what the artifacts are claimed to come from. What has to stay true is that the product tree has not moved since, which candidate_product_tree_sha256 pins and check-compat-baseline.py verify enforces against the current HEAD.",
     "evidence_provenance": "the prose document and every file in docs/compat-evidence/ are committed by docs-only commits that come after the candidate revision, so the revision that delivers this evidence cannot be recorded here: a commit cannot contain its own hash. Read it from the repository instead - 'git log --oneline -- docs/compat-baseline-real-binary.md docs/compat-evidence/' - and note that those commits touch no product_tree_paths, which is the property verify checks.",
     "product_tree_derivation": "sha256 over one '<path>\\t<git blob object id>\\n' line per tracked file under product_tree_paths, paths in ascending byte order, no header; see check-compat-baseline.py product_tree_digest",
@@ -87,6 +87,17 @@
     "reference": "1371e42549472ec388f58bc1fd5dbdf96e8dcdd1",
     "reference_product_tree_files": 106,
     "reference_product_tree_sha256": "23165413ab8e29b08ac71bd712aaf607154aea090ae1680170472f05d3a8e6f3"
+  },
+  "semantic_adjudication": {
+    "checker": "scripts/check-compat-semantics.py",
+    "items": [
+      "guard_polarity",
+      "selector_losses",
+      "dropped_call_argument",
+      "control_flow_accounting"
+    ],
+    "modes": "derive and check need both output trees; verify and --self-test are offline",
+    "record": "semantic-adjudication.json"
   },
   "toolchain": {
     "cargo": "cargo 1.92.0 (344c4567c 2025-10-21)",

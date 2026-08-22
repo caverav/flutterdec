@@ -1227,7 +1227,11 @@ An `IndirectBranch` increments `unresolved_cf` in both emitters
 (`structured.rs:923`, `emit.rs:1431`). A `Trap` does not: control genuinely ends
 there, so nothing about it is unresolved. The count is per emitted occurrence, not
 per instruction, so on a declined graph the DFS fallback, which duplicates a block
-once per path that reaches it, can count one `br` several times. The test at
+once per path that reaches it, can count one `br` several times. Those increments
+are no longer the artifact's number: since `2214697` the artifact recounts the
+statements from the finished body, because a block rendered into a helper body is
+rendered by a nested emitter whose counters are dropped, and inlining copies that
+body to every call site (`docs/compat-baseline-real-binary.md` section 6.5). The test at
 `arm64_control_effects.rs:177` pins the count to the number of emitted notes for
 that reason.
 

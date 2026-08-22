@@ -92,17 +92,30 @@ GUARD_POLARITY_SITES = (
 GUARD_POLARITY_CLASS = "expression_replaced_by_the_register_holding_it"
 GUARD_POLARITY_DEFINITION = (
     "the operand-direction-losses.tsv column, derived from the two rendered lines and not "
-    "adjudicated: reference_eq_zero_candidate_ne_zero on a row whose reference_line and "
+    "adjudicated there: reference_eq_zero_candidate_ne_zero on a row whose reference_line and "
     "candidate_line both start with 'if (' while the reference ends with '== 0) {' and the "
     "candidate with '!= 0) {', and none on every other row. It cuts across adjudication_class, "
     "which the flagged rows keep, and verify re-derives the column from the row bytes instead "
-    "of trusting it. The flip is recorded and not accepted: no committed oracle proves which "
-    "polarity is correct."
+    "of trusting it. Which polarity is correct is decided outside this column, by "
+    "semantic-adjudication.json over the ARM64 spans: the candidate is right and the reference "
+    "inverted the guard."
 )
-GUARD_POLARITY_OPEN_ITEM = (
-    "The sibling guards suggest the candidate corrected the polarity, but nothing committed "
-    "here is an independent semantic oracle over the machine code, so the flip is carried as "
-    "an open semantic item and is not claimed as an accepted correction."
+GUARD_POLARITY_ADJUDICATION = (
+    "Every one of those sites is `tst Xn, #0xc0000000` followed immediately by `b.eq`, which "
+    "branches past the guarded body exactly when the masked bits are zero, so the body runs "
+    "when they are not and `!= 0` is the guard the machine code carries. The candidate renders "
+    "all 14 emitted guards that way and the reference inverted three of them."
+)
+
+# The machine-level adjudication of the four behaviour-affecting differences, and
+# the oracle that re-derives it from the two output trees.
+SEMANTIC_RECORD = EVIDENCE / "semantic-adjudication.json"
+SEMANTIC_CHECKER = "scripts/check-compat-semantics.py"
+SEMANTIC_ITEMS = (
+    "control_flow_accounting",
+    "dropped_call_argument",
+    "guard_polarity",
+    "selector_losses",
 )
 
 # The three candidate processes wrote the same bytes, so one derivation covers
@@ -764,9 +777,16 @@ def check_guard_polarity(rows, classes, doc, failures):
             failures.append(f"the sibling-guard count {claim!r} is not stated in {DOC.name}")
     if prose(GUARD_POLARITY_DEFINITION) not in flat:
         failures.append(f"the guard_polarity definition is missing or altered in {DOC.name}")
-    if prose(GUARD_POLARITY_OPEN_ITEM) not in flat:
-        failures.append(f"the guard-polarity flip is not carried as an open semantic item in "
-                        f"{DOC.name}")
+    if prose(GUARD_POLARITY_ADJUDICATION) not in flat:
+        failures.append(f"the machine-level adjudication of the guard-polarity flip is missing or "
+                        f"altered in {DOC.name}")
+    adjudication = classes["operand_naming_guard_polarity"].get("adjudication", {})
+    if adjudication.get("conclusion") != "candidate_correct_reference_wrong":
+        failures.append("operand_naming_guard_polarity.adjudication does not conclude that the "
+                        "candidate is correct")
+    if adjudication.get("derived_guard") != "!= 0":
+        failures.append("operand_naming_guard_polarity.adjudication does not carry the guard the "
+                        "machine code derives")
     for row in rows:
         if row[4] != GUARD_POLARITY_FLAG:
             continue
@@ -776,6 +796,48 @@ def check_guard_polarity(rows, classes, doc, failures):
             if line.strip() not in doc:
                 failures.append(f"the guard-polarity row for {row[0]} is not rendered verbatim "
                                 f"in {DOC.name}: {line.strip()[:60]}...")
+
+
+def check_semantic_adjudication(accounting, quality, doc, failures):
+    """The four behaviour-affecting differences are adjudicated, not recorded.
+
+    Every claim in `semantic-adjudication.json` is derived from the ARM64 spans by
+    `check-compat-semantics.py check`, which needs both output trees. What is
+    checkable offline is that the record exists, covers exactly the four items,
+    is quoted where the prose relies on it, and agrees with the counters the rest
+    of this evidence carries. The unresolved-control-flow counter is the one those
+    four moved: it is now the number of statements the artifacts hold, so it
+    reconciles against the text like the other text-derived counters.
+    """
+    record = json.loads(SEMANTIC_RECORD.read_text(encoding="utf-8"))
+    if tuple(sorted(record)) != SEMANTIC_ITEMS:
+        failures.append(f"{SEMANTIC_RECORD.name} does not adjudicate exactly {SEMANTIC_ITEMS}: "
+                        f"{tuple(sorted(record))}")
+    for item, block in record.items():
+        for field in ("question", "derivation", "conclusion", "evidence"):
+            if not block.get(field):
+                failures.append(f"{SEMANTIC_RECORD.name} {item} records no {field}")
+    if SEMANTIC_CHECKER not in doc:
+        failures.append(f"{DOC.name} does not name the oracle that re-derives the adjudication")
+    residue = accounting["unresolved_control_flow"]
+    statements = record["control_flow_accounting"]["candidate"]["unresolved_cf_statements"]
+    if statements != residue["candidate_unresolved_cf_statements"]:
+        failures.append("the semantic record and accounting-reconciliation.json disagree on the "
+                        "candidate unresolved-control-flow statements")
+    if statements != quality["unresolved_cf"]:
+        failures.append(f"the candidate emits {statements} unresolved-control-flow statements and "
+                        f"quality-candidate.json reports {quality['unresolved_cf']}")
+    if str(statements) not in doc:
+        failures.append(f"the candidate statement count {statements} is not stated in {DOC.name}")
+    for item in SEMANTIC_ITEMS:
+        for phrase in ("open semantic item", "is not claimed as an accepted correction"):
+            if phrase in doc:
+                failures.append(f"{DOC.name} still carries {phrase!r} while {item} is adjudicated")
+                break
+        break
+    if REPLAY_MARKER_TABLE.exists():
+        failures.append(f"{REPLAY_MARKER_TABLE.name} was retired with the residue it localized, "
+                        f"so a copy of it is stale evidence")
 
 
 def check_register_scopes(failures):
@@ -913,23 +975,8 @@ def verify(failures):
     if classes["asm"]["differing_files"] != 0:
         failures.append("assembly output changed; that is not an accepted difference class")
 
-    # The two adjudication tables have to hold the rows the JSON counts claim.
-    replay_rows = REPLAY_MARKER_TABLE.read_text(encoding="utf-8").splitlines()[1:]
-    residue = accounting["unresolved_control_flow"]
-    if len(replay_rows) != residue["marker_bearing_functions"]:
-        failures.append(
-            f"{REPLAY_MARKER_TABLE.name} has {len(replay_rows)} rows, "
-            f"{residue['marker_bearing_functions']} marker-bearing functions are claimed"
-        )
-    identical = [r.split("\t") for r in replay_rows if r.split("\t")[4] == "true"]
-    if len(identical) != residue["per_function_replay_identical"]:
-        failures.append(f"{len(identical)} replays reproduced the whole-run pseudocode, "
-                        f"{residue['per_function_replay_identical']} are claimed")
-    if any(row[2] != row[3] for row in identical):
-        failures.append("a reproduced replay disagrees with its own unresolved_cf counter")
-    if sum(int(row[1]) for row in [r.split("\t") for r in replay_rows]) != residue["candidate_emitted_markers"]:
-        failures.append("the replay table does not account for every emitted marker")
     doc = DOC.read_text(encoding="utf-8")
+    check_semantic_adjudication(accounting, quality, doc, failures)
     check_operand_loss_classes(classes, doc, failures)
     for name in (list(classes["ir"]["op_transitions"])
                  + list(classes["ir"]["branch_target_shape_transitions"])
@@ -1224,14 +1271,13 @@ def self_test():
     polarities = [["a", guard_eq, guard_ne, GUARD_POLARITY_CLASS, GUARD_POLARITY_FLAG],
                   ["b", "x;", "y;", "other", "none"]]
     assert count_by(polarities, 4) == {GUARD_POLARITY_FLAG: 1, "none": 1}
-    for phrase in ("derived from the two rendered lines and not adjudicated",
+    for phrase in ("derived from the two rendered lines and not adjudicated there",
                    "'== 0) {'", "'!= 0) {'", "cuts across adjudication_class",
-                   "recorded and not accepted"):
+                   "semantic-adjudication.json over the ARM64 spans"):
         assert phrase in GUARD_POLARITY_DEFINITION, phrase
-    for phrase in ("sibling guards suggest the candidate corrected the polarity",
-                   "an independent semantic oracle over the machine code",
-                   "open semantic item", "not claimed as an accepted correction"):
-        assert phrase in GUARD_POLARITY_OPEN_ITEM, phrase
+    for phrase in ("tst Xn, #0xc0000000", "branches past the guarded body",
+                   "the body runs when they are not", "the reference inverted three"):
+        assert phrase in GUARD_POLARITY_ADJUDICATION, phrase
 
     # `fetch` must never leave an unverified asset at --dest: the download lands on
     # a temporary sibling, is checked there, and replaces the destination only on a

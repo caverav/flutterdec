@@ -12,7 +12,7 @@
   "indirect_calls": 6627,
   "indirect_call_ratio": 0.1582264880739202,
   "placeholder_ifs": 530,
-  "unresolved_cf": 517,
+  "unresolved_cf": 521,
   "raw_register_calls": 6627,
   "semantic_direct_calls": 0,
   "semantic_indirect_calls": 0,

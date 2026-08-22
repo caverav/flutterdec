@@ -26,11 +26,11 @@ prose here exists to adjudicate the differences, which a JSON file cannot do.
 | Snapshot hash | `80a49c7111088100a233b2ae788e1f48` (identical on both sides) |
 | Adapter | `--adapter-backend internal`, kind `dynamic_snapshot_string_model_v1` |
 | Reference revision | `1371e42549472ec388f58bc1fd5dbdf96e8dcdd1` |
-| Candidate revision | `361c922ad418da67277aea911050fdf70fe10234` |
+| Candidate revision | `22146970e5d2fd1fd223297aec0b2b06826dfbd9` |
 | Reference product tree | `23165413ab8e29b08ac71bd712aaf607154aea090ae1680170472f05d3a8e6f3` (106 files) |
-| Candidate product tree | `43d9ecebb959e6e00514fb50d2af38d7402cb221b674df9d92a994d403c9c238` (141 files) |
-| Reference binary sha256 | `54981d32172f8ea9cc03331eb16d8e3cfbc8f300d7ebf17bbc0b25dece8c272b` |
-| Candidate binary sha256 | `08110f952bc2c0a831aa9bb979b4f745b9607595cef6f47c1bf5bc36a4f67c31` |
+| Candidate product tree | `9dae6d8258663b359fb960e3546ec84cc26a672289c4d25f0293f7213edbbc75` (142 files) |
+| Reference binary sha256 | `a8eef0988e6f25c0da07ffe0dfdadad217272625c523bdaf87c95787f5ac604c` |
+| Candidate binary sha256 | `7fe12b2f592159f102616722e266ee0f399a59f9a37568a3ef86f69a8f2e61f3` |
 | CLI version | `flutterdec 0.1.0-alpha.4` on both sides |
 | Toolchain | `nix develop`, rustc 1.92.0, cargo 1.92.0, profile `release` |
 | Environment | `LC_ALL=C`, `TZ=UTC`, identical absolute input path on every run |
@@ -39,7 +39,7 @@ Both sides were built clean, in separate worktrees, into separate
 workspace-backed target directories, from `rust-toolchain.toml` and
 `flake.lock` that are byte-identical at the two revisions.
 
-**What the candidate revision is, and what it is not.** `361c922` is the
+**What the candidate revision is, and what it is not.** `2214697` is the
 *product-state* revision: the state of the code that decides the emitted bytes,
 which is what these artifacts were built from. It is deliberately never advanced
 to the docs commit that carries this evidence. Advancing it would change what the
@@ -49,7 +49,7 @@ so it is pinned by digest: sha256 over one `<path>\t<git blob object id>\n` line
 per tracked file under `Cargo.lock`, `Cargo.toml`, `adapters/`, `crates/`,
 `flake.lock`, `flake.nix`, `rust-toolchain.toml` and `symbols/`, paths in
 ascending byte order, no header. `check-compat-baseline.py verify` recomputes it
-at `361c922`, at `1371e42`, and at the current `HEAD`, and fails if `HEAD` has any
+at `2214697`, at `1371e42`, and at the current `HEAD`, and fails if `HEAD` has any
 product-path delta from the recorded candidate tree. The evidence and prose live
 outside those paths on purpose, which is what lets the record keep moving while
 the pin stays still.
@@ -134,14 +134,14 @@ failure:
 | Run | Exit | Gate reasons | Wall clock |
 | --- | --- | --- | --- |
 | reference `1371e42` | 1 | placeholder if-count exceeded | 53 s |
-| candidate `361c922` | 1 | placeholder if-count exceeded; unresolved control-flow count exceeded | 133 s |
+| candidate `2214697` | 1 | placeholder if-count exceeded; unresolved control-flow count exceeded | 133 s |
 | candidate, second process | 1 | same two reasons | 133 s |
 | candidate, third process | 1 | same two reasons | 133 s |
 | candidate, fourth process, input copied to a different absolute path | 1 | same two reasons | 133 s |
 
 `placeholder_ifs=501 unresolved_cf=0 indirect_call_ratio=0.156
 disassembly_ratio=1.000` on the reference; `placeholder_ifs=530
-unresolved_cf=517 indirect_call_ratio=0.158 disassembly_ratio=1.000` on the
+unresolved_cf=521 indirect_call_ratio=0.158 disassembly_ratio=1.000` on the
 candidate.
 
 ## 4. Artifact sets
@@ -153,10 +153,10 @@ Each run wrote 17402 files: 5800 `pseudocode/*.dartpseudo`, 5800 `ir/*.json`,
 
 | Manifest | sha256 of the per-artifact manifest |
 | --- | --- |
-| reference | `bc70190801414e18c6c68cf4a20f3037da1b086e47484880bc47fb85943ff39a` |
-| candidate | `aa587824359452cd5af2e51b1ca18070b51ae297faf424199a1e0cc6d5b9f48b` |
-| candidate, second process | `aa587824359452cd5af2e51b1ca18070b51ae297faf424199a1e0cc6d5b9f48b` |
-| candidate, third process | `aa587824359452cd5af2e51b1ca18070b51ae297faf424199a1e0cc6d5b9f48b` |
+| reference | `cb156a879817b9db2e2ed416ca4715df2b7a754cf11032f968b6416c96d4cdc0` |
+| candidate | `3879e3728baffe0ec7ea58b73ddf3439dc2bf2f97d5857a5cc9af65862319a8a` |
+| candidate, second process | `3879e3728baffe0ec7ea58b73ddf3439dc2bf2f97d5857a5cc9af65862319a8a` |
+| candidate, third process | `3879e3728baffe0ec7ea58b73ddf3439dc2bf2f97d5857a5cc9af65862319a8a` |
 
 Each of those four values is the sha256 of a one-run manifest: one
 `<path>\t<bytes>\t<sha256>\n` line per emitted artifact, paths in ascending byte
@@ -185,7 +185,7 @@ performs is the check that holds from any checkout. Measured, from a cold clone
 built and run by the section 8 recipe: of the 17402 manifest lines exactly one
 differs from the recorded candidate manifest, `report.json`, and substituting the
 recorded `report.json` line into the fresh tree's manifest reproduces
-`aa587824359452cd5af2e51b1ca18070b51ae297faf424199a1e0cc6d5b9f48b` exactly.
+`3879e3728baffe0ec7ea58b73ddf3439dc2bf2f97d5857a5cc9af65862319a8a` exactly.
 
 The three candidate manifests are equal, so all 17402 artifacts are byte-stable
 across three separate processes. Nothing in the emitted set carries a
@@ -378,19 +378,20 @@ the three rows that are none of the above: `01058_sub_6b17b4.dartpseudo` renders
 the expression `(tmp3 + (tmp1 - 1))`, and `05149_sub_bdd098.dartpseudo` is the one
 case in the 3672 differing files where the candidate prints strictly less at a
 call site: the reference emits `sub_90b144(reg0)` and the candidate emits
-`sub_90b144()`, declining the register-argument claim. That row is listed in
-section 9 as an open item rather than adjudicated as a correction.
+`sub_90b144()`, declining the register-argument claim. Section 6.5 adjudicates
+that row from the call site's own instructions.
 
 **Guard polarity.** Three of the 78 rows carry a second difference that cuts
 across the four classes above and that none of them describes, so the table
 carries a fifth column, defined once and recorded here: `guard_polarity` is
 the operand-direction-losses.tsv column, derived from the two rendered lines and
-not adjudicated: reference_eq_zero_candidate_ne_zero on a row whose
+not adjudicated there: reference_eq_zero_candidate_ne_zero on a row whose
 reference_line and candidate_line both start with `'if ('` while the reference
 ends with `'== 0) {'` and the candidate with `'!= 0) {'`, and none on every other
 row. It cuts across adjudication_class, which the flagged rows keep, and verify
-re-derives the column from the row bytes instead of trusting it. The flip is
-recorded and not accepted: no committed oracle proves which polarity is correct.
+re-derives the column from the row bytes instead of trusting it. Which polarity
+is correct is decided outside this column, by semantic-adjudication.json over the
+ARM64 spans: the candidate is right and the reference inverted the guard.
 The three sites are exactly these, with the reference line above the candidate
 line that replaces it:
 
@@ -419,8 +420,8 @@ when the flagged set is not exactly these three files, when a flagged row's
 one of its six lines differently. The reverse flip - a reference `!= 0` guard
 becoming `== 0` - does not occur in the 78 rows, and
 `difference-classes.json.operand_naming_guard_polarity.reverse_direction_rows`
-records that 0 and is recounted the same way. Section 9 carries the flip as an
-open semantic item.
+records that 0 and is recounted the same way. Section 6.5 settles which side is
+right, from the machine code.
 
 **Helper resolution.** All 27097 `_block_N` occurrences resolve: every
 referenced helper has a definition in the same file, in all 5800 candidate
@@ -625,11 +626,132 @@ Nineteen `report.json` values change, fifteen of them inside the `quality`
 block it embeds and four outside it (`call_fallback.dispatch_target_invoke`,
 `call_fallback.generic_invoke`, and the two `shared_stub_naming` noreturn
 counters). All of them follow from 6.1 and 6.2. The ones worth
-naming: `unresolved_cf` 0 -> 517 (previously unstated indirect branches),
+naming: `unresolved_cf` 0 -> 521 (previously unstated indirect branches),
 `block_helper_refs` 0 -> 27097, `total_calls` 45955 -> 41883 and
 `indirect_calls` 7149 -> 6627 (calls behind an invented post-trap fallthrough
 are no longer counted), `unlifted_instructions` 689 -> 481,
 `omitted_path_markers` 355 -> 50, and the new `emission` object.
+
+### 6.5 Machine-level adjudication of the behaviour-affecting differences
+
+Four of the differences above change what the artifact says the program does, and
+none of them can be settled by counting text. Each one is derived here from the
+ARM64 instruction spans, the destinations those instructions encode, and the two
+emitted files - never from a prior rendering, a prior report, or the emitter's own
+account of itself. The derivations, with every span they rest on, are in
+[compat-evidence/semantic-adjudication.json](compat-evidence/semantic-adjudication.json),
+and `scripts/check-compat-semantics.py` re-derives all four from the two output
+trees and fails on any disagreement:
+
+```bash
+python3 scripts/check-compat-semantics.py --self-test     # the rules themselves
+python3 scripts/check-compat-semantics.py verify          # offline: the record
+python3 scripts/check-compat-semantics.py check \
+  --reference /tmp/ref-out --candidate /tmp/compat-out    # the derivation
+```
+
+**Guard polarity: the candidate is right and the reference inverted it.** The
+seven files that render this guard shape hold 15 mask-test sites, and every one of
+them is the same three-instruction span: `tst Xn, #0xc0000000`, then `b.eq` to an
+address past the guarded body, then the body itself. `tst` is `ANDS xzr, Xn, #imm`
+(Arm ARM DDI 0487, C6.2), so it sets Z exactly when the masked bits are zero, and
+`b.eq` is taken exactly then. Every one of those sites is `tst Xn, #0xc0000000`
+followed immediately by `b.eq`, which branches past the guarded body exactly when
+the masked bits are zero, so the body runs when they are not and `!= 0` is the
+guard the machine code carries. The candidate renders all 14 emitted guards that
+way and the reference inverted three of them. The body is identified by what it
+contains rather than by position: the `ldp` of the Thread stack-limit pair at
+`[x26, #0x50]`, the `+ 0x10`, the `cmp`, and a `b.ls` whose destination calls the
+shared stack-overflow stub at `0xd51af0`. In `03119_sub_936128` the first site is
+`tst x3, #0xc0000000` at `0x9361a4`, `b.eq #0x9361d8` at `0x9361a8`, and the body
+from `0x9361ac` (`ldp x0, x4, [x26, #0x50]`) through `b.ls #0x936430` at
+`0x9361b8`, whose target reaches `bl #0xd51af0` at `0x936438`. No site in the
+seven files is followed by `b.ne`, so no emitted guard there derives `== 0`, and
+the checker's self-test proves the rule reads the condition code by deriving the
+opposite answer from a planted `b.ne`.
+
+The emitted side of that shape is counted the same way on both trees: an emitted
+line whose stripped text ends with `'& 0xc0000000) == 0) {'` or
+`'& 0xc0000000) != 0) {'` and whose next emitted line contains `'thread.f88 <='`,
+counted over `pseudocode/*.dartpseudo` on each side, occurs 14 times in the same 7
+files. The reference renders 11 of them != 0 and only these 3 == 0, and the
+candidate renders all 14 != 0. Five of the reference's 11 sit inside the three
+flagged files - three in `03119_sub_936128.dartpseudo` and one each in the other
+two - so each of those functions renders that shape both ways in the reference
+itself, which is what first made the flip look like a correction. The machine code
+is what settles it, and the 15 sites say the same thing at every one of them. The
+one file whose site count does not match its emitted count is
+`04626_sub_b14cf4`, with 2 sites and 1 emitted guard: the second guard's block is
+not emitted, so there is no line to compare, and the derivation covers the sites
+rather than the lines.
+
+All 15 sites, each one a `tst`/`b.eq` pair whose fall-through is the checked body,
+so each one derives `!= 0`:
+
+| Function | Mask test | Branch | Destination | Body from | Slow path | Stub call |
+| --- | --- | --- | --- | --- | --- | --- |
+| `03097_sub_9264c4` | `tst x1, #0xc0000000` at `0x926548` | `b.eq #0x92657c` at `0x92654c` | `0x92657c` | `0x926550` | `0x92655c` | `0x926674` |
+| `03119_sub_936128` | `tst x3, #0xc0000000` at `0x9361a4` | `b.eq #0x9361d8` at `0x9361a8` | `0x9361d8` | `0x9361ac` | `0x9361b8` | `0x936438` |
+| `03119_sub_936128` | `tst x0, #0xc0000000` at `0x936230` | `b.eq #0x936264` at `0x936234` | `0x936264` | `0x936238` | `0x936244` | `0x936458` |
+| `03119_sub_936128` | `tst x1, #0xc0000000` at `0x9362ec` | `b.eq #0x936320` at `0x9362f0` | `0x936320` | `0x9362f4` | `0x936300` | `0x936478` |
+| `03119_sub_936128` | `tst x1, #0xc0000000` at `0x9363b8` | `b.eq #0x9363ec` at `0x9363bc` | `0x9363ec` | `0x9363c0` | `0x9363cc` | `0x9364a0` |
+| `03124_sub_936bd0` | `tst x2, #0xc0000000` at `0x936c00` | `b.eq #0x936c34` at `0x936c04` | `0x936c34` | `0x936c08` | `0x936c14` | `0x936cf0` |
+| `03124_sub_936bd0` | `tst x2, #0xc0000000` at `0x936c7c` | `b.eq #0x936cb0` at `0x936c80` | `0x936cb0` | `0x936c84` | `0x936c90` | `0x936d0c` |
+| `04626_sub_b14cf4` | `tst x2, #0xc0000000` at `0xb14d28` | `b.eq #0xb14d5c` at `0xb14d2c` | `0xb14d5c` | `0xb14d30` | `0xb14d3c` | `0xb14d80` |
+| `04626_sub_b14cf4` | `tst x0, #0xc0000000` at `0xb14db8` | `b.eq #0xb14dec` at `0xb14dbc` | `0xb14dec` | `0xb14dc0` | `0xb14dcc` | `0xb14e90` |
+| `05530_sub_c8b9b8` | `tst x3, #0xc0000000` at `0xc8ba10` | `b.eq #0xc8ba44` at `0xc8ba14` | `0xc8ba44` | `0xc8ba18` | `0xc8ba24` | `0xc8bb58` |
+| `05530_sub_c8b9b8` | `tst x3, #0xc0000000` at `0xc8bad4` | `b.eq #0xc8bb08` at `0xc8bad8` | `0xc8bb08` | `0xc8badc` | `0xc8bae8` | `0xc8bb84` |
+| `05548_sub_c93e0c` | `tst x6, #0xc0000000` at `0xc93f64` | `b.eq #0xc93f98` at `0xc93f68` | `0xc93f98` | `0xc93f6c` | `0xc93f78` | `0xc940c0` |
+| `05548_sub_c93e0c` | `tst x3, #0xc0000000` at `0xc94034` | `b.eq #0xc94068` at `0xc94038` | `0xc94068` | `0xc9403c` | `0xc94048` | `0xc940dc` |
+| `05557_sub_cf0300` | `tst x4, #0xc0000000` at `0xcf04c0` | `b.eq #0xcf04f4` at `0xcf04c4` | `0xcf04f4` | `0xcf04c8` | `0xcf04d4` | `0xcf0610` |
+| `05557_sub_cf0300` | `tst x3, #0xc0000000` at `0xcf054c` | `b.eq #0xcf0580` at `0xcf0550` | `0xcf0580` | `0xcf0554` | `0xcf0560` | `0xcf063c` |
+
+**Selector losses: unreachable code, not lost recovery.** The address-level graph
+of `01540_sub_772c00` and `01723_sub_7cf2b0` is rebuilt from the emitted asm
+alone, giving each instruction the control effect its text has: `br Xn`, `ret`,
+`brk` and an unconditional `b` have no fall-through, a conditional branch has both
+edges, and a `bl`/`blr` falls through to its return address while its destination
+leaves the function. Under those effects **every** dispatch call site in both
+files is unreachable from the entry address. Inventing a fall-through after
+`br Xn` - which is exactly what classifying `br` as a non-terminator did - makes
+two of them reachable in each file, and they are the only ones: `0x772cf8` and
+`0x772d28` in `01540_sub_772c00`, `0x7cf32c` and `0x7cf350` in
+`01723_sub_7cf2b0`. Those are the sites whose 18 and 2 `sel<N>(` renderings the
+reference emitted and the candidate does not. In `01540_sub_772c00` the invented
+edge is the one after `br x16` at `0x772ca8`: the reference's block runs from
+`0x772ca4` to `0x772cd0` and falls into `0x772cd4`, while the candidate's ends at
+the `br`. So the class is the same correction as section 6.1 seen at the selector
+surface, and no recovered call was lost.
+
+**The dropped call argument: no recovered value disappeared.** At
+`0xbdd0c0` in `05149_sub_bdd098` the instruction is `bl #0x90b144`. The emitter
+claims an argument position only for a register the call site defined, in
+`DartCallingConvention` order - `x1`, `x2`, `x3`, `x5`, `x6`, `x7` - and the only
+writes to any of those, or to `x0`, between the function entry and that `bl` are
+`mov x0, x1` at `0xbdd0a4` and `mov x1, x0` at `0xbdd0bc`. Following that chain,
+the value in `x1` at the call is the function's own incoming `x1`: a pass-through,
+which the stated lower bound does not claim as an argument. No argument position
+carries a defined value, so `sub_90b144()` is the whole claim the call site
+supports. The token the reference printed, `reg0`, is the unrecovered-value
+spelling of `x0`, which is not an argument position at all, so what disappeared
+was an arity claim over an unrecovered value and not a recovered argument.
+
+**Control-flow accounting: reconciled by fixing the counter.** The candidate used
+to emit 521 unresolved-control-flow statements while `quality.json.unresolved_cf`
+reported 517. The cause was not a text difference: a block the DFS walk refuses to
+inline is rendered by a nested emitter in `append_helper_functions` whose counters
+are discarded when its lines are copied into the body, and `inline_helper_calls`
+then copies that body to every call site, so both paths put statements into the
+artifact that the walk never counted. The whole residue was one function:
+`00860_sub_696734.dartpseudo` carries four `// indirect branch through reg2`
+statements over a single reachable `br x2` at `0x6968fc` - its other two
+`br x16` blocks are `NoreturnPruned` and `RetainedUnreachable` - and its counter
+read 0. `2214697` recounts the statement shapes from the finished body, so the
+counter is the number the artifact carries whatever path emitted it: 521 against
+521 on the candidate, 0 against 0 on the reference, over 138 statement-bearing
+functions. The regression test is
+`crates/flutterdec-decompiler/tests/unresolved_cf_accounting.rs`, which fails on
+the previous counter for both the helper-body case and the inlined-copy case.
 
 ## 7. Accounting reconciliation
 
@@ -647,10 +769,11 @@ From [compat-evidence/accounting-reconciliation.json](compat-evidence/accounting
 - `report.json.shared_stub_naming.noreturn_pruned_blocks` (13016) equals
   `quality.json.emission.noreturn_pruned_blocks` on the candidate; the
   reference reported 13696 with no ledger to check it against.
-- The four text-derived quality counters recount exactly from the emitted
+- The five text-derived quality counters recount exactly from the emitted
   files on **both** sides: `block_helper_refs` (0 / 27097),
   `placeholder_cond_markers` (215 / 2617), `omitted_path_markers` (355 / 50),
-  `loop_backedge_markers` (130 / 77).
+  `loop_backedge_markers` (130 / 77), and `unresolved_cf` (0 / 521), which
+  joined them in `2214697` and is the subject of section 6.5.
 
 **`raw_register_name_refs` and its two counter scopes.** The structural census
 counts `\breg\d+\b` over the whole emitted text and reports 54062 on the
@@ -704,33 +827,28 @@ emitted text, and the quality counter is the one to quote for emitted code. The
 0.329-per-line figure in section 6.2 is the code-span counter over 2099918
 emitted lines.
 
-One residue, recorded rather than papered over: the candidate emits 520
-unrecovered-indirect-branch markers while `quality.json.unresolved_cf` is 517.
-The markers sit in 137 functions. Function-level replay with `--target id:<N>`
-over all 137, in
-[compat-evidence/marker-replay.tsv](compat-evidence/marker-replay.tsv),
-reproduces 136 of them byte-for-byte, and in every one of those 136 the
-replayed marker count equals the replayed counter: 516 and 516. The residue is
-therefore exactly the one function whose targeted render differs,
-`00860_sub_696734`, which carries 4 markers in the whole-program run against
-the 1 remaining counter (517 - 516). Marker text and `unresolved_cf` are not a
-product invariant - the counter is incremented on the counted emission path
-while text can be re-rendered - so this is an emitter accounting question for
-the emitter contracts, not a reference-to-candidate compatibility difference:
-the reference has 0 of both.
+**Unresolved control flow, statement by statement.** The counter is the number
+of unresolved-control-flow statements the artifacts carry, counted by the prefix
+each one starts with - `// indirect branch`, `// unresolved branch target`,
+`// unresolved jump` - and it reconciles exactly on both sides: **521** statements
+against `quality.json.unresolved_cf` 521 on the candidate, over 138 functions, and
+0 against 0 on the reference. Section 6.5 records what that took: until `2214697`
+the counter was the walk's own total, it read 517, and the four-statement
+difference was one function whose statements were rendered into a helper body the
+walk did not count.
 
-The register-scope recount above turned up one more marker than the census
-recorded, and it belongs to the same open residue rather than to this repair.
+Counting by prefix is part of the definition, and the census shows why.
 `structural-census-candidate.json.unrecovered_indirect_branch` is 520 because it
 matches `// indirect branch through \w+: target not recovered`, and in
-`pseudocode/01224_sub_6cd918.dartpseudo` one marker carries an inline value
+`pseudocode/01224_sub_6cd918.dartpseudo` one statement carries an inline value
 annotation between the register and the tail:
-`// indirect branch through reg2 /* = slot0.f8 */: target not recovered`. Marker
-lines that start with `// indirect branch through` number **521**. The 520-based
-tables above - the census, `accounting-reconciliation.json`, and
-`marker-replay.tsv` - are left exactly as they were measured; the residue against
-`unresolved_cf = 517` is therefore 4 markers by the prefix count rather than 3,
-and section 9 carries it as an open item.
+`// indirect branch through reg2 /* = slot0.f8 */: target not recovered`. A
+whole-marker regex loses that line; the prefix keeps it, which is why the census
+carries both numbers - the 520 it measured and
+`unrecovered_indirect_branch_statement_prefix` 521 - and why the counter is
+prefix-keyed. The regression test in
+`crates/flutterdec-decompiler/tests/unresolved_cf_accounting.rs` pins that case
+directly.
 
 ## 8. Re-running this baseline
 
@@ -766,9 +884,9 @@ normalized, so it fails on any lost file, any added file, and any changed byte
 outside those fields. Both modes were plant-tested, each exiting 1: deleting two
 artifacts and changing `counts.functions` in the replayed `report.json` is
 reported as two missing artifacts plus a `report.json` difference in `counts`;
-injecting a dropped `blocks.preds` key into `schema-comparison.json`, putting an
-absolute path back into `report-candidate.json.input`, and truncating
-`marker-replay.tsv` each fail `verify` with the matching message.
+injecting a dropped `blocks.preds` key into `schema-comparison.json` and putting
+an absolute path back into `report-candidate.json.input` each fail `verify` with
+the matching message.
 
 The four areas this document had to repair are plant-tested the same way, each
 exiting 1 with its own message:
@@ -788,7 +906,7 @@ The precision repair on top of it is plant-tested the same way, each exiting 1:
 | blank one row's `candidate_marker` | `<file> carries the candidate_marker '', which is not one of ('both', 'indirect_branch_only', 'trap_only', 'none')` plus the all-rows count failure |
 | change one row's `lost_edge_after_IndirectBranch` count | `the lost_edge_effects column does not sum to the recorded totals: {...}` |
 | set `reg31_tokens` in `register-counter-scopes.json` to a nonzero value | `the candidate text carries <n> reg31_tokens, so the quality.rs 0..=30 boundary drops tokens the census counts and the two scopes are not comparable` |
-| commit any change under `crates/` | `HEAD has a product-path delta from revisions.candidate (361c922): the product tree hashes <digest>, so the recorded artifacts were not produced by the product state at HEAD` |
+| commit any change under `crates/` | `HEAD has a product-path delta from revisions.candidate (2214697): the product tree hashes <digest>, so the recorded artifacts were not produced by the product state at HEAD` |
 | delete the `NIX_CONFIG` export from section 8 | `the NIX_CONFIG export the build line needs is not in compat-baseline-real-binary.md` |
 | drop the exact `difflib` spelling, `n=0` argument included, from section 6.2 | `the diff implementation is not named in compat-baseline-real-binary.md` |
 
@@ -835,18 +953,37 @@ detached from the direction the rows themselves state.
 | flag a fourth row | the same derivation, pinned-sites and count failures, plus `the guard-polarity site <file> is not named in compat-baseline-real-binary.md` and both `is not rendered verbatim` failures |
 | move a flagged row's `adjudication_class` to `other` | `verify`: `the guard-polarity row 03119_sub_936128.dartpseudo carries the adjudication_class 'other'; the flag is orthogonal and the class must stay expression_replaced_by_the_register_holding_it` |
 | reword `definitions.operand_naming_guard_polarity` in `difference-classes.json` | `verify`: `the operand_naming_guard_polarity definition in difference-classes.json does not state that the column is re-derived and the flip unaccepted` |
+| set `operand_naming_guard_polarity.adjudication.conclusion` to anything else | `verify`: `operand_naming_guard_polarity.adjudication does not conclude that the candidate is correct` |
 | drop a clause of that definition from section 6.2 | `verify`: `the guard_polarity definition is missing or altered in compat-baseline-real-binary.md` |
 | change one rendered guard line in section 6.2 | `verify`: `the guard-polarity row for 05530_sub_c8b9b8.dartpseudo is not rendered verbatim in compat-baseline-real-binary.md: <line>...` |
-| turn the section 9 open item into an accepted correction | `verify`: `the guard-polarity flip is not carried as an open semantic item in compat-baseline-real-binary.md` |
-| change `sibling_guards.reference_ne_zero` in `difference-classes.json` to 10 | `verify`: `sibling_guards does not split guards_per_side on the reference side`, plus a `the sibling-guard count ... is not stated in compat-baseline-real-binary.md` failure quoting the section 9 sentence the wrong count builds |
+| drop a clause of the machine-level guard adjudication from section 6.5 | `verify`: `the machine-level adjudication of the guard-polarity flip is missing or altered in compat-baseline-real-binary.md` |
+| change `sibling_guards.reference_ne_zero` in `difference-classes.json` to 10 | `verify`: `sibling_guards does not split guards_per_side on the reference side`, plus a `the sibling-guard count ... is not stated in compat-baseline-real-binary.md` failure quoting the section 6.5 sentence the wrong count builds |
 | drop a clause of `sibling_guards.reading` | `verify`: `the sibling-guard reading behind the 14/7 figures is missing or altered in compat-baseline-real-binary.md` |
 | let `guard_polarity_of` accept either direction | `--self-test`: `AssertionError` on `guard_polarity_of(guard_ne, guard_eq) == "none"` |
 
-`verify` is not wired into `scripts/ci-check.sh` yet. Both that script and
-`scripts/lint-python.sh` are protected paths in section 7 of
-`oracle-protocol-ir-cfg-emitter.md`, so adding a step to them is a ruler change
-and needs its own section 9 adjudication commit, which this evidence slice
-deliberately does not bundle.
+The section 6.5 adjudication is plant-tested against its own oracle, each exiting
+1. The first three are the point of it: a conclusion the machine code does not
+support has to fail here rather than read as settled.
+
+| Plant | Failure |
+| --- | --- |
+| replace one site's guard branch with the opposite condition code, in both trees | `check`: `the machine code derives ['!= 0', '== 0'], the record claims != 0`, plus `guard site 0x9361a4 does not match the record` |
+| do the same in one tree only | `check`: `asm/03119_sub_936128.s is not identical on the two sides`, which is checked before any guard is read |
+| replace the register branch in a selector file's asm with a non-terminator | `check`: `01540_sub_772c00.dartpseudo: dispatch calls ['0x772cf8', '0x772d28'] are reachable without an invented fall-through` |
+| give an argument position a defined value, by writing `x1` from a register the call site defines | `check`: `argument positions ['x1'] carry a defined value, so the candidate dropped a recovered argument`, plus the pass-through mismatch |
+| perturb `quality.json.unresolved_cf` in the tree being checked | `check`: `candidate.quality_unresolved_cf derives 520, the record claims 521`, plus `candidate: 521 statements against quality.json.unresolved_cf 520` |
+| drop a site from `semantic-adjudication.json` | `check`: `guard site 0x9363b8 is not in the record`; `verify`: `the per-file guard sites sum to 14, the record claims 15` |
+| stop naming a derived site in this document | `verify`: `the guard site <va> is not named in compat-baseline-real-binary.md` |
+| revert the counter to the walk's own total | `cargo test`: two failures in `unresolved_cf_accounting.rs`, the helper-body case and the inlined-copy case |
+| let the derivation rule accept either polarity | `--self-test`: `AssertionError` on the planted opposite-condition span |
+
+Neither `verify` nor `scripts/check-compat-semantics.py` is wired into
+`scripts/ci-check.sh` yet. Both that script and `scripts/lint-python.sh` are
+protected paths in section 7 of `oracle-protocol-ir-cfg-emitter.md`, so adding a
+step to them is a ruler change and needs its own adjudication commit, which this
+evidence slice deliberately does not bundle. The emitter side of the accounting
+does run in CI: `crates/flutterdec-decompiler/tests/unresolved_cf_accounting.rs`
+is a `cargo test --workspace` target.
 
 Reproducing the reference side needs a second clean build at `1371e42`:
 
@@ -868,48 +1005,22 @@ artifact manifest is the comparison that has to hold.
   Google Play build of the same release are untested here.
 - Both sides exit 1 on the default quality gates. This baseline proves
   compatibility of the emitted artifacts, not that the run passes the gates.
-- The `unresolved_cf` residue in section 7 is open and belongs to the emitter
-  contracts. It is 3 markers against the 520 the census matched and 4 against
-  the 521 lines that start with the marker prefix; the one difference is the
-  annotated marker in `pseudocode/01224_sub_6cd918.dartpseudo`, which also means
-  `structural-census-candidate.json.unrecovered_indirect_branch` undercounts
-  emitted markers by one. The census, `accounting-reconciliation.json` and
-  `marker-replay.tsv` still carry 520, as measured.
-- Two files lose only `sel<N>(` renderings
-  (`01540_sub_772c00.dartpseudo`, `01723_sub_7cf2b0.dartpseudo`, 20 renderings,
-  160 removed lines). A recovered selector is not a call target, so no IR
-  instruction carries the name and the lost-edge attribution in section 6.4 does
-  not reach them. Both files do carry an unrecovered-indirect-branch marker, but
-  that is whole-file evidence, not per-rendering attribution, so this class is
-  open.
-- One operand pair in section 6.2 is open: `sub_90b144(reg0)` becomes
-  `sub_90b144()` in `pseudocode/05149_sub_bdd098.dartpseudo`. It is the only
-  replacement in the 3672 differing files where the candidate prints fewer
-  call arguments than the reference, and it is a declined register-argument
-  claim rather than an adjudicated correction.
-- The three `guard_polarity` rows in section 6.2 are an open semantic item. In
-  `pseudocode/03119_sub_936128.dartpseudo`,
-  `pseudocode/05530_sub_c8b9b8.dartpseudo` and
-  `pseudocode/05548_sub_c93e0c.dartpseudo` the reference guard tests
-  `& 0xc0000000) == 0` where the candidate tests `!= 0`, over a structurally
-  identical guarded body, so the two renderings enter that body under
-  complementary conditions. The same guard shape - an emitted line whose stripped
-  text ends with `'& 0xc0000000) == 0) {'` or `'& 0xc0000000) != 0) {'` and whose
-  next emitted line contains `'thread.f88 <='`, counted over
-  `pseudocode/*.dartpseudo` on each side - occurs 14 times in the same 7 files:
-  the reference renders 11 of them `!= 0` and only these 3
-  `== 0`, and the candidate renders all 14 `!= 0`. Five of the reference's 11 are
-  inside these same three files - three in `03119_sub_936128.dartpseudo` and one
-  each in the other two - so each of the three functions is a place where the
-  reference itself already renders that shape both ways. The sibling guards
-  suggest the candidate corrected the polarity, but nothing committed here is an
-  independent semantic oracle over the machine code, so the flip is carried as an
-  open semantic item and is not claimed as an accepted correction.
+- Section 6.5 adjudicates the four behaviour-affecting differences from the
+  machine code, and what it proves is bounded by what it reads. The guard
+  derivation covers the 15 mask-test sites of this one guard shape in these seven
+  files, not every emitted guard in the run; the selector derivation is an
+  address-level reachability argument over one function's own instructions, so it
+  says nothing about a target reached from another function; and the argument
+  derivation follows `mov` chains only, so a value assembled by arithmetic would
+  be reported as an opaque write rather than followed.
+- `scripts/check-compat-semantics.py check` needs both output trees, so like
+  `replay` it is the independent-rerun path rather than an offline one. Its
+  `verify` and `--self-test` modes are offline.
 - The input is fetched, never vendored, so an independent rerun needs network
   access to the pinned GitHub release asset.
 - `check-compat-baseline.py verify` is not a CI step, for the reason in
   section 8, so nothing re-runs it automatically.
-- The product-tree check in section 1 needs `git` and needs `361c922` and
+- The product-tree check in section 1 needs `git` and needs `2214697` and
   `1371e42` to be reachable objects. In a shallow or exported checkout that has
   neither, `verify` prints that it skipped the check rather than passing it
   silently; every other check still runs.

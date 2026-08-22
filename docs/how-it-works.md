@@ -676,6 +676,11 @@ Metric formulas:
 
 - `disassembly_ratio = disassembled_function_count / function_count`
 - `indirect_call_ratio = indirect_calls / total_calls`
+- `unresolved_cf` = the number of unresolved-control-flow statements in the
+  emitted pseudocode: lines starting with `// indirect branch`,
+  `// unresolved branch target` or `// unresolved jump`. It is counted from the
+  finished text, so a statement inside a `_block_N` helper body, or copied into
+  the caller when that helper is inlined, counts once per line you can read.
 
 Gate mapping to CLI options:
 

@@ -23,6 +23,7 @@
     "thread_field_ref": 49140,
     "trap_comment": 7262,
     "unrecovered_indirect_branch": 520,
+    "unrecovered_indirect_branch_statement_prefix": 521,
     "unrecovered_receiver": 11793,
     "value_hint_comment": 143,
     "while_statement": 1704,
