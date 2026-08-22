@@ -3,7 +3,7 @@
 ## Decision
 
 The final decision is **honest no-win**, and the bound final signoff does not
-satisfy `VAL-CFG-003`. Candidate
+satisfy the frozen performance acceptance target. Candidate
 `9b82e07fa62f97654aea5153d9fb6a2ef57a377a` remains the immutable E1 evidence
 object, but no speed candidate was accepted over frozen post-correctness
 reference `630ec442d951aac5704ae80287367912bfbfc388`.
@@ -15,7 +15,7 @@ six-case held-out comparison did not generalize: emission-exclusive improved
 only 1.1321 percent and combined improved only 0.6329 percent. Both estimates
 were inside their own 5 percent MDE and therefore miss the promotion rule. Six
 disclosed serialization cells also exceeded their positive 10 percent per-cell
-guard. These are failures of the frozen `VAL-CFG-003` contract, not merely
+guard. These are failures of the frozen performance acceptance target, not merely
 reasons to withhold a speed claim.
 
 The E1 allocation measurements remain historical evidence only. All disclosed
@@ -26,7 +26,7 @@ product change was removed by forward commit `ecca9e6`. The historical E1, E2,
 and E3 objects and ledgers remain available for audit. The allocation result is
 not shipped and is not an accepted product win.
 
-## Frozen VAL-CFG-003 failures
+## Frozen performance acceptance failures
 
 The bound held-out emission-exclusive estimate is `-0.0113209874` and the bound
 held-out combined estimate is `-0.0063290226`. Each has MDE `0.05`; neither
@@ -153,9 +153,10 @@ those values is included in E1 scoring or described as a candidate regression.
 The final command was:
 
 ```text
-TMPDIR=/home/camilo/flutterdec/.post-correctness-tmp/final-tmp \
+export FLUTTERDEC_RUN_ROOT="${FLUTTERDEC_RUN_ROOT:?set a writable run root}"
+TMPDIR="$FLUTTERDEC_RUN_ROOT/final-tmp" \
   docs/final-performance/run-final.sh \
-  /home/camilo/flutterdec/.post-correctness-tmp/final-performance-run
+  "$FLUTTERDEC_RUN_ROOT/final-performance-run"
 ```
 
 An initial pre-measurement execution exposed a Bash local-declaration error and

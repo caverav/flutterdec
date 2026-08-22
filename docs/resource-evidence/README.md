@@ -1,11 +1,12 @@
-# VAL-METRIC-002 resource evidence
+# Resource evidence
 
 This directory is the durable output of:
 
 ```text
-TMPDIR=/home/camilo/flutterdec/.post-correctness-tmp/resource-tmp \
+export FLUTTERDEC_RUN_ROOT="${FLUTTERDEC_RUN_ROOT:?set a writable run root}"
+TMPDIR="$FLUTTERDEC_RUN_ROOT/resource-tmp" \
   scripts/bench-resource.sh \
-  /home/camilo/flutterdec/.post-correctness-tmp/val-metric-002
+  "$FLUTTERDEC_RUN_ROOT/resource-run"
 ```
 
 The run completed with exit 0. It measured all 33 disclosed cases for frozen

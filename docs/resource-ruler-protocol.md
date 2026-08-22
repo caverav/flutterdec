@@ -1,6 +1,6 @@
 # Auxiliary phase resource ruler
 
-This ruler closes VAL-METRIC-002 without changing the accepted timing ruler,
+This ruler closes the resource-evidence gap without changing the accepted timing ruler,
 candidate order, target selection, or scores. Timing remains bound to
 `4c127aba4e74fb6f8d486c4cb066586bb0d74846`. Resource scoring is a separate
 command over frozen reference `630ec442d951aac5704ae80287367912bfbfc388`

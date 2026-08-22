@@ -1140,8 +1140,8 @@ be cited with the revision it applies to.
 Separate from the above and disclosed here so the two are not conflated. The
 harness commits also changed a protected ruler: `scripts/ci-check.sh` moved at
 `61e89fd`, `5bf6595` and `5f6a39f`, all before baseline acceptance. That change
-is adjudicated in the companion protocol section 10, landed in `e3d7d2f` under
-VAL-ORACLE-002, with the digest chain `9d994285...` to `675099447f...` to
+is adjudicated in the companion protocol section 10, landed in `e3d7d2f`, with
+the digest chain `9d994285...` to `675099447f...` to
 `6ee0cdf976...` to `2f76a8b9...`, and the additivity proof: 26 insertions and 3
 deletions against `1371e42`, and the only three lines the diff removes are the
 usage-heredoc list numbers `5)`, `6)` and `7)`, which reappear with the same
@@ -1427,7 +1427,8 @@ refresh is carried into a candidate decision.
 
 The checksum-bound final signoff in
 [`final-performance/`](final-performance/README.md) is an honest no-win and does
-not satisfy `VAL-CFG-003`. Held-out emission-exclusive was `-0.0113209874` and
+not satisfy the frozen performance acceptance target. Held-out
+emission-exclusive was `-0.0113209874` and
 held-out combined was `-0.0063290226`, each against MDE `0.05`. Six disclosed
 serialization cells were also above the positive `0.10` case bound:
 `linear/64/base` at `+0.1003255880`, `linear/256/heavy` at `+0.1047375370`,
@@ -1502,9 +1503,10 @@ the bound evidence.
 The final command, which names the output directory holding both matrices, was:
 
 ```text
-TMPDIR=/home/camilo/flutterdec/.post-correctness-tmp/final-tmp \
+export FLUTTERDEC_RUN_ROOT="${FLUTTERDEC_RUN_ROOT:?set a writable run root}"
+TMPDIR="$FLUTTERDEC_RUN_ROOT/final-tmp" \
   docs/final-performance/run-final.sh \
-  /home/camilo/flutterdec/.post-correctness-tmp/final-performance-run
+  "$FLUTTERDEC_RUN_ROOT/final-performance-run"
 ```
 
 The retained evidence is re-audited with these exact commands:
@@ -1548,9 +1550,11 @@ twice, once per output directory, against external LocalSend APK SHA-256
 `2c7f5fd4872da25115bb8e5e62f92de94dda47b0f249ff387ac667b13871dc3e`:
 
 ```text
+export FLUTTERDEC_COMPAT_APK="${FLUTTERDEC_COMPAT_APK:?set the pinned LocalSend APK path}"
+export FLUTTERDEC_COMPAT_OUTPUT="${FLUTTERDEC_COMPAT_OUTPUT:?set a writable output directory}"
 nix develop --extra-experimental-features 'nix-command flakes' -c cargo run \
-  -p flutterdec-cli -- decompile /home/camilo/.zenith/samples/localsend.apk \
-  --out OUTPUT --adapter-backend internal --function-scope all \
+  -p flutterdec-cli -- decompile "$FLUTTERDEC_COMPAT_APK" \
+  --out "$FLUTTERDEC_COMPAT_OUTPUT" --adapter-backend internal --function-scope all \
   --emit-ir --emit-asm
 ```
 

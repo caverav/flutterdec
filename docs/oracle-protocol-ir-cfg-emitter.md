@@ -2626,7 +2626,7 @@ contains 5,151 annotations: 4,486 join, 394 loop-entry, and 271 pre-call records
 
 ## 19. Adjudication record: emitter repair oracle protection
 
-This is the section 9 record for closing VAL-ORACLE-004 after the emitter
+This is the section 9 record for closing the emitter-oracle protection gap after the emitter
 repairs and their ruler refreshes. It adds no mutable product file, temporary
 probe, generated artifact, or performance fixture to section 7. It protects
 only stable test-only rulers, strengthens the existing relation oracle, and
@@ -2658,7 +2658,7 @@ At this record section 7 contained 67 protected digests, of which 44 were Rust
 oracle rows. Each later record states the counts of its own state, and the
 current exact counts are in section 23.
 
-These rulers directly preserve VAL-EMIT-001 through VAL-EMIT-007: helper
+These rulers directly preserve helper
 resolution and syntax boundaries, the closed emission taxonomy and rollback
 state, width and unknown-write effects, exact annotation identity and complete
 provenance accounting, recovered-data rewrite boundaries, and byte-identical

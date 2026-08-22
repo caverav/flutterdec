@@ -12,9 +12,10 @@ goldens, checkers, thresholds, or scoring.
 Run from a clean checkout with enough space for four release builds:
 
 ```text
-TMPDIR=/home/camilo/flutterdec-metric-tmp \
-docs/post-correctness/run-refresh.sh \
-  /home/camilo/flutterdec-metric-run
+export FLUTTERDEC_RUN_ROOT="${FLUTTERDEC_RUN_ROOT:?set a writable run root}"
+TMPDIR="$FLUTTERDEC_RUN_ROOT/post-correctness-tmp" \
+  docs/post-correctness/run-refresh.sh \
+  "$FLUTTERDEC_RUN_ROOT/post-correctness-run"
 ```
 
 The runner uses Nix, a single canonical build path, `CARGO_INCREMENTAL=0`,

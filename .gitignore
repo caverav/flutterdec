@@ -6,6 +6,9 @@
 /.direnv
 /dist
 /out
+/.post-correctness-tmp/
+/.worker-tmp/
+/.zenith-validator/
 /.venv
 *.log
 /adapters/installed/*
