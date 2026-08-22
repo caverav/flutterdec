@@ -1,0 +1,122 @@
+{
+  "asm": {
+    "differing_files": 0,
+    "identical_files": 5800
+  },
+  "definitions": {
+    "branch_target_shape": "empty | hex (0x...) | dec (digits) | register (an ARM64 register name) | other, applied to the instruction target field",
+    "differing_field_paths": "number of ir documents whose difference set includes the field path, after removing the two added top-level objects; '.[] (length)' means the two lists had different lengths",
+    "exclusive_instruction_reason": "for an address present on only one side, the nearest earlier instruction in address order that is not itself exclusive to that side; 'after_trap:<mnemonic>' when that instruction is brk/hlt/udf, otherwise 'after_<op>'",
+    "instruction_alignment": "instructions are matched between the two sides by virtual address within the same function",
+    "op_transitions": "for an address present on both sides, '<reference op>-><candidate op>' when the op differs",
+    "operand_naming_direction": "unified diff with zero context; hunks that replace exactly one line with exactly one line, compared by the number of regN tokens on each side",
+    "operand_naming_fewer_register_classes": "the fewer_registers pairs, enumerated in operand-direction-losses.tsv",
+    "pseudocode_line_tags": "regex tags per added or removed line of a zero-context unified diff; a line can carry several tags"
+  },
+  "ir": {
+    "block_count_delta_histogram": {
+      "0": 4719,
+      "1": 618,
+      "10": 4,
+      "11": 1,
+      "12": 3,
+      "15": 1,
+      "16": 1,
+      "19": 1,
+      "2": 243,
+      "29": 1,
+      "3": 107,
+      "39": 1,
+      "4": 49,
+      "5": 24,
+      "55": 1,
+      "6": 12,
+      "7": 8,
+      "8": 2,
+      "9": 4
+    },
+    "branch_target_shape_transitions": {
+      "empty->register": 1304
+    },
+    "branch_target_values_only_in_candidate": {
+      "x1": 1,
+      "x16": 1284,
+      "x2": 4,
+      "x3": 3,
+      "x4": 11,
+      "x5": 1
+    },
+    "differing_after_removing_added_top_level_keys": 1693,
+    "differing_field_paths": {
+      "blocks.[] (length)": 1081,
+      "blocks.instrs.[] (length)": 1418,
+      "blocks.instrs.op": 1692,
+      "blocks.instrs.src": 998,
+      "blocks.instrs.target": 1222,
+      "blocks.instrs.va": 998,
+      "blocks.preds": 1006,
+      "blocks.preds.[] (length)": 1384,
+      "blocks.start_va": 998,
+      "blocks.succs": 936,
+      "blocks.succs.[] (length)": 1425
+    },
+    "identical_after_removing_added_top_level_keys": 4107,
+    "instructions_only_in_candidate": {
+      "after_Call": 135,
+      "after_Jump": 14,
+      "after_Return": 250
+    },
+    "instructions_only_in_candidate_by_block": {
+      "in_block_without_predecessors": 399
+    },
+    "instructions_only_in_reference": {
+      "after_trap:brk": 934
+    },
+    "op_transitions": {
+      "Other->IndirectBranch": 1304,
+      "Other->Trap": 2456
+    }
+  },
+  "operand_naming_direction": {
+    "fewer_registers": 78,
+    "more_registers": 9060,
+    "same_register_count": 1984
+  },
+  "operand_naming_fewer_register_classes": {
+    "expression_replaced_by_the_register_holding_it": 63,
+    "line_replaced_by_structural_or_comment_line": 1,
+    "other": 3,
+    "register_named_as_parameter_slot": 11
+  },
+  "pseudocode": {
+    "added_lines_total": 1930418,
+    "changed_line_tag_counts": {
+      "comment_only": 215032,
+      "control_keyword": 657541,
+      "dispatch_comment": 25669,
+      "field_access": 303815,
+      "helper_call": 128683,
+      "omitted_path_comment": 405,
+      "other": 705224,
+      "register_operand": 495368,
+      "selector_call": 25669,
+      "temp_declaration": 1180,
+      "value_hint_comment": 63
+    },
+    "differing_files": 3672,
+    "files_touched_per_tag": {
+      "comment_only": 771,
+      "control_keyword": 3116,
+      "dispatch_comment": 242,
+      "field_access": 3229,
+      "helper_call": 719,
+      "omitted_path_comment": 355,
+      "other": 716,
+      "register_operand": 3660,
+      "selector_call": 242,
+      "temp_declaration": 261,
+      "value_hint_comment": 34
+    },
+    "removed_lines_total": 103986
+  }
+}

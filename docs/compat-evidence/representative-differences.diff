@@ -1,0 +1,248 @@
+### pseudocode/00001_sub_606bc0.dartpseudo
+@@ -8,11 +8,11 @@
+   tmp3 = slot0;
+   tmp2 = slot1;
+   if (!(reg4 == 0x22f7)) {
+-    final t1 = sub_6c1b28(reg1 /* = -1 | 1 */, reg2, poolOff[55384]);
++    final t1 = sub_6c1b28(reg1, reg2, poolOff[55384]);
+   }
+   tmp1 = tmp3.f8;
+-  if (tmp3.f8 != tmp2.f8) {
+-    return (reg1 << 1);
++  if (reg0 != reg3) {
++    return (reg1 /* = -1 | 1 */ << 1);
+   }
+   final t2 = sub_6c1a14(tmp3, tmp2, tmp2.f8);
+   if (!(reg3 == (smiTag(reg3) >> 1))) {
+
+### pseudocode/00008_sub_6071fc.dartpseudo
+@@ -13,17 +13,15 @@
+   dynamic tmp12;
+   dynamic tmp13;
+ 
+-  while (true) {
+-    ((reg15 - 8)).f0 = tmp6;
+-    final t1 = sub_60897c();
+-    if (((t1 >> 4) & 1) != 0) {
+-      final t2 = fn_0x60725c();
+-      t2.f12 = tmp6;
+-      final t3 = sub_d4fcf4(t2);
+-      stackOverflowSharedWithoutFpuRegs();
+-      continue;
+-    }
+-    break;
++  ((reg15 - 8)).f0 = tmp6;
++  final t1 = sub_60897c();
++  if (((reg0 >> 4) & 1) != 0) {
++    final t2 = fn_0x60725c();
++    t2.f12 = reg0;
++    final t3 = sub_d4fcf4(t2);
++    // trap: control does not continue
++  }
++  else {
++    return null;
+   }
+-  return null;
+ }
+
+### pseudocode/00096_sub_60f780.dartpseudo
+@@ -6,52 +6,32 @@
+   dynamic tmp5;
+ 
+   if (((reg0 >> 0) & 1) == 0) {
+-    tmp2 = tmp5.f24;
+-    final t1 = sub_bbe8a0(tmp5.f24.f16, tmp5.f24.f20, tmp5.f24);
+-    tmp2.f20 = poolOff[4368];
+-    tmp1 = tmp2.f16;
+-    final t2 = sub_60f8bc(tmp4, tmp2);
+-    final t3 = sub_bbe8a0(tmp1, t2);
+-    if ((!(tmp3 == null)) && (!(tmp3.f8 == 0))) {
+-      final t4 = sub_bbe8a0(tmp2.f16, poolOff[4376], tmp2);
+-      tmp1 = tmp2.f16;
+-      final t5 = sub_60f8bc(tmp3, tmp2.f16);
+-      final t6 = sub_bbe8a0(tmp1, t5);
+-    }
+-    return null;
+-  }
+-  if ((classId(reg0) - 0x57) <= 4) {
+-    return null;
+-  }
+-  if ((classId(reg0) - 0x6f) <= 0x37) {
+-    return null;
+-  }
+-  if ((classId(reg0) - 0x6f) == 0x1e8f) {
+-    return null;
+-  }
+-  if ((classId(reg0) - 0x6f) == 0x2084) {
+-    return null;
+-  }
+-  if ((classId(reg0) - 0x210d) <= 2) {
+-    return null;
+-  }
+-  if ((classId(reg0) - 0x2301) <= 0x5b) {
+-    return null;
++    // indirect branch through reg16: target not recovered
+   }
+-  if ((classId(reg0) - 0x2364) > 2) {
+-    tmp2 = tmp5.f24;
+-    final t7 = sub_bbe8a0(tmp5.f24.f16, tmp5.f24.f20, tmp5.f24);
+-    tmp2.f20 = poolOff[4368];
+-    tmp1 = tmp2.f16;
+-    final t8 = sub_60f8bc(tmp4, tmp2);
+-    final t9 = sub_bbe8a0(tmp1, t8);
+-    if ((!(tmp3 == null)) && (!(tmp3.f8 == 0))) {
+-      final t10 = sub_bbe8a0(tmp2.f16, poolOff[4376], tmp2);
+-      tmp1 = tmp2.f16;
+-      final t11 = sub_60f8bc(tmp3, tmp2.f16);
+-      final t12 = sub_bbe8a0(tmp1, t11);
++  else {
++    if ((classId(reg0) - 0x57) <= 4) {
++      return null;
++    }
++    if ((classId(reg0) - 0x6f) <= 0x37) {
++      return null;
++    }
++    if ((classId(reg0) - 0x6f) == 0x1e8f) {
++      return null;
++    }
++    if ((classId(reg0) - 0x6f) == 0x2084) {
++      return null;
++    }
++    if ((classId(reg0) - 0x210d) <= 2) {
++      return null;
++    }
++    if ((classId(reg0) - 0x2301) <= 0x5b) {
++      return null;
++    }
++    if ((classId(reg0) - 0x2364) > 2) {
++      // indirect branch through reg16: target not recovered
++    }
++    else {
++      return null;
+     }
+-    return null;
+   }
+-  return null;
+ }
+
+### ir/00008_sub_6071fc.json
+@@ -1,1463 +1,5916 @@
+ {
+-  "function_id": 8,
+-  "name": "sub_6071fc",
+-  "entry_va": 6320636,
++  "block_ledger": {
++    "dispositions": [
++      {
++        "disposition": "StructuredEmitted",
++        "identity": {
++          "function_id": 8,
++          "start_va": 6320636
++        }
++      },
++      {
++        "disposition": "StructuredEmitted",
++        "identity": {
++          "function_id": 8,
++          "start_va": 6320660
++        }
++      },
++      {
++        "disposition": "StructuredEmitted",
++        "identity": {
++          "function_id": 8,
++          "start_va": 6320676
++        }
++      },
++      {
++        "disposition": "StructuredEmitted",
++        "identity": {
++          "function_id": 8,
++          "start_va": 6320692
++        }
++      },
++      {
++        "disposition": "RetainedUnreachable",
++        "identity": {
++          "function_id": 8,
++          "start_va": 6320732
++        }
++      },
++      {
++        "disposition": "RetainedUnreachable",
++        "identity": {
++          "function_id": 8,
++          "start_va": 6320744
++        }
++      },
++      {
++        "disposition": "RetainedUnreachable",
++        "identity": {
++          "function_id": 8,
++          "start_va": 6320768
++        }
++      },
++      {
++        "disposition": "RetainedUnreachable",
++        "identity": {
++          "function_id": 8,
++          "start_va": 6320836
++        }
++      },
++      {
++        "disposition": "RetainedUnreachable",
++        "identity": {
++          "function_id": 8,
++          "start_va": 6320844
++        }
++      },
++      {
++        "disposition": "RetainedUnreachable",
++        "identity": {
++          "function_id": 8,
++          "start_va": 6320868
++        }
++      },
++      {
++        "disposition": "RetainedUnreachable",
++        "identity": {
++          "function_id": 8,
++          "start_va": 6320884
++        }
++      },
++      {
++        "disposition": "RetainedUnreachable",
++        "identity": {
++          "function_id": 8,
++          "start_va": 6320904
++        }
++      },
++      {
++        "disposition": "RetainedUnreachable",
++        "identity": {
++          "function_id": 8,
++          "start_va": 6320908
++        }
++      },
++      {
++        "disposition": "RetainedUnreachable",
++        "identity": {
++          "function_id": 8,
++          "start_va": 6320964
++        }
++      },
++      {
++        "disposition": "RetainedUnreachable",
++        "identity": {
++          "function_id": 8,
++          "start_va": 6320976
++        }
++      },
++      {
++        "disposition": "RetainedUnreachable",
++        "identity": {
++          "function_id": 8,
++          "start_va": 6321060
++        }
++      },
++      {

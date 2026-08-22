@@ -1,0 +1,29 @@
+{
+  "mode": "strict",
+  "passed": false,
+  "failures": [
+    "placeholder if-count exceeded threshold"
+  ],
+  "function_count": 5800,
+  "disassembled_function_count": 5800,
+  "disassembly_ratio": 1.0,
+  "total_calls": 45955,
+  "indirect_calls": 7149,
+  "indirect_call_ratio": 0.15556522685235558,
+  "placeholder_ifs": 501,
+  "unresolved_cf": 0,
+  "raw_register_calls": 7149,
+  "semantic_direct_calls": 0,
+  "semantic_indirect_calls": 0,
+  "dispatch_selector_calls": 0,
+  "dispatch_table_calls": 4424,
+  "repeated_blocks": 9697,
+  "unlifted_instructions": 689,
+  "target_va_symbol_calls": 0,
+  "block_helper_refs": 0,
+  "raw_arg_name_refs": 0,
+  "raw_register_name_refs": 54062,
+  "placeholder_cond_markers": 215,
+  "omitted_path_markers": 355,
+  "loop_backedge_markers": 130
+}

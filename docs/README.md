@@ -10,4 +10,5 @@
 - IR, CFG, and emitter correctness protocol: [oracle-protocol-ir-cfg-emitter.md](oracle-protocol-ir-cfg-emitter.md)
 - Pipeline phase A/A noise floor and its artifacts: [baseline-ir-cfg-emitter.md](baseline-ir-cfg-emitter.md)
 - Post-correctness performance reference and evidence: [post-correctness/README.md](post-correctness/README.md)
+- Public real-binary compatibility baseline: [compat-baseline-real-binary.md](compat-baseline-real-binary.md)
 - Project context/history: [../context.md](../context.md)

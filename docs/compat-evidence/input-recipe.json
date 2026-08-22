@@ -1,0 +1,76 @@
+{
+  "artifacts": {
+    "asm": 5800,
+    "candidate_manifest_sha256": "aa587824359452cd5af2e51b1ca18070b51ae297faf424199a1e0cc6d5b9f48b",
+    "candidate_processes_compared": 3,
+    "files_per_run": 17402,
+    "identical_between_reference_and_candidate": 7928,
+    "ir": 5800,
+    "pseudocode": 5800,
+    "reference_manifest_sha256": "bc70190801414e18c6c68cf4a20f3037da1b086e47484880bc47fb85943ff39a",
+    "reports": [
+      "quality.json",
+      "report.json"
+    ],
+    "second_candidate_process_manifest_sha256": "aa587824359452cd5af2e51b1ca18070b51ae297faf424199a1e0cc6d5b9f48b",
+    "third_candidate_process_manifest_sha256": "aa587824359452cd5af2e51b1ca18070b51ae297faf424199a1e0cc6d5b9f48b"
+  },
+  "binaries": {
+    "candidate_sha256": "08110f952bc2c0a831aa9bb979b4f745b9607595cef6f47c1bf5bc36a4f67c31",
+    "reference_sha256": "54981d32172f8ea9cc03331eb16d8e3cfbc8f300d7ebf17bbc0b25dece8c272b"
+  },
+  "command": {
+    "args": [
+      "decompile",
+      "<input>",
+      "--out",
+      "<out>",
+      "--adapter-backend",
+      "internal",
+      "--function-scope",
+      "all",
+      "--emit-ir",
+      "--emit-asm"
+    ],
+    "environment": {
+      "LC_ALL": "C",
+      "TZ": "UTC"
+    },
+    "expected_exit_code": 1,
+    "expected_exit_reason": "quality gate failed after artifact generation; artifacts complete",
+    "program": "target/release/flutterdec",
+    "quality_gate_flags": "defaults (--max-placeholder-ifs 0, --max-unresolved-cf 0, --max-indirect-call-ratio 0.30, --min-disassembly-ratio 0.80)"
+  },
+  "input": {
+    "asset": "LocalSend-1.17.0-android-arm64v8.apk",
+    "bytes": 17491108,
+    "license": "Apache-2.0",
+    "license_url": "https://github.com/localsend/localsend/blob/main/LICENSE",
+    "project": "LocalSend",
+    "redistribution": "not vendored; fetch-and-verify only",
+    "release_page": "https://github.com/localsend/localsend/releases/tag/v1.17.0",
+    "release_tag": "v1.17.0",
+    "sha256": "2c7f5fd4872da25115bb8e5e62f92de94dda47b0f249ff387ac667b13871dc3e",
+    "url": "https://github.com/localsend/localsend/releases/download/v1.17.0/LocalSend-1.17.0-android-arm64v8.apk"
+  },
+  "revisions": {
+    "candidate": "361c922ad418da67277aea911050fdf70fe10234",
+    "reference": "1371e42549472ec388f58bc1fd5dbdf96e8dcdd1"
+  },
+  "toolchain": {
+    "cargo": "cargo 1.92.0 (344c4567c 2025-10-21)",
+    "cli_version": "flutterdec 0.1.0-alpha.4",
+    "profile": "release",
+    "rust_toolchain_file": "rust-toolchain.toml (channel = stable)",
+    "rustc": "rustc 1.92.0 (ded5c06cf 2025-12-08) (built from a source tarball)",
+    "shell": "nix develop --extra-experimental-features 'nix-command flakes'"
+  },
+  "volatile_fields": {
+    "note": "the three workspace-dependent strings in report.json: the input path and two absolute paths under the repository root. report-*.json in this directory store them as \"<input>\" and \"<repo>/...\", and `check-compat-baseline.py replay` normalizes them before comparing report.json. Every other emitted byte is stable: a second and a third candidate process reproduced all 17402 artifacts exactly, and a fourth run from a different input path reproduced 17401 of them and differed only in report.json.input.",
+    "report.json": [
+      "input",
+      "adapter_selection.adapter_exec_path",
+      "engine_symbol_ingestion.manifest_path"
+    ]
+  }
+}

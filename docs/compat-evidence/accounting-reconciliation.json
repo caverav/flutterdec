@@ -1,0 +1,92 @@
+{
+  "candidate_block_ledger_disposition_totals": {
+    "DfsEmitted": 22277,
+    "GuardPruned": 5302,
+    "NoreturnPruned": 13016,
+    "ReachableUnemitted": 1499,
+    "RetainedUnreachable": 201006,
+    "StructuredEmitted": 55019
+  },
+  "candidate_quality_emission": {
+    "coverage_mismatch": 0,
+    "dfs_depth_omissions": 199441,
+    "dfs_emitted_blocks": 22277,
+    "dfs_visit_omissions": 25252,
+    "guard_pruned_blocks": 5302,
+    "helper_cap_omissions": 3847,
+    "invalid_cfg_rejected_functions": 0,
+    "irreducible": 0,
+    "noreturn_pruned_blocks": 13016,
+    "reachable_unemitted_blocks": 1499,
+    "repeat_budget": 301,
+    "retained_unreachable_blocks": 201006,
+    "structured_declines": 303,
+    "structured_depth_budget": 2,
+    "structured_emitted_blocks": 55019,
+    "structured_rollbacks": 303,
+    "unsupported_region": 0
+  },
+  "candidate_traversal_event_totals": {
+    "DfsDepthOmission": 199441,
+    "DfsVisitOmission": 25252,
+    "HelperCapOmission": 3847
+  },
+  "text_counter_reconciliation": {
+    "candidate": {
+      "block_helper_refs": {
+        "match": true,
+        "quality_json": 27097,
+        "scanned_text": 27097
+      },
+      "loop_backedge_markers": {
+        "match": true,
+        "quality_json": 77,
+        "scanned_text": 77
+      },
+      "omitted_path_markers": {
+        "match": true,
+        "quality_json": 50,
+        "scanned_text": 50
+      },
+      "placeholder_cond_markers": {
+        "match": true,
+        "quality_json": 2617,
+        "scanned_text": 2617
+      }
+    },
+    "reference": {
+      "block_helper_refs": {
+        "match": true,
+        "quality_json": 0,
+        "scanned_text": 0
+      },
+      "loop_backedge_markers": {
+        "match": true,
+        "quality_json": 130,
+        "scanned_text": 130
+      },
+      "omitted_path_markers": {
+        "match": true,
+        "quality_json": 355,
+        "scanned_text": 355
+      },
+      "placeholder_cond_markers": {
+        "match": true,
+        "quality_json": 215,
+        "scanned_text": 215
+      }
+    }
+  },
+  "unresolved_control_flow": {
+    "candidate_emitted_markers": 520,
+    "candidate_quality_unresolved_cf": 517,
+    "evidence": "marker-replay.tsv",
+    "marker_bearing_functions": 137,
+    "note": "see docs/compat-baseline-real-binary.md section 7",
+    "per_function_replay_identical": 136,
+    "per_function_replay_markers": 516,
+    "per_function_replay_unresolved_cf": 516,
+    "residue_function": "00860_sub_696734",
+    "residue_markers": 4
+  }
+}
