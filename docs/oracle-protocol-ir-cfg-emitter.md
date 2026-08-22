@@ -3102,7 +3102,7 @@ legitimate change and rules nothing.
 
 Column order keeps this history outside the section 7 path-and-digest parser.
 
-| Protected ruler | Prior sha256 | New sha256 at `addec19` |
+| Protected ruler | Prior sha256 | New sha256 at `a77f5fd` |
 | --- | --- | --- |
 | `scripts/ci-check.sh` | `94cc9b90e935bb1ecdce4280a31315337d5345b5c74b165e395c74de6dd608f5` | `9dac174b7a2a4e3a0d14d182d292dac0dbc8b6c63679e859da7cc8dad21ea45e` |
 | `scripts/check-oracle-inventory.py` | `21bea1f4fa438b0aae70b5477a1ec026f13007c0bf569d6f37435089999b47df` | `3900f505ea8aea59500c99fcf598013cffac55e9128ec9498f7811738bcbf71a` |
@@ -3207,7 +3207,7 @@ reordered into a pipeline, or allowed to fail.
 
 ### 24.1 The divergence this closes
 
-Measured at `addec19`, comparing every command `scripts/ci-check.sh` runs against
+Measured at `a77f5fd`, comparing every command `scripts/ci-check.sh` runs against
 every `run:` line of `.github/workflows/ci.yml`. Present in both lanes already:
 the flake check, root `cargo fmt --all --check`, `scripts/lint-shell.sh`,
 workspace clippy, all three named protected-target lanes,
@@ -3247,9 +3247,15 @@ without adding a dependency it needs. No lane repeats another lane's command wit
 different options, and no path in the workflow is absolute or machine-specific.
 
 The third is the one platform condition in this record, and it is measured, not
-assumed. `Benchmark harness tests` carries `if: runner.os == 'Linux'`. The first
-push of these lanes, run `32284265246` at `b97ee86`, passed all twenty steps on
-`ubuntu-latest` and failed exactly one test on `macos-latest`:
+assumed. `Benchmark harness tests` carries `if: runner.os == 'Linux'`.
+The immutable failed [run `32284265246`](https://github.com/caverav/flutterdec/actions/runs/32284265246)
+was captured at pre-amend head `b97ee86`, which is no longer reachable from branch
+refs and is reproduced through that run record. The later amended commit `4613dd4`
+is also no longer reachable after the trailer-only rewrite; its [successful run
+`32287029139`](https://github.com/caverav/flutterdec/actions/runs/32287029139)
+remains its immutable record. Its reachable mapped successor, `a88bb9d`, retains
+the same tree `085d874de348e35c4e6a0a14fe9bcfe75966022c`. That failed run passed
+all twenty steps on `ubuntu-latest` and failed exactly one test on `macos-latest`:
 `measure::tests::host_identity_is_readable_on_this_platform` panicked with `linux
 VmHWM` at `crates/flutterdec-bench/src/measure.rs:411`, 37 passed and 1 failed.
 That test asserts `peak_rss_bytes()` returns a value, and `peak_rss_bytes` reads
@@ -3348,7 +3354,7 @@ dropping it from the workflow.
    every exercised command.
 3. Diff and digests: sections 24.2 and 24.4. One moved digest, no product
    behavior change, nothing removed from either lane.
-4. Reference preserved: `1371e42` and `addec19` remain addressable; all prior
+4. Reference preserved: `1371e42` and `a77f5fd` remain addressable; all prior
    bytes are recoverable with `git show`.
 5. The workflow steps, the generalized guard, this record, the refreshed L5, and
    the refreshed `docs/development.md` and `docs/research-ir-cfg-emitter.md`
@@ -3368,13 +3374,19 @@ clippy under `-D warnings`, and the harness's 38 tests. The full local gate,
 `scripts/ci-check.sh`, exits 0 with `all checks passed`, and the workspace suite
 is 29 result lines and 592 passed.
 
-On GitHub, run `32284265246` at `b97ee86` is the first push of these lanes and the
-proof that every one of them really executes there rather than only parsing.
-`Rust Checks (ubuntu-latest)` completed all twenty steps green, including
-`Lint Python scripts`, `Benchmark identity gate`, `Resource ruler inventory` and
-all three harness lanes. `Rust Checks (macos-latest)` completed nineteen green and
-failed only `Benchmark harness tests`, on the Linux-only RSS assertion section
-24.2 records; that runner had already passed the Python lint under `nix develop`,
-the identity gate under its own bash 3.2, the resource inventory, and harness fmt
-and clippy. The `if: runner.os == 'Linux'` condition on that one lane is the whole
-difference between that run and this record's bytes.
+On GitHub, the immutable failed [run `32284265246`](https://github.com/caverav/flutterdec/actions/runs/32284265246)
+was captured at pre-amend head `b97ee86`, which is no longer reachable from branch
+refs and is reproduced through that run record. The later amended commit `4613dd4`
+has the [successful run `32287029139`](https://github.com/caverav/flutterdec/actions/runs/32287029139),
+but it too is unreachable after the trailer-only rewrite. Its reachable mapped
+successor, `a88bb9d`, retains `4613dd4`'s tree
+`085d874de348e35c4e6a0a14fe9bcfe75966022c`.
+That failed run's `Rust Checks (ubuntu-latest)` completed all twenty steps green,
+including `Lint Python scripts`, `Benchmark identity gate`, `Resource ruler
+inventory` and all three harness lanes. `Rust Checks (macos-latest)` completed
+nineteen green and failed only `Benchmark harness tests`, on the Linux-only RSS
+assertion section 24.2 records; that runner had already passed the Python lint
+under `nix develop`, the identity gate under its own bash 3.2, the resource
+inventory, and harness fmt and clippy. The `if: runner.os == 'Linux'` condition on
+that one lane is the whole difference between that failed run and this record's
+bytes.
