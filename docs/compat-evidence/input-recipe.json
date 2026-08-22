@@ -1,4 +1,16 @@
 {
+  "adapter": {
+    "backend": "internal",
+    "install_command": "target/release/flutterdec adapter install --dart-hash 80a49c7111088100a233b2ae788e1f48",
+    "installed_bytes": 329,
+    "installed_path": "adapters/installed/dart_adapter_80a49c7111088100a233b2ae788e1f48",
+    "installed_sha256": "a9cd861143bf91c46f484e79dd5cd3180fd329883d3dd3b02cf8dda16af45f95",
+    "kind": "dynamic_snapshot_string_model_v1",
+    "network": "none; the step generates a shim from the tracked template",
+    "note": "adapters/installed/* is gitignored (.gitignore:11), so a cold checkout has no adapter and the decompile aborts with 'adapter not installed for hash ...' before writing any artifact. The install step is offline and leaves adapters/manifest.json untouched, because the pinned snapshot hash is already an entry there.",
+    "snapshot_hash": "80a49c7111088100a233b2ae788e1f48",
+    "template": "adapters/python/adapter_template.py"
+  },
   "artifacts": {
     "asm": 5800,
     "candidate_manifest_sha256": "aa587824359452cd5af2e51b1ca18070b51ae297faf424199a1e0cc6d5b9f48b",
@@ -6,6 +18,7 @@
     "files_per_run": 17402,
     "identical_between_reference_and_candidate": 7928,
     "ir": 5800,
+    "manifest_digest_derivation": "sha256 over one line per emitted artifact, '<path>\\t<bytes>\\t<sha256>\\n', paths in ascending byte order, no header; see check-compat-baseline.py side_manifest_text and tree_manifest_digest",
     "pseudocode": 5800,
     "reference_manifest_sha256": "bc70190801414e18c6c68cf4a20f3037da1b086e47484880bc47fb85943ff39a",
     "reports": [
@@ -51,6 +64,7 @@
     "release_page": "https://github.com/localsend/localsend/releases/tag/v1.17.0",
     "release_tag": "v1.17.0",
     "sha256": "2c7f5fd4872da25115bb8e5e62f92de94dda47b0f249ff387ac667b13871dc3e",
+    "snapshot_hash": "80a49c7111088100a233b2ae788e1f48",
     "url": "https://github.com/localsend/localsend/releases/download/v1.17.0/LocalSend-1.17.0-android-arm64v8.apk"
   },
   "revisions": {

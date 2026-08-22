@@ -1,0 +1,79 @@
+{
+  "candidate": {
+    "counts": {
+      "census_regN_after_annotation_strip": 692215,
+      "census_regN_over_whole_text": 692215,
+      "code_span_scope_total": 690963,
+      "emitted_lines": 2099918,
+      "excluded_by_code_span_filter_in_block_comment": 0,
+      "excluded_by_code_span_filter_in_line_comment": 1252,
+      "excluded_by_code_span_filter_in_string_literal": 0,
+      "excluded_by_code_span_filter_total": 1252,
+      "regN_removed_by_annotation_strip": 0,
+      "regN_tokens_code_span_scope": 690963,
+      "regN_tokens_whole_line_scope": 692215,
+      "whole_line_scope_total": 692215,
+      "xN_tokens_code_span_scope": 0,
+      "xN_tokens_whole_line_scope": 0
+    },
+    "excluded_examples": [
+      {
+        "file": "00013_sub_607f74.dartpseudo",
+        "line": "final t3 = indirectTarget9(null, reg7.f8, poolOff[1848], reg7.f8); // target: reg7.f8.f24.f8, indirect via: indirectTarget9"
+      },
+      {
+        "file": "00014_sub_608230.dartpseudo",
+        "line": "final t8 = indirectTarget9(null, reg6, poolOff[1880], reg5, reg6, tmp4); // target: reg6.f24.f8, indirect via: indirectTarget9"
+      },
+      {
+        "file": "00021_sub_608918.dartpseudo",
+        "line": "// indirect branch through reg16: target not recovered"
+      }
+    ],
+    "label": "candidate",
+    "quality_counter_scope": "code_span"
+  },
+  "definitions": {
+    "census_regN_over_whole_text": "occurrences of the regex \\breg\\d+\\b over the whole emitted text, which is what structural-census-*.json counts",
+    "code_span_scope": "count_code_identifier_tokens over strip_join_annotation_span(line), which visits emitter-owned code spans only and skips every string literal and every comment (crates/flutterdec-decompiler/src/lib.rs, helpers/expr.rs non_code_span_len)",
+    "excluded_by_code_span_filter_in_<kind>": "tokens the whole_line scope counts and the code_span scope does not, by the kind of non-code span holding them",
+    "quality_counter_scope": "which scope that side's quality.json raw_register_name_refs was computed in",
+    "regN_removed_by_annotation_strip": "regN tokens strip_join_annotation_span deletes with the annotation span; zero on both sides of this baseline",
+    "tokens": "the identifier spellings x0..x30 and reg0..reg30, exactly the token list crates/flutterdec-core/src/pipeline/quality.rs iterates",
+    "whole_line_scope": "count_ident_token over strip_join_annotation_span(line) with no code-span filter, which is what the reference revision 1371e42 ran (crates/flutterdec-core/src/pipeline/helpers.rs)"
+  },
+  "reference": {
+    "counts": {
+      "census_regN_after_annotation_strip": 54062,
+      "census_regN_over_whole_text": 54062,
+      "code_span_scope_total": 53784,
+      "emitted_lines": 273486,
+      "excluded_by_code_span_filter_in_block_comment": 0,
+      "excluded_by_code_span_filter_in_line_comment": 278,
+      "excluded_by_code_span_filter_in_string_literal": 0,
+      "excluded_by_code_span_filter_total": 278,
+      "regN_removed_by_annotation_strip": 0,
+      "regN_tokens_code_span_scope": 53784,
+      "regN_tokens_whole_line_scope": 54062,
+      "whole_line_scope_total": 54062,
+      "xN_tokens_code_span_scope": 0,
+      "xN_tokens_whole_line_scope": 0
+    },
+    "excluded_examples": [
+      {
+        "file": "00013_sub_607f74.dartpseudo",
+        "line": "final t3 = indirectTarget9(null, reg7.f8, poolOff[1848], reg7.f8); // target: reg7.f8.f24.f8, indirect via: indirectTarget9"
+      },
+      {
+        "file": "00014_sub_608230.dartpseudo",
+        "line": "final t8 = indirectTarget9(null, reg6, poolOff[1880], reg5, reg6, tmp4); // target: reg6.f24.f8, indirect via: indirectTarget9"
+      },
+      {
+        "file": "00064_sub_60c274.dartpseudo",
+        "line": "final t4 = indirectTarget9(null, reg7, poolOff[1280]); // target: reg7.f24.f8, indirect via: indirectTarget9"
+      }
+    ],
+    "label": "reference",
+    "quality_counter_scope": "whole_line"
+  }
+}

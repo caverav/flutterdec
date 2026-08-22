@@ -5,13 +5,17 @@
   },
   "definitions": {
     "branch_target_shape": "empty | hex (0x...) | dec (digits) | register (an ARM64 register name) | other, applied to the instruction target field",
+    "callee_rendering": "an occurrence of '<callee>(' for the three emitted callee spellings sub_<hex>, fn_0x<hex> and sel<N>; lost is the per-file, per-callee positive difference reference minus candidate",
     "differing_field_paths": "number of ir documents whose difference set includes the field path, after removing the two added top-level objects; '.[] (length)' means the two lists had different lengths",
     "exclusive_instruction_reason": "for an address present on only one side, the nearest earlier instruction in address order that is not itself exclusive to that side; 'after_trap:<mnemonic>' when that instruction is brk/hlt/udf, otherwise 'after_<op>'",
     "instruction_alignment": "instructions are matched between the two sides by virtual address within the same function",
+    "lost_edge": "an address-level control-flow edge the reference had and the candidate does not, over sequential adjacency inside a block plus one edge from a block's last instruction address to each successor block's start address; the effect that removed it is the candidate op at the edge's tail address",
     "op_transitions": "for an address present on both sides, '<reference op>-><candidate op>' when the op differs",
     "operand_naming_direction": "unified diff with zero context; hunks that replace exactly one line with exactly one line, compared by the number of regN tokens on each side",
     "operand_naming_fewer_register_classes": "the fewer_registers pairs, enumerated in operand-direction-losses.tsv",
-    "pseudocode_line_tags": "regex tags per added or removed line of a zero-context unified diff; a line can carry several tags"
+    "pseudocode_line_tags": "regex tags per added or removed line of a zero-context unified diff; a line can carry several tags",
+    "removed_pseudocode_class": "one class per differing file: no_callee_rendering_lost, fewer_renderings_same_callees, dispatch_selector_rendering_only, or vanished_behind_<the lost-edge effects bounding the unreachable candidate region that holds the vanished call>",
+    "wholly_vanished_callee": "a callee the reference rendered at least once in a file and the candidate renders nowhere in that file"
   },
   "ir": {
     "block_count_delta_histogram": {
@@ -90,6 +94,23 @@
   },
   "pseudocode": {
     "added_lines_total": 1930418,
+    "callee_rendering_removals": {
+      "callee_renderings_gained": 139285,
+      "callee_renderings_lost": 4045,
+      "distinct_wholly_vanished_callees": 170,
+      "evidence": "pseudocode-callee-removals.tsv",
+      "files_losing_a_callee_rendering": 215,
+      "files_with_a_wholly_vanished_callee": 85,
+      "removed_lines_by_class": {
+        "dispatch_selector_rendering_only": 160,
+        "fewer_renderings_same_callees": 26667,
+        "no_callee_rendering_lost": 65656,
+        "vanished_behind_indirect_branch": 7964,
+        "vanished_behind_indirect_branch_and_trap": 2359,
+        "vanished_behind_trap": 1180
+      },
+      "wholly_vanished_callee_renderings": 1975
+    },
     "changed_line_tag_counts": {
       "comment_only": 215032,
       "control_keyword": 657541,

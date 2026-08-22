@@ -52,6 +52,15 @@
         "match": true,
         "quality_json": 2617,
         "scanned_text": 2617
+      },
+      "raw_register_name_refs": {
+        "census_over_whole_text": 692215,
+        "counter_scope": "code_span",
+        "evidence": "register-counter-scopes.json",
+        "excluded_by_code_span_filter": 1252,
+        "match": true,
+        "quality_json": 690963,
+        "scanned_text": 690963
       }
     },
     "reference": {
@@ -74,6 +83,15 @@
         "match": true,
         "quality_json": 215,
         "scanned_text": 215
+      },
+      "raw_register_name_refs": {
+        "census_over_whole_text": 54062,
+        "counter_scope": "whole_line",
+        "evidence": "register-counter-scopes.json",
+        "excluded_by_code_span_filter": 278,
+        "match": true,
+        "quality_json": 54062,
+        "scanned_text": 54062
       }
     }
   },

@@ -6,13 +6,17 @@ whole-APK decompile of a pinned public LocalSend release at the fixed reference
 `1371e42` and at the branch head. This script is the guard that keeps that
 record usable:
 
-  verify   (default) offline: the recipe is fetchable and pinned, the manifest
-           agrees with the counts every other file claims, no public schema key
-           was dropped, and every observed difference class is adjudicated in
-           the prose document.
+  verify   (default) offline: the recipe is fetchable and pinned, the offline
+           adapter step the run needs is recorded and documented, the four
+           aggregate manifest digests recompute from the per-artifact rows, the
+           manifest agrees with the counts every other file claims, no public
+           schema key was dropped, both register-counter scopes reconcile, and
+           every observed difference class - including every class of removed
+           pseudocode - is adjudicated in the prose document.
   fetch    download the pinned asset and fail unless size and SHA-256 match.
   replay   compare a fresh candidate output tree against the committed
-           per-artifact manifest, which is what proves deterministic bytes.
+           per-artifact manifest, which is what proves deterministic bytes, and
+           recompute that tree's aggregate manifest digest.
 
 `verify` is offline and is the mode to run after touching the baseline;
 `scripts/ci-check.sh` does not call it yet, for the protected-path reason in
@@ -25,6 +29,7 @@ import hashlib
 import json
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
@@ -36,10 +41,31 @@ INVENTORY = EVIDENCE / "function-inventory.tsv"
 MANIFEST_HEADER = "path\tref_bytes\tref_sha256\tcand_bytes\tcand_sha256"
 REPLAY_MARKER_TABLE = EVIDENCE / "marker-replay.tsv"
 LOSS_TABLE = EVIDENCE / "operand-direction-losses.tsv"
+REMOVAL_TABLE = EVIDENCE / "pseudocode-callee-removals.tsv"
+REMOVAL_AGGREGATE = EVIDENCE / "callee-removals-aggregate.json"
+REGISTER_SCOPES = EVIDENCE / "register-counter-scopes.json"
+REMOVAL_HEADER = (
+    "file\tclass\tcallee_renderings_lost\twholly_vanished_callees\tremoved_lines\t"
+    "added_lines\tcandidate_marker\tir_reference_only_instructions\t"
+    "lost_edge_effects\tvanished_callee_names\tlost_rendering_detail"
+)
 REPORT = "report.json"
 
 HEX40 = 40
 HEX64 = 64
+
+# The three candidate processes wrote the same bytes, so one derivation covers
+# all four recorded digests.
+CANDIDATE_DIGEST_FIELDS = (
+    "candidate_manifest_sha256",
+    "second_candidate_process_manifest_sha256",
+    "third_candidate_process_manifest_sha256",
+)
+MANIFEST_DIGEST_DERIVATION = (
+    "sha256 over one line per emitted artifact, '<path>\\t<bytes>\\t<sha256>\\n', "
+    "paths in ascending byte order, no header; see check-compat-baseline.py "
+    "side_manifest_text and tree_manifest_digest"
+)
 
 
 def normalize_report(doc):
@@ -77,6 +103,176 @@ def read_manifest(text):
             cand_bytes, cand_sha = ref_bytes, ref_sha
         rows[path] = (int(ref_bytes), ref_sha, int(cand_bytes), cand_sha)
     return rows, identical
+
+
+def side_manifest_text(rows, side):
+    """The one-run manifest whose digest is `artifacts.<side>_manifest_sha256`.
+
+    One `<path>\\t<bytes>\\t<sha256>\\n` line per emitted artifact, paths in
+    ascending byte order, no header, trailing newline included. This is the
+    exact text the baseline run hashed, so the recorded aggregate digests are
+    recomputable offline from the committed per-artifact rows alone.
+    """
+    index = 0 if side == "reference" else 2
+    return "".join(
+        f"{path}\t{row[index]}\t{row[index + 1]}\n" for path, row in sorted(rows.items())
+    )
+
+
+def manifest_digest(rows, side):
+    return hashlib.sha256(side_manifest_text(rows, side).encode("utf-8")).hexdigest()
+
+
+def tree_manifest_digest(out: Path):
+    """The same derivation, over a freshly emitted output tree."""
+    lines = []
+    for path in sorted(p.relative_to(out).as_posix() for p in out.rglob("*") if p.is_file()):
+        payload = (out / path).read_bytes()
+        lines.append(f"{path}\t{len(payload)}\t{hashlib.sha256(payload).hexdigest()}\n")
+    return hashlib.sha256("".join(lines).encode("utf-8")).hexdigest()
+
+
+def parse_table(text, header, name):
+    lines = text.splitlines()
+    if not lines or lines[0] != header:
+        raise ValueError(f"{name} header must be {header!r}")
+    return [line.split("\t") for line in lines[1:]]
+
+
+def read_table(path, header):
+    return parse_table(path.read_text(encoding="utf-8"), header, path.name)
+
+
+def check_adapter(recipe, doc, failures):
+    """The run needs one offline adapter step; a recipe without it emits nothing.
+
+    `adapters/installed/*` is gitignored, so a cold checkout has no adapter and
+    the decompile aborts before writing a single artifact. The step is recorded
+    here and required to appear verbatim in the rerun recipe.
+    """
+    adapter = recipe["adapter"]
+    if adapter["snapshot_hash"] != recipe["input"]["snapshot_hash"]:
+        failures.append("adapter.snapshot_hash disagrees with input.snapshot_hash")
+    if adapter["snapshot_hash"] not in adapter["install_command"]:
+        failures.append("adapter.install_command does not carry the pinned snapshot hash")
+    if adapter["install_command"] not in doc:
+        failures.append(f"the adapter install step is not in {DOC.name}")
+    if not (REPO / adapter["template"]).exists():
+        failures.append(f"the tracked adapter template {adapter['template']} is missing")
+    if not is_hex(adapter["installed_sha256"], HEX64):
+        failures.append("adapter.installed_sha256 is not a sha256 digest")
+    installed = REPO / adapter["installed_path"]
+    if adapter["snapshot_hash"] not in adapter["installed_path"]:
+        failures.append("adapter.installed_path does not name the pinned snapshot hash")
+    if installed.exists():
+        payload = installed.read_bytes()
+        digest = hashlib.sha256(payload).hexdigest()
+        if len(payload) != adapter["installed_bytes"] or digest != adapter["installed_sha256"]:
+            failures.append(
+                f"the installed adapter does not match the recipe: {len(payload)} {digest}"
+            )
+
+
+def check_removals(classes, doc, failures):
+    """Removed pseudocode is accounted for per file, per class, and per callee."""
+    aggregate = json.loads(REMOVAL_AGGREGATE.read_text(encoding="utf-8"))
+    counts = aggregate["aggregate"]
+    by_class = aggregate["removed_lines_by_class"]
+    summary = classes["pseudocode"]["callee_rendering_removals"]
+    if summary["removed_lines_by_class"] != by_class:
+        failures.append("difference-classes.json and the removal aggregate disagree on the classes")
+    for key, value in summary.items():
+        if key in counts and counts[key] != value:
+            failures.append(f"difference-classes.json and the removal aggregate disagree on {key}")
+    rows = read_table(REMOVAL_TABLE, REMOVAL_HEADER)
+    if len(rows) != counts["files_losing_a_callee_rendering"]:
+        failures.append(
+            f"{REMOVAL_TABLE.name} has {len(rows)} rows, "
+            f"{counts['files_losing_a_callee_rendering']} files are claimed"
+        )
+    if sum(int(row[2]) for row in rows) != counts["callee_renderings_lost"]:
+        failures.append("the removal table does not account for every lost callee rendering")
+    vanished_rows = [row for row in rows if int(row[3])]
+    if len(vanished_rows) != counts["files_with_a_wholly_vanished_callee"]:
+        failures.append(
+            f"{len(vanished_rows)} rows carry a wholly vanished callee, "
+            f"{counts['files_with_a_wholly_vanished_callee']} are claimed"
+        )
+    named = {}
+    for row in vanished_rows:
+        for item in row[10].split(";"):
+            callee, _, count = item.rpartition(":")
+            if callee in row[9].split(";"):
+                named[callee] = named.get(callee, 0) + int(count)
+    if named != aggregate["vanished_callees"]:
+        failures.append("the enumerated vanished callees do not sum to the recorded totals")
+    if len(named) != counts["distinct_wholly_vanished_callees"]:
+        failures.append(
+            f"{len(named)} distinct vanished callees are enumerated, "
+            f"{counts['distinct_wholly_vanished_callees']} are claimed"
+        )
+    per_class = {}
+    for row in rows:
+        per_class[row[1]] = per_class.get(row[1], 0) + int(row[4])
+    for name, removed in per_class.items():
+        if by_class.get(name) != removed:
+            failures.append(f"removed lines for class {name} do not match the enumerated rows")
+    if sum(by_class.values()) != classes["pseudocode"]["removed_lines_total"]:
+        failures.append(
+            "the removed-line classes do not partition pseudocode.removed_lines_total"
+        )
+    # The indirect-branch class is only an emitter-surface removal if the IR kept
+    # every reference instruction; one lost instruction would make it a real loss.
+    ir_only = aggregate["ir_reference_only_instructions_by_class"]
+    if ir_only.get("vanished_behind_indirect_branch") != 0:
+        failures.append(
+            "the indirect-branch removal class lost reference IR instructions, "
+            "so it is not an emitter-surface removal"
+        )
+    for row in vanished_rows:
+        if int(row[7]) and "trap" not in row[1]:
+            failures.append(f"{row[0]} lost reference IR instructions outside the trap class")
+            break
+    for name in by_class:
+        if name not in doc:
+            failures.append(f"removed-pseudocode class {name!r} is not adjudicated in {DOC.name}")
+    files = {row[0] for row in rows}
+    for name, representative in aggregate["representative_file_by_class"].items():
+        if representative not in files:
+            failures.append(f"the representative file for {name} is not in the removal table")
+        if representative not in doc:
+            failures.append(f"the representative file for {name} is not named in {DOC.name}")
+
+
+def check_register_scopes(failures):
+    """The census counts text; the quality counter counts a scope inside it."""
+    scopes = json.loads(REGISTER_SCOPES.read_text(encoding="utf-8"))
+    for side in ("reference", "candidate"):
+        entry = scopes[side]
+        counts = entry["counts"]
+        quality = json.loads((EVIDENCE / f"quality-{side}.json").read_text(encoding="utf-8"))
+        census = json.loads(
+            (EVIDENCE / f"structural-census-{side}.json").read_text(encoding="utf-8")
+        )["counts"]["register_operand"]
+        scope = entry["quality_counter_scope"]
+        if scope not in ("whole_line", "code_span"):
+            failures.append(f"{side} declares an unknown register-counter scope: {scope}")
+            continue
+        recounted = counts[f"{scope}_scope_total"]
+        if recounted != quality["raw_register_name_refs"]:
+            failures.append(
+                f"the {scope} scope recounts {recounted} register tokens on the {side}, "
+                f"quality-{side}.json reports {quality['raw_register_name_refs']}"
+            )
+        if counts["census_regN_over_whole_text"] != census:
+            failures.append(f"the {side} register census does not match structural-census-{side}")
+        excluded = counts["whole_line_scope_total"] - counts["code_span_scope_total"]
+        if excluded != counts["excluded_by_code_span_filter_total"]:
+            failures.append(f"the {side} code-span exclusion total does not close")
+        split = sum(value for key, value in counts.items()
+                    if key.startswith("excluded_by_code_span_filter_in_"))
+        if split != counts["excluded_by_code_span_filter_total"]:
+            failures.append(f"the {side} code-span exclusions are not split by span kind")
 
 
 def verify(failures):
@@ -189,18 +385,28 @@ def verify(failures):
                  + list(classes["ir"]["instructions_only_in_reference"])):
         if name not in doc:
             failures.append(f"difference class {name!r} is not adjudicated in {DOC.name}")
-    process_fields = (
-        "candidate_manifest_sha256",
-        "second_candidate_process_manifest_sha256",
-        "third_candidate_process_manifest_sha256",
-    )
-    for digest_field in ("reference_manifest_sha256",) + process_fields:
+    check_adapter(recipe, doc, failures)
+    check_removals(classes, doc, failures)
+    check_register_scopes(failures)
+    for digest_field in ("reference_manifest_sha256",) + CANDIDATE_DIGEST_FIELDS:
         if not is_hex(artifacts[digest_field], HEX64):
             failures.append(f"artifacts.{digest_field} is not a sha256 digest")
-    if len({artifacts[f] for f in process_fields}) != 1:
+    if len({artifacts[f] for f in CANDIDATE_DIGEST_FIELDS}) != 1:
         failures.append("the candidate processes did not agree; the baseline is not deterministic")
-    if artifacts["candidate_processes_compared"] != len(process_fields):
+    if artifacts["candidate_processes_compared"] != len(CANDIDATE_DIGEST_FIELDS):
         failures.append("candidate_processes_compared does not match the recorded process digests")
+    # A recorded aggregate digest nobody can recompute is a claim, not evidence.
+    if artifacts["manifest_digest_derivation"] != MANIFEST_DIGEST_DERIVATION:
+        failures.append("artifacts.manifest_digest_derivation does not state the derivation used")
+    for side, fields in (("reference", ("reference_manifest_sha256",)),
+                         ("candidate", CANDIDATE_DIGEST_FIELDS)):
+        recomputed = manifest_digest(rows, side)
+        for field in fields:
+            if artifacts[field] != recomputed:
+                failures.append(
+                    f"artifacts.{field} does not recompute from the per-artifact "
+                    f"manifest: {recomputed}"
+                )
     return recipe
 
 
@@ -249,6 +455,15 @@ def replay(out: Path, failures):
     if differing:
         failures.append(f"{len(differing)} artifacts differ from the baseline, first: {differing[:3]}")
     print(f"[compat-baseline] replayed {len(seen)} artifacts against {len(rows)} baseline rows")
+    # The same derivation as the recorded aggregates. It matches only when the
+    # replay ran from the recorded workspace, because report.json carries the
+    # three volatile strings; the per-artifact comparison above is the check
+    # that has to hold from any checkout.
+    recorded = json.loads(RECIPE.read_text(encoding="utf-8"))["artifacts"]
+    fresh = tree_manifest_digest(out)
+    print(f"[compat-baseline] replayed tree manifest digest {fresh}"
+          f" ({'equal to' if fresh == recorded['candidate_manifest_sha256'] else 'differs from'}"
+          f" the recorded candidate digest)")
 
 
 def self_test():
@@ -277,6 +492,42 @@ def self_test():
                                        "kind": "internal"}
     # a value with no in-repository segment is left alone rather than silently rewritten
     assert doc["engine_symbol_ingestion"]["manifest_path"] == "/elsewhere/nothing.json"
+
+    # The aggregate-digest derivation, on a manifest small enough to state by
+    # hand: `=` resolves to the reference row, the order is by path, and the two
+    # sides differ exactly where their digests do.
+    rows, _ = read_manifest(
+        MANIFEST_HEADER
+        + "\nir/b.json\t2\t" + "cd" * 32 + "\t3\t" + "ef" * 32
+        + "\nasm/a.s\t1\t" + "ab" * 32 + "\t=\t=\n"
+    )
+    expected_reference = (
+        "asm/a.s\t1\t" + "ab" * 32 + "\nir/b.json\t2\t" + "cd" * 32 + "\n"
+    )
+    assert side_manifest_text(rows, "reference") == expected_reference
+    assert side_manifest_text(rows, "candidate") == (
+        "asm/a.s\t1\t" + "ab" * 32 + "\nir/b.json\t3\t" + "ef" * 32 + "\n"
+    )
+    assert manifest_digest(rows, "reference") == hashlib.sha256(
+        expected_reference.encode("utf-8")
+    ).hexdigest()
+    assert manifest_digest(rows, "reference") != manifest_digest(rows, "candidate")
+    # tree_manifest_digest is the same function of the same bytes, so a tree
+    # written from a manifest hashes to that manifest's digest.
+    with tempfile.TemporaryDirectory() as scratch:
+        tree = Path(scratch)
+        (tree / "asm").mkdir()
+        (tree / "asm" / "a.s").write_bytes(b"x")
+        assert tree_manifest_digest(tree) == hashlib.sha256(
+            ("asm/a.s\t1\t" + hashlib.sha256(b"x").hexdigest() + "\n").encode("utf-8")
+        ).hexdigest()
+
+    try:
+        parse_table("path\tonly\n", REMOVAL_HEADER, REMOVAL_TABLE.name)
+    except ValueError:
+        pass
+    else:  # pragma: no cover - guarded by the assert below
+        raise AssertionError("a bad table header must be rejected")
     print("[compat-baseline] self-test ok")
 
 
