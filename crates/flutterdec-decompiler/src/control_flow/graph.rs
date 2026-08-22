@@ -9,10 +9,43 @@ pub(super) const TRAP_NOTE: &str = "trap: control does not continue";
 pub(super) fn indirect_branch_note(target: &str) -> String {
     let via = target.trim();
     if via.is_empty() {
-        "indirect branch: target not recovered".to_string()
+        format!("{INDIRECT_BRANCH_NOTE_PREFIX}: target not recovered")
     } else {
-        format!("indirect branch through {via}: target not recovered")
+        format!("{INDIRECT_BRANCH_NOTE_PREFIX} through {via}: target not recovered")
     }
+}
+
+/// The three statements that report unresolved control flow, by the prefix each
+/// one starts with. One spelling for the emission site and for the counter, so
+/// the count cannot drift from the text it counts.
+pub(super) const INDIRECT_BRANCH_NOTE_PREFIX: &str = "indirect branch";
+/// A conditional branch whose taken target resolved to no block.
+pub(super) const UNRESOLVED_BRANCH_TARGET_NOTE: &str = "unresolved branch target";
+/// An unconditional jump whose target resolved to no block and to no address.
+pub(super) const UNRESOLVED_JUMP_NOTE: &str = "unresolved jump";
+
+/// Unresolved control flow in a finished body, counted from the body itself.
+///
+/// The walk's own increments cannot be the artifact's number: a block rendered
+/// into a helper body is rendered by a nested emitter whose counters are
+/// discarded, and `inline_helper_calls` then copies that body to every call
+/// site, so text the artifact carries was never counted anywhere. Counting the
+/// finished lines is the one scope a reader can recount from the artifact, and
+/// it holds whatever the emission path was: an annotation spliced into a marker
+/// keeps its prefix, so it stays counted.
+pub(super) fn unresolved_cf_statements(lines: &[String]) -> usize {
+    lines
+        .iter()
+        .filter(|line| {
+            let text = line.trim_start();
+            let Some(comment) = text.strip_prefix("// ") else {
+                return false;
+            };
+            comment.starts_with(INDIRECT_BRANCH_NOTE_PREFIX)
+                || comment.starts_with(UNRESOLVED_BRANCH_TARGET_NOTE)
+                || comment.starts_with(UNRESOLVED_JUMP_NOTE)
+        })
+        .count()
 }
 
 /// What an edge into a block the walk already rendered says.

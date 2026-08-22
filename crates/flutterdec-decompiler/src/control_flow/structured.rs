@@ -1048,7 +1048,10 @@ impl<'a> FuncEmitter<'a> {
                                 self.push_line(indent + 1, "/* external branch */");
                             } else {
                                 self.unresolved_cf += 1;
-                                self.push_line(indent + 1, "// unresolved branch target");
+                                self.push_line(
+                                    indent + 1,
+                                    &format!("// {UNRESOLVED_BRANCH_TARGET_NOTE}"),
+                                );
                             }
                         }
                     }
@@ -1234,7 +1237,7 @@ impl<'a> FuncEmitter<'a> {
                                 self.push_line(indent, &format!("return tailCall_{}();", normalized));
                             } else {
                                 self.unresolved_cf += 1;
-                                self.push_line(indent, "// unresolved jump");
+                                self.push_line(indent, &format!("// {UNRESOLVED_JUMP_NOTE}"));
                             }
                             Flow::Ends
                         }

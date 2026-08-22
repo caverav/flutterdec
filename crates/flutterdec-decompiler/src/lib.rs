@@ -715,7 +715,12 @@ impl<'a> FuncEmitter<'a> {
             function_name: fn_name,
             source: self.lines.join("\n"),
             placeholder_ifs: self.placeholder_ifs,
-            unresolved_cf: self.unresolved_cf,
+            // Counted from the finished body, not from the walk: helper bodies
+            // are rendered by a nested emitter whose counters are dropped, and
+            // inlining copies such a body to every call site, so the walk's own
+            // total is not the number of unresolved-control-flow statements the
+            // artifact carries.
+            unresolved_cf: control_flow::unresolved_cf_statements(&self.lines),
             raw_register_calls: self.raw_register_calls,
             total_calls: self.total_calls,
             indirect_calls: self.indirect_calls,
