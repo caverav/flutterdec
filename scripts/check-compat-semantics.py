@@ -72,7 +72,6 @@ FALLTHROUGH_POLARITY = {"b.eq": "!= 0", "b.ne": "== 0"}
 # instruction. `br`/`braa`-style register branches leave through a value, `ret`
 # returns, `brk`/`hlt`/`udf` trap, and an unconditional `b` transfers.
 NO_FALLTHROUGH = ("br ", "braa", "brab", "ret", "brk", "hlt", "udf", "b ")
-CONDITIONAL = re.compile(r"^(b\.[a-z]+|cbz|cbnz|tbz|tbnz) ")
 
 CONCLUSIONS = (
     "candidate_correct_reference_wrong",
