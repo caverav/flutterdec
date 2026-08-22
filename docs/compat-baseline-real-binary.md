@@ -138,11 +138,15 @@ failure:
 
 | Run | Exit | Gate reasons | Wall clock |
 | --- | --- | --- | --- |
-| reference `1371e42` | 1 | placeholder if-count exceeded | 53 s |
-| candidate `2214697` build | 1 | placeholder if-count exceeded; unresolved control-flow count exceeded | 133 s |
-| candidate, second process | 1 | same two reasons | 133 s |
-| candidate, third process | 1 | same two reasons | 133 s |
-| candidate, fourth process, input copied to a different absolute path | 1 | same two reasons | 133 s |
+| reference `1371e42` | 1 | placeholder if-count exceeded | 54 s |
+| candidate `2214697` build | 1 | placeholder if-count exceeded; unresolved control-flow count exceeded | 136 s |
+| candidate, second process | 1 | same two reasons | not separately timed |
+| candidate, third process | 1 | same two reasons | not separately timed |
+| candidate, fourth process, input copied to a different absolute path | 1 | same two reasons | not separately timed |
+
+The two wall clocks are the clean-build runs of section 8 on this workspace's
+machine, taken with the shell's own second counter. They are a record of what was
+run, not a threshold: the performance record is `docs/performance-profile/`.
 
 `placeholder_ifs=501 unresolved_cf=0 indirect_call_ratio=0.156
 disassembly_ratio=1.000` on the reference; `placeholder_ifs=530
@@ -1023,7 +1027,15 @@ CARGO_TARGET_DIR=../target-ref nix develop <repo> -c \
 The two binary digests in section 1 are the ones this workspace produced;
 crate metadata hashes depend on the build path, so treat them as a record of
 what was run rather than as a value a different machine must reproduce. The
-artifact manifest is the comparison that has to hold.
+artifact manifest is the comparison that has to hold, and it does hold from a
+cold build: a clean release build of each side, each in its own worktree with its
+own target directory, reproduced 17401 of the 17402 committed rows on its side,
+differing only in `report.json`, whose three volatile fields carry that
+worktree's paths. Those two builds hashed
+`78a91ecbd7b66d58ea4607efc862ea39e099b0f3860a5934b891de7e3bfca246` and
+`512745c3336f1e9f00b3544bc9248d5135534af6c9bdcd816f887969001d45da`, which is the
+build-path dependence this paragraph is about, and both runs reported the section
+3 gate summaries unchanged.
 
 ## 9. Limits
 
