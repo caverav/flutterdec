@@ -261,8 +261,18 @@ fn an_invalid_cfg_reports_one_site_and_carries_one_statement() {
     let mut ir = function(
         "invalid_cfg",
         vec![
-            blk(0, 0x4000, vec![instr(0x4000, IROp::Other, "mov x0, x1", "")], vec![1]),
-            blk(1, 0x4004, vec![instr(0x4004, IROp::Other, "ret", "")], vec![]),
+            blk(
+                0,
+                0x4000,
+                vec![instr(0x4000, IROp::Other, "mov x0, x1", "")],
+                vec![1],
+            ),
+            blk(
+                1,
+                0x4004,
+                vec![instr(0x4004, IROp::Other, "ret", "")],
+                vec![],
+            ),
         ],
     );
     // Two blocks claiming the same id: an id-keyed map keeps one of them, so the

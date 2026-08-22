@@ -71,8 +71,8 @@ digest, extra/missing row, duplicate row, and loader bypass all fail closed.
 | `crates/flutterdec-bench/Cargo.toml` | `98dbc4b430302d76c4cf4716dfdd781ea354f26195514d1f9b844e79f97a7040` |
 | `crates/flutterdec-bench/src/main.rs` | `c8fefa460ecc3dd7a919f6577367d5e967386c277630fd3e1493d4dd53b6ac34` |
 | `crates/flutterdec-bench/src/measure.rs` | `49dfc3fcb2a33fa2903f9f19ec0c02915fb15cc2cba86a9d4f8e6d72535570b8` |
-| `crates/flutterdec-decompiler/src/lib.rs` | `bfaec5e3c54488f60cc6057fb8743847bed1fb0c8f1db11743a400d9c76d3cd7` |
-| `crates/flutterdec-decompiler/src/control_flow/structured.rs` | `5d748ff24c73049402db3511c9346bfeba8730002757c228da6bc4bb809b4d02` |
+| `crates/flutterdec-decompiler/src/lib.rs` | `c7897b95d46006bea5e8b4edd1011d6e4245159e804e97c4adb6922e84913c6f` |
+| `crates/flutterdec-decompiler/src/control_flow/structured.rs` | `13421bf7198e09f388c3f79537b870614b53a1946263f44dfab8a7367baf9f53` |
 | `scripts/bench-resource.sh` | `93a6932301bb37452c41149b237d3c46b4244d2b3ee2d76a60ca11dd35c101db` |
 | `scripts/audit-resource-evidence.py` | `4cea4c88f15144a5cdf34a724751a173d11e91f7d7cda5641c156cd48faaf220` |
 | `scripts/check-resource-ruler.py` | `c99345bea216e0c8f42eb854d826d5d040230f37bf571b81eda81c80d6fe2716` |
@@ -197,3 +197,31 @@ candidate are unchanged. The resource ruler self-test and clean loader check wer
 refreshed in Nix, and the checker was proved fail-closed through the workflow's
 own command line by deleting `scripts/bench-resource.sh` in a disposable
 worktree; timing selection was not rerun.
+
+The 2026-08-22 unresolved-control-flow accounting adjudication changes
+`crates/flutterdec-decompiler/src/lib.rs` from
+`bfaec5e3c54488f60cc6057fb8743847bed1fb0c8f1db11743a400d9c76d3cd7` to
+`c7897b95d46006bea5e8b4edd1011d6e4245159e804e97c4adb6922e84913c6f`, and
+`crates/flutterdec-decompiler/src/control_flow/structured.rs` from
+`5d748ff24c73049402db3511c9346bfeba8730002757c228da6bc4bb809b4d02` to
+`13421bf7198e09f388c3f79537b870614b53a1946263f44dfab8a7367baf9f53`.
+The product change is two hunks and one line of behaviour: the artifact's
+`unresolved_cf` is recounted from the finished body instead of taking the walk's
+own total, because a block rendered into a helper body is rendered by a nested
+emitter whose counters are discarded and inlining copies that body to every call
+site. The `structured.rs` hunks only replace two literal note strings with the
+shared constants the counter keys on. No emitted pseudocode, IR, or assembly byte
+moves: on the pinned public baseline the whole diff is
+`quality.json.unresolved_cf` and its copy in `report.json`, 517 to 521, which is
+the number of statements the artifacts already carried
+(`docs/compat-baseline-real-binary.md` section 6.5).
+
+The feature-gated resource allocator, phase ownership, CFG clone plant, and
+emitter clone plant are byte-for-byte unchanged: both diff hunks sit in
+`emit_with_plan` and in the two note pushes, and nothing under
+`#[cfg(feature = "bench-spans")]` is touched. The resource ruler self-test and
+inventory check and the full Nix `scripts/ci-check.sh` were refreshed with the
+atomic commit. The resource harness cases were not rerun, because no
+resource-instrumented code moved, and no timing selection, candidate order,
+score, threshold, sample, seed, accepted harness, frozen reference, or immutable
+candidate was rerun or changed.
