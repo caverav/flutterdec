@@ -12,13 +12,21 @@
     "instruction_alignment": "instructions are matched between the two sides by virtual address within the same function",
     "ir_reference_only_instructions": "the pseudocode-callee-removals.tsv column: instruction addresses present in that function's reference ir/*.json and absent from its candidate ir/*.json, recorded on every row of the table",
     "lost_edge": "an address-level control-flow edge the reference had and the candidate does not, over sequential adjacency inside a block plus one edge from a block's last instruction address to each successor block's start address; the effect that removed it is the candidate op at the edge's tail address",
-    "lost_edge_effects": "the pseudocode-callee-removals.tsv column: an effect-occurrence count, not a count of distinct edges. disposition_<D> is one per (wholly vanished callee, candidate block holding a Call to it) pair; lost_edge_after_<op> is one per (wholly vanished callee, candidate block, distinct candidate tail op bounding that block's unreachable region). Distinct address-level lost edges are counted separately in callee-removals-aggregate.json distinct_lost_edges.",
+    "lost_edge_effects": "the pseudocode-callee-removals.tsv column, an effect-occurrence count and not a count of distinct control-flow edges: its keys are keyed on the tuples in lost_edge_effects_algorithm, so one lost edge bounding a region that holds three vanished callees is counted three times. Distinct address-level lost edges are counted separately in callee-removals-aggregate.json distinct_lost_edges.",
+    "lost_edge_effects_algorithm": [
+      "The entry block is the candidate block whose start_va equals the function's entry_va, and a candidate block is unreachable when no directed path of successor edges reaches it from that entry block.",
+      "The region of a candidate block is its weakly connected component in the subgraph induced by the unreachable blocks, taking a successor edge between two unreachable blocks as undirected.",
+      "A lost reference edge bounds that region when its head address falls inside the component: the head resolves to the candidate block that starts at that address, or failing that to the candidate block holding an instruction at it.",
+      "lost_edge_after_<op> is one occurrence per (file, wholly vanished callee, candidate block holding a Call to that callee, distinct candidate tail op among the lost edges bounding that block's region).",
+      "disposition_<D> is one occurrence per (file, wholly vanished callee, unreachable candidate block holding a Call to that callee).",
+      "dispatch_selector_rendering is one occurrence per (file, wholly vanished sel<N> callee), not one per lost rendering."
+    ],
     "op_transitions": "for an address present on both sides, '<reference op>-><candidate op>' when the op differs",
     "operand_naming_direction": "difflib.unified_diff(n=0) as in removed_and_added_lines; hunks that replace exactly one line with exactly one line, compared by the number of regN tokens on each side",
     "operand_naming_fewer_register_classes": "the fewer_registers pairs, enumerated in operand-direction-losses.tsv",
     "pseudocode_line_tags": "regex tags per added or removed line of a difflib.unified_diff(n=0) diff, as in removed_and_added_lines; a line can carry several tags",
     "removed_and_added_lines": "counted from difflib.unified_diff(reference_lines, candidate_lines, n=0) in Python 3, over splitlines(True) of the two files, skipping the ---/+++/@@ lines: every remaining line starting with '-' is a removed line and every one starting with '+' is an added line. The implementation matters: GNU diff -U0 and git diff -U0 group hunks differently and do not reproduce these totals.",
-    "removed_pseudocode_class": "one class per differing file: no_callee_rendering_lost, fewer_renderings_same_callees, dispatch_selector_rendering_only, or vanished_behind_<the lost-edge effects bounding the unreachable candidate region that holds the vanished call>",
+    "removed_pseudocode_class": "one class per differing file: no_callee_rendering_lost, fewer_renderings_same_callees, dispatch_selector_rendering_only, or vanished_behind_<ops>, where ops is the set of tail ops in that file's lost_edge_after_<op> keys, each op spelled in snake_case, in ascending op order, joined by _and_; a file can hold several unreachable regions and the ops need not all bound the same one",
     "wholly_vanished_callee": "a callee the reference rendered at least once in a file and the candidate renders nowhere in that file"
   },
   "ir": {

@@ -75,6 +75,38 @@ PRODUCT_TREE_DERIVATION = (
     "check-compat-baseline.py product_tree_digest"
 )
 
+# The lost_edge_effects column is re-derivable only from this algorithm. The
+# neighbouring readings of "that block's unreachable region" answer differently
+# on the same trees: every unreachable block in the file gives 350 and 90, and a
+# directed walk of the induced subgraph gives 29 and 35, against the recorded 303
+# and 68. `unreachable_regions` below is the same rule in code and `--self-test`
+# runs it on a graph where the readings disagree.
+LOST_EDGE_ALGORITHM = (
+    "The entry block is the candidate block whose start_va equals the function's entry_va, "
+    "and a candidate block is unreachable when no directed path of successor edges reaches "
+    "it from that entry block.",
+    "The region of a candidate block is its weakly connected component in the subgraph "
+    "induced by the unreachable blocks, taking a successor edge between two unreachable "
+    "blocks as undirected.",
+    "A lost reference edge bounds that region when its head address falls inside the "
+    "component: the head resolves to the candidate block that starts at that address, or "
+    "failing that to the candidate block holding an instruction at it.",
+    "lost_edge_after_<op> is one occurrence per (file, wholly vanished callee, candidate "
+    "block holding a Call to that callee, distinct candidate tail op among the lost edges "
+    "bounding that block's region).",
+    "disposition_<D> is one occurrence per (file, wholly vanished callee, unreachable "
+    "candidate block holding a Call to that callee).",
+    "dispatch_selector_rendering is one occurrence per (file, wholly vanished sel<N> "
+    "callee), not one per lost rendering.",
+)
+LOST_EDGE_UNIT = (
+    "the pseudocode-callee-removals.tsv column, an effect-occurrence count and not a count "
+    "of distinct control-flow edges: its keys are keyed on the tuples in "
+    "lost_edge_effects_algorithm, so one lost edge bounding a region that holds three "
+    "vanished callees is counted three times. Distinct address-level lost edges are counted "
+    "separately in callee-removals-aggregate.json distinct_lost_edges."
+)
+
 
 def normalize_report(doc):
     """Replace the three workspace-dependent strings the recipe declares volatile.
@@ -91,6 +123,11 @@ def normalize_report(doc):
         if isinstance(value, str) and marker in value:
             doc[section] = {**doc[section], key: "<repo>" + value[value.index(marker):]}
     return doc
+
+
+def prose(text):
+    """Markdown prose flattened for verbatim anchor checks: no code ticks, no wrapping."""
+    return " ".join(text.replace("`", "").split())
 
 
 def is_hex(value, width):
@@ -346,7 +383,105 @@ def check_marker_column(rows, vanished_rows, aggregate, counts, failures):
         failures.append("candidate_marker does not state the column's scope")
 
 
-def check_lost_edge_effects(rows, aggregate, ir_only, doc, failures):
+def unreachable_regions(blocks, entry_va):
+    """LOST_EDGE_ALGORITHM clauses 1 and 2 in code: {block id: region id}.
+
+    `blocks` is a candidate `ir/*.json` block list. Reachability is directed over
+    `succs` from the entry block; a region is a weakly connected component of the
+    subgraph the unreachable blocks induce, identified by its lowest block id.
+    Reachable blocks are absent from the result: they have no region.
+    """
+    by_id = {b["id"]: b for b in blocks}
+    entry = next((b["id"] for b in blocks if b["start_va"] == entry_va), None)
+    live, stack = set(), [entry] if entry in by_id else []
+    while stack:
+        block = stack.pop()
+        if block in by_id and block not in live:
+            live.add(block)
+            stack.extend(by_id[block]["succs"])
+    dead = set(by_id) - live
+    adjacent = {block: set() for block in dead}
+    for block in dead:
+        for succ in by_id[block]["succs"]:
+            if succ in dead:
+                adjacent[block].add(succ)
+                adjacent[succ].add(block)
+    region = {}
+    for block in sorted(dead):
+        if block in region:
+            continue
+        component, stack = set(), [block]
+        while stack:
+            reached = stack.pop()
+            if reached not in component:
+                component.add(reached)
+                stack.extend(adjacent[reached])
+        region.update(dict.fromkeys(component, block))
+    return region
+
+
+def check_lost_edge_definition(rows, aggregate, classes, doc, failures):
+    """The unit and the algorithm must stand, verbatim, in all four files.
+
+    A wrong reading of the region rule is undetectable from the totals alone -
+    the column sums to itself either way - so the record's defence is that the
+    definition cannot be dropped or reworded in one place without failing here.
+    """
+    effects = aggregate["lost_edge_effects"]
+    algorithm = list(LOST_EDGE_ALGORITHM)
+    if effects.get("unit") != LOST_EDGE_UNIT:
+        failures.append("the lost_edge_effects unit in callee-removals-aggregate.json is "
+                        "missing or altered")
+    if effects.get("algorithm") != algorithm:
+        failures.append("the lost_edge_effects algorithm in callee-removals-aggregate.json is "
+                        "missing or altered")
+    if classes["definitions"].get("lost_edge_effects") != LOST_EDGE_UNIT:
+        failures.append("the lost_edge_effects unit in difference-classes.json is missing or "
+                        "altered")
+    if classes["definitions"].get("lost_edge_effects_algorithm") != algorithm:
+        failures.append("the lost_edge_effects algorithm in difference-classes.json is missing "
+                        "or altered")
+    flowed = prose(doc)
+    if prose(LOST_EDGE_UNIT) not in flowed:
+        failures.append(f"the lost_edge_effects unit is missing or altered in {DOC.name}")
+    for index, clause in enumerate(algorithm, start=1):
+        if prose(clause) not in flowed:
+            failures.append(f"clause {index} of the lost_edge_effects algorithm is missing or "
+                            f"altered in {DOC.name}")
+    # The selector key is the one whose unit is checkable from the committed rows:
+    # the callee reading and the rendering reading are 34 against 370.
+    check = effects["dispatch_selector_rendering_cross_check"]
+    callees = renderings = 0
+    files = set()
+    for row in rows:
+        detail = dict(item.rpartition(":")[::2] for item in row[10].split(";"))
+        selectors = [name for name in row[9].split(";") if name.startswith("sel")]
+        callees += len(selectors)
+        renderings += sum(int(detail[name]) for name in selectors)
+        if selectors:
+            files.add(row[0])
+    recounted = {"vanished_sel_callees": callees, "files": len(files),
+                 "lost_sel_renderings_the_wrong_unit": renderings}
+    if recounted != check:
+        failures.append(f"the dispatch_selector_rendering cross-check does not match the rows: "
+                        f"{recounted}")
+    if effects["totals"]["dispatch_selector_rendering"] != callees:
+        failures.append(
+            f"dispatch_selector_rendering counts wholly vanished sel<N> callees, so it must be "
+            f"{callees}, not {effects['totals']['dispatch_selector_rendering']}"
+        )
+    if callees == renderings:
+        failures.append("the dispatch_selector_rendering cross-check cannot separate the callee "
+                        "unit from the rendering unit")
+    # The derivation can emit three further keys; the record claims none of them
+    # occurred, and a key appearing later would be an unadjudicated effect.
+    for key in effects["keys_that_are_zero_in_this_run"]:
+        if key in effects["totals"]:
+            failures.append(f"lost_edge_effects records {key} as absent from the run but the "
+                            f"column carries it")
+
+
+def check_lost_edge_effects(rows, aggregate, classes, ir_only, doc, failures):
     """The column counts effect occurrences; distinct edges are counted separately."""
     effects = aggregate["lost_edge_effects"]
     totals = {}
@@ -357,10 +492,7 @@ def check_lost_edge_effects(rows, aggregate, ir_only, doc, failures):
     if totals != effects["totals"]:
         failures.append(f"the lost_edge_effects column does not sum to the recorded totals: "
                         f"{totals}")
-    if not effects.get("unit"):
-        failures.append("lost_edge_effects does not state the unit it counts")
-    if "per (wholly vanished callee" not in doc:
-        failures.append(f"the lost_edge_effects unit is not stated in {DOC.name}")
+    check_lost_edge_definition(rows, aggregate, classes, doc, failures)
     edges = aggregate["distinct_lost_edges"]
     for key, total in (("whole_file_by_candidate_tail_op", "whole_file_total"),
                        ("bounding_an_unreachable_region_by_candidate_tail_op",
@@ -443,7 +575,7 @@ def check_removals(classes, doc, failures):
             break
     check_reference_only_column(rows, aggregate, classes, failures)
     check_marker_column(rows, vanished_rows, aggregate, counts, failures)
-    check_lost_edge_effects(rows, aggregate, ir_only, doc, failures)
+    check_lost_edge_effects(rows, aggregate, classes, ir_only, doc, failures)
     for name in by_class:
         if name not in doc:
             failures.append(f"removed-pseudocode class {name!r} is not adjudicated in {DOC.name}")
@@ -801,6 +933,37 @@ def self_test():
     assert tree_oid_digest(entries) != tree_oid_digest(
         [("crates/b.rs", "c" * HEX40), ("Cargo.toml", "a" * HEX40)]
     )
+
+    # The lost_edge_effects region rule, on a graph where the readings disagree:
+    # 1 is the only reachable block besides the entry, 2 and 3 are one region
+    # joined by an edge whose direction does not matter, and 4 is a second one.
+    blocks = [{"id": 0, "start_va": 16, "succs": [1], "instrs": []},
+              {"id": 1, "start_va": 20, "succs": [], "instrs": []},
+              {"id": 2, "start_va": 24, "succs": [3], "instrs": []},
+              {"id": 3, "start_va": 28, "succs": [], "instrs": []},
+              {"id": 4, "start_va": 32, "succs": [], "instrs": []}]
+    region = unreachable_regions(blocks, 16)
+    assert set(region) == {2, 3, 4}, region  # reachable blocks have no region
+    assert region[2] == region[3] != region[4], region
+    assert len(set(region.values())) == 2, region  # not one region per file
+    reversed_edge = [dict(block) for block in blocks]
+    reversed_edge[2]["succs"], reversed_edge[3]["succs"] = [], [2]
+    assert unreachable_regions(reversed_edge, 16) == region  # undirected, so 3 -> 2 is the same
+    # An entry_va that names no block leaves every block unreachable, in one
+    # region only where the successor edges connect them.
+    orphaned = unreachable_regions(blocks, 99)
+    assert set(orphaned) == {0, 1, 2, 3, 4} and len(set(orphaned.values())) == 3, orphaned
+
+    # An edit that drops a load-bearing clause would let verify's anchors pass
+    # against a record that no longer determines the recorded totals.
+    stated = " ".join(LOST_EDGE_ALGORITHM)
+    for phrase in ("start_va equals the function's entry_va", "no directed path of successor",
+                   "weakly connected component", "as undirected",
+                   "head address falls inside the component",
+                   "distinct candidate tail op", "not one per lost rendering"):
+        assert phrase in stated, phrase
+    assert "not a count of distinct control-flow edges" in LOST_EDGE_UNIT
+    assert prose("`a`  b\nc") == "a b c"
     print("[compat-baseline] self-test ok")
 
 

@@ -77,14 +77,32 @@
     "vanished_behind_trap": 6
   },
   "lost_edge_effects": {
+    "algorithm": [
+      "The entry block is the candidate block whose start_va equals the function's entry_va, and a candidate block is unreachable when no directed path of successor edges reaches it from that entry block.",
+      "The region of a candidate block is its weakly connected component in the subgraph induced by the unreachable blocks, taking a successor edge between two unreachable blocks as undirected.",
+      "A lost reference edge bounds that region when its head address falls inside the component: the head resolves to the candidate block that starts at that address, or failing that to the candidate block holding an instruction at it.",
+      "lost_edge_after_<op> is one occurrence per (file, wholly vanished callee, candidate block holding a Call to that callee, distinct candidate tail op among the lost edges bounding that block's region).",
+      "disposition_<D> is one occurrence per (file, wholly vanished callee, unreachable candidate block holding a Call to that callee).",
+      "dispatch_selector_rendering is one occurrence per (file, wholly vanished sel<N> callee), not one per lost rendering."
+    ],
+    "dispatch_selector_rendering_cross_check": {
+      "files": 14,
+      "lost_sel_renderings_the_wrong_unit": 370,
+      "vanished_sel_callees": 34
+    },
     "empty_on": "rows of class fewer_renderings_same_callees, which have no wholly vanished callee",
+    "keys_that_are_zero_in_this_run": [
+      "callee_absent_from_candidate_ir",
+      "lost_edge_after_absent",
+      "reachable_block_not_rendered"
+    ],
     "totals": {
       "dispatch_selector_rendering": 34,
       "disposition_RetainedUnreachable": 385,
       "lost_edge_after_IndirectBranch": 303,
       "lost_edge_after_Trap": 68
     },
-    "unit": "one increment per (wholly vanished callee, candidate block holding a Call to that callee) pair for the disposition_<D> keys; for the lost_edge_after_<op> keys, one increment per (wholly vanished callee, candidate block, distinct candidate tail op bounding that block's unreachable region). It is an effect-occurrence count, not a count of distinct control-flow edges."
+    "unit": "the pseudocode-callee-removals.tsv column, an effect-occurrence count and not a count of distinct control-flow edges: its keys are keyed on the tuples in lost_edge_effects_algorithm, so one lost edge bounding a region that holds three vanished callees is counted three times. Distinct address-level lost edges are counted separately in callee-removals-aggregate.json distinct_lost_edges."
   },
   "removed_lines_by_class": {
     "dispatch_selector_rendering_only": 160,

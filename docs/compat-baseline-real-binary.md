@@ -385,7 +385,7 @@ nothing left over:
 | `no_callee_rendering_lost` | 3457 | 65656 | Restructuring and operand renaming only, sections 6.1 and 6.2. Every callee the reference rendered is still rendered. |
 | `fewer_renderings_same_callees` | 130 | 26667 | The same callees, rendered fewer times: a block the reference repeated inline is now emitted once as a `_block_N` helper and called, so duplicate renderings collapse. No callee is lost. |
 | `vanished_behind_indirect_branch` | 58 | 7964 | The removed text sat behind a `br Xn`. Adjudicated below. |
-| `vanished_behind_indirect_branch_and_trap` | 11 | 2359 | Both effects bound the same unreachable region in one file. Same adjudication as the two single-effect classes. |
+| `vanished_behind_indirect_branch_and_trap` | 11 | 2359 | Both effect ops appear among the lost edges bounding that file's vanished calls: in 5 of the 11 every such region is bounded by both ops, in the other 6 the vanished calls sit in two to four regions that are not all bounded by both. Same adjudication as the two single-effect classes. |
 | `vanished_behind_trap` | 14 | 1180 | The removed text sat behind a `brk`, which is the section 6.1 class rendered at the pseudocode surface. |
 | `dispatch_selector_rendering_only` | 2 | 160 | Two files lose only `sel<N>(` renderings, whose selector is recovered from a dispatch table rather than from a call target, so no IR call instruction carries the name. Declared open in section 9. |
 
@@ -413,13 +413,57 @@ they are not, so each states its own scope:
   121 `trap_only`, 71 `indirect_branch_only`, 23 `none`, 0 `both`; over the 85
   files with a wholly vanished callee it is 70 `indirect_branch_only` and 15
   `trap_only`.
-- `lost_edge_effects` counts effect **occurrences**, not distinct edges.
-  `disposition_<D>` is one per (wholly vanished callee, candidate block holding a
-  `Call` to that callee) pair; `lost_edge_after_<op>` is one per (wholly vanished
-  callee, candidate block, distinct candidate tail op bounding that block's
-  unreachable region). That unit is why the column sums to 385, 303 and 68 rather
-  than to an edge count: one lost edge bounding a region that holds three vanished
-  callees is counted three times.
+- `lost_edge_effects` counts effect **occurrences**. Its unit is
+  the `pseudocode-callee-removals.tsv` column, an effect-occurrence count and
+  not a count of distinct control-flow edges: its keys are keyed on the tuples in
+  `lost_edge_effects_algorithm`, so one lost edge bounding a region that holds
+  three vanished callees is counted three times. Distinct address-level lost edges
+  are counted separately in `callee-removals-aggregate.json distinct_lost_edges`.
+  That unit is why the column sums to 385, 303 and 68 rather than to an edge
+  count.
+
+**The algorithm the `lost_edge_effects` column is derived by.** "That block's
+unreachable region" has neighbouring readings that answer differently on the same
+trees, so the six clauses below are the definition; they are carried verbatim in
+`difference-classes.json.definitions.lost_edge_effects_algorithm` and in
+`callee-removals-aggregate.json.lost_edge_effects.algorithm`, and `verify` fails
+if any of the three copies is dropped or reworded.
+
+1. The entry block is the candidate block whose `start_va` equals the function's
+   `entry_va`, and a candidate block is unreachable when no directed path of
+   successor edges reaches it from that entry block.
+2. The region of a candidate block is its weakly connected component in the
+   subgraph induced by the unreachable blocks, taking a successor edge between two
+   unreachable blocks as undirected.
+3. A lost reference edge bounds that region when its head address falls inside
+   the component: the head resolves to the candidate block that starts at that
+   address, or failing that to the candidate block holding an instruction at it.
+4. `lost_edge_after_<op>` is one occurrence per (file, wholly vanished callee,
+   candidate block holding a `Call` to that callee, distinct candidate tail op
+   among the lost edges bounding that block's region).
+5. `disposition_<D>` is one occurrence per (file, wholly vanished callee,
+   unreachable candidate block holding a `Call` to that callee).
+6. `dispatch_selector_rendering` is one occurrence per (file, wholly vanished
+   `sel<N>` callee), not one per lost rendering.
+
+A file's `vanished_behind_<ops>` class name is that file's `lost_edge_after_<op>`
+tail ops, each op in snake_case, in ascending op order, joined by `_and_`; the ops
+of one file need not all bound the same region.
+
+Only that reading reproduces the recorded 303 and 68. Taking the region as every
+unreachable block in the file gives 350 and 90; walking the induced subgraph
+directedly instead of undirectedly gives 29 and 35; both were re-derived from the
+same two output trees. Clause 3's second half never decides a count in this run -
+every bounding head is a block start - and clauses 1 and 2 are in code as
+`unreachable_regions` in `scripts/check-compat-baseline.py`, which `--self-test`
+runs on a graph where the readings disagree. Clause 6 is the one unit the
+committed rows can settle on their own: the 85 rows carry 34 wholly vanished
+`sel<N>` callees over 14 files against 370 lost `sel<N>` renderings, and `verify`
+recounts both from `vanished_callee_names` and `lost_rendering_detail` and fails
+if the recorded 34 is the rendering figure instead. Three further keys the
+derivation can emit - `callee_absent_from_candidate_ir`,
+`lost_edge_after_absent`, and `reachable_block_not_rendered` - do not occur in
+this run, which `verify` also holds.
 
 **Why the removed text was unreachable.** Attribution is the same
 nearest-earlier-instruction rule the `definitions` object already uses for
@@ -670,6 +714,20 @@ The precision repair on top of it is plant-tested the same way, each exiting 1:
 | commit any change under `crates/` | `HEAD has a product-path delta from revisions.candidate (361c922): the product tree hashes <digest>, so the recorded artifacts were not produced by the product state at HEAD` |
 | delete the `NIX_CONFIG` export from section 8 | `the NIX_CONFIG export the build line needs is not in compat-baseline-real-binary.md` |
 | drop `difflib.unified_diff(n=0)` from section 6.2 | `the diff implementation is not named in compat-baseline-real-binary.md` |
+
+The definition repair on top of that is plant-tested the same way. The first four
+are the point of it: the recorded totals sum to themselves under a wrong reading
+of the region rule, so the only defence is that the definition cannot be dropped
+or reworded in one copy without failing here.
+
+| Plant | Failure |
+| --- | --- |
+| reword clause 2 in section 6.2 | `verify`: `clause 2 of the lost_edge_effects algorithm is missing or altered in compat-baseline-real-binary.md` |
+| edit `lost_edge_effects.algorithm` in `callee-removals-aggregate.json` | `verify`: `the lost_edge_effects algorithm in callee-removals-aggregate.json is missing or altered` |
+| delete `definitions.lost_edge_effects_algorithm` from `difference-classes.json` | `verify`: `the lost_edge_effects algorithm in difference-classes.json is missing or altered` |
+| reword `definitions.lost_edge_effects` in `difference-classes.json` | `verify`: `the lost_edge_effects unit in difference-classes.json is missing or altered` |
+| record the rendering figure 370 as `vanished_sel_callees` | `verify`: `the dispatch_selector_rendering cross-check does not match the rows: {'vanished_sel_callees': 34, ...}` |
+| drop `weakly connected component` from the script's clause 2 | `--self-test`: `AssertionError: weakly connected component` |
 
 `verify` is not wired into `scripts/ci-check.sh` yet. Both that script and
 `scripts/lint-python.sh` are protected paths in section 7 of
