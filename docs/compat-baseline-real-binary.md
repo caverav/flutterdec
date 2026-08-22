@@ -27,6 +27,8 @@ prose here exists to adjudicate the differences, which a JSON file cannot do.
 | Adapter | `--adapter-backend internal`, kind `dynamic_snapshot_string_model_v1` |
 | Reference revision | `1371e42549472ec388f58bc1fd5dbdf96e8dcdd1` |
 | Candidate revision | `361c922ad418da67277aea911050fdf70fe10234` |
+| Reference product tree | `23165413ab8e29b08ac71bd712aaf607154aea090ae1680170472f05d3a8e6f3` (106 files) |
+| Candidate product tree | `43d9ecebb959e6e00514fb50d2af38d7402cb221b674df9d92a994d403c9c238` (141 files) |
 | Reference binary sha256 | `54981d32172f8ea9cc03331eb16d8e3cfbc8f300d7ebf17bbc0b25dece8c272b` |
 | Candidate binary sha256 | `08110f952bc2c0a831aa9bb979b4f745b9607595cef6f47c1bf5bc36a4f67c31` |
 | CLI version | `flutterdec 0.1.0-alpha.4` on both sides |
@@ -36,6 +38,27 @@ prose here exists to adjudicate the differences, which a JSON file cannot do.
 Both sides were built clean, in separate worktrees, into separate
 workspace-backed target directories, from `rust-toolchain.toml` and
 `flake.lock` that are byte-identical at the two revisions.
+
+**What the candidate revision is, and what it is not.** `361c922` is the
+*product-state* revision: the state of the code that decides the emitted bytes,
+which is what these artifacts were built from. It is deliberately never advanced
+to the docs commit that carries this evidence. Advancing it would change what the
+artifacts are claimed to come from, and no commit can name itself anyway. The
+property that has to keep holding is that the product tree has not moved since,
+so it is pinned by digest: sha256 over one `<path>\t<git blob object id>\n` line
+per tracked file under `Cargo.lock`, `Cargo.toml`, `adapters/`, `crates/`,
+`flake.lock`, `flake.nix`, `rust-toolchain.toml` and `symbols/`, paths in
+ascending byte order, no header. `check-compat-baseline.py verify` recomputes it
+at `361c922`, at `1371e42`, and at the current `HEAD`, and fails if `HEAD` has any
+product-path delta from the recorded candidate tree. The evidence and prose live
+outside those paths on purpose, which is what lets the record keep moving while
+the pin stays still.
+
+The revision that *delivers* this evidence is therefore not recorded in
+`input-recipe.json` - it cannot be, without a self-referential hash. Read it from
+the repository: `git log --oneline -- docs/compat-baseline-real-binary.md
+docs/compat-evidence/`. Every one of those commits touches zero product paths,
+which is exactly the property `verify` checks.
 
 ## 2. Fetch the input
 
@@ -258,7 +281,12 @@ Instruction membership changes are fully accounted for:
 
 ### 6.2 Pseudocode
 
-3672 files differ: 103986 removed lines against 1930418 added lines. The
+3672 files differ: 103986 removed lines against 1930418 added lines. Those two
+totals, and every per-file `removed_lines`/`added_lines` in section 6.4, are
+counted from Python `difflib.unified_diff(reference_lines, candidate_lines, n=0)`
+over `splitlines(True)`, skipping the `---`/`+++`/`@@` lines. The implementation
+is part of the definition: GNU `diff -U0` and `git diff -U0` group hunks
+differently and reproduce neither total. The
 candidate emits about 7.7x more pseudocode text for the same 5800 functions,
 and the added text is paths the reference declined to emit rather than new
 claims about the program:
@@ -296,7 +324,9 @@ and annotation-anchor rules enforced by
 `annotation_anchor_identity.rs`, and `provenance_audit.rs`.
 
 Counting the one-line-for-one-line replacements across all 3672 differing files
-(zero-context diff hunks that replace exactly one line with exactly one line):
+(`difflib.unified_diff(n=0)` hunks that replace exactly one line with exactly one
+line - the same implementation caveat applies, `SequenceMatcher` opcodes and GNU
+`diff -U0` both give different splits):
 9060 gain `regN` tokens, 1984 keep the same number, and 78 lose them. All 78 are
 enumerated in
 [compat-evidence/operand-direction-losses.tsv](compat-evidence/operand-direction-losses.tsv)
@@ -359,6 +389,38 @@ nothing left over:
 | `vanished_behind_trap` | 14 | 1180 | The removed text sat behind a `brk`, which is the section 6.1 class rendered at the pseudocode surface. |
 | `dispatch_selector_rendering_only` | 2 | 160 | Two files lose only `sel<N>(` renderings, whose selector is recovered from a dispatch table rather than from a call target, so no IR call instruction carries the name. Declared open in section 9. |
 
+**What the table's columns mean.** Three of them are easy to read as something
+they are not, so each states its own scope:
+
+- `ir_reference_only_instructions` is per file: instruction addresses present in
+  that function's reference `ir/*.json` and absent from its candidate
+  `ir/*.json`. It is measured on **every** row, not only on the rows with a
+  wholly vanished callee. 104 rows are nonzero, for 244 instructions: 238 on 101
+  `fewer_renderings_same_callees` rows (97 rows of 2, two of 4, one of 6, one of
+  30) and 6 on 3 `vanished_behind_trap` rows of 2 each. The value histogram over
+  all 104 nonzero rows - 100 twos, two fours, one six, one thirty - is recorded in
+  the aggregate and `verify` checks the column against it.
+  The other 690 of the run's 934 sit outside the table, 678 in differing files
+  that lose no callee rendering and 12 in files whose pseudocode is byte-identical.
+  244 + 690 = 934, which is the whole `after_trap:brk` class section 6.1
+  adjudicates, so every reference-only instruction in the run is placed and none
+  is a real loss.
+- `candidate_marker` is whole-file marker presence in the candidate pseudocode -
+  `both`, `indirect_branch_only`, `trap_only` or `none` - and is recorded on every
+  row. It is *not* the class: `00465_sub_6516f8.dartpseudo` is bounded by a trap
+  edge yet carries no `// trap:` marker, because the marker census counts
+  *emitted* markers and an unemitted region emits none. Over all 215 rows it is
+  121 `trap_only`, 71 `indirect_branch_only`, 23 `none`, 0 `both`; over the 85
+  files with a wholly vanished callee it is 70 `indirect_branch_only` and 15
+  `trap_only`.
+- `lost_edge_effects` counts effect **occurrences**, not distinct edges.
+  `disposition_<D>` is one per (wholly vanished callee, candidate block holding a
+  `Call` to that callee) pair; `lost_edge_after_<op>` is one per (wholly vanished
+  callee, candidate block, distinct candidate tail op bounding that block's
+  unreachable region). That unit is why the column sums to 385, 303 and 68 rather
+  than to an edge count: one lost edge bounding a region that holds three vanished
+  callees is counted three times.
+
 **Why the removed text was unreachable.** Attribution is the same
 nearest-earlier-instruction rule the `definitions` object already uses for
 exclusive instructions, applied to edges. Address-level edges are built for both
@@ -372,15 +434,33 @@ unreachable from the function entry in the candidate, its ledger disposition is
 tail whose candidate op is `IndirectBranch` or `Trap`. There is no other tail op
 in the whole class.
 
+Counted as distinct address-level edges instead - the same `lost_edge`
+definition, deduplicated, over the 85 files with a wholly vanished callee - the
+numbers are smaller and are recorded separately in
+`callee-removals-aggregate.json.distinct_lost_edges`:
+
+| Distinct lost edges, 85 files | `IndirectBranch` | `Trap` | tail absent from the candidate IR | total |
+| --- | --- | --- | --- | --- |
+| anywhere in the file | 142 | 59 | 6 | 207 |
+| bounding an unreachable region | 142 | 52 | 0 | 194 |
+
+The two rows differ because seven `Trap`-tailed lost edges in these files do not
+land in an unreachable block at all, and because the 6 edges whose tail
+instruction is not in the candidate IR are exactly the 6 reference-only
+instructions of the trap class - the same 6 counted in the column above. No
+distinct lost edge in the class has any other tail op, which is the claim; 303
+and 68 are the occurrence sums, and the two units are not interchangeable.
+
 `br Xn` is a register-indirect jump and `brk` traps: neither has a fallthrough.
 The reference classified both as `Other`, which is not a terminator, so the IR
 builder kept the block open and pulled the following bytes into it - which is
 how the reference reached that code at all. Removing the invented edge makes
 those blocks unreachable, so the emitter no longer renders them. The IR keeps
 them: across the 58 indirect-branch files the reference has **0** instructions
-the candidate lacks, and the 6 reference-only instructions in the whole class
-sit in 3 files of the trap class and are part of the 934 `after_trap:brk`
-instructions section 6.1 already adjudicates.
+the candidate lacks, and the only reference-only instructions anywhere in the 85
+wholly-vanished files are 6, in 3 files of the trap class. They are part of the
+934 `after_trap:brk` instructions section 6.1 already adjudicates, as are the 238
+on the `fewer_renderings_same_callees` rows.
 
 One representative file per class, all of them rows of the removal table:
 
@@ -393,20 +473,24 @@ One representative file per class, all of them rows of the removal table:
 | `vanished_behind_trap` | `00249_sub_62f4d8.dartpseudo` | `fn_0x62f620`, 3 renderings behind one `Trap` lost edge |
 | `dispatch_selector_rendering_only` | `01540_sub_772c00.dartpseudo` | `sel4096`, 18 renderings; the second file of this class is `01723_sub_7cf2b0.dartpseudo` |
 
-The `candidate_marker` column is whole-file marker presence, and it is not the
-same thing as the class: `00465_sub_6516f8.dartpseudo` is bounded by a trap edge
-yet carries no `// trap:` marker, because the marker census counts *emitted*
-markers and an unemitted region emits none. 70 of the 85 files carry only the
-indirect-branch marker and 15 only the trap marker.
-
 Worked example, in the committed diff:
 `pseudocode/00096_sub_60f780.dartpseudo` renders `sub_bbe8a0(` 8 times in the
 reference and nowhere in the candidate. In `ir/00096_sub_60f780.json` the
-reference has 14 blocks and block 9 at `0x60f7e8` runs from `br x16` through
-`b.ls #0x60f8b4`, because `br x16` was `Other`; the candidate has 16 blocks,
-block 9 ends at `br x16` as an `IndirectBranch`, and `0x60f7f0` onward becomes
-blocks 10 to 15 with no predecessor. `bl #0xbbe8a0` is in block 13 of that
-unreachable region. No instruction is missing from the candidate IR.
+reference has 14 blocks. Its block 9 starts at `0x60f7e8` with
+`ldr x16, [x26, #0x278]`; `br x16` is the block's *second* instruction, at
+`0x60f7ec`, and because `br x16` was `Other` the block does not end there - it
+runs on for ten more instructions, through `b.ls #0x60f8b4` at `0x60f814`, twelve
+in all.
+
+The candidate has 16 blocks. Block 9 is those first two instructions and ends at
+`br x16`, now an `IndirectBranch` with no successors, and `0x60f7f0` onward
+becomes blocks 10 to 15. All six are unreachable from `entry_va` and all six are
+`RetainedUnreachable`; only blocks 10 and 15 have an empty predecessor set, while
+11 to 14 have predecessors inside that same unreachable region (11 from 10 and
+15, 12 from 11, 13 from 12, 14 from 11, 12 and 13). Unreachable from the entry is
+the property that matters here, not an empty predecessor list. `bl #0xbbe8a0`
+sits in blocks 11 and 13, twice in each. No instruction is missing from the
+candidate IR: this file's `ir_reference_only_instructions` is 0.
 
 So this class is the pseudocode-surface consequence of the same correction as
 section 6.1: text the reference reached only through an edge the program does
@@ -466,13 +550,30 @@ equals the census exactly. The candidate computes it in the code-span scope
 (`crates/flutterdec-decompiler/src/lib.rs`, `count_code_identifier_tokens` over
 `for_each_code_span`), which skips every string literal and every comment,
 because a recovered pool string is program data and a comment is the emitter's
-own prose. All 1252 excluded tokens sit in line comments - 0 in block comments,
-0 in string literals - and they split two ways with nothing left over: 731 in
-the combined `// target: ...`, `// indirect via: ...` trailing comments, and 521
-in the `// indirect branch through regN: ...` markers themselves. Applying the
-candidate's scope to the reference text gives 53784, which is 278 fewer than the
-reference reported, so the scope change is worth exactly this difference and
-nothing else moved.
+own prose. The whole 1252 is tokens the code-span filter excludes, and every one
+of them sits in a line comment - 0 in block comments, 0 in string literals. They
+split two ways with nothing left over: **731** in the combined `// target: ...`,
+`// indirect via: ...` trailing comments and **521** in the
+`// indirect branch through regN: ...` markers themselves, recorded as
+`excluded_by_comment_shape`. Applying the candidate's scope to the reference text
+gives 53784, which is 278 fewer than the reference reported (all 278 in `//
+target:` comments; the reference emits no indirect-branch markers), so the scope
+change is worth exactly this difference and nothing else moved.
+
+**The `0..=30` boundary drops nothing here.**
+`crates/flutterdec-core/src/pipeline/quality.rs:18` iterates `for n in 0..=30`,
+so the quality counter only ever looks for `x0..x30` and `reg0..reg30`, while the
+census regex `\breg\d+\b` has no upper bound. On this baseline the two ranges see
+the same tokens: `reg31` occurs **0** times and `x31` occurs **0** times on both
+sides, no token of either spelling carries an index above 30, and the highest
+emitted register index is **`reg25`**. `xN` identifier tokens are 0 in the
+pseudocode altogether - the emitter renders an unresolved register through
+`named_register_alias`, which yields `regN` - and the handful of literal `x31`
+substrings in the text are inside hex constants such as `0x31e`. That is why
+`census_regN_over_whole_text` equals `whole_line_scope_total` exactly on both
+sides rather than by coincidence, and it is why the entire 1252 is the code-span
+filter and not the index bound. `verify` fails if any of those four counts stops
+being zero.
 
 `strip_join_annotation_span` removes 0 `regN` tokens on either side: the
 annotation spans in this baseline carry none, and the code-span filter would
@@ -520,6 +621,10 @@ python3 scripts/check-compat-baseline.py --self-test   # the parser's own check
 
 # with the real input: replay the candidate side and compare every artifact
 python3 scripts/check-compat-baseline.py fetch --dest /tmp/localsend.apk
+# required unless this host's nix.conf already enables both features: without it
+# every `nix develop` line below, and scripts/ci-check.sh, fail with
+# "experimental Nix feature 'nix-command' is disabled" before building anything
+export NIX_CONFIG='extra-experimental-features = nix-command flakes'
 nix develop -c cargo build -p flutterdec-cli --release
 # offline, and required: a cold checkout has no adapter (section 3)
 target/release/flutterdec adapter install --dart-hash 80a49c7111088100a233b2ae788e1f48
@@ -553,6 +658,18 @@ exiting 1 with its own message:
 | flip one digit of one `cand_sha256` in `artifact-manifest.tsv` | `artifacts.candidate_manifest_sha256 does not recompute from the per-artifact manifest: <digest>` |
 | drop a row from `pseudocode-callee-removals.tsv` | `pseudocode-callee-removals.tsv has 214 rows, 215 files are claimed` |
 | change `code_span_scope_total` in `register-counter-scopes.json` | `the code_span scope recounts <n> register tokens on the candidate, quality-candidate.json reports 690963` |
+
+The precision repair on top of it is plant-tested the same way, each exiting 1:
+
+| Plant | `verify` failure |
+| --- | --- |
+| change one row's `ir_reference_only_instructions` | `the per-row ir_reference_only_instructions do not sum to ir_reference_only_instructions_by_class: {...}` plus the histogram and total failures |
+| blank one row's `candidate_marker` | `<file> carries the candidate_marker '', which is not one of ('both', 'indirect_branch_only', 'trap_only', 'none')` plus the all-rows count failure |
+| change one row's `lost_edge_after_IndirectBranch` count | `the lost_edge_effects column does not sum to the recorded totals: {...}` |
+| set `reg31_tokens` in `register-counter-scopes.json` to a nonzero value | `the candidate text carries <n> reg31_tokens, so the quality.rs 0..=30 boundary drops tokens the census counts and the two scopes are not comparable` |
+| commit any change under `crates/` | `HEAD has a product-path delta from revisions.candidate (361c922): the product tree hashes <digest>, so the recorded artifacts were not produced by the product state at HEAD` |
+| delete the `NIX_CONFIG` export from section 8 | `the NIX_CONFIG export the build line needs is not in compat-baseline-real-binary.md` |
+| drop `difflib.unified_diff(n=0)` from section 6.2 | `the diff implementation is not named in compat-baseline-real-binary.md` |
 
 `verify` is not wired into `scripts/ci-check.sh` yet. Both that script and
 `scripts/lint-python.sh` are protected paths in section 7 of
@@ -603,3 +720,7 @@ artifact manifest is the comparison that has to hold.
   access to the pinned GitHub release asset.
 - `check-compat-baseline.py verify` is not a CI step, for the reason in
   section 8, so nothing re-runs it automatically.
+- The product-tree check in section 1 needs `git` and needs `361c922` and
+  `1371e42` to be reachable objects. In a shallow or exported checkout that has
+  neither, `verify` prints that it skipped the check rather than passing it
+  silently; every other check still runs.

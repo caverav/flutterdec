@@ -17,11 +17,74 @@
     "removed_lines_total": 103986,
     "wholly_vanished_callee_renderings": 1975
   },
+  "candidate_marker": {
+    "counts_over_all_removal_rows": {
+      "indirect_branch_only": 71,
+      "none": 23,
+      "trap_only": 121
+    },
+    "counts_over_files_with_a_wholly_vanished_callee": {
+      "indirect_branch_only": 70,
+      "trap_only": 15
+    },
+    "scope": "whole-file presence of the two candidate markers in the candidate pseudocode file: '// trap:' and '// indirect branch through <reg>: target not recovered'. It is a property of the file, not of the removal class, and is recorded on every row.",
+    "vocabulary": [
+      "both",
+      "indirect_branch_only",
+      "trap_only",
+      "none"
+    ]
+  },
+  "distinct_lost_edges": {
+    "bounding_an_unreachable_region_by_candidate_tail_op": {
+      "IndirectBranch": 142,
+      "Trap": 52
+    },
+    "bounding_an_unreachable_region_total": 194,
+    "note": "absent_from_candidate_ir counts lost edges whose tail instruction is not in the candidate IR at all; there are 6 and they are exactly the 6 reference-only instructions of the vanished_behind_trap class",
+    "scope": "distinct address-level lost edges, by the difference-classes.json lost_edge definition, over the 85 files with a wholly vanished callee, keyed by the candidate op at the edge's tail address",
+    "whole_file_by_candidate_tail_op": {
+      "IndirectBranch": 142,
+      "Trap": 59,
+      "absent_from_candidate_ir": 6
+    },
+    "whole_file_total": 207
+  },
+  "ir_reference_only_instructions": {
+    "adjudication": "the all-files total equals difference-classes.json ir.instructions_only_in_reference['after_trap:brk'], so every reference-only instruction counted here is inside the class section 6.1 adjudicates",
+    "all_5800_files_total": 934,
+    "column_scope": "per row of pseudocode-callee-removals.tsv: instruction addresses present in that function's reference ir/*.json and absent from its candidate ir/*.json. Recorded on every row, not only on rows with a wholly vanished callee.",
+    "in_files_whose_pseudocode_is_identical": 12,
+    "in_no_callee_rendering_lost_files": 678,
+    "in_removal_table_total": 244,
+    "nonzero_rows_by_class": {
+      "fewer_renderings_same_callees": 101,
+      "vanished_behind_trap": 3
+    },
+    "outside_removal_table_total": 690,
+    "value_histogram_over_nonzero_rows": {
+      "2": 100,
+      "30": 1,
+      "4": 2,
+      "6": 1
+    }
+  },
   "ir_reference_only_instructions_by_class": {
     "dispatch_selector_rendering_only": 0,
+    "fewer_renderings_same_callees": 238,
     "vanished_behind_indirect_branch": 0,
     "vanished_behind_indirect_branch_and_trap": 0,
     "vanished_behind_trap": 6
+  },
+  "lost_edge_effects": {
+    "empty_on": "rows of class fewer_renderings_same_callees, which have no wholly vanished callee",
+    "totals": {
+      "dispatch_selector_rendering": 34,
+      "disposition_RetainedUnreachable": 385,
+      "lost_edge_after_IndirectBranch": 303,
+      "lost_edge_after_Trap": 68
+    },
+    "unit": "one increment per (wholly vanished callee, candidate block holding a Call to that callee) pair for the disposition_<D> keys; for the lost_edge_after_<op> keys, one increment per (wholly vanished callee, candidate block, distinct candidate tail op bounding that block's unreachable region). It is an effect-occurrence count, not a count of distinct control-flow edges."
   },
   "removed_lines_by_class": {
     "dispatch_selector_rendering_only": 160,

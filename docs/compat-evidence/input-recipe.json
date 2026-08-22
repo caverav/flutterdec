@@ -69,11 +69,30 @@
   },
   "revisions": {
     "candidate": "361c922ad418da67277aea911050fdf70fe10234",
-    "reference": "1371e42549472ec388f58bc1fd5dbdf96e8dcdd1"
+    "candidate_product_tree_files": 141,
+    "candidate_product_tree_sha256": "43d9ecebb959e6e00514fb50d2af38d7402cb221b674df9d92a994d403c9c238",
+    "candidate_role": "the product-state revision the candidate artifacts were built from. It is deliberately not advanced to later docs-only commits: advancing it would silently change what the artifacts are claimed to come from. What has to stay true is that the product tree has not moved since, which candidate_product_tree_sha256 pins and check-compat-baseline.py verify enforces against the current HEAD.",
+    "evidence_provenance": "the prose document and every file in docs/compat-evidence/ are committed by docs-only commits that come after the candidate revision, so the revision that delivers this evidence cannot be recorded here: a commit cannot contain its own hash. Read it from the repository instead - 'git log --oneline -- docs/compat-baseline-real-binary.md docs/compat-evidence/' - and note that those commits touch no product_tree_paths, which is the property verify checks.",
+    "product_tree_derivation": "sha256 over one '<path>\\t<git blob object id>\\n' line per tracked file under product_tree_paths, paths in ascending byte order, no header; see check-compat-baseline.py product_tree_digest",
+    "product_tree_paths": [
+      "Cargo.lock",
+      "Cargo.toml",
+      "adapters",
+      "crates",
+      "flake.lock",
+      "flake.nix",
+      "rust-toolchain.toml",
+      "symbols"
+    ],
+    "reference": "1371e42549472ec388f58bc1fd5dbdf96e8dcdd1",
+    "reference_product_tree_files": 106,
+    "reference_product_tree_sha256": "23165413ab8e29b08ac71bd712aaf607154aea090ae1680170472f05d3a8e6f3"
   },
   "toolchain": {
     "cargo": "cargo 1.92.0 (344c4567c 2025-10-21)",
     "cli_version": "flutterdec 0.1.0-alpha.4",
+    "nix_config_export": "export NIX_CONFIG='extra-experimental-features = nix-command flakes'",
+    "nix_config_note": "needed on a host whose nix.conf does not already enable the two experimental features; without it the `nix develop` build line and scripts/ci-check.sh both fail with \"experimental Nix feature 'nix-command' is disabled\" before anything is built",
     "profile": "release",
     "rust_toolchain_file": "rust-toolchain.toml (channel = stable)",
     "rustc": "rustc 1.92.0 (ded5c06cf 2025-12-08) (built from a source tarball)",

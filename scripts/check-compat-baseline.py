@@ -54,6 +54,9 @@ REPORT = "report.json"
 HEX40 = 40
 HEX64 = 64
 
+# Whole-file presence of the two candidate markers; every removal row carries one.
+MARKER_VOCABULARY = ("both", "indirect_branch_only", "trap_only", "none")
+
 # The three candidate processes wrote the same bytes, so one derivation covers
 # all four recorded digests.
 CANDIDATE_DIGEST_FIELDS = (
@@ -65,6 +68,11 @@ MANIFEST_DIGEST_DERIVATION = (
     "sha256 over one line per emitted artifact, '<path>\\t<bytes>\\t<sha256>\\n', "
     "paths in ascending byte order, no header; see check-compat-baseline.py "
     "side_manifest_text and tree_manifest_digest"
+)
+PRODUCT_TREE_DERIVATION = (
+    "sha256 over one '<path>\\t<git blob object id>\\n' line per tracked file under "
+    "product_tree_paths, paths in ascending byte order, no header; see "
+    "check-compat-baseline.py product_tree_digest"
 )
 
 
@@ -132,6 +140,83 @@ def tree_manifest_digest(out: Path):
     return hashlib.sha256("".join(lines).encode("utf-8")).hexdigest()
 
 
+def tree_oid_digest(entries):
+    """sha256 over one `<path>\\t<git blob oid>\\n` line per file, sorted by path."""
+    return hashlib.sha256(
+        "".join(f"{path}\t{oid}\n" for path, oid in sorted(entries)).encode("utf-8")
+    ).hexdigest()
+
+
+def product_tree_digest(rev, paths):
+    """(digest, file count) of the product tree at `rev`, or None if git cannot say.
+
+    The product tree is the part of the repository that decides the emitted bytes.
+    Docs and evidence commits are outside it on purpose, which is what lets
+    `revisions.candidate` stay pinned to the revision the artifacts came from
+    while the record that describes them keeps moving forward.
+    """
+    result = subprocess.run(
+        ["git", "-C", str(REPO), "ls-tree", "-r", rev, "--", *paths],
+        capture_output=True, text=True,
+    )
+    if result.returncode != 0:
+        return None
+    entries = []
+    for line in result.stdout.splitlines():
+        meta, _, path = line.partition("\t")
+        entries.append((path, meta.split()[2]))
+    return tree_oid_digest(entries), len(entries)
+
+
+def check_product_revision(recipe, failures):
+    """`revisions.candidate` is the product state, so HEAD must still be it.
+
+    `verify` used to accept any 40-hex string here, so the field could name a
+    revision the working product no longer matched and nothing noticed. The
+    pinned revision is never advanced to the docs commit that carries this
+    evidence - a commit cannot contain its own hash, and moving the pin would
+    change what the artifacts are claimed to come from. What is enforced instead
+    is that the product tree has not moved since.
+    """
+    revisions = recipe["revisions"]
+    if revisions["product_tree_derivation"] != PRODUCT_TREE_DERIVATION:
+        failures.append("revisions.product_tree_derivation does not state the derivation used")
+    if not revisions.get("candidate_role") or not revisions.get("evidence_provenance"):
+        failures.append("revisions does not say what the candidate revision is, or where the "
+                        "evidence revision is recorded instead")
+    paths = revisions["product_tree_paths"]
+    recorded = revisions["candidate_product_tree_sha256"]
+    if not is_hex(recorded, HEX64):
+        failures.append("revisions.candidate_product_tree_sha256 is not a sha256 digest")
+        return
+    at_candidate = product_tree_digest(revisions["candidate"], paths)
+    if at_candidate is None:
+        print("[compat-baseline] product-tree check skipped: git cannot read "
+              f"{revisions['candidate'][:7]} from this checkout")
+        return
+    if at_candidate != (recorded, revisions["candidate_product_tree_files"]):
+        failures.append(
+            f"the product tree at revisions.candidate does not match what is recorded: "
+            f"{at_candidate[0]} over {at_candidate[1]} files"
+        )
+    at_head = product_tree_digest("HEAD", paths)
+    if at_head is not None and at_head[0] != recorded:
+        failures.append(
+            f"HEAD has a product-path delta from revisions.candidate "
+            f"({revisions['candidate'][:7]}): the product tree hashes {at_head[0]}, so the "
+            f"recorded artifacts were not produced by the product state at HEAD"
+        )
+    at_reference = product_tree_digest(revisions["reference"], paths)
+    if at_reference is not None:
+        if at_reference[0] != revisions["reference_product_tree_sha256"]:
+            failures.append(
+                f"the product tree at revisions.reference does not match what is recorded: "
+                f"{at_reference[0]}"
+            )
+        if at_reference[0] == recorded:
+            failures.append("the two sides share one product tree; there is nothing to compare")
+
+
 def parse_table(text, header, name):
     lines = text.splitlines()
     if not lines or lines[0] != header:
@@ -171,6 +256,128 @@ def check_adapter(recipe, doc, failures):
             failures.append(
                 f"the installed adapter does not match the recipe: {len(payload)} {digest}"
             )
+
+
+def sum_by_class(rows, column):
+    totals = {}
+    for row in rows:
+        totals[row[1]] = totals.get(row[1], 0) + int(row[column])
+    return totals
+
+
+def count_by(rows, column):
+    counts = {}
+    for row in rows:
+        counts[row[column]] = counts.get(row[column], 0) + 1
+    return counts
+
+
+def check_reference_only_column(rows, aggregate, classes, failures):
+    """Every row's reference-only IR count, not only the wholly vanished ones.
+
+    The column was 0 on every `fewer_renderings_same_callees` row because the
+    generator never measured them, and nothing caught it: the class sums were
+    keyed only by the vanished classes. Reconciling per class, per nonzero row
+    count and per value makes a single wrong row fail here.
+    """
+    column = aggregate["ir_reference_only_instructions"]
+    by_class = sum_by_class(rows, 7)
+    if by_class != aggregate["ir_reference_only_instructions_by_class"]:
+        failures.append(
+            "the per-row ir_reference_only_instructions do not sum to "
+            f"ir_reference_only_instructions_by_class: {by_class}"
+        )
+    nonzero = [row for row in rows if int(row[7])]
+    if count_by(nonzero, 1) != column["nonzero_rows_by_class"]:
+        failures.append(
+            "the rows carrying a nonzero ir_reference_only_instructions do not match "
+            "ir_reference_only_instructions.nonzero_rows_by_class"
+        )
+    histogram = {}
+    for row in nonzero:
+        histogram[row[7]] = histogram.get(row[7], 0) + 1
+    if histogram != column["value_histogram_over_nonzero_rows"]:
+        failures.append(
+            "the ir_reference_only_instructions values do not match the recorded histogram: "
+            f"{histogram}"
+        )
+    if sum(by_class.values()) != column["in_removal_table_total"]:
+        failures.append("ir_reference_only_instructions.in_removal_table_total does not match "
+                        "the enumerated rows")
+    if (column["in_no_callee_rendering_lost_files"]
+            + column["in_files_whose_pseudocode_is_identical"]
+            != column["outside_removal_table_total"]):
+        failures.append("the reference-only instructions outside the removal table do not split")
+    if (column["in_removal_table_total"] + column["outside_removal_table_total"]
+            != column["all_5800_files_total"]):
+        failures.append("the reference-only instructions do not partition the whole-run total")
+    # Closing against 6.1 is the point: an instruction the record cannot place in
+    # the after_trap:brk class would be an unadjudicated output difference.
+    whole_run = classes["ir"]["instructions_only_in_reference"]
+    if column["all_5800_files_total"] != sum(whole_run.values()):
+        failures.append(
+            f"the removal table accounts for {column['all_5800_files_total']} reference-only "
+            f"instructions, difference-classes.json records {sum(whole_run.values())}"
+        )
+    if not column.get("column_scope"):
+        failures.append("ir_reference_only_instructions does not state the column's scope")
+
+
+def check_marker_column(rows, vanished_rows, aggregate, counts, failures):
+    """`candidate_marker` is a file property and is recorded on every row."""
+    marker = aggregate["candidate_marker"]
+    for row in rows:
+        if row[6] not in MARKER_VOCABULARY:
+            failures.append(f"{row[0]} carries the candidate_marker {row[6]!r}, which is not one "
+                            f"of {MARKER_VOCABULARY}")
+            break
+    if count_by(rows, 6) != marker["counts_over_all_removal_rows"]:
+        failures.append("the candidate_marker column does not match the counts over all rows")
+    over_vanished = count_by(vanished_rows, 6)
+    if over_vanished != marker["counts_over_files_with_a_wholly_vanished_callee"]:
+        failures.append("the candidate_marker column does not match the counts over the files "
+                        "with a wholly vanished callee")
+    for name in MARKER_VOCABULARY:
+        recorded = counts.get(f"candidate_marker_{name}")
+        if recorded is not None and over_vanished.get(name, 0) != recorded:
+            failures.append(f"aggregate.candidate_marker_{name} is scoped to the wholly vanished "
+                            f"files and disagrees with the rows: {over_vanished.get(name, 0)}")
+    if not marker.get("scope"):
+        failures.append("candidate_marker does not state the column's scope")
+
+
+def check_lost_edge_effects(rows, aggregate, ir_only, doc, failures):
+    """The column counts effect occurrences; distinct edges are counted separately."""
+    effects = aggregate["lost_edge_effects"]
+    totals = {}
+    for row in rows:
+        for item in filter(None, row[8].split(";")):
+            key, _, value = item.rpartition(":")
+            totals[key] = totals.get(key, 0) + int(value)
+    if totals != effects["totals"]:
+        failures.append(f"the lost_edge_effects column does not sum to the recorded totals: "
+                        f"{totals}")
+    if not effects.get("unit"):
+        failures.append("lost_edge_effects does not state the unit it counts")
+    if "per (wholly vanished callee" not in doc:
+        failures.append(f"the lost_edge_effects unit is not stated in {DOC.name}")
+    edges = aggregate["distinct_lost_edges"]
+    for key, total in (("whole_file_by_candidate_tail_op", "whole_file_total"),
+                       ("bounding_an_unreachable_region_by_candidate_tail_op",
+                        "bounding_an_unreachable_region_total")):
+        if sum(edges[key].values()) != edges[total]:
+            failures.append(f"distinct_lost_edges.{total} does not match its per-op counts")
+    # A lost edge whose tail is not in the candidate IR is a reference-only
+    # instruction; if those two counts drift, one of them is wrong.
+    absent = edges["whole_file_by_candidate_tail_op"].get("absent_from_candidate_ir", 0)
+    if absent != ir_only.get("vanished_behind_trap"):
+        failures.append(
+            f"{absent} lost edges have a tail absent from the candidate IR but the trap class "
+            f"records {ir_only.get('vanished_behind_trap')} reference-only instructions"
+        )
+    if sum(edges["whole_file_by_candidate_tail_op"].values()) < edges[
+            "bounding_an_unreachable_region_total"]:
+        failures.append("more lost edges bound an unreachable region than exist in those files")
 
 
 def check_removals(classes, doc, failures):
@@ -229,10 +436,14 @@ def check_removals(classes, doc, failures):
             "the indirect-branch removal class lost reference IR instructions, "
             "so it is not an emitter-surface removal"
         )
-    for row in vanished_rows:
-        if int(row[7]) and "trap" not in row[1]:
-            failures.append(f"{row[0]} lost reference IR instructions outside the trap class")
+    for row in rows:
+        if int(row[7]) and row[1] in ("vanished_behind_indirect_branch",
+                                      "dispatch_selector_rendering_only"):
+            failures.append(f"{row[0]} lost reference IR instructions in class {row[1]}")
             break
+    check_reference_only_column(rows, aggregate, classes, failures)
+    check_marker_column(rows, vanished_rows, aggregate, counts, failures)
+    check_lost_edge_effects(rows, aggregate, ir_only, doc, failures)
     for name in by_class:
         if name not in doc:
             failures.append(f"removed-pseudocode class {name!r} is not adjudicated in {DOC.name}")
@@ -273,6 +484,26 @@ def check_register_scopes(failures):
                     if key.startswith("excluded_by_code_span_filter_in_"))
         if split != counts["excluded_by_code_span_filter_total"]:
             failures.append(f"the {side} code-span exclusions are not split by span kind")
+        by_shape = entry["excluded_by_comment_shape"]
+        if sum(by_shape.values()) != counts["excluded_by_code_span_filter_total"]:
+            failures.append(f"the {side} code-span exclusions are not split by comment shape")
+        # `quality.rs` counts x0..x30 and reg0..reg30. That upper bound drops
+        # nothing on this baseline, which is why the unbounded census regex and
+        # the whole-line scope agree exactly instead of by luck.
+        for key in ("regN_tokens_with_index_above_30", "xN_tokens_with_index_above_30",
+                    "reg31_tokens", "x31_tokens"):
+            if counts[key] != 0:
+                failures.append(
+                    f"the {side} text carries {counts[key]} {key}, so the quality.rs 0..=30 "
+                    f"boundary drops tokens the census counts and the two scopes are not "
+                    f"comparable"
+                )
+        if counts["highest_emitted_register_index"] > 30:
+            failures.append(f"the {side} highest emitted register index is "
+                            f"{counts['highest_emitted_register_index']}, past the counted range")
+        if counts["census_regN_over_whole_text"] != counts["whole_line_scope_total"]:
+            failures.append(f"the {side} census and whole-line scope disagree, which they cannot "
+                            f"while no token sits past index 30")
 
 
 def verify(failures):
@@ -385,9 +616,22 @@ def verify(failures):
                  + list(classes["ir"]["instructions_only_in_reference"])):
         if name not in doc:
             failures.append(f"difference class {name!r} is not adjudicated in {DOC.name}")
+    # A line count nobody can reproduce is a claim. GNU diff -U0 and git diff -U0
+    # group hunks differently and give different totals for the same two files.
+    definitions = classes["definitions"]
+    if "difflib.unified_diff" not in definitions["removed_and_added_lines"]:
+        failures.append("difference-classes.json does not name the diff implementation the "
+                        "removed and added line counts came from")
+    if "difflib.unified_diff(n=0)" not in doc:
+        failures.append(f"the diff implementation is not named in {DOC.name}")
+    # Section 8 is meant to be runnable as written; on a host without flakes
+    # enabled the build line fails before anything else is exercised.
+    if recipe["toolchain"]["nix_config_export"] not in doc:
+        failures.append(f"the NIX_CONFIG export the build line needs is not in {DOC.name}")
     check_adapter(recipe, doc, failures)
     check_removals(classes, doc, failures)
     check_register_scopes(failures)
+    check_product_revision(recipe, failures)
     for digest_field in ("reference_manifest_sha256",) + CANDIDATE_DIGEST_FIELDS:
         if not is_hex(artifacts[digest_field], HEX64):
             failures.append(f"artifacts.{digest_field} is not a sha256 digest")
@@ -528,6 +772,35 @@ def self_test():
         pass
     else:  # pragma: no cover - guarded by the assert below
         raise AssertionError("a bad table header must be rejected")
+
+    # The per-row reconciliations, on two hand-stated rows: one wrong value in
+    # either column has to move a class sum or a marker count.
+    table = [["a.dartpseudo", "fewer_renderings_same_callees", "2", "0", "9", "9",
+              "trap_only", "2", "", "", "x:2"],
+             ["b.dartpseudo", "vanished_behind_trap", "1", "1", "4", "4",
+              "trap_only", "6", "disposition_RetainedUnreachable:1;lost_edge_after_Trap:2",
+              "y", "y:1"]]
+    assert sum_by_class(table, 7) == {"fewer_renderings_same_callees": 2,
+                                      "vanished_behind_trap": 6}
+    assert count_by(table, 6) == {"trap_only": 2}
+    bumped = [list(table[0]), table[1]]
+    bumped[0][7] = "3"
+    assert sum_by_class(bumped, 7) != sum_by_class(table, 7)
+    blanked = [list(table[0]), table[1]]
+    blanked[0][6] = ""
+    assert count_by(blanked, 6) != count_by(table, 6)
+    assert "" not in MARKER_VOCABULARY
+
+    # The product-tree derivation, on entries stated by hand: sorted by path,
+    # one line each, and any object-id change moves the digest.
+    entries = [("crates/b.rs", "b" * HEX40), ("Cargo.toml", "a" * HEX40)]
+    assert tree_oid_digest(entries) == hashlib.sha256(
+        (f"Cargo.toml\t{'a' * HEX40}\ncrates/b.rs\t{'b' * HEX40}\n").encode("utf-8")
+    ).hexdigest()
+    assert tree_oid_digest(entries) == tree_oid_digest(list(reversed(entries)))
+    assert tree_oid_digest(entries) != tree_oid_digest(
+        [("crates/b.rs", "c" * HEX40), ("Cargo.toml", "a" * HEX40)]
+    )
     print("[compat-baseline] self-test ok")
 
 

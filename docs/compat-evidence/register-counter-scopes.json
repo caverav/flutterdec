@@ -9,12 +9,21 @@
       "excluded_by_code_span_filter_in_line_comment": 1252,
       "excluded_by_code_span_filter_in_string_literal": 0,
       "excluded_by_code_span_filter_total": 1252,
+      "highest_emitted_register_index": 25,
+      "reg31_tokens": 0,
       "regN_removed_by_annotation_strip": 0,
       "regN_tokens_code_span_scope": 690963,
       "regN_tokens_whole_line_scope": 692215,
+      "regN_tokens_with_index_above_30": 0,
       "whole_line_scope_total": 692215,
+      "x31_tokens": 0,
       "xN_tokens_code_span_scope": 0,
-      "xN_tokens_whole_line_scope": 0
+      "xN_tokens_whole_line_scope": 0,
+      "xN_tokens_with_index_above_30": 0
+    },
+    "excluded_by_comment_shape": {
+      "indirect_branch_marker_comment": 521,
+      "target_and_indirect_via_comment": 731
     },
     "excluded_examples": [
       {
@@ -37,10 +46,14 @@
     "census_regN_over_whole_text": "occurrences of the regex \\breg\\d+\\b over the whole emitted text, which is what structural-census-*.json counts",
     "code_span_scope": "count_code_identifier_tokens over strip_join_annotation_span(line), which visits emitter-owned code spans only and skips every string literal and every comment (crates/flutterdec-decompiler/src/lib.rs, helpers/expr.rs non_code_span_len)",
     "excluded_by_code_span_filter_in_<kind>": "tokens the whole_line scope counts and the code_span scope does not, by the kind of non-code span holding them",
+    "excluded_by_comment_shape": "the same excluded tokens as excluded_by_code_span_filter_in_line_comment, split by the shape of the comment holding them; the two shapes sum to excluded_by_code_span_filter_total with nothing left over",
+    "highest_emitted_register_index": "the largest N over every regN identifier token in the emitted pseudocode; 25 on both sides of this baseline",
+    "index_boundary": "crates/flutterdec-core/src/pipeline/quality.rs iterates n in 0..=30 and so counts x0..x30 and reg0..reg30 only. On this baseline that boundary excludes nothing: reg31_tokens, x31_tokens, and both *_tokens_with_index_above_30 are 0 on both sides, and the highest emitted index is reg25. That is why census_regN_over_whole_text equals whole_line_scope_total exactly on both sides rather than by coincidence - the census regex \\breg\\d+\\b has no upper bound and still finds the same tokens.",
     "quality_counter_scope": "which scope that side's quality.json raw_register_name_refs was computed in",
     "regN_removed_by_annotation_strip": "regN tokens strip_join_annotation_span deletes with the annotation span; zero on both sides of this baseline",
     "tokens": "the identifier spellings x0..x30 and reg0..reg30, exactly the token list crates/flutterdec-core/src/pipeline/quality.rs iterates",
-    "whole_line_scope": "count_ident_token over strip_join_annotation_span(line) with no code-span filter, which is what the reference revision 1371e42 ran (crates/flutterdec-core/src/pipeline/helpers.rs)"
+    "whole_line_scope": "count_ident_token over strip_join_annotation_span(line) with no code-span filter, which is what the reference revision 1371e42 ran (crates/flutterdec-core/src/pipeline/helpers.rs)",
+    "xN_tokens": "xN identifier tokens are 0 in the emitted pseudocode on both sides: the emitter renders an unresolved register through named_register_alias, which yields regN. The few literal 'x31' substrings in the text are inside hex constants such as 0x31e and are not identifier tokens."
   },
   "reference": {
     "counts": {
@@ -52,12 +65,20 @@
       "excluded_by_code_span_filter_in_line_comment": 278,
       "excluded_by_code_span_filter_in_string_literal": 0,
       "excluded_by_code_span_filter_total": 278,
+      "highest_emitted_register_index": 25,
+      "reg31_tokens": 0,
       "regN_removed_by_annotation_strip": 0,
       "regN_tokens_code_span_scope": 53784,
       "regN_tokens_whole_line_scope": 54062,
+      "regN_tokens_with_index_above_30": 0,
       "whole_line_scope_total": 54062,
+      "x31_tokens": 0,
       "xN_tokens_code_span_scope": 0,
-      "xN_tokens_whole_line_scope": 0
+      "xN_tokens_whole_line_scope": 0,
+      "xN_tokens_with_index_above_30": 0
+    },
+    "excluded_by_comment_shape": {
+      "target_and_indirect_via_comment": 278
     },
     "excluded_examples": [
       {
