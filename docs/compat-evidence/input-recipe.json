@@ -13,24 +13,24 @@
   },
   "artifacts": {
     "asm": 5800,
-    "candidate_manifest_sha256": "3879e3728baffe0ec7ea58b73ddf3439dc2bf2f97d5857a5cc9af65862319a8a",
+    "candidate_manifest_sha256": "5a094778d395440ec8dc256257d392065f3dff9c258a09b02bed445faf1c7a3e",
     "candidate_processes_compared": 3,
     "files_per_run": 17402,
     "identical_between_reference_and_candidate": 7928,
     "ir": 5800,
     "manifest_digest_derivation": "sha256 over one line per emitted artifact, '<path>\\t<bytes>\\t<sha256>\\n', paths in ascending byte order, no header; see check-compat-baseline.py side_manifest_text and tree_manifest_digest",
     "pseudocode": 5800,
-    "reference_manifest_sha256": "cb156a879817b9db2e2ed416ca4715df2b7a754cf11032f968b6416c96d4cdc0",
+    "reference_manifest_sha256": "3f76bb96ab38cc860c7c060898b818e5d9e2f9c06cea4c7b7ffad7146363cd8e",
     "reports": [
       "quality.json",
       "report.json"
     ],
-    "second_candidate_process_manifest_sha256": "3879e3728baffe0ec7ea58b73ddf3439dc2bf2f97d5857a5cc9af65862319a8a",
-    "third_candidate_process_manifest_sha256": "3879e3728baffe0ec7ea58b73ddf3439dc2bf2f97d5857a5cc9af65862319a8a"
+    "second_candidate_process_manifest_sha256": "5a094778d395440ec8dc256257d392065f3dff9c258a09b02bed445faf1c7a3e",
+    "third_candidate_process_manifest_sha256": "5a094778d395440ec8dc256257d392065f3dff9c258a09b02bed445faf1c7a3e"
   },
   "binaries": {
-    "candidate_sha256": "7fe12b2f592159f102616722e266ee0f399a59f9a37568a3ef86f69a8f2e61f3",
-    "reference_sha256": "a8eef0988e6f25c0da07ffe0dfdadad217272625c523bdaf87c95787f5ac604c"
+    "candidate_sha256": "dc00cab3119be42fc21432f17bf8a7cfb94e01afd10e716fb39bb70036825ff0",
+    "reference_sha256": "c3301f031f14d1807dd6217f181e390c15ef866f8469a8217a9ea2ac88776df3"
   },
   "command": {
     "args": [
@@ -68,10 +68,10 @@
     "url": "https://github.com/localsend/localsend/releases/download/v1.17.0/LocalSend-1.17.0-android-arm64v8.apk"
   },
   "revisions": {
-    "candidate": "0ba3a67e31e3ba16ca2020f45ad053a9feb88a96",
+    "candidate": "eabbe7e96bd9cb9afd9f3dc2cc3d40718b06c924",
     "candidate_product_tree_files": 142,
-    "candidate_product_tree_sha256": "c6571c308946fe4fea99ec72480da4d047f0654c2b6006057a3ea6cca26c202e",
-    "candidate_role": "the product-state revision the candidate artifacts were built from, taken as the newest revision whose product tree the artifacts still match. The emitted bytes come from the release build of 2214697, which changed the counter; the only product-path change between that commit and this one is crates/flutterdec-decompiler/tests/unresolved_cf_accounting.rs, a test-only file the release binary does not compile. It is deliberately not advanced to later docs-only commits: advancing it would silently change what the artifacts are claimed to come from. What has to stay true is that the product tree has not moved since, which candidate_product_tree_sha256 pins and check-compat-baseline.py verify enforces against the current HEAD.",
+    "candidate_product_tree_sha256": "1b49ad07ca604dee352f9166601d29bb7b14ae01ece20d0acb122c4e91e07061",
+    "candidate_role": "the product-state revision whose product tree the candidate evidence is bound to. The emitted bytes come from the clean release build of d3c5367, which changed final-artifact call accounting; the only later product-path delta is the cfg(test)-only aggregation regression in crates/flutterdec-core/src/pipeline/quality.rs, which the release binary does not compile. The candidate_product_tree_sha256 pins that exact relationship and check-compat-baseline.py verify enforces it against the current HEAD.",
     "evidence_provenance": "the prose document and every file in docs/compat-evidence/ are committed by docs-only commits that come after the candidate revision, so the revision that delivers this evidence cannot be recorded here: a commit cannot contain its own hash. Read it from the repository instead - 'git log --oneline -- docs/compat-baseline-real-binary.md docs/compat-evidence/' - and note that those commits touch no product_tree_paths, which is the property verify checks.",
     "product_tree_derivation": "sha256 over one '<path>\\t<git blob object id>\\n' line per tracked file under product_tree_paths, paths in ascending byte order, no header; see check-compat-baseline.py product_tree_digest",
     "product_tree_paths": [

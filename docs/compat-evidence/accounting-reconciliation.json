@@ -133,5 +133,27 @@
     "resolution": "the artifact recounts the statements from the finished body, so the counter is the number the artifact carries on both sides. Oracle: scripts/check-compat-semantics.py check; regression test: crates/flutterdec-decompiler/tests/unresolved_cf_accounting.rs.",
     "root_cause": "before 2214697 the counter was the walk's own total, and a block rendered into a helper body by the nested emitter in append_helper_functions was counted nowhere, while inline_helper_calls copied that body to every call site. The candidate reported 517 against 521 emitted statements, and the whole residue was 00860_sub_696734, whose four statements over one reachable br x2 were counted 0 times.",
     "statement_bearing_functions": 138
+  },
+  "call_counter_reconciliation": {
+    "unit": "rendered IROp::Call statements retained in completed emitted artifacts, classified as direct or indirect by line-identity provenance that survives helper copying and removal",
+    "reference": {
+      "total_calls": 45955,
+      "indirect_calls": 7149
+    },
+    "candidate": {
+      "total_calls": 243760,
+      "indirect_calls": 39500
+    },
+    "regression": {
+      "test": "quality_tests::a_helper_rendered_call_reaches_quality_and_report_in_the_artifact_unit",
+      "rendered_calls": 1,
+      "artifact_total_calls": 1,
+      "artifact_indirect_calls": 1,
+      "quality_total_calls": 1,
+      "quality_indirect_calls": 1,
+      "report_total_calls": 1,
+      "report_indirect_calls": 1,
+      "provenance": "DfsDepthOmission"
+    }
   }
 }

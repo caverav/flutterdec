@@ -26,11 +26,11 @@ prose here exists to adjudicate the differences, which a JSON file cannot do.
 | Snapshot hash | `80a49c7111088100a233b2ae788e1f48` (identical on both sides) |
 | Adapter | `--adapter-backend internal`, kind `dynamic_snapshot_string_model_v1` |
 | Reference revision | `1371e42549472ec388f58bc1fd5dbdf96e8dcdd1` |
-| Candidate revision | `0ba3a67e31e3ba16ca2020f45ad053a9feb88a96` (product source `2214697`) |
+| Candidate revision | `eabbe7e96bd9cb9afd9f3dc2cc3d40718b06c924` (release product source `d3c5367`) |
 | Reference product tree | `23165413ab8e29b08ac71bd712aaf607154aea090ae1680170472f05d3a8e6f3` (106 files) |
-| Candidate product tree | `c6571c308946fe4fea99ec72480da4d047f0654c2b6006057a3ea6cca26c202e` (142 files) |
-| Reference binary sha256 | `a8eef0988e6f25c0da07ffe0dfdadad217272625c523bdaf87c95787f5ac604c` |
-| Candidate binary sha256 | `7fe12b2f592159f102616722e266ee0f399a59f9a37568a3ef86f69a8f2e61f3` |
+| Candidate product tree | `1b49ad07ca604dee352f9166601d29bb7b14ae01ece20d0acb122c4e91e07061` (142 files) |
+| Reference binary sha256 | `c3301f031f14d1807dd6217f181e390c15ef866f8469a8217a9ea2ac88776df3` |
+| Candidate binary sha256 | `dc00cab3119be42fc21432f17bf8a7cfb94e01afd10e716fb39bb70036825ff0` |
 | CLI version | `flutterdec 0.1.0-alpha.4` on both sides |
 | Toolchain | `nix develop`, rustc 1.92.0, cargo 1.92.0, profile `release` |
 | Environment | `LC_ALL=C`, `TZ=UTC`, identical absolute input path on every run |
@@ -39,14 +39,14 @@ Both sides were built clean, in separate worktrees, into separate
 workspace-backed target directories, from `rust-toolchain.toml` and
 `flake.lock` that are byte-identical at the two revisions.
 
-**What the candidate revision is, and what it is not.** `0ba3a67` is the
-*product-state* revision: the newest state of the code whose product tree these
-artifacts still match. The emitted bytes come from the release build of
-`2214697`, the commit that changed the counter; the only product-path change
-between the two is
-`crates/flutterdec-decompiler/tests/unresolved_cf_accounting.rs`, a test-only
-file the release binary does not compile, which the tree digest covers because it
-lives under `crates/`. It is deliberately never advanced
+**What the candidate revision is, and what it is not.** `eabbe7e` is the
+*product-state* revision whose product tree this evidence is bound to. The
+emitted bytes come from the clean release build of `d3c5367`, the commit that
+changed final-artifact call accounting. The only product-path change between
+the two is the `#[cfg(test)]` aggregation regression in
+`crates/flutterdec-core/src/pipeline/quality.rs`, which the release binary does
+not compile. The tree digest covers it because it lives under `crates/`. The
+revision is deliberately never advanced
 to the docs commit that carries this evidence. Advancing it would change what the
 artifacts are claimed to come from, and no commit can name itself anyway. The
 property that has to keep holding is that the product tree has not moved since,
@@ -54,7 +54,7 @@ so it is pinned by digest: sha256 over one `<path>\t<git blob object id>\n` line
 per tracked file under `Cargo.lock`, `Cargo.toml`, `adapters/`, `crates/`,
 `flake.lock`, `flake.nix`, `rust-toolchain.toml` and `symbols/`, paths in
 ascending byte order, no header. `check-compat-baseline.py verify` recomputes it
-at `0ba3a67`, at `1371e42`, and at the current `HEAD`, and fails if `HEAD` has any
+at `eabbe7e`, at `1371e42`, and at the current `HEAD`, and fails if `HEAD` has any
 product-path delta from the recorded candidate tree. The evidence and prose live
 outside those paths on purpose, which is what lets the record keep moving while
 the pin stays still.
@@ -138,8 +138,8 @@ failure:
 
 | Run | Exit | Gate reasons | Wall clock |
 | --- | --- | --- | --- |
-| reference `1371e42` | 1 | placeholder if-count exceeded | 54 s |
-| candidate `2214697` build | 1 | placeholder if-count exceeded; unresolved control-flow count exceeded | 136 s |
+| reference `1371e42` | 1 | placeholder if-count exceeded | not separately timed |
+| candidate `d3c5367` build | 1 | placeholder if-count exceeded; unresolved control-flow count exceeded | not separately timed |
 | candidate, second process | 1 | same two reasons | not separately timed |
 | candidate, third process | 1 | same two reasons | not separately timed |
 | candidate, fourth process, input copied to a different absolute path | 1 | same two reasons | not separately timed |
@@ -150,7 +150,7 @@ run, not a threshold: the performance record is `docs/performance-profile/`.
 
 `placeholder_ifs=501 unresolved_cf=0 indirect_call_ratio=0.156
 disassembly_ratio=1.000` on the reference; `placeholder_ifs=530
-unresolved_cf=521 indirect_call_ratio=0.158 disassembly_ratio=1.000` on the
+unresolved_cf=521 indirect_call_ratio=0.162 disassembly_ratio=1.000` on the
 candidate.
 
 ## 4. Artifact sets
@@ -162,10 +162,10 @@ Each run wrote 17402 files: 5800 `pseudocode/*.dartpseudo`, 5800 `ir/*.json`,
 
 | Manifest | sha256 of the per-artifact manifest |
 | --- | --- |
-| reference | `cb156a879817b9db2e2ed416ca4715df2b7a754cf11032f968b6416c96d4cdc0` |
-| candidate | `3879e3728baffe0ec7ea58b73ddf3439dc2bf2f97d5857a5cc9af65862319a8a` |
-| candidate, second process | `3879e3728baffe0ec7ea58b73ddf3439dc2bf2f97d5857a5cc9af65862319a8a` |
-| candidate, third process | `3879e3728baffe0ec7ea58b73ddf3439dc2bf2f97d5857a5cc9af65862319a8a` |
+| reference | `3f76bb96ab38cc860c7c060898b818e5d9e2f9c06cea4c7b7ffad7146363cd8e` |
+| candidate | `5a094778d395440ec8dc256257d392065f3dff9c258a09b02bed445faf1c7a3e` |
+| candidate, second process | `5a094778d395440ec8dc256257d392065f3dff9c258a09b02bed445faf1c7a3e` |
+| candidate, third process | `5a094778d395440ec8dc256257d392065f3dff9c258a09b02bed445faf1c7a3e` |
 
 Each of those four values is the sha256 of a one-run manifest: one
 `<path>\t<bytes>\t<sha256>\n` line per emitted artifact, paths in ascending byte
@@ -193,7 +193,7 @@ replay in the recorded workspace. The per-artifact comparison that `replay`
 performs is the check that holds from any checkout. Measured here, from a fresh
 run of the section 8 recipe in this workspace: `replay` reproduced the recorded
 candidate digest
-`3879e3728baffe0ec7ea58b73ddf3439dc2bf2f97d5857a5cc9af65862319a8a` exactly, all
+`5a094778d395440ec8dc256257d392065f3dff9c258a09b02bed445faf1c7a3e` exactly, all
 17402 lines included. The earlier slice measured the other half of the same
 claim from a cold clone outside this workspace, against the digest it recorded:
 exactly one of the 17402 lines differed, `report.json`, and substituting the
@@ -477,7 +477,7 @@ nothing left over:
 | `vanished_behind_indirect_branch` | 58 | 7964 | The removed text sat behind a `br Xn`. Adjudicated below. |
 | `vanished_behind_indirect_branch_and_trap` | 11 | 2359 | Both effect ops appear among the lost edges bounding that file's vanished calls: in 5 of the 11 every such region is bounded by both ops, in the other 6 the vanished calls sit in two to four regions that are not all bounded by both. Same adjudication as the two single-effect classes. |
 | `vanished_behind_trap` | 14 | 1180 | The removed text sat behind a `brk`, which is the section 6.1 class rendered at the pseudocode surface. |
-| `dispatch_selector_rendering_only` | 2 | 160 | Two files lose only `sel<N>(` renderings, whose selector is recovered from a dispatch table rather than from a call target, so no IR call instruction carries the name. Declared open in section 9. |
+| `dispatch_selector_rendering_only` | 2 | 160 | Machine-code adjudication: every dispatch `blr` in `01540_sub_772c00` and `01723_sub_7cf2b0` is unreachable from the function entry under ARM64 `br` no-fallthrough semantics. Only invented fall-through reaches `0x772cf8`, `0x772d28`, `0x7cf32c`, and `0x7cf350`, so the candidate correctly removes unreachable selector renderings; section 6.5 records the exact spans. |
 
 **What the table's columns mean.** Three of them are easy to read as something
 they are not, so each states its own scope:
@@ -636,14 +636,15 @@ candidate IR, which retains and accounts for them as `RetainedUnreachable`.
 
 ### 6.3 Quality and report values
 
-Nineteen `report.json` values change, fifteen of them inside the `quality`
-block it embeds and four outside it (`call_fallback.dispatch_target_invoke`,
-`call_fallback.generic_invoke`, and the two `shared_stub_naming` noreturn
-counters). All of them follow from 6.1 and 6.2. The ones worth
+Thirty-eight `report.json` leaves change, 32 of them inside the `quality`
+block it embeds and six outside it (`call_fallback.dispatch_target_invoke`,
+`call_fallback.generic_invoke`, `record_split.rejected_invalid_ir`, and the
+three `shared_stub_naming` noreturn or invalid-IR counters). All except the two
+call totals follow from 6.1 and 6.2; those two now use the completed-artifact
+scope proved below. The ones worth
 naming: `unresolved_cf` 0 -> 521 (previously unstated indirect branches),
-`block_helper_refs` 0 -> 27097, `total_calls` 45955 -> 41883 and
-`indirect_calls` 7149 -> 6627 (calls behind an invented post-trap fallthrough
-are no longer counted), `unlifted_instructions` 689 -> 481,
+`block_helper_refs` 0 -> 27097, `total_calls` 45955 -> 243760 and
+`indirect_calls` 7149 -> 39500, `unlifted_instructions` 689 -> 481,
 `omitted_path_markers` 355 -> 50, and the new `emission` object.
 
 ### 6.5 Machine-level adjudication of the behaviour-affecting differences
@@ -749,7 +750,7 @@ supports. The token the reference printed, `reg0`, is the unrecovered-value
 spelling of `x0`, which is not an argument position at all, so what disappeared
 was an arity claim over an unrecovered value and not a recovered argument.
 
-**Control-flow accounting: reconciled by fixing the counter.** The candidate used
+**Artifact accounting: reconciled by fixing the counters.** The candidate used
 to emit 521 unresolved-control-flow statements while `quality.json.unresolved_cf`
 reported 517. The cause was not a text difference: a block the DFS walk refuses to
 inline is rendered by a nested emitter in `append_helper_functions` whose counters
@@ -766,6 +767,21 @@ functions. The regression test is
 `crates/flutterdec-decompiler/tests/unresolved_cf_accounting.rs`, which fails on
 the previous counter for both the helper-body case and the inlined-copy case.
 
+The same nested-helper loss also made `total_calls` and `indirect_calls` compare
+different units across the two sides: the reference has no helper bodies, while
+the candidate copied call statements from nested emitters whose walk counters
+were discarded. `d3c5367` carries a private direct/indirect tag with each call
+line identity through helper copying, inlining, rollback, and removal, then
+derives both artifact fields from the line identities still present in the
+completed body. The fresh candidate therefore reports 243760 total calls and
+39500 indirect calls in both `quality.json` and `report.json.quality`; the
+reference remains 45955 and 7149. The unit and both run totals are committed in
+`accounting-reconciliation.json`. The focused
+`quality_tests::a_helper_rendered_call_reaches_quality_and_report_in_the_artifact_unit`
+regression sends one `blr x16` tail through a `DfsDepthOmission` helper and
+proves one rendered statement, one artifact total, one indirect total, one
+quality total, one report total, and the traversal provenance all agree.
+
 **Exact-function decompiles, run independently of the whole-program run.** Each
 adjudicated function was decompiled on its own with `--target id:<N>` on both
 sides, from the same pinned asset. `01540_sub_772c00` reproduces its
@@ -778,8 +794,12 @@ whole-program figures are the emission context, not the adjudication: a targeted
 run has no program-level callee-alias rewrite and a different helper budget, so
 `00860_sub_696734` renders 17 statements there against 4 in the whole-program
 run, and `05149_sub_bdd098` renders the `0x90b144` call under a different callee
-name entirely. What carries across every run is the invariant: the counter equals
-the statements the artifact holds.
+name entirely. The fresh candidate call totals are 0/0 for `01540`, 0/0 for
+`01723`, 20/1 for `03119`, 284/1 for `00860`, and 46/13 for `05149`, written as
+total/indirect; the reference totals are 36/36, 4/4, 20/1, 74/0, and 26/3.
+Every targeted `quality.json` pair equals its `report.json.quality` copy. What
+carries across every run is the invariant: each counter equals the completed
+artifact scope it names.
 
 ## 7. Accounting reconciliation
 
@@ -908,7 +928,7 @@ else prepared by hand. Without the `adapter install` line the decompile exits 1
 having written **0** artifacts, which is why `verify` fails when this document
 stops naming it.
 
-`replay` compares 17401 artifacts against the committed candidate digests and
+`replay` compares 17402 artifacts against the committed candidate digests and
 `report.json` against the committed snapshot with the three volatile fields
 normalized, so it fails on any lost file, any added file, and any changed byte
 outside those fields. Both modes were plant-tested, each exiting 1: deleting two
@@ -936,7 +956,7 @@ The precision repair on top of it is plant-tested the same way, each exiting 1:
 | blank one row's `candidate_marker` | `<file> carries the candidate_marker '', which is not one of ('both', 'indirect_branch_only', 'trap_only', 'none')` plus the all-rows count failure |
 | change one row's `lost_edge_after_IndirectBranch` count | `the lost_edge_effects column does not sum to the recorded totals: {...}` |
 | set `reg31_tokens` in `register-counter-scopes.json` to a nonzero value | `the candidate text carries <n> reg31_tokens, so the quality.rs 0..=30 boundary drops tokens the census counts and the two scopes are not comparable` |
-| commit any change under `crates/` | `HEAD has a product-path delta from revisions.candidate (0ba3a67): the product tree hashes <digest>, so the recorded artifacts were not produced by the product state at HEAD` |
+| commit any change under `crates/` | `HEAD has a product-path delta from revisions.candidate (eabbe7e): the product tree hashes <digest>, so the recorded artifacts were not produced by the product state at HEAD` |
 | delete the `NIX_CONFIG` export from section 8 | `the NIX_CONFIG export the build line needs is not in compat-baseline-real-binary.md` |
 | drop the exact `difflib` spelling, `n=0` argument included, from section 6.2 | `the diff implementation is not named in compat-baseline-real-binary.md` |
 
@@ -1006,6 +1026,9 @@ support has to fail here rather than read as settled.
 | stop naming a derived site in this document | `verify`: `the guard site <va> is not named in compat-baseline-real-binary.md` |
 | revert the counter to the walk's own total | `cargo test`: two failures in `unresolved_cf_accounting.rs`, the helper-body case and the inlined-copy case |
 | let the derivation rule accept either polarity | `--self-test`: `AssertionError` on the planted opposite-condition span |
+| restore the selector row's retired section-9 wording | both checker `verify` modes report `selector_losses` as unfinished |
+| mark any contract-named semantic adjudication unfinished | both checker `--self-test` modes reject every contract-named semantic item independently |
+| perturb either call counter in a checked tree's `quality.json` | `check`: the derived quality counter disagrees with the recorded value and with `report.json.quality` |
 
 Neither `verify` nor `scripts/check-compat-semantics.py` is wired into
 `scripts/ci-check.sh` yet. Both that script and `scripts/lint-python.sh` are
@@ -1032,8 +1055,8 @@ cold build: a clean release build of each side, each in its own worktree with it
 own target directory, reproduced 17401 of the 17402 committed rows on its side,
 differing only in `report.json`, whose three volatile fields carry that
 worktree's paths. Those two builds hashed
-`78a91ecbd7b66d58ea4607efc862ea39e099b0f3860a5934b891de7e3bfca246` and
-`512745c3336f1e9f00b3544bc9248d5135534af6c9bdcd816f887969001d45da`, which is the
+`c3301f031f14d1807dd6217f181e390c15ef866f8469a8217a9ea2ac88776df3` and
+`dc00cab3119be42fc21432f17bf8a7cfb94e01afd10e716fb39bb70036825ff0`, which is the
 build-path dependence this paragraph is about, and both runs reported the section
 3 gate summaries unchanged.
 
@@ -1058,7 +1081,7 @@ build-path dependence this paragraph is about, and both runs reported the sectio
   access to the pinned GitHub release asset.
 - `check-compat-baseline.py verify` is not a CI step, for the reason in
   section 8, so nothing re-runs it automatically.
-- The product-tree check in section 1 needs `git` and needs `0ba3a67` and
+- The product-tree check in section 1 needs `git` and needs `eabbe7e` and
   `1371e42` to be reachable objects. In a shallow or exported checkout that has
   neither, `verify` prints that it skipped the check rather than passing it
   silently; every other check still runs.

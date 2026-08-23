@@ -71,8 +71,8 @@ digest, extra/missing row, duplicate row, and loader bypass all fail closed.
 | `crates/flutterdec-bench/Cargo.toml` | `98dbc4b430302d76c4cf4716dfdd781ea354f26195514d1f9b844e79f97a7040` |
 | `crates/flutterdec-bench/src/main.rs` | `c8fefa460ecc3dd7a919f6577367d5e967386c277630fd3e1493d4dd53b6ac34` |
 | `crates/flutterdec-bench/src/measure.rs` | `49dfc3fcb2a33fa2903f9f19ec0c02915fb15cc2cba86a9d4f8e6d72535570b8` |
-| `crates/flutterdec-decompiler/src/lib.rs` | `c7897b95d46006bea5e8b4edd1011d6e4245159e804e97c4adb6922e84913c6f` |
-| `crates/flutterdec-decompiler/src/control_flow/structured.rs` | `13421bf7198e09f388c3f79537b870614b53a1946263f44dfab8a7367baf9f53` |
+| `crates/flutterdec-decompiler/src/lib.rs` | `0c84606d1af3fa240ed0011115279fd37ed360e8e72c5ec407e7ca7757dae467` |
+| `crates/flutterdec-decompiler/src/control_flow/structured.rs` | `b153fffc625956d284d8ce0115ac4de0334b45456ac7540f7f2770851dc5989a` |
 | `scripts/bench-resource.sh` | `93a6932301bb37452c41149b237d3c46b4244d2b3ee2d76a60ca11dd35c101db` |
 | `scripts/audit-resource-evidence.py` | `4cea4c88f15144a5cdf34a724751a173d11e91f7d7cda5641c156cd48faaf220` |
 | `scripts/check-resource-ruler.py` | `c99345bea216e0c8f42eb854d826d5d040230f37bf571b81eda81c80d6fe2716` |
@@ -225,3 +225,23 @@ atomic commit. The resource harness cases were not rerun, because no
 resource-instrumented code moved, and no timing selection, candidate order,
 score, threshold, sample, seed, accepted harness, frozen reference, or immutable
 candidate was rerun or changed.
+
+The 2026-08-22 final-artifact call-accounting adjudication changes
+`crates/flutterdec-decompiler/src/lib.rs` from
+`c7897b95d46006bea5e8b4edd1011d6e4245159e804e97c4adb6922e84913c6f` to
+`0c84606d1af3fa240ed0011115279fd37ed360e8e72c5ec407e7ca7757dae467`, and
+`crates/flutterdec-decompiler/src/control_flow/structured.rs` from
+`13421bf7198e09f388c3f79537b870614b53a1946263f44dfab8a7367baf9f53` to
+`b153fffc625956d284d8ce0115ac4de0334b45456ac7540f7f2770851dc5989a`.
+The product change carries direct/indirect call provenance with emitted line
+identity and derives `total_calls` and `indirect_calls` from the identities in
+the completed artifact. The structured-emitter change only snapshots and
+restores that provenance on rollback. The pinned LocalSend pseudocode, IR, and
+assembly bytes are unchanged; only the call counters and ratios in
+`quality.json` and `report.json` move.
+
+No `#[cfg(feature = "bench-spans")]` allocator, phase ownership, CFG clone
+plant, emitter clone plant, resource threshold, workload, timing selection,
+candidate order, score, sample, seed, accepted harness, frozen reference, or
+immutable candidate changed. The resource ruler self-test, inventory check, and
+full Nix CI were refreshed; resource and timing selection were not rerun.

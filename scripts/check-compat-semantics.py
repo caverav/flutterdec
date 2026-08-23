@@ -79,11 +79,36 @@ CONCLUSIONS = (
     "candidate_correct_no_recovered_value_lost",
     "candidate_corrected_after_this_slice",
 )
+STALE_OPEN_WORDING = "Declared open in section 9"
+SEMANTIC_ITEM_TERMS = {
+    "control_flow_accounting": ("control-flow accounting", "control flow accounting"),
+    "dropped_call_argument": ("dropped call argument", "call argument"),
+    "guard_polarity": ("guard polarity",),
+    "selector_losses": ("selector rendering", "selector loss", "selector"),
+}
 
 
 def fail(message):
     print(f"[compat-semantics] {message}", file=sys.stderr)
     sys.exit(1)
+
+
+def open_semantic_items(doc):
+    """Contract-named semantic items still described as open in prose."""
+    found = set()
+    if STALE_OPEN_WORDING in doc:
+        found.add("selector_losses")
+    # Sentence spans preserve wrapped prose, while the explicit table-row split
+    # prevents one stale row from tainting every semantic item in its table.
+    spans = re.split(r"(?<=[.!?])\s+|\n(?=\|)", doc)
+    for span in spans:
+        lowered = span.lower()
+        if not re.search(r"\bopen\b", lowered):
+            continue
+        for item, terms in SEMANTIC_ITEM_TERMS.items():
+            if any(term in lowered for term in terms):
+                found.add(item)
+    return tuple(sorted(found))
 
 
 # ---------------------------------------------------------------- asm decoding
@@ -398,6 +423,10 @@ def derive_accounting(tree, residue_function):
         "unresolved_cf_statements": total,
         "quality_unresolved_cf": quality["unresolved_cf"],
         "report_unresolved_cf": report["quality"]["unresolved_cf"],
+        "quality_total_calls": quality["total_calls"],
+        "report_total_calls": report["quality"]["total_calls"],
+        "quality_indirect_calls": quality["indirect_calls"],
+        "report_indirect_calls": report["quality"]["indirect_calls"],
         "residue_function": residue_function,
         "residue_function_statements": len(residue),
         "residue_function_indirect_branches": sites,
@@ -524,7 +553,16 @@ def check(ref, cand):
     #    statements the artifacts carry, on both sides.
     for side, derived_side in (("candidate", derived["accounting_candidate"]), ("reference", derived["accounting_reference"])):
         recorded = record["control_flow_accounting"][side]
-        for key in ("unresolved_cf_statements", "quality_unresolved_cf", "report_unresolved_cf", "functions_with_statements"):
+        for key in (
+            "unresolved_cf_statements",
+            "quality_unresolved_cf",
+            "report_unresolved_cf",
+            "quality_total_calls",
+            "report_total_calls",
+            "quality_indirect_calls",
+            "report_indirect_calls",
+            "functions_with_statements",
+        ):
             if derived_side[key] != recorded[key]:
                 problems.append(
                     f"{side}.{key} derives {derived_side[key]}, the record claims {recorded[key]}"
@@ -534,6 +572,12 @@ def check(ref, cand):
                 f"{side}: {derived_side['unresolved_cf_statements']} statements against "
                 f"quality.json.unresolved_cf {derived_side['quality_unresolved_cf']}"
             )
+        for counter in ("total_calls", "indirect_calls"):
+            if derived_side[f"quality_{counter}"] != derived_side[f"report_{counter}"]:
+                problems.append(
+                    f"{side}: quality.json.{counter} {derived_side[f'quality_{counter}']} against "
+                    f"report.json.quality.{counter} {derived_side[f'report_{counter}']}"
+                )
     residue = derived["accounting_candidate"]
     recorded = record["control_flow_accounting"]
     if residue["residue_function_statements"] != recorded["residue_function_statements"]:
@@ -552,7 +596,7 @@ def check(ref, cand):
         "fall-through, "
         f"1 call argument declined with no recovered value lost, "
         f"{residue['unresolved_cf_statements']} unresolved-control-flow statements equal "
-        f"quality.json.unresolved_cf"
+        f"quality.json.unresolved_cf, call totals equal report.json"
     )
 
 
@@ -598,6 +642,8 @@ def verify():
     for open_item in ("carried as an open semantic item", "no committed oracle proves"):
         if open_item in doc:
             problems.append(f"{DOC.name} still carries the phrase {open_item!r}")
+    for item in open_semantic_items(doc):
+        problems.append(f"{DOC.name} still marks the adjudicated semantic item {item!r} open")
     if problems:
         for problem in problems:
             print(f"[compat-semantics] {problem}", file=sys.stderr)
@@ -684,6 +730,17 @@ def self_test():
         ]
     )
     assert guards == [("!= 0", "if ((reg3 & 0xc0000000) != 0) {")], guards
+    assert open_semantic_items("Selector rendering: Declared open in section 9.") == (
+        "selector_losses",
+    )
+    for item, term in (
+        ("control_flow_accounting", "Control-flow accounting remains open."),
+        ("dropped_call_argument", "The dropped call argument is open."),
+        ("guard_polarity", "Guard polarity is still open."),
+        ("selector_losses", "Selector loss is an open question."),
+    ):
+        assert item in open_semantic_items(term), (item, term)
+    assert open_semantic_items("Selector rendering is adjudicated from machine code.") == ()
     print("[compat-semantics] self-test ok: polarity, reachability, statements, guard shape")
 
 

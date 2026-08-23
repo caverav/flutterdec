@@ -3255,8 +3255,8 @@
       "unresolved control-flow count exceeded threshold"
     ],
     "function_count": 5800,
-    "indirect_call_ratio": 0.1582264880739202,
-    "indirect_calls": 6627,
+    "indirect_call_ratio": 0.1620446340662947,
+    "indirect_calls": 39500,
     "loop_backedge_markers": 77,
     "mode": "strict",
     "omitted_path_markers": 50,
@@ -3270,7 +3270,7 @@
     "semantic_direct_calls": 0,
     "semantic_indirect_calls": 0,
     "target_va_symbol_calls": 0,
-    "total_calls": 41883,
+    "total_calls": 243760,
     "unlifted_instructions": 481,
     "unresolved_cf": 521
   },

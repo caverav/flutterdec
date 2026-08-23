@@ -676,6 +676,11 @@ Metric formulas:
 
 - `disassembly_ratio = disassembled_function_count / function_count`
 - `indirect_call_ratio = indirect_calls / total_calls`
+- `total_calls` = rendered `IROp::Call` statements retained in completed
+  pseudocode artifacts. `indirect_calls` is the subset rendered from register
+  call targets. Both are derived from call provenance attached to line identity,
+  so a call copied from a nested `_block_N` helper counts once per surviving
+  rendered copy, while a removed helper definition does not count.
 - `unresolved_cf` = the number of unresolved-control-flow statements in the
   emitted pseudocode: lines starting with `// indirect branch`,
   `// unresolved branch target`, `// unresolved jump`, or `// invalid CFG`, which

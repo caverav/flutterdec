@@ -31,6 +31,7 @@ run and are the independent-rerun path.
 import argparse
 import hashlib
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -117,6 +118,13 @@ SEMANTIC_ITEMS = (
     "guard_polarity",
     "selector_losses",
 )
+STALE_OPEN_WORDING = "Declared open in section 9"
+SEMANTIC_ITEM_TERMS = {
+    "control_flow_accounting": ("control-flow accounting", "control flow accounting"),
+    "dropped_call_argument": ("dropped call argument", "call argument"),
+    "guard_polarity": ("guard polarity",),
+    "selector_losses": ("selector rendering", "selector loss", "selector"),
+}
 
 # The three candidate processes wrote the same bytes, so one derivation covers
 # all four recorded digests.
@@ -190,6 +198,24 @@ def normalize_report(doc):
 def prose(text):
     """Markdown prose flattened for verbatim anchor checks: no code ticks, no wrapping."""
     return " ".join(text.replace("`", "").split())
+
+
+def open_semantic_items(doc):
+    """Contract-named semantic items still described as open in prose."""
+    found = set()
+    if STALE_OPEN_WORDING in doc:
+        found.add("selector_losses")
+    # Sentence spans preserve wrapped prose, while the explicit table-row split
+    # prevents one stale row from tainting every semantic item in its table.
+    spans = re.split(r"(?<=[.!?])\s+|\n(?=\|)", doc)
+    for span in spans:
+        lowered = span.lower()
+        if not re.search(r"\bopen\b", lowered):
+            continue
+        for item, terms in SEMANTIC_ITEM_TERMS.items():
+            if any(term in lowered for term in terms):
+                found.add(item)
+    return tuple(sorted(found))
 
 
 def is_hex(value, width):
@@ -829,12 +855,33 @@ def check_semantic_adjudication(accounting, quality, doc, failures):
                         f"quality-candidate.json reports {quality['unresolved_cf']}")
     if str(statements) not in doc:
         failures.append(f"the candidate statement count {statements} is not stated in {DOC.name}")
-    for item in SEMANTIC_ITEMS:
-        for phrase in ("open semantic item", "is not claimed as an accepted correction"):
-            if phrase in doc:
-                failures.append(f"{DOC.name} still carries {phrase!r} while {item} is adjudicated")
-                break
-        break
+    call_record = accounting["call_counter_reconciliation"]
+    semantic_calls = record["control_flow_accounting"]
+    for side in ("reference", "candidate"):
+        side_quality = json.loads(
+            (EVIDENCE / f"quality-{side}.json").read_text(encoding="utf-8")
+        )
+        side_report = json.loads(
+            (EVIDENCE / f"report-{side}.json").read_text(encoding="utf-8")
+        )["quality"]
+        for counter in ("total_calls", "indirect_calls"):
+            values = {
+                "quality": side_quality[counter],
+                "report": side_report[counter],
+                "accounting": call_record[side][counter],
+                "semantic": semantic_calls[side][f"quality_{counter}"],
+            }
+            if len(set(values.values())) != 1:
+                failures.append(f"{side} {counter} does not reconcile across evidence: {values}")
+            if semantic_calls[side][f"report_{counter}"] != side_report[counter]:
+                failures.append(
+                    f"{side} report_{counter} in {SEMANTIC_RECORD.name} does not match report-{side}.json"
+                )
+    for phrase in ("open semantic item", "is not claimed as an accepted correction"):
+        if phrase in doc:
+            failures.append(f"{DOC.name} still carries {phrase!r} while all semantic items are adjudicated")
+    for item in open_semantic_items(doc):
+        failures.append(f"{DOC.name} still marks the adjudicated semantic item {item!r} open")
     if REPLAY_MARKER_TABLE.exists():
         failures.append(f"{REPLAY_MARKER_TABLE.name} was retired with the residue it localized, "
                         f"so a copy of it is stale evidence")
@@ -1278,6 +1325,18 @@ def self_test():
     for phrase in ("tst Xn, #0xc0000000", "branches past the guarded body",
                    "the body runs when they are not", "the reference inverted three"):
         assert phrase in GUARD_POLARITY_ADJUDICATION, phrase
+
+    assert open_semantic_items("Selector rendering: Declared open in section 9.") == (
+        "selector_losses",
+    )
+    for item, term in (
+        ("control_flow_accounting", "Control-flow accounting remains open."),
+        ("dropped_call_argument", "The dropped call argument is open."),
+        ("guard_polarity", "Guard polarity is still open."),
+        ("selector_losses", "Selector loss is an open question."),
+    ):
+        assert item in open_semantic_items(term), (item, term)
+    assert open_semantic_items("Selector rendering is adjudicated from machine code.") == ()
 
     # `fetch` must never leave an unverified asset at --dest: the download lands on
     # a temporary sibling, is checked there, and replaces the destination only on a

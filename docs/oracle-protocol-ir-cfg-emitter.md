@@ -537,9 +537,9 @@ false` would switch any crate's targets off wholesale.
 | `crates/flutterdec-core/src/pipeline/runners/stubs/identity_tests.rs` | `a13fd1a26bafc8224edfbc9d1e8e1aa6441e935e50a5a4021315c119973e120d` |
 | `crates/flutterdec-decompiler/src/control_flow/regions/identity_boundary_tests.rs` | `84b619616bab352c6e49fab1190d80a1df4606b691811c72835266003dfcf42d` |
 | `crates/flutterdec-decompiler/src/control_flow/relation_oracle.rs` | `e53dd455ddbbdf2c0b00d184f1f2d788833cbfd6a0db070ad69b9372297da849` |
-| `crates/flutterdec-decompiler/src/control_flow/emission_taxonomy_tests.rs` | `35263822b004ebe7083c9a2f7c0fdfff94202be641c46174e30161893fa9df94` |
+| `crates/flutterdec-decompiler/src/control_flow/emission_taxonomy_tests.rs` | `9138a9da21ee873bf19341683da87a5f7b2985c6bfa86a8c9ecc2fa7a3adcea2` |
 | `crates/flutterdec-decompiler/src/control_flow/annotation_anchor_tests.rs` | `b7b4e4553fa93614ed7277c76a79a77c19884be64448a0c0192bcbc589252b7e` |
-| `crates/flutterdec-decompiler/src/line_identity_tests.rs` | `cbc8bc9be4e84e90a3e1f52302c3bcdd16d4ec4b8c69ee7291f8324177b8e178` |
+| `crates/flutterdec-decompiler/src/line_identity_tests.rs` | `7585d2d129887c92fbc98b09062db1d8fabf23ae2c06496018402f05d03ec6e0` |
 | `crates/flutterdec-decompiler/tests/helper_syntax_boundaries.rs` | `9a2832926b7871c2fd066277dd0ec6275e3ac9378c2fde519c7905b021ee7719` |
 | `crates/flutterdec-decompiler/tests/rewrite_boundaries.rs` | `f5b4ec6ac0754bef3fb2bf6bf8b86681c8896765deabdb105a73fdee26c153e1` |
 | `crates/flutterdec-decompiler/tests/unmodelled_write_effects.rs` | `4dac7f08cec237e3a611372f2e61ba766e8b7f88b616c514cabd0e6c11a991d4` |
@@ -3390,3 +3390,53 @@ under `nix develop`, the identity gate under its own bash 3.2, the resource
 inventory, and harness fmt and clippy. The `if: runner.os == 'Linux'` condition on
 that one lane is the whole difference between that failed run and this record's
 bytes.
+
+## 25. Adjudication record: completed-artifact call accounting rulers
+
+This is the section 9 record for the two protected unit-test rulers moved by
+`d3c5367`. Product code now derives call totals from line identities retained in
+the completed artifact, including calls copied out of nested helper emitters.
+The ruler change adds no acceptance exception and changes no fixture, threshold,
+golden output, public schema, or protected inventory membership.
+
+### 25.1 Invariant and test delta
+
+The invariant is that a published call counter counts rendered `IROp::Call`
+statements retained in the completed artifact, and classifies each direct or
+indirect call by provenance attached to the same final line identity. Snapshot
+rollback must restore that provenance, and any body replacement that changes
+text must allocate matching fresh identities before those identities can carry
+provenance.
+
+`snapshot_and_restore_cover_every_mutable_state_family` now poisons the rendered
+call-kind map and proves rollback restores it with the other mutable emitter
+state. The line-identity tests now assert that `replace_body_line` returns fresh
+identities for its replacement lines and that a partial identity mismatch is
+still rejected. These assertions fail against the old tests' assumptions once
+completed-artifact call provenance is introduced; no assertion was deleted or
+weakened.
+
+### 25.2 Digest chain
+
+| Protected ruler | Prior sha256 | Current sha256 in section 7 |
+| --- | --- | --- |
+| `crates/flutterdec-decompiler/src/control_flow/emission_taxonomy_tests.rs` | `35263822b004ebe7083c9a2f7c0fdfff94202be641c46174e30161893fa9df94` | `9138a9da21ee873bf19341683da87a5f7b2985c6bfa86a8c9ecc2fa7a3adcea2` |
+| `crates/flutterdec-decompiler/src/line_identity_tests.rs` | `cbc8bc9be4e84e90a3e1f52302c3bcdd16d4ec4b8c69ee7291f8324177b8e178` | `7585d2d129887c92fbc98b09062db1d8fabf23ae2c06496018402f05d03ec6e0` |
+
+The prior bytes remain recoverable with `git show a7bbd2e:<path>` and the
+reference commit `1371e42` remains unchanged.
+
+### 25.3 Section 9 steps
+
+1. Invariant: section 25.1, stated in the final-artifact unit rather than in
+   terms of an intermediate emitter walk.
+2. Tests: the two protected unit tests above, plus the focused helper-tail
+   artifact and quality/report regressions in commits `d3c5367` and `eabbe7e`.
+3. Diff and digests: sections 25.1 and 25.2 name the complete ruler delta and
+   both old and new digests.
+4. Reference preserved: the old bytes and `1371e42` remain addressable.
+5. Atomicity: product behavior and its focused test are in the two preceding
+   commits; this digest refresh and adjudication land with regenerated
+   compatibility evidence in a separate documentation commit.
+6. L5: `scripts/check-oracle-inventory.py` and the full
+   `scripts/ci-check.sh` are rerun after this record.
