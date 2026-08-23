@@ -1590,8 +1590,8 @@ hypothesis. Its rejection is measured evidence and does not invalidate
 [Lengauer and Tarjan](https://doi.org/10.1145/357062.357071), neither of which
 was implemented here.
 
-Remaining risks are concrete. There is no committed real-golden oracle. R8's
-permissive hexadecimal target parser remains open. The synthetic matrix does
+Remaining risks are concrete. There is no committed real-golden oracle. The explicit-radix hexadecimal target parser risk is closed by the shared IR parser, public branch-target ruler, and VAL-IR-004.
+The synthetic matrix does
 not establish the topology distribution
 of real Flutter programs. The disclosed regression cells and held-out MDE misses
 remain part of the record. The performance track stops here without a win; a

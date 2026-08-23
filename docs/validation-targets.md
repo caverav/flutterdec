@@ -6,7 +6,7 @@ for rerunning the named checks.
 
 | Target | Definition | Status | Evidence |
 | --- | --- | --- | --- |
-| `VAL-IR-004` | Branch target radix is explicit; malformed or ambiguous operands do not invent a target. | Passed | [`IR parser`](../crates/flutterdec-ir/src/lib.rs), [`control_effects.rs`](../crates/flutterdec-ir/src/tests/control_effects.rs) |
+| `VAL-IR-004` | Branch target radix is explicit; malformed or ambiguous operands do not invent a target. | Passed | [`IR parser`](../crates/flutterdec-ir/src/lib.rs), [`control_effects.rs`](../crates/flutterdec-ir/src/tests/control_effects.rs), [`branch_target_radix.rs`](../crates/flutterdec-ir/tests/branch_target_radix.rs) |
 | `VAL-CFG-005` | Loop headers and back edges follow dominance and active graph relations, independent of block addresses. | Passed | [`dfs_loop_address_invariance.rs`](../crates/flutterdec-decompiler/tests/dfs_loop_address_invariance.rs), [`oracle protocol`](oracle-protocol-ir-cfg-emitter.md) |
 | `VAL-EMIT-015` | Entry loops merge the implicit function-entry path with every explicit back edge before reusing state. | Passed | [`entry_loop_state_merge.rs`](../crates/flutterdec-decompiler/tests/entry_loop_state_merge.rs), [`oracle protocol`](oracle-protocol-ir-cfg-emitter.md) |
 | `VAL-ORACLE-005` | The block-ledger integration target is checksum-bound, compiled, and called by named local and GitHub CI lanes. | Passed | [`block_ledger_contract.rs`](../crates/flutterdec-decompiler/tests/block_ledger_contract.rs), [`oracle protocol`](oracle-protocol-ir-cfg-emitter.md), [`ci-check.sh`](../scripts/ci-check.sh) |
