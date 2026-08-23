@@ -15,5 +15,6 @@
 - Resource evidence: [resource-evidence/README.md](resource-evidence/README.md)
 - Resource-ruler protocol: [resource-ruler-protocol.md](resource-ruler-protocol.md)
 - Public real-binary compatibility baseline: [compat-baseline-real-binary.md](compat-baseline-real-binary.md)
+- Accepted atomic benchmark history repair: [history-repair/README.md](history-repair/README.md)
 - Validation target records: [validation-targets.md](validation-targets.md)
 - Project context/history: [../context.md](../context.md)
