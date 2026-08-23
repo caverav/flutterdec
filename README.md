@@ -426,6 +426,10 @@ Main outputs under `-o <OUT_DIR>`:
 - `engine_symbol_ingestion` for auto-loaded local engine symbol cache matches keyed by `libflutter.so` build id
 - `bootflow_discovery` entries tagged by `source` (`adapter`, `manifest`, `apk_startup`)
 
+For the complete public emission-counter schema, units, block-ledger semantics,
+and record-split rejection diagnostics, see
+[`docs/cli-reference.md`](docs/cli-reference.md#emission-diagnostics-in-qualityjson).
+
 ## See The Pipeline
 
 The goal of these examples is simple: show original public source first, then show what `flutterdec` recovers from the shipped APK.
