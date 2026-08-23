@@ -172,6 +172,14 @@ impl BodyBuffer {
 /// lines apart and this can.
 type LineId = u64;
 
+/// Provenance for a rendered call statement. Kept beside line identity so
+/// helper copying and removal change the published counters with the text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RenderedCallKind {
+    Direct,
+    Indirect,
+}
+
 /// One unresolved read of a register an ordinary call clobbered.
 ///
 /// Captured when the line is rendered, because that is the only moment the
@@ -296,6 +304,9 @@ struct FuncEmitter<'a> {
     /// emitter; otherwise the two Vecs are the same length, which
     /// `assert_line_identity` states at every pass boundary.
     line_ids: Vec<LineId>,
+    /// Call kind keyed by the identity of the rendered statement. The final
+    /// counters are derived from the identities that survive every rewrite.
+    rendered_call_kinds: HashMap<LineId, RenderedCallKind>,
     /// Monotonic for the whole function and deliberately not restored by a
     /// rollback.
     ///
@@ -356,6 +367,7 @@ struct HelperMeta {
 #[derive(Debug, Clone)]
 struct InlineHelperPlan {
     lines: Vec<String>,
+    call_kinds: Vec<Option<RenderedCallKind>>,
     append_null_return: bool,
 }
 
@@ -556,6 +568,7 @@ impl<'a> FuncEmitter<'a> {
             dfs_block_writes: HashMap::new(),
             lines: Vec::new(),
             line_ids: Vec::new(),
+            rendered_call_kinds: HashMap::new(),
             next_line_id: 0,
             identifier_renames: Vec::new(),
             state: init_state(),
@@ -710,6 +723,7 @@ impl<'a> FuncEmitter<'a> {
             "emission block ledger did not reconcile"
         );
         *self.accounting.block_ledger_mut() = block_ledger;
+        let (total_calls, indirect_calls) = self.rendered_call_counts();
         let artifact = PseudocodeArtifact {
             function_id: self.ir.function_id,
             function_name: fn_name,
@@ -722,8 +736,8 @@ impl<'a> FuncEmitter<'a> {
             // artifact carries.
             unresolved_cf: control_flow::unresolved_cf_statements(&self.lines),
             raw_register_calls: self.raw_register_calls,
-            total_calls: self.total_calls,
-            indirect_calls: self.indirect_calls,
+            total_calls,
+            indirect_calls,
             semantic_direct_calls: self.semantic_direct_calls,
             semantic_indirect_calls: self.semantic_indirect_calls,
             dispatch_selector_calls: self.dispatch_selector_calls,
@@ -769,6 +783,18 @@ impl<'a> FuncEmitter<'a> {
         self.line_ids.push(id);
     }
 
+    fn rendered_call_counts(&self) -> (usize, usize) {
+        let mut total = 0;
+        let mut indirect = 0;
+        for id in &self.line_ids {
+            if let Some(kind) = self.rendered_call_kinds.get(id) {
+                total += 1;
+                indirect += usize::from(*kind == RenderedCallKind::Indirect);
+            }
+        }
+        (total, indirect)
+    }
+
     /// Insert one line, shifting the identities after it along with the text.
     fn insert_body_line(&mut self, index: usize, line: String) {
         let tracked = !self.line_ids.is_empty();
@@ -802,7 +828,7 @@ impl<'a> FuncEmitter<'a> {
     /// Replace the single line at `index` with `lines`, all of them new. The
     /// replaced line's identity is retired, so an anchor that named it resolves
     /// to nothing rather than to whichever line took its place.
-    fn replace_body_line(&mut self, index: usize, lines: Vec<String>) {
+    fn replace_body_line(&mut self, index: usize, lines: Vec<String>) -> Vec<LineId> {
         let tracked = !self.line_ids.is_empty();
         if tracked {
             self.assert_line_identity();
@@ -814,8 +840,9 @@ impl<'a> FuncEmitter<'a> {
         };
         self.lines.splice(index..=index, lines);
         if tracked {
-            self.line_ids.splice(index..=index, ids);
+            self.line_ids.splice(index..=index, ids.iter().copied());
         }
+        ids
     }
 
     /// Drop the lines in `range` and the identities that went with them.

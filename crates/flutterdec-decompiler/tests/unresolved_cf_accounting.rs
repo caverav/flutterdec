@@ -88,6 +88,14 @@ fn assert_counter_is_the_body(artifact: &PseudocodeArtifact, expected: usize) {
     );
 }
 
+fn rendered_calls(artifact: &PseudocodeArtifact) -> usize {
+    artifact
+        .source
+        .lines()
+        .filter(|line| line.trim_start().starts_with("final t"))
+        .count()
+}
+
 /// A chain longer than the DFS inline-depth budget, ending in `br x16`.
 ///
 /// Past the budget the walk stops inlining, so the tail block is emitted as a
@@ -144,6 +152,38 @@ fn an_indirect_branch_rendered_only_into_a_helper_body_is_counted() {
         artifact.source
     );
     assert_counter_is_the_body(&artifact, unresolved_statements(&artifact));
+}
+
+/// The sibling call counters use the same finished-artifact scope. This tail is
+/// reached only after the DFS depth budget sends it through a nested helper;
+/// the helper is then inlined, so no intermediate emitter counter can describe
+/// the one call statement a reader receives.
+#[test]
+fn an_indirect_call_rendered_only_into_a_helper_body_is_counted() {
+    let ir = deep_chain(IROp::Call, "blr x16", "x16");
+    let artifact = emit_pseudocode_direct_dfs(&ir, &HashMap::new());
+    assert!(
+        artifact
+            .emission
+            .event_count(TraversalEventKind::DfsDepthOmission)
+            > 0,
+        "the traversal provenance must show that the call tail took the helper path:\n{}",
+        artifact.source
+    );
+    let calls = rendered_calls(&artifact);
+    assert_eq!(
+        calls, 1,
+        "fixture must render one call:\n{}",
+        artifact.source
+    );
+    assert_eq!(
+        artifact.total_calls, calls,
+        "total_calls must use the rendered-call unit"
+    );
+    assert_eq!(
+        artifact.indirect_calls, calls,
+        "the rendered `blr` call must remain classified as indirect"
+    );
 }
 
 /// Two paths into the same over-budget tail, so the helper body is copied to

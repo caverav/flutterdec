@@ -364,9 +364,19 @@ impl<'a> FuncEmitter<'a> {
     /// so those reads are left bare. The flag covers `emit_runtime_stub_call`
     /// too, which renders from inside here.
     pub(super) fn emit_call(&mut self, ins_target: &str, va: u64, indent: usize) {
+        let kind = if normalize_target(ins_target).starts_with('x') {
+            RenderedCallKind::Indirect
+        } else {
+            RenderedCallKind::Direct
+        };
+        let line_count = self.lines.len();
         self.rendering_call = true;
         self.emit_call_body(ins_target, va, indent);
         self.rendering_call = false;
+        debug_assert_eq!(self.lines.len(), line_count + 1);
+        if let Some(id) = self.line_ids.last().copied() {
+            self.rendered_call_kinds.insert(id, kind);
+        }
     }
 
     fn emit_call_body(&mut self, ins_target: &str, va: u64, indent: usize) {

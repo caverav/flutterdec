@@ -40,6 +40,7 @@ mod annotation_anchor_tests;
 pub(super) struct EmitterSnapshot {
     lines: Vec<String>,
     line_ids: Vec<LineId>,
+    rendered_call_kinds: HashMap<LineId, RenderedCallKind>,
     render_lines: Vec<String>,
     render_line_ids: Vec<LineId>,
     state: LiftState,
@@ -720,6 +721,7 @@ impl<'a> FuncEmitter<'a> {
         EmitterSnapshot {
             lines: self.lines.clone(),
             line_ids: self.line_ids.clone(),
+            rendered_call_kinds: self.rendered_call_kinds.clone(),
             render_lines: self.render_lines.clone(),
             render_line_ids: self.render_line_ids.clone(),
             state: self.state.clone(),
@@ -765,6 +767,7 @@ impl<'a> FuncEmitter<'a> {
         let EmitterSnapshot {
             lines,
             line_ids,
+            rendered_call_kinds,
             render_lines,
             render_line_ids,
             state,
@@ -800,6 +803,7 @@ impl<'a> FuncEmitter<'a> {
         } = snapshot;
         self.lines = lines;
         self.line_ids = line_ids;
+        self.rendered_call_kinds = rendered_call_kinds;
         self.render_lines = render_lines;
         self.render_line_ids = render_line_ids;
         self.state = state;

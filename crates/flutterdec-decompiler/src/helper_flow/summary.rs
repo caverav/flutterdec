@@ -89,8 +89,13 @@ impl<'a> FuncEmitter<'a> {
             // A helper body is rendered by its own emitter, so these lines are
             // new to this body and carry new identities. No anchor of this
             // function's render was ever on one of them.
-            for line in helper.lines {
+            for (line, line_id) in helper.lines.into_iter().zip(helper.line_ids) {
+                let call_kind = helper.rendered_call_kinds.get(&line_id).copied();
                 self.push_body_line(line);
+                if let Some(call_kind) = call_kind {
+                    self.rendered_call_kinds
+                        .insert(*self.line_ids.last().expect("helper line has an identity"), call_kind);
+                }
             }
             if !has_terminator {
                 self.push_line(1, &format!("return {};", fallback_return));

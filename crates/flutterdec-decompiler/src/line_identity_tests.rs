@@ -60,7 +60,9 @@ fn three_identical_lines_keep_the_exact_surviving_anchor_through_mutations() {
     );
     assert_middle_survives(|emitter| emitter.drain_body_lines(0..=0), Some(0));
     assert_middle_survives(
-        |emitter| emitter.replace_body_line(1, vec!["  replacement();".to_string()]),
+        |emitter| {
+            emitter.replace_body_line(1, vec!["  replacement();".to_string()]);
+        },
         None,
     );
     assert_middle_survives(|emitter| emitter.drain_body_lines(1..=1), None);
@@ -83,7 +85,9 @@ fn partial_mismatch_panics(mutate: impl FnOnce(&mut FuncEmitter<'_>)) {
 fn every_length_changing_helper_rejects_a_partial_identity_mismatch() {
     partial_mismatch_panics(|emitter| emitter.insert_body_line(0, "new".to_string()));
     partial_mismatch_panics(|emitter| emitter.splice_body_lines(0, vec!["new".to_string()]));
-    partial_mismatch_panics(|emitter| emitter.replace_body_line(0, vec!["new".to_string()]));
+    partial_mismatch_panics(|emitter| {
+        emitter.replace_body_line(0, vec!["new".to_string()]);
+    });
     partial_mismatch_panics(|emitter| emitter.drain_body_lines(0..=0));
     partial_mismatch_panics(|emitter| emitter.sync_line_ids());
 }

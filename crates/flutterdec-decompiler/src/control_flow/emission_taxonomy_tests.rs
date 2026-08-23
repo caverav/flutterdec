@@ -775,6 +775,10 @@ fn snapshot_families(emitter: &FuncEmitter) -> Vec<(&'static str, String)> {
     vec![
         ("lines", format!("{:?}", emitter.lines)),
         ("line_ids", format!("{:?}", emitter.line_ids)),
+        (
+            "rendered_call_kinds",
+            format!("{:?}", emitter.rendered_call_kinds),
+        ),
         ("render_lines", format!("{:?}", emitter.render_lines)),
         ("render_line_ids", format!("{:?}", emitter.render_line_ids)),
         ("state", format!("{:?}", emitter.state)),
@@ -975,6 +979,9 @@ fn poison(emitter: &mut FuncEmitter) {
 fn poison_snapshot_families(emitter: &mut FuncEmitter) {
     poison(emitter);
     emitter.push_body_line("  // poison body".to_string());
+    emitter
+        .rendered_call_kinds
+        .insert(emitter.line_ids[0], RenderedCallKind::Indirect);
     emitter.render_line_ids.push(emitter.line_ids[0]);
     emitter.state.narrow_bindings.insert("x9".to_string());
     emitter.rendering_call = true;
@@ -1005,6 +1012,7 @@ fn poison_snapshot_families(emitter: &mut FuncEmitter) {
 fn mutate_snapshot_families(emitter: &mut FuncEmitter) {
     emitter.lines.clear();
     emitter.line_ids.clear();
+    emitter.rendered_call_kinds.clear();
     emitter.render_lines.clear();
     emitter.render_line_ids.clear();
     emitter.state = LiftState::default();

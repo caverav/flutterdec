@@ -27,6 +27,7 @@ impl<'a> FuncEmitter<'a> {
         if linear_last_return && linear_no_braces {
             return Some(InlineHelperPlan {
                 lines: meta.body_lines.clone(),
+                call_kinds: vec![None; meta.body_lines.len()],
                 append_null_return: false,
             });
         }
@@ -73,6 +74,7 @@ impl<'a> FuncEmitter<'a> {
 
                             return Some(InlineHelperPlan {
                                 lines: meta.body_lines.clone(),
+                                call_kinds: vec![None; meta.body_lines.len()],
                                 append_null_return: !(has_return_if && has_return_else),
                             });
                         }
@@ -94,6 +96,7 @@ impl<'a> FuncEmitter<'a> {
         if balanced && depth == 0 {
             return Some(InlineHelperPlan {
                 lines: meta.body_lines.clone(),
+                call_kinds: vec![None; meta.body_lines.len()],
                 append_null_return: true,
             });
         }
@@ -121,7 +124,8 @@ impl<'a> FuncEmitter<'a> {
                 .unwrap_or(0);
 
             let mut replacement = Vec::new();
-            for line in &plan.lines {
+            let mut call_kinds = Vec::new();
+            for (offset, line) in plan.lines.iter().enumerate() {
                 if line.trim().is_empty() {
                     continue;
                 }
@@ -131,20 +135,29 @@ impl<'a> FuncEmitter<'a> {
                     " ".repeat(call_indent + rel),
                     line.trim_start()
                 ));
+                call_kinds.push(plan.call_kinds[offset]);
             }
             if replacement.is_empty() {
                 replacement.push(format!("{}return null;", " ".repeat(call_indent)));
+                call_kinds.push(None);
             }
             if plan.append_null_return {
                 replacement.push(format!("{}return null;", " ".repeat(call_indent)));
+                call_kinds.push(None);
             }
 
-            self.replace_body_line(i, replacement.clone());
+            let ids = self.replace_body_line(i, replacement.clone());
+            for (id, kind) in ids.into_iter().zip(call_kinds) {
+                if let Some(kind) = kind {
+                    self.rendered_call_kinds.insert(id, kind);
+                }
+            }
             i += replacement.len();
         }
     }
 
     pub(super) fn inline_trivial_helpers(&mut self) {
+        self.sync_line_ids();
         let first_pass = Self::scan_helpers(&self.lines);
         if first_pass.is_empty() {
             return;
@@ -165,9 +178,13 @@ impl<'a> FuncEmitter<'a> {
 
         let second_pass = Self::scan_helpers(&self.lines);
         for h in &second_pass {
-            let Some(plan) = Self::helper_inline_lines(h) else {
+            let Some(mut plan) = Self::helper_inline_lines(h) else {
                 continue;
             };
+            plan.call_kinds = self.line_ids[h.start + 1..h.end]
+                .iter()
+                .map(|id| self.rendered_call_kinds.get(id).copied())
+                .collect();
             self.inline_helper_calls(h.id, &plan);
         }
 
