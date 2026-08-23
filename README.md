@@ -484,7 +484,7 @@ This source is ordinary app UI code. It builds a ping badge with `BoxConstraints
 
 <p align="center"><strong>Recovered 2: From The ZedSecure APK With flutterdec</strong></p>
 
-<p align="center"><strong>↓ ARM64</strong></p>
+<p align="center"><strong>Next: ARM64</strong></p>
 
 At the machine-code layer, the APK still looks like indirect selector dispatch through pool-loaded metadata and call targets.
 
@@ -493,7 +493,7 @@ At the machine-code layer, the APK still looks like indirect selector dispatch t
 </p>
 
 <p align="center">
-  <strong>↓ Function IR</strong>
+  <strong>Next: Function IR</strong>
 </p>
 
 <p align="center">
@@ -503,7 +503,7 @@ At the machine-code layer, the APK still looks like indirect selector dispatch t
 The IR stage makes the selector-bearing pool values explicit before readability passes.
 
 <p align="center">
-  <strong>↓ Pseudocode</strong>
+  <strong>Next: Pseudocode</strong>
 </p>
 
 <p align="center">
