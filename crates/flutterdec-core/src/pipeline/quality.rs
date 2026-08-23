@@ -494,6 +494,55 @@ mod quality_tests {
         }
     }
 
+    #[test]
+    fn a_helper_rendered_call_reaches_quality_and_report_in_the_artifact_unit() {
+        let mut ir = graph(91, &(0..21).map(|id| vec![id + 1]).chain([Vec::new()]).collect::<Vec<_>>());
+        let tail = ir.blocks.last_mut().expect("fixture has a tail");
+        tail.instrs = vec![LlirInstr {
+            va: tail.start_va,
+            op: IROp::Call,
+            src: "blr x16".to_string(),
+            target: "x16".to_string(),
+        }];
+        let artifact = flutterdec_decompiler::emit_pseudocode_direct_dfs(&ir, &HashMap::new());
+        let rendered_calls = artifact
+            .source
+            .lines()
+            .filter(|line| line.trim_start().starts_with("final t"))
+            .count();
+        assert_eq!(rendered_calls, 1, "fixture must render one call:\n{}", artifact.source);
+        assert!(
+            artifact
+                .emission
+                .event_count(TraversalEventKind::DfsDepthOmission)
+                > 0,
+            "the omission provenance must show the nested-helper path"
+        );
+
+        let quality = quality_from_artifacts(
+            &empty_model(),
+            std::slice::from_ref(&artifact),
+            &default_options(),
+            0,
+        );
+        let report = serde_json::json!({ "quality": &quality });
+        for (field, value) in [
+            ("total_calls", quality.total_calls),
+            ("indirect_calls", quality.indirect_calls),
+        ] {
+            assert_eq!(
+                value,
+                rendered_calls,
+                "quality.{field} must use the rendered-call unit"
+            );
+            assert_eq!(
+                report["quality"][field],
+                rendered_calls,
+                "report.quality.{field} must equal quality.{field}"
+            );
+        }
+    }
+
     /// Every primary cause and every traversal event family reaches the report,
     /// so no counter is checked against a zero it would hold anyway.
     ///
