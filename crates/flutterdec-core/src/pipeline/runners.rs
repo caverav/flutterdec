@@ -982,7 +982,11 @@ fn apply_function_scope_filter(
     (scoped, stats)
 }
 
-pub fn run_info(repo_root: &Path, input_path: &Path) -> Result<InfoOutput> {
+pub fn run_info(
+    repo_root: &Path,
+    input_path: &Path,
+    adapter_backend: AdapterBackend,
+) -> Result<InfoOutput> {
     let apk_session = open_apk_session_if_input_is_apk(input_path)?;
     let bundle = load_snapshot_bundle_with_optional_apk_session(input_path, apk_session.as_ref())?;
     let adapter_installed = resolve_adapter_exec(repo_root, &bundle.snapshot_hash).is_ok();
@@ -1035,12 +1039,20 @@ pub fn run_info(repo_root: &Path, input_path: &Path) -> Result<InfoOutput> {
     };
 
     if adapter_installed {
-        if let Ok(loaded) = load_model(repo_root, &bundle, AdapterBackend::Auto) {
+        if let Ok(loaded) = load_model(repo_root, &bundle, adapter_backend) {
             let manifest_entry_present = loaded.manifest_entry_adapter.is_some();
             let model = loaded.model;
             let snapshot_hash_match = bundle.snapshot_hash == model.snapshot_hash;
-            let warnings =
-                collect_compatibility_warnings(manifest_entry_present, snapshot_hash_match, false);
+            let resolved_backend = resolved_backend_from_adapter_kind(&model.adapter_kind);
+            let backend_mismatch = match adapter_backend {
+                AdapterBackend::Auto => false,
+                _ => resolved_backend.is_some_and(|value| value != adapter_backend),
+            };
+            let warnings = collect_compatibility_warnings(
+                manifest_entry_present,
+                snapshot_hash_match,
+                backend_mismatch,
+            );
             out.adapter_kind = Some(model.adapter_kind.clone());
             out.manifest_entry_present = Some(manifest_entry_present);
             out.adapter_snapshot_hash_match = Some(snapshot_hash_match);

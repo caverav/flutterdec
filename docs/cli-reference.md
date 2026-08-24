@@ -9,13 +9,14 @@ and `flutterdec --version` reports the build you are running.
 Usage:
 
 ```bash
-flutterdec info <INPUT> [--json]
+flutterdec info <INPUT> [--json] [--adapter-backend <BACKEND>]
 ```
 
 Arguments:
 
 - `<INPUT>`: APK or `libapp.so`
 - `--json`: print JSON output
+- `--adapter-backend <auto|internal|blutter|r2-flutter>` (default `auto`; `auto` tries r2flutter, then blutter, then internal)
 
 Resolved from the snapshot hash alone, with or without an adapter, in both JSON and
 plain output:
