@@ -1,7 +1,8 @@
 mod base_objects_pseudocluster;
 
 use std::collections::HashMap;
-use std::u64;
+use std::sync::atomic::AtomicUsize;
+use std::{any, u64};
 
 use crate::constants::{Cid, ClassId, ClassId::*};
 use crate::instruction_table::{get_pc_offset_from_code_cluster_index, InstructionTable};
@@ -611,7 +612,7 @@ pub struct CodeCluster {
     end_of_fill: usize,
     end_of_alloc: usize,
 
-    first_ref_id: u32,
+    pub(crate) first_ref_id: u32,
 
     objs: Vec<Box<Code>>,
 }
@@ -706,6 +707,36 @@ IMPLEMENT_VARIABLE_LENGTH_CLUSTER!(
         }
     }
 );
+
+// this is the analogous function to the sdk's Deserializer::EndInstructions
+pub fn resolve_instructions_len_for_code_objects(
+    clusters: &mut HashMap<u32, Box<dyn Cluster>>,
+    instr_image_size: usize
+) -> anyhow::Result<()> {
+    const POLYMORPHIC_ENTRY_OFFSET: u64 = 24;
+
+    let code_cluster= clusters
+    .get_mut(&((ClassId::CodeCid as u32) << 2))
+    .ok_or_else(|| { anyhow::anyhow!("Code cluster not found") })?
+    .as_any_mut()
+    .downcast_mut::<CodeCluster>()
+    .ok_or_else(|| anyhow::anyhow!("Code cluster is not of type CodeCluster"))?;
+
+    let mut curr_end = instr_image_size as u64;
+    for idx in (0..code_cluster.non_deferred_obj_count).rev()
+    {
+        let code_obj = code_cluster.objs.get_mut(idx as usize).unwrap();
+        let entry_offset = if code_obj.has_monomorphic_entrypoint {
+            POLYMORPHIC_ENTRY_OFFSET
+        } else {
+            0
+        };
+        code_obj.instructions_length_ = curr_end - (code_obj.entry_point - entry_offset);
+        curr_end = code_obj.entry_point - entry_offset;
+    }
+
+    Ok(())
+}
 
 pub fn resolve_entrypoints(
     // we use find_map for both clusters given there should only be a single Cluster for Function and Code objects.

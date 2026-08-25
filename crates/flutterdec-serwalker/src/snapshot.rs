@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::cluster::{decide_cluster, resolve_entrypoints, ClassCluster, Cluster};
+use crate::cluster::{decide_cluster, resolve_entrypoints, resolve_instructions_len_for_code_objects, ClassCluster, Cluster};
 use crate::constants::{
     self, ClassId, DART_3_11_1_SNAPSHOT_HASH, MAGIC_BYTES, OBJECT_START_ALIGNMENT,
     SNAPSHOT_MAGIC_NUMBER_SZ,
@@ -239,12 +239,16 @@ impl DataSnapshot {
             self.instr_table_len,
         )
     }
+
 }
 
-pub fn parse_instr_snapshot(stream: &mut Stream) -> anyhow::Result<InstructionsSnapshot>
+pub fn parse_instr_snapshot(stream: &mut Stream, clusters: &mut HashMap<u32, Box<dyn Cluster>>) -> anyhow::Result<InstructionsSnapshot>
 {   
     let mut instructions_snapshot = InstructionsSnapshot::default();
     instructions_snapshot.image_size =  stream.read_raw_u64()?;
+
+    resolve_instructions_len_for_code_objects(clusters, instructions_snapshot.image_size as usize)?;
+    
     Ok(instructions_snapshot)
 }
 
