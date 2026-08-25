@@ -22,7 +22,7 @@ pub fn produce_model_headers(
 pub fn produce_model_object_info(
     model: &mut ProgramModel,
     snapshot: &DataSnapshot,
-    instructions: &InstructionsSnapshot
+    instructions: &InstructionsSnapshot,
 ) -> anyhow::Result<()> {
     model.classes = produce_classes_info(snapshot)?;
     model.functions = produce_functions_info(snapshot, instructions)?;

@@ -711,20 +711,19 @@ IMPLEMENT_VARIABLE_LENGTH_CLUSTER!(
 // this is the analogous function to the sdk's Deserializer::EndInstructions
 pub fn resolve_instructions_len_for_code_objects(
     clusters: &mut HashMap<u32, Box<dyn Cluster>>,
-    instr_image_size: usize
+    instr_image_size: usize,
 ) -> anyhow::Result<()> {
     const POLYMORPHIC_ENTRY_OFFSET: u64 = 24;
 
-    let code_cluster= clusters
-    .get_mut(&((ClassId::CodeCid as u32) << 2))
-    .ok_or_else(|| { anyhow::anyhow!("Code cluster not found") })?
-    .as_any_mut()
-    .downcast_mut::<CodeCluster>()
-    .ok_or_else(|| anyhow::anyhow!("Code cluster is not of type CodeCluster"))?;
+    let code_cluster = clusters
+        .get_mut(&((ClassId::CodeCid as u32) << 2))
+        .ok_or_else(|| anyhow::anyhow!("Code cluster not found"))?
+        .as_any_mut()
+        .downcast_mut::<CodeCluster>()
+        .ok_or_else(|| anyhow::anyhow!("Code cluster is not of type CodeCluster"))?;
 
     let mut curr_end = instr_image_size as u64;
-    for idx in (0..code_cluster.non_deferred_obj_count).rev()
-    {
+    for idx in (0..code_cluster.non_deferred_obj_count).rev() {
         let code_obj = code_cluster.objs.get_mut(idx as usize).unwrap();
         let entry_offset = if code_obj.has_monomorphic_entrypoint {
             POLYMORPHIC_ENTRY_OFFSET

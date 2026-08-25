@@ -1,6 +1,9 @@
 use std::collections::HashMap;
 
-use crate::cluster::{decide_cluster, resolve_entrypoints, resolve_instructions_len_for_code_objects, ClassCluster, Cluster};
+use crate::cluster::{
+    decide_cluster, resolve_entrypoints, resolve_instructions_len_for_code_objects, ClassCluster,
+    Cluster,
+};
 use crate::constants::{
     self, ClassId, DART_3_11_1_SNAPSHOT_HASH, MAGIC_BYTES, OBJECT_START_ALIGNMENT,
     SNAPSHOT_MAGIC_NUMBER_SZ,
@@ -41,10 +44,9 @@ impl TryFrom<u64> for SnapshotKind {
 }
 
 #[derive(Default)]
-pub struct InstructionsSnapshot
-{
+pub struct InstructionsSnapshot {
     pub image_size: u64,
-    pub image_va: u64
+    pub image_va: u64,
 }
 
 #[derive(Default)]
@@ -52,7 +54,7 @@ pub struct DataSnapshot {
     pub clusters: HashMap<u32, Box<dyn Cluster>>,
     cluster_order: Vec<u32>, // used in the fill step to know which cluster's read_fill function to call
     roots: ProgramRoots,
-    pub (crate) instruction_table: InstructionTable,
+    pub(crate) instruction_table: InstructionTable,
     pub(crate) class_table: HashMap<i32, usize>, // maps a CID to an index into ClassCluster::objs
 
     magic_bytes: u32,
@@ -239,16 +241,17 @@ impl DataSnapshot {
             self.instr_table_len,
         )
     }
-
 }
 
-pub fn parse_instr_snapshot(stream: &mut Stream, clusters: &mut HashMap<u32, Box<dyn Cluster>>) -> anyhow::Result<InstructionsSnapshot>
-{   
+pub fn parse_instr_snapshot(
+    stream: &mut Stream,
+    clusters: &mut HashMap<u32, Box<dyn Cluster>>,
+) -> anyhow::Result<InstructionsSnapshot> {
     let mut instructions_snapshot = InstructionsSnapshot::default();
-    instructions_snapshot.image_size =  stream.read_raw_u64()?;
+    instructions_snapshot.image_size = stream.read_raw_u64()?;
 
     resolve_instructions_len_for_code_objects(clusters, instructions_snapshot.image_size as usize)?;
-    
+
     Ok(instructions_snapshot)
 }
 
