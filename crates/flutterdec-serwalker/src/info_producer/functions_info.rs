@@ -98,6 +98,15 @@ pub fn produce_functions_info(
             .checked_add(entry_offset)
             .ok_or_else(|| anyhow::anyhow!("Function entry virtual address overflow"))?;
 
+        /* for code objects we can return three ranges:
+            let P = payload_start = instruction_table(first_entry_with_code + code_cluster_index).pc_offset
+            S = length of the instructions in bytees and E = end of instructions
+            1. SwitchableCallMiss entry: [P, E = P + S]
+            2. Monomorphic entry: [P + 8, E = P + S]
+            3. Polymorphic entry: [P + 24, E = P + S]
+
+            I return the first one, giving us the a view of the WHOLE function code.
+        */
         let function_info = FunctionInfo {
             id: id,
             name: func_name,
