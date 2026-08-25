@@ -428,7 +428,7 @@ pub struct Code {
 
     pub has_monomorphic_entrypoint: bool, // this field doesn't exist in UntaggedCode, its here so
     // resolve_entrypoints can make use of it
-    pub object_pool: u32,          // ObjectPoolPtr
+    pub object_pool: u32,          // ObjectPoolPtr, we know that it's the global object pool since we are in FullAOT mode
     pub instructions: u32,         // InstructionsPtr
     pub owner: u32, // ClassPtr or FunctionPtr or null, but the actual type in the class is an ObjectPtr
     pub exception_handlers: u32, // ExceptionHandlerPtr
@@ -442,7 +442,7 @@ pub struct Code {
     // pub deopt_info_array: u32, // ArrayPtr [[NOT PRESENT IN FullAOT]]
     // pub static_calls_target_table: u32, // ArrayPtr [[NOT PRESENT IN FullAOT]]
     pub state_bits: i32,
-    pub instructions_length_: u32,
+    pub instructions_length_: u64, // u32 is probably enough but one never knows
 }
 
 #[derive(Default)]

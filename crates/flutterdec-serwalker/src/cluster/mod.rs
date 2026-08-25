@@ -708,6 +708,7 @@ IMPLEMENT_VARIABLE_LENGTH_CLUSTER!(
 );
 
 pub fn resolve_entrypoints(
+    // we use find_map for both clusters given there should only be a single Cluster for Function and Code objects.
     clusters: &mut HashMap<u32, Box<dyn Cluster>>,
     instruction_table: &InstructionTable,
     expected_non_deferred_code_count: usize,

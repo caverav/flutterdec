@@ -10,7 +10,7 @@ pub struct Stream<'a> {
 impl<'a> Stream<'a> {
     pub fn new(byte_stream: &'a [u8]) -> Self {
         Self {
-            byte_stream,
+            byte_stream: byte_stream,
             curr_stream_offset: 0,
         }
     }

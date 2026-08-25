@@ -41,11 +41,18 @@ impl TryFrom<u64> for SnapshotKind {
 }
 
 #[derive(Default)]
+pub struct InstructionsSnapshot
+{
+    pub image_size: u64,
+    pub image_va: u64
+}
+
+#[derive(Default)]
 pub struct DataSnapshot {
     pub clusters: HashMap<u32, Box<dyn Cluster>>,
     cluster_order: Vec<u32>, // used in the fill step to know which cluster's read_fill function to call
     roots: ProgramRoots,
-    instruction_table: InstructionTable,
+    pub (crate) instruction_table: InstructionTable,
     pub(crate) class_table: HashMap<i32, usize>, // maps a CID to an index into ClassCluster::objs
 
     magic_bytes: u32,
@@ -234,7 +241,14 @@ impl DataSnapshot {
     }
 }
 
-pub fn parse_snapshot(stream: &mut Stream) -> anyhow::Result<DataSnapshot> {
+pub fn parse_instr_snapshot(stream: &mut Stream) -> anyhow::Result<InstructionsSnapshot>
+{   
+    let mut instructions_snapshot = InstructionsSnapshot::default();
+    instructions_snapshot.image_size =  stream.read_raw_u64()?;
+    Ok(instructions_snapshot)
+}
+
+pub fn parse_data_snapshot(stream: &mut Stream) -> anyhow::Result<DataSnapshot> {
     let mut snapshot = DataSnapshot::default();
 
     println!("Now parsing the snapshot...");
