@@ -11,7 +11,7 @@ mod snapshot;
 mod info_producer;
 mod stream;
 
-use flutterdec_adapter::{AdapterInput, ProgramModel};
+use flutterdec_adapter::{AdapterInput, PoolGeometry, ProgramModel};
 
 use crate::{
     constants::DART_3_11_1_SNAPSHOT_HASH,
@@ -25,17 +25,23 @@ pub const SUPPORTED_SNAPSHOT_HASH: &str = DART_3_11_1_SNAPSHOT_HASH;
 pub fn walk_snapshot_and_produce_model(
     adapter_input: &AdapterInput,
 ) -> anyhow::Result<ProgramModel> {
+    const ENTRIES_OFFSET: u64 = 16;
+    const WORD_SIZE: u64 = 8; // size in bytes of ObjectPoolEntry objects
+
     let mut program_model = ProgramModel {
         schema_version: 3,
         adapter_kind: "serwalker".to_owned(),
         dart_version: "3.11.1".to_owned(),
         snapshot_hash: DART_3_11_1_SNAPSHOT_HASH.to_owned(),
-        arch: "unknown".to_owned(),
+        arch: "ARM64".to_owned(),
         libraries: Vec::new(),
         classes: Vec::new(),
         functions: Vec::new(),
         object_pool: Vec::new(),
-        pool_geometry: Option::None,
+        pool_geometry: Some(PoolGeometry {
+            entries_offset: ENTRIES_OFFSET,
+            word_size: WORD_SIZE,
+        }),
     };
 
     let mut isolate_data_stream = Stream::new(adapter_input.isolate_data);

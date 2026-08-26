@@ -53,7 +53,7 @@ pub struct InstructionsSnapshot {
 pub struct DataSnapshot {
     pub clusters: HashMap<u32, Box<dyn Cluster>>,
     cluster_order: Vec<u32>, // used in the fill step to know which cluster's read_fill function to call
-    roots: ProgramRoots,
+    pub(crate) roots: ProgramRoots,
     pub(crate) instruction_table: InstructionTable,
     pub(crate) class_table: HashMap<i32, usize>, // maps a CID to an index into ClassCluster::objs
 
@@ -79,6 +79,43 @@ pub struct DataSnapshot {
 }
 
 impl DataSnapshot {
+    pub(crate) fn cluster_by_ref_id(
+        &self,
+        reference_id: u32,
+    ) -> anyhow::Result<Option<&dyn Cluster>> {
+        let mut left = 0;
+        let mut right = self.cluster_order.len();
+
+        while left < right {
+            let middle = left + (right - left) / 2;
+            let key = self.cluster_order[middle];
+            let cluster = self.clusters.get(&key).ok_or_else(|| {
+                anyhow::anyhow!("cluster_order contains missing cluster key {key}")
+            })?;
+
+            if cluster.first_ref_id() <= reference_id {
+                left = middle + 1;
+            } else {
+                right = middle;
+            }
+        }
+
+        let Some(candidate_index) = left.checked_sub(1) else {
+            return Ok(None);
+        };
+        let key = self.cluster_order[candidate_index];
+        let cluster = self
+            .clusters
+            .get(&key)
+            .ok_or_else(|| anyhow::anyhow!("cluster_order contains missing cluster key {key}"))?;
+
+        if cluster.object_by_ref_id(reference_id).is_none() {
+            return Ok(None);
+        }
+
+        Ok(Some(cluster.as_ref()))
+    }
+
     fn parse_version_and_features(&mut self, stream: &mut Stream) -> anyhow::Result<()> {
         let mut version_and_features = stream.read_c_string()?;
 

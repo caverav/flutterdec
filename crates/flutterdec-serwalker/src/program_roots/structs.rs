@@ -266,6 +266,10 @@ macro_rules! define_object_store {
                     $( $field: stream.read_ref_id()?, )*
                 })
             }
+
+            pub fn global_object_pool(&self) -> u32 {
+                self.global_object_pool
+            }
         }
     };
 }
@@ -320,5 +324,10 @@ impl ProgramRoots {
             shared_field_table,
             dispatch_table,
         }
+    }
+
+    pub(crate) fn object_store(&self) -> &ObjectStore
+    {
+        &self.object_store
     }
 }

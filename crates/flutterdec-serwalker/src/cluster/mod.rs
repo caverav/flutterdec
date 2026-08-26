@@ -15,6 +15,8 @@ pub trait Cluster {
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
     fn as_any(&self) -> &dyn std::any::Any;
     fn object_by_ref_id(&self, id: u32) -> Option<&dyn std::any::Any>;
+    fn cid(&self) -> Cid;
+    fn first_ref_id(&self) -> u32;
     fn set_metadata(&mut self, tags: u32, cid: Cid, is_immutable: bool, is_canonical: bool);
     fn is_fixed_len(&self) -> bool;
     fn read_alloc(&mut self, last_ref_id: &mut u64, stream: &mut Stream) -> anyhow::Result<usize>;
@@ -509,6 +511,14 @@ macro_rules! IMPLEMENT_VARIABLE_LENGTH_CLUSTER {
                 self.objs
                     .get(index)
                     .map(|object| object.as_ref() as &dyn std::any::Any)
+            }
+
+            fn cid(&self) -> Cid {
+                self.cid
+            }
+
+            fn first_ref_id(&self) -> u32 {
+                self.first_ref_id
             }
 
             fn set_metadata(

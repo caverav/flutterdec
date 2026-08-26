@@ -115,6 +115,14 @@ macro_rules! DECLARE_FIXED_LENGTH_CLUSTER {
                     .map(|object| object.as_ref() as &dyn std::any::Any)
             }
 
+            fn cid(&self) -> Cid {
+                self.cid
+            }
+
+            fn first_ref_id(&self) -> u32 {
+                self.first_ref_id
+            }
+
             fn set_metadata(
                 &mut self,
                 tags: u32,
