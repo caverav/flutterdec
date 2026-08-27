@@ -42,7 +42,7 @@ pub fn produce_model_object_pool_info(
             ObjectPoolEntryValue::TaggedObjectRef(reference_id) => {
                 tagged_object_kind(snapshot, *reference_id)?
             }
-            ObjectPoolEntryValue::Immediate(imm) => String::from("Immediate"),
+            ObjectPoolEntryValue::Immediate(_imm) => String::from("Immediate"),
             _ => String::from("Non-immediate, non-object entry")
         };
 
@@ -59,7 +59,7 @@ pub fn produce_model_object_pool_info(
             } else {
                 String::from("Non-immediate or tagged object in this entry")
             }
-        } else {
+        } else { // the internal names for the One and Two Byte classes are prefixed with an "_"
             if kind == "String" || kind == "_OneByteString" || kind == "_TwoByteString" {
                 string_or_placeholder(snapshot, ref_id)
             } else {
@@ -77,7 +77,7 @@ pub fn produce_model_object_pool_info(
             target_va: None,
             owner_class: None,
             library_uri: None,
-            confidence: None,
+            confidence: Some(1.0), // can it be anything else, when using this technique?
             source: None,
         });
     }
