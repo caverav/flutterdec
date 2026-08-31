@@ -467,13 +467,15 @@ fn hint_signal_score(hint: &Hint) -> i32 {
 /// How strongly a pool entry's own value argues for its target address.
 ///
 /// Only entries the adapter authored, only their real decoded value, and only
-/// when the pool actually addresses code.
-fn pool_selector_signal_score(value: &str, library_lower: &str) -> i32 {
+/// when the pool actually addresses code. Unlike a hint, a pool entry carries no
+/// library, so the framework/stdlib de-weighting that applies to hints has
+/// nothing to key on here.
+fn pool_selector_signal_score(value: &str) -> i32 {
     let selector = value.trim().to_ascii_lowercase();
     if selector.is_empty() {
         return 0;
     }
-    let mut score = match selector.as_str() {
+    let score = match selector.as_str() {
         "runapp" => 1600,
         "createstate" => 1500,
         "build" => 1200,
@@ -493,14 +495,6 @@ fn pool_selector_signal_score(value: &str, library_lower: &str) -> i32 {
         "main" => 1800,
         _ => 0,
     };
-    if score == 0 {
-        return 0;
-    }
-    if library_lower.starts_with("package:flutter/") {
-        score /= 4;
-    } else if library_lower.starts_with("dart:") {
-        score /= 5;
-    }
     score
 }
 
@@ -632,7 +626,7 @@ fn build_target_va_priority_hints(model: &ProgramModel, hints: &ProgramHints) ->
     }
 
     for (target_va, value) in pool_code_selectors(model) {
-        let mut score = pool_selector_signal_score(value, "");
+        let mut score = pool_selector_signal_score(value);
         score += deep_link_signal_score(value);
         bump(target_va, score);
     }
