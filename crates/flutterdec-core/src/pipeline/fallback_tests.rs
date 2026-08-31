@@ -240,3 +240,31 @@ fn every_fallback_reason_carries_a_distinct_stable_token_and_detail() {
         );
     }
 }
+
+/// A snapshot built for another target recovers nothing rather than reading its
+/// instruction stream as AArch64.
+#[test]
+fn a_non_arm64_snapshot_recovers_no_candidates() {
+    let words = [PROLOGUE, NOP, NOP, RET, PROLOGUE_OFFSET, NOP, RET, NOP];
+    let mut bundle = bundle_with(stream(&words), 0x1000);
+    // Same bytes, same recovery, one field different.
+    let arm64 = core_recovered_model(&bundle, CoreFallbackReason::IdentityRejected)
+        .expect("core recovery");
+    assert_eq!(arm64.functions.len(), 2);
+
+    bundle.identity.target_arch = TargetArch::Unsupported("x64".to_string());
+    let other = core_recovered_model(&bundle, CoreFallbackReason::IdentityRejected)
+        .expect("core recovery");
+    assert!(
+        other.functions.is_empty(),
+        "an x64 instruction stream was read as AArch64"
+    );
+    assert_eq!(other.capabilities.functions, CapabilityLevel::Unavailable);
+    assert!(
+        other
+            .diagnostics
+            .iter()
+            .any(|d| d.message.contains("targets x64")),
+        "the model does not say why nothing was recovered"
+    );
+}
