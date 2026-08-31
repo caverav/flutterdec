@@ -874,19 +874,23 @@ fn check_addresses(model: &ProgramModel) -> Check {
                 id: u64::from(function.id.0),
             });
         }
-        let Some(region) = executable
-            .iter()
-            .find(|r| r.contains_range(function.code.start_va, function.code.size))
-        else {
+        let contained =
+            |r: &&InputRegion| r.contains_range(function.code.start_va, function.code.size);
+        if !executable.iter().any(contained) {
             return Err(ValidationError::CodeRangeOutsideExecutableRegions {
                 function: function.id.0,
                 start_va: function.code.start_va,
                 size: function.code.size,
             });
-        };
-        // The declared section base has to be the base of the region the code is
-        // actually in, or the producer and the host disagree about the layout.
-        if region.virtual_address != Some(function.code_section_va) {
+        }
+        // The declared section base has to name the region the code is actually
+        // in. Keying off the declared base rather than off whichever region
+        // happens to match first keeps this answer independent of region order.
+        let declared_holds_the_code = executable
+            .iter()
+            .filter(|r| r.virtual_address == Some(function.code_section_va))
+            .any(contained);
+        if !declared_holds_the_code {
             return Err(ValidationError::CodeSectionMismatch {
                 function: function.id.0,
                 code_section_va: function.code_section_va,

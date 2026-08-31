@@ -94,6 +94,12 @@ impl PoolGeometry {
     }
 }
 
+/// Legacy adapter output, superseded by [`model::ProgramModel`].
+///
+/// Kept only because the core, disassembler, and CLI still read it. It is not a
+/// v4 compatibility shim and must not become one: nothing converts between the
+/// two, and `model::ProgramModel::from_json` rejects any document this type can
+/// parse. Migrating the remaining consumers removes this type outright.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProgramModel {
     pub schema_version: u32,

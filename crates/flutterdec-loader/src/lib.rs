@@ -747,4 +747,223 @@ mod tests {
             Err(IdentityRejection::UnsupportedTarget("riscv64".to_string())),
         );
     }
+
+    /// Assemble a minimal ARM64 shared object carrying the four snapshot
+    /// symbols, so `load_snapshot_bundle` can be exercised on bytes rather than
+    /// on the header parser alone.
+    ///
+    /// The single `PT_LOAD` maps at address zero with file offset zero, which
+    /// makes a symbol's virtual address equal its file offset and keeps the
+    /// fixture readable. Only the pieces `goblin` needs to find a symbol table
+    /// are present: a program header, `.symtab`, `.strtab`, and `.shstrtab`.
+    fn synthetic_libapp(
+        vm_data: &[u8],
+        isolate_data: &[u8],
+        vm_instr: &[u8],
+        isolate_instr: &[u8],
+    ) -> Vec<u8> {
+        const EHDR: usize = 64;
+        const PHDR: usize = 56;
+        const SHDR: usize = 64;
+        const SYM: usize = 24;
+
+        let mut out = vec![0u8; 128];
+        let mut place = |out: &mut Vec<u8>, bytes: &[u8]| -> (u64, u64) {
+            let at = out.len() as u64;
+            out.extend_from_slice(bytes);
+            (at, bytes.len() as u64)
+        };
+        let spans = [
+            place(&mut out, vm_data),
+            place(&mut out, isolate_data),
+            place(&mut out, vm_instr),
+            place(&mut out, isolate_instr),
+        ];
+
+        let names = [
+            "_kDartVmSnapshotData",
+            "_kDartIsolateSnapshotData",
+            "_kDartVmSnapshotInstructions",
+            "_kDartIsolateSnapshotInstructions",
+        ];
+        let mut strtab = vec![0u8];
+        let mut name_offsets = Vec::new();
+        for name in names {
+            name_offsets.push(strtab.len() as u32);
+            strtab.extend_from_slice(name.as_bytes());
+            strtab.push(0);
+        }
+
+        // Index 0 is the reserved null symbol.
+        let mut symtab = vec![0u8; SYM];
+        for (index, (value, size)) in spans.iter().enumerate() {
+            symtab.extend_from_slice(&name_offsets[index].to_le_bytes());
+            symtab.push(0x11); // STB_GLOBAL | STT_OBJECT
+            symtab.push(0);
+            symtab.extend_from_slice(&1u16.to_le_bytes()); // any defined section
+            symtab.extend_from_slice(&value.to_le_bytes());
+            symtab.extend_from_slice(&size.to_le_bytes());
+        }
+
+        let mut shstrtab = vec![0u8];
+        let mut section_name = |shstrtab: &mut Vec<u8>, name: &str| -> u32 {
+            let at = shstrtab.len() as u32;
+            shstrtab.extend_from_slice(name.as_bytes());
+            shstrtab.push(0);
+            at
+        };
+        let symtab_name = section_name(&mut shstrtab, ".symtab");
+        let strtab_name = section_name(&mut shstrtab, ".strtab");
+        let shstrtab_name = section_name(&mut shstrtab, ".shstrtab");
+
+        let symtab_off = out.len() as u64;
+        out.extend_from_slice(&symtab);
+        let strtab_off = out.len() as u64;
+        out.extend_from_slice(&strtab);
+        let shstrtab_off = out.len() as u64;
+        out.extend_from_slice(&shstrtab);
+        let shoff = out.len() as u64;
+
+        let mut section =
+            |name: u32, kind: u32, offset: u64, size: u64, link: u32, entsize: u64| {
+                let mut hdr = Vec::with_capacity(SHDR);
+                hdr.extend_from_slice(&name.to_le_bytes());
+                hdr.extend_from_slice(&kind.to_le_bytes());
+                hdr.extend_from_slice(&0u64.to_le_bytes()); // flags
+                hdr.extend_from_slice(&0u64.to_le_bytes()); // addr
+                hdr.extend_from_slice(&offset.to_le_bytes());
+                hdr.extend_from_slice(&size.to_le_bytes());
+                hdr.extend_from_slice(&link.to_le_bytes());
+                hdr.extend_from_slice(&0u32.to_le_bytes()); // info
+                hdr.extend_from_slice(&1u64.to_le_bytes()); // addralign
+                hdr.extend_from_slice(&entsize.to_le_bytes());
+                out.extend_from_slice(&hdr);
+            };
+        section(0, 0, 0, 0, 0, 0); // SHT_NULL
+        section(
+            symtab_name,
+            2,
+            symtab_off,
+            symtab.len() as u64,
+            2,
+            SYM as u64,
+        ); // SHT_SYMTAB
+        section(strtab_name, 3, strtab_off, strtab.len() as u64, 0, 0); // SHT_STRTAB
+        section(shstrtab_name, 3, shstrtab_off, shstrtab.len() as u64, 0, 0);
+
+        let total = out.len() as u64;
+
+        let mut header = Vec::with_capacity(EHDR);
+        header.extend_from_slice(&[0x7f, b'E', b'L', b'F', 2, 1, 1, 0]);
+        header.extend_from_slice(&[0u8; 8]);
+        header.extend_from_slice(&3u16.to_le_bytes()); // ET_DYN
+        header.extend_from_slice(&183u16.to_le_bytes()); // EM_AARCH64
+        header.extend_from_slice(&1u32.to_le_bytes()); // version
+        header.extend_from_slice(&0u64.to_le_bytes()); // entry
+        header.extend_from_slice(&(EHDR as u64).to_le_bytes()); // phoff
+        header.extend_from_slice(&shoff.to_le_bytes());
+        header.extend_from_slice(&0u32.to_le_bytes()); // flags
+        header.extend_from_slice(&(EHDR as u16).to_le_bytes());
+        header.extend_from_slice(&(PHDR as u16).to_le_bytes());
+        header.extend_from_slice(&1u16.to_le_bytes()); // phnum
+        header.extend_from_slice(&(SHDR as u16).to_le_bytes());
+        header.extend_from_slice(&4u16.to_le_bytes()); // shnum
+        header.extend_from_slice(&3u16.to_le_bytes()); // shstrndx
+        out[..EHDR].copy_from_slice(&header);
+
+        // One PT_LOAD covering the file at address zero.
+        let mut phdr = Vec::with_capacity(PHDR);
+        phdr.extend_from_slice(&1u32.to_le_bytes()); // PT_LOAD
+        phdr.extend_from_slice(&5u32.to_le_bytes()); // R+X
+        phdr.extend_from_slice(&0u64.to_le_bytes()); // offset
+        phdr.extend_from_slice(&0u64.to_le_bytes()); // vaddr
+        phdr.extend_from_slice(&0u64.to_le_bytes()); // paddr
+        phdr.extend_from_slice(&total.to_le_bytes()); // filesz
+        phdr.extend_from_slice(&total.to_le_bytes()); // memsz
+        phdr.extend_from_slice(&0x1000u64.to_le_bytes()); // align
+        out[EHDR..EHDR + PHDR].copy_from_slice(&phdr);
+
+        out
+    }
+
+    fn load_synthetic(vm_data: &[u8]) -> super::SnapshotBundle {
+        let bytes = synthetic_libapp(vm_data, &[0u8; 32], &[0x1fu8; 16], &[0x2fu8; 16]);
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("libapp.so");
+        std::fs::write(&path, &bytes).expect("write libapp");
+        super::load_snapshot_bundle(&path).expect("load synthetic libapp")
+    }
+
+    /// The identity a real load produces, not just the one the header parser
+    /// returns. This is the wiring that decides what every downstream
+    /// compatibility check sees.
+    #[test]
+    fn loading_a_real_container_produces_the_header_identity() {
+        let bundle = load_synthetic(&snapshot_blob(AOT_HASH, AOT_FEATURES));
+
+        assert_eq!(bundle.identity.hash.as_deref(), Some(AOT_HASH));
+        assert_eq!(bundle.identity.hash_source, HashSource::Header);
+        assert_eq!(bundle.identity.kind, Some(SnapshotKind::FullAot));
+        assert_eq!(bundle.identity.target_arch, TargetArch::Arm64);
+        assert_eq!(
+            bundle.identity.pointer_compression,
+            PointerCompression::Compressed
+        );
+        assert!(bundle.identity.exact_selection_key().is_ok());
+
+        // The flattened fields are views of the identity, so they cannot drift.
+        assert_eq!(bundle.snapshot_hash, AOT_HASH);
+        assert_eq!(bundle.arch, "arm64");
+        assert_eq!(bundle.snapshot_features.as_deref(), Some(AOT_FEATURES));
+        assert_eq!(bundle.compressed_pointers, Some(true));
+    }
+
+    /// A JIT snapshot loads fine and is refused at the gate rather than at the
+    /// parser, which is what keeps the refusal explainable.
+    #[test]
+    fn loading_a_jit_container_stops_at_the_gate_not_the_loader() {
+        let bundle = load_synthetic(&snapshot_blob_of_kind(AOT_HASH, AOT_FEATURES, 2));
+        assert_eq!(bundle.identity.kind, Some(SnapshotKind::FullJit));
+        assert_eq!(
+            bundle.identity.exact_selection_key(),
+            Err(IdentityRejection::NotFullAot(Some(SnapshotKind::FullJit)))
+        );
+    }
+
+    /// With no parseable header, the loader falls back to a byte scan. The hash
+    /// it finds is recorded as scanned, so it reaches the gate and is refused
+    /// instead of quietly selecting a parser.
+    #[test]
+    fn a_container_without_a_header_falls_back_to_a_scan_that_cannot_select() {
+        let mut data = vec![0u8; 16];
+        data.extend_from_slice(AOT_HASH.as_bytes());
+        data.extend_from_slice(b"product no-code_comments arm64\0");
+        let bundle = load_synthetic(&data);
+
+        assert_eq!(bundle.identity.hash.as_deref(), Some(AOT_HASH));
+        assert_eq!(bundle.identity.hash_source, HashSource::Scan);
+        assert_eq!(bundle.identity.kind, None);
+        assert_eq!(bundle.snapshot_features, None);
+        assert_eq!(bundle.compressed_pointers, None);
+        assert_eq!(
+            bundle.identity.exact_selection_key(),
+            Err(IdentityRejection::HashNotHeaderDerived(HashSource::Scan))
+        );
+    }
+
+    /// Nothing hash-shaped anywhere: the hash is unavailable rather than a
+    /// string that later compares against a registry key.
+    #[test]
+    fn a_container_with_no_hash_at_all_reports_it_as_unavailable() {
+        let bundle = load_synthetic(&[0x5au8; 256]);
+        assert_eq!(bundle.identity.hash, None);
+        assert_eq!(bundle.identity.hash_source, HashSource::Unavailable);
+        assert_eq!(bundle.snapshot_hash, "unknown");
+        assert_eq!(
+            bundle.identity.exact_selection_key(),
+            Err(IdentityRejection::HashNotHeaderDerived(
+                HashSource::Unavailable
+            ))
+        );
+    }
 }
