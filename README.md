@@ -168,6 +168,10 @@ If adapter metadata is available, `info` also reports package and compatibility 
 - `identity_rejection` (why no adapter could be selected, when none could)
 - `model_capabilities`
 - `compatibility_warnings`
+- `provider` (one block: requested and resolved backend, whether an adapter was
+  executed at all and why not, host and target architectures, the producer and
+  its artifact digest, the parser family, profile and artifact the registry
+  named, and the containment the child reported)
 
 2. Install the adapter for the detected Dart hash:
 
@@ -373,16 +377,26 @@ flutterdec decompile ./sample.apk -o ./out --analysis-profile light
 
 Adapter backend selection:
 
-- `--adapter-backend auto` (default): try r2flutter, then Blutter, then fall back to the internal adapter
-- `--adapter-backend internal`: force the internal adapter only
+- `--adapter-backend auto` (default): try r2flutter, then Blutter, then the producer's internal path
+- `--adapter-backend internal`: recover in core; select nothing, read no registry, execute nothing
 - `--adapter-backend blutter`: require the Blutter backend and fail if unavailable
 - `--adapter-backend r2-flutter`: require the r2flutter backend and fail if unavailable
+- `--adapter-timeout <SECONDS>`: bound one adapter invocation
 - `--require-snapshot-hash-match`: fail unless the snapshot identity came from a real header
+
+A snapshot nothing is authorized to parse does not end the run. Core recovers
+ARM64 code candidates from the instruction bytes, marks every one of them
+heuristic and unnamed, and leaves libraries, classes, function names, the
+original entry function and the ObjectPool unavailable with a diagnostic each.
+`core_fallback_reason` says which condition it was. A pinned external backend is
+refused by name instead, and an adapter that was authorized, ran, and failed is
+still a failure. See [Core recovery](docs/cli-reference.md#core-recovery).
 
 What the backends actually recover:
 
 | Backend | Function names | Classes | ObjectPool |
 | --- | --- | --- | --- |
+| core recovery | none at all; code ranges are unnamed | none | unavailable |
 | `internal` | none at all; code ranges are unnamed | none | carved strings, ordinal index space |
 | `blutter` | scraped from Blutter's rendered source, heuristic | yes | Blutter `pp.txt` entries, ordinal index space |
 | `r2flutter` | exact, from the AOT instruction table | yes, library attribution unavailable | real slots, resolvable from `x27` displacements |

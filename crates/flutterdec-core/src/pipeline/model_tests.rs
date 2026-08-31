@@ -52,10 +52,11 @@ impl SpyRepo {
         let dir = TempDir::new().expect("tempdir");
         let root = dir.path().to_path_buf();
         let marker = root.join("adapter_ran.marker");
-        fs::create_dir_all(root.join("adapters/installed")).expect("mkdir installed");
+        fs::create_dir_all(root.join("artifacts")).expect("mkdir artifacts");
+        fs::create_dir_all(root.join("adapters")).expect("mkdir adapters");
         fs::write(root.join("adapters/registry.json"), registry).expect("write registry");
 
-        let exec = root.join(format!("adapters/installed/dart_adapter_{}", HASH));
+        let exec = root.join("artifacts/flutterdec-spy");
         fs::write(
             &exec,
             format!(
@@ -102,7 +103,7 @@ impl SpyRepo {
 
         let exec_path = self
             .root
-            .join(format!("adapters/installed/dart_adapter_{}", HASH));
+            .join("artifacts/flutterdec-spy".to_string());
         let exec_bytes = fs::read(&exec_path).expect("read spy adapter");
         let features = vec![
             "android".to_string(),
@@ -139,7 +140,7 @@ impl SpyRepo {
                 variants: vec![HostArtifactVariant {
                     host_os: std::env::consts::OS.to_string(),
                     host_arch: std::env::consts::ARCH.to_string(),
-                    path: format!("adapters/installed/dart_adapter_{}", HASH),
+                    path: "artifacts/flutterdec-spy".to_string(),
                     size: exec_bytes.len() as u64,
                     sha256: Sha256Digest::of(&exec_bytes).to_string(),
                     provenance: "unit fixture".to_string(),
@@ -453,7 +454,7 @@ fn run_adapter_refuses_a_rejected_identity_before_spawn() {
     let record = repo.record.clone().expect("the valid registry has a record");
     let exec = repo
         .root
-        .join(format!("adapters/installed/dart_adapter_{}", HASH));
+        .join("artifacts/flutterdec-spy".to_string());
     let profile_path = repo.root.join("data/test-profile.json");
 
     let err = run_adapter(

@@ -106,7 +106,7 @@ echo "[release-layout-smoke] list reports the installed adapter verified"
 
 store="$home/.local/share/flutterdec/adapters"
 [[ -d "$store" ]] || fail "no writable store under the isolated HOME"
-[[ -n "$(find "$store" -type f -name 'dart_adapter_*' -print -quit)" ]] ||
+[[ -n "$(find "$store/artifacts" -type f -print -quit 2>/dev/null)" ]] ||
   fail "the store holds no published artifact"
 
 # Nothing above may have touched the checkout.
