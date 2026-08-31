@@ -106,13 +106,13 @@ pub(crate) fn run(mut command: Command, limits: &Limits) -> Result<Execution, Ho
 
     let started = Instant::now();
     let mut completion = None;
-    let mut tree_killed = false;
+    let mut terminated = false;
     loop {
         match child.try_wait() {
             Ok(Some(status)) => {
                 // Reaped. Sweep the group before anything else so an abandoned
                 // grandchild cannot outlive the run or hold the pipes open.
-                tree_killed |= kill_tree(pid);
+                kill_tree(pid);
                 completion = Some(match status.code() {
                     Some(code) => Completion::Exited { code },
                     None => Completion::Signalled {
@@ -149,7 +149,8 @@ pub(crate) fn run(mut command: Command, limits: &Limits) -> Result<Execution, Ho
         if completion.is_some() {
             // The group first, so a fork bomb loses its members before the
             // leader is reaped and the pid is free to be reused.
-            tree_killed |= kill_tree(pid);
+            terminated = true;
+            kill_tree(pid);
             let _ = child.kill();
             let _ = child.wait();
             break;
@@ -167,6 +168,6 @@ pub(crate) fn run(mut command: Command, limits: &Limits) -> Result<Execution, Ho
         completion: completion.expect("the loop only exits with a completion"),
         stdout,
         stderr,
-        containment: containment.collect(tree_killed),
+        containment: containment.collect(terminated),
     })
 }
