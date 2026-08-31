@@ -10,6 +10,7 @@ use zip::ZipArchive;
 
 pub mod dart_profile;
 pub mod identity;
+pub mod layout;
 pub mod registry;
 
 use dart_profile::ResolvedDartProfile;
