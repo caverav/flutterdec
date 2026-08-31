@@ -30,9 +30,11 @@ If adapter metadata is available, JSON output also includes app-package hints:
 
 - `app_package_count_total`
 - `app_package_counts_top`
-- `adapter_kind`
+- `requested_backend`, `resolved_backend`, `backend_fallback_reason`
+- `producer_id`, `producer_trust`, `compatibility_record_sha256`
 - `manifest_entry_present`
-- `adapter_snapshot_hash_match`
+- `snapshot_identity_is_exact`
+- `model_capabilities`
 - `compatibility_warnings`
 
 ## `flutterdec decompile`

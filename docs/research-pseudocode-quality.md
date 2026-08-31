@@ -2308,7 +2308,8 @@ carried. Here the schema is the tighter constraint:
 | pool entries | base required, semantic optional | 19,872 carved strings, `source=internal`, confidence 0.4; target VA **0**, owner class **0** | 19,156; target VA **0**, owner **0** |
 | pool geometry | optional; required to claim hardware indices | **absent** | **absent** |
 
-`ClassInfo` in `schemas/adapter.schema.json:36-48` defines exactly `id`, `name`, `super`,
+`ClassInfo` in the then-current `schemas/adapter.schema.json` (removed with the v4
+cutover) defined exactly `id`, `name`, `super`,
 `lib`, and the Rust deserializer mirrors that surface with no class-field, field-offset or
 method-table member. An exhaustive recursive raw-JSON audit of both captured models found
 only `classes[].{id,lib,name,super}`: no differently-spelled or nested field list, so this
