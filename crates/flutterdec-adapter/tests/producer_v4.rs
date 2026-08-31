@@ -15,12 +15,11 @@
 mod support;
 
 use flutterdec_adapter::model::{
-    CapabilityLevel, Domain, PoolIndexSpace, Producer, ProducerTrust, ProgramModel, Provenance,
+    CapabilityLevel, Domain, InputRegionName, PoolIndexSpace, ProducerTrust, ProgramModel,
+    Provenance,
 };
-use flutterdec_adapter::model::{CompatibilityBinding, InputRegionName};
-use flutterdec_adapter::primitives::Sha256Digest;
 use flutterdec_adapter::protocol::{BackendId, RequestedBackend};
-use flutterdec_adapter::{run_adapter, AdapterInput, AdapterRegionInput, AdapterRun};
+use flutterdec_adapter::{run_adapter, AdapterInput, AdapterRegionInput, AdapterRun, Limits};
 use flutterdec_loader::identity::SnapshotIdentity;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -42,61 +41,22 @@ fn repo_root() -> PathBuf {
         .expect("canonicalize repo root")
 }
 
-/// A scratch directory with the real producer published under it.
-struct Installed {
-    _dir: TempDir,
-    exec: PathBuf,
-}
-
-fn install(hash: &str) -> Installed {
-    install_named(hash, None)
+/// The real producer, published as the artifact a registry record authorizes.
+fn install(identity: &SnapshotIdentity) -> support::Authorized {
+    install_named(identity, None)
 }
 
 /// Install under an arbitrary adapter file name.
 ///
 /// Used to prove that a deliberately misleading filename changes nothing: the
-/// resolved backend comes from the protocol result, not from the path.
-fn install_named(hash: &str, file_name: Option<&str>) -> Installed {
-    let dir = TempDir::new().expect("tempdir");
-    let root = dir.path();
-    let name = match file_name {
-        Some(name) => name.to_string(),
-        None => format!("dart_adapter_{hash}"),
-    };
-    // The checked-in producer is self-contained, so publishing it *is* the
-    // install: one file, one digest, no companion library to keep in step.
-    fs::create_dir_all(root.join("artifacts")).expect("mkdir artifacts");
-    let exec = root.join("artifacts").join(name);
-    fs::copy(
-        repo_root().join("adapters/python/adapter_template.py"),
-        &exec,
+/// resolved backend comes from the protocol result, not from the path, and the
+/// record authorizes the path rather than the path authorizing itself.
+fn install_named(identity: &SnapshotIdentity, file_name: Option<&str>) -> support::Authorized {
+    support::Authorized::install_named(
+        &repo_root().join("adapters/python/adapter_template.py"),
+        identity,
+        file_name,
     )
-    .expect("copy producer");
-    set_executable(&exec);
-    Installed { _dir: dir, exec }
-}
-
-/// The host's own producer record.
-///
-/// `Local` is not a judgement call here: `run_adapter` refuses any identity that
-/// did not clear the exact-selection gate, so every run that happens at all is
-/// one a locally installed adapter was authorized for.
-fn producer(exec: &Path) -> Producer {
-    Producer {
-        id: "flutterdec-local-python".to_string(),
-        version: "unknown".to_string(),
-        artifact_sha256: Sha256Digest::of(&fs::read(exec).expect("read adapter artifact")),
-        trust: ProducerTrust::Local,
-    }
-}
-
-fn compatibility() -> CompatibilityBinding {
-    CompatibilityBinding {
-        record_sha256: Sha256Digest::of(b"producer test record"),
-        parser_family_id: "flutterdec-local-python".to_string(),
-        profile_id: "unresolved".to_string(),
-        profile_sha256: Sha256Digest::of(b"producer test profile"),
-    }
 }
 
 struct Snapshot {
@@ -148,7 +108,7 @@ fn regions(snapshot: &Snapshot) -> Vec<AdapterRegionInput<'_>> {
 }
 
 fn run(
-    installed: &Installed,
+    installed: &support::Authorized,
     identity: &SnapshotIdentity,
     snapshot: &Snapshot,
     backend: RequestedBackend,
@@ -157,15 +117,17 @@ fn run(
         &installed.exec,
         &AdapterInput {
             identity,
-            producer: producer(&installed.exec),
-            compatibility: compatibility(),
+            authorization: installed.authorization(),
+            producer: installed.producer(),
+            compatibility: installed.binding(),
             regions: regions(snapshot),
             input_path: None,
-            libapp_path: None,
+            libapp: None,
             requested_backend: backend,
+            limits: Limits::default(),
         },
     )
-    .map_err(|err| format!("{err:#}"))
+    .map_err(|err| err.to_string())
 }
 
 /// Strings that would be fabrications if they appeared anywhere in the model.
@@ -227,8 +189,8 @@ fn assert_unavailable_domains_are_explained(model: &ProgramModel) {
 
 #[test]
 fn a_snapshot_with_nothing_in_it_yields_unavailable_domains_and_no_invented_records() {
-    let installed = install("deadbeefdeadbeefdeadbeefdeadbeef");
     let identity = support::identity();
+    let installed = install(&identity);
     let run = run(
         &installed,
         &identity,
@@ -275,8 +237,8 @@ fn a_snapshot_with_nothing_in_it_yields_unavailable_domains_and_no_invented_reco
 
 #[test]
 fn heuristic_code_ranges_are_labelled_heuristic_and_stay_unnamed() {
-    let installed = install("deadbeefdeadbeefdeadbeefdeadbeef");
     let identity = support::identity();
+    let installed = install(&identity);
     let mut snapshot = empty_snapshot();
     // Three prologues in the isolate instruction image, so the scanner has
     // something to find and the domain comes back partial rather than empty.
@@ -329,8 +291,8 @@ fn heuristic_code_ranges_are_labelled_heuristic_and_stay_unnamed() {
 
 #[test]
 fn carved_strings_become_ordinal_pool_entries_never_hardware_ones() {
-    let installed = install("deadbeefdeadbeefdeadbeefdeadbeef");
     let identity = support::identity();
+    let installed = install(&identity);
     let mut snapshot = empty_snapshot();
     snapshot.isolate_data = b"package:sample/widgets/home.dart\0onPressed\0Scaffold\0".to_vec();
 
@@ -387,8 +349,8 @@ fn carved_strings_become_ordinal_pool_entries_never_hardware_ones() {
 
 #[test]
 fn a_pinned_backend_that_cannot_run_fails_instead_of_falling_back() {
-    let installed = install("deadbeefdeadbeefdeadbeefdeadbeef");
     let identity = support::identity();
+    let installed = install(&identity);
     // r2flutter is not on PATH in this environment, and the input path the
     // backend needs is absent, so it cannot run. Pinned means it must fail.
     let err = run(
@@ -406,8 +368,8 @@ fn a_pinned_backend_that_cannot_run_fails_instead_of_falling_back() {
 
 #[test]
 fn auto_falls_back_to_internal_and_says_why() {
-    let installed = install("deadbeefdeadbeefdeadbeefdeadbeef");
     let identity = support::identity();
+    let installed = install(&identity);
     let run = run(
         &installed,
         &identity,
@@ -434,7 +396,7 @@ fn a_misleading_adapter_filename_cannot_change_the_resolved_backend() {
         "internal_but_actually_r2flutter",
         "snapshot_serwalker",
     ] {
-        let installed = install_named("deadbeefdeadbeefdeadbeefdeadbeef", Some(name));
+        let installed = install_named(&identity, Some(name));
         let run = run(
             &installed,
             &identity,
@@ -449,8 +411,8 @@ fn a_misleading_adapter_filename_cannot_change_the_resolved_backend() {
         );
         assert_eq!(
             run.model.producer.trust,
-            ProducerTrust::Local,
-            "trust is host-assigned; a filename cannot raise it"
+            ProducerTrust::Registered,
+            "trust is host-assigned; a filename cannot change it"
         );
     }
 }
@@ -505,10 +467,8 @@ pathlib.Path(args.result).write_text(json.dumps({
     set_executable(&exec);
 
     let identity = support::identity();
-    let installed = Installed {
-        _dir: dir,
-        exec: exec.clone(),
-    };
+    let installed = support::Authorized::install_named(&exec, &identity, Some("legacy_adapter"));
+    drop(dir);
     let err = run(
         &installed,
         &identity,
@@ -591,11 +551,17 @@ asm.mkdir(parents=True, exist_ok=True)
     .expect("write adapter exec");
     set_executable(&exec);
 
-    let installed = Installed {
-        _dir: dir,
-        exec: exec.clone(),
-    };
     let identity = support::identity();
+    let installed = support::Authorized::install_named(&exec, &identity, Some("blutter_adapter"));
+    // The wrapper resolves the producer library relative to its own parent's
+    // parent, so the library has to sit beside the published artifact's
+    // directory rather than beside the copy it was made from.
+    fs::create_dir_all(installed.store_root.join("python")).expect("mkdir published python");
+    fs::copy(
+        repo_root().join("adapters/python/adapter_template.py"),
+        installed.store_root.join("python/adapter_template.py"),
+    )
+    .expect("publish producer library");
     let mut snapshot = empty_snapshot();
     snapshot.isolate_instr = RET.repeat(16);
     let input = root.join("app.apk");
@@ -605,15 +571,17 @@ asm.mkdir(parents=True, exist_ok=True)
         &installed.exec,
         &AdapterInput {
             identity: &identity,
-            producer: producer(&installed.exec),
-            compatibility: compatibility(),
+            authorization: installed.authorization(),
+            producer: installed.producer(),
+            compatibility: installed.binding(),
             regions: regions(&snapshot),
             input_path: Some(&input),
-            libapp_path: None,
+            libapp: None,
             requested_backend: RequestedBackend::Fixed(BackendId::Blutter),
+            limits: Limits::default(),
         },
     )
-    .map_err(|err| format!("{err:#}"))
+    .map_err(|err| err.to_string())
     .expect("blutter bridge runs");
 
     assert_eq!(run.resolved_backend, BackendId::Blutter);

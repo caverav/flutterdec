@@ -34,6 +34,9 @@ const FEATURES: &str = "product no-code_comments arm64 android compressed-pointe
 struct SpyRepo {
     _dir: TempDir,
     root: PathBuf,
+    /// The record the valid registry declares, kept so a test can hand the
+    /// library boundary the same authorization the pipeline would build.
+    record: Option<CompatibilityRecord>,
     /// The spy repo doubles as both roots: package data and adapter store point
     /// at the same directory, so the rigging stays one tree.
     layout: Layout,
@@ -67,6 +70,7 @@ impl SpyRepo {
         Self {
             _dir: dir,
             root,
+            record: None,
             layout,
             marker,
         }
@@ -76,7 +80,7 @@ impl SpyRepo {
         self.marker.exists()
     }
 
-    fn write_valid_registry(&self) {
+    fn write_valid_registry(&mut self) {
         let profile_bytes = serde_json::to_vec_pretty(&serde_json::json!({
             "profiles": {
                 "test-profile": {
@@ -148,6 +152,7 @@ impl SpyRepo {
             protocol_major: 1,
             model_major: flutterdec_adapter::model::MODEL_VERSION,
         };
+        self.record = Some(record.clone());
         let registry = CompatibilityRegistry {
             version: 1,
             records: vec![record],
@@ -165,7 +170,7 @@ fn poisoned_registry_repo() -> SpyRepo {
 }
 
 fn valid_registry_repo() -> SpyRepo {
-    let repo = SpyRepo::new("{}");
+    let mut repo = SpyRepo::new("{}");
     repo.write_valid_registry();
     repo
 }
@@ -175,6 +180,7 @@ fn bundle(identity: SnapshotIdentity) -> SnapshotBundle {
     SnapshotBundle {
         input_path: PathBuf::from("/nonexistent/app.apk"),
         libapp_path: PathBuf::from("/nonexistent/libapp.so"),
+        libapp_entry: None,
         arch: identity.target_arch.as_str().to_string(),
         snapshot_hash: identity.hash.clone().unwrap_or_default(),
         vm_data: vec![0u8; 64],
@@ -319,16 +325,30 @@ fn a_rejected_identity_is_not_downgraded_to_an_untrusted_run() {
 
 /// The library boundary states the same rule for itself: a caller that skipped
 /// the core pipeline still cannot spawn an adapter for a rejected identity.
+///
+/// Every other fact handed in is deliberately wrong: an untrusted producer, a
+/// digest for bytes that were never read, and a binding that belongs to no
+/// record. The identity gate is first, so it is the one that answers.
 #[test]
 fn run_adapter_refuses_a_rejected_identity_before_spawn() {
     let repo = valid_registry_repo();
     let bundle = bundle(full_jit());
-    let exec = repo.root.join(format!("adapters/installed/dart_adapter_{}", HASH));
+    let record = repo.record.clone().expect("the valid registry has a record");
+    let exec = repo
+        .root
+        .join(format!("adapters/installed/dart_adapter_{}", HASH));
+    let profile_path = repo.root.join("data/test-profile.json");
 
     let err = run_adapter(
         &exec,
         &AdapterInput {
             identity: &bundle.identity,
+            authorization: HostAuthorization {
+                record: &record,
+                variant: &record.artifact.variants[0],
+                store_root: repo.layout.store_dir(),
+                profile_path: &profile_path,
+            },
             producer: Producer {
                 id: "flutterdec-local-python".to_string(),
                 version: "unknown".to_string(),
@@ -364,15 +384,21 @@ fn run_adapter_refuses_a_rejected_identity_before_spawn() {
                 },
             ],
             input_path: None,
-            libapp_path: None,
+            libapp: None,
             requested_backend: RequestedBackend::Auto,
+            limits: Limits::default(),
         },
     )
-        .expect_err("run_adapter cannot run a rejected identity");
+    .expect_err("run_adapter cannot run a rejected identity");
 
     assert_eq!(
-        rejection(&err),
-        IdentityRejection::NotFullAot(Some(SnapshotKind::FullJit))
+        err,
+        HostError::IdentityRejected(IdentityRejection::NotFullAot(Some(SnapshotKind::FullJit))),
+        "the identity gate must answer before any other fact is looked at"
+    );
+    assert!(
+        err.is_pre_spawn(),
+        "an identity rejection is a refusal, not a failed run"
     );
     assert!(
         !repo.spawned(),
