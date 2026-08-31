@@ -160,12 +160,12 @@
                     executable: true,
                 }],
             },
-            compatibility: CompatibilityBinding {
+            compatibility: Some(CompatibilityBinding {
                 record_sha256: digest.clone(),
                 parser_family_id: "fixture".to_string(),
                 profile_id: "fixture".to_string(),
                 profile_sha256: digest,
-            },
+            }),
             capabilities: Capabilities {
                 libraries: CapabilityLevel::Partial,
                 classes: CapabilityLevel::Partial,
@@ -252,6 +252,7 @@
             std::path::Path::new("./out/report.json"),
             std::path::Path::new("libapp.so"),
             Some(AdapterBackend::Internal),
+            None,
             &symbol_quality_counts,
         );
 
@@ -535,17 +536,18 @@
             vec![cls(0, "AppRoot", Some(0))],
             vec![
                 fun(0, named("main"), Some(0), 0x1000, 16),
-                // No library, no owner, no name: three separate unknowns, and
-                // the descriptor says so with three empty segments rather than
-                // inventing `UnknownOwner::sub_2000`.
+                // No library, no owner, no name: nothing that survives a
+                // rebuild, so it is counted as uncomparable rather than folded
+                // into a `::` descriptor that reads as one unchanged function.
                 fun(1, None, None, 0x2000, 16),
             ],
             ordinal_pool(Vec::new()),
         );
 
-        let descriptors = collect_function_descriptors(&model);
+        let (descriptors, uncomparable) = collect_function_descriptors(&model);
         assert!(descriptors.contains("package:spotube/main.dart::AppRoot::main"));
-        assert!(descriptors.contains("::::"));
+        assert!(!descriptors.contains("::"));
+        assert_eq!(uncomparable, 1);
     }
 
     #[test]
@@ -560,10 +562,11 @@
             ordinal_pool(Vec::new()),
         );
 
-        let descriptors = collect_function_descriptors(&model);
+        let (descriptors, uncomparable) = collect_function_descriptors(&model);
         assert!(descriptors.contains(
             "file:///.dart_tool/flutter_build/dart_plugin_registrant.dart::_PluginRegistrant::register"
         ));
+        assert_eq!(uncomparable, 0);
     }
 
     #[test]
@@ -586,7 +589,7 @@
 
     #[test]
     fn collects_compatibility_warnings_from_flags() {
-        let warnings = collect_compatibility_warnings(false, false, true);
+        let warnings = collect_compatibility_warnings(false, false, true, None);
         assert_eq!(warnings.len(), 3);
         assert!(warnings
             .iter()
@@ -598,8 +601,20 @@
             .iter()
             .any(|w| w.contains("backend differs")));
 
-        let warnings = collect_compatibility_warnings(true, true, false);
+        let warnings = collect_compatibility_warnings(true, true, false, None);
         assert!(warnings.is_empty());
+
+        // A core fallback is the loudest of the four: it says nothing parsed
+        // the snapshot, and what that costs.
+        let warnings = collect_compatibility_warnings(
+            true,
+            true,
+            false,
+            Some(CoreFallbackReason::NoCompatibilityRecord),
+        );
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("no compatibility record matches"));
+        assert!(warnings[0].contains("no authoritative ObjectPool index space"));
     }
 
     /// The resolved backend is whatever the protocol result named, mapped
@@ -619,9 +634,6 @@
             backend_from_id(BackendId::Internal),
             AdapterBackend::Internal
         );
-        assert_eq!(backend_label(Some(AdapterBackend::Internal)), "internal");
-        assert_eq!(backend_label(Some(AdapterBackend::Blutter)), "blutter");
-        assert_eq!(backend_label(None), "unknown");
     }
 
     /// A pinned backend maps to a `Fixed` request, which the protocol refuses to
@@ -1553,7 +1565,7 @@
                 identity: identity.clone(),
                 regions: regions.clone(),
             },
-            compatibility: compatibility.clone(),
+            compatibility: Some(compatibility.clone()),
             capabilities,
             libraries,
             classes,
@@ -1565,7 +1577,7 @@
         let host = HostSelectedContext {
             identity,
             producer,
-            compatibility,
+            compatibility: Some(compatibility),
             regions,
         };
         (model, host)

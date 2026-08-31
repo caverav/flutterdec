@@ -123,32 +123,39 @@
       "type": "array"
     },
     "compatibility": {
-      "additionalProperties": false,
-      "properties": {
-        "parser_family_id": {
-          "minLength": 1,
-          "type": "string"
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "parser_family_id": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "profile_id": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "profile_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "record_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "record_sha256",
+            "parser_family_id",
+            "profile_id",
+            "profile_sha256"
+          ],
+          "type": "object"
         },
-        "profile_id": {
-          "minLength": 1,
-          "type": "string"
-        },
-        "profile_sha256": {
-          "pattern": "^[0-9a-f]{64}$",
-          "type": "string"
-        },
-        "record_sha256": {
-          "pattern": "^[0-9a-f]{64}$",
-          "type": "string"
+        {
+          "type": "null"
         }
-      },
-      "required": [
-        "record_sha256",
-        "parser_family_id",
-        "profile_id",
-        "profile_sha256"
-      ],
-      "type": "object"
+      ]
     },
     "diagnostics": {
       "items": {

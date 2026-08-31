@@ -354,6 +354,13 @@ fn a_model_cannot_change_a_host_selected_fact() {
                 v["compatibility"]["profile_sha256"] = json!(support::digest("other").to_string())
             }),
         ),
+        // `null` is a legal binding for a model the host recovered itself, and
+        // it is exactly the wrong answer to an adapter request: the record that
+        // authorized the run is the one thing the model may not drop.
+        (
+            "compatibility binding presence",
+            Box::new(|v: &mut Value| v["compatibility"] = Value::Null),
+        ),
     ];
 
     for (field, mutate) in cases {
@@ -1176,7 +1183,7 @@ fn the_schema_pins_the_model_version() {
 /// did: file every such class under an invented library URI.
 #[test]
 fn a_class_with_no_recovered_library_is_valid() {
-    let mut model = support::maximal_model();
+    let mut model = maximal_model();
     model.libraries.clear();
     model.capabilities.libraries = CapabilityLevel::Unavailable;
     model.diagnostics.push(Diagnostic::unavailable(
@@ -1189,4 +1196,35 @@ fn a_class_with_no_recovered_library_is_valid() {
     let parsed = parse_and_validate(&model.to_canonical_json()).expect("valid without libraries");
     assert!(parsed.classes.iter().all(|c| c.library.is_none()));
     assert_eq!(parsed.class_library_uri(ClassId(2)), None);
+}
+
+/// A model with no compatibility binding is well-formed, and is only accepted
+/// by a host that had no record to hand it.
+///
+/// The two halves matter together: parsing has to allow `null` so a
+/// core-recovered model is expressible at all, and validation has to keep the
+/// binding mandatory for every run that had one.
+#[test]
+fn an_unbound_model_is_accepted_only_where_no_record_authorized_the_run() {
+    let mut model = maximal_model();
+    model.compatibility = None;
+    let bytes = model.to_canonical_json();
+
+    let parsed = ProgramModel::from_json(&bytes).expect("null compatibility is a valid v4 model");
+    assert_eq!(parsed.compatibility, None);
+
+    let unbound_host = flutterdec_adapter::validate::HostSelectedContext {
+        compatibility: None,
+        ..host()
+    };
+    validate(&parsed, &unbound_host)
+        .expect("a host with no record accepts a model with no binding");
+
+    // And the same model against a host that did select a record.
+    assert_eq!(
+        validate(&parsed, &host()),
+        Err(ValidationError::HostFactMismatch {
+            field: "compatibility binding presence"
+        })
+    );
 }
