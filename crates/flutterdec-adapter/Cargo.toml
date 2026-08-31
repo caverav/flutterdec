@@ -9,3 +9,5 @@ anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tempfile.workspace = true
+sha2.workspace = true
+flutterdec-loader = { path = "../flutterdec-loader" }
