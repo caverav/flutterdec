@@ -519,8 +519,11 @@ sidecar("probe").write_text(json.dumps({
     "env": dict(os.environ),
     "fds": visible,
     "inputs_writable": inputs_writable,
-    "home": os.environ.get("HOME"),
-    "tmpdir": os.environ.get("TMPDIR"),
+    # Resolved, because `os.getcwd()` above is resolved too and Darwin's
+    # temporary directory lives behind a `/var` -> `/private/var` symlink. Two
+    # spellings of one directory would fail a containment check that is true.
+    "home": os.path.realpath(os.environ["HOME"]) if "HOME" in os.environ else None,
+    "tmpdir": os.path.realpath(os.environ["TMPDIR"]) if "TMPDIR" in os.environ else None,
     "stdin_is_tty": sys.stdin.isatty(),
     "stdin_read": (lambda: sys.stdin.read(16))(),
 }))
@@ -851,7 +854,7 @@ fn the_descriptor_limit_stops_an_adapter_that_opens_too_many() {
 held = []
 opened = 0
 try:
-    while opened < 500:
+    while opened < 200:
         held.append(open(ARGS.request, "rb"))
         opened += 1
 except OSError:
@@ -865,7 +868,10 @@ succeed()
     let control = Rig::new(body);
     control
         .run(Limits {
-            max_descriptors: 4096,
+            // Comfortably above the target and below the smallest per-process
+            // ceiling this crate builds for; Darwin's inherited soft limit is
+            // 256, so the control has to raise it to open anything.
+            max_descriptors: 1024,
             ..brisk()
         })
         .expect("the control adapter answers");
@@ -873,8 +879,8 @@ succeed()
         serde_json::from_slice(&fs::read(control.sidecar("descriptors")).expect("probe"))
             .expect("a count");
     assert_eq!(
-        control_opened, 500,
-        "the control could not open 500 descriptors, so the limited case proves nothing"
+        control_opened, 200,
+        "the control could not open 200 descriptors, so the limited case proves nothing"
     );
 
     let rig = Rig::new(body);
@@ -888,7 +894,7 @@ succeed()
     let opened: u32 = serde_json::from_slice(&fs::read(rig.sidecar("descriptors")).expect("probe"))
         .expect("a count");
     assert!(
-        opened < 100,
+        opened < 64,
         "the adapter opened {opened} descriptors under a limit of 64"
     );
 }
