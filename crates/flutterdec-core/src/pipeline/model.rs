@@ -251,10 +251,16 @@ fn fallback_reason_for_registry(error: &RegistryError) -> Option<(CoreFallbackRe
 }
 
 /// Recover the program with core's own ARM64 scanning, having executed nothing.
+///
+/// `record` is the record the registry did select, when one was selected and the
+/// run stopped after it. "A record exists and its artifact is not installed" and
+/// "no record exists" are different things to report, and an operator acts on
+/// them differently.
 fn load_core_fallback(
     bundle: &SnapshotBundle,
     reason: CoreFallbackReason,
     detail: Option<String>,
+    record: Option<CompatibilityRecord>,
 ) -> Result<LoadedProgram> {
     let model = core_recovered_model(bundle, reason)?;
     Ok(LoadedProgram {
@@ -269,8 +275,9 @@ fn load_core_fallback(
         core_fallback_detail: detail,
         containment: None,
         adapter_exec: None,
+        // No binding: nothing authorized this run, even where a record exists.
         compatibility: None,
-        compatibility_record: None,
+        compatibility_record: record,
         profile: None,
     })
 }
@@ -298,6 +305,7 @@ fn recover_or_refuse(
     bundle: &SnapshotBundle,
     backend: AdapterBackend,
     error: RegistryError,
+    record: Option<CompatibilityRecord>,
 ) -> Result<LoadedProgram> {
     let Some((reason, detail)) = fallback_reason_for_registry(&error) else {
         return Err(registry_error(error));
@@ -305,7 +313,7 @@ fn recover_or_refuse(
     if pins_external_backend(backend) {
         return Err(pinned_backend_refused(backend, reason, &detail));
     }
-    load_core_fallback(bundle, reason, Some(detail))
+    load_core_fallback(bundle, reason, Some(detail), record)
 }
 
 /// Decide what produces the model, then produce it.
@@ -330,13 +338,18 @@ fn load_program(
                 &detail,
             ));
         }
-        return load_core_fallback(bundle, CoreFallbackReason::IdentityRejected, Some(detail));
+        return load_core_fallback(
+            bundle,
+            CoreFallbackReason::IdentityRejected,
+            Some(detail),
+            None,
+        );
     }
     // An explicitly internal run selects nothing and executes nothing. Reading
     // the registry here would make "internal" mean "internal, once an adapter
     // has been authorized", which is not what the operator asked for.
     if backend == AdapterBackend::Internal {
-        return load_core_fallback(bundle, CoreFallbackReason::InternalRequested, None);
+        return load_core_fallback(bundle, CoreFallbackReason::InternalRequested, None, None);
     }
 
     // Both of these can refuse for a reason that is about the snapshot rather
@@ -345,11 +358,13 @@ fn load_program(
         CompatibilityRegistry::load(&layout.registry_path()).map_err(registry_error)?;
     let selection = match registry.select(&bundle.identity) {
         Ok(selection) => selection,
-        Err(error) => return recover_or_refuse(bundle, backend, error),
+        Err(error) => return recover_or_refuse(bundle, backend, error, None),
     };
     let artifact = match selection.resolve_current_artifact(layout.store_dir()) {
         Ok(artifact) => artifact,
-        Err(error) => return recover_or_refuse(bundle, backend, error),
+        Err(error) => {
+            return recover_or_refuse(bundle, backend, error, Some(selection.record().clone()))
+        }
     };
 
     // The profile is loaded only once a real artifact is going to run: a

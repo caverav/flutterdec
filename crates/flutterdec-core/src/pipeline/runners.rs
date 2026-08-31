@@ -966,14 +966,19 @@ pub fn run_info(
     let mut bundle =
         load_snapshot_bundle_with_optional_apk_session(input_path, apk_session.as_ref())?;
     let identity_rejection = bundle.identity.exact_selection_key().err();
-    // Whether a verified artifact exists is a separate question from whether one
-    // ran, and `info` answers it without executing anything: the probe stops at
-    // the store, and it is skipped entirely for an identity that may not select.
-    let adapter_installed = identity_rejection.is_none()
-        && select_registry(layout, &bundle)
-            .ok()
-            .and_then(|selection| selection.resolve_current_artifact(layout.store_dir()).ok())
-            .is_some();
+    // Which record the registry holds, and whether its artifact is installed,
+    // are both pre-spawn facts. `info` establishes them without executing
+    // anything so that they are still reportable when the run that follows
+    // fails, and skips the probe entirely for an identity that may not select.
+    let selection = if identity_rejection.is_none() {
+        select_registry(layout, &bundle).ok()
+    } else {
+        None
+    };
+    let adapter_installed = selection
+        .as_ref()
+        .and_then(|selection| selection.resolve_current_artifact(layout.store_dir()).ok())
+        .is_some();
     let manifest_inspection = if let Some(apk) = apk_session.as_ref() {
         inspect_android_manifest_from_apk_session(apk)
     } else {
@@ -1022,8 +1027,10 @@ pub fn run_info(
         backend_fallback_reason: None,
         producer_id: None,
         producer_trust: None,
-        compatibility_record_sha256: None,
-        registry_record_present: None,
+        compatibility_record_sha256: selection
+            .as_ref()
+            .and_then(|selection| selection.record_sha256().ok()),
+        registry_record_present: Some(selection.is_some()),
         adapter_containment: None,
         snapshot_identity_is_exact: Some(bundle.identity.is_exact()),
         identity_rejection: identity_rejection.as_ref().map(ToString::to_string),
@@ -1057,8 +1064,10 @@ pub fn run_info(
     out.backend_fallback_reason = provider.backend_fallback_reason.clone();
     out.producer_id = Some(provider.producer_id.clone());
     out.producer_trust = Some(provider.producer_trust.clone());
-    out.compatibility_record_sha256 = provider.compatibility_record_sha256.clone();
-    out.registry_record_present = Some(provider.registry_record_present);
+    if provider.compatibility_record_sha256.is_some() {
+        out.compatibility_record_sha256 = provider.compatibility_record_sha256.clone();
+    }
+    out.registry_record_present = Some(provider.registry_record_present || selection.is_some());
     out.adapter_containment = provider.containment.clone();
     out.compatibility_warnings = Some(provider.warnings.clone());
     out.model_capabilities = Some(provider.capabilities.clone());

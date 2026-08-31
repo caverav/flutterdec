@@ -1,365 +1,16 @@
 //! The adapter store, driven through the real CLI.
 //!
-//! Every case here runs the built `flutterdec` binary from a temporary
-//! *package prefix* (`bin/flutterdec` plus `share/flutterdec/...`), with a
-//! cleared environment, an isolated `HOME`, and a current directory that is not
-//! a checkout and contains nothing at all. That is deliberate: install,
-//! listing, and discovery all used to depend on the current directory sitting
-//! inside a source tree, so a test that runs from the repository root cannot
-//! tell a fix from the old behavior.
-//!
-//! The fixture registry and profile are written here as fresh JSON rather than
-//! built from the crate's own types, and the fixture producer is a real
-//! executable script whose digest the fixture registry content-addresses, so
-//! the digest, host, and containment checks are exercised against bytes rather
-//! than against a mock.
+//! Install, listing, rollback, containment and store containment, each proven
+//! through the packaged binary rather than through the library. The rig itself
+//! lives in `support`, which every CLI integration test shares.
+
+mod support;
 
 use serde_json::Value;
-use sha2::{Digest, Sha256};
-use std::collections::BTreeMap;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
-use tempfile::TempDir;
-
-const HASH: &str = "80a49c7111088100a233b2ae788e1f48";
-const OTHER_HASH: &str = "ace654289f5abc240509fc941453ebc5";
-const FEATURES: &str = "product arm64 android compressed-pointers";
-const ARTIFACT_RELATIVE: &str = "artifacts/dart_adapter";
-
-fn digest(bytes: &[u8]) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(bytes);
-    format!("{:x}", hasher.finalize())
-}
-
-/// SHA-256 of every regular file under `root`, keyed by relative path.
-///
-/// Used to assert that a directory was not written to, which is stronger than
-/// checking a modification time and does not depend on filesystem timestamp
-/// granularity.
-fn tree_digests(root: &Path) -> BTreeMap<String, String> {
-    let mut out = BTreeMap::new();
-    let mut stack = vec![root.to_path_buf()];
-    while let Some(dir) = stack.pop() {
-        let Ok(entries) = fs::read_dir(&dir) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            let meta = match fs::symlink_metadata(&path) {
-                Ok(meta) => meta,
-                Err(_) => continue,
-            };
-            if meta.is_dir() {
-                stack.push(path);
-                continue;
-            }
-            if !meta.is_file() {
-                continue;
-            }
-            let key = path
-                .strip_prefix(root)
-                .unwrap_or(&path)
-                .display()
-                .to_string();
-            let bytes = fs::read(&path).unwrap_or_default();
-            out.insert(key, digest(&bytes));
-        }
-    }
-    out
-}
-
-/// Files under the store that are neither the lock nor part of a finished
-/// install. A staged temporary left behind is a partial-state failure.
-fn store_files(store: &Path) -> Vec<PathBuf> {
-    let mut out = Vec::new();
-    let mut stack = vec![store.to_path_buf()];
-    while let Some(dir) = stack.pop() {
-        let Ok(entries) = fs::read_dir(&dir) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                stack.push(path);
-                continue;
-            }
-            if path.file_name().and_then(|name| name.to_str()) == Some(".lock") {
-                continue;
-            }
-            out.push(path);
-        }
-    }
-    out.sort();
-    out
-}
-
-fn checkout_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
-        .canonicalize()
-        .expect("canonicalize checkout root")
-}
-
-/// A temporary release-style package prefix and an isolated home.
-struct Prefix {
-    dir: TempDir,
-    /// Absolute path baked into the fixture producer, touched when it runs.
-    marker: PathBuf,
-}
-
-impl Prefix {
-    fn new() -> Self {
-        Self::with_variant(
-            ARTIFACT_RELATIVE,
-            std::env::consts::OS,
-            std::env::consts::ARCH,
-        )
-    }
-
-    /// `variant_path`, `host_os` and `host_arch` are what the fixture registry
-    /// declares, which is how the containment and host cases are set up.
-    fn with_variant(variant_path: &str, host_os: &str, host_arch: &str) -> Self {
-        Self::build(variant_path, host_os, host_arch, None)
-    }
-
-    /// A prefix whose packaged producer answers the request instead of only
-    /// proving it ran.
-    ///
-    /// Needed wherever the assertion is about what a *completed* run reports:
-    /// a producer that exits without a model never gets as far as a model, a
-    /// containment report, or a `report.json`.
-    fn answering() -> Self {
-        Self::build(
-            ARTIFACT_RELATIVE,
-            std::env::consts::OS,
-            std::env::consts::ARCH,
-            Some(&answering_producer()),
-        )
-    }
-
-    fn build(
-        variant_path: &str,
-        host_os: &str,
-        host_arch: &str,
-        producer_source: Option<&str>,
-    ) -> Self {
-        let dir = TempDir::new().expect("tempdir");
-        let root = dir.path();
-        let marker = root.join("producer_ran.marker");
-        fs::create_dir_all(root.join("bin")).expect("mkdir bin");
-        fs::create_dir_all(root.join("home")).expect("mkdir home");
-        fs::create_dir_all(root.join("cwd")).expect("mkdir cwd");
-        fs::create_dir_all(root.join("share/flutterdec/adapters/python")).expect("mkdir python");
-        fs::create_dir_all(root.join("share/flutterdec/data")).expect("mkdir data");
-
-        // Only release-distributed files are copied in: the binary and the
-        // package data. Nothing from the checkout is linked or referenced.
-        fs::copy(
-            env!("CARGO_BIN_EXE_flutterdec"),
-            root.join("bin/flutterdec"),
-        )
-        .expect("copy release binary");
-
-        let producer = match producer_source {
-            Some(source) => source.to_string(),
-            None => format!("#!/bin/sh\ntouch '{}'\nexit 3\n", marker.display()),
-        };
-        let producer_path = root.join("share/flutterdec/adapters/python/adapter_template.py");
-        fs::write(&producer_path, &producer).expect("write producer");
-        let mut perms = fs::metadata(&producer_path)
-            .expect("metadata")
-            .permissions();
-        perms.set_mode(0o755);
-        fs::set_permissions(&producer_path, perms).expect("chmod producer");
-
-        let profile = serde_json::to_vec_pretty(&serde_json::json!({
-            "profiles": {
-                "fixture-profile": {
-                    "tag_style": "CID_INT32",
-                    "compressed_word_size": 4,
-                    "header_fields": 5,
-                    "max_alignment": 16,
-                    "heap_object_tag": 1,
-                    "cids": {"class": 1, "object_pool": 23}
-                }
-            }
-        }))
-        .expect("serialize profile");
-        fs::write(
-            root.join("share/flutterdec/data/fixture-profile.json"),
-            &profile,
-        )
-        .expect("write profile");
-
-        let registry = serde_json::json!({
-            "version": 1,
-            "records": [record_json(
-                HASH,
-                variant_path,
-                host_os,
-                host_arch,
-                producer.as_bytes(),
-                &profile,
-            )]
-        });
-        fs::write(
-            root.join("share/flutterdec/adapters/registry.json"),
-            serde_json::to_vec_pretty(&registry).expect("serialize registry"),
-        )
-        .expect("write registry");
-
-        Self { dir, marker }
-    }
-
-    fn root(&self) -> &Path {
-        self.dir.path()
-    }
-
-    fn share(&self) -> PathBuf {
-        self.root().join("share/flutterdec")
-    }
-
-    /// The store the default discovery rule lands on for this isolated home.
-    fn store(&self) -> PathBuf {
-        self.root().join("home/.local/share/flutterdec/adapters")
-    }
-
-    fn artifact(&self) -> PathBuf {
-        self.store().join(ARTIFACT_RELATIVE)
-    }
-
-    fn producer(&self) -> PathBuf {
-        self.share().join("adapters/python/adapter_template.py")
-    }
-
-    /// What the store holds after one successful install and nothing else.
-    fn settled_store_files(&self) -> Vec<PathBuf> {
-        let mut files = vec![self.artifact(), self.store().join("store.json")];
-        files.sort();
-        files
-    }
-
-    /// A run of the packaged binary from an unrelated working directory.
-    fn cmd(&self) -> Command {
-        let mut cmd = Command::new(self.root().join("bin/flutterdec"));
-        cmd.env_clear()
-            .env("PATH", "/usr/bin:/bin")
-            .env("HOME", self.root().join("home"))
-            .current_dir(self.root().join("cwd"));
-        cmd
-    }
-
-    fn run(&self, args: &[&str]) -> Output {
-        self.run_with(&[], args)
-    }
-
-    fn run_with(&self, env: &[(&str, &str)], args: &[&str]) -> Output {
-        let mut cmd = self.cmd();
-        for (key, value) in env {
-            cmd.env(key, value);
-        }
-        cmd.args(args);
-        run(&mut cmd)
-    }
-
-    fn install(&self) -> Output {
-        self.run(&["adapter", "install", "--dart-hash", HASH, "--json"])
-    }
-
-    fn list(&self) -> Output {
-        self.run(&["adapter", "list", "--json"])
-    }
-}
-
-/// One compatibility record as JSON, content-addressing `producer` and
-/// `profile` exactly as a real registry does.
-fn record_json(
-    hash: &str,
-    variant_path: &str,
-    host_os: &str,
-    host_arch: &str,
-    producer: &[u8],
-    profile: &[u8],
-) -> Value {
-    let features = ["android", "arm64", "compressed-pointers", "product"];
-    let mut hasher = Sha256::new();
-    hasher.update(features.join("\n").as_bytes());
-    let fingerprint = format!("{:x}", hasher.finalize());
-    serde_json::json!({
-        "snapshot_hash": hash,
-        "snapshot_kind": "full_aot",
-        "target_arch": "arm64",
-        "features": features,
-        "feature_fingerprint": fingerprint,
-        "known_features": features,
-        "forbidden_features": ["no-compressed-pointers"],
-        "sdk_aliases": [],
-        "parser_family": {"id": "fixture-family", "version": "1", "sha256": null},
-        "profile": {
-            "id": "fixture-profile",
-            "path": "data/fixture-profile.json",
-            "sha256": digest(profile)
-        },
-        "artifact": {
-            "id": "fixture-artifact",
-            "variants": [{
-                "host_os": host_os,
-                "host_arch": host_arch,
-                "path": variant_path,
-                "size": producer.len(),
-                "sha256": digest(producer),
-                "provenance": "integration fixture"
-            }]
-        },
-        "evidence": {"source": "fixture", "provenance": "integration test", "references": []},
-        "trust_tier": "experimental",
-        "protocol_major": 1,
-        "model_major": 4
-    })
-}
-
-/// Run a command, retrying while a freshly copied binary is still reported busy.
-///
-/// Tests run as parallel threads in one process, and a thread that forks while
-/// another thread is writing a file can leave the kernel's deny-write count on
-/// that inode raised for a moment, which surfaces as `ETXTBSY` from `exec`.
-/// That is a property of the harness, not of the binary under test.
-fn run(cmd: &mut Command) -> Output {
-    for _ in 0..200 {
-        match cmd.output() {
-            Ok(output) => return output,
-            Err(err) if err.raw_os_error() == Some(26) => {
-                std::thread::sleep(std::time::Duration::from_millis(20))
-            }
-            Err(err) => panic!("run {cmd:?}: {err}"),
-        }
-    }
-    panic!("{cmd:?} stayed busy")
-}
-
-fn stdout(output: &Output) -> String {
-    String::from_utf8_lossy(&output.stdout).to_string()
-}
-
-fn stderr(output: &Output) -> String {
-    String::from_utf8_lossy(&output.stderr).to_string()
-}
-
-fn json(output: &Output) -> Value {
-    serde_json::from_str(&stdout(output))
-        .unwrap_or_else(|err| panic!("stdout is not JSON ({err}): {}", stdout(output)))
-}
-
-fn code(output: &Output) -> i32 {
-    output.status.code().unwrap_or(-1)
-}
-
-fn text(value: &str) -> Value {
-    Value::String(value.to_string())
-}
+use support::*;
 
 #[test]
 fn installs_and_lists_from_a_packaged_prefix_with_no_checkout_in_sight() {
@@ -1055,13 +706,28 @@ fn info_and_decompile_resolve_the_same_registry_profile_and_store() {
 
     let install = prefix.install();
     assert_eq!(code(&install), 0, "{}", stderr(&install));
+    // The fixture producer exits without writing a result, so this run fails.
+    // That is the point: the artifact in *this* store is the one that ran, and
+    // `info` reports the failure rather than printing a report that looks like
+    // a snapshot with nothing in it.
     let after = prefix.run(&["info", &input, "--json"]);
-    assert_eq!(code(&after), 0, "{}", stderr(&after));
+    assert_ne!(code(&after), 0, "a producer that answered nothing exited 0");
+    assert!(
+        stderr(&after).contains("error category: adapter_no_result"),
+        "info did not name the failure category: {}",
+        stderr(&after)
+    );
     let report = json(&after);
     assert_eq!(
         report["adapter_installed"],
         Value::Bool(true),
         "info did not see the install: {}",
+        stdout(&after)
+    );
+    assert_eq!(
+        report["adapter_error_category"],
+        text("adapter_no_result"),
+        "info swallowed the adapter failure: {}",
         stdout(&after)
     );
     assert_eq!(
@@ -1092,9 +758,10 @@ fn info_and_decompile_resolve_the_same_registry_profile_and_store() {
         "info ran an artifact from another store"
     );
 
-    // `decompile` resolves the same two locations. The fixture producer writes
-    // no model, so both runs fail, but they fail at different points: with no
-    // store the artifact is unavailable, and with the install the artifact runs.
+    // `decompile` resolves the same two locations. With no store there is
+    // nothing to execute, so core recovers the program and names the reason;
+    // with the install the artifact runs. The two arms differ in exactly one
+    // observable: whether the fixture producer's marker appears.
     let out = prefix.root().join("out");
     let out_arg = out.to_str().expect("path").to_string();
     let empty = prefix.run_with(
@@ -1102,11 +769,24 @@ fn info_and_decompile_resolve_the_same_registry_profile_and_store() {
             "FLUTTERDEC_ADAPTER_STORE",
             prefix.root().join("nowhere").to_str().expect("path"),
         )],
-        &["decompile", &input, "-o", &out_arg],
+        &[
+            "decompile",
+            &input,
+            "-o",
+            &out_arg,
+            "--function-scope",
+            "all",
+            "--min-disassembly-ratio",
+            "0.0",
+        ],
     );
-    assert_ne!(code(&empty), 0);
-    assert!(
-        stderr(&empty).contains("adapter artifact") && stderr(&empty).contains("unavailable"),
+    assert_eq!(code(&empty), 0, "{}", stderr(&empty));
+    let summary: Value =
+        serde_json::from_slice(&fs::read(out.join("report.json")).expect("read report"))
+            .expect("report JSON");
+    assert_eq!(
+        summary["adapter_selection"]["provider"]["core_fallback_reason"],
+        text("adapter_not_installed"),
         "decompile did not look for the artifact in the resolved store: {}",
         stderr(&empty)
     );
@@ -1122,336 +802,6 @@ fn info_and_decompile_resolve_the_same_registry_profile_and_store() {
         "decompile did not execute the artifact from the resolved store: {}",
         stderr(&installed)
     );
-}
-
-/// A minimal ARM64 `libapp.so` carrying a FullAOT snapshot header.
-///
-/// One `PT_LOAD` at address zero, so a symbol's virtual address equals its file
-/// offset, plus the four `_kDart*` symbols the loader looks for. The snapshot
-/// header layout is `runtime/vm/snapshot.h`: magic, `int64` length, `int64`
-/// kind, then the 32-character hash and the NUL-terminated features string.
-fn synthetic_libapp(hash: &str, features: &str) -> Vec<u8> {
-    const EHDR: usize = 64;
-    const PHDR: usize = 56;
-    const SHDR: usize = 64;
-    const SYM: usize = 24;
-    const RET: [u8; 4] = 0xD65F_03C0u32.to_le_bytes();
-
-    let mut vm_data = vec![0u8; 8];
-    vm_data.extend_from_slice(&[0xf5, 0xf5, 0xdc, 0xdc]);
-    let payload = 20 + hash.len() + features.len() + 1;
-    vm_data.extend_from_slice(&(payload as i64).to_le_bytes());
-    vm_data.extend_from_slice(&3i64.to_le_bytes()); // kFullAOT
-    vm_data.extend_from_slice(hash.as_bytes());
-    vm_data.extend_from_slice(features.as_bytes());
-    vm_data.push(0);
-
-    let mut out = vec![0u8; 128];
-    let place = |out: &mut Vec<u8>, bytes: &[u8]| -> (u64, u64) {
-        let at = out.len() as u64;
-        out.extend_from_slice(bytes);
-        (at, bytes.len() as u64)
-    };
-    let spans = [
-        place(&mut out, &vm_data),
-        place(&mut out, &[0u8; 32]),
-        place(&mut out, &RET),
-        place(&mut out, &RET.repeat(4)),
-    ];
-
-    let mut strtab = vec![0u8];
-    let mut name_offsets = Vec::new();
-    for name in [
-        "_kDartVmSnapshotData",
-        "_kDartIsolateSnapshotData",
-        "_kDartVmSnapshotInstructions",
-        "_kDartIsolateSnapshotInstructions",
-    ] {
-        name_offsets.push(strtab.len() as u32);
-        strtab.extend_from_slice(name.as_bytes());
-        strtab.push(0);
-    }
-
-    let mut symtab = vec![0u8; SYM];
-    for (index, (value, size)) in spans.iter().enumerate() {
-        symtab.extend_from_slice(&name_offsets[index].to_le_bytes());
-        symtab.push(0x11); // STB_GLOBAL | STT_OBJECT
-        symtab.push(0);
-        symtab.extend_from_slice(&1u16.to_le_bytes());
-        symtab.extend_from_slice(&value.to_le_bytes());
-        symtab.extend_from_slice(&size.to_le_bytes());
-    }
-
-    let mut shstrtab = vec![0u8];
-    let section_name = |shstrtab: &mut Vec<u8>, name: &str| -> u32 {
-        let at = shstrtab.len() as u32;
-        shstrtab.extend_from_slice(name.as_bytes());
-        shstrtab.push(0);
-        at
-    };
-    let symtab_name = section_name(&mut shstrtab, ".symtab");
-    let strtab_name = section_name(&mut shstrtab, ".strtab");
-    let shstrtab_name = section_name(&mut shstrtab, ".shstrtab");
-
-    let symtab_off = out.len() as u64;
-    out.extend_from_slice(&symtab);
-    let strtab_off = out.len() as u64;
-    out.extend_from_slice(&strtab);
-    let shstrtab_off = out.len() as u64;
-    out.extend_from_slice(&shstrtab);
-    let shoff = out.len() as u64;
-
-    let mut section = |name: u32, kind: u32, offset: u64, size: u64, link: u32, entsize: u64| {
-        let mut hdr = Vec::with_capacity(SHDR);
-        hdr.extend_from_slice(&name.to_le_bytes());
-        hdr.extend_from_slice(&kind.to_le_bytes());
-        hdr.extend_from_slice(&0u64.to_le_bytes());
-        hdr.extend_from_slice(&0u64.to_le_bytes());
-        hdr.extend_from_slice(&offset.to_le_bytes());
-        hdr.extend_from_slice(&size.to_le_bytes());
-        hdr.extend_from_slice(&link.to_le_bytes());
-        hdr.extend_from_slice(&0u32.to_le_bytes());
-        hdr.extend_from_slice(&1u64.to_le_bytes());
-        hdr.extend_from_slice(&entsize.to_le_bytes());
-        out.extend_from_slice(&hdr);
-    };
-    section(0, 0, 0, 0, 0, 0);
-    section(
-        symtab_name,
-        2,
-        symtab_off,
-        symtab.len() as u64,
-        2,
-        SYM as u64,
-    );
-    section(strtab_name, 3, strtab_off, strtab.len() as u64, 0, 0);
-    section(shstrtab_name, 3, shstrtab_off, shstrtab.len() as u64, 0, 0);
-
-    let total = out.len() as u64;
-
-    let mut header = Vec::with_capacity(EHDR);
-    header.extend_from_slice(&[0x7f, b'E', b'L', b'F', 2, 1, 1, 0]);
-    header.extend_from_slice(&[0u8; 8]);
-    header.extend_from_slice(&3u16.to_le_bytes()); // ET_DYN
-    header.extend_from_slice(&183u16.to_le_bytes()); // EM_AARCH64
-    header.extend_from_slice(&1u32.to_le_bytes());
-    header.extend_from_slice(&0u64.to_le_bytes());
-    header.extend_from_slice(&(EHDR as u64).to_le_bytes());
-    header.extend_from_slice(&shoff.to_le_bytes());
-    header.extend_from_slice(&0u32.to_le_bytes());
-    header.extend_from_slice(&(EHDR as u16).to_le_bytes());
-    header.extend_from_slice(&(PHDR as u16).to_le_bytes());
-    header.extend_from_slice(&1u16.to_le_bytes());
-    header.extend_from_slice(&(SHDR as u16).to_le_bytes());
-    header.extend_from_slice(&4u16.to_le_bytes());
-    header.extend_from_slice(&3u16.to_le_bytes());
-    out[..EHDR].copy_from_slice(&header);
-
-    let mut phdr = Vec::with_capacity(PHDR);
-    phdr.extend_from_slice(&1u32.to_le_bytes()); // PT_LOAD
-    phdr.extend_from_slice(&5u32.to_le_bytes()); // R+X
-    phdr.extend_from_slice(&0u64.to_le_bytes());
-    phdr.extend_from_slice(&0u64.to_le_bytes());
-    phdr.extend_from_slice(&0u64.to_le_bytes());
-    phdr.extend_from_slice(&total.to_le_bytes());
-    phdr.extend_from_slice(&total.to_le_bytes());
-    phdr.extend_from_slice(&0x1000u64.to_le_bytes());
-    out[EHDR..EHDR + PHDR].copy_from_slice(&phdr);
-
-    out
-}
-
-/// The interpreter this test process can see, as an absolute path.
-///
-/// The CLI runs with `PATH=/usr/bin:/bin`, and the adapter host passes that
-/// `PATH` through, so a `/usr/bin/env` shebang would resolve against a
-/// deliberately bare search path. Baking the interpreter in keeps the fixture
-/// independent of what the packaged prefix happens to have on `PATH`.
-fn interpreter() -> PathBuf {
-    let path = std::env::var_os("PATH").expect("PATH");
-    std::env::split_paths(&path)
-        .map(|dir| dir.join("python3"))
-        .find(|candidate| candidate.is_file())
-        .expect("a python3 on the test process PATH")
-}
-
-/// A packaged producer that answers correctly and recovers nothing.
-///
-/// Every host-selected fact is echoed out of the request rather than restated,
-/// because a fixture that restates them is a fixture that can disagree with the
-/// host for reasons that have nothing to do with what is under test.
-fn answering_producer() -> String {
-    format!(
-        r#"#!{}
-import argparse, json, pathlib
-
-DOMAINS = [
-    "libraries", "classes", "class_relationships", "functions",
-    "function_names", "object_pool", "pool_index_space",
-]
-
-p = argparse.ArgumentParser()
-p.add_argument("--request", required=True)
-p.add_argument("--result", required=True)
-p.add_argument("--input-path")
-p.add_argument("--libapp-path")
-args = p.parse_args()
-request = json.loads(pathlib.Path(args.request).read_text())
-code_region = next(
-    handle for handle in request["inputs"] if handle["region"] == "isolate_instructions"
-)
-
-model = {{
-    "model_version": 4,
-    "producer": request["producer"],
-    "input": {{
-        "identity": request["identity"],
-        "regions": [
-            {{
-                "region": handle["region"],
-                "size": handle["size"],
-                "sha256": handle["sha256"],
-                "virtual_address": handle["virtual_address"],
-                "executable": handle["executable"],
-            }}
-            for handle in request["inputs"]
-        ],
-    }},
-    "compatibility": request["compatibility"],
-    "capabilities": dict(
-        {{domain: "unavailable" for domain in DOMAINS}}, functions="partial"
-    ),
-    "libraries": [],
-    "classes": [],
-    # One unnamed heuristic code range. A model with no functions at all makes
-    # `decompile` stop before it writes a report, and the report is the point.
-    "functions": [
-        {{
-            "id": 1,
-            "name": None,
-            "owner": None,
-            "code": {{
-                "start_va": code_region["virtual_address"],
-                "size": code_region["size"],
-            }},
-            "code_section_va": code_region["virtual_address"],
-            "provenance": "heuristic",
-        }}
-    ],
-    "object_pool": {{"index_space": "ordinal", "geometry": None, "entries": []}},
-    "diagnostics": [
-        {{
-            "code": (
-                "domain_heuristic_only"
-                if domain == "functions"
-                else "domain_not_recovered"
-            ),
-            "severity": "warning",
-            "subject": domain,
-            "message": "the packaging fixture parses nothing",
-        }}
-        for domain in DOMAINS
-    ],
-    "extensions": {{}},
-}}
-pathlib.Path(request["output"]).write_text(json.dumps(model))
-pathlib.Path(args.result).write_text(json.dumps({{
-    "protocol_major": 1,
-    "model_major": 4,
-    "status": "ok",
-    "model": request["output"],
-    "error": None,
-    "resolved_backend": "internal",
-    "fallback_reason": None,
-    "diagnostics": [],
-}}))
-"#,
-        interpreter().display()
-    )
-}
-
-/// Every containment control the host names, so the assertion cannot silently
-/// stop covering one that was added later.
-const CONTROLS: &[&str] = &[
-    "wall_clock_deadline",
-    "process_group",
-    "descriptor_isolation",
-    "cpu_seconds",
-    "file_size",
-    "address_space",
-    "process_count",
-    "descriptors",
-    "network",
-    "stdout_bytes",
-    "stderr_bytes",
-    "model_bytes",
-];
-
-fn assert_controls_are_accurate(containment: &Value, source: &str) {
-    let object = containment
-        .as_object()
-        .unwrap_or_else(|| panic!("{source} has no containment object: {containment}"));
-    for control in CONTROLS {
-        let state = object
-            .get(*control)
-            .unwrap_or_else(|| panic!("{source} does not report {control}: {containment}"));
-        match state["state"].as_str() {
-            Some("applied") => {}
-            Some("unavailable") => assert!(
-                state["reason"]
-                    .as_str()
-                    .is_some_and(|r| !r.trim().is_empty()),
-                "{source} reports {control} unavailable without a reason: {state}"
-            ),
-            other => panic!("{source} reports {control} as {other:?}: {state}"),
-        }
-    }
-    assert!(
-        object["process_tree_terminated"].is_boolean(),
-        "{source} does not say whether the host had to end the run: {containment}"
-    );
-    assert_eq!(
-        object.len(),
-        CONTROLS.len() + 1,
-        "{source} reports controls this test does not check: {containment}"
-    );
-
-    // Host-side bounds and POSIX controls hold everywhere this crate builds.
-    for control in [
-        "wall_clock_deadline",
-        "stdout_bytes",
-        "stderr_bytes",
-        "model_bytes",
-        "process_group",
-        "descriptor_isolation",
-        "cpu_seconds",
-        "file_size",
-        "descriptors",
-    ] {
-        assert_eq!(
-            object[control]["state"], "applied",
-            "{source} could not establish {control}: {}",
-            object[control]
-        );
-    }
-
-    if cfg!(target_os = "linux") {
-        for control in ["address_space", "process_count"] {
-            assert_eq!(
-                object[control]["state"], "applied",
-                "{source} did not establish {control} on linux: {}",
-                object[control]
-            );
-        }
-    } else {
-        for control in ["address_space", "process_count", "network"] {
-            assert_eq!(
-                object[control]["state"], "unavailable",
-                "{source} claimed {control} on a platform that cannot establish it: {}",
-                object[control]
-            );
-        }
-    }
 }
 
 /// What the host says it established has to reach the operator, and it has to
@@ -1499,11 +849,11 @@ fn info_and_the_decompile_report_state_which_containment_controls_were_establish
     let summary: Value =
         serde_json::from_slice(&fs::read(&report_path).expect("read report")).expect("report JSON");
     assert_controls_are_accurate(
-        &summary["adapter_selection"]["containment"],
+        &summary["adapter_selection"]["provider"]["containment"],
         "decompile report.json",
     );
     assert_eq!(
-        summary["adapter_selection"]["containment"], report["adapter_containment"],
+        summary["adapter_selection"]["provider"]["containment"], report["adapter_containment"],
         "info and report.json disagree about what was established"
     );
 }
