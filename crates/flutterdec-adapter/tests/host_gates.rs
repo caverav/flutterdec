@@ -289,6 +289,28 @@ fn an_executable_outside_the_adapter_store_is_refused() {
     );
 }
 
+/// Containment is not implied by "the record named this path".
+///
+/// A symlink published inside the store resolves to a file the registry never
+/// saw, and both the caller and the record agree on the link, so only the
+/// containment check can tell.
+#[test]
+fn an_artifact_that_links_out_of_the_store_is_refused() {
+    let rig = Rig::new();
+    fs::remove_file(&rig.installed.exec).expect("remove the published artifact");
+    std::os::unix::fs::symlink(&rig.unpublished, &rig.installed.exec).expect("publish a symlink");
+
+    let record = rig.installed.record.clone();
+    let err = rig.refuse(&rig.input(&record));
+    let HostError::ArtifactPathRejected(ref detail) = err else {
+        panic!("wrong refusal: {err}");
+    };
+    assert!(
+        detail.contains("outside the adapter store"),
+        "the refusal does not name containment: {detail}"
+    );
+}
+
 #[test]
 fn an_artifact_that_is_not_executable_is_refused() {
     let rig = Rig::new();

@@ -65,11 +65,20 @@ const RESULT_PATH: &str = "result.json";
 /// interpreter shebang resolvable. `HOME`, `TMPDIR` and `PWD` are not on this
 /// list: they are *set* to directories inside the private workspace, so an
 /// adapter that writes to either of them writes somewhere that is cleaned up.
+///
+/// `XDG_CACHE_HOME` is the one exception to "everything the adapter writes is
+/// thrown away", and it is here on purpose. An external backend that compiles
+/// itself on first use rebuilds on every invocation if its cache is private,
+/// which is the difference between a bridge that works and one that nobody
+/// uses. Passing the variable through means the operator decides: unset, the
+/// backend caches inside the private workspace and the run leaves nothing
+/// behind; set, it caches where the operator already keeps caches.
 const ENVIRONMENT_ALLOWLIST: &[&str] = &[
     "PATH",
     "LANG",
     "LC_ALL",
     "PYTHON",
+    "XDG_CACHE_HOME",
     "FLUTTERDEC_BLUTTER_CMD",
     "FLUTTERDEC_BLUTTER_PY",
     "FLUTTERDEC_R2FLUTTER_CMD",
