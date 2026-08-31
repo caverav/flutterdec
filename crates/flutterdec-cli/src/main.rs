@@ -532,6 +532,9 @@ fn handle_info(repo_root: &Path, cmd: InfoCmd) -> Result<()> {
         if let Some(exact) = out.snapshot_identity_is_exact {
             println!("snapshot identity header-derived: {}", exact);
         }
+        if let Some(rejection) = out.identity_rejection.as_deref() {
+            println!("adapter selection refused: {}", rejection);
+        }
         if let Some(capabilities) = out.model_capabilities.as_ref() {
             println!("model capabilities:");
             for (domain, level) in capabilities {

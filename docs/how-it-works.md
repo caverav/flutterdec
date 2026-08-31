@@ -76,7 +76,9 @@ sequenceDiagram
 1. `info`
 - fast metadata path
 - loader always runs
-- adapter runs only if installed for the detected hash
+- the snapshot identity is gated first: a non-FullAOT, scanned-hash, or unsupported-target
+  snapshot reports why it was refused and no manifest, path, or adapter is touched
+- adapter runs only if the identity cleared that gate and one is installed for the hash
 - APK inputs also run Android startup evidence extraction from `classes*.dex` and surface summary counts in JSON output
 - no disassembly, no IR, no pseudocode writing
 
@@ -166,6 +168,7 @@ This is the effective high-level control flow in `run_decompile`:
 
 ```text
 bundle = load_snapshot_bundle(input)
+key = bundle.identity.exact_selection_key()   // hard stop: no key, no lookup, no spawn
 model = run_adapter(resolve_adapter_exec(bundle.hash), bundle)
 scoped_model = apply_scope_filter(model, function_scope, app_package_filters)
 selected_model = apply_target_filter(scoped_model, model, target?)  // optional --target id/va
@@ -274,6 +277,10 @@ Three properties are what separate it from v3:
 - **The host decides, the adapter reports.** Identity, producer, and compatibility are
   compared against what the host selected. An adapter cannot promote its own trust,
   change which snapshot it was given, or claim a different compatibility record.
+- **Identity is a gate, not a label.** A snapshot that cannot produce an exact selection
+  key never reaches manifest loading, executable resolution, or a process spawn; it is
+  refused with the typed rejection rather than run under a lower trust level. Every
+  producer record that exists therefore says `local`.
 
 Minimal example, from a producer that recovered code ranges and nothing else:
 

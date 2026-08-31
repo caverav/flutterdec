@@ -17,9 +17,8 @@ pub mod protocol;
 pub mod validate;
 
 use anyhow::{anyhow, bail, Context, Result};
-use model::{
-    CompatibilityBinding, InputRegion, InputRegionName, Producer, ProducerTrust, ProgramModel,
-};
+use flutterdec_loader::identity::IdentityRejection;
+use model::{CompatibilityBinding, InputRegion, InputRegionName, Producer, ProgramModel};
 use primitives::{RelativePath, Sha256Digest};
 use protocol::{AdapterRequest, AdapterResult, AdapterStatus, BackendId, RequestedBackend};
 use serde::{Deserialize, Serialize};
@@ -187,21 +186,6 @@ pub fn resolve_adapter_exec(repo_root: &Path, dart_hash: &str) -> Result<PathBuf
     Ok(exec)
 }
 
-/// How far the host may trust a producer it is about to run.
-///
-/// PR1 has no registry, so nothing can be [`ProducerTrust::Registered`] yet.
-/// What is decidable today is whether the identity could have authorized an
-/// exact parser at all: a locally installed adapter behind a header-derived
-/// FullAOT identity is `Local`, and everything else is `Untrusted` evidence.
-pub fn local_producer_trust(
-    identity: &flutterdec_loader::identity::SnapshotIdentity,
-) -> ProducerTrust {
-    match identity.exact_selection_key() {
-        Ok(_) => ProducerTrust::Local,
-        Err(_) => ProducerTrust::Untrusted,
-    }
-}
-
 fn region_file_name(region: InputRegionName) -> &'static str {
     match region {
         InputRegionName::VmData => "vm_data.bin",
@@ -215,6 +199,14 @@ const OUTPUT_MODEL_PATH: &str = "model.json";
 const REQUEST_PATH: &str = "request.json";
 const RESULT_PATH: &str = "result.json";
 
+/// Wrap an identity rejection so it survives as a typed cause.
+///
+/// `anyhow::Error::new` keeps the `IdentityRejection` downcastable, so a caller
+/// can act on *which* check refused the snapshot rather than parse a message.
+pub fn identity_rejected(rejection: IdentityRejection) -> anyhow::Error {
+    anyhow::Error::new(rejection).context("snapshot identity may not authorize an adapter")
+}
+
 /// Run one adapter and return a model that has already been checked against the
 /// host's own view of the snapshot.
 ///
@@ -222,6 +214,16 @@ const RESULT_PATH: &str = "result.json";
 /// and the model is validated before it is handed back, so neither a malformed
 /// question nor a mismatched answer reaches the core.
 pub fn run_adapter(exec_path: &Path, input: &AdapterInput<'_>) -> Result<AdapterRun> {
+    // The gate, restated at the boundary itself. Callers gate earlier so that a
+    // rejected identity never reaches a manifest or the filesystem, but this is
+    // the last place a process can be spawned, and a public entry point that
+    // trusts its caller to have checked is a public entry point that will one
+    // day be called by a caller that did not.
+    input
+        .identity
+        .exact_selection_key()
+        .map_err(identity_rejected)?;
+
     let tmp = tempdir().context("create scratch directory for adapter")?;
     let work = tmp.path();
 

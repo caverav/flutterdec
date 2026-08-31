@@ -34,6 +34,7 @@ If adapter metadata is available, JSON output also includes app-package hints:
 - `producer_id`, `producer_trust`, `compatibility_record_sha256`
 - `manifest_entry_present`
 - `snapshot_identity_is_exact`
+- `identity_rejection`
 - `model_capabilities`
 - `compatibility_warnings`
 
