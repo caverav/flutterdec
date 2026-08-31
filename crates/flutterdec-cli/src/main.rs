@@ -505,14 +505,38 @@ fn handle_info(repo_root: &Path, cmd: InfoCmd) -> Result<()> {
             println!("compressed pointers: {}", compressed);
         }
         println!("adapter installed: {}", out.adapter_installed);
-        if let Some(kind) = out.adapter_kind.as_deref() {
-            println!("adapter kind: {}", kind);
+        // Requested, resolved, and fallback are printed separately because they
+        // are separate facts. Collapsing them into one "adapter kind" line is
+        // what made a filename look like a decision.
+        if let Some(requested) = out.requested_backend.as_deref() {
+            println!("requested backend: {}", requested);
+        }
+        if let Some(resolved) = out.resolved_backend.as_deref() {
+            println!("resolved backend: {}", resolved);
+        }
+        if let Some(reason) = out.backend_fallback_reason.as_deref() {
+            println!("backend fallback reason: {}", reason);
+        }
+        if let Some(id) = out.producer_id.as_deref() {
+            println!("producer: {}", id);
+        }
+        if let Some(trust) = out.producer_trust.as_deref() {
+            println!("producer trust: {}", trust);
+        }
+        if let Some(digest) = out.compatibility_record_sha256.as_deref() {
+            println!("compatibility record: {}", digest);
         }
         if let Some(present) = out.manifest_entry_present {
             println!("manifest entry present: {}", present);
         }
-        if let Some(hash_match) = out.adapter_snapshot_hash_match {
-            println!("adapter snapshot hash match: {}", hash_match);
+        if let Some(exact) = out.snapshot_identity_is_exact {
+            println!("snapshot identity header-derived: {}", exact);
+        }
+        if let Some(capabilities) = out.model_capabilities.as_ref() {
+            println!("model capabilities:");
+            for (domain, level) in capabilities {
+                println!("  {}: {}", domain, level);
+            }
         }
         if let Some(warnings) = out.compatibility_warnings.as_ref() {
             if !warnings.is_empty() {

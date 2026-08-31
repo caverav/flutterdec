@@ -1,120 +1,34 @@
+//! Host side of the adapter boundary.
+//!
+//! One adapter run is one process: the host writes the snapshot regions and an
+//! [`protocol::AdapterRequest`] into a scratch directory, runs the adapter
+//! there, and reads back an [`protocol::AdapterResult`] plus a
+//! [`model::ProgramModel`]. Nothing about the run is decided by the adapter: the
+//! identity, the producer record, the compatibility binding, and the region
+//! table are host facts that the model is checked against before it is returned.
+//!
+//! There is no v2/v3 path. [`model::ProgramModel::from_json`] rejects those
+//! documents by version, so an old adapter fails loudly instead of being
+//! silently reinterpreted.
+
 pub mod model;
 pub mod primitives;
 pub mod protocol;
 pub mod validate;
 
 use anyhow::{anyhow, bail, Context, Result};
+use model::{
+    CompatibilityBinding, InputRegion, InputRegionName, Producer, ProducerTrust, ProgramModel,
+};
+use primitives::{RelativePath, Sha256Digest};
+use protocol::{AdapterRequest, AdapterResult, AdapterStatus, BackendId, RequestedBackend};
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use tempfile::tempdir;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LibraryInfo {
-    pub id: u64,
-    pub uri: String,
-    pub name_display: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ClassInfo {
-    pub id: u64,
-    pub name: String,
-    #[serde(rename = "super")]
-    pub super_name: String,
-    #[serde(rename = "lib")]
-    pub library_uri: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FunctionInfo {
-    pub id: u64,
-    pub name: String,
-    pub owner_class: String,
-    pub entry_va: u64,
-    pub size: u64,
-    pub code_section_va: u64,
-    #[serde(default)]
-    pub name_kind: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ObjectPoolEntry {
-    pub index: u64,
-    pub kind: String,
-    pub value: String,
-    #[serde(default)]
-    pub decoded_kind: Option<String>,
-    #[serde(default)]
-    pub selector: Option<String>,
-    #[serde(default)]
-    pub target_va: Option<u64>,
-    #[serde(default)]
-    pub owner_class: Option<String>,
-    #[serde(default)]
-    pub library_uri: Option<String>,
-    #[serde(default)]
-    pub confidence: Option<f64>,
-    #[serde(default)]
-    pub source: Option<String>,
-}
-
-/// Hardware layout of the Dart `ObjectPool` object that `x27`/PP points at.
-///
-/// Presence of this record is the adapter's assertion that `ObjectPoolEntry::index`
-/// values live in the *hardware* index space, i.e. that a `ldr xN, [x27, #disp]`
-/// resolves to `(disp - entries_offset) / word_size`. Adapters that only carve
-/// strings out of the snapshot must leave it unset; without it the core refuses to
-/// map pool references onto values instead of guessing.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub struct PoolGeometry {
-    /// Byte offset of entry 0 from the PP base (0x10 on ARM64 AOT).
-    pub entries_offset: u64,
-    /// Stride between entries in bytes (8 on ARM64 AOT, even with compressed pointers).
-    pub word_size: u64,
-}
-
-impl PoolGeometry {
-    /// Convert a PP-relative byte displacement into a pool entry index.
-    ///
-    /// Returns `None` for displacements below the first entry or not on a stride
-    /// boundary; those are pool-object header accesses, not entry loads.
-    pub fn index_for_displacement(&self, displacement: u64) -> Option<u64> {
-        if self.word_size == 0 {
-            return None;
-        }
-        let rel = displacement.checked_sub(self.entries_offset)?;
-        if !rel.is_multiple_of(self.word_size) {
-            return None;
-        }
-        Some(rel / self.word_size)
-    }
-}
-
-/// Legacy adapter output, superseded by [`model::ProgramModel`].
-///
-/// Kept only because the core, disassembler, and CLI still read it. It is not a
-/// v4 compatibility shim and must not become one: nothing converts between the
-/// two, and `model::ProgramModel::from_json` rejects any document this type can
-/// parse. Migrating the remaining consumers removes this type outright.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ProgramModel {
-    pub schema_version: u32,
-    pub adapter_kind: String,
-    pub dart_version: String,
-    pub snapshot_hash: String,
-    pub arch: String,
-    pub libraries: Vec<LibraryInfo>,
-    pub classes: Vec<ClassInfo>,
-    pub functions: Vec<FunctionInfo>,
-    pub object_pool: Vec<ObjectPoolEntry>,
-    /// Set only by adapters that recover the real `ObjectPool`; see [`PoolGeometry`].
-    #[serde(default)]
-    pub pool_geometry: Option<PoolGeometry>,
-}
+use validate::HostSelectedContext;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AdapterManifest {
@@ -128,17 +42,45 @@ pub struct AdapterManifestEntry {
     pub adapter: String,
 }
 
+/// One snapshot region, as the host read it.
+#[derive(Debug, Clone, Copy)]
+pub struct AdapterRegionInput<'a> {
+    pub region: InputRegionName,
+    pub bytes: &'a [u8],
+    /// Load address. Required for executable regions, forbidden for data ones;
+    /// [`AdapterRequest::validate`] rejects the other combinations.
+    pub virtual_address: Option<u64>,
+}
+
+/// Everything the host hands one adapter invocation.
+///
+/// The host-selected facts are here rather than derived from adapter output on
+/// the way back, because a fact the adapter supplies cannot check the adapter.
 #[derive(Debug, Clone)]
 pub struct AdapterInput<'a> {
+    /// Header-derived identity of the snapshot. Authoritative.
+    pub identity: &'a flutterdec_loader::identity::SnapshotIdentity,
+    /// Who the host believes is about to run, including the digest of the
+    /// artifact it is about to execute.
+    pub producer: Producer,
+    /// The compatibility decision that authorized this run.
+    pub compatibility: CompatibilityBinding,
+    pub regions: Vec<AdapterRegionInput<'a>>,
+    /// The original artifact, for backends that re-read it themselves.
     pub input_path: Option<&'a Path>,
     pub libapp_path: Option<&'a Path>,
-    pub vm_data: &'a [u8],
-    pub isolate_data: &'a [u8],
-    pub vm_instr: &'a [u8],
-    pub isolate_instr: &'a [u8],
-    pub vm_instr_va: u64,
-    pub isolate_instr_va: u64,
-    pub backend: Option<&'a str>,
+    pub requested_backend: RequestedBackend,
+}
+
+/// What one adapter invocation produced, with the facts about the run that the
+/// core needs and must not re-derive from the model.
+#[derive(Debug, Clone)]
+pub struct AdapterRun {
+    pub model: ProgramModel,
+    /// The backend that actually ran, as the protocol reported it.
+    pub resolved_backend: BackendId,
+    pub fallback_reason: Option<protocol::FallbackReason>,
+    pub diagnostics: Vec<model::Diagnostic>,
 }
 
 fn manifest_path(repo_root: &Path) -> PathBuf {
@@ -211,10 +153,7 @@ pub fn install_adapter(repo_root: &Path, dart_hash: &str) -> Result<PathBuf> {
     fs::create_dir_all(&out_dir)?;
     let out = out_dir.join(name);
 
-    let script = format!(
-        "#!/usr/bin/env python3\nfrom pathlib import Path\nimport sys\nroot = Path(__file__).resolve().parents[1]\nsys.path.insert(0, str(root / 'python'))\nimport adapter_template\nif __name__ == '__main__':\n    raise SystemExit(adapter_template.entrypoint(default_snapshot_hash={:?}, default_version='unknown'))\n",
-        dart_hash
-    );
+    let script = "#!/usr/bin/env python3\nfrom pathlib import Path\nimport sys\nroot = Path(__file__).resolve().parents[1]\nsys.path.insert(0, str(root / 'python'))\nimport adapter_template\nif __name__ == '__main__':\n    raise SystemExit(adapter_template.entrypoint())\n";
 
     fs::write(&out, script).with_context(|| format!("write adapter script: {}", out.display()))?;
     let mut perms = fs::metadata(&out)?.permissions();
@@ -248,80 +187,184 @@ pub fn resolve_adapter_exec(repo_root: &Path, dart_hash: &str) -> Result<PathBuf
     Ok(exec)
 }
 
-fn validate_model(model: &ProgramModel) -> Result<()> {
-    if model.schema_version != 2 && model.schema_version != 3 {
-        bail!(
-            "unsupported adapter schema version {}",
-            model.schema_version
-        );
+/// How far the host may trust a producer it is about to run.
+///
+/// PR1 has no registry, so nothing can be [`ProducerTrust::Registered`] yet.
+/// What is decidable today is whether the identity could have authorized an
+/// exact parser at all: a locally installed adapter behind a header-derived
+/// FullAOT identity is `Local`, and everything else is `Untrusted` evidence.
+pub fn local_producer_trust(
+    identity: &flutterdec_loader::identity::SnapshotIdentity,
+) -> ProducerTrust {
+    match identity.exact_selection_key() {
+        Ok(_) => ProducerTrust::Local,
+        Err(_) => ProducerTrust::Untrusted,
     }
-    if model.arch != "arm64" {
-        bail!("adapter returned unsupported arch {}", model.arch);
-    }
-    if model.functions.is_empty() {
-        bail!("adapter returned no functions");
-    }
-    Ok(())
 }
 
-pub fn run_adapter(exec_path: &Path, input: &AdapterInput<'_>) -> Result<ProgramModel> {
-    let tmp = tempdir().context("create tempdir for adapter")?;
+fn region_file_name(region: InputRegionName) -> &'static str {
+    match region {
+        InputRegionName::VmData => "vm_data.bin",
+        InputRegionName::IsolateData => "isolate_data.bin",
+        InputRegionName::VmInstructions => "vm_instructions.bin",
+        InputRegionName::IsolateInstructions => "isolate_instructions.bin",
+    }
+}
 
-    let vm_data = tmp.path().join("vm_data.bin");
-    let iso_data = tmp.path().join("iso_data.bin");
-    let vm_instr = tmp.path().join("vm_instr.bin");
-    let iso_instr = tmp.path().join("iso_instr.bin");
-    let out_json = tmp.path().join("model.json");
+const OUTPUT_MODEL_PATH: &str = "model.json";
+const REQUEST_PATH: &str = "request.json";
+const RESULT_PATH: &str = "result.json";
 
-    fs::File::create(&vm_data)?.write_all(input.vm_data)?;
-    fs::File::create(&iso_data)?.write_all(input.isolate_data)?;
-    fs::File::create(&vm_instr)?.write_all(input.vm_instr)?;
-    fs::File::create(&iso_instr)?.write_all(input.isolate_instr)?;
+/// Run one adapter and return a model that has already been checked against the
+/// host's own view of the snapshot.
+///
+/// The order matters: the request is validated before the process is spawned,
+/// and the model is validated before it is handed back, so neither a malformed
+/// question nor a mismatched answer reaches the core.
+pub fn run_adapter(exec_path: &Path, input: &AdapterInput<'_>) -> Result<AdapterRun> {
+    let tmp = tempdir().context("create scratch directory for adapter")?;
+    let work = tmp.path();
+
+    let mut handles = Vec::with_capacity(input.regions.len());
+    let mut host_regions: Vec<InputRegion> = Vec::with_capacity(input.regions.len());
+    for region in &input.regions {
+        let name = region_file_name(region.region);
+        fs::write(work.join(name), region.bytes)
+            .with_context(|| format!("write adapter input region {}", region.region))?;
+        let digest = Sha256Digest::of(region.bytes);
+        let size = region.bytes.len() as u64;
+        handles.push(protocol::InputHandle {
+            region: region.region,
+            path: RelativePath::parse(name).map_err(|err| anyhow!(err))?,
+            size,
+            sha256: digest.clone(),
+            virtual_address: region.virtual_address,
+            executable: region.region.is_executable(),
+        });
+        host_regions.push(InputRegion {
+            region: region.region,
+            size,
+            sha256: digest,
+            virtual_address: region.virtual_address,
+            executable: region.region.is_executable(),
+        });
+    }
+    handles.sort_by_key(|h| h.region);
+    host_regions.sort_by_key(|r| r.region);
+
+    let request = AdapterRequest {
+        protocol_major: protocol::PROTOCOL_MAJOR,
+        model_major: model::MODEL_VERSION,
+        compatibility: input.compatibility.clone(),
+        producer: input.producer.clone(),
+        identity: input.identity.clone(),
+        requested_backend: input.requested_backend,
+        inputs: handles,
+        output: RelativePath::parse(OUTPUT_MODEL_PATH).map_err(|err| anyhow!(err))?,
+    };
+    // Fail before spawn, not after: a request the host itself would reject is
+    // not a request an adapter should get a chance to answer.
+    request
+        .validate()
+        .map_err(|err| anyhow!("adapter request is invalid: {}", err))?;
+    fs::write(work.join(REQUEST_PATH), request.to_json()).context("write adapter request")?;
 
     let mut cmd = Command::new(exec_path);
-    cmd.arg("--vm-data")
-        .arg(&vm_data)
-        .arg("--isolate-data")
-        .arg(&iso_data)
-        .arg("--vm-instr")
-        .arg(&vm_instr)
-        .arg("--isolate-instr")
-        .arg(&iso_instr)
-        .arg("--vm-instr-va")
-        .arg(input.vm_instr_va.to_string())
-        .arg("--isolate-instr-va")
-        .arg(input.isolate_instr_va.to_string())
-        .arg("--out")
-        .arg(&out_json);
+    cmd.current_dir(work)
+        .arg("--request")
+        .arg(REQUEST_PATH)
+        .arg("--result")
+        .arg(RESULT_PATH);
     if let Some(path) = input.input_path {
-        cmd.arg("--input-path").arg(path);
+        cmd.arg("--input-path").arg(absolute(path));
     }
     if let Some(path) = input.libapp_path {
-        cmd.arg("--libapp-path").arg(path);
-    }
-    if let Some(backend) = input.backend {
-        cmd.env("FLUTTERDEC_ADAPTER_BACKEND", backend);
+        cmd.arg("--libapp-path").arg(absolute(path));
     }
     let output = cmd
         .output()
         .with_context(|| format!("launch adapter: {}", exec_path.display()))?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let stdout = String::from_utf8_lossy(&output.stdout);
+    let result_path = work.join(RESULT_PATH);
+    if !output.status.success() && !result_path.exists() {
         return Err(anyhow!(
-            "adapter failed with status {}\nstdout:\n{}\nstderr:\n{}",
+            "adapter failed with status {} and wrote no result document\nstdout:\n{}\nstderr:\n{}",
             output.status,
-            stdout,
-            stderr
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
         ));
     }
 
-    let bytes = fs::read(&out_json)
-        .with_context(|| format!("read adapter output: {}", out_json.display()))?;
-    let model = serde_json::from_slice::<ProgramModel>(&bytes).context("parse adapter output")?;
-    validate_model(&model)?;
-    Ok(model)
+    let result_bytes = fs::read(&result_path)
+        .with_context(|| format!("read adapter result: {}", result_path.display()))?;
+    let result = AdapterResult::from_json(&result_bytes)
+        .map_err(|err| anyhow!("adapter result is not protocol v1: {}", err))?;
+    result
+        .validate_against(&request)
+        .map_err(|err| anyhow!("adapter result does not answer the request: {}", err))?;
+
+    if result.status != AdapterStatus::Ok {
+        let error = result
+            .error
+            .as_ref()
+            .expect("a non-ok result carries an error");
+        return Err(anyhow!(
+            "adapter reported {:?} ({:?}): {}\nstderr:\n{}",
+            result.status,
+            error.code,
+            error.message,
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+
+    let model_rel = result.model.as_ref().expect("an ok result carries a model");
+    if model_rel.as_str() != request.output.as_str() {
+        bail!(
+            "adapter wrote its model to {:?} instead of the requested {:?}",
+            model_rel.as_str(),
+            request.output.as_str()
+        );
+    }
+    let model_bytes = fs::read(work.join(model_rel.as_str()))
+        .with_context(|| format!("read adapter model: {}", model_rel.as_str()))?;
+    let model = ProgramModel::from_json(&model_bytes)
+        .map_err(|err| anyhow!("adapter model rejected: {}", err))?;
+
+    let host = HostSelectedContext {
+        identity: input.identity.clone(),
+        producer: input.producer.clone(),
+        compatibility: input.compatibility.clone(),
+        regions: host_regions,
+    };
+    validate::validate(&model, &host)
+        .map_err(|err| anyhow!("adapter model failed semantic validation: {}", err))?;
+
+    Ok(AdapterRun {
+        model,
+        resolved_backend: result
+            .resolved_backend
+            .expect("an ok result names its backend"),
+        fallback_reason: result.fallback_reason,
+        diagnostics: result.diagnostics,
+    })
+}
+
+/// An absolute path for a caller-supplied artifact.
+///
+/// The adapter runs with its working directory set to the scratch dir, so a
+/// relative path handed straight through would resolve somewhere the caller did
+/// not mean. Canonicalizing fails only for a path that does not exist yet, and
+/// joining the current directory is still absolute.
+fn absolute(path: &Path) -> PathBuf {
+    if let Ok(canonical) = path.canonicalize() {
+        return canonical;
+    }
+    if path.is_absolute() {
+        return path.to_path_buf();
+    }
+    std::env::current_dir()
+        .map(|cwd| cwd.join(path))
+        .unwrap_or_else(|_| path.to_path_buf())
 }
 
 #[cfg(test)]
@@ -337,7 +380,7 @@ mod tests {
         fs::create_dir_all(repo.join("adapters/installed")).expect("mkdir");
         fs::write(
             repo.join("adapters/python/adapter_template.py"),
-            "def entrypoint(default_snapshot_hash='x', default_version='unknown'): return 0\n",
+            "def entrypoint(): return 0\n",
         )
         .expect("write template");
 
@@ -347,128 +390,5 @@ mod tests {
         let manifest = load_manifest(repo).expect("load");
         assert_eq!(manifest.entries.len(), 1);
         assert_eq!(manifest.entries[0].snapshot_hash, "abcd1234");
-    }
-
-    #[test]
-    fn run_adapter_blutter_backend_synthesizes_entrypoint_candidate() {
-        let td = tempdir().expect("tempdir");
-        let root = td.path();
-        let python_dir = root.join("python");
-        fs::create_dir_all(&python_dir).expect("mkdir python");
-
-        let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../..")
-            .canonicalize()
-            .expect("canonicalize repo root");
-        let template_src = repo_root.join("adapters/python/adapter_template.py");
-        fs::copy(&template_src, python_dir.join("adapter_template.py"))
-            .expect("copy adapter template");
-
-        let fake_blutter = root.join("fake_blutter");
-        fs::write(
-            &fake_blutter,
-            r#"#!/usr/bin/env python3
-from pathlib import Path
-import sys
-
-if len(sys.argv) < 3:
-    raise SystemExit("usage: fake_blutter <input> <outdir>")
-out_dir = Path(sys.argv[2])
-asm_dir = out_dir / "asm"
-asm_dir.mkdir(parents=True, exist_ok=True)
-(asm_dir / "main.dart").write_text(
-    "// lib: 0, url: package:app/main.dart\n"
-    "  dynamic main() {\n"
-    "// ** addr: 0x1000, size: 0x10\n"
-    "}\n",
-    encoding="utf-8",
-)
-(asm_dir / "router.dart").write_text(
-    "// lib: 1, url: package:app/router.dart\n"
-    "class RouterHost {\n"
-    "  dynamic onNewIntent() {\n"
-    "// ** addr: 0x1010, size: 0x10\n"
-    "  }\n"
-    "}\n",
-    encoding="utf-8",
-)
-(asm_dir / "subject.dart").write_text(
-    "// lib: 2, url: package:app/state/subject.dart\n"
-    "class Subject {\n"
-    "  dynamic onResume() {\n"
-    "// ** addr: 0x1020, size: 0x10\n"
-    "  }\n"
-    "}\n",
-    encoding="utf-8",
-)
-(out_dir / "pp.txt").write_text("", encoding="utf-8")
-"#,
-        )
-        .expect("write fake blutter");
-        let mut fake_perms = fs::metadata(&fake_blutter).expect("metadata").permissions();
-        fake_perms.set_mode(0o755);
-        fs::set_permissions(&fake_blutter, fake_perms).expect("chmod fake blutter");
-
-        let exec = root.join("adapter_exec.py");
-        fs::write(
-            &exec,
-            "#!/usr/bin/env python3\nfrom pathlib import Path\nimport os\nimport sys\nroot = Path(__file__).resolve().parent\nos.environ['FLUTTERDEC_BLUTTER_CMD'] = str(root / 'fake_blutter')\nsys.path.insert(0, str(root / 'python'))\nimport adapter_template\nif __name__ == '__main__':\n    raise SystemExit(adapter_template.entrypoint(default_snapshot_hash='testhash', default_version='unknown'))\n",
-        )
-        .expect("write exec");
-        let mut perms = fs::metadata(&exec).expect("metadata").permissions();
-        perms.set_mode(0o755);
-        fs::set_permissions(&exec, perms).expect("chmod exec");
-
-        let input_dir = root.join("input");
-        fs::create_dir_all(&input_dir).expect("mkdir input");
-        let input_file = input_dir.join("app.apk");
-        fs::write(&input_file, b"dummy").expect("write dummy input");
-
-        let vm_data = vec![0u8; 64];
-        let iso_data = vec![0u8; 64];
-        let vm_instr = vec![0u8; 16];
-        let iso_instr = vec![0u8; 16];
-        let input = AdapterInput {
-            input_path: Some(&input_file),
-            libapp_path: None,
-            vm_data: &vm_data,
-            isolate_data: &iso_data,
-            vm_instr: &vm_instr,
-            isolate_instr: &iso_instr,
-            vm_instr_va: 0,
-            isolate_instr_va: 0,
-            backend: Some("blutter"),
-        };
-
-        let model = run_adapter(&exec, &input).expect("run adapter");
-        assert!(model.functions.iter().any(|f| f.entry_va == 0x1000));
-        let entrypoint = model
-            .object_pool
-            .iter()
-            .find(|e| e.decoded_kind.as_deref() == Some("EntryPointCandidate"))
-            .expect("entrypoint candidate");
-        assert_eq!(entrypoint.selector.as_deref(), Some("main"));
-        assert_eq!(entrypoint.target_va, Some(0x1000));
-        let deeplink = model
-            .object_pool
-            .iter()
-            .find(|e| e.decoded_kind.as_deref() == Some("DeepLinkHandlerCandidate"))
-            .expect("deeplink candidate");
-        assert_eq!(deeplink.selector.as_deref(), Some("onNewIntent"));
-        assert_eq!(deeplink.target_va, Some(0x1010));
-        let activity_targets = model
-            .object_pool
-            .iter()
-            .filter(|e| e.decoded_kind.as_deref() == Some("ActivityHandlerCandidate"))
-            .map(|e| e.target_va.unwrap_or_default())
-            .collect::<Vec<_>>();
-        assert!(
-            activity_targets.contains(&0x1010),
-            "expected onNewIntent to be tagged as activity handler"
-        );
-        assert!(
-            !activity_targets.contains(&0x1020),
-            "generic onResume in non-activity owner should not be tagged as activity handler"
-        );
     }
 }

@@ -612,11 +612,13 @@ fn check_identity_and_order(model: &ProgramModel) -> Check {
 
 fn check_references(model: &ProgramModel) -> Check {
     for class in &model.classes {
-        if model.library(class.library).is_none() {
-            return Err(ValidationError::MissingLibraryReference {
-                class: class.id.0,
-                library: class.library.0,
-            });
+        if let Some(library) = class.library {
+            if model.library(library).is_none() {
+                return Err(ValidationError::MissingLibraryReference {
+                    class: class.id.0,
+                    library: library.0,
+                });
+            }
         }
         if let Some(super_class) = class.super_class {
             if model.class(super_class).is_none() {

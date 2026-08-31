@@ -13,7 +13,7 @@
 //! Both documents carry the protocol and model majors they were written for.
 //! Version negotiation is a rejection, not a translation.
 
-use crate::model::{Diagnostic, InputRegionName, MODEL_VERSION};
+use crate::model::{CompatibilityBinding, Diagnostic, InputRegionName, Producer, MODEL_VERSION};
 use crate::primitives::{RelativePath, Sha256Digest};
 use flutterdec_loader::identity::SnapshotIdentity;
 use serde::{Deserialize, Serialize};
@@ -23,6 +23,127 @@ use std::fmt;
 
 /// The only accepted protocol major.
 pub const PROTOCOL_MAJOR: u32 = 1;
+
+/// A checked-in producer backend.
+///
+/// A closed enum rather than a string, because the previous design read the
+/// resolved backend out of a substring of an adapter-authored free-text field,
+/// which meant an adapter could name itself `r2flutter_...` and be treated as
+/// one. Membership here is the only way to be a backend.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BackendId {
+    /// String carving plus prologue scanning. No exact names, no real pool.
+    Internal,
+    Blutter,
+    /// `r2flutter`: deserializes the snapshot, so it is the only backend that
+    /// can supply exact names and a hardware pool index space.
+    R2Flutter,
+}
+
+impl BackendId {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Internal => "internal",
+            Self::Blutter => "blutter",
+            Self::R2Flutter => "r2flutter",
+        }
+    }
+}
+
+impl fmt::Display for BackendId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// What the host asked for, which is distinct from what ran.
+///
+/// Serializes as one flat string, `auto` or a backend name, rather than as a
+/// tagged variant: the wire form is what a producer parses, and one token is
+/// easier to get right than a nested object.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RequestedBackend {
+    /// The producer may pick, and may fall back.
+    Auto,
+    /// The producer must use this one or fail. No silent substitution.
+    Fixed(BackendId),
+}
+
+impl RequestedBackend {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Fixed(backend) => backend.as_str(),
+        }
+    }
+
+    pub fn parse(text: &str) -> Option<Self> {
+        match text {
+            "auto" => Some(Self::Auto),
+            "internal" => Some(Self::Fixed(BackendId::Internal)),
+            "blutter" => Some(Self::Fixed(BackendId::Blutter)),
+            "r2flutter" => Some(Self::Fixed(BackendId::R2Flutter)),
+            _ => None,
+        }
+    }
+
+    pub fn fixed(self) -> Option<BackendId> {
+        match self {
+            Self::Auto => None,
+            Self::Fixed(backend) => Some(backend),
+        }
+    }
+}
+
+impl Serialize for RequestedBackend {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for RequestedBackend {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let text = String::deserialize(deserializer)?;
+        Self::parse(&text).ok_or_else(|| {
+            serde::de::Error::custom(format!("unknown requested backend {:?}", text))
+        })
+    }
+}
+
+impl fmt::Display for RequestedBackend {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// Why the backend that ran is not the one `auto` would have preferred.
+///
+/// Closed for the same reason [`DiagnosticCode`] is: a free-text reason cannot
+/// be checked, and "fell back for some reason" is not a fact a host can act on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FallbackReason {
+    /// The preferred backend's tooling is not installed.
+    BackendUnavailable,
+    /// The preferred backend ran and failed on this snapshot.
+    BackendFailed,
+}
+
+impl FallbackReason {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::BackendUnavailable => "backend_unavailable",
+            Self::BackendFailed => "backend_failed",
+        }
+    }
+}
+
+impl fmt::Display for FallbackReason {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
 
 /// One input region, as a handle rather than as content.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -47,12 +168,19 @@ pub struct InputHandle {
 pub struct AdapterRequest {
     pub protocol_major: u32,
     pub model_major: u32,
-    /// Digest of the compatibility record that selected this adapter. Echoed
-    /// into the model so the run can be tied back to the decision.
-    pub compatibility_record_sha256: Sha256Digest,
+    /// The compatibility record the host selected, digest included. Echoed into
+    /// the model so a model can be tied back to the decision that produced it,
+    /// and so a model produced under a different decision is detectable.
+    pub compatibility: CompatibilityBinding,
+    /// Who the host believes is running. The adapter reports it back verbatim;
+    /// it does not get to describe itself, which is what stops a producer from
+    /// promoting its own trust level.
+    pub producer: Producer,
     /// The host's identity for the snapshot. Not a suggestion: the adapter must
     /// report it back unchanged.
     pub identity: SnapshotIdentity,
+    /// Which backend the host wants. `Fixed` forbids substitution.
+    pub requested_backend: RequestedBackend,
     pub inputs: Vec<InputHandle>,
     /// Where the adapter writes its `ProgramModel`.
     pub output: RelativePath,
@@ -116,6 +244,12 @@ pub struct AdapterResult {
     pub model: Option<RelativePath>,
     /// Present exactly when `status` is not `Ok`.
     pub error: Option<AdapterError>,
+    /// Which backend actually produced the model. Present exactly when `status`
+    /// is `Ok`, and the only place the host reads it from.
+    pub resolved_backend: Option<BackendId>,
+    /// Present only when the host asked for `auto` and the preferred backend
+    /// did not run.
+    pub fallback_reason: Option<FallbackReason>,
     pub diagnostics: Vec<Diagnostic>,
 }
 
@@ -138,6 +272,16 @@ pub enum ProtocolError {
     AliasedPath(String),
     /// `status` and the `model`/`error` fields disagree.
     StatusPayloadMismatch,
+    /// `resolved_backend` is present without success, or absent with it.
+    ResolvedBackendPayloadMismatch,
+    /// The host pinned a backend and a different one answered.
+    BackendSubstituted {
+        requested: BackendId,
+        resolved: BackendId,
+    },
+    /// A fallback reason on a result whose backend was pinned, so there was
+    /// nothing to fall back from.
+    FallbackWithoutAuto,
 }
 
 impl fmt::Display for ProtocolError {
@@ -177,6 +321,20 @@ impl fmt::Display for ProtocolError {
             ),
             Self::StatusPayloadMismatch => f.write_str(
                 "an ok result must carry a model and no error, and a failed result must carry an error and no model",
+            ),
+            Self::ResolvedBackendPayloadMismatch => f.write_str(
+                "an ok result must name the backend that produced the model, and a result that produced nothing must not name one",
+            ),
+            Self::BackendSubstituted {
+                requested,
+                resolved,
+            } => write!(
+                f,
+                "host pinned backend {} but {} answered; a pinned backend may fail, never be substituted",
+                requested, resolved
+            ),
+            Self::FallbackWithoutAuto => f.write_str(
+                "a fallback reason is only meaningful when the host asked for auto",
             ),
         }
     }
@@ -306,16 +464,52 @@ impl AdapterResult {
         if !consistent {
             return Err(ProtocolError::StatusPayloadMismatch);
         }
+        // A model nobody will admit to producing is a model with no provenance,
+        // and a backend named by a run that produced nothing is a claim about
+        // work that did not happen.
+        if self.resolved_backend.is_some() != matches!(self.status, AdapterStatus::Ok) {
+            return Err(ProtocolError::ResolvedBackendPayloadMismatch);
+        }
         Ok(())
     }
 
-    pub fn ok(model: RelativePath, diagnostics: Vec<Diagnostic>) -> Self {
+    /// The checks that need the request the result answers.
+    ///
+    /// Separate from [`AdapterResult::validate`] because a result read off disk
+    /// can be checked for self-consistency on its own, but "did this answer the
+    /// question that was asked" is only decidable with the question in hand.
+    pub fn validate_against(&self, request: &AdapterRequest) -> Result<(), ProtocolError> {
+        self.validate()?;
+        if let (Some(requested), Some(resolved)) =
+            (request.requested_backend.fixed(), self.resolved_backend)
+        {
+            if requested != resolved {
+                return Err(ProtocolError::BackendSubstituted {
+                    requested,
+                    resolved,
+                });
+            }
+        }
+        if self.fallback_reason.is_some() && request.requested_backend.fixed().is_some() {
+            return Err(ProtocolError::FallbackWithoutAuto);
+        }
+        Ok(())
+    }
+
+    pub fn ok(
+        model: RelativePath,
+        resolved_backend: BackendId,
+        fallback_reason: Option<FallbackReason>,
+        diagnostics: Vec<Diagnostic>,
+    ) -> Self {
         Self {
             protocol_major: PROTOCOL_MAJOR,
             model_major: MODEL_VERSION,
             status: AdapterStatus::Ok,
             model: Some(model),
             error: None,
+            resolved_backend: Some(resolved_backend),
+            fallback_reason,
             diagnostics,
         }
     }
@@ -330,6 +524,8 @@ impl AdapterResult {
                 code,
                 message: message.into(),
             }),
+            resolved_backend: None,
+            fallback_reason: None,
             diagnostics: Vec::new(),
         }
     }
