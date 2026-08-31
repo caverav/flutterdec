@@ -9,7 +9,7 @@ and `flutterdec --version` reports the build you are running.
 Usage:
 
 ```bash
-flutterdec info <INPUT> [--json] [--adapter-backend <BACKEND>]
+flutterdec info <INPUT> [--json] [--adapter-backend <BACKEND>] [--adapter-timeout <SECONDS>]
 ```
 
 Arguments:
@@ -17,6 +17,10 @@ Arguments:
 - `<INPUT>`: APK or `libapp.so`
 - `--json`: print JSON output
 - `--adapter-backend <auto|internal|blutter|r2-flutter>` (default `auto`; `auto` tries r2flutter, then blutter, then internal)
+- `--adapter-timeout <SECONDS>`: wall-clock deadline for one adapter invocation
+
+Exit status is nonzero when an adapter was authorized, ran, and failed. The
+report is still printed, and `adapter_error_category` names what went wrong.
 
 Resolved only after a FullAOT header identity exactly matches a host registry record
 (hash, target, and canonical layout-feature fingerprint). The runtime profile is
@@ -35,6 +39,8 @@ If adapter metadata is available, JSON output also includes app-package hints:
 - `snapshot_identity_is_exact`, `identity_rejection`, `model_capabilities`
 - `compatibility_warnings`
 - `adapter_containment` (per control: `applied` with its bound, or `unavailable` with the reason)
+- `adapter_error`, `adapter_error_category` when an authorized adapter failed
+- `provider`: the block described under [Provider reporting](#provider-reporting)
 
 ## `flutterdec decompile`
 
@@ -74,6 +80,7 @@ General options:
   ratio is not inflated by split pieces. Comparing a split run against an unsplit one compares unlike
   populations.
 - `--adapter-backend <auto|internal|blutter|r2-flutter>` (default `auto`; `auto` tries r2flutter, then blutter, then internal)
+- `--adapter-timeout <SECONDS>`: wall-clock deadline for one adapter invocation
 - `--require-snapshot-hash-match` (fail if adapter-reported snapshot hash differs from loader hash)
 
 Symbol ingestion:
@@ -144,12 +151,21 @@ Options:
 - `--function-scope <app-unknown|app|all>` (default `app-unknown`)
 - `--app-package <NAME>` (repeatable; limit compare set to selected app packages)
 - `--adapter-backend <auto|internal|blutter|r2-flutter>` (default `auto`)
+- `--adapter-timeout <SECONDS>`: wall-clock deadline for one adapter invocation, applied to each side
 - `--require-snapshot-hash-match` (fail if either side has adapter/loader snapshot hash mismatch)
 - `--json`
 
 Output:
 
 - writes `diff_report.json` with function-level deltas and package-level summaries (`added_packages_top`, `removed_packages_top`)
+- `old_provider` and `new_provider`, each the block under [Provider reporting](#provider-reporting).
+  The two sides are selected independently, so a run whose sides were not produced the same way sets
+  `provider_mismatch`: a name-bearing model and a core-recovered one differ in every descriptor whether
+  or not the code changed.
+- `old_uncomparable_function_count` and `new_uncomparable_function_count`: functions with no name, owner
+  or library. An address alone does not survive a rebuild, so these are counted and excluded from the
+  compared sets rather than collapsed into one descriptor that would read as "unchanged".
+- a failure on either side names which side it was, and carries that side's error category
 
 ## `flutterdec engine-fingerprint`
 
@@ -220,6 +236,80 @@ Reports one row per compatibility record, with a state that is verified rather t
 existence: `verified`, `missing`, `corrupt`, `incompatible`, or `unavailable`. Exit status is 2 when any
 entry is `missing` or `corrupt`, 0 otherwise, and nonzero with a message when the store's own state file
 cannot be read.
+
+## Provider reporting
+
+`info`, `decompile` (`report.json`, under `adapter_selection.provider`) and each
+side of `diff` (`old_provider`, `new_provider`) carry the same block. It is
+built once from host facts and the protocol result, so the three surfaces cannot
+describe one run differently.
+
+- `requested_backend`, `resolved_backend`, `backend_mismatch`,
+  `backend_fallback_reason`
+- `adapter_executed`, `adapter_exec_path`, `containment`
+- `core_fallback_reason`, `core_fallback_detail`, `core_fallback_effect`
+- `producer_id`, `producer_version`, `producer_artifact_sha256`, `producer_trust`
+- `registry_record_present`, `compatibility_record_sha256`, `parser_family_id`,
+  `profile_id`, `profile_sha256`, `artifact_id`, `artifact_sha256`
+- `host_os`, `host_arch` (the machine that ran) and `target_arch` (the machine
+  the snapshot targets), which are separate facts
+- `snapshot_identity_is_exact`, `identity_rejection`, `capabilities`, `warnings`
+
+## Core recovery
+
+When nothing is authorized to parse a snapshot, no adapter is executed and core
+recovers what it can from the instruction bytes. `core_fallback_reason` says
+which of these it was:
+
+| reason | meaning |
+| --- | --- |
+| `internal_requested` | `--adapter-backend internal`; no registry read, no execution |
+| `identity_rejected` | not a FullAOT snapshot, or the hash did not come from a header |
+| `no_compatibility_record` | the identity is exact and no record covers it |
+| `compatibility_unsupported` | a record exists for the hash but not for this target or feature tuple, or the selection was ambiguous |
+| `adapter_not_installed` | a record authorizes an artifact and none is installed |
+
+What core recovery produces: ARM64 code candidates from frame prologues and
+repeatedly-called targets, every one of them `heuristic` and unnamed. What it
+does not: libraries, classes, class relationships, function names, the original
+entry function, and any ObjectPool index space, all of which stay `unavailable`
+with a diagnostic saying why.
+
+A malformed registry, a record that fails its own invariants, a profile that
+does not verify, and an artifact whose bytes are not the ones the registry
+authorized are *not* fallback conditions. They are integrity failures of the
+installation and they stop the command. So does an adapter that was authorized,
+spawned, and then failed.
+
+`--adapter-backend blutter` and `--adapter-backend r2-flutter` are refused
+rather than answered by core recovery: those flags mean "exact names or
+nothing", and substituting prologue scanning is what the protocol already
+forbids inside a run.
+
+## Error categories
+
+Every failure prints `error category: <token>` on stderr alongside its message.
+The message is for a human and may be reworded; the token is stable.
+
+- identity and registry: `identity_rejected`, `registry_no_record`,
+  `registry_target_mismatch`, `registry_feature_mismatch`, `registry_ambiguous`,
+  `registry_malformed`, `registry_unsupported_version`, `registry_invalid_record`,
+  `registry_profile_rejected`, `registry_artifact_absent`,
+  `registry_artifact_rejected`
+- refused before any child existed: `record_invalid`, `record_digest_mismatch`,
+  `unsupported_majors`, `identity_record_mismatch`, `target_mismatch`,
+  `feature_mismatch`, `host_variant_mismatch`, `variant_not_in_record`,
+  `artifact_path_rejected`, `artifact_not_executable`,
+  `artifact_digest_mismatch`, `profile_rejected`, `producer_mismatch`,
+  `binding_mismatch`, `input_rejected`, `request_rejected`,
+  `output_handle_rejected`
+- a child ran: `spawn_failed`, `workspace_failed`, `adapter_timeout`,
+  `adapter_output_limit_exceeded`, `adapter_crashed`, `adapter_no_result`,
+  `adapter_document_too_large`, `adapter_malformed_document`,
+  `adapter_result_mismatch`, `adapter_model_path_mismatch`,
+  `adapter_reported_failure`, `adapter_model_rejected`,
+  `containment_unreported`, `adapter_io`
+- `unclassified` for anything else
 
 ## Resolved locations
 

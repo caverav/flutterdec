@@ -337,6 +337,34 @@ additionally allowed to be `auto`, which is the only case in which a producer ma
 backend and the only case in which `fallback_reason` may be set: a pinned backend fails
 rather than substituting.
 
+### When no adapter is authorized
+
+Selection can end without an adapter to run, and there are five ways it does:
+the operator pinned `internal`, the identity gate refused the snapshot, no
+compatibility record covers it, a record exists but not for this target or
+feature tuple (or two records claim it), or a record authorizes an artifact that
+is not installed. None of those is a fact about a broken installation, and none
+of them is a reason to stop.
+
+Core recovers what instruction bytes can support: code ranges from AArch64 frame
+prologues (`stp x29, x30, [sp, ...]`) and from targets reached by two or more
+`bl` sites, each range bounded by the next start and capped at 32 KiB. Every one
+is `heuristic` and carries no name and no owner, because a prologue is evidence
+of a boundary and of nothing else. `libraries`, `classes`,
+`class_relationships`, `function_names`, `object_pool` and `pool_index_space`
+stay `unavailable`, each with a diagnostic naming why, so nothing downstream can
+mistake a scan for a parse. The model has no compatibility binding at all
+(`compatibility: null`): writing one would mean inventing a record digest, a
+parser family and a profile that no registry ever selected. It goes through the
+same `validate` an adapter model does.
+
+The conditions that stay loud are the ones about the installation rather than
+about the snapshot: a malformed registry, a record that fails its own
+invariants, a profile that does not verify, an artifact whose bytes are not the
+authorized bytes, and any adapter that was authorized, spawned, and then failed.
+A pinned external backend is also refused rather than answered, for the same
+reason the protocol refuses substitution inside a run.
+
 ### Adapter execution containment
 
 An adapter is a third-party executable, so the host treats one run as a bounded,
