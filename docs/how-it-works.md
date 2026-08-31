@@ -337,6 +337,55 @@ additionally allowed to be `auto`, which is the only case in which a producer ma
 backend and the only case in which `fallback_reason` may be set: a pinned backend fails
 rather than substituting.
 
+### Adapter execution containment
+
+An adapter is a third-party executable, so the host treats one run as a bounded,
+one-shot job.
+
+Everything is decided before a process exists. Before `run_adapter` spawns anything it
+re-derives, from the compatibility record rather than from the caller: the record's own
+SHA-256, the protocol and model majors, the snapshot hash, the target architecture, the
+canonical feature tuple, the host artifact variant, the profile digest, and the artifact
+digest and size. It also requires the executable to be a regular file with an execute
+bit, to live inside the adapter store, and to be exactly the path the record names; the
+producer record and compatibility binding to follow from the record; and every snapshot
+region and the output handle to be usable. Each refusal is a distinct `HostError`
+variant, and the ones that mean "no process was created" answer `true` to
+`HostError::is_pre_spawn`.
+
+The child that does run gets a private invocation directory (mode `0700`) holding
+read-only input handles under `in/`, its output under `out/`, and its own `HOME` and
+`TMPDIR`; a cleared environment plus a small allowlist (`PATH`, locale, and the
+variables the checked-in producer reads to find an external backend); `/dev/null` on
+stdin; its own session and process group; and close-on-exec on every inherited
+descriptor above the standard three. The directory is removed on every path, including
+timeout and including one an adapter deliberately made unwritable.
+
+The host holds an overall wall-clock deadline and caps stdout, stderr, the result
+document and the model. On a timeout or a cap breach it signals the whole process group,
+waits, and reaps. It signals the group after a clean exit too: a backend that shelled
+out and abandoned a grandchild leaves one behind on the clean path as well, and that
+grandchild would otherwise hold the host's pipes open. Diagnostics quote a bounded,
+escaped tail of child output, never the whole stream.
+
+The child also applies `RLIMIT_CPU`, `RLIMIT_FSIZE`, `RLIMIT_AS`, `RLIMIT_NPROC` and
+`RLIMIT_NOFILE`, and on Linux drops into an empty network namespace where the host
+permits one.
+
+None of that is claimed unless it was established. The child applies each control
+between `fork` and `exec` and writes one fixed-size record of per-control outcomes back
+through a close-on-exec pipe; the host turns that record into a containment report where
+each control is either `applied` with its bound or `unavailable` with the reason. The
+report appears in `flutterdec info --json` as `adapter_containment` and in
+`report.json` under `adapter_selection.containment`.
+
+Platform differences are stated rather than smoothed over. Darwin does not enforce
+`RLIMIT_AS`, offers no network namespace, and gives no cheap way to observe the per-user
+task count, so all three are reported `unavailable` there instead of being set and
+assumed. `RLIMIT_NPROC` counts every task of the real user id, so the budget on Linux is
+the host's current task count plus an allowance; when the child gets its own user
+namespace the count restarts there, and the budget becomes the allowance alone.
+
 ### FunctionDisassembly
 
 Produced by disassembler. Per function:
@@ -746,7 +795,7 @@ File naming convention:
 - input metadata
 - counts for libraries, classes, functions, pool entries
 - `model.function_name_provenance` (exact/derived/heuristic/unnamed)
-- `adapter_selection` trace (requested backend, resolved backend, adapter exec, manifest mapping, snapshot hash match, and strict hash-match enforcement flag)
+- `adapter_selection` trace (requested backend, resolved backend, adapter exec, manifest mapping, snapshot hash match, strict hash-match enforcement flag, and the `containment` report naming every execution control as applied or unavailable)
 - `compatibility` summary (adapter schema support, manifest-entry presence, snapshot hash alignment, and warning list)
 - embedded `quality` object
 - `name_resolution` aggregate (final name-quality mix and merge replacement diagnostics)

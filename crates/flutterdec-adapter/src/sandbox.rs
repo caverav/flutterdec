@@ -398,6 +398,9 @@ unsafe fn apply_plan(plan: &ChildPlan) {
     }
     #[cfg(not(target_os = "linux"))]
     {
+        // Read on this platform too, so the field cannot rot into one that is
+        // only ever written.
+        let _ = plan.max_address_space_bytes;
         codes[SLOT_ADDRESS_SPACE] = CODE_UNSUPPORTED;
     }
 
@@ -504,6 +507,35 @@ fn descriptor_scan_ceiling() -> u32 {
     u32::try_from(soft.min(u64::from(MAX_DESCRIPTOR_SCAN))).unwrap_or(MAX_DESCRIPTOR_SCAN)
 }
 
+/// A pipe whose two ends both close on `exec`.
+///
+/// `pipe2` does it in one syscall where it exists; Darwin has no `pipe2`, so the
+/// flag is set afterwards. The window between the two calls is not a leak risk
+/// here: the descriptors are used by this process and by the child it is about
+/// to fork, and nothing else runs in between.
+fn close_on_exec_pipe() -> std::io::Result<[libc::c_int; 2]> {
+    let mut fds = [0 as libc::c_int; 2];
+    #[cfg(target_os = "linux")]
+    let created = unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC) };
+    #[cfg(not(target_os = "linux"))]
+    let created = unsafe { libc::pipe(fds.as_mut_ptr()) };
+    if created != 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    #[cfg(not(target_os = "linux"))]
+    for fd in fds {
+        if unsafe { libc::fcntl(fd, libc::F_SETFD, libc::FD_CLOEXEC) } != 0 {
+            let err = std::io::Error::last_os_error();
+            unsafe {
+                libc::close(fds[0]);
+                libc::close(fds[1]);
+            }
+            return Err(err);
+        }
+    }
+    Ok(fds)
+}
+
 /// One status pipe, and the plan the child will apply through it.
 pub(crate) struct Containment {
     read_end: OwnedFd,
@@ -519,12 +551,9 @@ pub(crate) struct Containment {
 impl Containment {
     /// Build the pipe and the plan. Fails only if a pipe cannot be created.
     pub(crate) fn prepare(limits: &Limits) -> std::io::Result<Self> {
-        let mut fds = [0 as libc::c_int; 2];
         // Both ends close on exec: the write end so the parent sees end of file
         // the moment the child execs, the read end so the child never holds it.
-        if unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC) } != 0 {
-            return Err(std::io::Error::last_os_error());
-        }
+        let fds = close_on_exec_pipe()?;
         let read_end = unsafe { OwnedFd::from_raw_fd(fds[0]) };
         let write_end = unsafe { OwnedFd::from_raw_fd(fds[1]) };
 
