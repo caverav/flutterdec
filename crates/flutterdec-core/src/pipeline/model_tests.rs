@@ -19,6 +19,7 @@ use super::*;
 use flutterdec_loader::identity::{
     HashSource, IdentityRejection, SnapshotIdentity, SnapshotKind, TargetArch,
 };
+use flutterdec_loader::layout::Layout;
 use flutterdec_loader::registry::{
     canonical_feature_fingerprint, ArtifactReference, CompatibilityEvidence, HostArtifactVariant,
     ParserFamilyReference, ProfileReference, TrustTier,
@@ -33,6 +34,9 @@ const FEATURES: &str = "product no-code_comments arm64 android compressed-pointe
 struct SpyRepo {
     _dir: TempDir,
     root: PathBuf,
+    /// The spy repo doubles as both roots: package data and adapter store point
+    /// at the same directory, so the rigging stays one tree.
+    layout: Layout,
     marker: PathBuf,
 }
 
@@ -59,9 +63,11 @@ impl SpyRepo {
         std::os::unix::fs::PermissionsExt::set_mode(&mut perms, 0o755);
         fs::set_permissions(&exec, perms).expect("chmod spy adapter");
 
+        let layout = Layout::new(root.clone(), root.clone(), root.join("symbols"));
         Self {
             _dir: dir,
             root,
+            layout,
             marker,
         }
     }
@@ -218,7 +224,7 @@ fn assert_stops_before_lookup(identity: SnapshotIdentity, expected: IdentityReje
     let repo = poisoned_registry_repo();
     let bundle = bundle(identity);
 
-    let err = load_model(&repo.root, &bundle, AdapterBackend::Auto)
+    let err = load_model(&repo.layout, &bundle, AdapterBackend::Auto)
         .expect_err("a rejected identity cannot load a model");
 
     assert_eq!(rejection(&err), expected, "wrong rejection: {err:#}");
@@ -277,7 +283,7 @@ fn a_full_aot_snapshot_reaches_selection_and_execution() {
     let repo = valid_registry_repo();
     let bundle = bundle(full_aot());
 
-    let err = load_model(&repo.root, &bundle, AdapterBackend::Auto)
+    let err = load_model(&repo.layout, &bundle, AdapterBackend::Auto)
         .expect_err("the spy adapter cannot produce a model");
 
     assert!(
@@ -298,7 +304,7 @@ fn a_rejected_identity_is_not_downgraded_to_an_untrusted_run() {
     let repo = valid_registry_repo();
     let bundle = bundle(full_jit());
 
-    let err = load_model(&repo.root, &bundle, AdapterBackend::Auto)
+    let err = load_model(&repo.layout, &bundle, AdapterBackend::Auto)
         .expect_err("a FullJIT snapshot cannot load a model");
 
     assert_eq!(

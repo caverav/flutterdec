@@ -89,20 +89,20 @@ fn collect_diff_package_counts(descriptors: &[String]) -> Vec<PackageCount> {
 }
 
 pub fn run_diff(
-    repo_root: &Path,
+    layout: &Layout,
     old_input_path: &Path,
     new_input_path: &Path,
     opt: &DiffOptions,
 ) -> Result<DiffReport> {
     let mut old_bundle = load_snapshot_bundle(old_input_path)?;
     let mut new_bundle = load_snapshot_bundle(new_input_path)?;
-    attach_registry_profile(repo_root, &mut old_bundle)?
+    attach_registry_profile(layout, &mut old_bundle)?
         .ok_or_else(|| anyhow!("no compatibility registry record for old input"))?;
-    attach_registry_profile(repo_root, &mut new_bundle)?
+    attach_registry_profile(layout, &mut new_bundle)?
         .ok_or_else(|| anyhow!("no compatibility registry record for new input"))?;
 
-    let old_loaded = load_model(repo_root, &old_bundle, opt.adapter_backend)?;
-    let new_loaded = load_model(repo_root, &new_bundle, opt.adapter_backend)?;
+    let old_loaded = load_model(layout, &old_bundle, opt.adapter_backend)?;
+    let new_loaded = load_model(layout, &new_bundle, opt.adapter_backend)?;
     let old_snapshot_hash_match = old_bundle.identity.is_exact();
     let new_snapshot_hash_match = new_bundle.identity.is_exact();
     if opt.require_snapshot_hash_match && !(old_snapshot_hash_match && new_snapshot_hash_match) {

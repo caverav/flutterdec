@@ -687,7 +687,7 @@
         };
 
         let apk_resolution = resolve_local_engine_symbol_targets(
-            repo_root,
+            &repo_root.join("symbols"),
             Path::new("sample.apk"),
             "arm64",
             &engine_context,
@@ -697,7 +697,7 @@
         assert_eq!(apk_resolution.loaded_paths, vec![build_id_path]);
 
         let so_resolution = resolve_local_engine_symbol_targets(
-            repo_root,
+            &repo_root.join("symbols"),
             Path::new("libapp.so"),
             "arm64",
             &engine_context,

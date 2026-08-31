@@ -25,6 +25,7 @@ regex = "1"
 goblin = "0.10"
 zip = { version = "8", default-features = false, features = ["deflate"] }
 tempfile = "3"
+libc = "0.2"
 sha2 = "0.10"
 walkdir = "2"
 capstone = "0.14"

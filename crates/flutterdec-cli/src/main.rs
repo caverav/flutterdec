@@ -1,13 +1,16 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use clap::{Args, Parser, Subcommand, ValueEnum};
-use flutterdec_adapter::install_adapter;
+use flutterdec_adapter::store::{self, EntryState};
 use flutterdec_core::{
     available_adapters, run_decompile, run_diff, run_engine_fingerprint, run_info, run_symbol_map,
     AdapterBackend, DecompileAnalysisProfile, DecompileEngineOptionOverrides,
     DecompileEngineOptions, DecompileOptions, DiffOptions, EngineFingerprintOptions, FunctionScope,
     FunctionTarget, SymbolMapOptions,
 };
-use std::path::{Path, PathBuf};
+use flutterdec_loader::layout::Layout;
+use flutterdec_loader::registry::CompatibilityRegistry;
+use std::path::PathBuf;
+use std::process::ExitCode;
 
 #[derive(Parser, Debug)]
 #[command(name = "flutterdec")]
@@ -436,10 +439,10 @@ struct MapSymbolsCmd {
 
 #[derive(Subcommand, Debug)]
 enum AdapterSubcommand {
-    /// Build and install the adapter for a given Dart snapshot hash
+    /// Install the adapter a compatibility record authorizes for a snapshot hash
     Install(AdapterInstallCmd),
-    /// List known adapters and whether each is installed
-    List,
+    /// Report the verified state of every authorized adapter
+    List(AdapterListCmd),
 }
 
 #[derive(Args, Debug)]
@@ -447,6 +450,23 @@ struct AdapterInstallCmd {
     /// Dart snapshot hash, as reported by `flutterdec info`
     #[arg(long = "dart-hash", value_name = "HASH")]
     dart_hash: String,
+    /// Target architecture, when one hash has records for more than one
+    #[arg(long = "target-arch", value_name = "ARCH")]
+    target_arch: Option<String>,
+    /// Artifact to publish instead of the packaged producer. Must match the
+    /// digest and size the compatibility record declares.
+    #[arg(long = "from", value_name = "PATH")]
+    from: Option<PathBuf>,
+    /// Print the installation record as JSON on stdout
+    #[arg(long)]
+    json: bool,
+}
+
+#[derive(Args, Debug)]
+struct AdapterListCmd {
+    /// Print the store report as JSON on stdout
+    #[arg(long)]
+    json: bool,
 }
 
 #[derive(Args, Debug)]
@@ -455,39 +475,40 @@ struct AdapterCmd {
     subcommand: AdapterSubcommand,
 }
 
-fn find_repo_root(start: &Path) -> PathBuf {
-    let mut p = start.to_path_buf();
-    loop {
-        let marker1 = p.join("Cargo.toml");
-        let marker2 = p.join("adapters/manifest.json");
-        if marker1.exists() && marker2.exists() {
-            return p;
-        }
-        if !p.pop() {
-            return start.to_path_buf();
+/// Exit status for a store whose content is broken rather than merely absent.
+const STORE_STATE_FAILURE: u8 = 2;
+
+fn main() -> ExitCode {
+    match run() {
+        Ok(code) => code,
+        Err(err) => {
+            eprintln!("error: {err:#}");
+            ExitCode::FAILURE
         }
     }
 }
 
-fn main() -> Result<()> {
+fn run() -> Result<ExitCode> {
     let cli = Cli::parse();
-    let cwd = std::env::current_dir().context("resolve current dir")?;
-    let repo_root = find_repo_root(&cwd);
+    // Resolved once, from the executable and the environment. Nothing below
+    // this line may consult the current directory for a repository root: that
+    // is what made a packaged binary behave differently per working directory.
+    let layout = Layout::resolve().context("resolve flutterdec data and store locations")?;
 
     match cli.command {
-        Command::Info(cmd) => handle_info(&repo_root, cmd)?,
-        Command::Decompile(cmd) => handle_decompile(&repo_root, cmd)?,
-        Command::Diff(cmd) => handle_diff(&repo_root, cmd)?,
+        Command::Info(cmd) => handle_info(&layout, cmd)?,
+        Command::Decompile(cmd) => handle_decompile(&layout, cmd)?,
+        Command::Diff(cmd) => handle_diff(&layout, cmd)?,
         Command::EngineFingerprint(cmd) => handle_engine_fingerprint(cmd)?,
-        Command::MapSymbols(cmd) => handle_map_symbols(&repo_root, cmd)?,
-        Command::Adapter(cmd) => handle_adapter(&repo_root, cmd)?,
+        Command::MapSymbols(cmd) => handle_map_symbols(&layout, cmd)?,
+        Command::Adapter(cmd) => return handle_adapter(&layout, cmd),
     }
 
-    Ok(())
+    Ok(ExitCode::SUCCESS)
 }
 
-fn handle_info(repo_root: &Path, cmd: InfoCmd) -> Result<()> {
-    let out = run_info(repo_root, &cmd.input, cmd.adapter_backend.to_core())?;
+fn handle_info(layout: &Layout, cmd: InfoCmd) -> Result<()> {
+    let out = run_info(layout, &cmd.input, cmd.adapter_backend.to_core())?;
     if cmd.json {
         println!("{}", serde_json::to_string_pretty(&out)?);
     } else {
@@ -576,15 +597,15 @@ fn handle_info(repo_root: &Path, cmd: InfoCmd) -> Result<()> {
     Ok(())
 }
 
-fn handle_decompile(repo_root: &Path, cmd: DecompileCmd) -> Result<()> {
+fn handle_decompile(layout: &Layout, cmd: DecompileCmd) -> Result<()> {
     let input = cmd.input.clone();
     let opt = build_decompile_options(cmd)?;
-    let quality = run_decompile(repo_root, &input, &opt)?;
+    let quality = run_decompile(layout, &input, &opt)?;
     println!("{}", serde_json::to_string_pretty(&quality)?);
     Ok(())
 }
 
-fn handle_diff(repo_root: &Path, cmd: DiffCmd) -> Result<()> {
+fn handle_diff(layout: &Layout, cmd: DiffCmd) -> Result<()> {
     let old_input = cmd.old_input.clone();
     let new_input = cmd.new_input.clone();
     let json = cmd.json;
@@ -595,7 +616,7 @@ fn handle_diff(repo_root: &Path, cmd: DiffCmd) -> Result<()> {
         app_packages: cmd.app_packages,
         require_snapshot_hash_match: cmd.require_snapshot_hash_match,
     };
-    let report = run_diff(repo_root, &old_input, &new_input, &opt)?;
+    let report = run_diff(layout, &old_input, &new_input, &opt)?;
     if json {
         println!("{}", serde_json::to_string_pretty(&report)?);
     } else {
@@ -787,13 +808,15 @@ fn handle_engine_fingerprint(cmd: EngineFingerprintCmd) -> Result<()> {
     Ok(())
 }
 
-fn handle_map_symbols(repo_root: &Path, cmd: MapSymbolsCmd) -> Result<()> {
+fn handle_map_symbols(layout: &Layout, cmd: MapSymbolsCmd) -> Result<()> {
     let opt = SymbolMapOptions {
         out_dir: cmd.out_dir,
         include_branches: cmd.include_branches,
         nearest_max_distance: cmd.nearest_max_distance,
         require_exec_match: cmd.require_exec_match,
-        local_cache_root: cmd.register_local_cache.then(|| repo_root.join("symbols")),
+        local_cache_root: cmd
+            .register_local_cache
+            .then(|| layout.symbols_dir().to_path_buf()),
     };
     let report = run_symbol_map(&cmd.stripped_path, &cmd.unstripped_path, &opt)?;
     if cmd.json {
@@ -842,27 +865,99 @@ fn handle_map_symbols(repo_root: &Path, cmd: MapSymbolsCmd) -> Result<()> {
     Ok(())
 }
 
-fn handle_adapter(repo_root: &Path, cmd: AdapterCmd) -> Result<()> {
+fn handle_adapter(layout: &Layout, cmd: AdapterCmd) -> Result<ExitCode> {
     match cmd.subcommand {
         AdapterSubcommand::Install(cmd) => {
-            let path = install_adapter(repo_root, &cmd.dart_hash)?;
-            println!("installed adapter: {}", path.display());
-        }
-        AdapterSubcommand::List => {
-            let rows = available_adapters(repo_root)?;
-            if rows.is_empty() {
-                println!("no manifest entries");
+            let registry = CompatibilityRegistry::load(&layout.registry_path())
+                .map_err(|err| anyhow!("read compatibility registry: {}", err))?;
+            let installation = store::install(
+                layout,
+                &registry,
+                &cmd.dart_hash,
+                cmd.target_arch.as_deref(),
+                cmd.from.as_deref(),
+            )
+            .map_err(|err| anyhow!("{}", err))?;
+            if cmd.json {
+                println!("{}", serde_json::to_string_pretty(&installation)?);
             } else {
-                for (hash, version, adapter, installed) in rows {
-                    println!(
-                        "hash={} version={} adapter={} installed={}",
-                        hash, version, adapter, installed
+                let record = &installation.record;
+                println!(
+                    "result: {}",
+                    if installation.idempotent {
+                        "already-installed"
+                    } else {
+                        "installed"
+                    }
+                );
+                println!("store: {}", installation.store_dir.display());
+                println!("artifact: {}", installation.artifact_path.display());
+                println!("snapshot hash: {}", record.snapshot_hash);
+                println!("target: {}", record.target_arch);
+                println!("host: {}/{}", record.host_os, record.host_arch);
+                println!(
+                    "artifact digest: {} ({} bytes)",
+                    record.sha256, record.size
+                );
+                println!("artifact id: {}", record.artifact_id);
+                println!("artifact source: {}", record.source);
+                println!("profile: {} {}", record.profile_id, record.profile_sha256);
+                println!("profile path: {}", installation.profile_path.display());
+                println!(
+                    "compatibility record: {}",
+                    record.compatibility_record_sha256
+                );
+                println!(
+                    "protocol/model majors: {}/{}",
+                    record.protocol_major, record.model_major
+                );
+            }
+            Ok(ExitCode::SUCCESS)
+        }
+        AdapterSubcommand::List(cmd) => {
+            let rows = available_adapters(layout)?;
+            if cmd.json {
+                println!("{}", serde_json::to_string_pretty(&rows)?);
+            } else if rows.is_empty() {
+                println!("no compatibility records");
+            } else {
+                for row in &rows {
+                    print!(
+                        "hash={} state={} adapter={} target={} host={}/{}",
+                        row.snapshot_hash,
+                        row.state,
+                        row.artifact_id,
+                        row.target_arch,
+                        row.host_os,
+                        row.host_arch
                     );
+                    if let Some(path) = row.artifact_path.as_deref() {
+                        print!(" artifact={}", path);
+                    }
+                    if let Some(digest) = row.expected_sha256.as_deref() {
+                        print!(" sha256={}", digest);
+                    }
+                    if let Some(detail) = row.detail.as_deref() {
+                        print!(" detail={:?}", detail);
+                    }
+                    println!();
                 }
             }
+            // A store that claims installs it cannot back is a failure, not a
+            // report: exiting 0 here is how "installed" came to mean "a file
+            // with the right name exists".
+            let broken = rows.iter().filter(|row| row.state.is_failure()).count();
+            if broken > 0 {
+                eprintln!(
+                    "error: {broken} adapter store entries are {} or {}",
+                    EntryState::Missing,
+                    EntryState::Corrupt
+                );
+                return Ok(ExitCode::from(STORE_STATE_FAILURE));
+            }
+            Ok(ExitCode::SUCCESS)
         }
     }
-    Ok(())
 }
 
 fn resolve_toggle(with: bool, without: bool, name: &str) -> Result<Option<bool>> {
