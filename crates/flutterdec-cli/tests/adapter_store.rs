@@ -122,6 +122,30 @@ impl Prefix {
     /// `variant_path`, `host_os` and `host_arch` are what the fixture registry
     /// declares, which is how the containment and host cases are set up.
     fn with_variant(variant_path: &str, host_os: &str, host_arch: &str) -> Self {
+        Self::build(variant_path, host_os, host_arch, None)
+    }
+
+    /// A prefix whose packaged producer answers the request instead of only
+    /// proving it ran.
+    ///
+    /// Needed wherever the assertion is about what a *completed* run reports:
+    /// a producer that exits without a model never gets as far as a model, a
+    /// containment report, or a `report.json`.
+    fn answering() -> Self {
+        Self::build(
+            ARTIFACT_RELATIVE,
+            std::env::consts::OS,
+            std::env::consts::ARCH,
+            Some(&answering_producer()),
+        )
+    }
+
+    fn build(
+        variant_path: &str,
+        host_os: &str,
+        host_arch: &str,
+        producer_source: Option<&str>,
+    ) -> Self {
         let dir = TempDir::new().expect("tempdir");
         let root = dir.path();
         let marker = root.join("producer_ran.marker");
@@ -139,7 +163,10 @@ impl Prefix {
         )
         .expect("copy release binary");
 
-        let producer = format!("#!/bin/sh\ntouch '{}'\nexit 3\n", marker.display());
+        let producer = match producer_source {
+            Some(source) => source.to_string(),
+            None => format!("#!/bin/sh\ntouch '{}'\nexit 3\n", marker.display()),
+        };
         let producer_path = root.join("share/flutterdec/adapters/python/adapter_template.py");
         fs::write(&producer_path, &producer).expect("write producer");
         let mut perms = fs::metadata(&producer_path)
@@ -1232,4 +1259,251 @@ fn synthetic_libapp(hash: &str, features: &str) -> Vec<u8> {
     out[EHDR..EHDR + PHDR].copy_from_slice(&phdr);
 
     out
+}
+
+/// The interpreter this test process can see, as an absolute path.
+///
+/// The CLI runs with `PATH=/usr/bin:/bin`, and the adapter host passes that
+/// `PATH` through, so a `/usr/bin/env` shebang would resolve against a
+/// deliberately bare search path. Baking the interpreter in keeps the fixture
+/// independent of what the packaged prefix happens to have on `PATH`.
+fn interpreter() -> PathBuf {
+    let path = std::env::var_os("PATH").expect("PATH");
+    std::env::split_paths(&path)
+        .map(|dir| dir.join("python3"))
+        .find(|candidate| candidate.is_file())
+        .expect("a python3 on the test process PATH")
+}
+
+/// A packaged producer that answers correctly and recovers nothing.
+///
+/// Every host-selected fact is echoed out of the request rather than restated,
+/// because a fixture that restates them is a fixture that can disagree with the
+/// host for reasons that have nothing to do with what is under test.
+fn answering_producer() -> String {
+    format!(
+        r#"#!{}
+import argparse, json, pathlib
+
+DOMAINS = [
+    "libraries", "classes", "class_relationships", "functions",
+    "function_names", "object_pool", "pool_index_space",
+]
+
+p = argparse.ArgumentParser()
+p.add_argument("--request", required=True)
+p.add_argument("--result", required=True)
+p.add_argument("--input-path")
+p.add_argument("--libapp-path")
+args = p.parse_args()
+request = json.loads(pathlib.Path(args.request).read_text())
+code_region = next(
+    handle for handle in request["inputs"] if handle["region"] == "isolate_instructions"
+)
+
+model = {{
+    "model_version": 4,
+    "producer": request["producer"],
+    "input": {{
+        "identity": request["identity"],
+        "regions": [
+            {{
+                "region": handle["region"],
+                "size": handle["size"],
+                "sha256": handle["sha256"],
+                "virtual_address": handle["virtual_address"],
+                "executable": handle["executable"],
+            }}
+            for handle in request["inputs"]
+        ],
+    }},
+    "compatibility": request["compatibility"],
+    "capabilities": dict(
+        {{domain: "unavailable" for domain in DOMAINS}}, functions="partial"
+    ),
+    "libraries": [],
+    "classes": [],
+    # One unnamed heuristic code range. A model with no functions at all makes
+    # `decompile` stop before it writes a report, and the report is the point.
+    "functions": [
+        {{
+            "id": 1,
+            "name": None,
+            "owner": None,
+            "code": {{
+                "start_va": code_region["virtual_address"],
+                "size": code_region["size"],
+            }},
+            "code_section_va": code_region["virtual_address"],
+            "provenance": "heuristic",
+        }}
+    ],
+    "object_pool": {{"index_space": "ordinal", "geometry": None, "entries": []}},
+    "diagnostics": [
+        {{
+            "code": (
+                "domain_heuristic_only"
+                if domain == "functions"
+                else "domain_not_recovered"
+            ),
+            "severity": "warning",
+            "subject": domain,
+            "message": "the packaging fixture parses nothing",
+        }}
+        for domain in DOMAINS
+    ],
+    "extensions": {{}},
+}}
+pathlib.Path(request["output"]).write_text(json.dumps(model))
+pathlib.Path(args.result).write_text(json.dumps({{
+    "protocol_major": 1,
+    "model_major": 4,
+    "status": "ok",
+    "model": request["output"],
+    "error": None,
+    "resolved_backend": "internal",
+    "fallback_reason": None,
+    "diagnostics": [],
+}}))
+"#,
+        interpreter().display()
+    )
+}
+
+/// Every containment control the host names, so the assertion cannot silently
+/// stop covering one that was added later.
+const CONTROLS: &[&str] = &[
+    "wall_clock_deadline",
+    "process_group",
+    "descriptor_isolation",
+    "cpu_seconds",
+    "file_size",
+    "address_space",
+    "process_count",
+    "descriptors",
+    "network",
+    "stdout_bytes",
+    "stderr_bytes",
+    "model_bytes",
+];
+
+fn assert_controls_are_accurate(containment: &Value, source: &str) {
+    let object = containment
+        .as_object()
+        .unwrap_or_else(|| panic!("{source} has no containment object: {containment}"));
+    for control in CONTROLS {
+        let state = object
+            .get(*control)
+            .unwrap_or_else(|| panic!("{source} does not report {control}: {containment}"));
+        match state["state"].as_str() {
+            Some("applied") => {}
+            Some("unavailable") => assert!(
+                state["reason"]
+                    .as_str()
+                    .is_some_and(|r| !r.trim().is_empty()),
+                "{source} reports {control} unavailable without a reason: {state}"
+            ),
+            other => panic!("{source} reports {control} as {other:?}: {state}"),
+        }
+    }
+    assert!(
+        object["process_tree_terminated"].is_boolean(),
+        "{source} does not say whether the host had to end the run: {containment}"
+    );
+    assert_eq!(
+        object.len(),
+        CONTROLS.len() + 1,
+        "{source} reports controls this test does not check: {containment}"
+    );
+
+    // Host-side bounds and POSIX controls hold everywhere this crate builds.
+    for control in [
+        "wall_clock_deadline",
+        "stdout_bytes",
+        "stderr_bytes",
+        "model_bytes",
+        "process_group",
+        "descriptor_isolation",
+        "cpu_seconds",
+        "file_size",
+        "descriptors",
+    ] {
+        assert_eq!(
+            object[control]["state"], "applied",
+            "{source} could not establish {control}: {}",
+            object[control]
+        );
+    }
+
+    if cfg!(target_os = "linux") {
+        for control in ["address_space", "process_count"] {
+            assert_eq!(
+                object[control]["state"], "applied",
+                "{source} did not establish {control} on linux: {}",
+                object[control]
+            );
+        }
+    } else {
+        for control in ["address_space", "process_count", "network"] {
+            assert_eq!(
+                object[control]["state"], "unavailable",
+                "{source} claimed {control} on a platform that cannot establish it: {}",
+                object[control]
+            );
+        }
+    }
+}
+
+/// What the host says it established has to reach the operator, and it has to
+/// say the same thing through both surfaces that report a run.
+#[test]
+fn info_and_the_decompile_report_state_which_containment_controls_were_established() {
+    let prefix = Prefix::answering();
+    let libapp = prefix.root().join("libapp.so");
+    fs::write(&libapp, synthetic_libapp(HASH, FEATURES)).expect("write libapp");
+    let input = libapp.to_str().expect("path").to_string();
+
+    let install = prefix.install();
+    assert_eq!(code(&install), 0, "{}", stderr(&install));
+
+    let info = prefix.run(&["info", &input, "--json"]);
+    assert_eq!(code(&info), 0, "{}", stderr(&info));
+    let report = json(&info);
+    assert_eq!(
+        report["resolved_backend"],
+        text("internal"),
+        "the fixture producer did not run: {}",
+        stdout(&info)
+    );
+    assert_controls_are_accurate(&report["adapter_containment"], "flutterdec info");
+
+    let out = prefix.root().join("out");
+    let out_arg = out.to_str().expect("path").to_string();
+    // The fixture producer recovers nothing, so the default app-only scope has
+    // nothing to emit. The scope is not what this test is about.
+    let decompile = prefix.run(&[
+        "decompile",
+        &input,
+        "-o",
+        &out_arg,
+        "--function-scope",
+        "all",
+    ]);
+    let report_path = out.join("report.json");
+    assert!(
+        report_path.is_file(),
+        "decompile wrote no report (exit {}): {}",
+        code(&decompile),
+        stderr(&decompile)
+    );
+    let summary: Value =
+        serde_json::from_slice(&fs::read(&report_path).expect("read report")).expect("report JSON");
+    assert_controls_are_accurate(
+        &summary["adapter_selection"]["containment"],
+        "decompile report.json",
+    );
+    assert_eq!(
+        summary["adapter_selection"]["containment"], report["adapter_containment"],
+        "info and report.json disagree about what was established"
+    );
 }
