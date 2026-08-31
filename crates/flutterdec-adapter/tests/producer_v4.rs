@@ -629,3 +629,45 @@ asm.mkdir(parents=True, exist_ok=True)
         .iter()
         .all(|e| e.target_va.is_none()));
 }
+
+/// The registry content-addresses the producer that ships with it, so editing
+/// one and not the other publishes a record no install can satisfy.
+///
+/// Without this the drift only surfaces in the release layout smoke, which is
+/// the last step of the local check and does not run at all in a plain
+/// `cargo test`.
+#[test]
+fn the_registry_declares_the_digest_of_the_producer_that_ships_with_it() {
+    let root = repo_root();
+    let bytes = fs::read(root.join("adapters/python/adapter_template.py")).expect("read producer");
+    let expected = flutterdec_adapter::primitives::Sha256Digest::of(&bytes);
+
+    let registry = flutterdec_adapter::registry::CompatibilityRegistry::load(
+        &root.join("adapters/registry.json"),
+    )
+    .expect("the checked-in registry is valid");
+
+    let mut variants = 0;
+    for record in &registry.records {
+        for variant in &record.artifact.variants {
+            variants += 1;
+            assert_eq!(
+                variant.sha256,
+                expected.as_str(),
+                "record {} variant {}/{} declares a digest the checked-in producer does not have",
+                record.snapshot_hash,
+                variant.host_os,
+                variant.host_arch
+            );
+            assert_eq!(
+                variant.size,
+                bytes.len() as u64,
+                "record {} variant {}/{} declares the wrong producer size",
+                record.snapshot_hash,
+                variant.host_os,
+                variant.host_arch
+            );
+        }
+    }
+    assert!(variants > 0, "the checked-in registry declares no artifact");
+}
