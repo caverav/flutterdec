@@ -433,7 +433,7 @@ Main outputs under `-o <OUT_DIR>`:
 - `android_startup.dart_entrypoints` entries can carry `function_name`, `library_uri`, and `app_bundle_path` when those values are directly recoverable from APK bytecode or simple helper return propagation
 - `android_startup.bootstrap_chain` summarizes observed Android embedder startup stages per source method, including ownership, stage ordering, completeness, and missing steps
 - `engine_symbol_ingestion` for auto-loaded local engine symbol cache matches keyed by `libflutter.so` build id
-- `bootflow_discovery` entries tagged by `source` (`adapter`, `manifest`, `apk_startup`)
+- `bootflow_discovery` entries tagged by `source` (`android_manifest`, `apk_startup`, `model_name_pattern`) and by `provenance` (`derived` or `heuristic`, never exact)
 
 ## See The Pipeline
 
