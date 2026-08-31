@@ -119,7 +119,7 @@ fn recover_code_candidates(instr: &[u8], base_va: u64) -> Vec<Function> {
     let Some(end_va) = base_va.checked_add(instr.len() as u64) else {
         return Vec::new();
     };
-    let in_region = |va: u64| va >= base_va && va < end_va && (va - base_va) % 4 == 0;
+    let in_region = |va: u64| va >= base_va && va < end_va && (va - base_va).is_multiple_of(4);
 
     let mut prologues: BTreeSet<u64> = BTreeSet::new();
     let mut call_targets: BTreeMap<u64, usize> = BTreeMap::new();
