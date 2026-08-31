@@ -1098,7 +1098,7 @@ fn producer_trust_label(trust: ProducerTrust) -> &'static str {
 }
 
 /// The model's per-domain capability levels, for reports.
-fn capability_map(caps: &Capabilities) -> Vec<(String, String)> {
+fn capability_map(caps: &Capabilities) -> BTreeMap<String, String> {
     Domain::ALL
         .iter()
         .map(|domain| {
@@ -1915,10 +1915,7 @@ pub fn run_decompile(
         "model": {
             "model_version": model.model_version,
             "name_pattern_hints": model_name_hints,
-            "capabilities": capability_map(&model.capabilities)
-                .into_iter()
-                .map(|(domain, level)| (domain, serde_json::Value::String(level)))
-                .collect::<serde_json::Map<_, _>>(),
+            "capabilities": capability_map(&model.capabilities),
             "diagnostics": model.diagnostics.len(),
             "function_name_provenance": {
                 "named": function_name_provenance_stats.named(),

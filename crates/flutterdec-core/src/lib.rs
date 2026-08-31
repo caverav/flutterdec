@@ -22,7 +22,7 @@ use flutterdec_loader::{
 };
 use serde::Serialize;
 use serde_json::json;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -246,7 +246,7 @@ pub struct InfoOutput {
     /// against a string the adapter chose.
     pub snapshot_identity_is_exact: Option<bool>,
     /// Per-domain capability levels the model reported.
-    pub model_capabilities: Option<Vec<(String, String)>>,
+    pub model_capabilities: Option<BTreeMap<String, String>>,
     pub compatibility_warnings: Option<Vec<String>>,
     pub function_count: Option<usize>,
     pub class_count: Option<usize>,
