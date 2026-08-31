@@ -121,6 +121,7 @@ pub enum PointerCompression {
 /// lowercased, sorted, deduplicated. The raw string is retained because it is
 /// the actual evidence and normalization is lossy about ordering.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct FeatureEvidence {
     /// Absent when no header parsed.
     pub raw: Option<String>,
@@ -178,6 +179,7 @@ impl FeatureEvidence {
 
 /// What is actually known about a loaded snapshot, and how well it is known.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SnapshotIdentity {
     /// Normalized lowercase 32-character hash. `None` when unrecoverable.
     pub hash: Option<String>,
@@ -252,6 +254,7 @@ impl std::error::Error for IdentityRejection {}
 /// match. Semantic Dart versions are absent for the same reason plus a stronger
 /// one, they are aliases of a hash and never selectors.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ExactSelectionKey {
     pub hash: String,
     pub target_arch: TargetArch,

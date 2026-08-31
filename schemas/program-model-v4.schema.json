@@ -1,0 +1,648 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "capabilities": {
+      "additionalProperties": false,
+      "properties": {
+        "class_relationships": {
+          "enum": [
+            "complete",
+            "partial",
+            "unavailable"
+          ],
+          "type": "string"
+        },
+        "classes": {
+          "enum": [
+            "complete",
+            "partial",
+            "unavailable"
+          ],
+          "type": "string"
+        },
+        "function_names": {
+          "enum": [
+            "complete",
+            "partial",
+            "unavailable"
+          ],
+          "type": "string"
+        },
+        "functions": {
+          "enum": [
+            "complete",
+            "partial",
+            "unavailable"
+          ],
+          "type": "string"
+        },
+        "libraries": {
+          "enum": [
+            "complete",
+            "partial",
+            "unavailable"
+          ],
+          "type": "string"
+        },
+        "object_pool": {
+          "enum": [
+            "complete",
+            "partial",
+            "unavailable"
+          ],
+          "type": "string"
+        },
+        "pool_index_space": {
+          "enum": [
+            "complete",
+            "partial",
+            "unavailable"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "libraries",
+        "classes",
+        "class_relationships",
+        "functions",
+        "function_names",
+        "object_pool",
+        "pool_index_space"
+      ],
+      "type": "object"
+    },
+    "classes": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "maximum": 4294967295,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "library": {
+            "maximum": 4294967295,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "name": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "provenance": {
+            "enum": [
+              "exact",
+              "derived",
+              "heuristic"
+            ],
+            "type": "string"
+          },
+          "super_class": {
+            "maximum": 4294967295,
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "library",
+          "super_class",
+          "provenance"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "compatibility": {
+      "additionalProperties": false,
+      "properties": {
+        "parser_family_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "profile_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "profile_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "record_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "record_sha256",
+        "parser_family_id",
+        "profile_id",
+        "profile_sha256"
+      ],
+      "type": "object"
+    },
+    "diagnostics": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "enum": [
+              "domain_unsupported",
+              "domain_not_recovered",
+              "domain_partially_recovered",
+              "domain_heuristic_only",
+              "region_not_decoded",
+              "record_discarded"
+            ],
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "info",
+              "warning",
+              "error"
+            ],
+            "type": "string"
+          },
+          "subject": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "code",
+          "severity",
+          "subject",
+          "message"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "extensions": {
+      "additionalProperties": true,
+      "description": "The only object in this schema that accepts undeclared keys. Hosts may ignore its contents; nothing in it carries authority.",
+      "type": "object"
+    },
+    "functions": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "additionalProperties": false,
+            "properties": {
+              "size": {
+                "maximum": 18446744073709551615,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "start_va": {
+                "maximum": 18446744073709551615,
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "start_va",
+              "size"
+            ],
+            "type": "object"
+          },
+          "code_section_va": {
+            "maximum": 18446744073709551615,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "id": {
+            "maximum": 4294967295,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "name": {
+            "oneOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "confidence": {
+                    "maximum": 1.0,
+                    "minimum": 0.0,
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "provenance": {
+                    "enum": [
+                      "exact",
+                      "derived",
+                      "heuristic"
+                    ],
+                    "type": "string"
+                  },
+                  "text": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "text",
+                  "provenance",
+                  "confidence"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "owner": {
+            "maximum": 4294967295,
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "provenance": {
+            "enum": [
+              "exact",
+              "derived",
+              "heuristic"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "owner",
+          "code",
+          "code_section_va",
+          "provenance"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "input": {
+      "additionalProperties": false,
+      "properties": {
+        "identity": {
+          "additionalProperties": false,
+          "properties": {
+            "features": {
+              "additionalProperties": false,
+              "properties": {
+                "normalized": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "raw": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "raw",
+                "normalized"
+              ],
+              "type": "object"
+            },
+            "hash": {
+              "pattern": "^[0-9a-f]{32}$",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "hash_source": {
+              "enum": [
+                "header",
+                "scan",
+                "unavailable"
+              ],
+              "type": "string"
+            },
+            "kind": {
+              "enum": [
+                "full",
+                "full_core",
+                "full_jit",
+                "full_aot",
+                "unrecognized",
+                null
+              ],
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "pointer_compression": {
+              "enum": [
+                "compressed",
+                "uncompressed",
+                "unavailable",
+                "conflicting"
+              ],
+              "type": "string"
+            },
+            "target_arch": {
+              "oneOf": [
+                {
+                  "enum": [
+                    "arm64"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "unsupported": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "unsupported"
+                  ],
+                  "type": "object"
+                }
+              ]
+            }
+          },
+          "required": [
+            "hash",
+            "hash_source",
+            "kind",
+            "target_arch",
+            "features",
+            "pointer_compression"
+          ],
+          "type": "object"
+        },
+        "regions": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "executable": {
+                "type": "boolean"
+              },
+              "region": {
+                "enum": [
+                  "vm_data",
+                  "isolate_data",
+                  "vm_instructions",
+                  "isolate_instructions"
+                ],
+                "type": "string"
+              },
+              "sha256": {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              "size": {
+                "maximum": 18446744073709551615,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "virtual_address": {
+                "maximum": 18446744073709551615,
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "region",
+              "size",
+              "sha256",
+              "virtual_address",
+              "executable"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "identity",
+        "regions"
+      ],
+      "type": "object"
+    },
+    "libraries": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "display_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "maximum": 4294967295,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "provenance": {
+            "enum": [
+              "exact",
+              "derived",
+              "heuristic"
+            ],
+            "type": "string"
+          },
+          "uri": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "uri",
+          "display_name",
+          "provenance"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "model_version": {
+      "const": 4,
+      "type": "integer"
+    },
+    "object_pool": {
+      "additionalProperties": false,
+      "properties": {
+        "entries": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "confidence": {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "index": {
+                "maximum": 18446744073709551615,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "kind": {
+                "enum": [
+                  "string",
+                  "immediate",
+                  "code",
+                  "field",
+                  "class",
+                  "selector",
+                  "undecoded"
+                ],
+                "type": "string"
+              },
+              "provenance": {
+                "enum": [
+                  "exact",
+                  "derived",
+                  "heuristic"
+                ],
+                "type": "string"
+              },
+              "target_va": {
+                "maximum": 18446744073709551615,
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "value": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "index",
+              "kind",
+              "value",
+              "target_va",
+              "provenance",
+              "confidence"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "geometry": {
+          "oneOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "entries_offset": {
+                  "maximum": 18446744073709551615,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "word_size": {
+                  "maximum": 18446744073709551615,
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "entries_offset",
+                "word_size"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "index_space": {
+          "enum": [
+            "hardware",
+            "ordinal"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "index_space",
+        "geometry",
+        "entries"
+      ],
+      "type": "object"
+    },
+    "producer": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "trust": {
+          "enum": [
+            "registered",
+            "local",
+            "untrusted"
+          ],
+          "type": "string"
+        },
+        "version": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "artifact_sha256",
+        "trust"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "model_version",
+    "producer",
+    "input",
+    "compatibility",
+    "capabilities",
+    "libraries",
+    "classes",
+    "functions",
+    "object_pool",
+    "diagnostics"
+  ],
+  "title": "flutterdec ProgramModel v4",
+  "type": "object"
+}
