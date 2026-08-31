@@ -644,10 +644,7 @@ fn select_record<'a>(
 }
 
 /// Verify the profile the record points at, in the read-only data directory.
-fn verify_profile(
-    layout: &Layout,
-    record: &CompatibilityRecord,
-) -> Result<PathBuf, StoreError> {
+fn verify_profile(layout: &Layout, record: &CompatibilityRecord) -> Result<PathBuf, StoreError> {
     let relative = contained_relative(&record.profile.path, "profile path")?;
     let path = layout.data_dir().join(&relative);
     load_profile_artifact(
@@ -784,12 +781,11 @@ pub fn install(
         None => state.adapters.push(installed.clone()),
     }
     state.adapters.sort_by(|left, right| {
-        (
-            &left.snapshot_hash,
-            &left.host_os,
-            &left.host_arch,
-        )
-            .cmp(&(&right.snapshot_hash, &right.host_os, &right.host_arch))
+        (&left.snapshot_hash, &left.host_os, &left.host_arch).cmp(&(
+            &right.snapshot_hash,
+            &right.host_os,
+            &right.host_arch,
+        ))
     });
     let mut state_bytes = serde_json::to_vec_pretty(&state)
         .map_err(|err| StoreError::Malformed(format!("serialize store state: {err}")))?;
@@ -801,13 +797,15 @@ pub fn install(
     if let Err(err) = injected_failure(PublishStep::PublishState)
         .and_then(move |()| staged_state.publish(&state_dest))
     {
-        return Err(match restore_artifact(&dest, previous_artifact.as_deref()) {
-            Ok(()) => err,
-            Err(rollback) => StoreError::Io(format!(
-                "{err}; and restoring {} failed: {rollback}",
-                dest.display()
-            )),
-        });
+        return Err(
+            match restore_artifact(&dest, previous_artifact.as_deref()) {
+                Ok(()) => err,
+                Err(rollback) => StoreError::Io(format!(
+                    "{err}; and restoring {} failed: {rollback}",
+                    dest.display()
+                )),
+            },
+        );
     }
 
     Ok(Installation {
@@ -823,8 +821,7 @@ pub fn install(
 fn restore_artifact(dest: &Path, previous: Option<&[u8]>) -> Result<(), StoreError> {
     match previous {
         Some(bytes) => Staged::write(dest, bytes, ARTIFACT_MODE)?.publish(dest),
-        None => fs::remove_file(dest)
-            .map_err(|err| io(&format!("remove {}", dest.display()), err)),
+        None => fs::remove_file(dest).map_err(|err| io(&format!("remove {}", dest.display()), err)),
     }
 }
 
@@ -905,7 +902,28 @@ pub fn inspect(
     let host_os = std::env::consts::OS;
     let host_arch = std::env::consts::ARCH;
     let mut rows = Vec::new();
-    let mut claimed = Vec::new();
+    // Computed before the record walk rather than inside it: a record that
+    // turns out to be incompatible still accounts for its own store entry, and
+    // reporting that entry twice would read as two separate problems.
+    let claimed = state
+        .adapters
+        .iter()
+        .filter(|entry| {
+            entry.host_os == host_os
+                && entry.host_arch == host_arch
+                && registry
+                    .records
+                    .iter()
+                    .any(|record| record.snapshot_hash == entry.snapshot_hash)
+        })
+        .map(|entry| {
+            (
+                entry.snapshot_hash.clone(),
+                entry.host_os.clone(),
+                entry.host_arch.clone(),
+            )
+        })
+        .collect::<Vec<_>>();
 
     for record in &registry.records {
         let mut row = StoreEntry {
@@ -951,12 +969,6 @@ pub fn inspect(
             rows.push(row);
             continue;
         };
-        claimed.push((
-            installed.snapshot_hash.clone(),
-            installed.host_os.clone(),
-            installed.host_arch.clone(),
-        ));
-
         if installed.sha256 != variant.sha256
             || installed.size != variant.size
             || installed.artifact_path != variant.path
@@ -1019,19 +1031,16 @@ pub fn inspect(
             profile_id: Some(installed.profile_id.clone()),
             profile_sha256: Some(installed.profile_sha256.clone()),
             compatibility_record_sha256: Some(installed.compatibility_record_sha256.clone()),
-            detail: Some(
-                "no compatibility record authorizes this installed adapter".to_string(),
-            ),
+            detail: Some("no compatibility record authorizes this installed adapter".to_string()),
         });
     }
 
     rows.sort_by(|left, right| {
-        (
-            &left.snapshot_hash,
-            &left.host_os,
-            &left.host_arch,
-        )
-            .cmp(&(&right.snapshot_hash, &right.host_os, &right.host_arch))
+        (&left.snapshot_hash, &left.host_os, &left.host_arch).cmp(&(
+            &right.snapshot_hash,
+            &right.host_os,
+            &right.host_arch,
+        ))
     });
     Ok(rows)
 }
@@ -1189,7 +1198,10 @@ mod tests {
         let fixture = default_fixture();
         let first = install_default(&fixture).expect("install");
         assert!(!first.idempotent);
-        assert_eq!(fs::read(&first.artifact_path).expect("read"), PRODUCER.as_bytes());
+        assert_eq!(
+            fs::read(&first.artifact_path).expect("read"),
+            PRODUCER.as_bytes()
+        );
         let mode = fs::metadata(&first.artifact_path)
             .expect("metadata")
             .permissions()
@@ -1244,7 +1256,12 @@ mod tests {
 
     #[test]
     fn a_record_path_that_leaves_the_store_is_refused() {
-        for relative in ["../escape", "/etc/escape", "artifacts/../../escape", "./escape"] {
+        for relative in [
+            "../escape",
+            "/etc/escape",
+            "artifacts/../../escape",
+            "./escape",
+        ] {
             let (os, arch) = host();
             let fixture = fixture(relative, os, arch);
             match install_default(&fixture) {
@@ -1267,7 +1284,10 @@ mod tests {
         let err = install_default(&fixture).expect_err("a symlinked store directory escapes");
         assert!(matches!(err, StoreError::Containment(_)), "{err}");
         assert!(
-            fs::read_dir(&outside).expect("read outside").next().is_none(),
+            fs::read_dir(&outside)
+                .expect("read outside")
+                .next()
+                .is_none(),
             "the install wrote outside the store"
         );
     }

@@ -567,9 +567,16 @@ impl RegistrySelection {
 
 fn resolve_contained(root: &Path, relative: &str, label: &str) -> Result<PathBuf, RegistryError> {
     validate_relative_path(relative)?;
-    let root = root
-        .canonicalize()
-        .map_err(|err| RegistryError::Artifact(format!("canonicalize registry root: {err}")))?;
+    // Naming the label and the path matters: profiles resolve against the
+    // read-only package data and artifacts against the writable store, so
+    // "canonicalize registry root" left an operator unable to tell which of the
+    // two directories was missing.
+    let root = root.canonicalize().map_err(|err| {
+        RegistryError::Artifact(format!(
+            "{label} root {} is unavailable: {err}",
+            root.display()
+        ))
+    })?;
     let path = root.join(relative);
     let canonical = path.canonicalize().map_err(|err| {
         RegistryError::Artifact(format!("{label} {} is unavailable: {err}", path.display()))
