@@ -190,9 +190,14 @@ pub struct ContainmentReport {
     pub stdout_bytes: ControlState,
     pub stderr_bytes: ControlState,
     pub model_bytes: ControlState,
-    /// Whether the process tree was signalled. True on timeout, on an output
-    /// cap breach, and as the post-exit sweep that removes any survivor.
-    pub process_tree_killed: bool,
+    /// Whether the host had to terminate a tree that was still running, rather
+    /// than reaping a child that finished on its own.
+    ///
+    /// The group is signalled on every exit path, including the clean one,
+    /// because a backend that forked and abandoned a grandchild leaves one
+    /// behind on the clean path too. This field is about the other case: the
+    /// deadline or an output cap ran out and the host ended the run.
+    pub process_tree_terminated: bool,
 }
 
 impl ContainmentReport {
@@ -229,7 +234,12 @@ struct ChildPlan {
     /// `u64::MAX` means "not requested"; `RLIM_INFINITY` is a legitimate value
     /// so it cannot double as the sentinel.
     max_address_space_bytes: u64,
+    /// Budget when the child shares the host's user namespace: the host's
+    /// current task count plus the allowance.
     process_count: u64,
+    /// Budget when the child gets its own user namespace: the allowance plus the
+    /// one task that is the child itself.
+    process_count_isolated: u64,
     max_descriptors: u64,
     isolate_network: bool,
 }
@@ -300,23 +310,28 @@ type RlimitResource = libc::c_int;
 /// that allow unprivileged user namespaces. Where neither works the errno from
 /// the first attempt is reported and nothing is claimed.
 ///
+/// The second return value says whether a *user* namespace was entered, which
+/// the caller needs: the kernel counts `RLIMIT_NPROC` per user namespace and
+/// uid, so entering one resets that count and a budget computed against the
+/// host's count would no longer bound anything.
+///
 /// # Safety
 /// Called between `fork` and `exec`. Only makes syscalls.
 #[cfg(target_os = "linux")]
-unsafe fn isolate_network() -> i32 {
+unsafe fn isolate_network() -> (i32, bool) {
     if libc::unshare(libc::CLONE_NEWNET) == 0 {
-        return CODE_APPLIED;
+        return (CODE_APPLIED, false);
     }
     let first = errno();
     if libc::unshare(libc::CLONE_NEWUSER | libc::CLONE_NEWNET) == 0 {
-        return CODE_APPLIED;
+        return (CODE_APPLIED, true);
     }
-    first
+    (first, false)
 }
 
 #[cfg(not(target_os = "linux"))]
-unsafe fn isolate_network() -> i32 {
-    CODE_UNSUPPORTED
+unsafe fn isolate_network() -> (i32, bool) {
+    (CODE_UNSUPPORTED, false)
 }
 
 /// Apply the plan and report each outcome. Runs in the forked child.
@@ -386,21 +401,36 @@ unsafe fn apply_plan(plan: &ChildPlan) {
         codes[SLOT_ADDRESS_SPACE] = CODE_UNSUPPORTED;
     }
 
-    if plan.process_count != NOT_REQUESTED {
-        codes[SLOT_PROCESS_COUNT] = lower_limit(
-            libc::RLIMIT_NPROC,
-            plan.process_count,
-            &mut values[SLOT_PROCESS_COUNT],
-        );
-    }
     codes[SLOT_DESCRIPTORS] = lower_limit(
         libc::RLIMIT_NOFILE,
         plan.max_descriptors,
         &mut values[SLOT_DESCRIPTORS],
     );
 
+    // Network isolation before the process budget, because which namespace this
+    // task ends up in decides what the budget has to be.
+    let mut own_user_namespace = false;
     if plan.isolate_network {
-        codes[SLOT_NETWORK] = isolate_network();
+        let (code, entered) = isolate_network();
+        codes[SLOT_NETWORK] = code;
+        own_user_namespace = entered;
+    }
+
+    // In a fresh user namespace the per-uid task count starts at this task
+    // alone, so the budget is the tree's own allowance. Sharing the host's
+    // namespace means sharing its count, so the budget is that count plus the
+    // allowance.
+    let process_count = if own_user_namespace {
+        plan.process_count_isolated
+    } else {
+        plan.process_count
+    };
+    if process_count != NOT_REQUESTED {
+        codes[SLOT_PROCESS_COUNT] = lower_limit(
+            libc::RLIMIT_NPROC,
+            process_count,
+            &mut values[SLOT_PROCESS_COUNT],
+        );
     }
 
     let mut record = [0u8; STATUS_BYTES];
@@ -498,14 +528,21 @@ impl Containment {
         let read_end = unsafe { OwnedFd::from_raw_fd(fds[0]) };
         let write_end = unsafe { OwnedFd::from_raw_fd(fds[1]) };
 
-        let (process_count, process_count_note) = match limits.extra_processes {
-            None => (NOT_REQUESTED, None),
+        let (process_count, process_count_isolated, process_count_note) = match limits
+            .extra_processes
+        {
+            None => (NOT_REQUESTED, NOT_REQUESTED, None),
             Some(extra) => match current_process_count() {
-                Some(current) => (current.saturating_add(extra), None),
+                Some(current) => (
+                    current.saturating_add(extra),
+                    extra.saturating_add(1),
+                    None,
+                ),
                 None => (
                     NOT_REQUESTED,
+                    NOT_REQUESTED,
                     Some(format!(
-                        "RLIMIT_NPROC counts every process of the real user id and {} cannot observe that count, so no process budget was set",
+                        "RLIMIT_NPROC counts every task of the real user id and {} cannot observe that count, so no process budget was set",
                         std::env::consts::OS
                     )),
                 ),
@@ -520,6 +557,7 @@ impl Containment {
                 max_file_bytes: limits.max_file_bytes,
                 max_address_space_bytes: limits.max_address_space_bytes.unwrap_or(NOT_REQUESTED),
                 process_count,
+                process_count_isolated,
                 max_descriptors: limits.max_descriptors,
                 isolate_network: limits.isolate_network,
             },
@@ -550,7 +588,7 @@ impl Containment {
     /// Must be called once the child exists. Blocks until `exec` closes the
     /// write end, which is bounded: `exec` either happens or the child exits,
     /// and both close the descriptor.
-    pub(crate) fn collect(mut self, tree_killed: bool) -> ContainmentReport {
+    pub(crate) fn collect(mut self, terminated: bool) -> ContainmentReport {
         // The parent's own copy of the write end would keep the pipe open
         // forever.
         drop(self.write_end.take());
@@ -616,7 +654,7 @@ impl Containment {
             model_bytes: ControlState::Applied {
                 limit: Some(self.limits.max_model_bytes),
             },
-            process_tree_killed: tree_killed,
+            process_tree_terminated: terminated,
         }
     }
 }
