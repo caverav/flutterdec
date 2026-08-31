@@ -136,6 +136,8 @@ sequenceDiagram
 
 3. `adapter`
 - management path for adapter installation and listing
+- installs into the writable adapter store, verified against the compatibility registry
+- reports a verified state per record rather than whether a file exists
 - does not inspect binaries directly
 
 4. `map-symbols`
@@ -800,12 +802,15 @@ This split is intentional. It lets you improve one stage without destabilizing t
 
 ## Adding support for a new snapshot hash
 
-1. create or install adapter entry for hash
-2. ensure adapter emits schema version 2
+1. add a compatibility record for the hash in `adapters/registry.json`: header identity, target,
+   canonical feature tuple and fingerprint, profile path and digest, and one artifact variant per
+   supported host with the artifact's size and SHA-256
+2. ensure the producer speaks protocol major 1 and emits ProgramModel v4
 3. run:
 
 ```bash
 flutterdec adapter install --dart-hash <hash>
+flutterdec adapter list
 flutterdec decompile app.apk -o out
 ```
 
@@ -829,10 +834,17 @@ If output quality is poor:
 
 ## Debugging by symptom
 
-Symptom: `adapter not installed for hash ...`
+Symptom: `info` reports `adapter installed: false`
 
 - run `flutterdec adapter install --dart-hash <hash>`
-- verify with `flutterdec adapter list`
+- verify with `flutterdec adapter list`; the row must read `state=verified`
+- `state=missing` or `state=corrupt` means the store holds an install it cannot back, and
+  `adapter list` exits 2; reinstall
+- `state=incompatible` means no artifact variant in the record serves this host
+
+Symptom: `no packaged data directory holds adapters/registry.json`
+
+- the binary is not in a prefix that carries `share/flutterdec`; set `FLUTTERDEC_DATA_DIR`
 
 Symptom: quality gate fails with low disassembly ratio
 

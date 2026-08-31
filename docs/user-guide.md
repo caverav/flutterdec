@@ -110,32 +110,34 @@ nix develop -c cargo build -p flutterdec-cli --release
 ./target/release/flutterdec --help
 ```
 
-### Where Adapters Live, And Why A Run Can Fail Outside A Checkout
+### Where Adapters Live
 
-`decompile` needs a Python adapter installed for the target's Dart snapshot hash. The adapter store is found
-by **walking up from your current directory** for a folder containing *both* `Cargo.toml` and
-`adapters/manifest.json`; if no such folder is found, the current directory is used as-is. So the binary's
-own location is irrelevant - what matters is where you `cd`.
+`flutterdec` uses two directories, and neither one depends on your current directory.
 
-Two consequences that produce the same confusing error:
+**Read-only package data** holds the compatibility registry (`adapters/registry.json`), the runtime
+profiles (`data/*.json`), and the checked-in reference producer. It is resolved from the location of
+the binary itself, first match wins:
 
-- **Running from outside a checkout finds no store.** `nix run`, a `nix profile` install, or a release binary
-  invoked from, say, `~/work` will report:
+1. `FLUTTERDEC_DATA_DIR`, if set. An explicit override never silently falls back: if it holds no
+   `adapters/registry.json`, the command fails and says so.
+2. `<binary>/../share/flutterdec`, which is where the Nix package and any normal prefix install put it.
+3. `<binary>`, for a flat unpacked distribution.
+4. `<binary>/../..`, which is where `cargo build` leaves a binary inside a checkout.
 
-  ```
-  Error: adapter not installed for hash 80a49c7111088100a233b2ae788e1f48.
-  run: flutterdec adapter install --dart-hash 80a49c7111088100a233b2ae788e1f48
-  ```
+**The writable adapter store** holds installed adapters and the store's own state file. It is:
 
-  The message is correct and the fix is to run that command - but run it from **inside** the checkout, or the
-  adapter lands somewhere the next invocation will not look.
-- **A fresh clone or `git worktree` has the manifest but no adapters.** `adapters/installed/` is gitignored,
-  so a second working tree of the same repository starts with zero installed adapters even though your main
-  checkout has them. This has already caused a real misdiagnosis in this project's own research: a run in a
-  fresh worktree hit the error above and it was recorded as "the quality gate is unrunnable" before the true
-  cause was found. If a command works in one tree and not another, check this first.
+1. `FLUTTERDEC_ADAPTER_STORE`, if set.
+2. otherwise `$XDG_DATA_HOME/flutterdec/adapters`, or `$HOME/.local/share/flutterdec/adapters` when
+   `XDG_DATA_HOME` is unset.
 
-Install once per snapshot hash, from within the checkout:
+The local symbol cache used by `map-symbols --register-local-cache` follows the same rule under
+`FLUTTERDEC_SYMBOL_CACHE` or `<data home>/flutterdec/symbols`.
+
+So a release binary works from any directory, installing an adapter never dirties a checkout, and the
+same install is visible to `info`, `decompile`, `diff` and `adapter list` in the same environment. If you
+want a throwaway store, point `FLUTTERDEC_ADAPTER_STORE` at a temporary directory.
+
+Install once per snapshot hash, from anywhere:
 
 ```bash
 flutterdec info ./sample.apk --json      # read snapshot_hash
@@ -143,13 +145,24 @@ flutterdec adapter install --dart-hash <HASH>
 flutterdec adapter list
 ```
 
-Two things to know about that install step. `adapter install` writes the built adapter into
-`adapters/installed/`, which is gitignored, **but it also registers the hash in `adapters/manifest.json`,
-which is tracked** - so installing an adapter leaves your working tree dirty with a one-entry diff. That is
-expected, not a mistake, and the entry is worth keeping if you intend to share support for that snapshot
-hash. Second, the manifest and the installed adapters can disagree: a fresh clone has a manifest listing
-adapters whose files are absent, and you get the same "adapter not installed" message as if the manifest were
-empty. `flutterdec adapter list` shows both sides, which is the quickest way to tell the two apart.
+The compatibility registry is the only install authority. `adapter install` refuses a hash it has no
+record for, a record that does not serve this host, and any artifact whose bytes do not match the digest
+and size the record declares. It publishes one file into the store atomically, is safe to run
+concurrently, and reports `already-installed` when the store already holds exactly that install. A
+failed install leaves nothing behind.
+
+`adapter list` reports a verified state per record rather than whether a file exists:
+
+| state | meaning |
+| --- | --- |
+| `verified` | installed, present, and byte-for-byte what the record declares |
+| `missing` | the store records the install but the artifact file is gone |
+| `corrupt` | the artifact is present but is not what the record declares |
+| `incompatible` | no artifact variant, or no supported protocol/model major, for this host |
+| `unavailable` | authorized by a record, not installed |
+
+`adapter list` exits 2 when any entry is `missing` or `corrupt`, so a broken store is an error rather
+than a line of output. Both commands take `--json`.
 
 ## First Use
 
