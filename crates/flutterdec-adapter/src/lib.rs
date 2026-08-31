@@ -14,6 +14,7 @@
 pub mod model;
 pub mod primitives;
 pub mod protocol;
+pub mod store;
 pub mod validate;
 /// Host compatibility records live in the loader crate so profile and identity
 /// selection cannot depend on adapter model DTOs; re-export them at the adapter
@@ -27,25 +28,11 @@ use flutterdec_loader::identity::IdentityRejection;
 use model::{CompatibilityBinding, InputRegion, InputRegionName, Producer, ProgramModel};
 use primitives::{RelativePath, Sha256Digest};
 use protocol::{AdapterRequest, AdapterResult, AdapterStatus, BackendId, RequestedBackend};
-use serde::{Deserialize, Serialize};
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use tempfile::tempdir;
 use validate::HostSelectedContext;
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct AdapterManifest {
-    pub entries: Vec<AdapterManifestEntry>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AdapterManifestEntry {
-    pub snapshot_hash: String,
-    pub version: String,
-    pub adapter: String,
-}
 
 /// One snapshot region, as the host read it.
 #[derive(Debug, Clone, Copy)]
@@ -86,110 +73,6 @@ pub struct AdapterRun {
     pub resolved_backend: BackendId,
     pub fallback_reason: Option<protocol::FallbackReason>,
     pub diagnostics: Vec<model::Diagnostic>,
-}
-
-fn manifest_path(repo_root: &Path) -> PathBuf {
-    repo_root.join("adapters/manifest.json")
-}
-
-fn template_path(repo_root: &Path) -> PathBuf {
-    repo_root.join("adapters/python/adapter_template.py")
-}
-
-fn installed_dir(repo_root: &Path) -> PathBuf {
-    repo_root.join("adapters/installed")
-}
-
-pub fn load_manifest(repo_root: &Path) -> Result<AdapterManifest> {
-    let path = manifest_path(repo_root);
-    if !path.exists() {
-        return Ok(AdapterManifest::default());
-    }
-    let bytes = fs::read(&path).with_context(|| format!("read manifest: {}", path.display()))?;
-    let m =
-        serde_json::from_slice::<AdapterManifest>(&bytes).context("parse adapter manifest JSON")?;
-    Ok(m)
-}
-
-pub fn save_manifest(repo_root: &Path, manifest: &AdapterManifest) -> Result<()> {
-    let path = manifest_path(repo_root);
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    let body = serde_json::to_vec_pretty(manifest)?;
-    fs::write(&path, body).with_context(|| format!("write manifest: {}", path.display()))?;
-    Ok(())
-}
-
-pub fn resolve_adapter_name(repo_root: &Path, dart_hash: &str) -> Result<String> {
-    let m = load_manifest(repo_root)?;
-    if let Some(entry) = m.entries.iter().find(|e| e.snapshot_hash == dart_hash) {
-        return Ok(entry.adapter.clone());
-    }
-    Ok(format!("dart_adapter_{}", dart_hash))
-}
-
-pub fn install_adapter(repo_root: &Path, dart_hash: &str) -> Result<PathBuf> {
-    if dart_hash.is_empty() {
-        bail!("dart hash cannot be empty");
-    }
-
-    let template = template_path(repo_root);
-    if !template.exists() {
-        bail!("missing adapter template: {}", template.display());
-    }
-
-    let mut manifest = load_manifest(repo_root)?;
-    if !manifest
-        .entries
-        .iter()
-        .any(|e| e.snapshot_hash == dart_hash)
-    {
-        manifest.entries.push(AdapterManifestEntry {
-            snapshot_hash: dart_hash.to_string(),
-            version: "unknown".to_string(),
-            adapter: format!("dart_adapter_{}", dart_hash),
-        });
-        save_manifest(repo_root, &manifest)?;
-    }
-
-    let name = resolve_adapter_name(repo_root, dart_hash)?;
-    let out_dir = installed_dir(repo_root);
-    fs::create_dir_all(&out_dir)?;
-    let out = out_dir.join(name);
-
-    let script = "#!/usr/bin/env python3\nfrom pathlib import Path\nimport sys\nroot = Path(__file__).resolve().parents[1]\nsys.path.insert(0, str(root / 'python'))\nimport adapter_template\nif __name__ == '__main__':\n    raise SystemExit(adapter_template.entrypoint())\n";
-
-    fs::write(&out, script).with_context(|| format!("write adapter script: {}", out.display()))?;
-    let mut perms = fs::metadata(&out)?.permissions();
-    perms.set_mode(0o755);
-    fs::set_permissions(&out, perms)?;
-
-    Ok(out)
-}
-
-pub fn list_adapters(repo_root: &Path) -> Result<Vec<(AdapterManifestEntry, bool)>> {
-    let m = load_manifest(repo_root)?;
-    let base = installed_dir(repo_root);
-    let mut out = Vec::new();
-    for entry in m.entries {
-        let installed = base.join(&entry.adapter).exists();
-        out.push((entry, installed));
-    }
-    Ok(out)
-}
-
-pub fn resolve_adapter_exec(repo_root: &Path, dart_hash: &str) -> Result<PathBuf> {
-    let name = resolve_adapter_name(repo_root, dart_hash)?;
-    let exec = installed_dir(repo_root).join(name);
-    if !exec.exists() {
-        bail!(
-            "adapter not installed for hash {}. run: flutterdec adapter install --dart-hash {}",
-            dart_hash,
-            dart_hash
-        );
-    }
-    Ok(exec)
 }
 
 fn region_file_name(region: InputRegionName) -> &'static str {
@@ -373,30 +256,4 @@ fn absolute(path: &Path) -> PathBuf {
     std::env::current_dir()
         .map(|cwd| cwd.join(path))
         .unwrap_or_else(|_| path.to_path_buf())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use tempfile::tempdir;
-
-    #[test]
-    fn install_adds_manifest_entry() {
-        let td = tempdir().expect("tempdir");
-        let repo = td.path();
-        fs::create_dir_all(repo.join("adapters/python")).expect("mkdir");
-        fs::create_dir_all(repo.join("adapters/installed")).expect("mkdir");
-        fs::write(
-            repo.join("adapters/python/adapter_template.py"),
-            "def entrypoint(): return 0\n",
-        )
-        .expect("write template");
-
-        let out = install_adapter(repo, "abcd1234").expect("install");
-        assert!(out.exists());
-
-        let manifest = load_manifest(repo).expect("load");
-        assert_eq!(manifest.entries.len(), 1);
-        assert_eq!(manifest.entries[0].snapshot_hash, "abcd1234");
-    }
 }

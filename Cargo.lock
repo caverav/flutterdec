@@ -326,6 +326,7 @@ version = "0.1.0-alpha.4"
 dependencies = [
  "anyhow",
  "flutterdec-loader",
+ "libc",
  "serde",
  "serde_json",
  "sha2",
@@ -340,6 +341,7 @@ dependencies = [
  "clap",
  "flutterdec-adapter",
  "flutterdec-core",
+ "flutterdec-loader",
  "serde_json",
 ]
 
@@ -401,6 +403,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
+ "sha2",
  "tempfile",
  "zip",
 ]

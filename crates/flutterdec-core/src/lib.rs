@@ -7,9 +7,8 @@ use flutterdec_adapter::model::{
 };
 use flutterdec_adapter::primitives::Sha256Digest;
 use flutterdec_adapter::protocol::{BackendId, FallbackReason, RequestedBackend};
-use flutterdec_adapter::{
-    list_adapters, run_adapter, AdapterInput, AdapterRegionInput,
-};
+use flutterdec_adapter::store::{self, StoreEntry};
+use flutterdec_adapter::{run_adapter, AdapterInput, AdapterRegionInput};
 use flutterdec_decompiler::{emit_program_with_runtime_stubs, PseudocodeArtifact};
 use flutterdec_disasm_arm64::{
     disassemble_program_with_priorities_and_package_hints, FunctionDisassembly,
@@ -18,6 +17,7 @@ use flutterdec_disasm_arm64::{
 use flutterdec_ir::{build_program_ir, FunctionIr};
 use flutterdec_loader::dart_profile::{ResolvedDartProfile, SdkAlias};
 use flutterdec_loader::identity::ExactSelectionKey;
+use flutterdec_loader::layout::Layout;
 use flutterdec_loader::{
     load_snapshot_bundle, load_snapshot_bundle_from_apk_session, ApkSession, SnapshotBundle,
 };

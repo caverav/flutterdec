@@ -20,9 +20,7 @@ use flutterdec_adapter::model::{
 use flutterdec_adapter::model::{CompatibilityBinding, InputRegionName};
 use flutterdec_adapter::primitives::Sha256Digest;
 use flutterdec_adapter::protocol::{BackendId, RequestedBackend};
-use flutterdec_adapter::{
-    install_adapter, run_adapter, AdapterInput, AdapterRegionInput, AdapterRun,
-};
+use flutterdec_adapter::{run_adapter, AdapterInput, AdapterRegionInput, AdapterRun};
 use flutterdec_loader::identity::SnapshotIdentity;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -44,7 +42,7 @@ fn repo_root() -> PathBuf {
         .expect("canonicalize repo root")
 }
 
-/// A scratch repo with the real producer installed under it.
+/// A scratch directory with the real producer published under it.
 struct Installed {
     _dir: TempDir,
     exec: PathBuf,
@@ -61,26 +59,20 @@ fn install(hash: &str) -> Installed {
 fn install_named(hash: &str, file_name: Option<&str>) -> Installed {
     let dir = TempDir::new().expect("tempdir");
     let root = dir.path();
-    fs::create_dir_all(root.join("adapters/python")).expect("mkdir python");
-    fs::create_dir_all(root.join("adapters/installed")).expect("mkdir installed");
+    let name = match file_name {
+        Some(name) => name.to_string(),
+        None => format!("dart_adapter_{hash}"),
+    };
+    // The checked-in producer is self-contained, so publishing it *is* the
+    // install: one file, one digest, no companion library to keep in step.
+    fs::create_dir_all(root.join("artifacts")).expect("mkdir artifacts");
+    let exec = root.join("artifacts").join(name);
     fs::copy(
         repo_root().join("adapters/python/adapter_template.py"),
-        root.join("adapters/python/adapter_template.py"),
+        &exec,
     )
     .expect("copy producer");
-
-    if let Some(name) = file_name {
-        let manifest = serde_json::json!({
-            "entries": [{ "snapshot_hash": hash, "version": "unknown", "adapter": name }]
-        });
-        fs::write(
-            root.join("adapters/manifest.json"),
-            serde_json::to_vec_pretty(&manifest).expect("manifest json"),
-        )
-        .expect("write manifest");
-    }
-
-    let exec = install_adapter(root, hash).expect("install adapter");
+    set_executable(&exec);
     Installed { _dir: dir, exec }
 }
 
@@ -470,8 +462,8 @@ fn a_misleading_adapter_filename_cannot_change_the_resolved_backend() {
 fn a_producer_that_emits_a_legacy_model_is_rejected() {
     let dir = TempDir::new().expect("tempdir");
     let root = dir.path();
-    fs::create_dir_all(root.join("adapters/installed")).expect("mkdir");
-    let exec = root.join("adapters/installed/legacy_adapter");
+    fs::create_dir_all(root.join("artifacts")).expect("mkdir");
+    let exec = root.join("artifacts/legacy_adapter");
     fs::write(
         &exec,
         r#"#!/usr/bin/env python3
