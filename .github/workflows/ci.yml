@@ -54,3 +54,6 @@ jobs:
 
       - name: Build release CLI
         run: nix develop -c cargo build -p flutterdec-cli --release
+
+      - name: Release layout smoke
+        run: nix develop -c ./scripts/release-layout-smoke.sh target/release/flutterdec
