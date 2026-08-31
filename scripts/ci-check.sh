@@ -14,6 +14,7 @@ Runs the same checks as CI from the local workspace:
   5) cargo clippy --workspace --all-targets -- -D warnings
   6) cargo test --workspace            (unless --skip-tests)
   7) cargo build -p flutterdec-cli --release
+  8) scripts/release-layout-smoke.sh
 EOF
 }
 
@@ -62,5 +63,8 @@ fi
 
 echo "[ci-check] cargo build -p flutterdec-cli --release"
 nix develop -c cargo build -p flutterdec-cli --release
+
+echo "[ci-check] scripts/release-layout-smoke.sh"
+nix develop -c ./scripts/release-layout-smoke.sh target/release/flutterdec
 
 echo "[ci-check] all checks passed"
