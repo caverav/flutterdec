@@ -128,7 +128,7 @@ pub fn load_profile_artifact(
             MAX_PROFILE_BYTES
         ));
     }
-    let mut file = fs::File::open(path).map_err(|err| format!("open {}: {err}", path.display()))?;
+    let file = fs::File::open(path).map_err(|err| format!("open {}: {err}", path.display()))?;
     let mut bytes = Vec::with_capacity(metadata.len() as usize);
     file.take(MAX_PROFILE_BYTES + 1)
         .read_to_end(&mut bytes)

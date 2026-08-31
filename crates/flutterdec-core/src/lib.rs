@@ -17,6 +17,7 @@ use flutterdec_disasm_arm64::{
 };
 use flutterdec_ir::{build_program_ir, FunctionIr};
 use flutterdec_loader::dart_profile::{ResolvedDartProfile, SdkAlias};
+use flutterdec_loader::identity::ExactSelectionKey;
 use flutterdec_loader::{
     load_snapshot_bundle, load_snapshot_bundle_from_apk_session, ApkSession, SnapshotBundle,
 };
@@ -244,6 +245,9 @@ pub struct InfoOutput {
     /// Whether the snapshot identity came out of a real header. Replaces the v3
     /// "does the adapter agree about the hash" check, which compared a host fact
     /// against a string the adapter chose.
+    pub snapshot_identity_is_exact: Option<bool>,
+    /// Why no adapter was selected, when the identity gate refused the snapshot.
+    ///
     /// `Some` means no registry record was selected, no executable was
     /// resolved, and no adapter ran; the fields below that describe a run are
     /// absent for that reason rather than because a run failed.

@@ -366,7 +366,7 @@ impl CompatibilityRegistry {
                 path.display(), MAX_REGISTRY_BYTES
             )));
         }
-        let mut file = fs::File::open(path)
+        let file = fs::File::open(path)
             .map_err(|err| RegistryError::Malformed(format!("open {}: {err}", path.display())))?;
         let mut bytes = Vec::with_capacity(metadata.len() as usize);
         file.take(MAX_REGISTRY_BYTES + 1)
@@ -601,7 +601,7 @@ fn verify_file(
             max_bytes
         )));
     }
-    let mut file = fs::File::open(path)
+    let file = fs::File::open(path)
         .map_err(|err| RegistryError::Artifact(format!("open {label}: {err}")))?;
     let mut bytes = Vec::with_capacity(metadata.len() as usize);
     file.take(max_bytes + 1)

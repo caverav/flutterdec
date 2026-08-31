@@ -590,7 +590,7 @@
         assert_eq!(warnings.len(), 3);
         assert!(warnings
             .iter()
-            .any(|w| w.contains("manifest entry missing")));
+            .any(|w| w.contains("compatibility registry record missing")));
         assert!(warnings
             .iter()
             .any(|w| w.contains("not header-derived")));

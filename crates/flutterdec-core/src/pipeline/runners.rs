@@ -1913,6 +1913,7 @@ pub fn run_decompile(
             "fallback_reason": backend_fallback_reason.map(|reason| reason.as_str()),
             "backend_mismatch": backend_mismatch,
             "require_snapshot_hash_match": opt.require_snapshot_hash_match,
+            "adapter_exec_path": adapter_exec_path,
             "artifact_id": &registry_record.artifact.id,
             "parser_family_id": &registry_record.parser_family.id,
             "profile_id": &registry_record.profile.id,
