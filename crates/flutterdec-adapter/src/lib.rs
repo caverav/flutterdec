@@ -1,3 +1,8 @@
+pub mod model;
+pub mod primitives;
+pub mod protocol;
+pub mod validate;
+
 use anyhow::{anyhow, bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::fs;
