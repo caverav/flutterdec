@@ -172,6 +172,26 @@ fn an_unknown_snapshot_is_recovered_by_core_with_no_adapter_execution() {
         "core recovery named a function"
     );
 
+    // One diagnostic per domain that stayed unavailable, plus the one that says
+    // the code candidates are a scan.
+    assert!(
+        summary["model"]["diagnostics"].as_u64().unwrap_or(0) > SEMANTIC_DOMAINS.len() as u64,
+        "the fallback left domains unavailable without saying why: {summary}"
+    );
+    // The quality artifact describes the same recovery, and no emitted name
+    // claims to come from the snapshot.
+    let quality = read_json(&out.join("quality.json"));
+    assert_eq!(
+        quality["function_count"], summary["counts"]["functions"],
+        "quality.json and report.json disagree about what was recovered"
+    );
+    assert!(quality["disassembled_function_count"].as_u64().unwrap_or(0) > 0);
+    assert_eq!(
+        summary["name_resolution"]["final_quality"]["exact"],
+        Value::from(0),
+        "core recovery produced an exact symbol name"
+    );
+
     assert_eq!(
         prefix.spawns(),
         0,
@@ -179,6 +199,20 @@ fn an_unknown_snapshot_is_recovered_by_core_with_no_adapter_execution() {
         prefix.spawns()
     );
     assert!(!prefix.marker.exists());
+
+    // Deterministic: the same input through the same command twice reports the
+    // same reason, the same counts and the same provider block.
+    let second = out_dir(&prefix, "out-again");
+    let second_arg = second.to_str().expect("path").to_string();
+    let repeat = prefix.run(&decompile_args(&input, &second_arg));
+    assert_eq!(code(&repeat), 0, "{}", stderr(&repeat));
+    let repeated = read_json(&second.join("report.json"));
+    assert_eq!(
+        repeated["adapter_selection"]["provider"], summary["adapter_selection"]["provider"],
+        "two identical runs described the provider differently"
+    );
+    assert_eq!(repeated["counts"], summary["counts"]);
+    assert_eq!(prefix.spawns(), 0);
 }
 
 /// The control for the case above: the same prefix, the same producer, a hash

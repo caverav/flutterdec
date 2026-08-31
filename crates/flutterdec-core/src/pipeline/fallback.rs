@@ -300,7 +300,19 @@ fn core_recovered_model(
     bundle: &SnapshotBundle,
     reason: CoreFallbackReason,
 ) -> Result<ProgramModel> {
-    let functions = recover_code_candidates(&bundle.isolate_instr, bundle.isolate_instr_va);
+    // The scan decodes AArch64 words. Running it over anything else does not
+    // fail, it invents boundaries: an x64 instruction stream contains plenty of
+    // 32-bit words that read as a frame-record store. A snapshot built for
+    // another target recovers nothing and says so.
+    let is_arm64 = matches!(
+        bundle.identity.target_arch,
+        flutterdec_loader::identity::TargetArch::Arm64
+    );
+    let functions = if is_arm64 {
+        recover_code_candidates(&bundle.isolate_instr, bundle.isolate_instr_va)
+    } else {
+        Vec::new()
+    };
     let capabilities = Capabilities {
         libraries: CapabilityLevel::Unavailable,
         classes: CapabilityLevel::Unavailable,
@@ -314,7 +326,17 @@ fn core_recovered_model(
         object_pool: CapabilityLevel::Unavailable,
         pool_index_space: CapabilityLevel::Unavailable,
     };
-    let diagnostics = fallback_diagnostics(reason, functions.len());
+    let mut diagnostics = fallback_diagnostics(reason, functions.len());
+    if !is_arm64 {
+        diagnostics.push(Diagnostic::unavailable(
+            Domain::Functions,
+            format!(
+                "core recovery decodes AArch64 instructions and this snapshot targets {}",
+                bundle.identity.target_arch
+            ),
+        ));
+        diagnostics.sort_by(|a, b| a.subject.cmp(&b.subject));
+    }
     let model = ProgramModel {
         model_version: flutterdec_adapter::model::MODEL_VERSION,
         producer: core_producer()?,
