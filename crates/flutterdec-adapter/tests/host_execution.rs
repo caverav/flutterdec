@@ -141,7 +141,7 @@ impl Rig {
     fn valid_model(&self) -> ProgramModel {
         let mut model = support::unavailable_model();
         model.producer = self.producer();
-        model.compatibility = self.binding();
+        model.compatibility = Some(self.binding());
         model.input = ObservedInput {
             identity: self.identity.clone(),
             regions: self.host_regions(),

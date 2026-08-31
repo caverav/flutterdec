@@ -1056,7 +1056,10 @@ pub fn run_adapter(exec_path: &Path, input: &AdapterInput<'_>) -> Result<Adapter
     let host = HostSelectedContext {
         identity: input.identity.clone(),
         producer: input.producer.clone(),
-        compatibility: input.compatibility.clone(),
+        // An adapter run is always authorized by a record, so this arm is always
+        // `Some` and a model answering with `null` is rejected as a host-fact
+        // mismatch.
+        compatibility: Some(input.compatibility.clone()),
         regions: host_regions,
     };
     validate::validate(&model, &host).map_err(|err| HostError::ModelRejected(err.to_string()))?;

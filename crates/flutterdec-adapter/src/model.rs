@@ -600,7 +600,16 @@ pub struct ProgramModel {
     pub model_version: u32,
     pub producer: Producer,
     pub input: ObservedInput,
-    pub compatibility: CompatibilityBinding,
+    /// The registry decision that authorized this run, or `None` when there was
+    /// no decision to record.
+    ///
+    /// `None` is reachable exactly one way: the host recovered the program
+    /// itself because no compatibility record authorized an adapter. Writing a
+    /// binding there would mean inventing a record digest, a parser family and a
+    /// profile that no registry ever selected, which is the same class of lie as
+    /// inventing a name. An adapter-produced model is always checked against the
+    /// binding the host handed it, so `null` from an adapter is a rejection.
+    pub compatibility: Option<CompatibilityBinding>,
     pub capabilities: Capabilities,
     pub libraries: Vec<Library>,
     pub classes: Vec<Class>,
@@ -737,6 +746,15 @@ fn nullable_u64_schema() -> Value {
 
 fn confidence_schema() -> Value {
     json!({ "type": ["number", "null"], "minimum": 0.0, "maximum": 1.0 })
+}
+
+/// The same object, or JSON `null`.
+///
+/// `oneOf` rather than a `"type": ["object", "null"]` widening, so the object's
+/// own `required`/`additionalProperties` rules still apply to the non-null arm
+/// instead of being silently dropped.
+fn nullable(schema: Value) -> Value {
+    json!({ "oneOf": [schema, { "type": "null" }] })
 }
 
 fn object(properties: Value, required: Vec<&str>) -> Value {
@@ -928,7 +946,7 @@ pub fn schema() -> Value {
                 }),
                 vec!["identity", "regions"],
             ),
-            "compatibility": object(
+            "compatibility": nullable(object(
                 json!({
                     "record_sha256": digest_schema(),
                     "parser_family_id": { "type": "string", "minLength": 1 },
@@ -936,7 +954,7 @@ pub fn schema() -> Value {
                     "profile_sha256": digest_schema(),
                 }),
                 vec!["record_sha256", "parser_family_id", "profile_id", "profile_sha256"],
-            ),
+            )),
             "capabilities": object(
                 json!({
                     "libraries": level_enum(),

@@ -138,19 +138,13 @@ struct EngineSymbolIngestion {
     error: Option<String>,
 }
 
-fn backend_label(value: Option<AdapterBackend>) -> &'static str {
-    match value {
-        Some(backend) => backend.as_str(),
-        None => "unknown",
-    }
-}
-
 fn format_quality_gate_failure_message(
     report: &QualityReport,
     quality_path: &Path,
     report_path: &Path,
     input_path: &Path,
     resolved_backend: Option<AdapterBackend>,
+    core_fallback: Option<CoreFallbackReason>,
     symbol_quality_counts: &SymbolQualityCounts,
 ) -> String {
     let mut out = String::new();
@@ -176,7 +170,13 @@ fn format_quality_gate_failure_message(
     if !is_apk_input_path(input_path) {
         notes.push("input is not an APK, so manifest/startup evidence is unavailable".to_string());
     }
-    if resolved_backend == Some(AdapterBackend::Internal) {
+    if let Some(reason) = core_fallback {
+        // The gate's denominators are the model's own function list, and a
+        // core-recovered list is prologue guesses. Saying which fallback ran is
+        // the difference between "your snapshot decompiles badly" and "nothing
+        // parsed your snapshot".
+        notes.push(format!("no adapter ran ({}): {}", reason, reason.detail()));
+    } else if resolved_backend == Some(AdapterBackend::Internal) {
         notes.push(
             "resolved backend is internal: no exact names and no ObjectPool index space"
                 .to_string(),
@@ -965,19 +965,15 @@ pub fn run_info(
     let apk_session = open_apk_session_if_input_is_apk(input_path)?;
     let mut bundle =
         load_snapshot_bundle_with_optional_apk_session(input_path, apk_session.as_ref())?;
-    // Profiles are loaded only through an exact registry record. An info query
-    // for an unknown/non-FullAOT identity remains useful, but never probes an
-    // adapter artifact or invents a profile.
     let identity_rejection = bundle.identity.exact_selection_key().err();
-    let registry_selection = if identity_rejection.is_none() {
-        attach_registry_profile(layout, &mut bundle).ok().flatten()
-    } else {
-        None
-    };
-    let adapter_installed = registry_selection
-        .as_ref()
-        .and_then(|selection| selection.resolve_current_artifact(layout.store_dir()).ok())
-        .is_some();
+    // Whether a verified artifact exists is a separate question from whether one
+    // ran, and `info` answers it without executing anything: the probe stops at
+    // the store, and it is skipped entirely for an identity that may not select.
+    let adapter_installed = identity_rejection.is_none()
+        && select_registry(layout, &bundle)
+            .ok()
+            .and_then(|selection| selection.resolve_current_artifact(layout.store_dir()).ok())
+            .is_some();
     let manifest_inspection = if let Some(apk) = apk_session.as_ref() {
         inspect_android_manifest_from_apk_session(apk)
     } else {
@@ -995,6 +991,11 @@ pub fn run_info(
         )
     };
 
+    // One selection decision, the same one `decompile` and `diff` make. An
+    // authorized adapter that fails is reported as a failure rather than
+    // dropped: an `info` that silently omits the model fields looks exactly
+    // like a snapshot with nothing in it.
+    let loaded = load_program(layout, &mut bundle, adapter_backend);
     let mut out = InfoOutput {
         input_path: bundle.input_path.display().to_string(),
         libapp_path: bundle.libapp_path.display().to_string(),
@@ -1015,18 +1016,19 @@ pub fn run_info(
         compressed_pointers: bundle.compressed_pointers,
         snapshot_features: bundle.snapshot_features.clone(),
         adapter_installed,
+        provider: None,
         requested_backend: Some(adapter_backend.as_str().to_string()),
         resolved_backend: None,
         backend_fallback_reason: None,
         producer_id: None,
         producer_trust: None,
-        compatibility_record_sha256: registry_selection
-            .as_ref()
-            .and_then(|selection| selection.record_sha256().ok()),
-        registry_record_present: Some(registry_selection.is_some()),
+        compatibility_record_sha256: None,
+        registry_record_present: None,
         adapter_containment: None,
         snapshot_identity_is_exact: Some(bundle.identity.is_exact()),
         identity_rejection: identity_rejection.as_ref().map(ToString::to_string),
+        adapter_error: None,
+        adapter_error_category: None,
         model_capabilities: None,
         compatibility_warnings: None,
         function_count: None,
@@ -1040,53 +1042,39 @@ pub fn run_info(
         android_startup_flutter_activity_count: Some(startup_evidence.flutter_activity_classes.len()),
     };
 
-    if adapter_installed {
-        if let Ok(loaded) = load_model(layout, &bundle, adapter_backend) {
-            let registry_record_present = true;
-            let model = loaded.model;
-            // The model was validated against the host identity before it got
-            // here, so it describes this snapshot by construction. What is worth
-            // reporting is whether that identity was header-derived at all.
-            let identity_is_exact = bundle.identity.is_exact();
-            let resolved_backend = backend_from_id(loaded.resolved_backend);
-            let backend_mismatch = match adapter_backend {
-                AdapterBackend::Auto => false,
-                _ => resolved_backend != adapter_backend,
-            };
-            let warnings = collect_compatibility_warnings(
-                registry_record_present,
-                identity_is_exact,
-                backend_mismatch,
-            );
-            out.requested_backend = Some(adapter_backend.as_str().to_string());
-            out.resolved_backend = Some(resolved_backend.as_str().to_string());
-            out.backend_fallback_reason = loaded
-                .fallback_reason
-                .map(|reason| reason.as_str().to_string());
-            out.producer_id = Some(loaded.producer.id.clone());
-            out.producer_trust = Some(producer_trust_label(loaded.producer.trust).to_string());
-            out.compatibility_record_sha256 =
-                Some(loaded.compatibility.record_sha256.to_string());
-            out.registry_record_present = Some(registry_record_present);
-            out.adapter_containment = Some(loaded.containment.clone());
-            out.snapshot_identity_is_exact = Some(identity_is_exact);
-            out.compatibility_warnings = Some(warnings);
-            out.model_capabilities = Some(capability_map(&model.capabilities));
-            out.function_count = Some(model.functions.len());
-            out.class_count = Some(model.classes.len());
-            out.object_pool_count = Some(model.object_pool.entries.len());
-            let app_package_counts = collect_app_package_counts(&model);
-            out.app_package_count_total = Some(app_package_counts.len());
-            out.app_package_counts_top = Some(
-                app_package_counts
-                    .into_iter()
-                    .take(20)
-                    .map(|(package, functions)| PackageCount { package, functions })
-                    .collect::<Vec<_>>(),
-            );
+    let loaded = match loaded {
+        Ok(loaded) => loaded,
+        Err(err) => {
+            out.adapter_error = Some(format!("{err:#}"));
+            out.adapter_error_category = Some(error_category(&err).to_string());
+            return Ok(out);
         }
-    }
+    };
 
+    let provider = provider_report(&loaded, &bundle, adapter_backend);
+    let model = &loaded.model;
+    out.resolved_backend = Some(provider.resolved_backend.clone());
+    out.backend_fallback_reason = provider.backend_fallback_reason.clone();
+    out.producer_id = Some(provider.producer_id.clone());
+    out.producer_trust = Some(provider.producer_trust.clone());
+    out.compatibility_record_sha256 = provider.compatibility_record_sha256.clone();
+    out.registry_record_present = Some(provider.registry_record_present);
+    out.adapter_containment = provider.containment.clone();
+    out.compatibility_warnings = Some(provider.warnings.clone());
+    out.model_capabilities = Some(provider.capabilities.clone());
+    out.function_count = Some(model.functions.len());
+    out.class_count = Some(model.classes.len());
+    out.object_pool_count = Some(model.object_pool.entries.len());
+    let app_package_counts = collect_app_package_counts(model);
+    out.app_package_count_total = Some(app_package_counts.len());
+    out.app_package_counts_top = Some(
+        app_package_counts
+            .into_iter()
+            .take(20)
+            .map(|(package, functions)| PackageCount { package, functions })
+            .collect::<Vec<_>>(),
+    );
+    out.provider = Some(provider);
     Ok(out)
 }
 
@@ -1094,6 +1082,7 @@ fn collect_compatibility_warnings(
     registry_record_present: bool,
     identity_is_exact: bool,
     backend_mismatch: bool,
+    core_fallback: Option<CoreFallbackReason>,
 ) -> Vec<String> {
     let mut warnings = Vec::new();
     if !registry_record_present {
@@ -1107,6 +1096,11 @@ fn collect_compatibility_warnings(
     }
     if backend_mismatch {
         warnings.push("resolved adapter backend differs from requested backend".to_string());
+    }
+    // The loudest of the three: an operator reading only the warnings has to
+    // learn that nothing parsed the snapshot before reading a function count.
+    if let Some(reason) = core_fallback {
+        warnings.push(format!("{}; {}", reason.detail(), CORE_FALLBACK_EFFECT));
     }
     warnings
 }
@@ -1233,24 +1227,20 @@ pub fn run_decompile(
     let apk_session = open_apk_session_if_input_is_apk(input_path)?;
     let mut bundle =
         load_snapshot_bundle_with_optional_apk_session(input_path, apk_session.as_ref())?;
-    attach_registry_profile(layout, &mut bundle)?
-        .ok_or_else(|| anyhow!("no compatibility registry record selected"))?;
-    let loaded_model = load_model(layout, &bundle, opt.adapter_backend)?;
-    let adapter_exec_path = loaded_model.adapter_exec.display().to_string();
-    let containment = loaded_model.containment.clone();
+    // One selection decision. An identity or a registry that authorizes no
+    // adapter reaches core recovery here rather than stopping the command; an
+    // adapter that ran and failed still stops it.
+    let loaded_model = load_program(layout, &mut bundle, opt.adapter_backend)?;
+    let provider = provider_report(&loaded_model, &bundle, opt.adapter_backend);
     let registry_record = loaded_model.compatibility_record.clone();
-    let sdk_aliases = loaded_model.profile.aliases.clone();
-    let requested_backend = opt.adapter_backend;
-    // Four distinct typed facts, none of them read out of a name: what the host
-    // asked for, what answered, why it differed, and who produced the model.
+    let sdk_aliases = loaded_model
+        .profile
+        .as_ref()
+        .map(|profile| profile.aliases.clone())
+        .unwrap_or_default();
     let resolved_backend = backend_from_id(loaded_model.resolved_backend);
-    let backend_fallback_reason = loaded_model.fallback_reason;
+    let core_fallback = loaded_model.core_fallback;
     let producer = loaded_model.producer.clone();
-    let compatibility = loaded_model.compatibility.clone();
-    let backend_mismatch = match requested_backend {
-        AdapterBackend::Auto => false,
-        _ => resolved_backend != requested_backend,
-    };
     let snapshot_identity_is_exact = bundle.identity.is_exact();
     if opt.require_snapshot_hash_match && !snapshot_identity_is_exact {
         bail!(
@@ -1881,12 +1871,8 @@ pub fn run_decompile(
     let quality_path = opt.out_dir.join("quality.json");
     fs::write(&quality_path, serde_json::to_vec_pretty(&report)?)?;
     let bundle_snapshot_hash = bundle.snapshot_hash.clone();
-    let registry_record_present = true;
-    let compatibility_warnings = collect_compatibility_warnings(
-        registry_record_present,
-        snapshot_identity_is_exact,
-        backend_mismatch,
-    );
+    let registry_record_present = provider.registry_record_present;
+    let compatibility_warnings = provider.warnings.clone();
     let compatibility_status = if compatibility_warnings.is_empty() {
         "ok"
     } else {
@@ -1908,22 +1894,13 @@ pub fn run_decompile(
             "profile": opt.analysis_profile.as_str(),
             "engine": &opt.engine_options
         },
-        // Four separate typed facts. `resolved_backend` comes from the protocol
-        // result, never from a filename or a substring of adapter output.
+        // Requested, resolved, why they differ, whether anything was executed
+        // at all, and under what containment. Every one of them a typed host or
+        // protocol fact, never a filename or a substring of adapter output. The
+        // whole provider block is the same value `info` and `diff` print.
         "adapter_selection": {
-            "requested_backend": requested_backend.as_str(),
-            "resolved_backend": backend_label(Some(resolved_backend)),
-            "fallback_reason": backend_fallback_reason.map(|reason| reason.as_str()),
-            "backend_mismatch": backend_mismatch,
+            "provider": &provider,
             "require_snapshot_hash_match": opt.require_snapshot_hash_match,
-            "adapter_exec_path": adapter_exec_path,
-            // What the host actually established for the child it ran. A
-            // control that is not here as `applied` was not in force, and the
-            // host says so rather than leaving the reader to assume.
-            "containment": containment,
-            "artifact_id": &registry_record.artifact.id,
-            "parser_family_id": &registry_record.parser_family.id,
-            "profile_id": &registry_record.profile.id,
             "sdk_aliases": &sdk_aliases,
             "snapshot_identity": {
                 "hash": bundle_snapshot_hash,
@@ -1968,15 +1945,20 @@ pub fn run_decompile(
         },
         "compatibility": {
             "status": compatibility_status,
-            "record_sha256": compatibility.record_sha256.to_string(),
-            "parser_family_id": &registry_record.parser_family.id,
-            "profile_id": &registry_record.profile.id,
-            "profile_sha256": compatibility.profile_sha256.to_string(),
-            "trust_tier": registry_record.trust_tier,
-            "protocol_major": registry_record.protocol_major,
-            "model_major": registry_record.model_major,
-            "evidence": &registry_record.evidence,
-            "artifact": &registry_record.artifact,
+            "record_sha256": &provider.compatibility_record_sha256,
+            "parser_family_id": &provider.parser_family_id,
+            "profile_id": &provider.profile_id,
+            "profile_sha256": &provider.profile_sha256,
+            "trust_tier": registry_record.as_ref().map(|record| &record.trust_tier),
+            "protocol_major": registry_record.as_ref().map(|record| record.protocol_major),
+            "model_major": registry_record.as_ref().map(|record| record.model_major),
+            "evidence": registry_record.as_ref().map(|record| &record.evidence),
+            "artifact": registry_record.as_ref().map(|record| &record.artifact),
+            // Why nothing parsed the snapshot, when nothing did. Absent means an
+            // authorized adapter produced this model.
+            "core_fallback_reason": &provider.core_fallback_reason,
+            "core_fallback_detail": &provider.core_fallback_detail,
+            "core_fallback_effect": &provider.core_fallback_effect,
             "model": {
                 "version": model.model_version,
                 "supported_versions": [flutterdec_adapter::model::MODEL_VERSION],
@@ -2279,6 +2261,7 @@ pub fn run_decompile(
                 &report_path,
                 input_path,
                 Some(resolved_backend),
+                core_fallback,
                 &symbol_quality_counts,
             )
         );

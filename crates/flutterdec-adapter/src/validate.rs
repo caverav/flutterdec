@@ -31,7 +31,13 @@ use std::fmt;
 pub struct HostSelectedContext {
     pub identity: SnapshotIdentity,
     pub producer: Producer,
-    pub compatibility: CompatibilityBinding,
+    /// The registry decision the host acted on, or `None` when the host
+    /// recovered the program itself and no record authorized anything.
+    ///
+    /// An adapter run always has one, so a model that answers an adapter request
+    /// with `null` here fails the same equality check that catches a model
+    /// claiming someone else's record.
+    pub compatibility: Option<CompatibilityBinding>,
     pub regions: Vec<InputRegion>,
 }
 
@@ -420,24 +426,39 @@ fn check_host_facts(model: &ProgramModel, host: &HostSelectedContext) -> Check {
         }
     }
 
-    let compatibility_fields: [(&'static str, bool); 4] = [
-        (
-            "compatibility record digest",
-            model.compatibility.record_sha256 == host.compatibility.record_sha256,
-        ),
-        (
-            "parser family",
-            model.compatibility.parser_family_id == host.compatibility.parser_family_id,
-        ),
-        (
-            "profile id",
-            model.compatibility.profile_id == host.compatibility.profile_id,
-        ),
-        (
-            "profile digest",
-            model.compatibility.profile_sha256 == host.compatibility.profile_sha256,
-        ),
-    ];
+    // Presence is checked first and separately: a model that drops the binding
+    // entirely is a different failure from one that carries someone else's, and
+    // the two arms below cannot be expressed as one field comparison.
+    let compatibility_fields: [(&'static str, bool); 4] =
+        match (&model.compatibility, &host.compatibility) {
+            (None, None) => [("", true); 4],
+            (model_binding, host_binding) => {
+                let (Some(model_binding), Some(host_binding)) = (model_binding, host_binding)
+                else {
+                    return Err(ValidationError::HostFactMismatch {
+                        field: "compatibility binding presence",
+                    });
+                };
+                [
+                    (
+                        "compatibility record digest",
+                        model_binding.record_sha256 == host_binding.record_sha256,
+                    ),
+                    (
+                        "parser family",
+                        model_binding.parser_family_id == host_binding.parser_family_id,
+                    ),
+                    (
+                        "profile id",
+                        model_binding.profile_id == host_binding.profile_id,
+                    ),
+                    (
+                        "profile digest",
+                        model_binding.profile_sha256 == host_binding.profile_sha256,
+                    ),
+                ]
+            }
+        };
     for (field, matches) in compatibility_fields {
         if !matches {
             return Err(ValidationError::HostFactMismatch { field });
@@ -501,8 +522,10 @@ fn not_placeholder(value: &str, field: &'static str) -> Check {
 fn check_strings(model: &ProgramModel) -> Check {
     non_empty(&model.producer.id, "producer id")?;
     non_empty(&model.producer.version, "producer version")?;
-    non_empty(&model.compatibility.parser_family_id, "parser family id")?;
-    non_empty(&model.compatibility.profile_id, "profile id")?;
+    if let Some(compatibility) = &model.compatibility {
+        non_empty(&compatibility.parser_family_id, "parser family id")?;
+        non_empty(&compatibility.profile_id, "profile id")?;
+    }
     for library in &model.libraries {
         not_placeholder(&library.uri, "library uri")?;
         if let Some(display) = &library.display_name {

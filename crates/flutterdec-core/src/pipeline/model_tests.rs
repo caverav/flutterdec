@@ -1,9 +1,11 @@
 //! The identity gate, proven by what the pipeline does *not* do.
 //!
-//! Asserting that `load_model` returns an error would not distinguish a snapshot
-//! refused before anything happened from one that was looked up, spawned, and
-//! then failed. So each rejection case is run against a scratch repo that is
-//! rigged to fail loudly at every step the gate is supposed to precede:
+//! A rejected identity is answered by core recovery, so "it returned an error"
+//! was never the property worth asserting, and "it returned a model" is not one
+//! either: a model would come back whether or not the gate ran. What the gate
+//! guarantees is that nothing was selected and nothing was executed. So each
+//! rejection case is run against a scratch repo that is rigged to fail loudly at
+//! every step the gate is supposed to precede:
 //!
 //! * `adapters/registry.json` is not valid JSON, so any registry read reports a
 //!   parse failure instead of an identity rejection;
@@ -218,30 +220,74 @@ fn unsupported_target() -> SnapshotIdentity {
     )
 }
 
-fn rejection(err: &anyhow::Error) -> IdentityRejection {
-    err.chain()
-        .find_map(|cause| cause.downcast_ref::<IdentityRejection>())
-        .cloned()
-        .unwrap_or_else(|| panic!("expected a typed identity rejection, got: {err:#}"))
-}
-
 /// Every non-exact identity, through the shared entry every adapter path uses.
+///
+/// A rejected identity is not an error any more: it is answered by core
+/// recovery. What the gate still guarantees is that nothing was selected and
+/// nothing was executed, so the assertions are about the absence of a registry
+/// read, the absence of a spawn, and the typed reason on the result.
 fn assert_stops_before_lookup(identity: SnapshotIdentity, expected: IdentityRejection) {
     let repo = poisoned_registry_repo();
-    let bundle = bundle(identity);
+    let mut bundle = bundle(identity);
 
-    let err = load_model(&repo.layout, &bundle, AdapterBackend::Auto)
-        .expect_err("a rejected identity cannot load a model");
+    let loaded = load_program(&repo.layout, &mut bundle, AdapterBackend::Auto)
+        .expect("a rejected identity is answered by core recovery");
 
-    assert_eq!(rejection(&err), expected, "wrong rejection: {err:#}");
+    assert_eq!(
+        loaded.core_fallback,
+        Some(CoreFallbackReason::IdentityRejected),
+        "the run did not report an identity-driven fallback"
+    );
+    let detail = loaded
+        .core_fallback_detail
+        .clone()
+        .expect("the fallback quotes the rejection");
+    assert_eq!(
+        detail,
+        expected.to_string(),
+        "the fallback quoted a different rejection"
+    );
+    // The registry in this repo is not JSON. Reading it at all produces a parse
+    // failure, so a run that reports a clean core fallback provably never read
+    // it.
+    assert!(
+        loaded.compatibility_record.is_none() && loaded.compatibility.is_none(),
+        "a rejected identity was bound to a compatibility record"
+    );
+    assert!(
+        loaded.adapter_exec.is_none() && loaded.containment.is_none(),
+        "a rejected identity resolved an executable"
+    );
+    assert!(
+        !repo.spawned(),
+        "the adapter was executed for a rejected identity"
+    );
+    // And the model it produced is honest about what it is.
+    assert_eq!(loaded.resolved_backend, BackendId::Internal);
+    assert_eq!(loaded.producer.trust, ProducerTrust::Local);
+    assert!(loaded.model.libraries.is_empty() && loaded.model.classes.is_empty());
+    assert!(loaded.model.object_pool.entries.is_empty());
+    assert!(loaded.model.functions.iter().all(|f| f.name.is_none()));
+}
+
+/// The same rejection, with a backend only an external tool can serve. Here it
+/// is an error: answering `--adapter-backend r2flutter` with prologue scanning
+/// is the substitution the protocol refuses inside a run, done one layer up.
+fn assert_pinned_external_is_refused(identity: SnapshotIdentity, expected: IdentityRejection) {
+    let repo = poisoned_registry_repo();
+    let mut bundle = bundle(identity);
+
+    let err = load_program(&repo.layout, &mut bundle, AdapterBackend::R2Flutter)
+        .expect_err("a pinned external backend cannot be served by core recovery");
+
     let rendered = format!("{err:#}");
+    assert!(
+        rendered.contains("identity_rejected") && rendered.contains(&expected.to_string()),
+        "the refusal does not name the deterministic reason: {rendered}"
+    );
     assert!(
         !rendered.contains("compatibility registry"),
         "the registry was read before the gate: {rendered}"
-    );
-    assert!(
-        !rendered.contains("adapter artifact"),
-        "the executable was resolved before the gate: {rendered}"
     );
     assert!(
         !repo.spawned(),
@@ -252,6 +298,10 @@ fn assert_stops_before_lookup(identity: SnapshotIdentity, expected: IdentityReje
 #[test]
 fn a_full_jit_snapshot_stops_before_registry_lookup_or_execution() {
     assert_stops_before_lookup(
+        full_jit(),
+        IdentityRejection::NotFullAot(Some(SnapshotKind::FullJit)),
+    );
+    assert_pinned_external_is_refused(
         full_jit(),
         IdentityRejection::NotFullAot(Some(SnapshotKind::FullJit)),
     );
@@ -287,9 +337,9 @@ fn an_unsupported_target_stops_before_registry_lookup_or_execution() {
 #[test]
 fn a_full_aot_snapshot_reaches_selection_and_execution() {
     let repo = valid_registry_repo();
-    let bundle = bundle(full_aot());
+    let mut bundle = bundle(full_aot());
 
-    let err = load_model(&repo.layout, &bundle, AdapterBackend::Auto)
+    let err = load_program(&repo.layout, &mut bundle, AdapterBackend::Auto)
         .expect_err("the spy adapter cannot produce a model");
 
     assert!(
@@ -301,6 +351,66 @@ fn a_full_aot_snapshot_reaches_selection_and_execution() {
             .all(|cause| cause.downcast_ref::<IdentityRejection>().is_none()),
         "an exact identity was refused by the gate: {err:#}"
     );
+    // And an adapter that ran and failed stays a failure. Core recovery is for
+    // snapshots nothing was authorized to parse, not a way to paper over a
+    // producer that broke.
+    assert_eq!(error_category(&err), "adapter_no_result", "{err:#}");
+}
+
+/// An explicitly internal run reads nothing and executes nothing, even where a
+/// perfectly good record and a working artifact are installed.
+#[test]
+fn an_explicitly_internal_run_selects_nothing_and_executes_nothing() {
+    let repo = valid_registry_repo();
+    let mut bundle = bundle(full_aot());
+
+    let loaded = load_program(&repo.layout, &mut bundle, AdapterBackend::Internal)
+        .expect("internal recovery does not depend on a registry");
+
+    assert_eq!(
+        loaded.core_fallback,
+        Some(CoreFallbackReason::InternalRequested)
+    );
+    assert!(!repo.spawned(), "an internal run executed an adapter");
+    assert!(loaded.compatibility_record.is_none());
+    assert!(
+        bundle.dart_profile.is_none(),
+        "an internal run loaded a compatibility profile it never used"
+    );
+}
+
+/// An exact identity with no record for it is the unknown-snapshot case: core
+/// recovers, and says which of the reasons it was.
+#[test]
+fn an_unknown_hash_is_recovered_by_core_rather_than_refused() {
+    let repo = valid_registry_repo();
+    let mut bundle = bundle(SnapshotIdentity::from_header(
+        TargetArch::Arm64,
+        "0123456789abcdef0123456789abcdef",
+        SnapshotKind::FullAot,
+        FEATURES,
+    ));
+
+    let loaded = load_program(&repo.layout, &mut bundle, AdapterBackend::Auto)
+        .expect("an unknown hash is answered by core recovery");
+
+    assert_eq!(
+        loaded.core_fallback,
+        Some(CoreFallbackReason::NoCompatibilityRecord)
+    );
+    assert!(!repo.spawned(), "an unknown hash executed an adapter");
+    assert!(
+        !loaded.model.functions.is_empty(),
+        "core recovery produced no code candidates at all"
+    );
+    assert!(
+        loaded
+            .model
+            .functions
+            .iter()
+            .all(|f| f.provenance == Provenance::Heuristic),
+        "core recovery claimed a non-heuristic function"
+    );
 }
 
 /// A rejected identity has no way to become a run with a lesser trust label.
@@ -308,14 +418,21 @@ fn a_full_aot_snapshot_reaches_selection_and_execution() {
 #[test]
 fn a_rejected_identity_is_not_downgraded_to_an_untrusted_run() {
     let repo = valid_registry_repo();
-    let bundle = bundle(full_jit());
+    let mut bundle = bundle(full_jit());
 
-    let err = load_model(&repo.layout, &bundle, AdapterBackend::Auto)
-        .expect_err("a FullJIT snapshot cannot load a model");
+    let loaded = load_program(&repo.layout, &mut bundle, AdapterBackend::Auto)
+        .expect("a FullJIT snapshot is answered by core recovery");
 
     assert_eq!(
-        rejection(&err),
-        IdentityRejection::NotFullAot(Some(SnapshotKind::FullJit))
+        loaded.core_fallback_detail.as_deref(),
+        Some(IdentityRejection::NotFullAot(Some(SnapshotKind::FullJit))
+            .to_string()
+            .as_str())
+    );
+    assert_ne!(
+        loaded.producer.trust,
+        ProducerTrust::Untrusted,
+        "a rejected identity produced an untrusted run instead of no run"
     );
     assert!(
         !repo.spawned(),
