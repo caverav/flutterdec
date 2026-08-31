@@ -84,12 +84,17 @@ fn install_named(hash: &str, file_name: Option<&str>) -> Installed {
     Installed { _dir: dir, exec }
 }
 
-fn producer(identity: &SnapshotIdentity, exec: &Path) -> Producer {
+/// The host's own producer record.
+///
+/// `Local` is not a judgement call here: `run_adapter` refuses any identity that
+/// did not clear the exact-selection gate, so every run that happens at all is
+/// one a locally installed adapter was authorized for.
+fn producer(exec: &Path) -> Producer {
     Producer {
         id: "flutterdec-local-python".to_string(),
         version: "unknown".to_string(),
         artifact_sha256: Sha256Digest::of(&fs::read(exec).expect("read adapter artifact")),
-        trust: flutterdec_adapter::local_producer_trust(identity),
+        trust: ProducerTrust::Local,
     }
 }
 
@@ -160,7 +165,7 @@ fn run(
         &installed.exec,
         &AdapterInput {
             identity,
-            producer: producer(identity, &installed.exec),
+            producer: producer(&installed.exec),
             compatibility: compatibility(),
             regions: regions(snapshot),
             input_path: None,
@@ -608,7 +613,7 @@ asm.mkdir(parents=True, exist_ok=True)
         &installed.exec,
         &AdapterInput {
             identity: &identity,
-            producer: producer(&identity, &installed.exec),
+            producer: producer(&installed.exec),
             compatibility: compatibility(),
             regions: regions(&snapshot),
             input_path: Some(&input),

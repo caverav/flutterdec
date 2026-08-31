@@ -17,6 +17,7 @@ use flutterdec_disasm_arm64::{
 };
 use flutterdec_ir::{build_program_ir, FunctionIr};
 use flutterdec_loader::dart_profile::ResolvedDartProfile;
+use flutterdec_loader::identity::ExactSelectionKey;
 use flutterdec_loader::{
     load_snapshot_bundle, load_snapshot_bundle_from_apk_session, ApkSession, SnapshotBundle,
 };
@@ -245,6 +246,11 @@ pub struct InfoOutput {
     /// "does the adapter agree about the hash" check, which compared a host fact
     /// against a string the adapter chose.
     pub snapshot_identity_is_exact: Option<bool>,
+    /// Why this snapshot may not select an adapter at all, when it may not.
+    /// `Some` means no manifest was read, no executable was resolved, and no
+    /// adapter ran; the fields below that describe a run are absent for that
+    /// reason rather than because a run failed.
+    pub identity_rejection: Option<String>,
     /// Per-domain capability levels the model reported.
     pub model_capabilities: Option<BTreeMap<String, String>>,
     pub compatibility_warnings: Option<Vec<String>>,

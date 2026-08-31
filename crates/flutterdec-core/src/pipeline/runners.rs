@@ -964,7 +964,12 @@ pub fn run_info(
 ) -> Result<InfoOutput> {
     let apk_session = open_apk_session_if_input_is_apk(input_path)?;
     let bundle = load_snapshot_bundle_with_optional_apk_session(input_path, apk_session.as_ref())?;
-    let adapter_installed = resolve_adapter_exec(repo_root, &bundle.snapshot_hash).is_ok();
+    // `info` reports rather than fails, but it still may not look an adapter up
+    // for a snapshot that could never authorize one: the filesystem probe is
+    // downstream of the gate, not a way around it.
+    let identity_rejection = bundle.identity.exact_selection_key().err();
+    let adapter_installed = identity_rejection.is_none()
+        && resolve_adapter_exec(repo_root, &bundle.snapshot_hash).is_ok();
     let manifest_inspection = if let Some(apk) = apk_session.as_ref() {
         inspect_android_manifest_from_apk_session(apk)
     } else {
@@ -1006,6 +1011,7 @@ pub fn run_info(
         compatibility_record_sha256: None,
         manifest_entry_present: None,
         snapshot_identity_is_exact: Some(bundle.identity.is_exact()),
+        identity_rejection: identity_rejection.as_ref().map(ToString::to_string),
         model_capabilities: None,
         compatibility_warnings: None,
         function_count: None,
