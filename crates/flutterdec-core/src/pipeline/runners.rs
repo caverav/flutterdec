@@ -23,21 +23,20 @@ struct SharedStubNamingSummary {
 #[path = "runners/manifest.rs"]
 mod runners_manifest;
 use runners_manifest::{
-    enrich_model_with_manifest_bootflow_hints, inspect_android_manifest,
+    collect_manifest_bootflow_hints, inspect_android_manifest,
     inspect_android_manifest_from_apk_session, AndroidManifestSignals,
 };
 #[path = "runners/symbols.rs"]
 mod runners_symbols;
 use runners_symbols::{
-    build_class_library_lookup, build_pool_semantic_hints, build_pool_target_symbols,
+    build_pool_semantic_hints, build_pool_target_symbols,
     build_pool_value_hints, canonical_standard_model_name, collect_pool_metadata_stats,
-    collect_symbol_quality_counts, infer_symbol_name_quality, merge_symbol_name,
-    symbol_name_quality_from_name_kind, SymbolMergeStats, SymbolNameQuality,
+    collect_symbol_quality_counts, merge_symbol_name,
+    symbol_name_quality_from_provenance, SymbolMergeStats, SymbolNameQuality,
     SymbolQualityCounts,
 };
 #[cfg(test)]
 use runners_symbols::{is_generic_symbol_name, normalize_external_symbol_name};
-use std::collections::HashSet;
 use tempfile::NamedTempFile;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -75,39 +74,38 @@ impl FunctionScopeStats {
     }
 }
 
+/// How the model's function names were recovered, counted.
+///
+/// `unnamed` replaces v3's `placeholder`: a function with no name is now a
+/// distinct, countable state instead of one carrying `sub_1234` and a
+/// `name_kind` claiming that was a placeholder.
 #[derive(Debug, Default, Clone, Copy)]
-struct FunctionNameKindStats {
+struct FunctionNameProvenanceStats {
     exact: usize,
-    external: usize,
+    derived: usize,
     heuristic: usize,
-    placeholder: usize,
-    unknown: usize,
-    unspecified: usize,
+    unnamed: usize,
 }
 
-impl FunctionNameKindStats {
-    fn tagged(self) -> usize {
-        self.exact + self.external + self.heuristic + self.placeholder + self.unknown
+impl FunctionNameProvenanceStats {
+    fn named(self) -> usize {
+        self.exact + self.derived + self.heuristic
     }
 }
 
-fn collect_function_name_kind_stats(functions: &[flutterdec_adapter::FunctionInfo]) -> FunctionNameKindStats {
-    let mut stats = FunctionNameKindStats::default();
+fn collect_function_name_provenance_stats(
+    functions: &[flutterdec_adapter::model::Function],
+) -> FunctionNameProvenanceStats {
+    let mut stats = FunctionNameProvenanceStats::default();
     for f in functions {
-        let Some(raw) = f.name_kind.as_deref().map(str::trim) else {
-            stats.unspecified += 1;
+        let Some(name) = f.name.as_ref() else {
+            stats.unnamed += 1;
             continue;
         };
-        if raw.is_empty() {
-            stats.unspecified += 1;
-            continue;
-        }
-        match symbol_name_quality_from_name_kind(Some(raw)) {
-            Some(SymbolNameQuality::Exact) => stats.exact += 1,
-            Some(SymbolNameQuality::External) => stats.external += 1,
-            Some(SymbolNameQuality::Heuristic) => stats.heuristic += 1,
-            Some(SymbolNameQuality::Placeholder) => stats.placeholder += 1,
-            None => stats.unknown += 1,
+        match name.provenance {
+            flutterdec_adapter::model::Provenance::Exact => stats.exact += 1,
+            flutterdec_adapter::model::Provenance::Derived => stats.derived += 1,
+            flutterdec_adapter::model::Provenance::Heuristic => stats.heuristic += 1,
         }
     }
     stats
@@ -140,20 +138,6 @@ struct EngineSymbolIngestion {
     error: Option<String>,
 }
 
-fn resolved_backend_from_adapter_kind(adapter_kind: &str) -> Option<AdapterBackend> {
-    let lowered = adapter_kind.trim().to_ascii_lowercase();
-    if lowered.contains("r2flutter") {
-        return Some(AdapterBackend::R2Flutter);
-    }
-    if lowered.contains("blutter") {
-        return Some(AdapterBackend::Blutter);
-    }
-    if lowered.contains("snapshot") || lowered.contains("internal") || lowered.contains("dynamic") {
-        return Some(AdapterBackend::Internal);
-    }
-    None
-}
-
 fn backend_label(value: Option<AdapterBackend>) -> &'static str {
     match value {
         Some(backend) => backend.as_str(),
@@ -167,7 +151,6 @@ fn format_quality_gate_failure_message(
     report_path: &Path,
     input_path: &Path,
     resolved_backend: Option<AdapterBackend>,
-    loaded_adapter_kind: &str,
     symbol_quality_counts: &SymbolQualityCounts,
 ) -> String {
     let mut out = String::new();
@@ -194,10 +177,10 @@ fn format_quality_gate_failure_message(
         notes.push("input is not an APK, so manifest/startup evidence is unavailable".to_string());
     }
     if resolved_backend == Some(AdapterBackend::Internal) {
-        notes.push("resolved backend is internal".to_string());
-    }
-    if loaded_adapter_kind == "dynamic_snapshot_string_model_v1" {
-        notes.push("adapter kind is dynamic_snapshot_string_model_v1".to_string());
+        notes.push(
+            "resolved backend is internal: no exact names and no ObjectPool index space"
+                .to_string(),
+        );
     }
     if symbol_quality_counts.placeholder > 0
         && symbol_quality_counts.exact == 0
@@ -458,10 +441,10 @@ fn classify_library_uri(uri: &str) -> ScopedFunctionKind {
 }
 
 fn function_kind_from_model(
-    f: &flutterdec_adapter::FunctionInfo,
-    class_to_library: &HashMap<String, String>,
+    model: &ProgramModel,
+    f: &flutterdec_adapter::model::Function,
 ) -> ScopedFunctionKind {
-    let Some(uri) = class_to_library.get(&f.owner_class) else {
+    let Some(uri) = model.owner_library_uri(f) else {
         return ScopedFunctionKind::Unknown;
     };
     classify_library_uri(uri)
@@ -584,16 +567,9 @@ fn build_startup_manifest_context(signals: &AndroidManifestSignals) -> StartupMa
 }
 
 fn collect_app_package_counts(model: &ProgramModel) -> Vec<(String, usize)> {
-    let mut class_to_library = HashMap::new();
-    for c in &model.classes {
-        class_to_library
-            .entry(c.name.clone())
-            .or_insert_with(|| c.library_uri.clone());
-    }
-
     let mut counts: HashMap<String, usize> = HashMap::new();
     for f in &model.functions {
-        let Some(uri) = class_to_library.get(&f.owner_class) else {
+        let Some(uri) = model.owner_library_uri(f) else {
             continue;
         };
         if classify_library_uri(uri) != ScopedFunctionKind::App {
@@ -656,7 +632,7 @@ fn collect_selected_priority_package_counts(
 ) -> Vec<(String, usize)> {
     let mut counts: HashMap<String, usize> = HashMap::new();
     for item in selected {
-        let key = priority_package_from_library_uri(&item.library_uri);
+        let key = priority_package_from_library_uri(item.library_uri.as_deref().unwrap_or(""));
         *counts.entry(key).or_insert(0) += 1;
     }
     let mut out = counts.into_iter().collect::<Vec<_>>();
@@ -679,7 +655,7 @@ fn collect_selected_priority_scope_mix(
 ) -> SelectedPriorityScopeMix {
     let mut mix = SelectedPriorityScopeMix::default();
     for item in selected {
-        match classify_library_uri(&item.library_uri) {
+        match classify_library_uri(item.library_uri.as_deref().unwrap_or("")) {
             ScopedFunctionKind::App => mix.app += 1,
             ScopedFunctionKind::Framework => mix.framework += 1,
             ScopedFunctionKind::Stdlib => mix.stdlib += 1,
@@ -701,10 +677,13 @@ fn collect_selected_preferred_package_stats(
 ) -> SelectedPreferredPackageStats {
     let mut out = SelectedPreferredPackageStats::default();
     for item in selected {
-        if classify_library_uri(&item.library_uri) != ScopedFunctionKind::App {
+        let Some(uri) = item.library_uri.as_deref() else {
+            continue;
+        };
+        if classify_library_uri(uri) != ScopedFunctionKind::App {
             continue;
         }
-        let Some(pkg) = package_name_from_library_uri(&item.library_uri) else {
+        let Some(pkg) = package_name_from_library_uri(uri) else {
             continue;
         };
         if preferred_packages.contains(&pkg) {
@@ -760,13 +739,14 @@ struct SelectedBootflowStats {
 #[derive(Debug, Clone)]
 struct SelectedBootflowHit {
     category: String,
-    decoded_kind: String,
+    hint_kind: String,
     source: String,
+    provenance: String,
     selector: String,
     target_va: u64,
-    function_name: String,
-    owner_class: String,
-    library_uri: String,
+    function_name: Option<String>,
+    owner_class: Option<String>,
+    library_uri: Option<String>,
     total_score: i32,
 }
 
@@ -804,8 +784,9 @@ fn collect_selected_bootflow_category_hits(
         }
         hits.push(SelectedBootflowHit {
             category: category.to_string(),
-            decoded_kind: entry.decoded_kind.clone(),
+            hint_kind: entry.kind.clone(),
             source: entry.source.clone(),
+            provenance: entry.provenance.clone(),
             selector: entry.selector.clone(),
             target_va,
             function_name: selected.function_name.clone(),
@@ -942,21 +923,15 @@ fn apply_function_scope_filter(
     scope: FunctionScope,
     app_packages: &[String],
 ) -> (ProgramModel, FunctionScopeStats) {
-    let mut class_to_library = HashMap::new();
-    for c in &model.classes {
-        class_to_library
-            .entry(c.name.clone())
-            .or_insert_with(|| c.library_uri.clone());
-    }
     let package_filters = normalize_package_filters(app_packages);
 
     let mut stats = FunctionScopeStats::from_total(model.functions.len());
     let mut filtered_functions = Vec::new();
     for f in &model.functions {
-        let kind = function_kind_from_model(f, &class_to_library);
-        let package_name = class_to_library
-            .get(&f.owner_class)
-            .and_then(|uri| package_name_from_library_uri(uri));
+        let kind = function_kind_from_model(model, f);
+        let package_name = model
+            .owner_library_uri(f)
+            .and_then(package_name_from_library_uri);
         match kind {
             ScopedFunctionKind::App => stats.app += 1,
             ScopedFunctionKind::Framework => stats.framework += 1,
@@ -1023,9 +998,15 @@ pub fn run_info(
         compressed_pointers: bundle.compressed_pointers,
         snapshot_features: bundle.snapshot_features.clone(),
         adapter_installed,
-        adapter_kind: None,
+        requested_backend: Some(adapter_backend.as_str().to_string()),
+        resolved_backend: None,
+        backend_fallback_reason: None,
+        producer_id: None,
+        producer_trust: None,
+        compatibility_record_sha256: None,
         manifest_entry_present: None,
-        adapter_snapshot_hash_match: None,
+        snapshot_identity_is_exact: Some(bundle.identity.is_exact()),
+        model_capabilities: None,
         compatibility_warnings: None,
         function_count: None,
         class_count: None,
@@ -1042,24 +1023,36 @@ pub fn run_info(
         if let Ok(loaded) = load_model(repo_root, &bundle, adapter_backend) {
             let manifest_entry_present = loaded.manifest_entry_adapter.is_some();
             let model = loaded.model;
-            let snapshot_hash_match = bundle.snapshot_hash == model.snapshot_hash;
-            let resolved_backend = resolved_backend_from_adapter_kind(&model.adapter_kind);
+            // The model was validated against the host identity before it got
+            // here, so it describes this snapshot by construction. What is worth
+            // reporting is whether that identity was header-derived at all.
+            let identity_is_exact = bundle.identity.is_exact();
+            let resolved_backend = backend_from_id(loaded.resolved_backend);
             let backend_mismatch = match adapter_backend {
                 AdapterBackend::Auto => false,
-                _ => resolved_backend.is_some_and(|value| value != adapter_backend),
+                _ => resolved_backend != adapter_backend,
             };
             let warnings = collect_compatibility_warnings(
                 manifest_entry_present,
-                snapshot_hash_match,
+                identity_is_exact,
                 backend_mismatch,
             );
-            out.adapter_kind = Some(model.adapter_kind.clone());
+            out.requested_backend = Some(adapter_backend.as_str().to_string());
+            out.resolved_backend = Some(resolved_backend.as_str().to_string());
+            out.backend_fallback_reason = loaded
+                .fallback_reason
+                .map(|reason| reason.as_str().to_string());
+            out.producer_id = Some(loaded.producer.id.clone());
+            out.producer_trust = Some(producer_trust_label(loaded.producer.trust).to_string());
+            out.compatibility_record_sha256 =
+                Some(loaded.compatibility.record_sha256.to_string());
             out.manifest_entry_present = Some(manifest_entry_present);
-            out.adapter_snapshot_hash_match = Some(snapshot_hash_match);
+            out.snapshot_identity_is_exact = Some(identity_is_exact);
             out.compatibility_warnings = Some(warnings);
+            out.model_capabilities = Some(capability_map(&model.capabilities));
             out.function_count = Some(model.functions.len());
             out.class_count = Some(model.classes.len());
-            out.object_pool_count = Some(model.object_pool.len());
+            out.object_pool_count = Some(model.object_pool.entries.len());
             let app_package_counts = collect_app_package_counts(&model);
             out.app_package_count_total = Some(app_package_counts.len());
             out.app_package_counts_top = Some(
@@ -1075,40 +1068,46 @@ pub fn run_info(
     Ok(out)
 }
 
-fn enforce_snapshot_hash_match(
-    require_match: bool,
-    context_label: &str,
-    bundle_snapshot_hash: &str,
-    adapter_snapshot_hash: &str,
-) -> Result<bool> {
-    let matches = bundle_snapshot_hash == adapter_snapshot_hash;
-    if require_match && !matches {
-        bail!(
-            "{} snapshot hash mismatch: bundle={} adapter={}",
-            context_label,
-            bundle_snapshot_hash,
-            adapter_snapshot_hash
-        );
-    }
-    Ok(matches)
-}
-
 fn collect_compatibility_warnings(
     manifest_entry_present: bool,
-    snapshot_hash_match: bool,
+    identity_is_exact: bool,
     backend_mismatch: bool,
 ) -> Vec<String> {
     let mut warnings = Vec::new();
     if !manifest_entry_present {
         warnings.push("adapter manifest entry missing for this snapshot hash".to_string());
     }
-    if !snapshot_hash_match {
-        warnings.push("adapter snapshot hash differs from loader snapshot hash".to_string());
+    if !identity_is_exact {
+        warnings.push(
+            "snapshot identity is not header-derived, so no exact parser could be authorized"
+                .to_string(),
+        );
     }
     if backend_mismatch {
         warnings.push("resolved adapter backend differs from requested backend".to_string());
     }
     warnings
+}
+
+fn producer_trust_label(trust: ProducerTrust) -> &'static str {
+    match trust {
+        ProducerTrust::Registered => "registered",
+        ProducerTrust::Local => "local",
+        ProducerTrust::Untrusted => "untrusted",
+    }
+}
+
+/// The model's per-domain capability levels, for reports.
+fn capability_map(caps: &Capabilities) -> Vec<(String, String)> {
+    Domain::ALL
+        .iter()
+        .map(|domain| {
+            (
+                domain.as_str().to_string(),
+                caps.level(*domain).as_str().to_string(),
+            )
+        })
+        .collect()
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -1118,11 +1117,15 @@ struct TargetSelectionStats {
     matched_count: usize,
 }
 
-fn function_matches_target(func: &flutterdec_adapter::FunctionInfo, target: FunctionTarget) -> bool {
+fn function_matches_target(
+    func: &flutterdec_adapter::model::Function,
+    target: FunctionTarget,
+) -> bool {
+    let id = u64::from(func.id.0);
     match target {
-        FunctionTarget::FunctionId(id) => func.id == id,
-        FunctionTarget::EntryVa(entry_va) => func.entry_va == entry_va,
-        FunctionTarget::Any(value) => func.id == value || func.entry_va == value,
+        FunctionTarget::FunctionId(want) => id == want,
+        FunctionTarget::EntryVa(entry_va) => func.code.start_va == entry_va,
+        FunctionTarget::Any(value) => id == value || func.code.start_va == value,
     }
 }
 
@@ -1167,7 +1170,14 @@ fn apply_target_function_filter(
         let preview = selected_functions
             .iter()
             .take(8)
-            .map(|func| format!("id={} va=0x{:x} {}", func.id, func.entry_va, func.name))
+            .map(|func| {
+                format!(
+                    "id={} va=0x{:x} {}",
+                    func.id,
+                    func.code.start_va,
+                    func.name_text().unwrap_or("<unnamed>")
+                )
+            })
             .collect::<Vec<_>>();
         bail!(
             "target {} is ambiguous and matched {} functions: {}. use id:<n> or va:0x<addr>",
@@ -1204,20 +1214,29 @@ pub fn run_decompile(
     let adapter_exec_path = loaded_model.adapter_exec.display().to_string();
     let manifest_entry_version = loaded_model.manifest_entry_version.clone();
     let manifest_entry_adapter = loaded_model.manifest_entry_adapter.clone();
-    let loaded_adapter_snapshot_hash = loaded_model.model.snapshot_hash.clone();
-    let loaded_adapter_kind = loaded_model.model.adapter_kind.clone();
     let requested_backend = opt.adapter_backend;
-    let resolved_backend = resolved_backend_from_adapter_kind(&loaded_adapter_kind);
+    // Four distinct typed facts, none of them read out of a name: what the host
+    // asked for, what answered, why it differed, and who produced the model.
+    let resolved_backend = backend_from_id(loaded_model.resolved_backend);
+    let backend_fallback_reason = loaded_model.fallback_reason;
+    let producer = loaded_model.producer.clone();
+    let compatibility = loaded_model.compatibility.clone();
     let backend_mismatch = match requested_backend {
         AdapterBackend::Auto => false,
-        _ => resolved_backend.is_some_and(|value| value != requested_backend),
+        _ => resolved_backend != requested_backend,
     };
-    let snapshot_hash_match = enforce_snapshot_hash_match(
-        opt.require_snapshot_hash_match,
-        "decompile input",
-        &bundle.snapshot_hash,
-        &loaded_adapter_snapshot_hash,
-    )?;
+    let snapshot_identity_is_exact = bundle.identity.is_exact();
+    if opt.require_snapshot_hash_match && !snapshot_identity_is_exact {
+        bail!(
+            "--require-snapshot-hash-match: decompile input identity is not header-derived: {}",
+            bundle
+                .identity
+                .exact_selection_key()
+                .err()
+                .map(|rejection| rejection.to_string())
+                .unwrap_or_default()
+        );
+    }
     let engine_context =
         try_collect_engine_fingerprint_with_apk_session(input_path, apk_session.as_ref(), &bundle.arch);
     let mut engine_symbol_ingestion =
@@ -1242,15 +1261,21 @@ pub fn run_decompile(
     } else {
         AndroidStartupEvidence::default()
     };
-    let (model, manifest_synthetic_hints) = if manifest_inspection.present {
-        enrich_model_with_manifest_bootflow_hints(&loaded_model.model, &manifest_inspection.signals)
+    // Enrichment produces hints. The model is not rewritten, so the
+    // authoritative library/class/function/pool records and the pool index space
+    // are exactly what the adapter authored, before and after this point.
+    let model = loaded_model.model;
+    let mut hints = ProgramHints::new();
+    let model_name_hints = collect_model_name_hints(&model, &mut hints);
+    let manifest_hint_count = if manifest_inspection.present {
+        collect_manifest_bootflow_hints(&model, &manifest_inspection.signals, &mut hints)
     } else {
-        (loaded_model.model, 0)
+        0
     };
-    let (model, startup_synthetic_hints) = if opt.engine_options.apk_startup_analysis {
-        enrich_model_with_apk_startup_bootflow_hints(&model, &startup_evidence)
+    let startup_hint_count = if opt.engine_options.apk_startup_analysis {
+        collect_apk_startup_bootflow_hints(&model, &startup_evidence, &mut hints)
     } else {
-        (model, 0)
+        0
     };
     let app_package_counts = collect_app_package_counts(&model);
     let app_package_counts_top = app_package_counts
@@ -1274,8 +1299,17 @@ pub fn run_decompile(
         (scoped_model.clone(), TargetSelectionStats::default())
     };
 
-    if selected_model.arch != "arm64" {
-        bail!("model arch {} unsupported in v1", selected_model.arch);
+    // Target architecture is a header fact the loader owns, and the model was
+    // already checked against it. v3 read `arch` off the adapter's own output,
+    // which meant an adapter could declare itself arm64.
+    if !matches!(
+        bundle.identity.target_arch,
+        flutterdec_loader::identity::TargetArch::Arm64
+    ) {
+        bail!(
+            "target architecture {} unsupported in v1",
+            bundle.identity.target_arch
+        );
     }
     if selected_model.functions.is_empty() {
         let app_package_note = if normalized_app_packages.is_empty() {
@@ -1304,6 +1338,7 @@ pub fn run_decompile(
 
     let (disasm, selected_priorities) = disassemble_program_with_priorities_and_package_hints(
         &selected_model,
+        &hints,
         &bundle.isolate_instr,
         bundle.isolate_instr_va,
         if target_selection_stats.enabled {
@@ -1333,46 +1368,23 @@ pub fn run_decompile(
     let mut symbol_quality: HashMap<u64, SymbolNameQuality> = HashMap::new();
     let mut symbol_merge_stats = SymbolMergeStats::default();
     let mut standard_model_symbol_count = 0usize;
-    let class_to_library = if opt.engine_options.canonical_model_symbols
-        || opt.engine_options.pool_semantic_hints
-    {
-        build_class_library_lookup(&selected_model)
-    } else {
-        HashMap::new()
-    };
     // `pool[N]` in the disassembly is a real ObjectPool entry index only when the
-    // adapter recovered the pool layout. Without geometry the adapter's own indices
-    // are in some private space (string ordinals, for instance), so joining the two
-    // would attach arbitrary values to unrelated slots. Refuse rather than invent.
-    let pool_index_space_authoritative = model.pool_geometry.is_some();
-    let pool_value_hints = if pool_index_space_authoritative
-        && (opt.engine_options.pool_value_hints || opt.engine_options.pool_semantic_hints)
-    {
-        build_pool_value_hints(&model)
-    } else {
-        HashMap::new()
-    };
+    // model claims a hardware index space. An ordinal pool's indexes are
+    // positions in the producer's own list, so joining the two would attach
+    // arbitrary values to unrelated slots. The pool-reading helpers enforce this
+    // themselves; the flag is kept for the report.
     let pool_metadata = collect_pool_metadata_stats(&model);
-    let function_name_kind_stats = collect_function_name_kind_stats(&model.functions);
-    let pool_confidence_count = model
-        .object_pool
-        .iter()
-        .filter(|e| e.confidence.is_some())
-        .count();
-    let pool_source_count = model
-        .object_pool
-        .iter()
-        .filter(|e| {
-            e.source
-                .as_deref()
-                .map(str::trim)
-                .is_some_and(|v| !v.is_empty())
-        })
-        .count();
-    let pool_semantic_hints = if pool_index_space_authoritative
-        && opt.engine_options.pool_semantic_hints
-    {
-        build_pool_semantic_hints(&model, &class_to_library)
+    let pool_index_space_authoritative = pool_metadata.addressable;
+    let pool_value_hints =
+        if opt.engine_options.pool_value_hints || opt.engine_options.pool_semantic_hints {
+            build_pool_value_hints(&model)
+        } else {
+            HashMap::new()
+        };
+    let function_name_provenance_stats =
+        collect_function_name_provenance_stats(&model.functions);
+    let pool_semantic_hints = if opt.engine_options.pool_semantic_hints {
+        build_pool_semantic_hints(&model, &hints)
     } else {
         HashMap::new()
     };
@@ -1385,41 +1397,43 @@ pub fn run_decompile(
     };
 
     for f in &selected_model.functions {
-        let resolved = if opt.engine_options.canonical_model_symbols {
-            let resolved = canonical_standard_model_name(f, &class_to_library)
-                .unwrap_or_else(|| f.name.clone());
-            if resolved != f.name {
-                standard_model_symbol_count += 1;
-            }
-            resolved
-        } else {
-            f.name.clone()
+        // A function with no recovered name contributes no symbol. It gets an
+        // address-derived label at emit time instead, so nothing downstream can
+        // mistake `fn_0x1000` for something the snapshot said.
+        let Some(model_name) = f.name_text() else {
+            symbol_quality.insert(f.code.start_va, SymbolNameQuality::Placeholder);
+            continue;
         };
-        let resolved_quality = if resolved != f.name {
-            SymbolNameQuality::Heuristic
-        } else {
-            symbol_name_quality_from_name_kind(f.name_kind.as_deref()).unwrap_or_else(|| {
-                if infer_symbol_name_quality(&resolved) == SymbolNameQuality::Placeholder {
-                    SymbolNameQuality::Placeholder
-                } else {
-                    SymbolNameQuality::Heuristic
+        let model_quality = f
+            .name
+            .as_ref()
+            .map(|name| symbol_name_quality_from_provenance(name.provenance))
+            .unwrap_or(SymbolNameQuality::Placeholder);
+        let (resolved, resolved_quality) = if opt.engine_options.canonical_model_symbols {
+            match canonical_standard_model_name(&selected_model, f) {
+                Some(canonical) if canonical != model_name => {
+                    standard_model_symbol_count += 1;
+                    (canonical, SymbolNameQuality::Heuristic)
                 }
-            })
+                _ => (model_name.to_string(), model_quality),
+            }
+        } else {
+            (model_name.to_string(), model_quality)
         };
-        symbol_names.insert(f.entry_va, resolved);
-        symbol_quality.insert(f.entry_va, resolved_quality);
+        symbol_names.insert(f.code.start_va, resolved);
+        symbol_quality.insert(f.code.start_va, resolved_quality);
     }
     for f in &disasm {
-        symbol_names
+        let Some(name) = f.function_name.clone() else {
+            symbol_quality
+                .entry(f.entry_va)
+                .or_insert(SymbolNameQuality::Placeholder);
+            continue;
+        };
+        symbol_names.entry(f.entry_va).or_insert(name);
+        symbol_quality
             .entry(f.entry_va)
-            .or_insert_with(|| f.function_name.clone());
-        symbol_quality.entry(f.entry_va).or_insert_with(|| {
-            if infer_symbol_name_quality(&f.function_name) == SymbolNameQuality::Placeholder {
-                SymbolNameQuality::Placeholder
-            } else {
-                SymbolNameQuality::Heuristic
-            }
-        });
+            .or_insert(SymbolNameQuality::Heuristic);
     }
     for (va, name) in &pool_target_symbols {
         merge_symbol_name(
@@ -1556,7 +1570,7 @@ pub fn run_decompile(
             let filename = format!(
                 "{:05}_{}.s",
                 f.function_id,
-                normalize_file_name(&f.function_name)
+                normalize_file_name(&f.display_name())
             );
             fs::write(asm_dir.join(filename), terminated(&lines.join("\n")))?;
         }
@@ -1703,7 +1717,7 @@ pub fn run_decompile(
             })
         })
         .collect::<Vec<_>>();
-    let bootflow_discovery = collect_bootflow_discovery(&model);
+    let bootflow_discovery = collect_bootflow_discovery(&hints);
     let (selected_bootflow_stats, selected_bootflow_hits) =
         collect_selected_bootflow_hits(&prioritization_selected, &bootflow_discovery);
     let selected_bootflow_hits_top = selected_bootflow_hits
@@ -1712,7 +1726,8 @@ pub fn run_decompile(
         .map(|hit| {
             json!({
                 "category": hit.category,
-                "decoded_kind": hit.decoded_kind,
+                "hint_kind": hit.hint_kind,
+                "provenance": hit.provenance,
                 "source": hit.source,
                 "selector": hit.selector,
                 "target_va": hit.target_va,
@@ -1760,13 +1775,14 @@ pub fn run_decompile(
         .iter()
         .map(|entry| {
             json!({
-                "decoded_kind": entry.decoded_kind,
+                "kind": entry.kind,
                 "source": entry.source,
+                "provenance": entry.provenance,
                 "selector": entry.selector,
                 "target_va": entry.target_va,
                 "owner_class": entry.owner_class,
                 "library_uri": entry.library_uri,
-                "value": entry.value
+                "detail": entry.detail
             })
         })
         .collect::<Vec<_>>();
@@ -1775,13 +1791,14 @@ pub fn run_decompile(
         .iter()
         .map(|entry| {
             json!({
-                "decoded_kind": entry.decoded_kind,
+                "kind": entry.kind,
+                "provenance": entry.provenance,
                 "source": entry.source,
                 "selector": entry.selector,
                 "target_va": entry.target_va,
                 "owner_class": entry.owner_class,
                 "library_uri": entry.library_uri,
-                "value": entry.value
+                "detail": entry.detail
             })
         })
         .collect::<Vec<_>>();
@@ -1790,13 +1807,14 @@ pub fn run_decompile(
         .iter()
         .map(|entry| {
             json!({
-                "decoded_kind": entry.decoded_kind,
+                "kind": entry.kind,
+                "provenance": entry.provenance,
                 "source": entry.source,
                 "selector": entry.selector,
                 "target_va": entry.target_va,
                 "owner_class": entry.owner_class,
                 "library_uri": entry.library_uri,
-                "value": entry.value
+                "detail": entry.detail
             })
         })
         .collect::<Vec<_>>();
@@ -1805,13 +1823,14 @@ pub fn run_decompile(
         .iter()
         .map(|entry| {
             json!({
-                "decoded_kind": entry.decoded_kind,
+                "kind": entry.kind,
+                "provenance": entry.provenance,
                 "source": entry.source,
                 "selector": entry.selector,
                 "target_va": entry.target_va,
                 "owner_class": entry.owner_class,
                 "library_uri": entry.library_uri,
-                "value": entry.value
+                "detail": entry.detail
             })
         })
         .collect::<Vec<_>>();
@@ -1820,13 +1839,14 @@ pub fn run_decompile(
         .iter()
         .map(|entry| {
             json!({
-                "decoded_kind": entry.decoded_kind,
+                "kind": entry.kind,
+                "provenance": entry.provenance,
                 "source": entry.source,
                 "selector": entry.selector,
                 "target_va": entry.target_va,
                 "owner_class": entry.owner_class,
                 "library_uri": entry.library_uri,
-                "value": entry.value
+                "detail": entry.detail
             })
         })
         .collect::<Vec<_>>();
@@ -1836,8 +1856,11 @@ pub fn run_decompile(
     fs::write(&quality_path, serde_json::to_vec_pretty(&report)?)?;
     let bundle_snapshot_hash = bundle.snapshot_hash.clone();
     let manifest_entry_present = manifest_entry_adapter.is_some();
-    let compatibility_warnings =
-        collect_compatibility_warnings(manifest_entry_present, snapshot_hash_match, backend_mismatch);
+    let compatibility_warnings = collect_compatibility_warnings(
+        manifest_entry_present,
+        snapshot_identity_is_exact,
+        backend_mismatch,
+    );
     let compatibility_status = if compatibility_warnings.is_empty() {
         "ok"
     } else {
@@ -1861,36 +1884,51 @@ pub fn run_decompile(
             "profile": opt.analysis_profile.as_str(),
             "engine": &opt.engine_options
         },
-        "adapter_kind": model.adapter_kind,
+        // Four separate typed facts. `resolved_backend` comes from the protocol
+        // result, never from a filename or a substring of adapter output.
         "adapter_selection": {
             "requested_backend": requested_backend.as_str(),
-            "resolved_backend": backend_label(resolved_backend),
-            "resolved_from_adapter_kind": loaded_adapter_kind,
+            "resolved_backend": backend_label(Some(resolved_backend)),
+            "fallback_reason": backend_fallback_reason.map(|reason| reason.as_str()),
             "backend_mismatch": backend_mismatch,
             "require_snapshot_hash_match": opt.require_snapshot_hash_match,
             "adapter_exec_path": adapter_exec_path,
             "manifest_entry_adapter": manifest_entry_adapter,
             "manifest_entry_version": manifest_entry_version,
-            "snapshot_hash": {
-                "bundle": bundle_snapshot_hash,
-                "adapter_model": loaded_adapter_snapshot_hash,
-                "match": snapshot_hash_match
+            "snapshot_identity": {
+                "hash": bundle_snapshot_hash,
+                "header_derived": snapshot_identity_is_exact
             }
         },
-        "adapter_schema": {
-            "schema_version": model.schema_version,
-            "compatibility_mode": if model.schema_version == 2 { "v2_compat" } else { "native_v3" },
-            "function_name_kind_count": function_name_kind_stats.tagged(),
-            "function_name_kind_breakdown": {
-                "exact": function_name_kind_stats.exact,
-                "external": function_name_kind_stats.external,
-                "heuristic": function_name_kind_stats.heuristic,
-                "placeholder": function_name_kind_stats.placeholder,
-                "unknown": function_name_kind_stats.unknown,
-                "unspecified": function_name_kind_stats.unspecified
+        "producer": {
+            "id": producer.id,
+            "version": producer.version,
+            "artifact_sha256": producer.artifact_sha256.to_string(),
+            "trust": producer_trust_label(producer.trust)
+        },
+        "compatibility": {
+            "record_sha256": compatibility.record_sha256.to_string(),
+            "parser_family_id": compatibility.parser_family_id,
+            "profile_id": compatibility.profile_id,
+            "profile_sha256": compatibility.profile_sha256.to_string()
+        },
+        "model": {
+            "model_version": model.model_version,
+            "name_pattern_hints": model_name_hints,
+            "capabilities": capability_map(&model.capabilities)
+                .into_iter()
+                .map(|(domain, level)| (domain, serde_json::Value::String(level)))
+                .collect::<serde_json::Map<_, _>>(),
+            "diagnostics": model.diagnostics.len(),
+            "function_name_provenance": {
+                "named": function_name_provenance_stats.named(),
+                "exact": function_name_provenance_stats.exact,
+                "derived": function_name_provenance_stats.derived,
+                "heuristic": function_name_provenance_stats.heuristic,
+                "unnamed": function_name_provenance_stats.unnamed
             },
-            "pool_confidence_count": pool_confidence_count,
-            "pool_source_count": pool_source_count
+            "pool_index_space_addressable": pool_metadata.addressable,
+            "pool_heuristic_entries": pool_metadata.heuristic
         },
         "engine_fingerprint_context": {
             "detected": engine_context.detected,
@@ -1909,17 +1947,23 @@ pub fn run_decompile(
         },
         "compatibility": {
             "status": compatibility_status,
-            "schema": {
-                "version": model.schema_version,
-                "supported_versions": [2, 3],
-                "supported": model.schema_version == 2 || model.schema_version == 3
+            "model": {
+                "version": model.model_version,
+                "supported_versions": [flutterdec_adapter::model::MODEL_VERSION],
+                "supported": model.model_version == flutterdec_adapter::model::MODEL_VERSION
             },
-            "snapshot_hash_match": snapshot_hash_match,
+            "snapshot_identity_is_exact": snapshot_identity_is_exact,
             "snapshot_hash_match_required": opt.require_snapshot_hash_match,
             "manifest_entry_present": manifest_entry_present,
             "warnings": compatibility_warnings
         },
-        "dart_version": model.dart_version,
+        // The Dart version is a host fact resolved from the snapshot hash, not
+        // something the adapter reports: a semantic version is an alias of the
+        // hash, never a selector.
+        "dart_version": bundle
+            .dart_profile
+            .as_ref()
+            .map(|p| p.dart_version.clone()),
         "function_scope": {
             "selected": opt.function_scope.as_str(),
             "total_before_filter": function_scope_stats.total_before_filter,
@@ -1959,7 +2003,7 @@ pub fn run_decompile(
             "deeplink_activities": manifest_inspection.signals.deeplink_activities,
             "deeplink_entry_count": manifest_inspection.signals.deeplink_entries.len(),
             "deeplink_entries": manifest_inspection.signals.deeplink_entries,
-            "synthetic_bootflow_hints": manifest_synthetic_hints
+            "bootflow_hints": manifest_hint_count
         },
         "android_startup": {
             "enabled": opt.engine_options.apk_startup_analysis,
@@ -1985,14 +2029,14 @@ pub fn run_decompile(
                 "path_count": startup_evidence.bootstrap_chain.paths.len(),
                 "paths": startup_evidence.bootstrap_chain.paths
             },
-            "synthetic_bootflow_hints": startup_synthetic_hints
+            "bootflow_hints": startup_hint_count
         },
         "counts": {
             "libraries": model.libraries.len(),
             "classes": model.classes.len(),
             "functions": selected_model.functions.len(),
             "functions_total": model.functions.len(),
-            "object_pool": model.object_pool.len(),
+            "object_pool": model.object_pool.entries.len(),
             "disassembled_functions": disasm.len()
         },
         "quality": report,
@@ -2079,10 +2123,10 @@ pub fn run_decompile(
             "total_entries": pool_metadata.total_entries,
             "with_target_va": pool_metadata.with_target_va,
             "with_selector": pool_metadata.with_selector,
-            "with_owner_class": pool_metadata.with_owner_class,
-            "with_library_uri": pool_metadata.with_library_uri,
+            "with_value": pool_metadata.with_value,
+            "heuristic_entries": pool_metadata.heuristic,
             "index_space_authoritative": pool_index_space_authoritative,
-            "geometry": model.pool_geometry.map(|g| serde_json::json!({
+            "geometry": model.object_pool.geometry.map(|g| serde_json::json!({
                 "entries_offset": g.entries_offset,
                 "word_size": g.word_size
             })),
@@ -2090,8 +2134,8 @@ pub fn run_decompile(
                 serde_json::Value::Null
             } else {
                 serde_json::Value::String(
-                    "adapter reported no pool_geometry; pool entry indices are not in the \
-                     hardware index space, so pool value/semantic hints were not applied"
+                    "the model declares an ordinal pool index space, so pool indexes carry \
+                     no address meaning and pool value/semantic hints were not applied"
                         .to_string(),
                 )
             }
@@ -2142,7 +2186,7 @@ pub fn run_decompile(
             "noreturn_pruned_functions": noreturn_prune.functions,
             "noreturn_pruned_blocks": noreturn_prune.blocks_cut,
             "noreturn_pruned_instructions": noreturn_prune.instructions_cut,
-            "model": model.adapter_kind.clone(),
+            "resolved_backend": resolved_backend.as_str(),
             "snapshot_dart_version": bundle.dart_profile.as_ref().map(|p| p.dart_version.clone()),
             "compressed_pointers": bundle.compressed_pointers
         },
@@ -2210,8 +2254,7 @@ pub fn run_decompile(
                 &quality_path,
                 &report_path,
                 input_path,
-                resolved_backend,
-                &loaded_adapter_kind,
+                Some(resolved_backend),
                 &symbol_quality_counts,
             )
         );

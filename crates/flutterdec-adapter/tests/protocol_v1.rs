@@ -8,8 +8,8 @@ mod support;
 use flutterdec_adapter::model::{InputRegionName, MODEL_VERSION};
 use flutterdec_adapter::primitives::{RelativePath, Sha256Digest};
 use flutterdec_adapter::protocol::{
-    AdapterError, AdapterErrorCode, AdapterRequest, AdapterResult, AdapterStatus, InputHandle,
-    ProtocolError, PROTOCOL_MAJOR,
+    AdapterError, AdapterErrorCode, AdapterRequest, AdapterResult, AdapterStatus, BackendId,
+    FallbackReason, InputHandle, ProtocolError, RequestedBackend, PROTOCOL_MAJOR,
 };
 use serde_json::{json, Value};
 use support::{ISO_INSTR_VA, VM_INSTR_VA};
@@ -33,8 +33,10 @@ fn request() -> AdapterRequest {
     AdapterRequest {
         protocol_major: PROTOCOL_MAJOR,
         model_major: MODEL_VERSION,
-        compatibility_record_sha256: Sha256Digest::of(b"record"),
+        compatibility: support::compatibility(),
+        producer: support::producer(),
         identity: support::identity(),
+        requested_backend: RequestedBackend::Auto,
         inputs: vec![
             handle(InputRegionName::VmData, "in/vm_data.bin", 64, None),
             handle(InputRegionName::IsolateData, "in/iso_data.bin", 128, None),
@@ -80,7 +82,12 @@ fn a_request_round_trips_through_fresh_json() {
 
 #[test]
 fn a_result_round_trips_in_both_its_shapes() {
-    let ok = AdapterResult::ok(path("out/model.json"), Vec::new());
+    let ok = AdapterResult::ok(
+        path("out/model.json"),
+        BackendId::R2Flutter,
+        None,
+        Vec::new(),
+    );
     assert_eq!(
         AdapterResult::from_json(&ok.to_json()).expect("ok result"),
         ok
@@ -119,7 +126,12 @@ fn unsupported_majors_are_rejected_on_both_documents() {
         Err(ProtocolError::UnsupportedModelMajor(3))
     );
 
-    let result = AdapterResult::ok(path("out/model.json"), Vec::new());
+    let result = AdapterResult::ok(
+        path("out/model.json"),
+        BackendId::R2Flutter,
+        None,
+        Vec::new(),
+    );
     let mut raw: Value = serde_json::from_slice(&result.to_json()).expect("json");
     raw["protocol_major"] = json!(99);
     let bytes = serde_json::to_vec(&raw).expect("serialize");
@@ -323,14 +335,24 @@ fn handles_must_be_distinct() {
 /// reason. Either without the other leaves the host with nothing to do.
 #[test]
 fn a_results_status_and_payload_must_agree() {
-    let mut ok = AdapterResult::ok(path("out/model.json"), Vec::new());
+    let mut ok = AdapterResult::ok(
+        path("out/model.json"),
+        BackendId::R2Flutter,
+        None,
+        Vec::new(),
+    );
     ok.model = None;
     assert_eq!(
         AdapterResult::from_json(&ok.to_json()),
         Err(ProtocolError::StatusPayloadMismatch)
     );
 
-    let mut ok = AdapterResult::ok(path("out/model.json"), Vec::new());
+    let mut ok = AdapterResult::ok(
+        path("out/model.json"),
+        BackendId::R2Flutter,
+        None,
+        Vec::new(),
+    );
     ok.error = Some(AdapterError {
         code: AdapterErrorCode::Internal,
         message: "but it worked".to_string(),
@@ -379,4 +401,114 @@ fn the_request_carries_the_host_identity_unchanged() {
     let parsed = AdapterRequest::from_json(&request().to_json()).expect("valid");
     assert_eq!(parsed.identity, support::identity());
     assert!(parsed.identity.exact_selection_key().is_ok());
+}
+
+/// Which backend ran is a typed field on the result, not something to be read
+/// out of a name. Success has to name one, and a run that produced nothing must
+/// not: "some backend produced this" and "no backend produced anything, but
+/// here is a backend name" are both unusable answers.
+#[test]
+fn a_result_must_name_the_backend_that_produced_the_model() {
+    let mut ok = AdapterResult::ok(path("out/model.json"), BackendId::Blutter, None, Vec::new());
+    ok.resolved_backend = None;
+    assert_eq!(
+        AdapterResult::from_json(&ok.to_json()),
+        Err(ProtocolError::ResolvedBackendPayloadMismatch)
+    );
+
+    let mut failed = AdapterResult::failed(AdapterErrorCode::ParseFailed, "boom");
+    failed.resolved_backend = Some(BackendId::Internal);
+    assert_eq!(
+        AdapterResult::from_json(&failed.to_json()),
+        Err(ProtocolError::ResolvedBackendPayloadMismatch)
+    );
+}
+
+/// A pinned backend may fail. It may not be quietly swapped for another one,
+/// which is what `auto`'s fall-through would otherwise do to an operator who
+/// asked for a specific parser.
+#[test]
+fn a_pinned_backend_cannot_be_substituted() {
+    let mut pinned = request();
+    pinned.requested_backend = RequestedBackend::Fixed(BackendId::R2Flutter);
+
+    let substituted = AdapterResult::ok(
+        path("out/model.json"),
+        BackendId::Internal,
+        None,
+        Vec::new(),
+    );
+    assert_eq!(
+        substituted.validate_against(&pinned),
+        Err(ProtocolError::BackendSubstituted {
+            requested: BackendId::R2Flutter,
+            resolved: BackendId::Internal,
+        })
+    );
+
+    let honored = AdapterResult::ok(
+        path("out/model.json"),
+        BackendId::R2Flutter,
+        None,
+        Vec::new(),
+    );
+    assert_eq!(honored.validate_against(&pinned), Ok(()));
+
+    // Failing is always allowed; that is the whole point of pinning.
+    let refused = AdapterResult::failed(AdapterErrorCode::UnsupportedSnapshot, "no r2flutter");
+    assert_eq!(refused.validate_against(&pinned), Ok(()));
+}
+
+/// A fallback reason on a pinned request describes something that cannot have
+/// happened, so it is a rejection rather than a curiosity.
+#[test]
+fn a_fallback_reason_only_makes_sense_under_auto() {
+    let mut pinned = request();
+    pinned.requested_backend = RequestedBackend::Fixed(BackendId::Blutter);
+    let result = AdapterResult::ok(
+        path("out/model.json"),
+        BackendId::Blutter,
+        Some(FallbackReason::BackendUnavailable),
+        Vec::new(),
+    );
+    assert_eq!(
+        result.validate_against(&pinned),
+        Err(ProtocolError::FallbackWithoutAuto)
+    );
+
+    let auto = request();
+    assert_eq!(auto.requested_backend, RequestedBackend::Auto);
+    assert_eq!(result.validate_against(&auto), Ok(()));
+}
+
+/// The backend vocabulary is closed. A producer that calls itself `serwalker`,
+/// `blutter_bridge_model_v1`, or anything else outside the enum cannot land in
+/// the field at all, which is what stops a name from becoming an authority.
+#[test]
+fn backend_names_outside_the_closed_set_are_rejected() {
+    let ok = AdapterResult::ok(
+        path("out/model.json"),
+        BackendId::Internal,
+        None,
+        Vec::new(),
+    );
+    let raw: Value = serde_json::from_slice(&ok.to_json()).expect("json");
+    assert_eq!(raw["resolved_backend"], json!("internal"));
+
+    for imposter in [
+        "serwalker",
+        "r2flutter_snapshot_v1",
+        "blutter_bridge_model_v1",
+        "dynamic_snapshot_string_model_v1",
+        "internal_but_actually_r2flutter",
+    ] {
+        let bytes = mutated(raw.clone(), |v| v["resolved_backend"] = json!(imposter));
+        assert!(
+            matches!(
+                AdapterResult::from_json(&bytes),
+                Err(ProtocolError::Malformed(_))
+            ),
+            "{imposter} was accepted as a backend id"
+        );
+    }
 }

@@ -2076,25 +2076,6 @@ fn startup_has_entrypoint_signal(startup: &AndroidStartupEvidence) -> bool {
         })
 }
 
-fn build_startup_class_library_lookup(
-    classes: &[flutterdec_adapter::ClassInfo],
-) -> std::collections::HashMap<String, String> {
-    let mut out = std::collections::HashMap::new();
-    for class in classes {
-        out.entry(class.name.clone())
-            .or_insert_with(|| class.library_uri.clone());
-    }
-    out
-}
-
-fn startup_hint_confidence(explicit_signal: bool) -> f64 {
-    if explicit_signal {
-        0.9
-    } else {
-        0.8
-    }
-}
-
 fn first_startup_method_selector(
     startup: &AndroidStartupEvidence,
     predicate: impl Fn(&str) -> bool,
@@ -2102,308 +2083,169 @@ fn first_startup_method_selector(
     startup
         .startup_methods
         .iter()
-        .map(|method| normalize_method_selector(&method.method_name))
-        .find(|selector| predicate(selector))
+        .map(|method| method.method_name.clone())
+        .find(|selector| predicate(&selector.to_ascii_lowercase()))
 }
 
-fn first_startup_owner_and_library(startup: &AndroidStartupEvidence) -> (&str, String) {
+fn first_startup_owner_and_library(startup: &AndroidStartupEvidence) -> (String, String) {
     if let Some(entrypoint) = startup.dart_entrypoints.first() {
         return (
-            entrypoint.class_name.as_str(),
+            entrypoint.class_name.clone(),
             format!("apk:{}", entrypoint.source_dex),
         );
     }
     if let Some(method) = startup.startup_methods.first() {
-        return (method.class_name.as_str(), format!("apk:{}", method.source_dex));
+        return (
+            method.class_name.clone(),
+            format!("apk:{}", method.source_dex),
+        );
     }
     if let Some(class) = startup.flutter_activity_classes.first() {
-        return (class.class_name.as_str(), format!("apk:{}", class.source_dex));
+        return (
+            class.class_name.clone(),
+            format!("apk:{}", class.source_dex),
+        );
     }
-    ("AndroidStartup", "apk:classes.dex".to_string())
+    ("AndroidStartup".to_string(), "apk:classes.dex".to_string())
 }
 
-fn enrich_model_with_apk_startup_bootflow_hints(
-    model: &flutterdec_adapter::ProgramModel,
+/// Turn APK startup evidence into hints, without touching the model.
+///
+/// Two kinds come out. Function-anchored hints name a code address, because a
+/// recovered function name matched a selector the dex evidence supports.
+/// Evidence-only hints name no address at all: the dex says Flutter is started
+/// from somewhere, and the honest record of that is a hint with `target_va:
+/// None`, not a synthetic pool entry pointing at nothing.
+fn collect_apk_startup_bootflow_hints(
+    model: &flutterdec_adapter::model::ProgramModel,
     startup: &AndroidStartupEvidence,
-) -> (flutterdec_adapter::ProgramModel, usize) {
+    hints: &mut ProgramHints,
+) -> usize {
     if !startup.present {
-        return (model.clone(), 0);
+        return 0;
     }
 
     let observed_method_names = startup_method_names(startup);
     let has_entrypoint_signal = startup_has_entrypoint_signal(startup);
     let has_bootstrap_signal = startup_has_bootstrap_signal(startup);
-    let has_deeplink_signal = observed_method_names.iter().any(|name| is_deeplink_selector(name));
+    let has_deeplink_signal = observed_method_names
+        .iter()
+        .any(|name| is_deeplink_selector(name));
     let has_activity_signal = !startup.flutter_activity_classes.is_empty()
         || observed_method_names
             .iter()
             .any(|name| is_activity_handler_selector(name));
 
-    if !has_entrypoint_signal && !has_bootstrap_signal && !has_deeplink_signal && !has_activity_signal {
-        return (model.clone(), 0);
+    let licensed = |kind: HintKind| match kind {
+        HintKind::EntryPoint | HintKind::BootMain | HintKind::BootRunApp => has_entrypoint_signal,
+        HintKind::DeepLinkHandler => has_deeplink_signal,
+        HintKind::ActivityHandler => has_activity_signal,
+        HintKind::BootstrapInit => has_bootstrap_signal,
+    };
+
+    if !has_entrypoint_signal
+        && !has_bootstrap_signal
+        && !has_deeplink_signal
+        && !has_activity_signal
+    {
+        return 0;
     }
 
-    let mut enriched = model.clone();
     let mut inserted = 0usize;
-    let mut inserted_main = 0usize;
-    let mut inserted_runapp = 0usize;
-    let mut inserted_deeplink = 0usize;
-    let mut inserted_activity = 0usize;
-    let mut inserted_bootstrap = 0usize;
-    let class_library = build_startup_class_library_lookup(&enriched.classes);
-    let mut seen = collect_existing_bootflow_hint_keys(&enriched);
-    let functions = enriched.functions.clone();
+    let mut anchored: HashSet<HintKind> = HashSet::new();
 
-    for function in functions {
-        let selector = normalize_method_selector(&function.name);
-        if selector.is_empty() {
+    for function in &model.functions {
+        let Some(name) = function.name_text() else {
             continue;
-        }
-        let owner = function.owner_class.trim();
-        let owner_lower = owner.to_ascii_lowercase();
-        let library_uri = class_library
-            .get(&function.owner_class)
-            .cloned()
-            .unwrap_or_default();
-        let library_lower = library_uri.to_ascii_lowercase();
-
-        if has_entrypoint_signal
-            && is_main_like_selector(&selector)
-            && push_synthetic_hint(
-                &mut enriched,
-                &mut seen,
-                &SyntheticHintInput {
-                    decoded_kind: "StartupMainCandidate",
-                    selector: &selector,
-                    target_va: Some(function.entry_va),
-                    owner_class: owner,
-                    library_uri: &library_uri,
-                    value: "bootflow:main:apk_startup",
-                    confidence: Some(startup_hint_confidence(true)),
-                    source: Some("apk_startup"),
-                },
-            )
-        {
-            inserted += 1;
-            inserted_main += 1;
-        }
-
-        if has_entrypoint_signal
-            && is_runapp_selector(&selector)
-            && push_synthetic_hint(
-                &mut enriched,
-                &mut seen,
-                &SyntheticHintInput {
-                    decoded_kind: "StartupRunAppCandidate",
-                    selector: &selector,
-                    target_va: Some(function.entry_va),
-                    owner_class: owner,
-                    library_uri: &library_uri,
-                    value: "bootflow:runapp:apk_startup",
-                    confidence: Some(startup_hint_confidence(true)),
-                    source: Some("apk_startup"),
-                },
-            )
-        {
-            inserted += 1;
-            inserted_runapp += 1;
-        }
-
-        if has_deeplink_signal
-            && is_deeplink_selector(&selector)
-            && push_synthetic_hint(
-                &mut enriched,
-                &mut seen,
-                &SyntheticHintInput {
-                    decoded_kind: "StartupDeepLinkCandidate",
-                    selector: &selector,
-                    target_va: Some(function.entry_va),
-                    owner_class: owner,
-                    library_uri: &library_uri,
-                    value: "bootflow:deeplink:apk_startup",
-                    confidence: Some(startup_hint_confidence(false)),
-                    source: Some("apk_startup"),
-                },
-            )
-        {
-            inserted += 1;
-            inserted_deeplink += 1;
-        }
-
-        if has_activity_signal
-            && is_activity_handler_selector(&selector)
-            && push_synthetic_hint(
-                &mut enriched,
-                &mut seen,
-                &SyntheticHintInput {
-                    decoded_kind: "StartupActivityCandidate",
-                    selector: &selector,
-                    target_va: Some(function.entry_va),
-                    owner_class: owner,
-                    library_uri: &library_uri,
-                    value: "bootflow:activity:apk_startup",
-                    confidence: Some(startup_hint_confidence(false)),
-                    source: Some("apk_startup"),
-                },
-            )
-        {
-            inserted += 1;
-            inserted_activity += 1;
-        }
-
-        if has_bootstrap_signal
-            && is_bootstrap_selector(&selector)
-            && (owner_is_bootstrap_context(&owner_lower)
-                || library_is_bootstrap_context(&library_lower))
-            && push_synthetic_hint(
-                &mut enriched,
-                &mut seen,
-                &SyntheticHintInput {
-                    decoded_kind: "StartupBootstrapCandidate",
-                    selector: &selector,
-                    target_va: Some(function.entry_va),
-                    owner_class: owner,
-                    library_uri: &library_uri,
-                    value: "bootflow:init:apk_startup",
-                    confidence: Some(startup_hint_confidence(false)),
-                    source: Some("apk_startup"),
-                },
-            )
-        {
-            inserted += 1;
-            inserted_bootstrap += 1;
+        };
+        let owner = model.owner_name(function);
+        let library_uri = model.owner_library_uri(function);
+        let candidate = HintCandidate {
+            origin: HintOrigin::ApkStartup,
+            provenance: HintProvenance::Derived,
+            selector: name,
+            target_va: Some(function.code.start_va),
+            owner_class: owner,
+            library_uri,
+            detail: "apk startup evidence matched a recovered function name",
+        };
+        for kind in hint_kinds_for_selector(name, owner, library_uri) {
+            if !licensed(kind) {
+                continue;
+            }
+            if push_hint(hints, kind, &candidate) {
+                inserted += 1;
+                anchored.insert(kind);
+            }
         }
     }
 
+    // Evidence the model could not be anchored to still gets recorded, so a
+    // report can say "the dex starts Flutter and no recovered function matches"
+    // instead of silently saying nothing.
     let (startup_owner, startup_library_uri) = first_startup_owner_and_library(startup);
-    let startup_library_uri = startup_library_uri.as_str();
-
-    if has_entrypoint_signal
-        && inserted_main == 0
-        && push_synthetic_hint(
-            &mut enriched,
-            &mut seen,
-            &SyntheticHintInput {
-                decoded_kind: "StartupMainCandidate",
-                selector: "main",
-                target_va: None,
-                owner_class: startup_owner,
-                library_uri: startup_library_uri,
-                value: "bootflow:main:apk_startup",
-                confidence: Some(startup_hint_confidence(true)),
-                source: Some("apk_startup"),
-            },
-        )
-    {
-        inserted += 1;
-    }
-
-    if has_entrypoint_signal
-        && inserted_runapp == 0
-        && push_synthetic_hint(
-            &mut enriched,
-            &mut seen,
-            &SyntheticHintInput {
-                decoded_kind: "StartupRunAppCandidate",
-                selector: "runApp",
-                target_va: None,
-                owner_class: startup_owner,
-                library_uri: startup_library_uri,
-                value: "bootflow:runapp:apk_startup",
-                confidence: Some(startup_hint_confidence(true)),
-                source: Some("apk_startup"),
-            },
-        )
-    {
-        inserted += 1;
-    }
-
-    if has_deeplink_signal && inserted_deeplink == 0 {
-        let selector = first_startup_method_selector(startup, is_deeplink_selector)
-            .unwrap_or_else(|| "onNewIntent".to_string());
-        if push_synthetic_hint(
-            &mut enriched,
-            &mut seen,
-            &SyntheticHintInput {
-                decoded_kind: "StartupDeepLinkCandidate",
-                selector: &selector,
-                target_va: None,
-                owner_class: startup_owner,
-                library_uri: startup_library_uri,
-                value: "bootflow:deeplink:apk_startup",
-                confidence: Some(startup_hint_confidence(false)),
-                source: Some("apk_startup"),
-            },
-        ) {
-            inserted += 1;
+    let unanchored = |kind: HintKind, selector: &str, hints: &mut ProgramHints| {
+        if !licensed(kind) || anchored.contains(&kind) {
+            return 0;
         }
-    }
+        let candidate = HintCandidate {
+            origin: HintOrigin::ApkStartup,
+            provenance: HintProvenance::Derived,
+            selector,
+            target_va: None,
+            owner_class: Some(startup_owner.as_str()),
+            library_uri: Some(startup_library_uri.as_str()),
+            detail: "apk startup evidence with no matching recovered function",
+        };
+        usize::from(push_hint(hints, kind, &candidate))
+    };
 
-    if has_activity_signal && inserted_activity == 0 {
-        let selector = first_startup_method_selector(startup, is_activity_handler_selector)
-            .unwrap_or_else(|| "onCreate".to_string());
-        if push_synthetic_hint(
-            &mut enriched,
-            &mut seen,
-            &SyntheticHintInput {
-                decoded_kind: "StartupActivityCandidate",
-                selector: &selector,
-                target_va: None,
-                owner_class: startup_owner,
-                library_uri: startup_library_uri,
-                value: "bootflow:activity:apk_startup",
-                confidence: Some(startup_hint_confidence(false)),
-                source: Some("apk_startup"),
-            },
-        ) {
-            inserted += 1;
-        }
-    }
+    inserted += unanchored(HintKind::BootMain, "main", hints);
+    inserted += unanchored(HintKind::BootRunApp, "runApp", hints);
+    let deeplink_selector = first_startup_method_selector(startup, is_deeplink_selector)
+        .unwrap_or_else(|| "onNewIntent".to_string());
+    inserted += unanchored(HintKind::DeepLinkHandler, &deeplink_selector, hints);
+    let activity_selector = first_startup_method_selector(startup, is_activity_handler_selector)
+        .unwrap_or_else(|| "onCreate".to_string());
+    inserted += unanchored(HintKind::ActivityHandler, &activity_selector, hints);
+    let bootstrap_selector = startup
+        .jni_bootstrap
+        .first()
+        .map(|item| item.target_method.clone())
+        .or_else(|| {
+            startup
+                .startup_methods
+                .iter()
+                .find(|method| {
+                    method.category.contains("initialization") || method.category.contains("jni")
+                })
+                .map(|method| method.target_method.clone())
+        })
+        .unwrap_or_else(|| "attachToNative".to_string());
+    inserted += unanchored(HintKind::BootstrapInit, &bootstrap_selector, hints);
 
-    if has_bootstrap_signal && inserted_bootstrap == 0 {
-        let selector = startup
-            .jni_bootstrap
-            .first()
-            .map(|item| item.target_method.clone())
-            .or_else(|| {
-                startup
-                    .startup_methods
-                    .iter()
-                    .find(|method| method.category.contains("initialization") || method.category.contains("jni"))
-                    .map(|method| method.target_method.clone())
-            })
-            .unwrap_or_else(|| "attachToNative".to_string());
-        if push_synthetic_hint(
-            &mut enriched,
-            &mut seen,
-            &SyntheticHintInput {
-                decoded_kind: "StartupBootstrapCandidate",
-                selector: &selector,
-                target_va: None,
-                owner_class: startup_owner,
-                library_uri: startup_library_uri,
-                value: "bootflow:init:apk_startup",
-                confidence: Some(startup_hint_confidence(false)),
-                source: Some("apk_startup"),
-            },
-        ) {
-            inserted += 1;
-        }
-    }
-
-    (enriched, inserted)
+    inserted
 }
 
 #[cfg(test)]
 mod apk_startup_tests {
     use super::{
-        analyze_android_startup, classify_startup_method, enrich_model_with_apk_startup_bootflow_hints,
+        analyze_android_startup, classify_startup_method, collect_apk_startup_bootflow_hints,
         finalize_android_startup_evidence, has_super_class, is_classes_dex_entry,
         AndroidStartupEvidence, ScannedAppMethodInvoke, ScannedDartEntrypoint, ScannedMethodDef,
         ScannedMethodKey, ScannedStartupClass, ScannedStartupMethodRef, StartupManifestContext,
         StartupScanResult, DART_ENTRYPOINT_DESC, DART_EXECUTOR_DESC, FLUTTER_ACTIVITY_DESC,
         FLUTTER_ENGINE_DESC, FLUTTER_JNI_DESC, FLUTTER_LOADER_DESC,
     };
+    use flutterdec_adapter::model::{
+        Capabilities, CapabilityLevel, Class, ClassId, CodeRange, CompatibilityBinding, Function,
+        FunctionId, InputRegion, InputRegionName, Library, LibraryId, Name, ObjectPool,
+        ObservedInput, PoolIndexSpace, Producer, ProducerTrust, ProgramModel, Provenance,
+        MODEL_VERSION,
+    };
+    use flutterdec_adapter::primitives::Sha256Digest;
+    use flutterdec_disasm_arm64::{HintKind, HintOrigin, HintProvenance, ProgramHints};
+    use flutterdec_loader::identity::{SnapshotIdentity, SnapshotKind, TargetArch};
     use std::collections::HashMap;
     use std::fs::File;
     use std::io::Write;
@@ -2626,71 +2468,120 @@ mod apk_startup_tests {
 
     #[test]
     fn enriches_model_with_apk_startup_synthetic_bootflow_hints() {
-        let model = flutterdec_adapter::ProgramModel {
-            schema_version: 2,
-            adapter_kind: "python".to_string(),
-            dart_version: "3.0.0".to_string(),
-            snapshot_hash: "deadbeef".to_string(),
-            arch: "arm64".to_string(),
-            libraries: vec![flutterdec_adapter::LibraryInfo {
-                id: 1,
+        let digest = Sha256Digest::of(b"apk startup fixture");
+        let model = ProgramModel {
+            model_version: MODEL_VERSION,
+            producer: Producer {
+                id: "fixture".to_string(),
+                version: "0".to_string(),
+                artifact_sha256: digest.clone(),
+                trust: ProducerTrust::Untrusted,
+            },
+            input: ObservedInput {
+                identity: SnapshotIdentity::from_header(
+                    TargetArch::Arm64,
+                    "80a49c7111088100a233b2ae788e1f48",
+                    SnapshotKind::FullAot,
+                    "product arm64 compressed-pointers",
+                ),
+                regions: vec![InputRegion {
+                    region: InputRegionName::IsolateInstructions,
+                    size: 0x1000,
+                    sha256: digest.clone(),
+                    virtual_address: Some(0x1000),
+                    executable: true,
+                }],
+            },
+            compatibility: CompatibilityBinding {
+                record_sha256: digest.clone(),
+                parser_family_id: "fixture".to_string(),
+                profile_id: "fixture".to_string(),
+                profile_sha256: digest,
+            },
+            capabilities: Capabilities {
+                libraries: CapabilityLevel::Partial,
+                classes: CapabilityLevel::Partial,
+                class_relationships: CapabilityLevel::Unavailable,
+                functions: CapabilityLevel::Partial,
+                function_names: CapabilityLevel::Partial,
+                object_pool: CapabilityLevel::Unavailable,
+                pool_index_space: CapabilityLevel::Unavailable,
+            },
+            libraries: vec![Library {
+                id: LibraryId(1),
                 uri: "package:app/main.dart".to_string(),
-                name_display: "package:app/main.dart".to_string(),
+                display_name: None,
+                provenance: Provenance::Exact,
             }],
             classes: vec![
-                flutterdec_adapter::ClassInfo {
-                    id: 1,
-                    name: "Global".to_string(),
-                    super_name: "Object".to_string(),
-                    library_uri: "package:app/main.dart".to_string(),
+                Class {
+                    id: ClassId(1),
+                    name: "AppRoot".to_string(),
+                    library: Some(LibraryId(1)),
+                    super_class: None,
+                    provenance: Provenance::Exact,
                 },
-                flutterdec_adapter::ClassInfo {
-                    id: 2,
-                    name: "WidgetHost".to_string(),
-                    super_name: "Object".to_string(),
-                    library_uri: "package:app/main.dart".to_string(),
+                Class {
+                    id: ClassId(2),
+                    name: "MainActivityHost".to_string(),
+                    library: Some(LibraryId(1)),
+                    super_class: None,
+                    provenance: Provenance::Exact,
                 },
             ],
             functions: vec![
-                flutterdec_adapter::FunctionInfo {
-                    id: 1,
-                    name: "main".to_string(),
-                    owner_class: "Global".to_string(),
-                    entry_va: 0x1000,
-                    size: 4,
+                Function {
+                    id: FunctionId(1),
+                    name: Some(Name::exact("main")),
+                    owner: Some(ClassId(1)),
+                    code: CodeRange {
+                        start_va: 0x1000,
+                        size: 4,
+                    },
                     code_section_va: 0x1000,
-                    name_kind: None,
+                    provenance: Provenance::Exact,
                 },
-                flutterdec_adapter::FunctionInfo {
-                    id: 2,
-                    name: "runApp".to_string(),
-                    owner_class: "Global".to_string(),
-                    entry_va: 0x1004,
-                    size: 4,
+                Function {
+                    id: FunctionId(2),
+                    name: Some(Name::exact("runApp")),
+                    owner: Some(ClassId(1)),
+                    code: CodeRange {
+                        start_va: 0x1004,
+                        size: 4,
+                    },
                     code_section_va: 0x1000,
-                    name_kind: None,
+                    provenance: Provenance::Exact,
                 },
-                flutterdec_adapter::FunctionInfo {
-                    id: 3,
-                    name: "onNewIntent".to_string(),
-                    owner_class: "WidgetHost".to_string(),
-                    entry_va: 0x1008,
-                    size: 4,
+                Function {
+                    id: FunctionId(3),
+                    name: Some(Name::exact("onNewIntent")),
+                    owner: Some(ClassId(2)),
+                    code: CodeRange {
+                        start_va: 0x1008,
+                        size: 4,
+                    },
                     code_section_va: 0x1000,
-                    name_kind: None,
+                    provenance: Provenance::Exact,
                 },
-                flutterdec_adapter::FunctionInfo {
-                    id: 4,
-                    name: "ensureInitialized".to_string(),
-                    owner_class: "Global".to_string(),
-                    entry_va: 0x100c,
-                    size: 4,
+                Function {
+                    id: FunctionId(4),
+                    name: Some(Name::exact("ensureInitialized")),
+                    owner: Some(ClassId(1)),
+                    code: CodeRange {
+                        start_va: 0x100c,
+                        size: 4,
+                    },
                     code_section_va: 0x1000,
-                    name_kind: None,
+                    provenance: Provenance::Exact,
                 },
             ],
-            pool_geometry: None,
-            object_pool: Vec::new(),
+            object_pool: ObjectPool {
+                index_space: PoolIndexSpace::Ordinal,
+                geometry: None,
+                entries: Vec::new(),
+            },
+            diagnostics: Vec::new(),
+            extensions: Default::default(),
         };
         let startup = AndroidStartupEvidence {
             present: true,
@@ -2816,22 +2707,32 @@ mod apk_startup_tests {
             },
         };
 
-        let (enriched, inserted) = enrich_model_with_apk_startup_bootflow_hints(&model, &startup);
-        assert!(inserted >= 5);
+        let before = model.clone();
+        let mut hints = ProgramHints::new();
+        let inserted = collect_apk_startup_bootflow_hints(&model, &startup, &mut hints);
+        assert!(inserted >= 5, "expected at least five hints, got {inserted}");
 
-        let kinds = enriched
-            .object_pool
+        // The whole point of the hint record: the model is untouched, so the
+        // authoritative collections and the pool index space are exactly what
+        // the adapter authored.
+        assert_eq!(model, before);
+        assert!(model.object_pool.entries.is_empty());
+        assert_eq!(model.object_pool.index_space, PoolIndexSpace::Ordinal);
+
+        let kinds = hints.iter().map(|h| h.kind).collect::<Vec<_>>();
+        for expected in [
+            HintKind::BootMain,
+            HintKind::BootRunApp,
+            HintKind::DeepLinkHandler,
+            HintKind::ActivityHandler,
+            HintKind::BootstrapInit,
+        ] {
+            assert!(kinds.contains(&expected), "missing hint kind {expected:?}");
+        }
+        assert!(hints.iter().all(|h| h.origin == HintOrigin::ApkStartup));
+        // Never `Exact`: dex evidence supports a guess about Dart code, not a fact.
+        assert!(hints
             .iter()
-            .filter_map(|entry| entry.decoded_kind.as_deref())
-            .collect::<Vec<_>>();
-        assert!(kinds.contains(&"StartupMainCandidate"));
-        assert!(kinds.contains(&"StartupRunAppCandidate"));
-        assert!(kinds.contains(&"StartupDeepLinkCandidate"));
-        assert!(kinds.contains(&"StartupActivityCandidate"));
-        assert!(kinds.contains(&"StartupBootstrapCandidate"));
-        assert!(enriched
-            .object_pool
-            .iter()
-            .all(|entry| entry.source.as_deref() == Some("apk_startup")));
+            .all(|h| h.provenance == HintProvenance::Derived));
     }
 }

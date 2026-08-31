@@ -1,21 +1,28 @@
 #![recursion_limit = "512"]
 
 use anyhow::{bail, Context, Result};
+use flutterdec_adapter::model::{
+    Capabilities, CompatibilityBinding, Domain, InputRegionName, Producer, ProducerTrust,
+    ProgramModel,
+};
+use flutterdec_adapter::primitives::Sha256Digest;
+use flutterdec_adapter::protocol::{BackendId, FallbackReason, RequestedBackend};
 use flutterdec_adapter::{
-    list_adapters, resolve_adapter_exec, run_adapter, AdapterInput, ProgramModel,
+    list_adapters, resolve_adapter_exec, run_adapter, AdapterInput, AdapterRegionInput,
 };
 use flutterdec_decompiler::{emit_program_with_runtime_stubs, PseudocodeArtifact};
 use flutterdec_disasm_arm64::{
     disassemble_program_with_priorities_and_package_hints, FunctionDisassembly,
-    FunctionPriorityBreakdown,
+    FunctionPriorityBreakdown, HintKind, HintOrigin, HintProvenance, ProgramHints,
 };
 use flutterdec_ir::{build_program_ir, FunctionIr};
+use flutterdec_loader::dart_profile::ResolvedDartProfile;
 use flutterdec_loader::{
     load_snapshot_bundle, load_snapshot_bundle_from_apk_session, ApkSession, SnapshotBundle,
 };
 use serde::Serialize;
 use serde_json::json;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -224,9 +231,22 @@ pub struct InfoOutput {
     /// The snapshot's features string verbatim, when the header parsed.
     pub snapshot_features: Option<String>,
     pub adapter_installed: bool,
-    pub adapter_kind: Option<String>,
+    /// What the operator asked for.
+    pub requested_backend: Option<String>,
+    /// What actually answered, as the protocol result reported it.
+    pub resolved_backend: Option<String>,
+    /// Why the two differ, when the request was `auto`.
+    pub backend_fallback_reason: Option<String>,
+    pub producer_id: Option<String>,
+    pub producer_trust: Option<String>,
+    pub compatibility_record_sha256: Option<String>,
     pub manifest_entry_present: Option<bool>,
-    pub adapter_snapshot_hash_match: Option<bool>,
+    /// Whether the snapshot identity came out of a real header. Replaces the v3
+    /// "does the adapter agree about the hash" check, which compared a host fact
+    /// against a string the adapter chose.
+    pub snapshot_identity_is_exact: Option<bool>,
+    /// Per-domain capability levels the model reported.
+    pub model_capabilities: Option<Vec<(String, String)>>,
     pub compatibility_warnings: Option<Vec<String>>,
     pub function_count: Option<usize>,
     pub class_count: Option<usize>,

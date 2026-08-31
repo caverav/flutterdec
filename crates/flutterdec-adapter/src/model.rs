@@ -413,6 +413,14 @@ impl Name {
     }
 }
 
+impl Function {
+    /// The recovered name, if there is one. `None` is the honest answer for a
+    /// code range nobody could put a name to.
+    pub fn name_text(&self) -> Option<&str> {
+        Some(self.name.as_ref()?.text.as_str())
+    }
+}
+
 /// A half-open `[start_va, start_va + size)` span of code.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -444,7 +452,11 @@ pub struct Library {
 pub struct Class {
     pub id: ClassId,
     pub name: String,
-    pub library: LibraryId,
+    /// `None` means the owning library was not recovered. Producers that read
+    /// class names out of the snapshot without an attribution table land here,
+    /// and forcing them to name a library is how a class ends up filed under an
+    /// invented `package:app/main.dart`.
+    pub library: Option<LibraryId>,
     /// `None` means no superclass edge was recovered, which is not the same as
     /// having no superclass.
     pub super_class: Option<ClassId>,
@@ -673,6 +685,30 @@ impl ProgramModel {
     pub fn class(&self, id: ClassId) -> Option<&Class> {
         self.classes.iter().find(|c| c.id == id)
     }
+
+    pub fn function(&self, id: FunctionId) -> Option<&Function> {
+        self.functions.iter().find(|f| f.id == id)
+    }
+
+    /// The URI of the library a class belongs to, when both are known.
+    pub fn class_library_uri(&self, id: ClassId) -> Option<&str> {
+        let class = self.class(id)?;
+        Some(self.library(class.library?)?.uri.as_str())
+    }
+
+    /// The owning class's name, or `None` when no owner was recovered.
+    ///
+    /// `None` rather than a stand-in: every consumer that used to read v3's
+    /// required `owner_class` string got `"Global"` for both "top level" and
+    /// "we did not find out", and could not tell the two apart.
+    pub fn owner_name(&self, function: &Function) -> Option<&str> {
+        Some(self.class(function.owner?)?.name.as_str())
+    }
+
+    /// The URI of the library the function's owning class belongs to.
+    pub fn owner_library_uri(&self, function: &Function) -> Option<&str> {
+        self.class_library_uri(function.owner?)
+    }
 }
 
 fn level_enum() -> Value {
@@ -771,7 +807,7 @@ pub fn schema() -> Value {
         json!({
             "id": { "type": "integer", "minimum": 0, "maximum": 4294967295u32 },
             "name": { "type": "string", "minLength": 1 },
-            "library": { "type": "integer", "minimum": 0, "maximum": 4294967295u32 },
+            "library": { "type": ["integer", "null"], "minimum": 0, "maximum": 4294967295u32 },
             "super_class": { "type": ["integer", "null"], "minimum": 0, "maximum": 4294967295u32 },
             "provenance": provenance_enum(),
         }),

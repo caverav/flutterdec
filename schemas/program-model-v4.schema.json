@@ -85,7 +85,10 @@
           "library": {
             "maximum": 4294967295,
             "minimum": 0,
-            "type": "integer"
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "name": {
             "minLength": 1,
