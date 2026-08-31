@@ -173,9 +173,8 @@ If adapter metadata is available, `info` also reports:
 - `app_package_counts_top`
 - `requested_backend`, `resolved_backend`, `backend_fallback_reason`
 - `producer_id`, `producer_trust`, `compatibility_record_sha256`
-- `manifest_entry_present`
-- `snapshot_identity_is_exact`
-- `identity_rejection` (why no adapter could be selected, when none could)
+- `dart_aliases` (provenance labels, not selectors)
+- `registry_record_present`, `snapshot_identity_is_exact`, `identity_rejection`
 - `model_capabilities` (per-domain `complete` / `partial` / `unavailable`)
 - `compatibility_warnings`
 

@@ -495,8 +495,8 @@ fn handle_info(repo_root: &Path, cmd: InfoCmd) -> Result<()> {
         println!("libapp: {}", out.libapp_path);
         println!("arch: {}", out.arch);
         println!("snapshot hash: {}", out.snapshot_hash);
-        if let Some(version) = out.dart_version.as_deref() {
-            println!("dart version: {}", version);
+        if let Some(aliases) = out.dart_aliases.as_ref().filter(|aliases| !aliases.is_empty()) {
+            println!("dart aliases: {}", serde_json::to_string(aliases)?);
         }
         if let Some(tag_style) = out.dart_tag_style.as_deref() {
             println!("dart tag style: {}", tag_style);
@@ -526,8 +526,8 @@ fn handle_info(repo_root: &Path, cmd: InfoCmd) -> Result<()> {
         if let Some(digest) = out.compatibility_record_sha256.as_deref() {
             println!("compatibility record: {}", digest);
         }
-        if let Some(present) = out.manifest_entry_present {
-            println!("manifest entry present: {}", present);
+        if let Some(present) = out.registry_record_present {
+            println!("registry record present: {}", present);
         }
         if let Some(exact) = out.snapshot_identity_is_exact {
             println!("snapshot identity header-derived: {}", exact);
@@ -612,8 +612,9 @@ fn handle_diff(repo_root: &Path, cmd: DiffCmd) -> Result<()> {
             report.require_snapshot_hash_match
         );
         println!(
-            "dart version: old={} new={}",
-            report.old_dart_version, report.new_dart_version
+            "dart aliases: old={} new={}",
+            serde_json::to_string(&report.old_dart_aliases)?,
+            serde_json::to_string(&report.new_dart_aliases)?
         );
         println!(
             "functions: old={} new={} common={} added={} removed={}",

@@ -5,17 +5,16 @@
 //! then failed. So each rejection case is run against a scratch repo that is
 //! rigged to fail loudly at every step the gate is supposed to precede:
 //!
-//! * `adapters/manifest.json` is not valid JSON, so any manifest read reports a
+//! * `adapters/registry.json` is not valid JSON, so any registry read reports a
 //!   parse failure instead of an identity rejection;
-//! * an executable is installed under the expected name, so path resolution
-//!   would succeed and the failure would come from somewhere else;
+//! * an executable is installed under the registry's expected path, so path
+//!   resolution would succeed and the failure would come from somewhere else;
 //! * that executable is a spy that creates a marker file on its first line, so
 //!   a spawn leaves evidence even though the run itself cannot produce a model.
 //!
-//! A FullAOT control runs against the same rigging with a valid manifest and
+//! A FullAOT control runs against the same rigging with a valid registry and
 //! proves the marker *does* appear, so the rejection cases are showing a gate
 //! rather than a scratch repo that could never work.
-
 use super::*;
 use flutterdec_loader::identity::{
     HashSource, IdentityRejection, SnapshotIdentity, SnapshotKind, TargetArch,
@@ -34,14 +33,14 @@ struct SpyRepo {
 }
 
 impl SpyRepo {
-    /// `manifest` is written verbatim, so a caller can hand it bytes that are
+    /// `registry` is written verbatim, so a caller can hand it bytes that are
     /// not JSON at all.
-    fn new(manifest: &str) -> Self {
+    fn new(registry: &str) -> Self {
         let dir = TempDir::new().expect("tempdir");
         let root = dir.path().to_path_buf();
         let marker = root.join("adapter_ran.marker");
         fs::create_dir_all(root.join("adapters/installed")).expect("mkdir installed");
-        fs::write(root.join("adapters/manifest.json"), manifest).expect("write manifest");
+        fs::write(root.join("adapters/registry.json"), registry).expect("write registry");
 
         let exec = root.join(format!("adapters/installed/dart_adapter_{}", HASH));
         fs::write(
@@ -66,19 +65,100 @@ impl SpyRepo {
     fn spawned(&self) -> bool {
         self.marker.exists()
     }
+
+    fn write_valid_registry(&self) {
+        let profile_bytes = serde_json::to_vec_pretty(&serde_json::json!({
+            "profiles": {
+                "test-profile": {
+                    "tag_style": "CID_INT32",
+                    "compressed_word_size": 4,
+                    "header_fields": 5,
+                    "max_alignment": 16,
+                    "heap_object_tag": 1,
+                    "cids": {"class": 1, "object_pool": 23}
+                }
+            }
+        }))
+        .expect("serialize test profile");
+        fs::create_dir_all(self.root.join("data")).expect("mkdir data");
+        fs::write(self.root.join("data/test-profile.json"), &profile_bytes)
+            .expect("write test profile");
+
+        let exec_path = self
+            .root
+            .join(format!("adapters/installed/dart_adapter_{}", HASH));
+        let exec_bytes = fs::read(&exec_path).expect("read spy adapter");
+        let features = vec![
+            "android".to_string(),
+            "arm64".to_string(),
+            "compressed-pointers".to_string(),
+            "no-code_comments".to_string(),
+            "product".to_string(),
+        ];
+        let record = CompatibilityRecord {
+            snapshot_hash: HASH.to_string(),
+            snapshot_kind: SnapshotKind::FullAot,
+            target_arch: TargetArch::Arm64,
+            features: features.clone(),
+            feature_fingerprint: canonical_feature_fingerprint(&features),
+            known_features: features.clone(),
+            forbidden_features: vec!["no-compressed-pointers".to_string()],
+            sdk_aliases: vec![SdkAlias {
+                ecosystem: "dart".to_string(),
+                version: "test".to_string(),
+                provenance: "unit fixture".to_string(),
+            }],
+            parser_family: ParserFamilyReference {
+                id: "flutterdec-spy".to_string(),
+                version: Some("test".to_string()),
+                sha256: None,
+            },
+            profile: ProfileReference {
+                id: "test-profile".to_string(),
+                path: "data/test-profile.json".to_string(),
+                sha256: Sha256Digest::of(&profile_bytes).to_string(),
+            },
+            artifact: ArtifactReference {
+                id: "flutterdec-spy".to_string(),
+                variants: vec![HostArtifactVariant {
+                    host_os: std::env::consts::OS.to_string(),
+                    host_arch: std::env::consts::ARCH.to_string(),
+                    path: format!("adapters/installed/dart_adapter_{}", HASH),
+                    size: exec_bytes.len() as u64,
+                    sha256: Sha256Digest::of(&exec_bytes).to_string(),
+                    provenance: "unit fixture".to_string(),
+                }],
+            },
+            evidence: CompatibilityEvidence {
+                source: "unit fixture".to_string(),
+                provenance: "unit fixture".to_string(),
+                references: Vec::new(),
+            },
+            trust_tier: TrustTier::Experimental,
+            protocol_major: 1,
+            model_major: flutterdec_adapter::model::MODEL_VERSION,
+        };
+        let registry = CompatibilityRegistry {
+            version: 1,
+            records: vec![record],
+        };
+        fs::write(
+            self.root.join("adapters/registry.json"),
+            serde_json::to_vec_pretty(&registry).expect("serialize test registry"),
+        )
+        .expect("write valid registry");
+    }
 }
 
-fn poisoned_manifest_repo() -> SpyRepo {
+fn poisoned_registry_repo() -> SpyRepo {
     SpyRepo::new("{ this is not json")
 }
 
-fn valid_manifest_repo() -> SpyRepo {
-    SpyRepo::new(&format!(
-        "{{\"entries\":[{{\"snapshot_hash\":\"{}\",\"version\":\"1.0\",\"adapter\":\"dart_adapter_{}\"}}]}}",
-        HASH, HASH
-    ))
+fn valid_registry_repo() -> SpyRepo {
+    let repo = SpyRepo::new("{}");
+    repo.write_valid_registry();
+    repo
 }
-
 /// A bundle carrying `identity`, with plausible regions so that nothing except
 /// the identity can decide the outcome.
 fn bundle(identity: SnapshotIdentity) -> SnapshotBundle {
@@ -131,7 +211,7 @@ fn rejection(err: &anyhow::Error) -> IdentityRejection {
 
 /// Every non-exact identity, through the shared entry every adapter path uses.
 fn assert_stops_before_lookup(identity: SnapshotIdentity, expected: IdentityRejection) {
-    let repo = poisoned_manifest_repo();
+    let repo = poisoned_registry_repo();
     let bundle = bundle(identity);
 
     let err = load_model(&repo.root, &bundle, AdapterBackend::Auto)
@@ -140,11 +220,11 @@ fn assert_stops_before_lookup(identity: SnapshotIdentity, expected: IdentityReje
     assert_eq!(rejection(&err), expected, "wrong rejection: {err:#}");
     let rendered = format!("{err:#}");
     assert!(
-        !rendered.contains("adapter manifest"),
-        "the manifest was read before the gate: {rendered}"
+        !rendered.contains("compatibility registry"),
+        "the registry was read before the gate: {rendered}"
     );
     assert!(
-        !rendered.contains("adapter not installed"),
+        !rendered.contains("adapter artifact"),
         "the executable was resolved before the gate: {rendered}"
     );
     assert!(
@@ -154,7 +234,7 @@ fn assert_stops_before_lookup(identity: SnapshotIdentity, expected: IdentityReje
 }
 
 #[test]
-fn a_full_jit_snapshot_stops_before_manifest_lookup_or_execution() {
+fn a_full_jit_snapshot_stops_before_registry_lookup_or_execution() {
     assert_stops_before_lookup(
         full_jit(),
         IdentityRejection::NotFullAot(Some(SnapshotKind::FullJit)),
@@ -162,7 +242,7 @@ fn a_full_jit_snapshot_stops_before_manifest_lookup_or_execution() {
 }
 
 #[test]
-fn a_scanned_hash_stops_before_manifest_lookup_or_execution() {
+fn a_scanned_hash_stops_before_registry_lookup_or_execution() {
     assert_stops_before_lookup(
         scanned(),
         IdentityRejection::HashNotHeaderDerived(HashSource::Scan),
@@ -170,7 +250,7 @@ fn a_scanned_hash_stops_before_manifest_lookup_or_execution() {
 }
 
 #[test]
-fn a_snapshot_with_no_recoverable_hash_stops_before_manifest_lookup_or_execution() {
+fn a_snapshot_with_no_recoverable_hash_stops_before_registry_lookup_or_execution() {
     assert_stops_before_lookup(
         SnapshotIdentity::without_header(TargetArch::Arm64, None),
         IdentityRejection::HashNotHeaderDerived(HashSource::Unavailable),
@@ -178,19 +258,19 @@ fn a_snapshot_with_no_recoverable_hash_stops_before_manifest_lookup_or_execution
 }
 
 #[test]
-fn an_unsupported_target_stops_before_manifest_lookup_or_execution() {
+fn an_unsupported_target_stops_before_registry_lookup_or_execution() {
     assert_stops_before_lookup(
         unsupported_target(),
         IdentityRejection::UnsupportedTarget("x64".to_string()),
     );
 }
 
-/// The control. Same rigging, valid manifest, exact identity: selection has to
+/// The control. Same rigging, valid registry, exact identity: selection has to
 /// reach the executable and spawn it, or the tests above would pass against a
 /// repo that simply never works.
 #[test]
 fn a_full_aot_snapshot_reaches_selection_and_execution() {
-    let repo = valid_manifest_repo();
+    let repo = valid_registry_repo();
     let bundle = bundle(full_aot());
 
     let err = load_model(&repo.root, &bundle, AdapterBackend::Auto)
@@ -211,7 +291,7 @@ fn a_full_aot_snapshot_reaches_selection_and_execution() {
 /// The gate is the only exit, so `Untrusted` never reaches a producer record.
 #[test]
 fn a_rejected_identity_is_not_downgraded_to_an_untrusted_run() {
-    let repo = valid_manifest_repo();
+    let repo = valid_registry_repo();
     let bundle = bundle(full_jit());
 
     let err = load_model(&repo.root, &bundle, AdapterBackend::Auto)
@@ -231,7 +311,7 @@ fn a_rejected_identity_is_not_downgraded_to_an_untrusted_run() {
 /// the core pipeline still cannot spawn an adapter for a rejected identity.
 #[test]
 fn run_adapter_refuses_a_rejected_identity_before_spawn() {
-    let repo = valid_manifest_repo();
+    let repo = valid_registry_repo();
     let bundle = bundle(full_jit());
     let exec = repo.root.join(format!("adapters/installed/dart_adapter_{}", HASH));
 

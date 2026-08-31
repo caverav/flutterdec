@@ -15,6 +15,12 @@ pub mod model;
 pub mod primitives;
 pub mod protocol;
 pub mod validate;
+/// Host compatibility records live in the loader crate so profile and identity
+/// selection cannot depend on adapter model DTOs; re-export them at the adapter
+/// boundary for callers that own adapter lifecycle.
+pub mod registry {
+    pub use flutterdec_loader::registry::*;
+}
 
 use anyhow::{anyhow, bail, Context, Result};
 use flutterdec_loader::identity::IdentityRejection;

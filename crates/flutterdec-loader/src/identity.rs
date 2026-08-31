@@ -153,16 +153,22 @@ impl FeatureEvidence {
         self.normalized.iter().any(|t| t == token)
     }
 
+    /// All architecture tokens the VM declared, in normalized order.
+    pub fn declared_targets(&self) -> Vec<String> {
+        const ARCH_TOKENS: [&str; 6] = ["ia32", "x64", "arm", "arm64", "riscv32", "riscv64"];
+        self.normalized
+            .iter()
+            .filter(|token| ARCH_TOKENS.contains(&token.as_str()))
+            .cloned()
+            .collect()
+    }
+
     /// The architecture token the features string declares, if it declares one.
     ///
     /// These are the values `Dart::FeaturesString` can append; anything else in
     /// the string is a build flag, not an architecture.
     pub fn declared_target(&self) -> Option<&str> {
-        const ARCH_TOKENS: [&str; 6] = ["ia32", "x64", "arm", "arm64", "riscv32", "riscv64"];
-        self.normalized
-            .iter()
-            .map(String::as_str)
-            .find(|token| ARCH_TOKENS.contains(token))
+        self.declared_targets().first().map(String::as_str)
     }
 
     pub fn pointer_compression(&self) -> PointerCompression {
@@ -204,6 +210,8 @@ pub enum IdentityRejection {
     /// FullAOT is a pre-lookup hard gate, not a registry key component.
     NotFullAot(Option<SnapshotKind>),
     UnsupportedTarget(String),
+    /// The features string names more than one target architecture.
+    ConflictingTargetFeatures(Vec<String>),
     /// The features string names a different architecture than the container.
     TargetArchConflict {
         declared: String,
@@ -228,6 +236,11 @@ impl fmt::Display for IdentityRejection {
             Self::UnsupportedTarget(arch) => {
                 write!(f, "unsupported target architecture {}", arch)
             }
+            Self::ConflictingTargetFeatures(declared) => write!(
+                f,
+                "features string declares contradictory target architectures {:?}",
+                declared
+            ),
             Self::TargetArchConflict {
                 declared,
                 container,
@@ -322,6 +335,12 @@ impl SnapshotIdentity {
                 self.target_arch.as_str().to_string(),
             ));
         };
+        let declared_targets = self.features.declared_targets();
+        if declared_targets.len() > 1 {
+            return Err(IdentityRejection::ConflictingTargetFeatures(
+                declared_targets,
+            ));
+        }
         if let Some(declared) = self.features.declared_target() {
             if declared != self.target_arch.as_str() {
                 return Err(IdentityRejection::TargetArchConflict {

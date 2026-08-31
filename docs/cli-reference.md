@@ -18,13 +18,13 @@ Arguments:
 - `--json`: print JSON output
 - `--adapter-backend <auto|internal|blutter|r2-flutter>` (default `auto`; `auto` tries r2flutter, then blutter, then internal)
 
-Resolved from the snapshot hash alone, with or without an adapter, in both JSON and
-plain output:
+Resolved only after a FullAOT header identity exactly matches a host registry record
+(hash, target, and canonical layout-feature fingerprint). The runtime profile is
+loaded and SHA-256 verified from that record:
 
-- `dart_version`
+- `dart_aliases` (SDK labels with provenance; never selectors)
 - `dart_tag_style` (`CID_INT32`, `CID_SHIFT1`, or `OBJECT_HEADER`)
-
-Both are null for snapshot hashes outside `data/dart-profiles.json`.
+- `registry_record_present`
 
 If adapter metadata is available, JSON output also includes app-package hints:
 
@@ -32,10 +32,7 @@ If adapter metadata is available, JSON output also includes app-package hints:
 - `app_package_counts_top`
 - `requested_backend`, `resolved_backend`, `backend_fallback_reason`
 - `producer_id`, `producer_trust`, `compatibility_record_sha256`
-- `manifest_entry_present`
-- `snapshot_identity_is_exact`
-- `identity_rejection`
-- `model_capabilities`
+- `snapshot_identity_is_exact`, `identity_rejection`, `model_capabilities`
 - `compatibility_warnings`
 
 ## `flutterdec decompile`
