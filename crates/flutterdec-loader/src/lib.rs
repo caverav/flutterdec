@@ -19,7 +19,16 @@ use identity::{SnapshotIdentity, SnapshotKind, TargetArch};
 #[derive(Debug, Clone)]
 pub struct SnapshotBundle {
     pub input_path: PathBuf,
+    /// Display path of the shared object the snapshot was read from. For an APK
+    /// this is the member name, which is not a path any tool can open.
     pub libapp_path: PathBuf,
+    /// The member of `input_path` the shared object came from, when it came from
+    /// inside a container rather than from the filesystem.
+    ///
+    /// `libapp_path` alone cannot express the difference, and the difference is
+    /// load bearing: an external backend given `lib/arm64-v8a/libapp.so` opens a
+    /// path relative to wherever it happens to be running.
+    pub libapp_entry: Option<String>,
     pub arch: String,
     pub snapshot_hash: String,
     pub vm_data: Vec<u8>,
@@ -306,7 +315,12 @@ fn detect_snapshot_hash(vm_data: &[u8], isolate_data: &[u8]) -> Option<String> {
     None
 }
 
-fn from_elf(path: &Path, libapp_display: PathBuf, bytes: Vec<u8>) -> Result<SnapshotBundle> {
+fn from_elf(
+    path: &Path,
+    libapp_display: PathBuf,
+    libapp_entry: Option<String>,
+    bytes: Vec<u8>,
+) -> Result<SnapshotBundle> {
     let elf = Elf::parse(&bytes).context("parse ELF libapp")?;
     let arch = match elf.header.e_machine {
         goblin::elf::header::EM_AARCH64 => "arm64",
@@ -363,6 +377,7 @@ fn from_elf(path: &Path, libapp_display: PathBuf, bytes: Vec<u8>) -> Result<Snap
     Ok(SnapshotBundle {
         input_path: path.to_path_buf(),
         libapp_path: libapp_display,
+        libapp_entry,
         arch,
         snapshot_hash: hash,
         vm_data: vm_data_bytes,
@@ -383,7 +398,8 @@ pub fn load_snapshot_bundle_from_apk_session(
     apk: &ApkSession,
 ) -> Result<SnapshotBundle> {
     let (lib_path, lib_bytes) = find_libapp_in_apk_session(apk)?;
-    from_elf(path, lib_path, lib_bytes)
+    let entry = lib_path.to_string_lossy().into_owned();
+    from_elf(path, lib_path, Some(entry), lib_bytes)
 }
 
 pub fn load_snapshot_bundle(path: &Path) -> Result<SnapshotBundle> {
@@ -399,7 +415,7 @@ pub fn load_snapshot_bundle(path: &Path) -> Result<SnapshotBundle> {
     }
 
     let bytes = fs::read(path).with_context(|| format!("read input file: {}", path.display()))?;
-    from_elf(path, path.to_path_buf(), bytes)
+    from_elf(path, path.to_path_buf(), None, bytes)
 }
 
 #[cfg(test)]

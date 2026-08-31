@@ -8,6 +8,8 @@ struct LoadedModel {
     /// from a substring of adapter output.
     resolved_backend: BackendId,
     fallback_reason: Option<FallbackReason>,
+    /// Which containment controls were established for the adapter child.
+    containment: ContainmentReport,
     adapter_exec: PathBuf,
     producer: Producer,
     compatibility: CompatibilityBinding,
@@ -17,6 +19,12 @@ struct LoadedModel {
 
 fn registry_error(error: RegistryError) -> anyhow::Error {
     anyhow!("compatibility registry selection failed: {}", error)
+}
+
+/// Keep the typed host refusal downcastable, and the identity rejection inside
+/// it downcastable too, so a caller can still tell which check stopped the run.
+fn adapter_error(error: HostError) -> anyhow::Error {
+    anyhow::Error::new(error).context("adapter invocation refused")
 }
 
 /// Select a record only after the identity's FullAOT/header gate passes.
@@ -141,16 +149,44 @@ fn load_model(
     let profile = selection
         .load_profile(layout.data_dir())
         .map_err(registry_error)?;
+    let profile_path = layout.data_dir().join(&selection.record().profile.path);
     let artifact = selection
         .resolve_current_artifact(layout.store_dir())
         .map_err(registry_error)?;
     let producer = producer_for(&artifact.path, &selection, &artifact)?;
     let compatibility = compatibility_binding(&selection, &profile)?;
 
+    // An APK member is not a path. A backend that opens `--libapp-path` needs a
+    // real file, so the member is materialized into the private invocation
+    // directory and the adapter is handed that instead of a zip entry name.
+    let member = match &bundle.libapp_entry {
+        Some(entry) => Some((
+            entry.clone(),
+            flutterdec_loader::read_apk_entry(&bundle.input_path, entry).with_context(|| {
+                format!(
+                    "materialize {} from {}",
+                    entry,
+                    bundle.input_path.display()
+                )
+            })?,
+        )),
+        None => None,
+    };
+    let libapp = match &member {
+        Some((name, bytes)) => LibappSource::Member { name, bytes },
+        None => LibappSource::File(&bundle.libapp_path),
+    };
+
     let run = run_adapter(
         &artifact.path,
         &AdapterInput {
             identity: &bundle.identity,
+            authorization: HostAuthorization {
+                record: selection.record(),
+                variant: &artifact.variant,
+                store_root: layout.store_dir(),
+                profile_path: &profile_path,
+            },
             producer: producer.clone(),
             compatibility: compatibility.clone(),
             regions: vec![
@@ -176,15 +212,18 @@ fn load_model(
                 },
             ],
             input_path: Some(&bundle.input_path),
-            libapp_path: Some(&bundle.libapp_path),
+            libapp: Some(libapp),
             requested_backend: requested_backend(backend),
+            limits: Limits::default(),
         },
-    )?;
+    )
+    .map_err(adapter_error)?;
 
     Ok(LoadedModel {
         model: run.model,
         resolved_backend: run.resolved_backend,
         fallback_reason: run.fallback_reason,
+        containment: run.containment,
         adapter_exec: artifact.path,
         producer,
         compatibility,

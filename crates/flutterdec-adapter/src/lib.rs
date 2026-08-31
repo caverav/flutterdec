@@ -1,19 +1,22 @@
 //! Host side of the adapter boundary.
 //!
 //! One adapter run is one process: the host writes the snapshot regions and an
-//! [`protocol::AdapterRequest`] into a scratch directory, runs the adapter
-//! there, and reads back an [`protocol::AdapterResult`] plus a
-//! [`model::ProgramModel`]. Nothing about the run is decided by the adapter: the
-//! identity, the producer record, the compatibility binding, and the region
-//! table are host facts that the model is checked against before it is returned.
+//! [`protocol::AdapterRequest`] into a private invocation directory, runs the
+//! adapter there under an explicit set of limits, and reads back an
+//! [`protocol::AdapterResult`] plus a [`model::ProgramModel`]. Nothing about the
+//! run is decided by the adapter: the identity, the registry record, the
+//! producer record, the compatibility binding, and the region table are host
+//! facts, and every one of them is checked before a process exists.
 //!
 //! There is no v2/v3 path. [`model::ProgramModel::from_json`] rejects those
 //! documents by version, so an old adapter fails loudly instead of being
 //! silently reinterpreted.
 
+pub mod host;
 pub mod model;
 pub mod primitives;
 pub mod protocol;
+pub mod sandbox;
 pub mod store;
 pub mod validate;
 /// Host compatibility records live in the loader crate so profile and identity
@@ -23,70 +26,13 @@ pub mod registry {
     pub use flutterdec_loader::registry::*;
 }
 
-use anyhow::{anyhow, bail, Context, Result};
+pub use host::{
+    run_adapter, AdapterInput, AdapterRegionInput, AdapterRun, HostAuthorization, HostError,
+    LibappSource, OutputStream,
+};
+pub use sandbox::{ContainmentReport, ControlState, Limits};
+
 use flutterdec_loader::identity::IdentityRejection;
-use model::{CompatibilityBinding, InputRegion, InputRegionName, Producer, ProgramModel};
-use primitives::{RelativePath, Sha256Digest};
-use protocol::{AdapterRequest, AdapterResult, AdapterStatus, BackendId, RequestedBackend};
-use std::fs;
-use std::path::{Path, PathBuf};
-use std::process::Command;
-use tempfile::tempdir;
-use validate::HostSelectedContext;
-
-/// One snapshot region, as the host read it.
-#[derive(Debug, Clone, Copy)]
-pub struct AdapterRegionInput<'a> {
-    pub region: InputRegionName,
-    pub bytes: &'a [u8],
-    /// Load address. Required for executable regions, forbidden for data ones;
-    /// [`AdapterRequest::validate`] rejects the other combinations.
-    pub virtual_address: Option<u64>,
-}
-
-/// Everything the host hands one adapter invocation.
-///
-/// The host-selected facts are here rather than derived from adapter output on
-/// the way back, because a fact the adapter supplies cannot check the adapter.
-#[derive(Debug, Clone)]
-pub struct AdapterInput<'a> {
-    /// Header-derived identity of the snapshot. Authoritative.
-    pub identity: &'a flutterdec_loader::identity::SnapshotIdentity,
-    /// Who the host believes is about to run, including the digest of the
-    /// artifact it is about to execute.
-    pub producer: Producer,
-    /// The compatibility decision that authorized this run.
-    pub compatibility: CompatibilityBinding,
-    pub regions: Vec<AdapterRegionInput<'a>>,
-    /// The original artifact, for backends that re-read it themselves.
-    pub input_path: Option<&'a Path>,
-    pub libapp_path: Option<&'a Path>,
-    pub requested_backend: RequestedBackend,
-}
-
-/// What one adapter invocation produced, with the facts about the run that the
-/// core needs and must not re-derive from the model.
-#[derive(Debug, Clone)]
-pub struct AdapterRun {
-    pub model: ProgramModel,
-    /// The backend that actually ran, as the protocol reported it.
-    pub resolved_backend: BackendId,
-    pub fallback_reason: Option<protocol::FallbackReason>,
-    pub diagnostics: Vec<model::Diagnostic>,
-}
-
-fn region_file_name(region: InputRegionName) -> &'static str {
-    match region {
-        InputRegionName::VmData => "vm_data.bin",
-        InputRegionName::IsolateData => "isolate_data.bin",
-        InputRegionName::VmInstructions => "vm_instructions.bin",
-        InputRegionName::IsolateInstructions => "isolate_instructions.bin",
-    }
-}
-
-const OUTPUT_MODEL_PATH: &str = "model.json";
-const REQUEST_PATH: &str = "request.json";
-const RESULT_PATH: &str = "result.json";
 
 /// Wrap an identity rejection so it survives as a typed cause.
 ///
@@ -94,166 +40,4 @@ const RESULT_PATH: &str = "result.json";
 /// can act on *which* check refused the snapshot rather than parse a message.
 pub fn identity_rejected(rejection: IdentityRejection) -> anyhow::Error {
     anyhow::Error::new(rejection).context("snapshot identity may not authorize an adapter")
-}
-
-/// Run one adapter and return a model that has already been checked against the
-/// host's own view of the snapshot.
-///
-/// The order matters: the request is validated before the process is spawned,
-/// and the model is validated before it is handed back, so neither a malformed
-/// question nor a mismatched answer reaches the core.
-pub fn run_adapter(exec_path: &Path, input: &AdapterInput<'_>) -> Result<AdapterRun> {
-    // The gate, restated at the boundary itself. Callers gate earlier so that a
-    // rejected identity never reaches a manifest or the filesystem, but this is
-    // the last place a process can be spawned, and a public entry point that
-    // trusts its caller to have checked is a public entry point that will one
-    // day be called by a caller that did not.
-    input
-        .identity
-        .exact_selection_key()
-        .map_err(identity_rejected)?;
-
-    let tmp = tempdir().context("create scratch directory for adapter")?;
-    let work = tmp.path();
-
-    let mut handles = Vec::with_capacity(input.regions.len());
-    let mut host_regions: Vec<InputRegion> = Vec::with_capacity(input.regions.len());
-    for region in &input.regions {
-        let name = region_file_name(region.region);
-        fs::write(work.join(name), region.bytes)
-            .with_context(|| format!("write adapter input region {}", region.region))?;
-        let digest = Sha256Digest::of(region.bytes);
-        let size = region.bytes.len() as u64;
-        handles.push(protocol::InputHandle {
-            region: region.region,
-            path: RelativePath::parse(name).map_err(|err| anyhow!(err))?,
-            size,
-            sha256: digest.clone(),
-            virtual_address: region.virtual_address,
-            executable: region.region.is_executable(),
-        });
-        host_regions.push(InputRegion {
-            region: region.region,
-            size,
-            sha256: digest,
-            virtual_address: region.virtual_address,
-            executable: region.region.is_executable(),
-        });
-    }
-    handles.sort_by_key(|h| h.region);
-    host_regions.sort_by_key(|r| r.region);
-
-    let request = AdapterRequest {
-        protocol_major: protocol::PROTOCOL_MAJOR,
-        model_major: model::MODEL_VERSION,
-        compatibility: input.compatibility.clone(),
-        producer: input.producer.clone(),
-        identity: input.identity.clone(),
-        requested_backend: input.requested_backend,
-        inputs: handles,
-        output: RelativePath::parse(OUTPUT_MODEL_PATH).map_err(|err| anyhow!(err))?,
-    };
-    // Fail before spawn, not after: a request the host itself would reject is
-    // not a request an adapter should get a chance to answer.
-    request
-        .validate()
-        .map_err(|err| anyhow!("adapter request is invalid: {}", err))?;
-    fs::write(work.join(REQUEST_PATH), request.to_json()).context("write adapter request")?;
-
-    let mut cmd = Command::new(exec_path);
-    cmd.current_dir(work)
-        .arg("--request")
-        .arg(REQUEST_PATH)
-        .arg("--result")
-        .arg(RESULT_PATH);
-    if let Some(path) = input.input_path {
-        cmd.arg("--input-path").arg(absolute(path));
-    }
-    if let Some(path) = input.libapp_path {
-        cmd.arg("--libapp-path").arg(absolute(path));
-    }
-    let output = cmd
-        .output()
-        .with_context(|| format!("launch adapter: {}", exec_path.display()))?;
-
-    let result_path = work.join(RESULT_PATH);
-    if !output.status.success() && !result_path.exists() {
-        return Err(anyhow!(
-            "adapter failed with status {} and wrote no result document\nstdout:\n{}\nstderr:\n{}",
-            output.status,
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        ));
-    }
-
-    let result_bytes = fs::read(&result_path)
-        .with_context(|| format!("read adapter result: {}", result_path.display()))?;
-    let result = AdapterResult::from_json(&result_bytes)
-        .map_err(|err| anyhow!("adapter result is not protocol v1: {}", err))?;
-    result
-        .validate_against(&request)
-        .map_err(|err| anyhow!("adapter result does not answer the request: {}", err))?;
-
-    if result.status != AdapterStatus::Ok {
-        let error = result
-            .error
-            .as_ref()
-            .expect("a non-ok result carries an error");
-        return Err(anyhow!(
-            "adapter reported {:?} ({:?}): {}\nstderr:\n{}",
-            result.status,
-            error.code,
-            error.message,
-            String::from_utf8_lossy(&output.stderr)
-        ));
-    }
-
-    let model_rel = result.model.as_ref().expect("an ok result carries a model");
-    if model_rel.as_str() != request.output.as_str() {
-        bail!(
-            "adapter wrote its model to {:?} instead of the requested {:?}",
-            model_rel.as_str(),
-            request.output.as_str()
-        );
-    }
-    let model_bytes = fs::read(work.join(model_rel.as_str()))
-        .with_context(|| format!("read adapter model: {}", model_rel.as_str()))?;
-    let model = ProgramModel::from_json(&model_bytes)
-        .map_err(|err| anyhow!("adapter model rejected: {}", err))?;
-
-    let host = HostSelectedContext {
-        identity: input.identity.clone(),
-        producer: input.producer.clone(),
-        compatibility: input.compatibility.clone(),
-        regions: host_regions,
-    };
-    validate::validate(&model, &host)
-        .map_err(|err| anyhow!("adapter model failed semantic validation: {}", err))?;
-
-    Ok(AdapterRun {
-        model,
-        resolved_backend: result
-            .resolved_backend
-            .expect("an ok result names its backend"),
-        fallback_reason: result.fallback_reason,
-        diagnostics: result.diagnostics,
-    })
-}
-
-/// An absolute path for a caller-supplied artifact.
-///
-/// The adapter runs with its working directory set to the scratch dir, so a
-/// relative path handed straight through would resolve somewhere the caller did
-/// not mean. Canonicalizing fails only for a path that does not exist yet, and
-/// joining the current directory is still absolute.
-fn absolute(path: &Path) -> PathBuf {
-    if let Ok(canonical) = path.canonicalize() {
-        return canonical;
-    }
-    if path.is_absolute() {
-        return path.to_path_buf();
-    }
-    std::env::current_dir()
-        .map(|cwd| cwd.join(path))
-        .unwrap_or_else(|_| path.to_path_buf())
 }
