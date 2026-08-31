@@ -342,6 +342,7 @@ dependencies = [
  "flutterdec-adapter",
  "flutterdec-core",
  "flutterdec-loader",
+ "libc",
  "serde_json",
  "sha2",
  "tempfile",
