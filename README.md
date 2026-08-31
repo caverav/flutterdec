@@ -216,6 +216,14 @@ flutterdec adapter install --dart-hash <HASH>
 flutterdec adapter list
 ```
 
+Adapters install into a writable store outside any checkout: `FLUTTERDEC_ADAPTER_STORE` when set,
+otherwise `$XDG_DATA_HOME/flutterdec/adapters` or `$HOME/.local/share/flutterdec/adapters`. The
+compatibility registry and the runtime profiles are read-only package data, found next to the binary at
+`share/flutterdec` (or wherever `FLUTTERDEC_DATA_DIR` points). Neither location depends on your current
+directory, so a release binary behaves the same everywhere. `adapter list` reports `verified`,
+`missing`, `corrupt`, `incompatible`, or `unavailable` per record and exits 2 if the store holds an
+install it cannot back. See [docs/user-guide.md](docs/user-guide.md) for the full rules.
+
 Decompile with the default app-focused scope:
 
 ```bash
