@@ -133,12 +133,34 @@ impl Prefix {
     /// a producer that exits without a model never gets as far as a model, a
     /// containment report, or a `report.json`.
     pub fn answering() -> Self {
+        Self::with_producer(&answering_producer())
+    }
+
+    /// A prefix carrying an arbitrary packaged producer.
+    ///
+    /// `__SPAWN_LOG__` in the source is replaced with an absolute path this
+    /// prefix owns, so every fixture producer records the fact that it ran. That
+    /// count is the evidence behind "no adapter was executed": an assertion
+    /// about an absent side effect is only as good as the proof the side effect
+    /// would have appeared.
+    pub fn with_producer(source: &str) -> Self {
         Self::build(
             ARTIFACT_RELATIVE,
             std::env::consts::OS,
             std::env::consts::ARCH,
-            Some(&answering_producer()),
+            Some(source),
         )
+    }
+
+    /// Where each spawn appended a line, and how many did.
+    pub fn spawn_log(&self) -> PathBuf {
+        self.root().join("producer_spawns.log")
+    }
+
+    pub fn spawns(&self) -> usize {
+        fs::read_to_string(self.spawn_log())
+            .map(|text| text.lines().filter(|line| !line.is_empty()).count())
+            .unwrap_or(0)
     }
 
     pub fn build(
@@ -165,8 +187,17 @@ impl Prefix {
         .expect("copy release binary");
 
         let producer = match producer_source {
-            Some(source) => source.to_string(),
-            None => format!("#!/bin/sh\ntouch '{}'\nexit 3\n", marker.display()),
+            Some(source) => source.replace(
+                "__SPAWN_LOG__",
+                root.join("producer_spawns.log")
+                    .to_str()
+                    .expect("spawn log path"),
+            ),
+            None => format!(
+                "#!/bin/sh\ntouch '{}'\necho spawn >> '{}'\nexit 3\n",
+                marker.display(),
+                root.join("producer_spawns.log").display()
+            ),
         };
         let producer_path = root.join("share/flutterdec/adapters/python/adapter_template.py");
         fs::write(&producer_path, &producer).expect("write producer");
@@ -523,6 +554,8 @@ pub fn answering_producer() -> String {
         r#"#!{}
 import argparse, json, pathlib
 
+pathlib.Path("__SPAWN_LOG__").open("a").write("spawn\n")
+
 DOMAINS = [
     "libraries", "classes", "class_relationships", "functions",
     "function_names", "object_pool", "pool_index_space",
@@ -690,4 +723,65 @@ pub fn assert_controls_are_accurate(containment: &Value, source: &str) {
             );
         }
     }
+}
+
+/// A producer that never finishes, so the host's deadline is what ends it.
+///
+/// It logs the spawn before sleeping, so the timeout case can still prove a
+/// child existed. Without that the test could not tell "the deadline killed it"
+/// from "nothing ever ran".
+pub fn sleeping_producer() -> String {
+    format!(
+        r#"#!{}
+import pathlib, time
+
+pathlib.Path("__SPAWN_LOG__").open("a").write("spawn\n")
+time.sleep(3600)
+"#,
+        interpreter().display()
+    )
+}
+
+/// A producer that reports success and writes a model that is not JSON.
+///
+/// The result document is well-formed, so nothing before the model read can
+/// catch this: the host has to reject the model itself.
+pub fn corrupt_model_producer() -> String {
+    format!(
+        r#"#!{}
+import argparse, json, pathlib
+
+pathlib.Path("__SPAWN_LOG__").open("a").write("spawn\n")
+p = argparse.ArgumentParser()
+p.add_argument("--request", required=True)
+p.add_argument("--result", required=True)
+p.add_argument("--input-path")
+p.add_argument("--libapp-path")
+args = p.parse_args()
+request = json.loads(pathlib.Path(args.request).read_text())
+pathlib.Path(request["output"]).write_text("{{not json at all")
+pathlib.Path(args.result).write_text(json.dumps({{
+    "protocol_major": 1,
+    "model_major": 4,
+    "status": "ok",
+    "model": request["output"],
+    "error": None,
+    "resolved_backend": "internal",
+    "fallback_reason": None,
+    "diagnostics": [],
+}}))
+"#,
+        interpreter().display()
+    )
+}
+
+/// A producer that answers correctly about a snapshot it was not given.
+///
+/// Every other field is echoed from the request, so the only thing wrong with
+/// the model is the identity: the host's own fact, restated differently.
+pub fn wrong_identity_producer() -> String {
+    answering_producer().replace(
+        r#""identity": request["identity"],"#,
+        r#""identity": dict(request["identity"], hash="ffffffffffffffffffffffffffffffff"),"#,
+    )
 }

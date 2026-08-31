@@ -299,6 +299,19 @@ fn pinned_backend_refused(
     )
 }
 
+/// The host's containment budget for one invocation.
+///
+/// Only the wall clock is operator-settable. The rest are integrity bounds
+/// rather than patience, and an operator raising them is not answering a
+/// question about their own snapshot.
+fn adapter_limits(timeout_seconds: Option<u64>) -> Limits {
+    let mut limits = Limits::default();
+    if let Some(seconds) = timeout_seconds {
+        limits.wall_clock = std::time::Duration::from_secs(seconds);
+    }
+    limits
+}
+
 /// Turn a registry refusal into core recovery, a pinned-backend refusal, or the
 /// original error, whichever the refusal actually means.
 fn recover_or_refuse(
@@ -326,6 +339,7 @@ fn load_program(
     layout: &Layout,
     bundle: &mut SnapshotBundle,
     backend: AdapterBackend,
+    adapter_timeout_seconds: Option<u64>,
 ) -> Result<LoadedProgram> {
     // Before the registry is read, before a path is resolved, before anything
     // is spawned.
@@ -432,7 +446,7 @@ fn load_program(
             input_path: Some(&bundle.input_path),
             libapp: Some(libapp),
             requested_backend: requested_backend(backend),
-            limits: Limits::default(),
+            limits: adapter_limits(adapter_timeout_seconds),
         },
     )
     // An adapter that was authorized, started, and then failed is a failure.

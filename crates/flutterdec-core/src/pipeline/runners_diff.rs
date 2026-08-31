@@ -117,10 +117,20 @@ pub fn run_diff(
     // Each side is selected independently, and each side's failures are its
     // own. Contexts name the side so a two-sided run cannot report a failure
     // that leaves the operator guessing which input caused it.
-    let old_loaded = load_program(layout, &mut old_bundle, opt.adapter_backend)
-        .with_context(|| format!("old input {}", old_bundle.input_path.display()))?;
-    let new_loaded = load_program(layout, &mut new_bundle, opt.adapter_backend)
-        .with_context(|| format!("new input {}", new_bundle.input_path.display()))?;
+    let old_loaded = load_program(
+        layout,
+        &mut old_bundle,
+        opt.adapter_backend,
+        opt.adapter_timeout_seconds,
+    )
+    .with_context(|| format!("old input {}", old_bundle.input_path.display()))?;
+    let new_loaded = load_program(
+        layout,
+        &mut new_bundle,
+        opt.adapter_backend,
+        opt.adapter_timeout_seconds,
+    )
+    .with_context(|| format!("new input {}", new_bundle.input_path.display()))?;
     let old_provider = provider_report(&old_loaded, &old_bundle, opt.adapter_backend);
     let new_provider = provider_report(&new_loaded, &new_bundle, opt.adapter_backend);
     // Two sides produced by different providers are not comparable in the way a

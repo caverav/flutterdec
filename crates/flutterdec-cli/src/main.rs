@@ -68,6 +68,9 @@ struct InfoCmd {
     /// Which snapshot adapter backend to use
     #[arg(long, value_enum, default_value_t = AdapterBackendArg::Auto, value_name = "BACKEND")]
     adapter_backend: AdapterBackendArg,
+    /// Wall-clock deadline for one adapter invocation, in seconds
+    #[arg(long, value_name = "SECONDS")]
+    adapter_timeout: Option<u64>,
 }
 
 #[derive(Args, Debug)]
@@ -186,6 +189,9 @@ FLUTTERDEC_R2FLUTTER_CMD for r2flutter, and FLUTTERDEC_BLUTTER_CMD or
 FLUTTERDEC_BLUTTER_PY for the Blutter bridge."
     )]
     adapter_backend: AdapterBackendArg,
+    /// Wall-clock deadline for one adapter invocation, in seconds
+    #[arg(long, value_name = "SECONDS")]
+    adapter_timeout: Option<u64>,
     /// Fail if the adapter and loader disagree on the snapshot hash
     #[arg(long, help_heading = "Analysis engine")]
     require_snapshot_hash_match: bool,
@@ -319,6 +325,9 @@ struct DiffCmd {
     /// Which snapshot adapter backend to use
     #[arg(long, value_enum, default_value_t = AdapterBackendArg::Auto, value_name = "BACKEND")]
     adapter_backend: AdapterBackendArg,
+    /// Wall-clock deadline for one adapter invocation, in seconds
+    #[arg(long, value_name = "SECONDS")]
+    adapter_timeout: Option<u64>,
     /// Fail if either side has an adapter/loader snapshot hash mismatch
     #[arg(long)]
     require_snapshot_hash_match: bool,
@@ -513,7 +522,12 @@ fn run() -> Result<ExitCode> {
 }
 
 fn handle_info(layout: &Layout, cmd: InfoCmd) -> Result<()> {
-    let out = run_info(layout, &cmd.input, cmd.adapter_backend.to_core())?;
+    let out = run_info(
+        layout,
+        &cmd.input,
+        cmd.adapter_backend.to_core(),
+        cmd.adapter_timeout,
+    )?;
     if cmd.json {
         println!("{}", serde_json::to_string_pretty(&out)?);
     } else {
@@ -697,6 +711,7 @@ fn handle_diff(layout: &Layout, cmd: DiffCmd) -> Result<()> {
     let opt = DiffOptions {
         out_dir: cmd.out_dir,
         adapter_backend: cmd.adapter_backend.to_core(),
+        adapter_timeout_seconds: cmd.adapter_timeout,
         function_scope: cmd.function_scope.to_core(),
         app_packages: cmd.app_packages,
         require_snapshot_hash_match: cmd.require_snapshot_hash_match,
@@ -792,6 +807,7 @@ fn build_decompile_options(cmd: DecompileCmd) -> Result<DecompileOptions> {
         function_scope: cmd.function_scope.to_core(),
         app_packages: cmd.app_packages,
         adapter_backend: cmd.adapter_backend.to_core(),
+        adapter_timeout_seconds: cmd.adapter_timeout,
         require_snapshot_hash_match: cmd.require_snapshot_hash_match,
         analysis_profile: profile,
         engine_options,
