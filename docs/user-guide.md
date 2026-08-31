@@ -64,12 +64,18 @@ nix profile upgrade flutterdec
 
 Current prerelease: [`v0.1.0-alpha.4`](https://github.com/caverav/flutterdec/releases/tag/v0.1.0-alpha.4)
 
+The archive is a prefix, not a lone binary: it holds `bin/flutterdec` plus the compatibility
+registry, the runtime profiles and the packaged producer under `share/flutterdec`. The CLI finds
+that data relative to its own executable, so copy `bin` and `share` to the same prefix and keep
+them together. A binary moved out on its own reports which directories it looked in and stops.
+
 Linux x64:
 
 ```bash
 curl -fLO https://github.com/caverav/flutterdec/releases/download/v0.1.0-alpha.4/flutterdec-v0.1.0-alpha.4-Linux-X64.tar.gz
-tar -xzf flutterdec-v0.1.0-alpha.4-Linux-X64.tar.gz
-sudo install -m 0755 flutterdec /usr/local/bin/flutterdec
+mkdir -p flutterdec-v0.1.0-alpha.4
+tar -xzf flutterdec-v0.1.0-alpha.4-Linux-X64.tar.gz -C flutterdec-v0.1.0-alpha.4
+sudo cp -R flutterdec-v0.1.0-alpha.4/bin flutterdec-v0.1.0-alpha.4/share /usr/local/
 flutterdec --help
 ```
 
@@ -77,8 +83,9 @@ macOS arm64:
 
 ```bash
 curl -fLO https://github.com/caverav/flutterdec/releases/download/v0.1.0-alpha.4/flutterdec-v0.1.0-alpha.4-macOS-ARM64.tar.gz
-tar -xzf flutterdec-v0.1.0-alpha.4-macOS-ARM64.tar.gz
-sudo install -m 0755 flutterdec /usr/local/bin/flutterdec
+mkdir -p flutterdec-v0.1.0-alpha.4
+tar -xzf flutterdec-v0.1.0-alpha.4-macOS-ARM64.tar.gz -C flutterdec-v0.1.0-alpha.4
+sudo cp -R flutterdec-v0.1.0-alpha.4/bin flutterdec-v0.1.0-alpha.4/share /usr/local/
 flutterdec --help
 ```
 
