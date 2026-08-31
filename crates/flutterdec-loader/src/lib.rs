@@ -10,6 +10,7 @@ use zip::ZipArchive;
 
 pub mod dart_profile;
 pub mod identity;
+pub mod registry;
 
 use dart_profile::ResolvedDartProfile;
 use identity::{SnapshotIdentity, SnapshotKind, TargetArch};
@@ -355,7 +356,8 @@ fn from_elf(path: &Path, libapp_display: PathBuf, bytes: Vec<u8>) -> Result<Snap
     let compressed_pointers = snapshot_features
         .as_deref()
         .and_then(compressed_pointers_from_features);
-    let dart_profile = dart_profile::profile_for_hash(&hash);
+    // Profile data is selected by the host registry after the identity gate.
+    // The loader intentionally does not maintain a second hash inventory.
 
     Ok(SnapshotBundle {
         input_path: path.to_path_buf(),
@@ -368,7 +370,7 @@ fn from_elf(path: &Path, libapp_display: PathBuf, bytes: Vec<u8>) -> Result<Snap
         isolate_instr: isolate_instr_bytes,
         vm_instr_va: vm_instr.va,
         isolate_instr_va: isolate_instr.va,
-        dart_profile,
+        dart_profile: None,
         snapshot_features,
         compressed_pointers,
         identity,

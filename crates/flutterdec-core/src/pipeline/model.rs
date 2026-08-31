@@ -1,13 +1,8 @@
-/// The one parser family PR1 ships. A registry that could name others is PR2.
-const PARSER_FAMILY_ID: &str = "flutterdec-local-python";
-
-/// The profile id used when no Dart profile resolves for the snapshot hash.
-///
-/// Not a placeholder standing in for a real profile: it names the state, and the
-/// digest below is the digest of that state, so two runs without a profile agree
-/// and a run with one never collides with them.
-const UNRESOLVED_PROFILE_ID: &str = "unresolved";
-
+use flutterdec_loader::registry::{
+    canonical_feature_fingerprint, ArtifactReference, CompatibilityEvidence, CompatibilityRecord,
+    CompatibilityRegistry, HostArtifactVariant, ParserFamilyReference, ProfileReference,
+    RegistryError, RegistrySelection, ResolvedArtifact, TrustTier,
+};
 #[derive(Debug, Clone)]
 struct LoadedModel {
     model: ProgramModel,
@@ -18,89 +13,91 @@ struct LoadedModel {
     adapter_exec: PathBuf,
     producer: Producer,
     compatibility: CompatibilityBinding,
-    manifest_entry_version: Option<String>,
-    manifest_entry_adapter: Option<String>,
+    compatibility_record: CompatibilityRecord,
+    profile: ResolvedDartProfile,
 }
 
-/// A stable digest for a layout profile, or for the absence of one.
+fn registry_error(error: RegistryError) -> anyhow::Error {
+    anyhow!("compatibility registry selection failed: {}", error)
+}
+
+/// Select a record only after the identity's FullAOT/header gate passes.
+fn select_registry(repo_root: &Path, bundle: &SnapshotBundle) -> Result<RegistrySelection> {
+    let registry = CompatibilityRegistry::load_from_root(repo_root).map_err(registry_error)?;
+    registry
+        .select(&bundle.identity)
+        .map_err(registry_error)
+}
+
+/// Attach the verified runtime profile selected by the registry to a bundle.
 ///
-/// `DartProfile` is deserialized from vendored data and is not `Serialize`, so
-/// the digest is taken over a canonical rendering of the fields that decide
-/// layout. Adding a field to the profile without adding it here would make two
-/// different profiles digest the same, which is why the rendering lists them
-/// explicitly rather than reflecting.
-fn profile_binding(profile: Option<&ResolvedDartProfile>) -> (String, Sha256Digest) {
-    let Some(resolved) = profile else {
-        return (
-            UNRESOLVED_PROFILE_ID.to_string(),
-            Sha256Digest::of(b"flutterdec:profile:unresolved"),
-        );
-    };
-    let p = &resolved.profile;
-    let mut cids = p.cids.iter().collect::<Vec<_>>();
-    cids.sort();
-    let canonical = format!(
-        "dart_version={};profile_version={};tag_style={};compressed_word_size={};header_fields={};max_alignment={};heap_object_tag={};cids={:?}",
-        resolved.dart_version,
-        resolved.profile_version,
-        p.tag_style.as_str(),
-        p.compressed_word_size,
-        p.header_fields,
-        p.max_alignment,
-        p.heap_object_tag,
-        cids,
-    );
-    (
-        resolved.profile_version.clone(),
-        Sha256Digest::of(canonical.as_bytes()),
+/// `Ok(None)` is reserved for callers that choose not to attempt selection
+/// (for example an `info` report for a non-FullAOT input); a selected record
+/// with a bad profile is an error, never an unverified fallback.
+fn attach_registry_profile(
+    repo_root: &Path,
+    bundle: &mut SnapshotBundle,
+) -> Result<Option<RegistrySelection>> {
+    let selection = select_registry(repo_root, bundle)?;
+    let profile = selection
+        .load_profile(repo_root)
+        .map_err(registry_error)?;
+    bundle.dart_profile = Some(profile);
+    Ok(Some(selection))
+}
+
+/// The compatibility binding comes entirely from the selected registry record.
+fn compatibility_binding(
+    selection: &RegistrySelection,
+    profile: &ResolvedDartProfile,
+) -> Result<CompatibilityBinding> {
+    let record_sha256 = Sha256Digest::parse(
+        &selection
+            .record_sha256()
+            .map_err(registry_error)?,
     )
-}
-
-/// The compatibility decision, materialized locally.
-///
-/// PR1 has no registry, so there is no record to look up; what there is, is a
-/// decision the host made, and this digests it so the model can be tied back to
-/// it. The digest covers the exact selection key, which only exists because the
-/// identity already cleared the gate, so a model produced under a different
-/// decision has a different binding and a rejected identity has none at all.
-fn compatibility_binding(bundle: &SnapshotBundle, key: &ExactSelectionKey) -> CompatibilityBinding {
-    let (profile_id, profile_sha256) = profile_binding(bundle.dart_profile.as_ref());
-    let decision = format!(
-        "exact;hash={};arch={};features={}",
-        key.hash,
-        key.target_arch.as_str(),
-        key.features.join(",")
-    );
-    let record = format!(
-        "family={};profile={};decision={}",
-        PARSER_FAMILY_ID, profile_id, decision
-    );
-    CompatibilityBinding {
-        record_sha256: Sha256Digest::of(record.as_bytes()),
-        parser_family_id: PARSER_FAMILY_ID.to_string(),
-        profile_id,
+    .map_err(|err| anyhow!("registry record digest is invalid: {}", err))?;
+    let profile_sha256 = Sha256Digest::parse(&profile.profile_sha256)
+        .map_err(|err| anyhow!("registry profile digest is invalid: {}", err))?;
+    Ok(CompatibilityBinding {
+        record_sha256,
+        parser_family_id: selection.record().parser_family.id.clone(),
+        profile_id: selection.record().profile.id.clone(),
         profile_sha256,
-    }
+    })
 }
 
-/// Who the host is about to run, digest included.
-///
-/// The digest is of the artifact on disk, taken immediately before the spawn, so
-/// the model's producer record names the bytes that actually executed rather
-/// than whatever the manifest says is installed.
-fn producer_for(exec_path: &Path, version: Option<&str>) -> Result<Producer> {
+/// Who the host is about to run, digest included and checked against the
+/// selected host artifact variant.
+fn producer_for(
+    exec_path: &Path,
+    selection: &RegistrySelection,
+    artifact: &ResolvedArtifact,
+) -> Result<Producer> {
     let bytes = fs::read(exec_path)
         .with_context(|| format!("read adapter artifact: {}", exec_path.display()))?;
+    let actual = Sha256Digest::of(&bytes);
+    let expected = Sha256Digest::parse(&artifact.variant.sha256)
+        .map_err(|err| anyhow!("registry artifact digest is invalid: {}", err))?;
+    if actual != expected || bytes.len() as u64 != artifact.variant.size {
+        bail!(
+            "adapter artifact changed after registry verification: expected {} bytes with {}, got {} bytes with {}",
+            artifact.variant.size,
+            expected,
+            bytes.len(),
+            actual
+        );
+    }
     Ok(Producer {
-        id: PARSER_FAMILY_ID.to_string(),
-        version: version.unwrap_or("unknown").to_string(),
-        artifact_sha256: Sha256Digest::of(&bytes),
-        // `Local`, unconditionally, because `load_model` refuses any identity
-        // that cannot authorize an exact parser before it gets here. PR1 has no
-        // registry, so `Registered` is not yet reachable, and `Untrusted` is not
-        // a state a run can be in: a rejected identity stops, it is not
-        // relabeled and executed anyway.
-        trust: ProducerTrust::Local,
+        id: selection.record().parser_family.id.clone(),
+        version: selection
+            .record()
+            .parser_family
+            .version
+            .clone()
+            .unwrap_or_else(|| "unknown".to_string()),
+        artifact_sha256: actual,
+        trust: ProducerTrust::Registered,
     })
 }
 
@@ -124,11 +121,6 @@ fn backend_from_id(id: BackendId) -> AdapterBackend {
 
 /// The pre-lookup identity gate, in the one place every adapter path goes
 /// through.
-///
-/// This is deliberately not a warning or a trust label. A snapshot whose header
-/// did not parse, or that is not FullAOT, or whose target this build cannot
-/// handle, has no exact parser to select, so there is nothing for a manifest
-/// lookup, a path resolution, or a process spawn to be right about.
 fn require_exact_selection(bundle: &SnapshotBundle) -> Result<ExactSelectionKey> {
     bundle
         .identity
@@ -141,23 +133,21 @@ fn load_model(
     bundle: &SnapshotBundle,
     backend: AdapterBackend,
 ) -> Result<LoadedModel> {
-    // Before the manifest is read, before a path is resolved, before anything is
-    // spawned.
-    let selection = require_exact_selection(bundle)?;
-    let manifest = flutterdec_adapter::load_manifest(repo_root)?;
-    let manifest_entry = manifest
-        .entries
-        .iter()
-        .find(|entry| entry.snapshot_hash == bundle.snapshot_hash);
-    let adapter_exec = resolve_adapter_exec(repo_root, &bundle.snapshot_hash)?;
-    let producer = producer_for(
-        &adapter_exec,
-        manifest_entry.map(|entry| entry.version.as_str()),
-    )?;
-    let compatibility = compatibility_binding(bundle, &selection);
+    // Before the registry is read, before a path is resolved, before anything
+    // is spawned.
+    require_exact_selection(bundle)?;
+    let selection = select_registry(repo_root, bundle)?;
+    let profile = selection
+        .load_profile(repo_root)
+        .map_err(registry_error)?;
+    let artifact = selection
+        .resolve_current_artifact(repo_root)
+        .map_err(registry_error)?;
+    let producer = producer_for(&artifact.path, &selection, &artifact)?;
+    let compatibility = compatibility_binding(&selection, &profile)?;
 
     let run = run_adapter(
-        &adapter_exec,
+        &artifact.path,
         &AdapterInput {
             identity: &bundle.identity,
             producer: producer.clone(),
@@ -194,11 +184,11 @@ fn load_model(
         model: run.model,
         resolved_backend: run.resolved_backend,
         fallback_reason: run.fallback_reason,
-        adapter_exec,
+        adapter_exec: artifact.path,
         producer,
         compatibility,
-        manifest_entry_version: manifest_entry.map(|entry| entry.version.clone()),
-        manifest_entry_adapter: manifest_entry.map(|entry| entry.adapter.clone()),
+        compatibility_record: selection.record().clone(),
+        profile,
     })
 }
 

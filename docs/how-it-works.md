@@ -166,10 +166,12 @@ This table shows what each stage consumes and produces.
 
 This is the effective high-level control flow in `run_decompile`:
 
-```text
 bundle = load_snapshot_bundle(input)
-key = bundle.identity.exact_selection_key()   // hard stop: no key, no lookup, no spawn
-model = run_adapter(resolve_adapter_exec(bundle.hash), bundle)
+key = bundle.identity.exact_selection_key()   // FullAOT/header gate
+record = load_registry("adapters/registry.json").select(key)
+profile = verify_profile(record.profile, record.profile.sha256)
+artifact = verify_host_variant(record.artifact, host_os, host_arch)
+model = run_adapter(artifact, bundle, record, profile)
 scoped_model = apply_scope_filter(model, function_scope, app_package_filters)
 selected_model = apply_target_filter(scoped_model, model, target?)  // optional --target id/va
 
@@ -484,9 +486,10 @@ Why process-based adapters:
 
 Key functions:
 
+- `CompatibilityRegistry::select`
+- `RegistrySelection::load_profile`
+- `RegistrySelection::resolve_current_artifact`
 - `run_adapter`
-- `resolve_adapter_exec`
-- `install_adapter`
 - `validate::validate`
 
 ## 3) Disassembler

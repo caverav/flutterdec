@@ -963,13 +963,21 @@ pub fn run_info(
     adapter_backend: AdapterBackend,
 ) -> Result<InfoOutput> {
     let apk_session = open_apk_session_if_input_is_apk(input_path)?;
-    let bundle = load_snapshot_bundle_with_optional_apk_session(input_path, apk_session.as_ref())?;
-    // `info` reports rather than fails, but it still may not look an adapter up
-    // for a snapshot that could never authorize one: the filesystem probe is
-    // downstream of the gate, not a way around it.
+    let mut bundle =
+        load_snapshot_bundle_with_optional_apk_session(input_path, apk_session.as_ref())?;
+    // Profiles are loaded only through an exact registry record. An info query
+    // for an unknown/non-FullAOT identity remains useful, but never probes an
+    // adapter artifact or invents a profile.
     let identity_rejection = bundle.identity.exact_selection_key().err();
-    let adapter_installed = identity_rejection.is_none()
-        && resolve_adapter_exec(repo_root, &bundle.snapshot_hash).is_ok();
+    let registry_selection = if identity_rejection.is_none() {
+        attach_registry_profile(repo_root, &mut bundle).ok().flatten()
+    } else {
+        None
+    };
+    let adapter_installed = registry_selection
+        .as_ref()
+        .and_then(|selection| selection.resolve_current_artifact(repo_root).ok())
+        .is_some();
     let manifest_inspection = if let Some(apk) = apk_session.as_ref() {
         inspect_android_manifest_from_apk_session(apk)
     } else {
@@ -996,6 +1004,10 @@ pub fn run_info(
             .dart_profile
             .as_ref()
             .map(|p| p.dart_version.clone()),
+        dart_aliases: bundle
+            .dart_profile
+            .as_ref()
+            .map(|p| p.aliases.clone()),
         dart_tag_style: bundle
             .dart_profile
             .as_ref()
@@ -1008,8 +1020,10 @@ pub fn run_info(
         backend_fallback_reason: None,
         producer_id: None,
         producer_trust: None,
-        compatibility_record_sha256: None,
-        manifest_entry_present: None,
+        compatibility_record_sha256: registry_selection
+            .as_ref()
+            .and_then(|selection| selection.record_sha256().ok()),
+        registry_record_present: Some(registry_selection.is_some()),
         snapshot_identity_is_exact: Some(bundle.identity.is_exact()),
         identity_rejection: identity_rejection.as_ref().map(ToString::to_string),
         model_capabilities: None,
@@ -1027,7 +1041,7 @@ pub fn run_info(
 
     if adapter_installed {
         if let Ok(loaded) = load_model(repo_root, &bundle, adapter_backend) {
-            let manifest_entry_present = loaded.manifest_entry_adapter.is_some();
+            let registry_record_present = true;
             let model = loaded.model;
             // The model was validated against the host identity before it got
             // here, so it describes this snapshot by construction. What is worth
@@ -1039,7 +1053,7 @@ pub fn run_info(
                 _ => resolved_backend != adapter_backend,
             };
             let warnings = collect_compatibility_warnings(
-                manifest_entry_present,
+                registry_record_present,
                 identity_is_exact,
                 backend_mismatch,
             );
@@ -1052,7 +1066,7 @@ pub fn run_info(
             out.producer_trust = Some(producer_trust_label(loaded.producer.trust).to_string());
             out.compatibility_record_sha256 =
                 Some(loaded.compatibility.record_sha256.to_string());
-            out.manifest_entry_present = Some(manifest_entry_present);
+            out.registry_record_present = Some(registry_record_present);
             out.snapshot_identity_is_exact = Some(identity_is_exact);
             out.compatibility_warnings = Some(warnings);
             out.model_capabilities = Some(capability_map(&model.capabilities));
@@ -1075,13 +1089,13 @@ pub fn run_info(
 }
 
 fn collect_compatibility_warnings(
-    manifest_entry_present: bool,
+    registry_record_present: bool,
     identity_is_exact: bool,
     backend_mismatch: bool,
 ) -> Vec<String> {
     let mut warnings = Vec::new();
-    if !manifest_entry_present {
-        warnings.push("adapter manifest entry missing for this snapshot hash".to_string());
+    if !registry_record_present {
+        warnings.push("compatibility registry record missing for this snapshot identity".to_string());
     }
     if !identity_is_exact {
         warnings.push(
@@ -1215,11 +1229,14 @@ pub fn run_decompile(
     opt: &DecompileOptions,
 ) -> Result<QualityReport> {
     let apk_session = open_apk_session_if_input_is_apk(input_path)?;
-    let bundle = load_snapshot_bundle_with_optional_apk_session(input_path, apk_session.as_ref())?;
+    let mut bundle =
+        load_snapshot_bundle_with_optional_apk_session(input_path, apk_session.as_ref())?;
+    attach_registry_profile(repo_root, &mut bundle)?
+        .ok_or_else(|| anyhow!("no compatibility registry record selected"))?;
     let loaded_model = load_model(repo_root, &bundle, opt.adapter_backend)?;
     let adapter_exec_path = loaded_model.adapter_exec.display().to_string();
-    let manifest_entry_version = loaded_model.manifest_entry_version.clone();
-    let manifest_entry_adapter = loaded_model.manifest_entry_adapter.clone();
+    let registry_record = loaded_model.compatibility_record.clone();
+    let sdk_aliases = loaded_model.profile.aliases.clone();
     let requested_backend = opt.adapter_backend;
     // Four distinct typed facts, none of them read out of a name: what the host
     // asked for, what answered, why it differed, and who produced the model.
@@ -1515,7 +1532,7 @@ pub fn run_decompile(
     // instead of naming everything wrong.
     let stub_naming = shared_stub_names(
         &disasm,
-        bundle.dart_profile.as_ref().map(|p| p.dart_version.as_str()),
+        bundle.dart_profile.as_ref().map(|p| p.profile_version.as_str()),
         bundle.compressed_pointers,
     );
     let shared_stub_naming = SharedStubNamingSummary {
@@ -1861,9 +1878,9 @@ pub fn run_decompile(
     let quality_path = opt.out_dir.join("quality.json");
     fs::write(&quality_path, serde_json::to_vec_pretty(&report)?)?;
     let bundle_snapshot_hash = bundle.snapshot_hash.clone();
-    let manifest_entry_present = manifest_entry_adapter.is_some();
+    let registry_record_present = true;
     let compatibility_warnings = collect_compatibility_warnings(
-        manifest_entry_present,
+        registry_record_present,
         snapshot_identity_is_exact,
         backend_mismatch,
     );
@@ -1875,12 +1892,10 @@ pub fn run_decompile(
 
     let summary = json!({
         "input": bundle.input_path,
-        "libapp": bundle.libapp_path,
-        "arch": bundle.arch,
-        "snapshot_hash": bundle_snapshot_hash.clone(),
         "dart_profile": bundle.dart_profile.as_ref().map(|p| json!({
-            "dart_version": p.dart_version,
-            "profile_version": p.profile_version,
+            "profile_id": p.profile_version,
+            "profile_sha256": p.profile_sha256,
+            "aliases": p.aliases,
             "tag_style": p.profile.tag_style.as_str(),
             "compressed_word_size": p.profile.compressed_word_size,
             "header_fields": p.profile.header_fields,
@@ -1898,9 +1913,10 @@ pub fn run_decompile(
             "fallback_reason": backend_fallback_reason.map(|reason| reason.as_str()),
             "backend_mismatch": backend_mismatch,
             "require_snapshot_hash_match": opt.require_snapshot_hash_match,
-            "adapter_exec_path": adapter_exec_path,
-            "manifest_entry_adapter": manifest_entry_adapter,
-            "manifest_entry_version": manifest_entry_version,
+            "artifact_id": &registry_record.artifact.id,
+            "parser_family_id": &registry_record.parser_family.id,
+            "profile_id": &registry_record.profile.id,
+            "sdk_aliases": &sdk_aliases,
             "snapshot_identity": {
                 "hash": bundle_snapshot_hash,
                 "header_derived": snapshot_identity_is_exact
@@ -1911,12 +1927,6 @@ pub fn run_decompile(
             "version": producer.version,
             "artifact_sha256": producer.artifact_sha256.to_string(),
             "trust": producer_trust_label(producer.trust)
-        },
-        "compatibility": {
-            "record_sha256": compatibility.record_sha256.to_string(),
-            "parser_family_id": compatibility.parser_family_id,
-            "profile_id": compatibility.profile_id,
-            "profile_sha256": compatibility.profile_sha256.to_string()
         },
         "model": {
             "model_version": model.model_version,
@@ -1950,6 +1960,15 @@ pub fn run_decompile(
         },
         "compatibility": {
             "status": compatibility_status,
+            "record_sha256": compatibility.record_sha256.to_string(),
+            "parser_family_id": &registry_record.parser_family.id,
+            "profile_id": &registry_record.profile.id,
+            "profile_sha256": compatibility.profile_sha256.to_string(),
+            "trust_tier": registry_record.trust_tier,
+            "protocol_major": registry_record.protocol_major,
+            "model_major": registry_record.model_major,
+            "evidence": &registry_record.evidence,
+            "artifact": &registry_record.artifact,
             "model": {
                 "version": model.model_version,
                 "supported_versions": [flutterdec_adapter::model::MODEL_VERSION],
@@ -1957,16 +1976,11 @@ pub fn run_decompile(
             },
             "snapshot_identity_is_exact": snapshot_identity_is_exact,
             "snapshot_hash_match_required": opt.require_snapshot_hash_match,
-            "manifest_entry_present": manifest_entry_present,
+            "registry_record_present": registry_record_present,
             "warnings": compatibility_warnings
         },
-        // The Dart version is a host fact resolved from the snapshot hash, not
-        // something the adapter reports: a semantic version is an alias of the
-        // hash, never a selector.
-        "dart_version": bundle
-            .dart_profile
-            .as_ref()
-            .map(|p| p.dart_version.clone()),
+        // SDK aliases are provenance only and never select a parser or profile.
+        "dart_aliases": sdk_aliases,
         "function_scope": {
             "selected": opt.function_scope.as_str(),
             "total_before_filter": function_scope_stats.total_before_filter,
@@ -2177,10 +2191,8 @@ pub fn run_decompile(
             "unique": selector_fallback.unique,
             "top": selector_fallback_top
         },
-        // Carries the keys the gate actually used, not just the outcome: a
-        // `named` status beside an unknown version would leave no way to tell
-        // which SDK the names came from, and a zero would be indistinguishable
-        // from a feature that never ran.
+        // Carries the verified profile id and provenance aliases, not a
+        // semantic SDK release selected from the snapshot hash.
         "shared_stub_naming": {
             "status": shared_stub_naming.status,
             "named": shared_stub_naming.named,
@@ -2190,7 +2202,8 @@ pub fn run_decompile(
             "noreturn_pruned_blocks": noreturn_prune.blocks_cut,
             "noreturn_pruned_instructions": noreturn_prune.instructions_cut,
             "resolved_backend": resolved_backend.as_str(),
-            "snapshot_dart_version": bundle.dart_profile.as_ref().map(|p| p.dart_version.clone()),
+            "profile_id": bundle.dart_profile.as_ref().map(|p| p.profile_version.clone()),
+            "sdk_aliases": bundle.dart_profile.as_ref().map(|p| p.aliases.clone()),
             "compressed_pointers": bundle.compressed_pointers
         },
         "call_fallback": {

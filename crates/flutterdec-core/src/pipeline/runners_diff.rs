@@ -16,16 +16,13 @@ fn function_descriptor(model: &ProgramModel, func: &flutterdec_adapter::model::F
     format!("{}::{}::{}", library_uri, owner, name)
 }
 
-/// The Dart version for the report, from the loader's profile table.
-///
-/// The adapter no longer supplies one: a semantic version is an alias of the
-/// snapshot hash, and the host is the side that holds the hash-to-version table.
-fn dart_version_label(bundle: &SnapshotBundle) -> String {
+/// SDK aliases are provenance and are not used to select a parser or profile.
+fn dart_aliases(bundle: &SnapshotBundle) -> Vec<SdkAlias> {
     bundle
         .dart_profile
         .as_ref()
-        .map(|p| p.dart_version.clone())
-        .unwrap_or_else(|| "unavailable".to_string())
+        .map(|profile| profile.aliases.clone())
+        .unwrap_or_default()
 }
 
 fn canonicalize_library_uri_for_diff(uri: &str) -> String {
@@ -96,14 +93,15 @@ pub fn run_diff(
     new_input_path: &Path,
     opt: &DiffOptions,
 ) -> Result<DiffReport> {
-    let old_bundle = load_snapshot_bundle(old_input_path)?;
-    let new_bundle = load_snapshot_bundle(new_input_path)?;
+    let mut old_bundle = load_snapshot_bundle(old_input_path)?;
+    let mut new_bundle = load_snapshot_bundle(new_input_path)?;
+    attach_registry_profile(repo_root, &mut old_bundle)?
+        .ok_or_else(|| anyhow!("no compatibility registry record for old input"))?;
+    attach_registry_profile(repo_root, &mut new_bundle)?
+        .ok_or_else(|| anyhow!("no compatibility registry record for new input"))?;
 
     let old_loaded = load_model(repo_root, &old_bundle, opt.adapter_backend)?;
     let new_loaded = load_model(repo_root, &new_bundle, opt.adapter_backend)?;
-    // The model echoes the host identity and validation already rejected any
-    // model that changed it, so a mismatch here is impossible by construction
-    // rather than something to re-check against an adapter-authored string.
     let old_snapshot_hash_match = old_bundle.identity.is_exact();
     let new_snapshot_hash_match = new_bundle.identity.is_exact();
     if opt.require_snapshot_hash_match && !(old_snapshot_hash_match && new_snapshot_hash_match) {
@@ -145,8 +143,8 @@ pub fn run_diff(
         old_snapshot_hash_match,
         new_snapshot_hash_match,
         require_snapshot_hash_match: opt.require_snapshot_hash_match,
-        old_dart_version: dart_version_label(&old_bundle),
-        new_dart_version: dart_version_label(&new_bundle),
+        old_dart_aliases: dart_aliases(&old_bundle),
+        new_dart_aliases: dart_aliases(&new_bundle),
         function_scope: opt.function_scope.as_str().to_string(),
         app_packages: opt.app_packages.clone(),
         old_function_count: old_descriptors.len(),

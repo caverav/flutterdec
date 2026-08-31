@@ -8,7 +8,7 @@ use flutterdec_adapter::model::{
 use flutterdec_adapter::primitives::Sha256Digest;
 use flutterdec_adapter::protocol::{BackendId, FallbackReason, RequestedBackend};
 use flutterdec_adapter::{
-    list_adapters, resolve_adapter_exec, run_adapter, AdapterInput, AdapterRegionInput,
+    list_adapters, run_adapter, AdapterInput, AdapterRegionInput,
 };
 use flutterdec_decompiler::{emit_program_with_runtime_stubs, PseudocodeArtifact};
 use flutterdec_disasm_arm64::{
@@ -16,8 +16,7 @@ use flutterdec_disasm_arm64::{
     FunctionPriorityBreakdown, HintKind, HintOrigin, HintProvenance, ProgramHints,
 };
 use flutterdec_ir::{build_program_ir, FunctionIr};
-use flutterdec_loader::dart_profile::ResolvedDartProfile;
-use flutterdec_loader::identity::ExactSelectionKey;
+use flutterdec_loader::dart_profile::{ResolvedDartProfile, SdkAlias};
 use flutterdec_loader::{
     load_snapshot_bundle, load_snapshot_bundle_from_apk_session, ApkSession, SnapshotBundle,
 };
@@ -218,12 +217,12 @@ pub struct InfoOutput {
     pub libapp_path: String,
     pub arch: String,
     pub snapshot_hash: String,
-    /// Dart SDK version behind `snapshot_hash`, when the hash is tabulated.
+    /// Legacy display marker (`unverified` when an alias exists); SDK aliases
+    /// are provenance only and never compatibility selectors.
     pub dart_version: Option<String>,
-    /// Object-header tag encoding for that version (`CID_INT32`, `CID_SHIFT1`,
-    /// `OBJECT_HEADER`); the layout dimension most likely to break a parser.
+    pub dart_aliases: Option<Vec<SdkAlias>>,
+    /// Object-header tag encoding for the selected profile.
     pub dart_tag_style: Option<String>,
-    /// Whether the snapshot was built with compressed pointers, read from the
     /// features string in its header rather than inferred from the code. It
     /// decides the width of a reference field and the value of `kSmiBits`, so it
     /// selects which offset tables apply. `None` means the header did not parse
@@ -241,15 +240,13 @@ pub struct InfoOutput {
     pub producer_id: Option<String>,
     pub producer_trust: Option<String>,
     pub compatibility_record_sha256: Option<String>,
-    pub manifest_entry_present: Option<bool>,
+    pub registry_record_present: Option<bool>,
     /// Whether the snapshot identity came out of a real header. Replaces the v3
     /// "does the adapter agree about the hash" check, which compared a host fact
     /// against a string the adapter chose.
-    pub snapshot_identity_is_exact: Option<bool>,
-    /// Why this snapshot may not select an adapter at all, when it may not.
-    /// `Some` means no manifest was read, no executable was resolved, and no
-    /// adapter ran; the fields below that describe a run are absent for that
-    /// reason rather than because a run failed.
+    /// `Some` means no registry record was selected, no executable was
+    /// resolved, and no adapter ran; the fields below that describe a run are
+    /// absent for that reason rather than because a run failed.
     pub identity_rejection: Option<String>,
     /// Per-domain capability levels the model reported.
     pub model_capabilities: Option<BTreeMap<String, String>>,
@@ -309,8 +306,8 @@ pub struct DiffReport {
     pub old_snapshot_hash_match: bool,
     pub new_snapshot_hash_match: bool,
     pub require_snapshot_hash_match: bool,
-    pub old_dart_version: String,
-    pub new_dart_version: String,
+    pub old_dart_aliases: Vec<SdkAlias>,
+    pub new_dart_aliases: Vec<SdkAlias>,
     pub function_scope: String,
     pub app_packages: Vec<String>,
     pub old_function_count: usize,
