@@ -499,7 +499,7 @@ fn the_blutter_bridge_reports_what_the_dump_says_and_invents_nothing() {
     let dir = TempDir::new().expect("tempdir");
     let root = dir.path().to_path_buf();
     fs::create_dir_all(root.join("adapters/python")).expect("mkdir python");
-    fs::create_dir_all(root.join("adapters/installed")).expect("mkdir installed");
+    fs::create_dir_all(root.join("artifacts")).expect("mkdir artifacts");
     fs::copy(
         repo_root().join("adapters/python/adapter_template.py"),
         root.join("adapters/python/adapter_template.py"),
@@ -542,7 +542,7 @@ asm.mkdir(parents=True, exist_ok=True)
 
     // The runner is pointed at through the adapter's own environment rather than
     // this process's, so concurrent tests cannot see it.
-    let exec = root.join("adapters/installed/blutter_adapter");
+    let exec = root.join("artifacts/blutter_adapter");
     fs::write(
         &exec,
         format!(

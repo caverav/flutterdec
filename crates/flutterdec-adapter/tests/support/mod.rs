@@ -298,9 +298,10 @@ impl Authorized {
         fs::create_dir_all(store_root.join("artifacts")).expect("mkdir store");
         fs::create_dir_all(&data_root).expect("mkdir data");
 
-        let name = file_name
-            .map(str::to_string)
-            .unwrap_or_else(|| format!("dart_adapter_{}", key.hash));
+        // Named after the parser family, not after a snapshot hash: one
+        // producer serves every record that names it, and a hash-derived file
+        // name is the retired one-wrapper-per-snapshot layout.
+        let name = file_name.unwrap_or("flutterdec-local-python").to_string();
         let relative = format!("artifacts/{name}");
         let exec = store_root.join(&relative);
         fs::copy(source, &exec).expect("publish adapter artifact");

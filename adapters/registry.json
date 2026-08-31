@@ -57,7 +57,7 @@
           {
             "host_os": "linux",
             "host_arch": "x86_64",
-            "path": "artifacts/dart_adapter_80a49c7111088100a233b2ae788e1f48",
+            "path": "artifacts/flutterdec-local-python",
             "size": 44159,
             "sha256": "561e7b04056623dd1438fd1bcb7220bed697bf6826398a8662a0a07255310cac",
             "provenance": "checked-in reference producer, published by adapter install"
@@ -65,7 +65,7 @@
           {
             "host_os": "macos",
             "host_arch": "x86_64",
-            "path": "artifacts/dart_adapter_80a49c7111088100a233b2ae788e1f48",
+            "path": "artifacts/flutterdec-local-python",
             "size": 44159,
             "sha256": "561e7b04056623dd1438fd1bcb7220bed697bf6826398a8662a0a07255310cac",
             "provenance": "checked-in reference producer, published by adapter install"
@@ -73,7 +73,7 @@
           {
             "host_os": "macos",
             "host_arch": "aarch64",
-            "path": "artifacts/dart_adapter_80a49c7111088100a233b2ae788e1f48",
+            "path": "artifacts/flutterdec-local-python",
             "size": 44159,
             "sha256": "561e7b04056623dd1438fd1bcb7220bed697bf6826398a8662a0a07255310cac",
             "provenance": "checked-in reference producer, published by adapter install"
@@ -143,7 +143,7 @@
           {
             "host_os": "linux",
             "host_arch": "x86_64",
-            "path": "artifacts/dart_adapter_ace654289f5abc240509fc941453ebc5",
+            "path": "artifacts/flutterdec-local-python",
             "size": 44159,
             "sha256": "561e7b04056623dd1438fd1bcb7220bed697bf6826398a8662a0a07255310cac",
             "provenance": "checked-in reference producer, published by adapter install"
@@ -151,7 +151,7 @@
           {
             "host_os": "macos",
             "host_arch": "x86_64",
-            "path": "artifacts/dart_adapter_ace654289f5abc240509fc941453ebc5",
+            "path": "artifacts/flutterdec-local-python",
             "size": 44159,
             "sha256": "561e7b04056623dd1438fd1bcb7220bed697bf6826398a8662a0a07255310cac",
             "provenance": "checked-in reference producer, published by adapter install"
@@ -159,7 +159,7 @@
           {
             "host_os": "macos",
             "host_arch": "aarch64",
-            "path": "artifacts/dart_adapter_ace654289f5abc240509fc941453ebc5",
+            "path": "artifacts/flutterdec-local-python",
             "size": 44159,
             "sha256": "561e7b04056623dd1438fd1bcb7220bed697bf6826398a8662a0a07255310cac",
             "provenance": "checked-in reference producer, published by adapter install"
