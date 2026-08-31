@@ -1,11 +1,12 @@
     use super::*;
     use flutterdec_adapter::model::{
         Capabilities, CapabilityLevel, Class, ClassId, CodeRange, CompatibilityBinding, Function,
-        FunctionId, InputRegion, InputRegionName, Library, LibraryId, Name, ObjectPool,
-        ObservedInput, PoolEntry, PoolEntryKind, PoolGeometry, PoolIndexSpace, Producer,
-        ProducerTrust, Provenance, MODEL_VERSION,
+        Diagnostic, Domain, FunctionId, InputRegion, InputRegionName, Library, LibraryId, Name,
+        ObjectPool, ObservedInput, PoolEntry, PoolEntryKind, PoolGeometry, PoolIndexSpace,
+        Producer, ProducerTrust, Provenance, MODEL_VERSION,
     };
     use flutterdec_adapter::primitives::Sha256Digest;
+    use flutterdec_adapter::validate::{validate, HostSelectedContext};
     use flutterdec_disasm_arm64::{
         AsmInstruction, FunctionDisassembly, FunctionPriorityComponent, Hint, HintKind, HintOrigin,
         HintProvenance, ProgramHints,
@@ -1481,6 +1482,276 @@
             .iter()
             .any(|entry| entry.source == "android_manifest"));
         assert!(summary.main.iter().any(|entry| entry.source == "apk_startup"));
+    }
+
+    /// A model that both parses and passes semantic validation, so enrichment
+    /// can be checked against the real invariant rather than against a fixture
+    /// that was never valid to begin with.
+    fn validatable_model(
+        libraries: Vec<Library>,
+        classes: Vec<Class>,
+        functions: Vec<Function>,
+        object_pool: ObjectPool,
+        capabilities: Capabilities,
+        diagnostics: Vec<Diagnostic>,
+    ) -> (ProgramModel, HostSelectedContext) {
+        let digest = Sha256Digest::of(b"enrichment fixture");
+        let identity = SnapshotIdentity::from_header(
+            TargetArch::Arm64,
+            "80a49c7111088100a233b2ae788e1f48",
+            SnapshotKind::FullAot,
+            "product arm64 compressed-pointers",
+        );
+        let producer = Producer {
+            id: "enrichment-fixture".to_string(),
+            version: "0".to_string(),
+            artifact_sha256: digest.clone(),
+            trust: ProducerTrust::Untrusted,
+        };
+        let compatibility = CompatibilityBinding {
+            record_sha256: digest.clone(),
+            parser_family_id: "fixture".to_string(),
+            profile_id: "fixture".to_string(),
+            profile_sha256: digest.clone(),
+        };
+        // Region order is the enum's declaration order, which is the canonical
+        // order validation requires.
+        let regions = vec![
+            InputRegion {
+                region: InputRegionName::VmData,
+                size: 64,
+                sha256: digest.clone(),
+                virtual_address: None,
+                executable: false,
+            },
+            InputRegion {
+                region: InputRegionName::IsolateData,
+                size: 64,
+                sha256: digest.clone(),
+                virtual_address: None,
+                executable: false,
+            },
+            InputRegion {
+                region: InputRegionName::VmInstructions,
+                size: 0x100,
+                sha256: digest.clone(),
+                virtual_address: Some(0x1000),
+                executable: true,
+            },
+            InputRegion {
+                region: InputRegionName::IsolateInstructions,
+                size: 0x100,
+                sha256: digest,
+                virtual_address: Some(0x2000),
+                executable: true,
+            },
+        ];
+        let model = ProgramModel {
+            model_version: MODEL_VERSION,
+            producer: producer.clone(),
+            input: ObservedInput {
+                identity: identity.clone(),
+                regions: regions.clone(),
+            },
+            compatibility: compatibility.clone(),
+            capabilities,
+            libraries,
+            classes,
+            functions,
+            object_pool,
+            diagnostics,
+            extensions: Default::default(),
+        };
+        let host = HostSelectedContext {
+            identity,
+            producer,
+            compatibility,
+            regions,
+        };
+        (model, host)
+    }
+
+    fn manifest_signals() -> AndroidManifestSignals {
+        AndroidManifestSignals {
+            package_name: Some("com.example.app".to_string()),
+            application_name: Some("com.example.app.App".to_string()),
+            has_main_launcher: true,
+            has_view_browsable: true,
+            activities: vec!["com.example.app.MainActivity".to_string()],
+            launcher_activities: vec!["com.example.app.MainActivity".to_string()],
+            deeplink_activities: vec!["com.example.app.MainActivity".to_string()],
+            deeplink_entries: vec!["myapp://open".to_string()],
+        }
+    }
+
+    fn startup_evidence() -> AndroidStartupEvidence {
+        AndroidStartupEvidence {
+            present: true,
+            confidence: "high".to_string(),
+            dex_files: vec!["classes.dex".to_string()],
+            dart_entrypoints: vec![DartEntrypointEvidence {
+                source_dex: "classes.dex".to_string(),
+                class_descriptor: "Lcom/example/MainActivity;".to_string(),
+                class_name: "com.example.MainActivity".to_string(),
+                method_name: "configureFlutterEngine".to_string(),
+                target_method: "executeDartEntrypoint".to_string(),
+                function_name: Some("main".to_string()),
+                library_uri: Some("package:app/main.dart".to_string()),
+                initial_route: None,
+                app_bundle_path: Some("flutter_assets".to_string()),
+                confidence: "high".to_string(),
+            }],
+            ..AndroidStartupEvidence::default()
+        }
+    }
+
+    /// Run every enrichment pass and prove the model came out the other side
+    /// byte-identical and still valid.
+    ///
+    /// This is the invariant that matters: no synthetic pool entry, no invented
+    /// class or function, no index collision, no capability contradiction, and
+    /// no authority upgrade. Checking it by re-validating rather than by
+    /// eyeballing fields means a future pass that writes into the model fails
+    /// here even if nobody thought to assert on the field it touched.
+    fn assert_enrichment_preserves(model: &ProgramModel, host: &HostSelectedContext) {
+        validate(model, host).expect("fixture must be valid before enrichment");
+        let before = model.to_canonical_json();
+
+        let mut hints = ProgramHints::new();
+        collect_model_name_hints(model, &mut hints);
+        collect_manifest_bootflow_hints(model, &manifest_signals(), &mut hints);
+        collect_apk_startup_bootflow_hints(model, &startup_evidence(), &mut hints);
+
+        assert_eq!(
+            before,
+            model.to_canonical_json(),
+            "enrichment mutated the model"
+        );
+        validate(model, host).expect("model must still be valid after enrichment");
+
+        // Whatever the passes produced, none of it can claim to be exact.
+        assert!(hints
+            .iter()
+            .all(|h| h.provenance != HintProvenance::Derived
+                || h.origin != HintOrigin::ModelNamePattern));
+        for hint in hints.iter() {
+            if let Some(va) = hint.target_va {
+                assert!(
+                    model.functions.iter().any(|f| f.code.start_va == va),
+                    "a hint points at {va:#x}, which is not a recovered code range"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn enrichment_preserves_an_authoritative_model() {
+        let (model, host) = validatable_model(
+            vec![lib(0, "package:app/main.dart")],
+            vec![cls(0, "MainActivity", Some(0))],
+            vec![
+                fun(0, named("main"), Some(0), 0x2000, 0x10),
+                Function {
+                    id: FunctionId(1),
+                    name: named("onNewIntent"),
+                    owner: Some(ClassId(0)),
+                    code: CodeRange {
+                        start_va: 0x2010,
+                        size: 0x10,
+                    },
+                    // The section base is the region's, not the function's.
+                    code_section_va: 0x2000,
+                    provenance: Provenance::Exact,
+                },
+            ],
+            ObjectPool {
+                index_space: PoolIndexSpace::Hardware,
+                geometry: Some(ARM64_POOL_GEOMETRY),
+                entries: vec![pool_selector(3, "build", 0x2000)],
+            },
+            Capabilities {
+                libraries: CapabilityLevel::Complete,
+                classes: CapabilityLevel::Complete,
+                class_relationships: CapabilityLevel::Unavailable,
+                functions: CapabilityLevel::Complete,
+                function_names: CapabilityLevel::Complete,
+                object_pool: CapabilityLevel::Complete,
+                pool_index_space: CapabilityLevel::Complete,
+            },
+            vec![Diagnostic::unavailable(
+                Domain::ClassRelationships,
+                "no superclass edges in this snapshot",
+            )],
+        );
+        assert_enrichment_preserves(&model, &host);
+    }
+
+    #[test]
+    fn enrichment_preserves_a_model_that_recovered_nothing() {
+        let (model, host) = validatable_model(
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            ObjectPool::unavailable(),
+            Capabilities::all_unavailable(),
+            Domain::ALL
+                .iter()
+                .map(|domain| Diagnostic::unavailable(*domain, "no parser for this identity"))
+                .collect(),
+        );
+        assert_enrichment_preserves(&model, &host);
+    }
+
+    #[test]
+    fn enrichment_preserves_a_heuristic_only_model() {
+        let (model, host) = validatable_model(
+            vec![Library {
+                id: LibraryId(0),
+                uri: "package:app/main.dart".to_string(),
+                display_name: None,
+                provenance: Provenance::Heuristic,
+            }],
+            Vec::new(),
+            vec![Function {
+                id: FunctionId(0),
+                name: None,
+                owner: None,
+                code: CodeRange {
+                    start_va: 0x2000,
+                    size: 0x10,
+                },
+                code_section_va: 0x2000,
+                provenance: Provenance::Heuristic,
+            }],
+            ObjectPool {
+                index_space: PoolIndexSpace::Ordinal,
+                geometry: None,
+                entries: vec![PoolEntry {
+                    index: 0,
+                    kind: PoolEntryKind::String,
+                    value: Some("a carved string".to_string()),
+                    target_va: None,
+                    provenance: Provenance::Heuristic,
+                    confidence: None,
+                }],
+            },
+            Capabilities {
+                libraries: CapabilityLevel::Partial,
+                classes: CapabilityLevel::Unavailable,
+                class_relationships: CapabilityLevel::Unavailable,
+                functions: CapabilityLevel::Partial,
+                function_names: CapabilityLevel::Unavailable,
+                object_pool: CapabilityLevel::Partial,
+                pool_index_space: CapabilityLevel::Unavailable,
+            },
+            vec![
+                Diagnostic::unavailable(Domain::Classes, "no class table"),
+                Diagnostic::unavailable(Domain::ClassRelationships, "no class table"),
+                Diagnostic::unavailable(Domain::FunctionNames, "no names in instruction bytes"),
+                Diagnostic::unavailable(Domain::PoolIndexSpace, "carve order is not an index space"),
+            ],
+        );
+        assert_enrichment_preserves(&model, &host);
     }
 
     /// Manifest enrichment produces hints and leaves the model alone. In v3 this
