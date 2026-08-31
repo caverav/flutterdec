@@ -158,6 +158,7 @@ If adapter metadata is available, `info` also reports package and compatibility 
 - `requested_backend`, `resolved_backend`, `backend_fallback_reason`
 - `producer_id`, `producer_trust`, `compatibility_record_sha256`
 - `snapshot_identity_is_exact`
+- `identity_rejection` (why no adapter could be selected, when none could)
 - `model_capabilities`
 - `compatibility_warnings`
 

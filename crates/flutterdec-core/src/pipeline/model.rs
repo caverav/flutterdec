@@ -60,20 +60,17 @@ fn profile_binding(profile: Option<&ResolvedDartProfile>) -> (String, Sha256Dige
 ///
 /// PR1 has no registry, so there is no record to look up; what there is, is a
 /// decision the host made, and this digests it so the model can be tied back to
-/// it. The digest covers the exact selection key when the identity cleared the
-/// FullAOT gate, and the rejection reason when it did not, so a model produced
-/// under a different decision has a different binding.
-fn compatibility_binding(bundle: &SnapshotBundle) -> CompatibilityBinding {
+/// it. The digest covers the exact selection key, which only exists because the
+/// identity already cleared the gate, so a model produced under a different
+/// decision has a different binding and a rejected identity has none at all.
+fn compatibility_binding(bundle: &SnapshotBundle, key: &ExactSelectionKey) -> CompatibilityBinding {
     let (profile_id, profile_sha256) = profile_binding(bundle.dart_profile.as_ref());
-    let decision = match bundle.identity.exact_selection_key() {
-        Ok(key) => format!(
-            "exact;hash={};arch={};features={}",
-            key.hash,
-            key.target_arch.as_str(),
-            key.features.join(",")
-        ),
-        Err(rejection) => format!("inexact;{}", rejection),
-    };
+    let decision = format!(
+        "exact;hash={};arch={};features={}",
+        key.hash,
+        key.target_arch.as_str(),
+        key.features.join(",")
+    );
     let record = format!(
         "family={};profile={};decision={}",
         PARSER_FAMILY_ID, profile_id, decision
@@ -91,14 +88,19 @@ fn compatibility_binding(bundle: &SnapshotBundle) -> CompatibilityBinding {
 /// The digest is of the artifact on disk, taken immediately before the spawn, so
 /// the model's producer record names the bytes that actually executed rather
 /// than whatever the manifest says is installed.
-fn producer_for(exec_path: &Path, version: Option<&str>, bundle: &SnapshotBundle) -> Result<Producer> {
+fn producer_for(exec_path: &Path, version: Option<&str>) -> Result<Producer> {
     let bytes = fs::read(exec_path)
         .with_context(|| format!("read adapter artifact: {}", exec_path.display()))?;
     Ok(Producer {
         id: PARSER_FAMILY_ID.to_string(),
         version: version.unwrap_or("unknown").to_string(),
         artifact_sha256: Sha256Digest::of(&bytes),
-        trust: flutterdec_adapter::local_producer_trust(&bundle.identity),
+        // `Local`, unconditionally, because `load_model` refuses any identity
+        // that cannot authorize an exact parser before it gets here. PR1 has no
+        // registry, so `Registered` is not yet reachable, and `Untrusted` is not
+        // a state a run can be in: a rejected identity stops, it is not
+        // relabeled and executed anyway.
+        trust: ProducerTrust::Local,
     })
 }
 
@@ -120,11 +122,28 @@ fn backend_from_id(id: BackendId) -> AdapterBackend {
     }
 }
 
+/// The pre-lookup identity gate, in the one place every adapter path goes
+/// through.
+///
+/// This is deliberately not a warning or a trust label. A snapshot whose header
+/// did not parse, or that is not FullAOT, or whose target this build cannot
+/// handle, has no exact parser to select, so there is nothing for a manifest
+/// lookup, a path resolution, or a process spawn to be right about.
+fn require_exact_selection(bundle: &SnapshotBundle) -> Result<ExactSelectionKey> {
+    bundle
+        .identity
+        .exact_selection_key()
+        .map_err(flutterdec_adapter::identity_rejected)
+}
+
 fn load_model(
     repo_root: &Path,
     bundle: &SnapshotBundle,
     backend: AdapterBackend,
 ) -> Result<LoadedModel> {
+    // Before the manifest is read, before a path is resolved, before anything is
+    // spawned.
+    let selection = require_exact_selection(bundle)?;
     let manifest = flutterdec_adapter::load_manifest(repo_root)?;
     let manifest_entry = manifest
         .entries
@@ -134,9 +153,8 @@ fn load_model(
     let producer = producer_for(
         &adapter_exec,
         manifest_entry.map(|entry| entry.version.as_str()),
-        bundle,
     )?;
-    let compatibility = compatibility_binding(bundle);
+    let compatibility = compatibility_binding(bundle, &selection);
 
     let run = run_adapter(
         &adapter_exec,
@@ -183,3 +201,7 @@ fn load_model(
         manifest_entry_adapter: manifest_entry.map(|entry| entry.adapter.clone()),
     })
 }
+
+#[cfg(test)]
+#[path = "model_tests.rs"]
+mod model_gate_tests;
