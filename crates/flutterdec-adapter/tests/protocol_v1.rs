@@ -109,6 +109,48 @@ fn a_result_round_trips_in_both_its_shapes() {
     assert_eq!(parsed.status, AdapterStatus::Unsupported);
 }
 
+/// One backend has one name on the wire.
+///
+/// The request's `requested_backend` and the result's `resolved_backend` are
+/// different Rust types over the same vocabulary, so a producer answers with the
+/// token it was handed. When they disagreed, `requested_backend: "r2flutter"`
+/// went out and every `resolved_backend: "r2flutter"` came back rejected, which
+/// broke the r2flutter backend for real runs while every Rust-to-Rust round trip
+/// still passed. Asserting on the JSON token is what catches that.
+#[test]
+fn a_backend_has_the_same_wire_token_on_both_documents() {
+    for (backend, token) in [
+        (BackendId::Internal, "internal"),
+        (BackendId::Blutter, "blutter"),
+        (BackendId::R2Flutter, "r2flutter"),
+    ] {
+        assert_eq!(
+            serde_json::to_value(backend).expect("backend serializes"),
+            json!(token),
+            "{backend} does not serialize as its own name"
+        );
+        assert_eq!(backend.as_str(), token);
+
+        // The request writes the token, the result has to accept it back.
+        let bytes = mutated(request_json(), |v| v["requested_backend"] = json!(token));
+        let parsed = AdapterRequest::from_json(&bytes).expect("request accepts the token");
+        assert_eq!(parsed.requested_backend, RequestedBackend::Fixed(backend));
+
+        let result: Value = serde_json::from_slice(
+            &AdapterResult::ok(path("out/model.json"), backend, None, Vec::new()).to_json(),
+        )
+        .expect("result parses as json");
+        assert_eq!(result["resolved_backend"], json!(token));
+        let bytes = mutated(result, |v| v["resolved_backend"] = json!(token));
+        assert_eq!(
+            AdapterResult::from_json(&bytes)
+                .expect("result accepts the token")
+                .resolved_backend,
+            Some(backend)
+        );
+    }
+}
+
 /// Version negotiation is a rejection, not a translation. A document written for
 /// another protocol or model major has to stop here rather than be interpreted
 /// under this build's field meanings.
