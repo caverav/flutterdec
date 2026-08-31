@@ -169,6 +169,23 @@ EOF
             doCheck = false;
             nativeBuildInputs = with pkgs; [ pkg-config ];
             buildInputs = with pkgs; [ capstone ];
+            # The CLI resolves its read-only data as <exe>/../share/flutterdec,
+            # so the compatibility registry, the runtime profiles and the
+            # checked-in producer have to be part of the package. Without them a
+            # release binary has no registry to select from and nothing to
+            # install. Adapters themselves are never installed here: they go into
+            # the user's writable store at runtime.
+            postInstall = ''
+              share="$out/share/flutterdec"
+              install -Dm444 adapters/registry.json "$share/adapters/registry.json"
+              install -Dm444 adapters/python/adapter_template.py \
+                "$share/adapters/python/adapter_template.py"
+              for profile in data/*.json; do
+                install -Dm444 "$profile" "$share/data/$(basename "$profile")"
+              done
+              test -f "$share/adapters/registry.json"
+              test -f "$share/data/dart-profiles.json"
+            '';
           };
         in {
           flutterdec = flutterdecCli;
