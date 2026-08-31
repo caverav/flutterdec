@@ -92,25 +92,39 @@ Current module layout:
 
 ## Data contracts
 
-The decompiler expects a normalized model from the adapter layer. That model includes:
+The decompiler expects a normalized model from the adapter layer: ProgramModel v4, the
+only accepted contract. That model includes:
 
-- functions and entry addresses
-- classes and library metadata when available
-- object pool entries
-- `pool_geometry`, when the adapter recovered the real `ObjectPool` layout
-- architecture and snapshot metadata
+- `model_version`, always 4; a document carrying `schema_version` is a legacy v2/v3
+  model and is rejected rather than migrated
+- `functions[]` with entry addresses, sizes, and optional names
+- `libraries[]` and `classes[]`, addressed by typed `LibraryId`/`ClassId` rather than by
+  name strings, with a class's library optional
+- `object_pool` with its declared `index_space`, optional `geometry`, and entries
+- `producer`, `input` (the host's snapshot identity plus the region table with digests),
+  and `compatibility` (the record and profile digests that authorized the run)
+- `capabilities`, saying per domain whether recovery was `complete`, `partial`, or
+  `unavailable`
+- `diagnostics[]`, and `extensions`, the one object allowed undeclared keys
+
+Every recovered fact carries `provenance` (`exact`, `derived`, or `heuristic`), and
+anything the producer did not recover is absent rather than filled with a stand-in. The
+host does not re-derive identity, producer, or compatibility from the model: those are
+host facts the model is checked against.
 
 This keeps the rest of the system independent from any single parser implementation.
 
 ### The pool index space is part of the contract
 
-`object_pool[].index` means one thing: the entry index a `ldr xN, [x27, #disp]`
-resolves to. An adapter claims that meaning by emitting `pool_geometry`
-(`entries_offset`, `word_size`), and core converts displacements with
-`index = (disp - entries_offset) / word_size`.
+`object_pool.entries[].index` means one thing when the adapter says so: the entry index a
+`ldr xN, [x27, #disp]` resolves to. An adapter claims that meaning by declaring
+`index_space: hardware` and emitting `geometry` (`entries_offset`, `word_size`), and core
+converts displacements with `index = (disp - entries_offset) / word_size`.
 
-An adapter that cannot recover the real pool must omit `pool_geometry`, and core then
-refuses to resolve pool references at all. This is deliberate: the failure mode of
+An adapter that cannot recover the real pool declares `index_space: ordinal` and omits
+`geometry`; core then refuses to resolve pool references at all and says so in
+`report.json` under `pool_metadata.hints_suppressed_reason`. This is deliberate: the
+failure mode of
 joining two unrelated index spaces is not a missing value, it is a *plausible wrong*
 value: a real string from the binary, attached to a slot that never referenced it,
 rendered in pseudocode with no marker distinguishing it from a correct one. For a
@@ -188,7 +202,7 @@ Current scope:
   example: `ldr x1, [x27, #0xef8]` was rendered as `"_workoutWorkoutDeserialize"` when slot
   477 actually holds a `type_arguments` object, and `pp+0x23a90` resolved two slots late to
   `...WebChromeClient.onShowFileChooser` instead of `...onProgressChanged`
-- pool value/semantic hints are now gated on `pool_geometry`, so an adapter without a real
+- pool value/semantic hints are now gated on `object_pool.index_space` being `hardware`, so an adapter without a real
   pool (the internal one) produces no pool literals instead of plausible wrong ones;
   `report.json.pool_metadata` reports `index_space_authoritative`, the geometry, and
   `hints_suppressed_reason`
@@ -222,23 +236,23 @@ Current scope:
 - declaration typing now also treats pool-mapped literal assignments (`"value" /* pool[...] */`) as concrete `String` locals instead of leaving them as `dynamic`
 - declaration typing now also infers `bool` from condition context (`if (x)`, `x && y`, `x == true`) so argument/local declarations keep less `dynamic` noise in control-flow-heavy functions
 - repeated pool-mapped selector literals now hoist into local `String` aliases (for example `poolStr42`) so repeated callsites stay compact and readable
-- adapter object-pool metadata fields (`decoded_kind`, `selector`, `target_va`, `owner_class`, `library_uri`) are now consumed by decompile for deterministic owner-qualified selector rewrites
-- adapter model contract now accepts schema versions `2` and `3`; v3 adds optional per-function `name_kind` and optional object-pool provenance fields (`confidence`, `source`) while preserving v2 compatibility defaults
+- adapter object-pool entry fields (`kind`, `value`, `target_va`, `provenance`) are consumed by decompile for deterministic owner-qualified selector rewrites; owner and library are not pool fields, they are resolved through the function `target_va` points at
+- adapter model contract accepts ProgramModel v4 and nothing else: `model_version` must be 4, a document carrying `schema_version` is rejected as a legacy v2/v3 model, and there is no migration shim. Every recovered fact carries `provenance` (`exact`/`derived`/`heuristic`), unrecovered names/owners/libraries are absent rather than fabricated, and per-domain `capabilities` say what the producer could and could not do
 - adapter execution now supports backend selection (`auto`, `internal`, `blutter`, `r2flutter`) so deterministic parser backends can be introduced without changing decompiler core contracts
 - default adapter backend mode is `auto`: it tries r2flutter, then the Blutter bridge when configured (`FLUTTERDEC_BLUTTER_CMD` or `FLUTTERDEC_BLUTTER_PY`), and falls back to internal parsing for resilience
 - r2flutter backend (`--adapter-backend r2-flutter`, `FLUTTERDEC_R2FLUTTER_BIN`/`FLUTTERDEC_R2FLUTTER_CMD`) shells out to the MIT tool [radareorg/r2flutter](https://github.com/radareorg/r2flutter) and maps `-ji` (AOT instruction table), `-jc` (classes), `-jxz` (pool-referenced strings with their slot indices), `-jzz` (library URIs), and `-jp` (pool geometry) onto `ProgramModel`; on a Dart 3.9.2 sample it returns 37258 exactly-named functions and 8986 classes where the internal adapter returns 7458 `sub_*` placeholders and 1 synthetic class
 - Blutter bridge parsing currently normalizes `asm/*.dart` and `pp.txt` output into `ProgramModel` (`libraries`, `classes`, `functions`, and best-effort `object_pool` target metadata), synthesizes deterministic `EntryPointCandidate` pool entries for `main`/`runApp`-like functions when present, and serializes blutter invocations with a cache lock to avoid concurrent runner races
-- owner-only metadata (selector + owner_class without library URI) can still rewrite indirect selector calls to deterministic owner-qualified call paths
-- if pool entries miss selector/owner/library metadata, core now backfills semantic hints from function ownership metadata keyed by `target_va`
+- owner-only metadata (a selector plus a resolved owning class whose library is unknown) can still rewrite indirect selector calls to deterministic owner-qualified call paths
+- pool semantic hints are built from the function a pool entry's `target_va` points at, joined through typed `ClassId`/`LibraryId` edges; host-side `ProgramHints` fill gaps the model left and never override a model fact
 - when metadata includes `target_va` and that address resolves to a non-generic symbol, indirect calls can be rewritten to the resolved symbol path (with `target_va` traceability in comments)
 - model-backed canonical naming now deterministically tags Dart stdlib (`dart:*`), Flutter framework (`package:flutter/*`), and package-owned calls (`package:*`) when adapter metadata includes class/library ownership
 - pool target symbol synthesis now also emits deterministic `package_<pkg>_<Owner>_<method>` names for `package:*` library targets, improving generic direct-call replacement in app/dependency code paths
 - symbol merge precedence now upgrades heuristic canonical names (`dart_*`, `flutter_*`, `package_*`) to stronger external symbols when both map to the same VA, reducing synthetic call names when symbol maps/ELFs are provided
 - symbol merge now uses an explicit quality lattice (`placeholder` < `heuristic` < `external` < `exact`) and reports final name-quality mix plus merge replacement diagnostics under `name_resolution` in `report.json`
-- adapter schema reporting now includes `function_name_kind_breakdown` (`exact`, `external`, `heuristic`, `placeholder`, `unknown`, `unspecified`) so model naming confidence can be tracked across versions/backends
+- `report.json` `model.function_name_provenance` counts recovered function names by provenance (`exact`, `derived`, `heuristic`) plus `unnamed`, so model naming confidence is trackable across versions/backends without a producer-supplied quality string
 - decompile reports now also include `adapter_selection` tracing (requested backend, resolved backend, adapter executable and manifest mapping, snapshot hash agreement) plus best-effort `engine_fingerprint_context` from nearby or APK-bundled `libflutter.so`
 - decompile `report.json` now includes a dedicated `compatibility` section with schema support status, manifest-entry presence, snapshot hash alignment, and warning diagnostics
-- `flutterdec info` now surfaces lightweight compatibility signals too (`adapter_kind`, manifest-entry presence, snapshot-hash match, warnings) so researchers can triage adapter health without full decompile
+- `flutterdec info` now surfaces lightweight compatibility signals too (`requested_backend`/`resolved_backend`/`backend_fallback_reason`, `producer_id`, `producer_trust`, `compatibility_record_sha256`, `snapshot_identity_is_exact`, `model_capabilities`, warnings) so researchers can triage adapter health without full decompile
 - decompile/diff now support `--require-snapshot-hash-match` for strict adapter-vs-loader hash enforcement; `diff_report.json` now also reports per-side snapshot hash match booleans
 - CLI now includes `flutterdec diff --old ... --new ...` to compare two builds at the recovered-function descriptor level (added/removed/common counts plus top changed signatures), with the same scope/package filters used by decompile; diff output now also normalizes unstable `file://.../.dart_tool/flutter_build/...` URIs and reports package-level churn summaries (`added_packages_top`, `removed_packages_top`)
 - generic symbol detection now also covers common tool-generated placeholders (`FUN_<hex>`, `nullsub_*`, `loc_*`, `off_*`) so deterministic semantic/external names can replace them
@@ -282,7 +296,7 @@ Current scope:
 - capped selection now deterministically seeds one function per discovered bootflow category (`main`, `runapp`, `deeplink`, `activity`, `bootstrap`) before normal diversity fill, so low `--max-functions` runs preserve key entry/deeplink coverage
 - blutter adapter ingestion now synthesizes deterministic bootflow pool metadata from recovered function names (`BootMainCandidate`, `BootRunAppCandidate`, `DeepLinkHandlerCandidate`, `ActivityHandlerCandidate`, `BootstrapInitCandidate`) so main/runApp/deeplink/activity/init targets carry explicit `target_va` hints even when broader symbol data is sparse; activity and bootstrap candidates are now gated by owner/library context to reduce false positives from generic app methods
 - disassembly prioritization now dampens framework/stdlib bootflow boosts for deeplink/activity/bootstrap candidate kinds so app-owned handlers dominate capped reverse-engineering output
-- decompile reports include a `bootflow_discovery` section in `report.json` with categorized deterministic targets (`main`, `runapp`, `deeplink`, `activity`, `bootstrap`) and metadata (`decoded_kind`, `selector`, `target_va`, owner and library context); overlapping discoveries for the same category/target/selector are deduplicated
+- decompile reports include a `bootflow_discovery` section in `report.json` with categorized deterministic targets (`main`, `runapp`, `deeplink`, `activity`, `bootstrap`) and metadata (`kind`, `source`, `provenance`, `selector`, `target_va`, owner and library context); overlapping discoveries for the same category/target/selector are deduplicated
 - decompile now inspects `AndroidManifest.xml` directly from APK inputs and exposes `android_manifest` diagnostics in `report.json` (`parse_mode`, per-signal confidence, `main_launcher`, `view_browsable`, activity names, deeplink entries, parse errors, and synthetic manifest-hint counts); parsing is binary-AXML first with deterministic string-pool decoding and heuristic fallback, and manifest-derived candidate hints are injected into model metadata as `Manifest*Candidate` entries to reinforce deterministic entrypoint/deeplink/activity prioritization when adapter symbols are sparse
 - APK-oriented stages now share a loader-level `ApkSession` that opens the ZIP once per `info` or `decompile` run, indexes entry names, and caches entry bytes on demand; loader snapshot extraction, manifest inspection, APK startup scanning, and engine fingerprint lookup now reuse that session instead of reopening and rescanning the APK independently
 - `info` and `decompile` now also inspect APK `classes*.dex` entries for Android startup evidence and expose `android_startup` diagnostics (presence/confidence, scanned dex files, parse errors, Flutter embedding callsites, JNI/bootstrap stages, and recovered `DartEntrypoint` callsites when present); this is implemented in core as a report-focused APK bytecode pass and is controllable through the engine toggle `apk_startup_analysis`

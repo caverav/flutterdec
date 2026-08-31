@@ -2385,7 +2385,8 @@ not hardware-space.
 PR #85, "resolve object pool references in the real index space, add r2flutter backend",
 is **already in the evaluated baseline**: its commit `36b4bc5` passes
 `git merge-base --is-ancestor 36b4bc5 2619ec7`. The named branch is an 11-commit
-continuation beyond it. The implementation emits `pool_geometry` only when r2flutter
+continuation beyond it. The implementation emits pool geometry (`object_pool.geometry` in
+ProgramModel v4, `pool_geometry` at the time of this measurement) only when r2flutter
 reconstructs it and otherwise empties the semantic hints rather than guessing, which is why
 geometry is null here: **the mechanism is landed but unfed.** With radare2 and r2flutter
 absent from this host, the addressable prize is 0 of 70,635 and 0 of 84,205 `poolOff`

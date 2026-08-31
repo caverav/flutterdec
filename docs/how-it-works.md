@@ -118,9 +118,9 @@ sequenceDiagram
 - VM-internal constructor selectors such as `_Closure` and `_TypeParameter` are rewritten to runtime constructor paths (`dart_vm.*.new`)
 - if selector evidence exists but no known standard mapping applies, indirect callsites use readable selector fallback forms: `dispatch.<selector>(...)` for general selectors and `<Selector>.new(...)` for constructor-like selectors (annotated with `heuristic: constructor-like selector`)
 - selector evidence for indirect calls is inferred from both call arguments and indirect target expressions
-- selector resolution also uses adapter pool metadata (`selector`, `owner_class`, `library_uri`) to build deterministic owner-qualified semantic paths
-- owner-only metadata (`selector` + `owner_class` without `library_uri`) can still deterministically rewrite to owner-qualified call paths (`owner:Class.method`)
-- missing selector/owner/library pool metadata can be backfilled from function ownership metadata (`target_va` -> function/class/library) before semantic resolution
+- selector resolution also uses pool metadata to build deterministic owner-qualified semantic paths; in ProgramModel v4 a pool entry carries only `kind`, `value`, and `target_va`, so owner and library come from the function that `target_va` points at, resolved through typed `ClassId`/`LibraryId` edges
+- owner-only metadata (a selector plus a resolved owning class whose library is unknown) can still deterministically rewrite to owner-qualified call paths (`owner:Class.method`)
+- where the model resolves no owner at all, host-side `ProgramHints` can supply a selector or owner; a hint never overrides a model fact
 - if pool metadata carries `target_va` and symbol resolution for that VA is non-generic, indirect callsites can rewrite through that symbol path with `target_va` traceability comments
 - selector extraction ignores file/URI/path-like strings to reduce false-positive standard-call rewrites
 - unresolved `dispatchTarget` callsites prefer semantic library invoke names when URI evidence exists (for example `flutter.widgets.invoke(...)` or `spotube.models.connect.load.invoke(...)`), otherwise use callable target form `<resolvedTarget>(...)` when the target expression is known, and only then use `dispatch.invoke(...)` fallback to reduce raw `dynamicCall(...)` noise
@@ -319,11 +319,21 @@ The result carries the same two majors, a structured status (`ok` / `unsupported
 `failed`), the model path on success, a stable error code on failure, the backend that
 actually ran, an optional fallback reason, and diagnostics.
 
+Backends are a closed vocabulary of three tokens - `internal`, `blutter`, `r2flutter` -
+and the request's `requested_backend` and the result's `resolved_backend` spell them the
+same way, so a producer can answer with the token it was handed. `requested_backend` is
+additionally allowed to be `auto`, which is the only case in which a producer may pick a
+backend and the only case in which `fallback_reason` may be set: a pinned backend fails
+rather than substituting.
+
 ### FunctionDisassembly
 
 Produced by disassembler. Per function:
 
-- function metadata (`id`, `name`, `entry_va`, `size`)
+- function metadata (`id`, `entry_va`, `size`, and optional `name`/`owner_class`).
+  `name` is `None` when the model recovered none; the printed label is then derived from
+  the entry address (`fn_0x<va>`), so an address-derived string can never be read back as
+  a recovered name
 - decoded instruction list (`AsmInstruction[]`)
 - per instruction annotation (`call`, `branch`, `return`, `pool[<index>]`, `poolOff[<displacement>]`, empty)
 

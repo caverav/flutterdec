@@ -52,8 +52,22 @@ nix run .#ci-check
 - `crates/flutterdec-ir`: IR + CFG
 - `crates/flutterdec-decompiler`: pseudo-Dart emission and readability passes
 - `adapters/`: adapter metadata and Python adapter implementation
-- `schemas/`: adapter schema
+- `schemas/`: `program-model-v4.schema.json`, the JSON Schema for the adapter's ProgramModel v4 output
 - `scripts/`: regression tooling
+
+## Adapter Model Contract Work
+
+`schemas/program-model-v4.schema.json` is committed and checked against the schema the
+code generates, so an intentional change to `flutterdec_adapter::model` fails the test
+suite until the file is regenerated:
+
+```bash
+UPDATE_SCHEMA=1 cargo test -p flutterdec-adapter --test model_v4 the_committed_schema
+```
+
+The check is two-part: the committed file must equal `model::schema()`, and a maximal
+model must validate against the schema in both directions, so a field added to the model
+without a schema entry is caught as well as a schema entry with no field behind it.
 
 ## Readability/Decompilation Work
 
