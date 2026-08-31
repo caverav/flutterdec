@@ -34,6 +34,7 @@ If adapter metadata is available, JSON output also includes app-package hints:
 - `producer_id`, `producer_trust`, `compatibility_record_sha256`
 - `snapshot_identity_is_exact`, `identity_rejection`, `model_capabilities`
 - `compatibility_warnings`
+- `adapter_containment` (per control: `applied` with its bound, or `unavailable` with the reason)
 
 ## `flutterdec decompile`
 

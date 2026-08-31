@@ -197,6 +197,8 @@ If adapter metadata is available, `info` also reports:
 - `registry_record_present`, `snapshot_identity_is_exact`, `identity_rejection`
 - `model_capabilities` (per-domain `complete` / `partial` / `unavailable`)
 - `compatibility_warnings`
+- `adapter_containment` (which execution controls were established for the adapter
+  process, each `applied` with its bound or `unavailable` with the reason)
 
 2. Install the adapter for the detected Dart hash:
 
@@ -330,6 +332,14 @@ Requested and resolved backend are separate facts. `auto` may fall back, and the
 result says which backend answered and why it differed; a named backend either runs or
 fails, never silently substituted. Both appear in `info` output and in
 `report.json.adapter_selection`.
+
+An adapter runs as a bounded one-shot job: a private working directory with read-only
+inputs, an allowlisted environment, an overall deadline, capped output, its own process
+group, and CPU, file size, address space, process count and descriptor limits, plus
+network isolation where the host permits it. `adapter_containment` in `info --json` and
+`adapter_selection.containment` in `report.json` say which of those were actually
+established; a control the host could not establish is reported `unavailable` with a
+reason rather than claimed.
 
 Backend choice decides how much is actually recovered. The internal adapter carves
 strings and scans prologues: it recovers code ranges with no names at all, and its
