@@ -2,10 +2,10 @@ use anyhow::{anyhow, bail, Context, Result};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use flutterdec_adapter::store::{self, EntryState};
 use flutterdec_core::{
-    available_adapters, run_decompile, run_diff, run_engine_fingerprint, run_info, run_symbol_map,
-    AdapterBackend, DecompileAnalysisProfile, DecompileEngineOptionOverrides,
+    available_adapters, error_category, run_decompile, run_diff, run_engine_fingerprint, run_info,
+    run_symbol_map, AdapterBackend, DecompileAnalysisProfile, DecompileEngineOptionOverrides,
     DecompileEngineOptions, DecompileOptions, DiffOptions, EngineFingerprintOptions, FunctionScope,
-    FunctionTarget, SymbolMapOptions,
+    FunctionTarget, ProviderReport, SymbolMapOptions,
 };
 use flutterdec_loader::layout::Layout;
 use flutterdec_loader::registry::CompatibilityRegistry;
@@ -481,8 +481,13 @@ const STORE_STATE_FAILURE: u8 = 2;
 fn main() -> ExitCode {
     match run() {
         Ok(code) => code,
+        // Every failure carries a stable category alongside the message. The
+        // message is for a human and may be reworded; the category is what a
+        // script matches on to tell a timeout from a corrupt store.
+        Err(err) if err.downcast_ref::<AlreadyReported>().is_some() => ExitCode::FAILURE,
         Err(err) => {
             eprintln!("error: {err:#}");
+            eprintln!("error category: {}", error_category(&err));
             ExitCode::FAILURE
         }
     }
@@ -597,9 +602,85 @@ fn handle_info(layout: &Layout, cmd: InfoCmd) -> Result<()> {
                 }
             }
         }
+        if let Some(provider) = out.provider.as_ref() {
+            print_provider(provider);
+        }
+        if let Some(error) = out.adapter_error.as_deref() {
+            eprintln!("error: {}", error);
+        }
+    }
+    // An `info` whose adapter ran and failed reports the failure and exits
+    // nonzero. Printing the surrounding facts and exiting 0 would make a broken
+    // adapter look like an empty snapshot.
+    if let Some(category) = out.adapter_error_category.as_deref() {
+        eprintln!("error category: {}", category);
+        return Err(AlreadyReported.into());
     }
     Ok(())
 }
+
+/// The provider block, in the same order every surface reports it.
+fn print_provider(provider: &ProviderReport) {
+    println!("provider:");
+    println!("  adapter executed: {}", provider.adapter_executed);
+    println!(
+        "  host: {}/{}  target: {}",
+        provider.host_os, provider.host_arch, provider.target_arch
+    );
+    if let Some(reason) = provider.core_fallback_reason.as_deref() {
+        println!("  core fallback reason: {}", reason);
+        if let Some(detail) = provider.core_fallback_detail.as_deref() {
+            println!("  core fallback detail: {}", detail);
+        }
+        if let Some(effect) = provider.core_fallback_effect.as_deref() {
+            println!("  core fallback effect: {}", effect);
+        }
+    }
+    if let Some(path) = provider.adapter_exec_path.as_deref() {
+        println!("  adapter executable: {}", path);
+    }
+    println!(
+        "  producer: {} {} ({})",
+        provider.producer_id, provider.producer_version, provider.producer_trust
+    );
+    println!("  producer artifact: {}", provider.producer_artifact_sha256);
+    if let Some(id) = provider.parser_family_id.as_deref() {
+        println!("  parser family: {}", id);
+    }
+    if let Some(id) = provider.profile_id.as_deref() {
+        println!("  profile: {}", id);
+    }
+    if let Some(digest) = provider.profile_sha256.as_deref() {
+        println!("  profile digest: {}", digest);
+    }
+    if let Some(id) = provider.artifact_id.as_deref() {
+        println!("  artifact: {}", id);
+    }
+    if let Some(digest) = provider.artifact_sha256.as_deref() {
+        println!("  artifact digest: {}", digest);
+    }
+    if let Some(containment) = provider.containment.as_ref() {
+        if let Ok(rendered) = serde_json::to_string(containment) {
+            println!("  containment: {}", rendered);
+        }
+    }
+}
+
+/// A failure whose message the caller already printed.
+///
+/// `main` prints `error: {err:#}` for anything it gets back, and `info` has to
+/// print its report before it can report the failure inside it. Without this the
+/// same sentence appears twice.
+#[derive(Debug)]
+struct AlreadyReported;
+
+impl std::fmt::Display for AlreadyReported {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("reported above")
+    }
+}
+
+impl std::error::Error for AlreadyReported {}
 
 fn handle_decompile(layout: &Layout, cmd: DecompileCmd) -> Result<()> {
     let input = cmd.input.clone();
@@ -649,6 +730,18 @@ fn handle_diff(layout: &Layout, cmd: DiffCmd) -> Result<()> {
             report.added_function_count,
             report.removed_function_count
         );
+        // Counted separately because they are not in the sets above: a
+        // heuristic candidate with no name, owner or library has no identity
+        // that survives a rebuild.
+        println!(
+            "uncomparable functions: old={} new={}",
+            report.old_uncomparable_function_count, report.new_uncomparable_function_count
+        );
+        println!("provider mismatch: {}", report.provider_mismatch);
+        println!("old side:");
+        print_provider(&report.old_provider);
+        println!("new side:");
+        print_provider(&report.new_provider);
         if !report.added_packages_top.is_empty() {
             println!("top added packages:");
             for item in report.added_packages_top.iter().take(5) {
