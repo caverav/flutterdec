@@ -103,7 +103,7 @@ impl SpyRepo {
 
         let exec_path = self
             .root
-            .join("artifacts/flutterdec-spy".to_string());
+            .join("artifacts/flutterdec-spy");
         let exec_bytes = fs::read(&exec_path).expect("read spy adapter");
         let features = vec![
             "android".to_string(),
@@ -454,7 +454,7 @@ fn run_adapter_refuses_a_rejected_identity_before_spawn() {
     let record = repo.record.clone().expect("the valid registry has a record");
     let exec = repo
         .root
-        .join("artifacts/flutterdec-spy".to_string());
+        .join("artifacts/flutterdec-spy");
     let profile_path = repo.root.join("data/test-profile.json");
 
     let err = run_adapter(

@@ -143,7 +143,7 @@ fn an_unknown_snapshot_is_recovered_by_core_with_no_adapter_execution() {
         provider["core_fallback_reason"],
         text("no_compatibility_record")
     );
-    assert_core_recovery_is_honest(&provider, &summary["model"]["capabilities"], "report.json");
+    assert_core_recovery_is_honest(provider, &summary["model"]["capabilities"], "report.json");
 
     // Useful code output: candidates recovered, disassembled, and emitted.
     assert!(
