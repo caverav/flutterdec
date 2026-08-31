@@ -208,6 +208,13 @@ pub enum HostError {
     },
     /// The result does not answer the request that was asked.
     ResultMismatch(String),
+    /// The adapter answered with a model at a path other than the one it was
+    /// given. Distinct from [`Self::OutputHandleRejected`], which is a refusal
+    /// before anything ran.
+    ModelPathMismatch {
+        wrote: String,
+        requested: String,
+    },
     /// The adapter answered, and the answer is a failure.
     AdapterFailed {
         status: AdapterStatus,
@@ -360,6 +367,10 @@ impl fmt::Display for HostError {
             Self::ResultMismatch(detail) => {
                 write!(f, "adapter result does not answer the request: {detail}")
             }
+            Self::ModelPathMismatch { wrote, requested } => write!(
+                f,
+                "adapter wrote its model to {wrote:?} instead of the requested {requested:?}"
+            ),
             Self::AdapterFailed {
                 status,
                 code,
@@ -822,6 +833,12 @@ impl Workspace {
             .tempdir()
             .map_err(|err| HostError::Workspace(format!("create scratch directory: {err}")))?;
         let workspace = Self { dir: Some(dir) };
+        // `tempfile` creates through the process umask, which on a default host
+        // leaves the directory group and world readable. The invocation
+        // directory holds the snapshot the operator handed us, so it is set
+        // explicitly rather than left to whatever the umask happened to be.
+        fs::set_permissions(workspace.path(), fs::Permissions::from_mode(0o700))
+            .map_err(|err| HostError::Workspace(format!("seal the invocation directory: {err}")))?;
         for name in [INPUT_DIR, OUTPUT_DIR, HOME_DIR, TEMP_DIR, ARTIFACT_DIR] {
             let path = workspace.path().join(name);
             std::os::unix::fs::DirBuilderExt::mode(&mut fs::DirBuilder::new(), 0o700)
@@ -1005,11 +1022,10 @@ pub fn run_adapter(exec_path: &Path, input: &AdapterInput<'_>) -> Result<Adapter
 
     let model_rel = result.model.as_ref().expect("an ok result carries a model");
     if model_rel.as_str() != request.output.as_str() {
-        return Err(HostError::OutputHandleRejected(format!(
-            "adapter wrote its model to {:?} instead of the requested {:?}",
-            model_rel.as_str(),
-            request.output.as_str()
-        )));
+        return Err(HostError::ModelPathMismatch {
+            wrote: model_rel.as_str().to_string(),
+            requested: request.output.as_str().to_string(),
+        });
     }
     let model_bytes = read_bounded(
         &work.join(model_rel.as_str()),
