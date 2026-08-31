@@ -1,7 +1,5 @@
 use flutterdec_loader::registry::{
-    canonical_feature_fingerprint, ArtifactReference, CompatibilityEvidence, CompatibilityRecord,
-    CompatibilityRegistry, HostArtifactVariant, ParserFamilyReference, ProfileReference,
-    RegistryError, RegistrySelection, ResolvedArtifact, TrustTier,
+    CompatibilityRecord, CompatibilityRegistry, RegistryError, RegistrySelection, ResolvedArtifact,
 };
 #[derive(Debug, Clone)]
 struct LoadedModel {
