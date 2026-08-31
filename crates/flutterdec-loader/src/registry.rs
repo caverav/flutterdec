@@ -5,7 +5,9 @@
 //! evidence attached to a record; they never participate in selection.
 
 use crate::dart_profile::{self, ResolvedDartProfile, SdkAlias};
-use crate::identity::{ExactSelectionKey, IdentityRejection, SnapshotIdentity, SnapshotKind, TargetArch};
+use crate::identity::{
+    ExactSelectionKey, IdentityRejection, SnapshotIdentity, SnapshotKind, TargetArch,
+};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashSet;
@@ -134,7 +136,9 @@ pub enum RegistryError {
     UnsupportedVersion(u32),
     Identity(IdentityRejection),
     NoRecord(String),
-    TargetMismatch { requested: String },
+    TargetMismatch {
+        requested: String,
+    },
     FeatureMismatch {
         missing: Vec<String>,
         forbidden: Vec<String>,
@@ -363,7 +367,8 @@ impl CompatibilityRegistry {
         if metadata.len() > MAX_REGISTRY_BYTES {
             return Err(RegistryError::Malformed(format!(
                 "{} exceeds the {} byte registry limit",
-                path.display(), MAX_REGISTRY_BYTES
+                path.display(),
+                MAX_REGISTRY_BYTES
             )));
         }
         let file = fs::File::open(path)
@@ -375,7 +380,8 @@ impl CompatibilityRegistry {
         if bytes.len() as u64 > MAX_REGISTRY_BYTES {
             return Err(RegistryError::Malformed(format!(
                 "{} exceeds the {} byte registry limit",
-                path.display(), MAX_REGISTRY_BYTES
+                path.display(),
+                MAX_REGISTRY_BYTES
             )));
         }
         Self::from_json(&bytes)
@@ -445,7 +451,10 @@ impl CompatibilityRegistry {
         if exact.len() > 1 {
             return Err(RegistryError::Ambiguous(format!(
                 "{} records match hash {}, target {}, and feature fingerprint {}",
-                exact.len(), key.hash, key.target_arch, fingerprint
+                exact.len(),
+                key.hash,
+                key.target_arch,
+                fingerprint
             )));
         }
         if let Some(record) = exact.into_iter().next() {
@@ -472,7 +481,10 @@ impl CompatibilityRegistry {
             .features
             .iter()
             .filter(|feature| {
-                expected.forbidden_features.iter().any(|item| item == *feature)
+                expected
+                    .forbidden_features
+                    .iter()
+                    .any(|item| item == *feature)
                     || (expected.known_features.iter().any(|item| item == *feature)
                         && !expected.features.contains(feature))
             })
@@ -538,7 +550,13 @@ impl RegistrySelection {
                 ))
             })?;
         let path = resolve_contained(root, &variant.path, "adapter artifact")?;
-        verify_file(&path, variant.size, &variant.sha256, MAX_ARTIFACT_BYTES, "adapter artifact")?;
+        verify_file(
+            &path,
+            variant.size,
+            &variant.sha256,
+            MAX_ARTIFACT_BYTES,
+            "adapter artifact",
+        )?;
         Ok(ResolvedArtifact { path, variant })
     }
 
@@ -630,7 +648,10 @@ mod tests {
     }
 
     fn record(features: &[&str]) -> CompatibilityRecord {
-        let features = features.iter().map(|item| (*item).to_string()).collect::<Vec<_>>();
+        let features = features
+            .iter()
+            .map(|item| (*item).to_string())
+            .collect::<Vec<_>>();
         CompatibilityRecord {
             snapshot_hash: "80a49c7111088100a233b2ae788e1f48".to_string(),
             snapshot_kind: SnapshotKind::FullAot,

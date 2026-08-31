@@ -516,7 +516,11 @@ fn handle_info(layout: &Layout, cmd: InfoCmd) -> Result<()> {
         println!("libapp: {}", out.libapp_path);
         println!("arch: {}", out.arch);
         println!("snapshot hash: {}", out.snapshot_hash);
-        if let Some(aliases) = out.dart_aliases.as_ref().filter(|aliases| !aliases.is_empty()) {
+        if let Some(aliases) = out
+            .dart_aliases
+            .as_ref()
+            .filter(|aliases| !aliases.is_empty())
+        {
             println!("dart aliases: {}", serde_json::to_string(aliases)?);
         }
         if let Some(tag_style) = out.dart_tag_style.as_deref() {
@@ -895,10 +899,7 @@ fn handle_adapter(layout: &Layout, cmd: AdapterCmd) -> Result<ExitCode> {
                 println!("snapshot hash: {}", record.snapshot_hash);
                 println!("target: {}", record.target_arch);
                 println!("host: {}/{}", record.host_os, record.host_arch);
-                println!(
-                    "artifact digest: {} ({} bytes)",
-                    record.sha256, record.size
-                );
+                println!("artifact digest: {} ({} bytes)", record.sha256, record.size);
                 println!("artifact id: {}", record.artifact_id);
                 println!("artifact source: {}", record.source);
                 println!("profile: {} {}", record.profile_id, record.profile_sha256);
