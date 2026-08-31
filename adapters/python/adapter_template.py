@@ -761,7 +761,12 @@ def _run_blutter_dump(input_path: Optional[str], libapp_path: Optional[str]) -> 
             raise BackendFailed("custom blutter backend needs --input-path")
         cmd = runner + [input_path, str(out_dir)]
 
-    lock_dir = Path.home() / ".cache" / "flutterdec"
+    # The lock has to live beside the cache it protects. The adapter host gives
+    # every invocation a private HOME, so a lock under it would be private too
+    # and would serialize nothing; XDG_CACHE_HOME is the variable the blutter
+    # wrapper itself keys its source cache on.
+    cache_root = os.getenv("XDG_CACHE_HOME", "").strip()
+    lock_dir = Path(cache_root) / "flutterdec" if cache_root else Path.home() / ".cache" / "flutterdec"
     lock_dir.mkdir(parents=True, exist_ok=True)
     lock_file = lock_dir / "blutter-run.lock"
     with lock_file.open("w") as lock_fp:
