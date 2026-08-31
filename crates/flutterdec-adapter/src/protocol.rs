@@ -38,6 +38,13 @@ pub enum BackendId {
     Blutter,
     /// `r2flutter`: deserializes the snapshot, so it is the only backend that
     /// can supply exact names and a hardware pool index space.
+    ///
+    /// Spelled out rather than left to `rename_all`, which would derive
+    /// `r2_flutter` and put a second spelling of one backend on the wire: the
+    /// request's `requested_backend` serializes through [`Self::as_str`], so a
+    /// producer echoing the token it was given back as `resolved_backend` would
+    /// be rejected by its own request's vocabulary.
+    #[serde(rename = "r2flutter")]
     R2Flutter,
 }
 
