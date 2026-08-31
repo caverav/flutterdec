@@ -144,7 +144,8 @@ fn holds_package_data(dir: &Path) -> bool {
 impl Layout {
     /// Resolve from the real process environment and executable path.
     pub fn resolve() -> Result<Self, LayoutError> {
-        let exe = std::env::current_exe().map_err(|err| LayoutError::Executable(err.to_string()))?;
+        let exe =
+            std::env::current_exe().map_err(|err| LayoutError::Executable(err.to_string()))?;
         Self::resolve_with(&exe, &|var| std::env::var_os(var))
     }
 
@@ -205,13 +206,18 @@ impl Layout {
 
         let exe_dir = exe.parent().unwrap_or(Path::new("."));
         let candidates = [
-            (exe_dir.join("../share/flutterdec"), DataSource::PackagePrefix),
+            (
+                exe_dir.join("../share/flutterdec"),
+                DataSource::PackagePrefix,
+            ),
             (exe_dir.to_path_buf(), DataSource::ExecutableDirectory),
             (exe_dir.join("../.."), DataSource::BuildTree),
         ];
         for (candidate, source) in &candidates {
             if holds_package_data(candidate) {
-                let resolved = candidate.canonicalize().unwrap_or_else(|_| candidate.clone());
+                let resolved = candidate
+                    .canonicalize()
+                    .unwrap_or_else(|_| candidate.clone());
                 return Ok((resolved, *source));
             }
         }
@@ -354,11 +360,8 @@ mod tests {
         // The data is *here*, which is exactly what discovery must ignore.
         let elsewhere = td.path().join("no/such/prefix/bin/flutterdec");
 
-        let err = Layout::resolve_with(
-            &elsewhere,
-            &env(&[("HOME", td.path().to_str().unwrap())]),
-        )
-        .expect_err("the current directory is not a discovery input");
+        let err = Layout::resolve_with(&elsewhere, &env(&[("HOME", td.path().to_str().unwrap())]))
+            .expect_err("the current directory is not a discovery input");
         let LayoutError::NoDataDirectory { candidates } = err else {
             panic!("wrong error: {err}");
         };
