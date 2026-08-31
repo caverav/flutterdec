@@ -8,7 +8,8 @@
 mod support;
 
 use flutterdec_adapter::model::{
-    schema, CapabilityLevel, Domain, ModelParseError, ProgramModel, MODEL_VERSION,
+    schema, CapabilityLevel, ClassId, Diagnostic, Domain, ModelParseError, ProgramModel,
+    MODEL_VERSION,
 };
 use flutterdec_adapter::validate::{validate, ValidationError};
 use serde_json::{json, Value};
@@ -1168,4 +1169,24 @@ fn the_schema_pins_the_model_version() {
         schema()["properties"]["model_version"]["const"],
         json!(MODEL_VERSION)
     );
+}
+
+/// A producer can recover class names without recovering which library they
+/// came from. That has to be expressible, because the alternative is what v3
+/// did: file every such class under an invented library URI.
+#[test]
+fn a_class_with_no_recovered_library_is_valid() {
+    let mut model = support::maximal_model();
+    model.libraries.clear();
+    model.capabilities.libraries = CapabilityLevel::Unavailable;
+    model.diagnostics.push(Diagnostic::unavailable(
+        Domain::Libraries,
+        "no library attribution table in this snapshot",
+    ));
+    for class in &mut model.classes {
+        class.library = None;
+    }
+    let parsed = parse_and_validate(&model.to_canonical_json()).expect("valid without libraries");
+    assert!(parsed.classes.iter().all(|c| c.library.is_none()));
+    assert_eq!(parsed.class_library_uri(ClassId(2)), None);
 }

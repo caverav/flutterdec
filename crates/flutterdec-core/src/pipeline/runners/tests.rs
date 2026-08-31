@@ -1,6 +1,187 @@
     use super::*;
-    use flutterdec_disasm_arm64::{AsmInstruction, FunctionDisassembly, FunctionPriorityComponent};
+    use flutterdec_adapter::model::{
+        Capabilities, CapabilityLevel, Class, ClassId, CodeRange, CompatibilityBinding, Function,
+        FunctionId, InputRegion, InputRegionName, Library, LibraryId, Name, ObjectPool,
+        ObservedInput, PoolEntry, PoolEntryKind, PoolGeometry, PoolIndexSpace, Producer,
+        ProducerTrust, Provenance, MODEL_VERSION,
+    };
+    use flutterdec_adapter::primitives::Sha256Digest;
+    use flutterdec_disasm_arm64::{
+        AsmInstruction, FunctionDisassembly, FunctionPriorityComponent, Hint, HintKind, HintOrigin,
+        HintProvenance, ProgramHints,
+    };
+    use flutterdec_loader::identity::{SnapshotIdentity, SnapshotKind, TargetArch};
     use tempfile::tempdir;
+
+    const ARM64_POOL_GEOMETRY: PoolGeometry = PoolGeometry {
+        entries_offset: 0x10,
+        word_size: 8,
+    };
+
+    /// Fixture builders for v4 models.
+    ///
+    /// Nothing here can produce a named function without being told the name, or
+    /// a class without a library id that resolves, which is the point: the cases
+    /// these tests cover include "the producer recovered nothing".
+    fn lib(id: u32, uri: &str) -> Library {
+        Library {
+            id: LibraryId(id),
+            uri: uri.to_string(),
+            display_name: None,
+            provenance: Provenance::Exact,
+        }
+    }
+
+    fn cls(id: u32, name: &str, library: Option<u32>) -> Class {
+        Class {
+            id: ClassId(id),
+            name: name.to_string(),
+            library: library.map(LibraryId),
+            super_class: None,
+            provenance: Provenance::Exact,
+        }
+    }
+
+    fn fun(
+        id: u32,
+        name: Option<Name>,
+        owner: Option<u32>,
+        start_va: u64,
+        size: u64,
+    ) -> Function {
+        Function {
+            id: FunctionId(id),
+            name,
+            owner: owner.map(ClassId),
+            code: CodeRange { start_va, size },
+            code_section_va: start_va,
+            provenance: Provenance::Exact,
+        }
+    }
+
+    fn named(text: &str) -> Option<Name> {
+        Some(Name::exact(text))
+    }
+
+    fn pool_string(index: u64, value: &str) -> PoolEntry {
+        PoolEntry {
+            index,
+            kind: PoolEntryKind::String,
+            value: Some(value.to_string()),
+            target_va: None,
+            provenance: Provenance::Exact,
+            confidence: None,
+        }
+    }
+
+    fn pool_selector(index: u64, selector: &str, target_va: u64) -> PoolEntry {
+        PoolEntry {
+            index,
+            kind: PoolEntryKind::Selector,
+            value: Some(selector.to_string()),
+            target_va: Some(target_va),
+            provenance: Provenance::Exact,
+            confidence: None,
+        }
+    }
+
+    fn ordinal_pool(entries: Vec<PoolEntry>) -> ObjectPool {
+        ObjectPool {
+            index_space: PoolIndexSpace::Ordinal,
+            geometry: None,
+            entries,
+        }
+    }
+
+    fn hardware_pool(entries: Vec<PoolEntry>) -> ObjectPool {
+        ObjectPool {
+            index_space: PoolIndexSpace::Hardware,
+            geometry: Some(ARM64_POOL_GEOMETRY),
+            entries,
+        }
+    }
+
+    fn hint(
+        kind: HintKind,
+        origin: HintOrigin,
+        selector: &str,
+        target_va: Option<u64>,
+        owner_class: Option<&str>,
+        library_uri: Option<&str>,
+    ) -> Hint {
+        Hint {
+            kind,
+            origin,
+            provenance: HintProvenance::Derived,
+            selector: selector.to_string(),
+            target_va,
+            owner_class: owner_class.map(str::to_string),
+            library_uri: library_uri.map(str::to_string),
+            detail: String::new(),
+        }
+    }
+
+    fn program_hints(entries: Vec<Hint>) -> ProgramHints {
+        let mut hints = ProgramHints::new();
+        for entry in entries {
+            hints.push(entry);
+        }
+        hints
+    }
+
+    fn test_model(
+        libraries: Vec<Library>,
+        classes: Vec<Class>,
+        functions: Vec<Function>,
+        object_pool: ObjectPool,
+    ) -> ProgramModel {
+        let digest = Sha256Digest::of(b"core fixture");
+        ProgramModel {
+            model_version: MODEL_VERSION,
+            producer: Producer {
+                id: "core-fixture".to_string(),
+                version: "0".to_string(),
+                artifact_sha256: digest.clone(),
+                trust: ProducerTrust::Untrusted,
+            },
+            input: ObservedInput {
+                identity: SnapshotIdentity::from_header(
+                    TargetArch::Arm64,
+                    "80a49c7111088100a233b2ae788e1f48",
+                    SnapshotKind::FullAot,
+                    "product arm64 compressed-pointers",
+                ),
+                regions: vec![InputRegion {
+                    region: InputRegionName::IsolateInstructions,
+                    size: u64::MAX / 2,
+                    sha256: digest.clone(),
+                    virtual_address: Some(0),
+                    executable: true,
+                }],
+            },
+            compatibility: CompatibilityBinding {
+                record_sha256: digest.clone(),
+                parser_family_id: "fixture".to_string(),
+                profile_id: "fixture".to_string(),
+                profile_sha256: digest,
+            },
+            capabilities: Capabilities {
+                libraries: CapabilityLevel::Partial,
+                classes: CapabilityLevel::Partial,
+                class_relationships: CapabilityLevel::Unavailable,
+                functions: CapabilityLevel::Partial,
+                function_names: CapabilityLevel::Partial,
+                object_pool: CapabilityLevel::Partial,
+                pool_index_space: CapabilityLevel::Unavailable,
+            },
+            libraries,
+            classes,
+            functions,
+            object_pool,
+            diagnostics: Vec::new(),
+            extensions: Default::default(),
+        }
+    }
 
     #[test]
     fn formats_asm_instruction_without_opcode_word() {
@@ -70,7 +251,6 @@
             std::path::Path::new("./out/report.json"),
             std::path::Path::new("libapp.so"),
             Some(AdapterBackend::Internal),
-            "dynamic_snapshot_string_model_v1",
             &symbol_quality_counts,
         );
 
@@ -126,8 +306,8 @@
     fn collects_ghidra_pool_comments_from_disassembly() {
         let disasm = vec![FunctionDisassembly {
             function_id: 1,
-            function_name: "main".to_string(),
-            owner_class: "Global".to_string(),
+            function_name: Some("main".to_string()),
+            owner_class: None,
             entry_va: 0x1000,
             size: 8,
             instructions: vec![
@@ -292,187 +472,92 @@
     }
 
     #[test]
-    fn resolves_symbol_quality_from_name_kind_values() {
+    fn symbol_quality_follows_the_models_name_provenance() {
         assert_eq!(
-            symbol_name_quality_from_name_kind(Some("exact")),
-            Some(SymbolNameQuality::Exact)
+            symbol_name_quality_from_provenance(Provenance::Exact),
+            SymbolNameQuality::Exact
         );
         assert_eq!(
-            symbol_name_quality_from_name_kind(Some("external")),
-            Some(SymbolNameQuality::External)
+            symbol_name_quality_from_provenance(Provenance::Derived),
+            SymbolNameQuality::External
         );
         assert_eq!(
-            symbol_name_quality_from_name_kind(Some("heuristic")),
-            Some(SymbolNameQuality::Heuristic)
+            symbol_name_quality_from_provenance(Provenance::Heuristic),
+            SymbolNameQuality::Heuristic
         );
-        assert_eq!(
-            symbol_name_quality_from_name_kind(Some("placeholder")),
-            Some(SymbolNameQuality::Placeholder)
-        );
-        assert_eq!(symbol_name_quality_from_name_kind(Some("unknown")), None);
-        assert_eq!(symbol_name_quality_from_name_kind(None), None);
     }
 
+    /// A function with no name is counted as unnamed, not as a placeholder-named
+    /// one. v3 could not express the difference, because every function had to
+    /// carry a name string.
     #[test]
-    fn collects_function_name_kind_breakdown() {
+    fn counts_function_name_provenance_including_unnamed() {
         let functions = vec![
-            flutterdec_adapter::FunctionInfo {
-                id: 1,
-                name: "main".to_string(),
-                owner_class: "Global".to_string(),
-                entry_va: 0x1000,
-                size: 16,
-                code_section_va: 0x1000,
-                name_kind: Some("exact".to_string()),
-            },
-            flutterdec_adapter::FunctionInfo {
-                id: 2,
-                name: "native_libc_printf".to_string(),
-                owner_class: "Global".to_string(),
-                entry_va: 0x1010,
-                size: 16,
-                code_section_va: 0x1000,
-                name_kind: Some("external".to_string()),
-            },
-            flutterdec_adapter::FunctionInfo {
-                id: 3,
-                name: "flutter_widgets_State_build".to_string(),
-                owner_class: "State".to_string(),
-                entry_va: 0x1020,
-                size: 16,
-                code_section_va: 0x1000,
-                name_kind: Some("heuristic".to_string()),
-            },
-            flutterdec_adapter::FunctionInfo {
-                id: 4,
-                name: "sub_1030".to_string(),
-                owner_class: "Global".to_string(),
-                entry_va: 0x1030,
-                size: 16,
-                code_section_va: 0x1000,
-                name_kind: Some("placeholder".to_string()),
-            },
-            flutterdec_adapter::FunctionInfo {
-                id: 5,
-                name: "fun_custom".to_string(),
-                owner_class: "Global".to_string(),
-                entry_va: 0x1040,
-                size: 16,
-                code_section_va: 0x1000,
-                name_kind: Some("mystery".to_string()),
-            },
-            flutterdec_adapter::FunctionInfo {
-                id: 6,
-                name: "sub_1050".to_string(),
-                owner_class: "Global".to_string(),
-                entry_va: 0x1050,
-                size: 16,
-                code_section_va: 0x1000,
-                name_kind: None,
-            },
-            flutterdec_adapter::FunctionInfo {
-                id: 7,
-                name: "sub_1060".to_string(),
-                owner_class: "Global".to_string(),
-                entry_va: 0x1060,
-                size: 16,
-                code_section_va: 0x1000,
-                name_kind: Some(" ".to_string()),
-            },
+            fun(1, named("main"), None, 0x1000, 16),
+            fun(
+                2,
+                Some(Name {
+                    text: "native_libc_printf".to_string(),
+                    provenance: Provenance::Derived,
+                    confidence: None,
+                }),
+                None,
+                0x1010,
+                16,
+            ),
+            fun(
+                3,
+                Some(Name {
+                    text: "build".to_string(),
+                    provenance: Provenance::Heuristic,
+                    confidence: None,
+                }),
+                None,
+                0x1020,
+                16,
+            ),
+            fun(4, None, None, 0x1030, 16),
+            fun(5, None, None, 0x1040, 16),
         ];
-        let stats = collect_function_name_kind_stats(&functions);
+        let stats = collect_function_name_provenance_stats(&functions);
         assert_eq!(stats.exact, 1);
-        assert_eq!(stats.external, 1);
+        assert_eq!(stats.derived, 1);
         assert_eq!(stats.heuristic, 1);
-        assert_eq!(stats.placeholder, 1);
-        assert_eq!(stats.unknown, 1);
-        assert_eq!(stats.unspecified, 2);
-        assert_eq!(stats.tagged(), 5);
+        assert_eq!(stats.unnamed, 2);
+        assert_eq!(stats.named(), 3);
     }
 
     #[test]
     fn collects_function_descriptors_with_library_context() {
-        let model = ProgramModel {
-            schema_version: 3,
-            adapter_kind: "python".to_string(),
-            dart_version: "unknown".to_string(),
-            snapshot_hash: "deadbeef".to_string(),
-            arch: "arm64".to_string(),
-            libraries: vec![flutterdec_adapter::LibraryInfo {
-                id: 0,
-                uri: "package:spotube/main.dart".to_string(),
-                name_display: "package:spotube/main.dart".to_string(),
-            }],
-            classes: vec![flutterdec_adapter::ClassInfo {
-                id: 0,
-                name: "Global".to_string(),
-                super_name: "Object".to_string(),
-                library_uri: "package:spotube/main.dart".to_string(),
-            }],
-            functions: vec![
-                flutterdec_adapter::FunctionInfo {
-                    id: 0,
-                    name: "main".to_string(),
-                    owner_class: "Global".to_string(),
-                    entry_va: 0x1000,
-                    size: 16,
-                    code_section_va: 0x1000,
-                    name_kind: Some("heuristic".to_string()),
-                },
-                flutterdec_adapter::FunctionInfo {
-                    id: 1,
-                    name: "sub_2000".to_string(),
-                    owner_class: "UnknownOwner".to_string(),
-                    entry_va: 0x2000,
-                    size: 16,
-                    code_section_va: 0x1000,
-                    name_kind: Some("placeholder".to_string()),
-                },
+        let model = test_model(
+            vec![lib(0, "package:spotube/main.dart")],
+            vec![cls(0, "AppRoot", Some(0))],
+            vec![
+                fun(0, named("main"), Some(0), 0x1000, 16),
+                // No library, no owner, no name: three separate unknowns, and
+                // the descriptor says so with three empty segments rather than
+                // inventing `UnknownOwner::sub_2000`.
+                fun(1, None, None, 0x2000, 16),
             ],
-            pool_geometry: None,
-            object_pool: Vec::new(),
-        };
+            ordinal_pool(Vec::new()),
+        );
 
         let descriptors = collect_function_descriptors(&model);
-        assert!(descriptors.contains("package:spotube/main.dart::Global::main"));
-        assert!(descriptors.contains("UnknownOwner::sub_2000"));
+        assert!(descriptors.contains("package:spotube/main.dart::AppRoot::main"));
+        assert!(descriptors.contains("::"));
     }
 
     #[test]
     fn canonicalizes_flutter_build_file_uri_in_descriptors() {
-        let model = ProgramModel {
-            schema_version: 3,
-            adapter_kind: "python".to_string(),
-            dart_version: "unknown".to_string(),
-            snapshot_hash: "deadbeef".to_string(),
-            arch: "arm64".to_string(),
-            libraries: vec![flutterdec_adapter::LibraryInfo {
-                id: 0,
-                uri:
-                    "file:///tmp/build/app/.dart_tool/flutter_build/dart_plugin_registrant.dart"
-                        .to_string(),
-                name_display: "generated".to_string(),
-            }],
-            classes: vec![flutterdec_adapter::ClassInfo {
-                id: 0,
-                name: "_PluginRegistrant".to_string(),
-                super_name: "Object".to_string(),
-                library_uri:
-                    "file:///tmp/build/app/.dart_tool/flutter_build/dart_plugin_registrant.dart"
-                        .to_string(),
-            }],
-            functions: vec![flutterdec_adapter::FunctionInfo {
-                id: 0,
-                name: "register".to_string(),
-                owner_class: "_PluginRegistrant".to_string(),
-                entry_va: 0x3000,
-                size: 16,
-                code_section_va: 0x3000,
-                name_kind: Some("heuristic".to_string()),
-            }],
-            pool_geometry: None,
-            object_pool: Vec::new(),
-        };
+        let model = test_model(
+            vec![lib(
+                0,
+                "file:///tmp/build/app/.dart_tool/flutter_build/dart_plugin_registrant.dart",
+            )],
+            vec![cls(0, "_PluginRegistrant", Some(0))],
+            vec![fun(0, named("register"), Some(0), 0x3000, 16)],
+            ordinal_pool(Vec::new()),
+        );
 
         let descriptors = collect_function_descriptors(&model);
         assert!(descriptors.contains(
@@ -499,16 +584,6 @@
     }
 
     #[test]
-    fn snapshot_hash_match_enforcement_behaves_as_expected() {
-        let ok = enforce_snapshot_hash_match(false, "test", "aaa", "bbb").expect("not strict");
-        assert!(!ok);
-        let ok = enforce_snapshot_hash_match(true, "test", "aaa", "aaa").expect("strict match");
-        assert!(ok);
-        let err = enforce_snapshot_hash_match(true, "test", "aaa", "bbb").expect_err("mismatch");
-        assert!(err.to_string().contains("snapshot hash mismatch"));
-    }
-
-    #[test]
     fn collects_compatibility_warnings_from_flags() {
         let warnings = collect_compatibility_warnings(false, false, true);
         assert_eq!(warnings.len(), 3);
@@ -517,7 +592,7 @@
             .any(|w| w.contains("manifest entry missing")));
         assert!(warnings
             .iter()
-            .any(|w| w.contains("snapshot hash differs")));
+            .any(|w| w.contains("not header-derived")));
         assert!(warnings
             .iter()
             .any(|w| w.contains("backend differs")));
@@ -526,20 +601,48 @@
         assert!(warnings.is_empty());
     }
 
+    /// The resolved backend is whatever the protocol result named, mapped
+    /// through a closed enum. No string is consulted, which is what makes a
+    /// producer calling itself `serwalker` or `r2flutter_snapshot_v1` inert.
     #[test]
-    fn resolves_backend_from_adapter_kind_values() {
+    fn resolved_backend_comes_from_the_typed_protocol_result() {
         assert_eq!(
-            resolved_backend_from_adapter_kind("blutter_bridge_model_v1"),
-            Some(AdapterBackend::Blutter)
+            backend_from_id(BackendId::Blutter),
+            AdapterBackend::Blutter
         );
         assert_eq!(
-            resolved_backend_from_adapter_kind("dynamic_snapshot_string_model_v1"),
-            Some(AdapterBackend::Internal)
+            backend_from_id(BackendId::R2Flutter),
+            AdapterBackend::R2Flutter
         );
-        assert_eq!(resolved_backend_from_adapter_kind("custom_model_v2"), None);
+        assert_eq!(
+            backend_from_id(BackendId::Internal),
+            AdapterBackend::Internal
+        );
         assert_eq!(backend_label(Some(AdapterBackend::Internal)), "internal");
         assert_eq!(backend_label(Some(AdapterBackend::Blutter)), "blutter");
         assert_eq!(backend_label(None), "unknown");
+    }
+
+    /// A pinned backend maps to a `Fixed` request, which the protocol refuses to
+    /// let a producer substitute. `auto` is the only request that may fall back.
+    #[test]
+    fn requested_backend_pins_everything_except_auto() {
+        assert_eq!(
+            requested_backend(AdapterBackend::Auto),
+            RequestedBackend::Auto
+        );
+        assert_eq!(
+            requested_backend(AdapterBackend::Blutter),
+            RequestedBackend::Fixed(BackendId::Blutter)
+        );
+        assert_eq!(
+            requested_backend(AdapterBackend::R2Flutter),
+            RequestedBackend::Fixed(BackendId::R2Flutter)
+        );
+        assert_eq!(
+            requested_backend(AdapterBackend::Internal),
+            RequestedBackend::Fixed(BackendId::Internal)
+        );
     }
 
     #[test]
@@ -685,45 +788,45 @@
         let selected = vec![
             FunctionPriorityBreakdown {
                 function_id: 1,
-                function_name: "main".to_string(),
-                owner_class: "Global".to_string(),
-                library_uri: "package:spotube/main.dart".to_string(),
+                function_name: Some("main".to_string()),
+                owner_class: None,
+                library_uri: Some("package:spotube/main.dart".to_string()),
                 entry_va: 0x1000,
                 total_score: 100,
                 components: Vec::new(),
             },
             FunctionPriorityBreakdown {
                 function_id: 2,
-                function_name: "init".to_string(),
-                owner_class: "Global".to_string(),
-                library_uri: "package:spotube/services/init.dart".to_string(),
+                function_name: Some("init".to_string()),
+                owner_class: None,
+                library_uri: Some("package:spotube/services/init.dart".to_string()),
                 entry_va: 0x1010,
                 total_score: 90,
                 components: Vec::new(),
             },
             FunctionPriorityBreakdown {
                 function_id: 3,
-                function_name: "watch".to_string(),
-                owner_class: "Provider".to_string(),
-                library_uri: "package:provider/src/provider.dart".to_string(),
+                function_name: Some("watch".to_string()),
+                owner_class: Some("Provider".to_string()),
+                library_uri: Some("package:provider/src/provider.dart".to_string()),
                 entry_va: 0x1020,
                 total_score: 80,
                 components: Vec::new(),
             },
             FunctionPriorityBreakdown {
                 function_id: 4,
-                function_name: "toString".to_string(),
-                owner_class: "Object".to_string(),
-                library_uri: "dart:core".to_string(),
+                function_name: Some("toString".to_string()),
+                owner_class: Some("Object".to_string()),
+                library_uri: Some("dart:core".to_string()),
                 entry_va: 0x1030,
                 total_score: 70,
                 components: Vec::new(),
             },
             FunctionPriorityBreakdown {
                 function_id: 5,
-                function_name: "sub_1040".to_string(),
-                owner_class: "Unknown".to_string(),
-                library_uri: "".to_string(),
+                function_name: Some("sub_1040".to_string()),
+                owner_class: Some("Unknown".to_string()),
+                library_uri: None,
                 entry_va: 0x1040,
                 total_score: 60,
                 components: Vec::new(),
@@ -746,36 +849,36 @@
         let selected = vec![
             FunctionPriorityBreakdown {
                 function_id: 1,
-                function_name: "main".to_string(),
-                owner_class: "Global".to_string(),
-                library_uri: "package:spotube/main.dart".to_string(),
+                function_name: Some("main".to_string()),
+                owner_class: None,
+                library_uri: Some("package:spotube/main.dart".to_string()),
                 entry_va: 0x1000,
                 total_score: 100,
                 components: Vec::new(),
             },
             FunctionPriorityBreakdown {
                 function_id: 2,
-                function_name: "setState".to_string(),
-                owner_class: "State".to_string(),
-                library_uri: "package:flutter/src/widgets/framework.dart".to_string(),
+                function_name: Some("setState".to_string()),
+                owner_class: Some("State".to_string()),
+                library_uri: Some("package:flutter/src/widgets/framework.dart".to_string()),
                 entry_va: 0x1010,
                 total_score: 90,
                 components: Vec::new(),
             },
             FunctionPriorityBreakdown {
                 function_id: 3,
-                function_name: "toString".to_string(),
-                owner_class: "Object".to_string(),
-                library_uri: "dart:core".to_string(),
+                function_name: Some("toString".to_string()),
+                owner_class: Some("Object".to_string()),
+                library_uri: Some("dart:core".to_string()),
                 entry_va: 0x1020,
                 total_score: 80,
                 components: Vec::new(),
             },
             FunctionPriorityBreakdown {
                 function_id: 4,
-                function_name: "sub_1030".to_string(),
-                owner_class: "Unknown".to_string(),
-                library_uri: "".to_string(),
+                function_name: Some("sub_1030".to_string()),
+                owner_class: Some("Unknown".to_string()),
+                library_uri: None,
                 entry_va: 0x1030,
                 total_score: 70,
                 components: Vec::new(),
@@ -793,36 +896,36 @@
         let selected = vec![
             FunctionPriorityBreakdown {
                 function_id: 1,
-                function_name: "main".to_string(),
-                owner_class: "Global".to_string(),
-                library_uri: "package:app/main.dart".to_string(),
+                function_name: Some("main".to_string()),
+                owner_class: None,
+                library_uri: Some("package:app/main.dart".to_string()),
                 entry_va: 0x1000,
                 total_score: 100,
                 components: Vec::new(),
             },
             FunctionPriorityBreakdown {
                 function_id: 2,
-                function_name: "init".to_string(),
-                owner_class: "Global".to_string(),
-                library_uri: "package:spotube/main.dart".to_string(),
+                function_name: Some("init".to_string()),
+                owner_class: None,
+                library_uri: Some("package:spotube/main.dart".to_string()),
                 entry_va: 0x1010,
                 total_score: 90,
                 components: Vec::new(),
             },
             FunctionPriorityBreakdown {
                 function_id: 3,
-                function_name: "watch".to_string(),
-                owner_class: "Provider".to_string(),
-                library_uri: "package:provider/src/provider.dart".to_string(),
+                function_name: Some("watch".to_string()),
+                owner_class: Some("Provider".to_string()),
+                library_uri: Some("package:provider/src/provider.dart".to_string()),
                 entry_va: 0x1020,
                 total_score: 80,
                 components: Vec::new(),
             },
             FunctionPriorityBreakdown {
                 function_id: 4,
-                function_name: "toString".to_string(),
-                owner_class: "Object".to_string(),
-                library_uri: "dart:core".to_string(),
+                function_name: Some("toString".to_string()),
+                owner_class: Some("Object".to_string()),
+                library_uri: Some("dart:core".to_string()),
                 entry_va: 0x1030,
                 total_score: 70,
                 components: Vec::new(),
@@ -839,9 +942,9 @@
         let selected = vec![
             FunctionPriorityBreakdown {
                 function_id: 1,
-                function_name: "main".to_string(),
-                owner_class: "Global".to_string(),
-                library_uri: "package:app/main.dart".to_string(),
+                function_name: Some("main".to_string()),
+                owner_class: None,
+                library_uri: Some("package:app/main.dart".to_string()),
                 entry_va: 0x1000,
                 total_score: 100,
                 components: vec![
@@ -857,9 +960,9 @@
             },
             FunctionPriorityBreakdown {
                 function_id: 2,
-                function_name: "sub_1010".to_string(),
-                owner_class: "Provider".to_string(),
-                library_uri: "package:provider/src/provider.dart".to_string(),
+                function_name: Some("sub_1010".to_string()),
+                owner_class: Some("Provider".to_string()),
+                library_uri: Some("package:provider/src/provider.dart".to_string()),
                 entry_va: 0x1010,
                 total_score: 90,
                 components: vec![
@@ -892,18 +995,18 @@
         let selected = vec![
             FunctionPriorityBreakdown {
                 function_id: 1,
-                function_name: "main".to_string(),
-                owner_class: "Global".to_string(),
-                library_uri: "package:app/main.dart".to_string(),
+                function_name: Some("main".to_string()),
+                owner_class: None,
+                library_uri: Some("package:app/main.dart".to_string()),
                 entry_va: 0x1000,
                 total_score: 100,
                 components: Vec::new(),
             },
             FunctionPriorityBreakdown {
                 function_id: 2,
-                function_name: "runApp".to_string(),
-                owner_class: "Global".to_string(),
-                library_uri: "package:app/main.dart".to_string(),
+                function_name: Some("runApp".to_string()),
+                owner_class: None,
+                library_uri: Some("package:app/main.dart".to_string()),
                 entry_va: 0x1010,
                 total_score: 90,
                 components: Vec::new(),
@@ -912,51 +1015,56 @@
         let bootflow = BootflowDiscoverySummary {
             main: vec![
                 BootflowDiscoveryEntry {
-                    decoded_kind: "pool".to_string(),
+                    kind: "pool".to_string(),
+                    provenance: "derived".to_string(),
                     source: "adapter".to_string(),
                     selector: "main".to_string(),
                     target_va: Some(0x1000),
-                    owner_class: "Global".to_string(),
-                    library_uri: "package:app/main.dart".to_string(),
-                    value: "bootflow:main:main".to_string(),
+                    owner_class: None,
+                    library_uri: Some("package:app/main.dart".to_string()),
+                    detail: "bootflow:main:main".to_string(),
                 },
                 BootflowDiscoveryEntry {
-                    decoded_kind: "pool".to_string(),
+                    kind: "pool".to_string(),
+                    provenance: "derived".to_string(),
                     source: "adapter".to_string(),
                     selector: "main".to_string(),
                     target_va: Some(0x2000),
-                    owner_class: "Global".to_string(),
-                    library_uri: "package:app/main.dart".to_string(),
-                    value: "bootflow:main:main".to_string(),
+                    owner_class: None,
+                    library_uri: Some("package:app/main.dart".to_string()),
+                    detail: "bootflow:main:main".to_string(),
                 },
             ],
             runapp: vec![BootflowDiscoveryEntry {
-                decoded_kind: "pool".to_string(),
+                kind: "pool".to_string(),
+                    provenance: "derived".to_string(),
                 source: "adapter".to_string(),
                 selector: "runApp".to_string(),
                 target_va: Some(0x1010),
-                owner_class: "Global".to_string(),
-                library_uri: "package:app/main.dart".to_string(),
-                value: "bootflow:runapp:runApp".to_string(),
+                owner_class: None,
+                library_uri: Some("package:app/main.dart".to_string()),
+                detail: "bootflow:runapp:runApp".to_string(),
             }],
             deeplink: vec![BootflowDiscoveryEntry {
-                decoded_kind: "pool".to_string(),
+                kind: "pool".to_string(),
+                    provenance: "derived".to_string(),
                 source: "adapter".to_string(),
                 selector: "onNewIntent".to_string(),
                 target_va: Some(0x3000),
-                owner_class: "MainActivity".to_string(),
-                library_uri: "package:app/main.dart".to_string(),
-                value: "bootflow:deeplink:onNewIntent".to_string(),
+                owner_class: Some("MainActivity".to_string()),
+                library_uri: Some("package:app/main.dart".to_string()),
+                detail: "bootflow:deeplink:onNewIntent".to_string(),
             }],
             activity: Vec::new(),
             bootstrap: vec![BootflowDiscoveryEntry {
-                decoded_kind: "pool".to_string(),
+                kind: "pool".to_string(),
+                    provenance: "derived".to_string(),
                 source: "adapter".to_string(),
                 selector: "ensureInitialized".to_string(),
                 target_va: Some(0x1000),
-                owner_class: "WidgetsFlutterBinding".to_string(),
-                library_uri: "package:flutter/src/widgets/binding.dart".to_string(),
-                value: "bootflow:init:ensureInitialized".to_string(),
+                owner_class: Some("WidgetsFlutterBinding".to_string()),
+                library_uri: Some("package:flutter/src/widgets/binding.dart".to_string()),
+                detail: "bootflow:init:ensureInitialized".to_string(),
             }],
         };
 
@@ -974,94 +1082,45 @@
         assert!((selected_bootflow_coverage_ratio(stats.any) - 0.5).abs() < f64::EPSILON);
 
         assert!(hits.iter().any(|hit| {
-            hit.category == "main" && hit.target_va == 0x1000 && hit.function_name == "main"
+            hit.category == "main" && hit.target_va == 0x1000 && hit.function_name.as_deref() == Some("main")
         }));
         assert!(hits.iter().any(|hit| {
             hit.category == "runapp"
                 && hit.target_va == 0x1010
-                && hit.function_name == "runApp"
+                && hit.function_name.as_deref() == Some("runApp")
         }));
         assert!(hits.iter().any(|hit| {
             hit.category == "bootstrap"
                 && hit.target_va == 0x1000
-                && hit.function_name == "main"
+                && hit.function_name.as_deref() == Some("main")
         }));
     }
 
     #[test]
     fn applies_app_unknown_scope_filter() {
-        let model = ProgramModel {
-            schema_version: 2,
-            adapter_kind: "python".to_string(),
-            dart_version: "3.0.0".to_string(),
-            snapshot_hash: "deadbeef".to_string(),
-            arch: "arm64".to_string(),
-            libraries: Vec::new(),
-            classes: vec![
-                flutterdec_adapter::ClassInfo {
-                    id: 1,
-                    name: "State".to_string(),
-                    super_name: "Object".to_string(),
-                    library_uri: "package:flutter/src/widgets/framework.dart".to_string(),
-                },
-                flutterdec_adapter::ClassInfo {
-                    id: 2,
-                    name: "_StringBase".to_string(),
-                    super_name: "Object".to_string(),
-                    library_uri: "dart:core".to_string(),
-                },
-                flutterdec_adapter::ClassInfo {
-                    id: 3,
-                    name: "ConnectService".to_string(),
-                    super_name: "Object".to_string(),
-                    library_uri: "package:spotube/models/connect/load.dart".to_string(),
-                },
+        let model = test_model(
+            vec![
+                lib(0, "package:flutter/src/widgets/framework.dart"),
+                lib(1, "dart:core"),
+                lib(2, "package:spotube/models/connect/load.dart"),
             ],
-            functions: vec![
-                flutterdec_adapter::FunctionInfo {
-                    id: 10,
-                    name: "setState".to_string(),
-                    owner_class: "State".to_string(),
-                    entry_va: 0x1000,
-                    size: 4,
-                    code_section_va: 0x1000,
-                name_kind: None,
-                },
-                flutterdec_adapter::FunctionInfo {
-                    id: 11,
-                    name: "toString".to_string(),
-                    owner_class: "_StringBase".to_string(),
-                    entry_va: 0x1100,
-                    size: 4,
-                    code_section_va: 0x1100,
-                name_kind: None,
-                },
-                flutterdec_adapter::FunctionInfo {
-                    id: 12,
-                    name: "executeCommandAsync".to_string(),
-                    owner_class: "ConnectService".to_string(),
-                    entry_va: 0x1200,
-                    size: 4,
-                    code_section_va: 0x1200,
-                name_kind: None,
-                },
-                flutterdec_adapter::FunctionInfo {
-                    id: 13,
-                    name: "sub_1300".to_string(),
-                    owner_class: "UnknownOwner".to_string(),
-                    entry_va: 0x1300,
-                    size: 4,
-                    code_section_va: 0x1300,
-                name_kind: None,
-                },
+            vec![
+                cls(1, "State", Some(0)),
+                cls(2, "_StringBase", Some(1)),
+                cls(3, "ConnectService", Some(2)),
             ],
-            pool_geometry: None,
-            object_pool: Vec::new(),
-        };
+            vec![
+                fun(10, named("setState"), Some(1), 0x1000, 4),
+                fun(11, named("toString"), Some(2), 0x1100, 4),
+                fun(12, named("executeCommandAsync"), Some(3), 0x1200, 4),
+                fun(13, None, None, 0x1300, 4),
+            ],
+            ordinal_pool(Vec::new()),
+        );
 
         let (scoped, stats) = apply_function_scope_filter(&model, FunctionScope::AppUnknown, &[]);
         let ids = scoped.functions.iter().map(|f| f.id).collect::<Vec<_>>();
-        assert_eq!(ids, vec![12, 13]);
+        assert_eq!(ids, vec![FunctionId(12), FunctionId(13)]);
         assert_eq!(stats.total_before_filter, 4);
         assert_eq!(stats.total_after_filter, 2);
         assert_eq!(stats.excluded, 2);
@@ -1073,46 +1132,19 @@
 
     #[test]
     fn applies_app_scope_filter() {
-        let model = ProgramModel {
-            schema_version: 2,
-            adapter_kind: "python".to_string(),
-            dart_version: "3.0.0".to_string(),
-            snapshot_hash: "deadbeef".to_string(),
-            arch: "arm64".to_string(),
-            libraries: Vec::new(),
-            classes: vec![flutterdec_adapter::ClassInfo {
-                id: 3,
-                name: "ConnectService".to_string(),
-                super_name: "Object".to_string(),
-                library_uri: "package:spotube/models/connect/load.dart".to_string(),
-            }],
-            functions: vec![
-                flutterdec_adapter::FunctionInfo {
-                    id: 12,
-                    name: "executeCommandAsync".to_string(),
-                    owner_class: "ConnectService".to_string(),
-                    entry_va: 0x1200,
-                    size: 4,
-                    code_section_va: 0x1200,
-                name_kind: None,
-                },
-                flutterdec_adapter::FunctionInfo {
-                    id: 13,
-                    name: "sub_1300".to_string(),
-                    owner_class: "UnknownOwner".to_string(),
-                    entry_va: 0x1300,
-                    size: 4,
-                    code_section_va: 0x1300,
-                name_kind: None,
-                },
+        let model = test_model(
+            vec![lib(0, "package:spotube/models/connect/load.dart")],
+            vec![cls(3, "ConnectService", Some(0))],
+            vec![
+                fun(12, named("executeCommandAsync"), Some(3), 0x1200, 4),
+                fun(13, None, None, 0x1300, 4),
             ],
-            pool_geometry: None,
-            object_pool: Vec::new(),
-        };
+            ordinal_pool(Vec::new()),
+        );
 
         let (scoped, stats) = apply_function_scope_filter(&model, FunctionScope::App, &[]);
         let ids = scoped.functions.iter().map(|f| f.id).collect::<Vec<_>>();
-        assert_eq!(ids, vec![12]);
+        assert_eq!(ids, vec![FunctionId(12)]);
         assert_eq!(stats.total_before_filter, 2);
         assert_eq!(stats.total_after_filter, 1);
         assert_eq!(stats.excluded, 1);
@@ -1120,80 +1152,31 @@
 
     #[test]
     fn applies_app_package_filter_to_scoped_functions() {
-        let model = ProgramModel {
-            schema_version: 2,
-            adapter_kind: "python".to_string(),
-            dart_version: "3.0.0".to_string(),
-            snapshot_hash: "deadbeef".to_string(),
-            arch: "arm64".to_string(),
-            libraries: Vec::new(),
-            classes: vec![
-                flutterdec_adapter::ClassInfo {
-                    id: 3,
-                    name: "ConnectService".to_string(),
-                    super_name: "Object".to_string(),
-                    library_uri: "package:spotube/models/connect/load.dart".to_string(),
-                },
-                flutterdec_adapter::ClassInfo {
-                    id: 4,
-                    name: "ProviderCore".to_string(),
-                    super_name: "Object".to_string(),
-                    library_uri: "package:provider/src/provider.dart".to_string(),
-                },
-                flutterdec_adapter::ClassInfo {
-                    id: 5,
-                    name: "State".to_string(),
-                    super_name: "Object".to_string(),
-                    library_uri: "package:flutter/src/widgets/framework.dart".to_string(),
-                },
+        let model = test_model(
+            vec![
+                lib(0, "package:spotube/models/connect/load.dart"),
+                lib(1, "package:provider/src/provider.dart"),
+                lib(2, "package:flutter/src/widgets/framework.dart"),
             ],
-            functions: vec![
-                flutterdec_adapter::FunctionInfo {
-                    id: 12,
-                    name: "executeCommandAsync".to_string(),
-                    owner_class: "ConnectService".to_string(),
-                    entry_va: 0x1200,
-                    size: 4,
-                    code_section_va: 0x1200,
-                name_kind: None,
-                },
-                flutterdec_adapter::FunctionInfo {
-                    id: 13,
-                    name: "watch".to_string(),
-                    owner_class: "ProviderCore".to_string(),
-                    entry_va: 0x1300,
-                    size: 4,
-                    code_section_va: 0x1300,
-                name_kind: None,
-                },
-                flutterdec_adapter::FunctionInfo {
-                    id: 14,
-                    name: "setState".to_string(),
-                    owner_class: "State".to_string(),
-                    entry_va: 0x1400,
-                    size: 4,
-                    code_section_va: 0x1400,
-                name_kind: None,
-                },
-                flutterdec_adapter::FunctionInfo {
-                    id: 15,
-                    name: "sub_1500".to_string(),
-                    owner_class: "UnknownOwner".to_string(),
-                    entry_va: 0x1500,
-                    size: 4,
-                    code_section_va: 0x1500,
-                name_kind: None,
-                },
+            vec![
+                cls(3, "ConnectService", Some(0)),
+                cls(4, "ProviderCore", Some(1)),
+                cls(5, "State", Some(2)),
             ],
-            pool_geometry: None,
-            object_pool: Vec::new(),
-        };
+            vec![
+                fun(12, named("executeCommandAsync"), Some(3), 0x1200, 4),
+                fun(13, named("watch"), Some(4), 0x1300, 4),
+                fun(14, named("setState"), Some(5), 0x1400, 4),
+                fun(15, None, None, 0x1500, 4),
+            ],
+            ordinal_pool(Vec::new()),
+        );
 
         let app_packages = vec!["spotube".to_string()];
         let (scoped, stats) =
             apply_function_scope_filter(&model, FunctionScope::AppUnknown, &app_packages);
         let ids = scoped.functions.iter().map(|f| f.id).collect::<Vec<_>>();
-        assert_eq!(ids, vec![12]);
+        assert_eq!(ids, vec![FunctionId(12)]);
         assert_eq!(stats.total_before_filter, 4);
         assert_eq!(stats.total_after_filter, 1);
         assert_eq!(stats.excluded, 3);
@@ -1202,74 +1185,25 @@
 
     #[test]
     fn collects_app_package_function_counts() {
-        let model = ProgramModel {
-            schema_version: 2,
-            adapter_kind: "python".to_string(),
-            dart_version: "3.0.0".to_string(),
-            snapshot_hash: "deadbeef".to_string(),
-            arch: "arm64".to_string(),
-            libraries: Vec::new(),
-            classes: vec![
-                flutterdec_adapter::ClassInfo {
-                    id: 1,
-                    name: "AppA".to_string(),
-                    super_name: "Object".to_string(),
-                    library_uri: "package:spotube/a.dart".to_string(),
-                },
-                flutterdec_adapter::ClassInfo {
-                    id: 2,
-                    name: "AppB".to_string(),
-                    super_name: "Object".to_string(),
-                    library_uri: "package:provider/b.dart".to_string(),
-                },
-                flutterdec_adapter::ClassInfo {
-                    id: 3,
-                    name: "State".to_string(),
-                    super_name: "Object".to_string(),
-                    library_uri: "package:flutter/src/widgets/framework.dart".to_string(),
-                },
+        let model = test_model(
+            vec![
+                lib(0, "package:spotube/a.dart"),
+                lib(1, "package:provider/b.dart"),
+                lib(2, "package:flutter/src/widgets/framework.dart"),
             ],
-            functions: vec![
-                flutterdec_adapter::FunctionInfo {
-                    id: 10,
-                    name: "f10".to_string(),
-                    owner_class: "AppA".to_string(),
-                    entry_va: 0x1000,
-                    size: 4,
-                    code_section_va: 0x1000,
-                name_kind: None,
-                },
-                flutterdec_adapter::FunctionInfo {
-                    id: 11,
-                    name: "f11".to_string(),
-                    owner_class: "AppA".to_string(),
-                    entry_va: 0x1100,
-                    size: 4,
-                    code_section_va: 0x1100,
-                name_kind: None,
-                },
-                flutterdec_adapter::FunctionInfo {
-                    id: 12,
-                    name: "f12".to_string(),
-                    owner_class: "AppB".to_string(),
-                    entry_va: 0x1200,
-                    size: 4,
-                    code_section_va: 0x1200,
-                name_kind: None,
-                },
-                flutterdec_adapter::FunctionInfo {
-                    id: 13,
-                    name: "setState".to_string(),
-                    owner_class: "State".to_string(),
-                    entry_va: 0x1300,
-                    size: 4,
-                    code_section_va: 0x1300,
-                name_kind: None,
-                },
+            vec![
+                cls(1, "AppA", Some(0)),
+                cls(2, "AppB", Some(1)),
+                cls(3, "State", Some(2)),
             ],
-            pool_geometry: None,
-            object_pool: Vec::new(),
-        };
+            vec![
+                fun(10, named("f10"), Some(1), 0x1000, 4),
+                fun(11, named("f11"), Some(1), 0x1100, 4),
+                fun(12, named("f12"), Some(2), 0x1200, 4),
+                fun(13, named("setState"), Some(3), 0x1300, 4),
+            ],
+            ordinal_pool(Vec::new()),
+        );
 
         let counts = collect_app_package_counts(&model);
         assert_eq!(
@@ -1300,87 +1234,50 @@
 
     #[test]
     fn canonicalizes_standard_model_function_names() {
-        let mut class_lib = HashMap::new();
-        class_lib.insert("_StringBase".to_string(), "dart:core".to_string());
-        class_lib.insert(
-            "_BoolPatch".to_string(),
-            "dart:core-patch/bool_patch.dart".to_string(),
+        let model = test_model(
+            vec![
+                lib(0, "dart:core"),
+                lib(1, "dart:core-patch/bool_patch.dart"),
+                lib(2, "package:flutter/src/widgets/framework.dart"),
+                lib(3, "package:flutter/src/rendering/object.dart"),
+            ],
+            vec![
+                cls(0, "_StringBase", Some(0)),
+                cls(1, "_BoolPatch", Some(1)),
+                cls(2, "State", Some(2)),
+                cls(3, "RenderObject", Some(3)),
+            ],
+            vec![
+                fun(1, named("toString"), Some(0), 0x1000, 4),
+                fun(5, named("fromEnvironment"), Some(1), 0x1800, 4),
+                fun(2, named("setState"), Some(2), 0x2000, 4),
+                fun(3, named("layout"), Some(3), 0x3000, 4),
+                // No name at all: there is nothing to canonicalize, which is the
+                // case v3 expressed as the fabricated name `sub_1234`.
+                fun(4, None, Some(2), 0x4000, 4),
+            ],
+            ordinal_pool(Vec::new()),
         );
-        class_lib.insert(
-            "State".to_string(),
-            "package:flutter/src/widgets/framework.dart".to_string(),
-        );
-        class_lib.insert(
-            "RenderObject".to_string(),
-            "package:flutter/src/rendering/object.dart".to_string(),
-        );
-
-        let dart_fn = flutterdec_adapter::FunctionInfo {
-            id: 1,
-            name: "toString".to_string(),
-            owner_class: "_StringBase".to_string(),
-            entry_va: 0x1000,
-            size: 4,
-            code_section_va: 0x1000,
-        name_kind: None,
+        let canonical = |id: u32| {
+            let f = model
+                .functions
+                .iter()
+                .find(|f| f.id == FunctionId(id))
+                .expect("fixture function");
+            canonical_standard_model_name(&model, f)
         };
-        assert_eq!(
-            canonical_standard_model_name(&dart_fn, &class_lib).as_deref(),
-            Some("dart_core_toString")
-        );
 
-        let dart_patch_fn = flutterdec_adapter::FunctionInfo {
-            id: 5,
-            name: "fromEnvironment".to_string(),
-            owner_class: "_BoolPatch".to_string(),
-            entry_va: 0x1800,
-            size: 4,
-            code_section_va: 0x1800,
-        name_kind: None,
-        };
+        assert_eq!(canonical(1).as_deref(), Some("dart_core_toString"));
         assert_eq!(
-            canonical_standard_model_name(&dart_patch_fn, &class_lib).as_deref(),
+            canonical(5).as_deref(),
             Some("dart_core_patch_bool_patch_fromEnvironment")
         );
-
-        let flutter_fn = flutterdec_adapter::FunctionInfo {
-            id: 2,
-            name: "setState".to_string(),
-            owner_class: "State".to_string(),
-            entry_va: 0x2000,
-            size: 4,
-            code_section_va: 0x2000,
-        name_kind: None,
-        };
+        assert_eq!(canonical(2).as_deref(), Some("flutter_widgets_State_setState"));
         assert_eq!(
-            canonical_standard_model_name(&flutter_fn, &class_lib).as_deref(),
-            Some("flutter_widgets_State_setState")
-        );
-
-        let render_fn = flutterdec_adapter::FunctionInfo {
-            id: 3,
-            name: "layout".to_string(),
-            owner_class: "RenderObject".to_string(),
-            entry_va: 0x3000,
-            size: 4,
-            code_section_va: 0x3000,
-        name_kind: None,
-        };
-        assert_eq!(
-            canonical_standard_model_name(&render_fn, &class_lib).as_deref(),
+            canonical(3).as_deref(),
             Some("flutter_rendering_RenderObject_layout")
         );
-
-        let generic_fn = flutterdec_adapter::FunctionInfo {
-            id: 4,
-            name: "sub_1234".to_string(),
-            owner_class: "State".to_string(),
-            entry_va: 0x4000,
-            size: 4,
-            code_section_va: 0x4000,
-        name_kind: None,
-        };
-        assert!(canonical_standard_model_name(&generic_fn, &class_lib).is_none());
+        assert!(canonical(4).is_none());
     }
 
     #[test]
@@ -1546,133 +1443,28 @@
 
     #[test]
     fn discovers_bootflow_candidates_from_pool_metadata() {
-        let model = ProgramModel {
-            schema_version: 2,
-            adapter_kind: "python".to_string(),
-            dart_version: "3.0.0".to_string(),
-            snapshot_hash: "deadbeef".to_string(),
-            arch: "arm64".to_string(),
-            libraries: Vec::new(),
-            classes: Vec::new(),
-            functions: Vec::new(),
-            pool_geometry: None,
-            object_pool: vec![
-                flutterdec_adapter::ObjectPoolEntry {
-                    index: 1,
-                    kind: "String".to_string(),
-                    value: "bootflow:main:main".to_string(),
-                    decoded_kind: Some("BootMainCandidate".to_string()),
-                    selector: Some("main".to_string()),
-                    target_va: Some(0x1000),
-                    owner_class: Some("Global".to_string()),
-                    library_uri: Some("package:app/main.dart".to_string()),
-                    confidence: None,
-                    source: None,
-                },
-                flutterdec_adapter::ObjectPoolEntry {
-                    index: 2,
-                    kind: "String".to_string(),
-                    value: "bootflow:deeplink:onNewIntent".to_string(),
-                    decoded_kind: Some("DeepLinkHandlerCandidate".to_string()),
-                    selector: Some("onNewIntent".to_string()),
-                    target_va: Some(0x1010),
-                    owner_class: Some("RouterHost".to_string()),
-                    library_uri: Some("package:app/router.dart".to_string()),
-                    confidence: None,
-                    source: None,
-                },
-                flutterdec_adapter::ObjectPoolEntry {
-                    index: 3,
-                    kind: "String".to_string(),
-                    value: "bootflow:activity:onResume".to_string(),
-                    decoded_kind: Some("ActivityHandlerCandidate".to_string()),
-                    selector: Some("onResume".to_string()),
-                    target_va: Some(0x1020),
-                    owner_class: Some("MainActivityHost".to_string()),
-                    library_uri: Some("package:app/main.dart".to_string()),
-                    confidence: None,
-                    source: None,
-                },
-                flutterdec_adapter::ObjectPoolEntry {
-                    index: 4,
-                    kind: "String".to_string(),
-                    value: "bootflow:init:ensureInitialized".to_string(),
-                    decoded_kind: Some("BootstrapInitCandidate".to_string()),
-                    selector: Some("ensureInitialized".to_string()),
-                    target_va: Some(0x1030),
-                    owner_class: Some("Global".to_string()),
-                    library_uri: Some("package:app/main.dart".to_string()),
-                    confidence: None,
-                    source: None,
-                },
-            ],
-        };
+        let hints = program_hints(vec![hint(HintKind::BootMain, HintOrigin::ModelNamePattern, "main", Some(0x1000), Some("AppRoot"), Some("package:app/main.dart")), hint(HintKind::DeepLinkHandler, HintOrigin::ModelNamePattern, "onNewIntent", Some(0x1010), Some("RouterHost"), Some("package:app/router.dart")), hint(HintKind::ActivityHandler, HintOrigin::ModelNamePattern, "onResume", Some(0x1020), Some("MainActivityHost"), Some("package:app/main.dart")), hint(HintKind::BootstrapInit, HintOrigin::ModelNamePattern, "ensureInitialized", Some(0x1030), Some("AppRoot"), Some("package:app/main.dart"))]);
 
-        let summary = collect_bootflow_discovery(&model);
+        let summary = collect_bootflow_discovery(&hints);
         assert_eq!(summary.main.len(), 1);
         assert_eq!(summary.runapp.len(), 0);
         assert_eq!(summary.deeplink.len(), 1);
-        assert_eq!(summary.activity.len(), 2);
+        assert_eq!(summary.activity.len(), 1);
         assert_eq!(summary.bootstrap.len(), 1);
         assert_eq!(summary.main[0].target_va, Some(0x1000));
-        assert_eq!(summary.main[0].source, "adapter");
+        assert_eq!(summary.main[0].source, "model_name_pattern");
+        // Provenance rides along on every reported entry: nothing here is exact.
+        assert_eq!(summary.main[0].provenance, "derived");
         assert_eq!(summary.deeplink[0].selector, "onNewIntent");
-        assert!(
-            summary
-                .activity
-                .iter()
-                .any(|entry| entry.selector == "onResume")
-        );
-        assert!(
-            summary
-                .activity
-                .iter()
-                .any(|entry| entry.selector == "onNewIntent")
-        );
+        assert_eq!(summary.activity[0].selector, "onResume");
         assert_eq!(summary.bootstrap[0].selector, "ensureInitialized");
     }
 
     #[test]
     fn dedupes_bootflow_entries_with_same_target_and_selector() {
-        let model = ProgramModel {
-            schema_version: 2,
-            adapter_kind: "python".to_string(),
-            dart_version: "3.0.0".to_string(),
-            snapshot_hash: "deadbeef".to_string(),
-            arch: "arm64".to_string(),
-            libraries: Vec::new(),
-            classes: Vec::new(),
-            functions: Vec::new(),
-            pool_geometry: None,
-            object_pool: vec![
-                flutterdec_adapter::ObjectPoolEntry {
-                    index: 1,
-                    kind: "String".to_string(),
-                    value: "entrypoint:main".to_string(),
-                    decoded_kind: Some("EntryPointCandidate".to_string()),
-                    selector: Some("main".to_string()),
-                    target_va: Some(0x2000),
-                    owner_class: Some("Global".to_string()),
-                    library_uri: Some("package:app/main.dart".to_string()),
-                    confidence: None,
-                    source: None,
-                },
-                flutterdec_adapter::ObjectPoolEntry {
-                    index: 2,
-                    kind: "String".to_string(),
-                    value: "bootflow:main:main".to_string(),
-                    decoded_kind: Some("BootMainCandidate".to_string()),
-                    selector: Some("main".to_string()),
-                    target_va: Some(0x2000),
-                    owner_class: Some("Global".to_string()),
-                    library_uri: Some("package:app/main.dart".to_string()),
-                    confidence: None,
-                    source: None,
-                },
-            ],
-        };
+        let hints = program_hints(vec![hint(HintKind::EntryPoint, HintOrigin::ModelNamePattern, "main", Some(0x2000), Some("AppRoot"), Some("package:app/main.dart")), hint(HintKind::BootMain, HintOrigin::ModelNamePattern, "main", Some(0x2000), Some("AppRoot"), Some("package:app/main.dart"))]);
 
-        let summary = collect_bootflow_discovery(&model);
+        let summary = collect_bootflow_discovery(&hints);
         assert_eq!(summary.main.len(), 1);
         assert_eq!(summary.main[0].target_va, Some(0x2000));
         assert_eq!(summary.main[0].selector, "main");
@@ -1680,133 +1472,39 @@
 
     #[test]
     fn keeps_bootflow_entries_with_same_target_and_selector_when_source_differs() {
-        let model = ProgramModel {
-            schema_version: 2,
-            adapter_kind: "python".to_string(),
-            dart_version: "3.0.0".to_string(),
-            snapshot_hash: "deadbeef".to_string(),
-            arch: "arm64".to_string(),
-            libraries: Vec::new(),
-            classes: Vec::new(),
-            functions: Vec::new(),
-            pool_geometry: None,
-            object_pool: vec![
-                flutterdec_adapter::ObjectPoolEntry {
-                    index: 1,
-                    kind: "String".to_string(),
-                    value: "manifest:main-launcher".to_string(),
-                    decoded_kind: Some("ManifestMainCandidate".to_string()),
-                    selector: Some("main".to_string()),
-                    target_va: Some(0x2000),
-                    owner_class: Some("Global".to_string()),
-                    library_uri: Some("package:app/main.dart".to_string()),
-                    confidence: None,
-                    source: Some("manifest".to_string()),
-                },
-                flutterdec_adapter::ObjectPoolEntry {
-                    index: 2,
-                    kind: "String".to_string(),
-                    value: "bootflow:main:apk_startup".to_string(),
-                    decoded_kind: Some("StartupMainCandidate".to_string()),
-                    selector: Some("main".to_string()),
-                    target_va: Some(0x2000),
-                    owner_class: Some("Global".to_string()),
-                    library_uri: Some("package:app/main.dart".to_string()),
-                    confidence: None,
-                    source: Some("apk_startup".to_string()),
-                },
-            ],
-        };
+        let hints = program_hints(vec![hint(HintKind::BootMain, HintOrigin::AndroidManifest, "main", Some(0x2000), Some("AppRoot"), Some("package:app/main.dart")), hint(HintKind::BootMain, HintOrigin::ApkStartup, "main", Some(0x2000), Some("AppRoot"), Some("package:app/main.dart"))]);
 
-        let summary = collect_bootflow_discovery(&model);
+        let summary = collect_bootflow_discovery(&hints);
         assert_eq!(summary.main.len(), 2);
-        assert!(summary.main.iter().any(|entry| entry.source == "manifest"));
+        assert!(summary
+            .main
+            .iter()
+            .any(|entry| entry.source == "android_manifest"));
         assert!(summary.main.iter().any(|entry| entry.source == "apk_startup"));
     }
 
+    /// Manifest enrichment produces hints and leaves the model alone. In v3 this
+    /// pushed synthetic `ObjectPoolEntry` records at `index = object_pool.len()`,
+    /// which both invented pool slots and grew the pool index space.
     #[test]
-    fn enriches_model_with_manifest_synthetic_bootflow_hints() {
-        let model = ProgramModel {
-            schema_version: 2,
-            adapter_kind: "python".to_string(),
-            dart_version: "3.0.0".to_string(),
-            snapshot_hash: "deadbeef".to_string(),
-            arch: "arm64".to_string(),
-            libraries: vec![flutterdec_adapter::LibraryInfo {
-                id: 1,
-                uri: "package:app/main.dart".to_string(),
-                name_display: "package:app/main.dart".to_string(),
-            }],
-            classes: vec![
-                flutterdec_adapter::ClassInfo {
-                    id: 1,
-                    name: "Global".to_string(),
-                    super_name: "Object".to_string(),
-                    library_uri: "package:app/main.dart".to_string(),
-                },
-                flutterdec_adapter::ClassInfo {
-                    id: 2,
-                    name: "MainActivity".to_string(),
-                    super_name: "Object".to_string(),
-                    library_uri: "package:app/main.dart".to_string(),
-                },
-                flutterdec_adapter::ClassInfo {
-                    id: 3,
-                    name: "SettingsMapper".to_string(),
-                    super_name: "Object".to_string(),
-                    library_uri: "package:app/model/settings.dart".to_string(),
-                },
+    fn manifest_enrichment_produces_hints_and_leaves_the_model_untouched() {
+        let model = test_model(
+            vec![lib(1, "package:app/main.dart")],
+            vec![
+                cls(1, "AppRoot", Some(1)),
+                cls(2, "MainActivity", Some(1)),
+                cls(3, "SettingsMapper", None),
             ],
-            functions: vec![
-                flutterdec_adapter::FunctionInfo {
-                    id: 1,
-                    name: "main".to_string(),
-                    owner_class: "Global".to_string(),
-                    entry_va: 0x1000,
-                    size: 4,
-                    code_section_va: 0x1000,
-                name_kind: None,
-                },
-                flutterdec_adapter::FunctionInfo {
-                    id: 2,
-                    name: "runApp".to_string(),
-                    owner_class: "Global".to_string(),
-                    entry_va: 0x1004,
-                    size: 4,
-                    code_section_va: 0x1000,
-                name_kind: None,
-                },
-                flutterdec_adapter::FunctionInfo {
-                    id: 3,
-                    name: "onNewIntent".to_string(),
-                    owner_class: "MainActivity".to_string(),
-                    entry_va: 0x1008,
-                    size: 4,
-                    code_section_va: 0x1000,
-                name_kind: None,
-                },
-                flutterdec_adapter::FunctionInfo {
-                    id: 4,
-                    name: "onResume".to_string(),
-                    owner_class: "MainActivity".to_string(),
-                    entry_va: 0x100c,
-                    size: 4,
-                    code_section_va: 0x1000,
-                name_kind: None,
-                },
-                flutterdec_adapter::FunctionInfo {
-                    id: 5,
-                    name: "ensureInitialized".to_string(),
-                    owner_class: "SettingsMapper".to_string(),
-                    entry_va: 0x1010,
-                    size: 4,
-                    code_section_va: 0x1000,
-                name_kind: None,
-                },
+            vec![
+                fun(1, named("main"), Some(1), 0x1000, 4),
+                fun(2, named("runApp"), Some(1), 0x1004, 4),
+                fun(3, named("onNewIntent"), Some(2), 0x1008, 4),
+                fun(4, named("onResume"), Some(2), 0x100c, 4),
+                fun(5, named("ensureInitialized"), Some(3), 0x1010, 4),
             ],
-            pool_geometry: None,
-            object_pool: Vec::new(),
-        };
+            ordinal_pool(vec![pool_string(0, "an adapter-authored value")]),
+        );
+        let before = model.clone();
         let signals = AndroidManifestSignals {
             package_name: Some("com.example.app".to_string()),
             application_name: Some("com.example.app.App".to_string()),
@@ -1818,23 +1516,29 @@
             deeplink_entries: vec!["myapp://open".to_string()],
         };
 
-        let (enriched, inserted) = enrich_model_with_manifest_bootflow_hints(&model, &signals);
-        assert!(inserted >= 4);
+        let mut hints = ProgramHints::new();
+        let inserted = collect_manifest_bootflow_hints(&model, &signals, &mut hints);
+        assert!(inserted >= 4, "expected at least four hints, got {inserted}");
 
-        let kinds = enriched
-            .object_pool
+        // No new pool entry, no new class, no new function, no index collision.
+        assert_eq!(model, before);
+        assert_eq!(model.object_pool.entries.len(), 1);
+        assert_eq!(model.object_pool.entries[0].index, 0);
+
+        let kinds = hints.iter().map(|h| h.kind).collect::<Vec<_>>();
+        assert!(kinds.contains(&HintKind::BootMain));
+        assert!(kinds.contains(&HintKind::BootRunApp));
+        assert!(kinds.contains(&HintKind::DeepLinkHandler));
+        assert!(kinds.contains(&HintKind::ActivityHandler));
+        // `SettingsMapper.ensureInitialized` is not in a bootstrap context, so
+        // the selector shape alone does not license the hint.
+        assert!(!kinds.contains(&HintKind::BootstrapInit));
+        assert!(hints
             .iter()
-            .filter_map(|e| e.decoded_kind.as_deref())
-            .collect::<Vec<_>>();
-        assert!(kinds.contains(&"ManifestMainCandidate"));
-        assert!(kinds.contains(&"ManifestRunAppCandidate"));
-        assert!(kinds.contains(&"ManifestDeepLinkCandidate"));
-        assert!(kinds.contains(&"ManifestActivityCandidate"));
-        assert!(!kinds.contains(&"ManifestBootstrapCandidate"));
-        assert!(enriched
-            .object_pool
+            .all(|h| h.origin == HintOrigin::AndroidManifest));
+        assert!(hints
             .iter()
-            .all(|entry| entry.source.as_deref() == Some("manifest")));
+            .all(|h| h.provenance == HintProvenance::Derived));
     }
 
     #[test]
@@ -1870,50 +1574,24 @@
         assert!(!cfg.apk_startup_analysis);
     }
 
+    /// Pool semantic metadata now comes from the function an entry points at,
+    /// plus host hints. v3 read `owner_class`/`library_uri` off the pool entry
+    /// itself, which let a producer attach any class to any slot.
     #[test]
-    fn builds_pool_semantic_hints_from_adapter_metadata() {
-        let model = ProgramModel {
-            schema_version: 2,
-            adapter_kind: "python".to_string(),
-            dart_version: "3.0.0".to_string(),
-            snapshot_hash: "deadbeef".to_string(),
-            arch: "arm64".to_string(),
-            libraries: Vec::new(),
-            classes: Vec::new(),
-            functions: Vec::new(),
-            pool_geometry: None,
-            object_pool: vec![
-                flutterdec_adapter::ObjectPoolEntry {
-                    index: 7,
-                    kind: "String".to_string(),
-                    value: "didChangeMetrics".to_string(),
-                    decoded_kind: Some("selector".to_string()),
-                    selector: Some("didChangeMetrics".to_string()),
-                    target_va: Some(0x1234),
-                    owner_class: Some("WidgetsBindingObserver".to_string()),
-                    library_uri: Some("package:flutter/src/widgets/binding.dart".to_string()),
-                    confidence: None,
-                    source: None,
-                },
-                flutterdec_adapter::ObjectPoolEntry {
-                    index: 8,
-                    kind: "Smi".to_string(),
-                    value: "42".to_string(),
-                    decoded_kind: None,
-                    selector: None,
-                    target_va: None,
-                    owner_class: None,
-                    library_uri: None,
-                    confidence: None,
-                    source: None,
-                },
-            ],
-        };
+    fn builds_pool_semantic_hints_from_the_function_an_entry_points_at() {
+        let model = test_model(
+            vec![lib(0, "package:flutter/src/widgets/binding.dart")],
+            vec![cls(0, "WidgetsBindingObserver", Some(0))],
+            vec![fun(0, named("didChangeMetrics"), Some(0), 0x1234, 4)],
+            hardware_pool(vec![
+                pool_selector(7, "didChangeMetrics", 0x1234),
+                pool_string(8, "42"),
+            ]),
+        );
+        let hints = program_hints(vec![]);
 
-        let class_to_library = build_class_library_lookup(&model);
-        let hints = build_pool_semantic_hints(&model, &class_to_library);
-        assert_eq!(hints.len(), 1);
-        let h = hints.get(&7).expect("missing semantic hint entry");
+        let semantic = build_pool_semantic_hints(&model, &hints);
+        let h = semantic.get(&7).expect("missing semantic hint entry");
         assert_eq!(h.selector.as_deref(), Some("didChangeMetrics"));
         assert_eq!(h.owner_class.as_deref(), Some("WidgetsBindingObserver"));
         assert_eq!(
@@ -1923,110 +1601,74 @@
         assert_eq!(h.target_va, Some(0x1234));
     }
 
+    /// An ordinal pool index is a position in the producer's list. Joining
+    /// disassembly against it would attach unrelated strings, so the join is
+    /// refused outright rather than filtered.
+    #[test]
+    fn ordinal_pool_indexes_produce_no_hints_at_all() {
+        let model = test_model(
+            vec![lib(0, "package:app/main.dart")],
+            vec![cls(0, "AppRoot", Some(0))],
+            vec![fun(0, named("didChangeMetrics"), Some(0), 0x1234, 4)],
+            ordinal_pool(vec![pool_selector(7, "didChangeMetrics", 0x1234)]),
+        );
+        let hints = program_hints(vec![]);
+
+        assert!(build_pool_semantic_hints(&model, &hints).is_empty());
+        assert!(build_pool_value_hints(&model).is_empty());
+        assert!(!collect_pool_metadata_stats(&model).addressable);
+    }
+
     #[test]
     fn collects_pool_metadata_coverage_stats() {
-        let model = ProgramModel {
-            schema_version: 2,
-            adapter_kind: "python".to_string(),
-            dart_version: "3.0.0".to_string(),
-            snapshot_hash: "deadbeef".to_string(),
-            arch: "arm64".to_string(),
-            libraries: Vec::new(),
-            classes: Vec::new(),
-            functions: Vec::new(),
-            pool_geometry: None,
-            object_pool: vec![
-                flutterdec_adapter::ObjectPoolEntry {
-                    index: 1,
-                    kind: "String".to_string(),
-                    value: "a".to_string(),
-                    decoded_kind: None,
-                    selector: Some("setState".to_string()),
-                    target_va: Some(0x1000),
-                    owner_class: Some("State".to_string()),
-                    library_uri: Some("package:flutter/src/widgets/framework.dart".to_string()),
-                    confidence: None,
-                    source: None,
-                },
-                flutterdec_adapter::ObjectPoolEntry {
-                    index: 2,
-                    kind: "Smi".to_string(),
-                    value: "42".to_string(),
-                    decoded_kind: None,
-                    selector: None,
-                    target_va: None,
-                    owner_class: None,
-                    library_uri: None,
-                    confidence: None,
-                    source: None,
-                },
-            ],
-        };
+        let model = test_model(
+            vec![],
+            vec![],
+            vec![],
+            hardware_pool(vec![
+                pool_selector(1, "setState", 0x1000),
+                pool_string(2, "42"),
+            ]),
+        );
 
         let stats = collect_pool_metadata_stats(&model);
         assert_eq!(stats.total_entries, 2);
+        assert!(stats.addressable);
         assert_eq!(stats.with_target_va, 1);
         assert_eq!(stats.with_selector, 1);
-        assert_eq!(stats.with_owner_class, 1);
-        assert_eq!(stats.with_library_uri, 1);
+        assert_eq!(stats.with_value, 2);
+        assert_eq!(stats.heuristic, 0);
     }
 
     #[test]
     fn builds_pool_target_symbols_from_metadata() {
-        let model = ProgramModel {
-            schema_version: 2,
-            adapter_kind: "python".to_string(),
-            dart_version: "3.0.0".to_string(),
-            snapshot_hash: "deadbeef".to_string(),
-            arch: "arm64".to_string(),
-            libraries: Vec::new(),
-            classes: Vec::new(),
-            functions: Vec::new(),
-            pool_geometry: None,
-            object_pool: vec![
-                flutterdec_adapter::ObjectPoolEntry {
-                    index: 7,
-                    kind: "String".to_string(),
-                    value: "didChangeMetrics".to_string(),
-                    decoded_kind: Some("selector".to_string()),
-                    selector: Some("didChangeMetrics".to_string()),
-                    target_va: Some(0x1234),
-                    owner_class: Some("WidgetsBindingObserver".to_string()),
-                    library_uri: Some("package:flutter/src/widgets/binding.dart".to_string()),
-                    confidence: None,
-                    source: None,
-                },
-                flutterdec_adapter::ObjectPoolEntry {
-                    index: 8,
-                    kind: "String".to_string(),
-                    value: "Int64List".to_string(),
-                    decoded_kind: Some("selector".to_string()),
-                    selector: Some("Int64List".to_string()),
-                    target_va: Some(0x2234),
-                    owner_class: Some("Int64List".to_string()),
-                    library_uri: Some("dart:typed_data".to_string()),
-                    confidence: None,
-                    source: None,
-                },
-                flutterdec_adapter::ObjectPoolEntry {
-                    index: 9,
-                    kind: "String".to_string(),
-                    value: "executeCommandAsync".to_string(),
-                    decoded_kind: Some("selector".to_string()),
-                    selector: Some("executeCommandAsync".to_string()),
-                    target_va: Some(0x3234),
-                    owner_class: Some("ConnectService".to_string()),
-                    library_uri: Some("package:spotube/models/connect/load.dart".to_string()),
-                    confidence: None,
-                    source: None,
-                },
+        let model = test_model(
+            vec![
+                lib(0, "package:flutter/src/widgets/binding.dart"),
+                lib(1, "dart:typed_data"),
+                lib(2, "package:spotube/services/connect.dart"),
             ],
-        };
+            vec![
+                cls(0, "WidgetsBindingObserver", Some(0)),
+                cls(1, "Int64List", Some(1)),
+                cls(2, "ConnectService", Some(2)),
+            ],
+            vec![
+                fun(0, named("didChangeMetrics"), Some(0), 0x1234, 4),
+                fun(1, named("Int64List"), Some(1), 0x2234, 4),
+                fun(2, named("executeCommandAsync"), Some(2), 0x3234, 4),
+            ],
+            hardware_pool(vec![
+                pool_selector(7, "didChangeMetrics", 0x1234),
+                pool_selector(8, "Int64List", 0x2234),
+                pool_selector(9, "executeCommandAsync", 0x3234),
+            ]),
+        );
+        let hints = program_hints(vec![]);
 
-        let class_to_library = build_class_library_lookup(&model);
-        let hints = build_pool_semantic_hints(&model, &class_to_library);
+        let semantic = build_pool_semantic_hints(&model, &hints);
         let values = build_pool_value_hints(&model);
-        let map = build_pool_target_symbols(&hints, &values);
+        let map = build_pool_target_symbols(&semantic, &values);
         assert_eq!(
             map.get(&0x1234).map(String::as_str),
             Some("flutter_widgets_WidgetsBindingObserver_didChangeMetrics")
@@ -2041,49 +1683,39 @@
         );
     }
 
+    /// A host hint fills in a selector the model never had, and only that: it
+    /// cannot displace an owner or library the model did recover.
     #[test]
-    fn enriches_pool_semantic_hints_from_function_metadata() {
-        let model = ProgramModel {
-            schema_version: 2,
-            adapter_kind: "python".to_string(),
-            dart_version: "3.0.0".to_string(),
-            snapshot_hash: "deadbeef".to_string(),
-            arch: "arm64".to_string(),
-            libraries: Vec::new(),
-            classes: vec![flutterdec_adapter::ClassInfo {
-                id: 1,
-                name: "State".to_string(),
-                super_name: "Object".to_string(),
-                library_uri: "package:flutter/src/widgets/framework.dart".to_string(),
-            }],
-            functions: vec![flutterdec_adapter::FunctionInfo {
-                id: 11,
-                name: "setState".to_string(),
-                owner_class: "State".to_string(),
-                entry_va: 0x4000,
-                size: 4,
-                code_section_va: 0x4000,
-            name_kind: None,
-            }],
-            pool_geometry: None,
-            object_pool: vec![flutterdec_adapter::ObjectPoolEntry {
-                index: 21,
-                kind: "Closure".to_string(),
-                value: "opaque".to_string(),
-                decoded_kind: None,
-                selector: None,
-                target_va: Some(0x4000),
-                owner_class: None,
-                library_uri: None,
-                confidence: None,
-                source: None,
-            }],
-        };
+    fn host_hints_fill_gaps_without_overriding_model_facts() {
+        let model = test_model(
+            vec![lib(0, "package:flutter/src/widgets/framework.dart")],
+            vec![cls(1, "State", Some(0))],
+            vec![fun(11, named("setState"), Some(1), 0x4000, 4)],
+            hardware_pool(vec![pool_string(21, "opaque")]),
+        );
+        let hints = program_hints(vec![hint(
+            HintKind::ActivityHandler,
+            HintOrigin::AndroidManifest,
+            "onNewIntent",
+            Some(0x4000),
+            Some("ManifestActivity"),
+            Some("apk:classes.dex"),
+        )]);
 
-        let class_to_library = build_class_library_lookup(&model);
-        let hints = build_pool_semantic_hints(&model, &class_to_library);
-        let h = hints.get(&21).expect("missing enriched semantic hint");
-        assert_eq!(h.selector.as_deref(), Some("setState"));
+        // Nothing points at 0x4000 from the pool, so the entry has no target and
+        // no fallback: the hint has nothing to attach to and does not invent one.
+        assert!(build_pool_semantic_hints(&model, &hints).is_empty());
+
+        let anchored = test_model(
+            vec![lib(0, "package:flutter/src/widgets/framework.dart")],
+            vec![cls(1, "State", Some(0))],
+            vec![fun(11, named("setState"), Some(1), 0x4000, 4)],
+            hardware_pool(vec![pool_selector(21, "opaque", 0x4000)]),
+        );
+        let semantic = build_pool_semantic_hints(&anchored, &hints);
+        let h = semantic.get(&21).expect("missing enriched semantic hint");
+        assert_eq!(h.selector.as_deref(), Some("opaque"));
+        // Owner and library come from the model's own function, not the hint.
         assert_eq!(h.owner_class.as_deref(), Some("State"));
         assert_eq!(
             h.library_uri.as_deref(),
@@ -2094,31 +1726,7 @@
 
     #[test]
     fn target_filter_matches_function_id_without_scope_override() {
-        let full_model = ProgramModel {
-            schema_version: 3,
-            adapter_kind: "python".to_string(),
-            dart_version: "unknown".to_string(),
-            snapshot_hash: "deadbeef".to_string(),
-            arch: "arm64".to_string(),
-            libraries: Vec::new(),
-            classes: vec![flutterdec_adapter::ClassInfo {
-                id: 1,
-                name: "Global".to_string(),
-                super_name: "Object".to_string(),
-                library_uri: "package:app/main.dart".to_string(),
-            }],
-            functions: vec![flutterdec_adapter::FunctionInfo {
-                id: 42,
-                name: "main".to_string(),
-                owner_class: "Global".to_string(),
-                entry_va: 0x1000,
-                size: 4,
-                code_section_va: 0x1000,
-                name_kind: Some("heuristic".to_string()),
-            }],
-            pool_geometry: None,
-            object_pool: Vec::new(),
-        };
+        let full_model = test_model(vec![], vec![cls(1, "AppRoot", None)], vec![fun(42, Some(Name { text: "main".to_string(), provenance: Provenance::Heuristic, confidence: None }), Some(1), 0x1000, 4)], ordinal_pool(vec![]));
         let scoped_model = full_model.clone();
         let (selected, stats) = apply_target_function_filter(
             &full_model,
@@ -2131,55 +1739,20 @@
         assert!(!stats.scope_overridden);
         assert_eq!(stats.matched_count, 1);
         assert_eq!(selected.functions.len(), 1);
-        assert_eq!(selected.functions[0].id, 42);
+        assert_eq!(selected.functions[0].id, FunctionId(42));
     }
 
     #[test]
     fn target_filter_can_override_scope_for_entry_va() {
-        let full_model = ProgramModel {
-            schema_version: 3,
-            adapter_kind: "python".to_string(),
-            dart_version: "unknown".to_string(),
-            snapshot_hash: "deadbeef".to_string(),
-            arch: "arm64".to_string(),
-            libraries: Vec::new(),
-            classes: vec![
-                flutterdec_adapter::ClassInfo {
-                    id: 1,
-                    name: "AppClass".to_string(),
-                    super_name: "Object".to_string(),
-                    library_uri: "package:app/main.dart".to_string(),
-                },
-                flutterdec_adapter::ClassInfo {
-                    id: 2,
-                    name: "CoreClass".to_string(),
-                    super_name: "Object".to_string(),
-                    library_uri: "dart:core".to_string(),
-                },
+        let full_model = test_model(
+            vec![lib(0, "package:app/main.dart"), lib(1, "dart:core")],
+            vec![cls(1, "AppClass", Some(0)), cls(2, "CoreClass", Some(1))],
+            vec![
+                fun(1, named("main"), Some(1), 0x1000, 4),
+                fun(2, named("coreFn"), Some(2), 0x2000, 4),
             ],
-            functions: vec![
-                flutterdec_adapter::FunctionInfo {
-                    id: 1,
-                    name: "main".to_string(),
-                    owner_class: "AppClass".to_string(),
-                    entry_va: 0x1000,
-                    size: 4,
-                    code_section_va: 0x1000,
-                    name_kind: Some("heuristic".to_string()),
-                },
-                flutterdec_adapter::FunctionInfo {
-                    id: 2,
-                    name: "coreFn".to_string(),
-                    owner_class: "CoreClass".to_string(),
-                    entry_va: 0x2000,
-                    size: 4,
-                    code_section_va: 0x2000,
-                    name_kind: Some("heuristic".to_string()),
-                },
-            ],
-            pool_geometry: None,
-            object_pool: Vec::new(),
-        };
+            ordinal_pool(Vec::new()),
+        );
         let (scoped_model, _) = apply_function_scope_filter(&full_model, FunctionScope::App, &[]);
         assert_eq!(scoped_model.functions.len(), 1);
 
@@ -2191,47 +1764,12 @@
         assert!(stats.scope_overridden);
         assert_eq!(stats.matched_count, 1);
         assert_eq!(selected.functions.len(), 1);
-        assert_eq!(selected.functions[0].entry_va, 0x2000);
+        assert_eq!(selected.functions[0].code.start_va, 0x2000);
     }
 
     #[test]
     fn target_filter_rejects_ambiguous_any_selector() {
-        let full_model = ProgramModel {
-            schema_version: 3,
-            adapter_kind: "python".to_string(),
-            dart_version: "unknown".to_string(),
-            snapshot_hash: "deadbeef".to_string(),
-            arch: "arm64".to_string(),
-            libraries: Vec::new(),
-            classes: vec![flutterdec_adapter::ClassInfo {
-                id: 1,
-                name: "Global".to_string(),
-                super_name: "Object".to_string(),
-                library_uri: "package:app/main.dart".to_string(),
-            }],
-            functions: vec![
-                flutterdec_adapter::FunctionInfo {
-                    id: 42,
-                    name: "fnA".to_string(),
-                    owner_class: "Global".to_string(),
-                    entry_va: 0x1000,
-                    size: 4,
-                    code_section_va: 0x1000,
-                    name_kind: Some("heuristic".to_string()),
-                },
-                flutterdec_adapter::FunctionInfo {
-                    id: 7,
-                    name: "fnB".to_string(),
-                    owner_class: "Global".to_string(),
-                    entry_va: 42,
-                    size: 4,
-                    code_section_va: 42,
-                    name_kind: Some("heuristic".to_string()),
-                },
-            ],
-            pool_geometry: None,
-            object_pool: Vec::new(),
-        };
+        let full_model = test_model(vec![], vec![cls(1, "AppRoot", None)], vec![fun(42, Some(Name { text: "fnA".to_string(), provenance: Provenance::Heuristic, confidence: None }), Some(1), 0x1000, 4), fun(7, Some(Name { text: "fnB".to_string(), provenance: Provenance::Heuristic, confidence: None }), Some(1), 42, 4)], ordinal_pool(vec![]));
         let scoped_model = full_model.clone();
 
         let err = apply_target_function_filter(&full_model, &scoped_model, FunctionTarget::Any(42))

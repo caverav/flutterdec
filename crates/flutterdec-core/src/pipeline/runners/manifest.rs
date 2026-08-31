@@ -1,10 +1,6 @@
-use super::{
-    collect_existing_bootflow_hint_keys, is_activity_handler_selector, is_bootstrap_selector,
-    is_deeplink_selector, is_main_like_selector, is_runapp_selector,
-    library_is_bootstrap_context, normalize_method_selector, owner_is_bootstrap_context,
-    push_synthetic_hint, SyntheticHintInput,
-};
-use flutterdec_adapter::ProgramModel;
+use super::{hint_kinds_for_selector, push_hint, HintCandidate};
+use flutterdec_adapter::model::ProgramModel;
+use flutterdec_disasm_arm64::{HintKind, HintOrigin, HintProvenance, ProgramHints};
 use flutterdec_loader::ApkSession;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::Path;
@@ -996,20 +992,18 @@ fn inspect_manifest_bytes(bytes: &[u8]) -> AndroidManifestInspection {
     }
 }
 
-pub(super) fn enrich_model_with_manifest_bootflow_hints(
+/// Turn manifest evidence into hints about functions the adapter recovered.
+///
+/// The model is read, never written. A manifest says which activity Android
+/// launches; it does not say which Dart code range that is, so everything this
+/// produces is a hint with `AndroidManifest` origin and derived provenance, and
+/// none of it can create a class, a function, or a pool entry.
+pub(super) fn collect_manifest_bootflow_hints(
     model: &ProgramModel,
     signals: &AndroidManifestSignals,
-) -> (ProgramModel, usize) {
-    let mut enriched = model.clone();
+    hints: &mut ProgramHints,
+) -> usize {
     let mut inserted = 0usize;
-    let mut class_library = HashMap::new();
-    for class in &enriched.classes {
-        class_library
-            .entry(class.name.clone())
-            .or_insert_with(|| class.library_uri.clone());
-    }
-
-    let mut seen = collect_existing_bootflow_hint_keys(&enriched);
 
     let activity_set = signals
         .activities
@@ -1018,121 +1012,42 @@ pub(super) fn enrich_model_with_manifest_bootflow_hints(
         .collect::<HashSet<_>>();
     let has_deeplink_signal = signals.has_view_browsable || !signals.deeplink_entries.is_empty();
 
-    let functions = enriched.functions.clone();
-    for function in functions {
-        let selector = normalize_method_selector(&function.name);
-        if selector.is_empty() {
+    for function in &model.functions {
+        let Some(name) = function.name_text() else {
             continue;
-        }
-        let owner = function.owner_class.trim();
-        let owner_lower = owner.to_ascii_lowercase();
-        let library_uri = class_library
-            .get(&function.owner_class)
-            .cloned()
-            .unwrap_or_default();
-        let library_lower = library_uri.to_ascii_lowercase();
+        };
+        let owner = model.owner_name(function);
+        let library_uri = model.owner_library_uri(function);
+        let candidate = HintCandidate {
+            origin: HintOrigin::AndroidManifest,
+            provenance: HintProvenance::Derived,
+            selector: name,
+            target_va: Some(function.code.start_va),
+            owner_class: owner,
+            library_uri,
+            detail: "manifest evidence matched a recovered function name",
+        };
 
-        if signals.has_main_launcher
-            && is_main_like_selector(&selector)
-            && push_synthetic_hint(
-                &mut enriched,
-                &mut seen,
-                &SyntheticHintInput {
-                    decoded_kind: "ManifestMainCandidate",
-                    selector: &selector,
-                    target_va: Some(function.entry_va),
-                    owner_class: owner,
-                    library_uri: &library_uri,
-                    value: "manifest:main-launcher",
-                    confidence: Some(0.95),
-                    source: Some("manifest"),
-                },
-            )
-        {
+        for kind in hint_kinds_for_selector(name, owner, library_uri) {
+            // Each manifest signal only licenses the kinds it is evidence for.
+            let licensed = match kind {
+                HintKind::EntryPoint | HintKind::BootMain | HintKind::BootRunApp => {
+                    signals.has_main_launcher
+                }
+                HintKind::DeepLinkHandler => has_deeplink_signal,
+                HintKind::ActivityHandler => {
+                    has_deeplink_signal
+                        && class_matches_manifest_activity(owner.unwrap_or(""), &activity_set)
+                }
+                HintKind::BootstrapInit => signals.has_main_launcher,
+            };
+            if licensed && push_hint(hints, kind, &candidate) {
                 inserted += 1;
-        }
-        if signals.has_main_launcher
-            && is_runapp_selector(&selector)
-            && push_synthetic_hint(
-                &mut enriched,
-                &mut seen,
-                &SyntheticHintInput {
-                    decoded_kind: "ManifestRunAppCandidate",
-                    selector: &selector,
-                    target_va: Some(function.entry_va),
-                    owner_class: owner,
-                    library_uri: &library_uri,
-                    value: "manifest:runapp",
-                    confidence: Some(0.95),
-                    source: Some("manifest"),
-                },
-            )
-        {
-                inserted += 1;
-        }
-        if has_deeplink_signal
-            && is_deeplink_selector(&selector)
-            && push_synthetic_hint(
-                &mut enriched,
-                &mut seen,
-                &SyntheticHintInput {
-                    decoded_kind: "ManifestDeepLinkCandidate",
-                    selector: &selector,
-                    target_va: Some(function.entry_va),
-                    owner_class: owner,
-                    library_uri: &library_uri,
-                    value: "manifest:deeplink",
-                    confidence: Some(0.9),
-                    source: Some("manifest"),
-                },
-            )
-        {
-                inserted += 1;
-        }
-        if has_deeplink_signal
-            && class_matches_manifest_activity(owner, &activity_set)
-            && is_activity_handler_selector(&selector)
-            && push_synthetic_hint(
-                &mut enriched,
-                &mut seen,
-                &SyntheticHintInput {
-                    decoded_kind: "ManifestActivityCandidate",
-                    selector: &selector,
-                    target_va: Some(function.entry_va),
-                    owner_class: owner,
-                    library_uri: &library_uri,
-                    value: "manifest:activity",
-                    confidence: Some(0.9),
-                    source: Some("manifest"),
-                },
-            )
-        {
-            inserted += 1;
-        }
-        if signals.has_main_launcher
-            && is_bootstrap_selector(&selector)
-            && (owner_is_bootstrap_context(&owner_lower)
-                || library_is_bootstrap_context(&library_lower))
-            && push_synthetic_hint(
-                &mut enriched,
-                &mut seen,
-                &SyntheticHintInput {
-                    decoded_kind: "ManifestBootstrapCandidate",
-                    selector: &selector,
-                    target_va: Some(function.entry_va),
-                    owner_class: owner,
-                    library_uri: &library_uri,
-                    value: "manifest:bootstrap",
-                    confidence: Some(0.9),
-                    source: Some("manifest"),
-                },
-            )
-        {
-            inserted += 1;
+            }
         }
     }
 
-    (enriched, inserted)
+    inserted
 }
 
 #[cfg(test)]

@@ -368,7 +368,7 @@ pub fn build_function_ir(d: &FunctionDisassembly) -> FunctionIr {
 
     FunctionIr {
         function_id: d.function_id,
-        name: d.function_name.clone(),
+        name: d.display_name(),
         entry_va: d.entry_va,
         blocks,
     }
@@ -400,8 +400,8 @@ mod tests {
     fn elides_the_dart_stack_overflow_check_and_its_slow_path() {
         let d = FunctionDisassembly {
             function_id: 7,
-            function_name: "guarded".to_string(),
-            owner_class: "Global".to_string(),
+            function_name: Some("guarded".to_string()),
+            owner_class: None,
             entry_va: 0x1000,
             size: 24,
             instructions: vec![
@@ -455,8 +455,8 @@ mod tests {
             for offset in ["0x38", "0x48", "0x60"] {
                 let d = FunctionDisassembly {
                     function_id: 9,
-                    function_name: "guarded".to_string(),
-                    owner_class: "Global".to_string(),
+                    function_name: Some("guarded".to_string()),
+                    owner_class: None,
                     entry_va: 0x1000,
                     size: 20,
                     instructions: vec![
@@ -494,8 +494,8 @@ mod tests {
     fn does_not_treat_an_unrelated_stack_compare_as_the_guard() {
         let d = FunctionDisassembly {
             function_id: 10,
-            function_name: "notGuarded".to_string(),
-            owner_class: "Global".to_string(),
+            function_name: Some("notGuarded".to_string()),
+            owner_class: None,
             entry_va: 0x1000,
             size: 12,
             instructions: vec![
@@ -522,8 +522,8 @@ mod tests {
     fn code_after_a_return_starts_a_new_block() {
         let d = FunctionDisassembly {
             function_id: 8,
-            function_name: "two_exits".to_string(),
-            owner_class: "Global".to_string(),
+            function_name: Some("two_exits".to_string()),
+            owner_class: None,
             entry_va: 0x2000,
             size: 12,
             instructions: vec![
@@ -542,8 +542,8 @@ mod tests {
     fn builds_cfg_with_branch_and_fallthrough() {
         let d = FunctionDisassembly {
             function_id: 1,
-            function_name: "f".to_string(),
-            owner_class: "Global".to_string(),
+            function_name: Some("f".to_string()),
+            owner_class: None,
             entry_va: 0x1000,
             size: 16,
             instructions: vec![
@@ -580,8 +580,8 @@ mod tests {
     fn parses_tbnz_target_from_last_operand_token() {
         let d = FunctionDisassembly {
             function_id: 2,
-            function_name: "g".to_string(),
-            owner_class: "Global".to_string(),
+            function_name: Some("g".to_string()),
+            owner_class: None,
             entry_va: 0x2000,
             size: 16,
             instructions: vec![

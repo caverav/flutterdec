@@ -1,8 +1,22 @@
 #!/usr/bin/env python3
+"""Checked-in reference producer for the flutterdec adapter boundary.
+
+One invocation reads an adapter protocol v1 request, runs exactly one backend,
+and writes a ProgramModel v4 plus a protocol v1 result. There is no v2/v3 path.
+
+The rule every backend here follows is that an unrecovered fact is absent, not
+invented. A function whose name was not recovered has no name; a class whose
+library was not recovered has no library; a producer that carved strings out of
+the data image says its pool indexes are ordinal and its index space is
+unavailable, rather than handing the host positions that look like `ObjectPool`
+entries. Every domain that came back empty carries a diagnostic saying so, so
+"nothing was there" and "we did not look" stay distinguishable.
+"""
 from __future__ import annotations
 
 import argparse
 import fcntl
+import hashlib
 import json
 import os
 import re
@@ -15,10 +29,250 @@ import tempfile
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
+PROTOCOL_MAJOR = 1
+MODEL_VERSION = 4
 
-def _read_bytes(path: str) -> bytes:
-    with open(path, "rb") as f:
-        return f.read()
+VM_DATA = "vm_data"
+ISOLATE_DATA = "isolate_data"
+VM_INSTRUCTIONS = "vm_instructions"
+ISOLATE_INSTRUCTIONS = "isolate_instructions"
+
+DOMAINS = (
+    "libraries",
+    "classes",
+    "class_relationships",
+    "functions",
+    "function_names",
+    "object_pool",
+    "pool_index_space",
+)
+
+COMPLETE = "complete"
+PARTIAL = "partial"
+UNAVAILABLE = "unavailable"
+
+EXACT = "exact"
+DERIVED = "derived"
+HEURISTIC = "heuristic"
+
+# Mirrors `validate::PLACEHOLDER_NAMES`. A carved string that is one of these is
+# an admission of ignorance wearing a value's clothes, and the host rejects the
+# whole model over one of them, so they are filtered at the source.
+PLACEHOLDER_NAMES = frozenset(
+    [
+        "",
+        "-",
+        "?",
+        "??",
+        "???",
+        "n/a",
+        "na",
+        "none",
+        "null",
+        "nil",
+        "todo",
+        "tbd",
+        "unknown",
+        "<unknown>",
+        "unnamed",
+        "anonymous",
+        "placeholder",
+        "undefined",
+    ]
+)
+
+
+class BackendUnavailable(Exception):
+    """The backend's tooling is not installed. Distinct from it failing."""
+
+
+class BackendFailed(Exception):
+    """The backend ran and could not produce a model."""
+
+
+def _is_placeholder(text: str) -> bool:
+    return text.strip().lower() in PLACEHOLDER_NAMES
+
+
+def _usable_value(text: str) -> bool:
+    return bool(text) and not _is_placeholder(text)
+
+
+# --------------------------------------------------------------------------
+# protocol v1
+# --------------------------------------------------------------------------
+
+
+def _sha256(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def _load_request(path: Path) -> dict:
+    try:
+        request = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"request is not readable JSON: {exc}") from exc
+    if request.get("protocol_major") != PROTOCOL_MAJOR:
+        raise ValueError(
+            f"unsupported protocol major {request.get('protocol_major')!r}; this adapter implements {PROTOCOL_MAJOR}"
+        )
+    if request.get("model_major") != MODEL_VERSION:
+        raise ValueError(
+            f"unsupported model major {request.get('model_major')!r}; this adapter emits {MODEL_VERSION}"
+        )
+    for key in ("identity", "compatibility", "producer", "inputs", "output", "requested_backend"):
+        if key not in request:
+            raise ValueError(f"request is missing {key}")
+    return request
+
+
+def _handle(request: dict, region: str) -> dict:
+    for handle in request["inputs"]:
+        if handle.get("region") == region:
+            return handle
+    raise ValueError(f"request omits input region {region}")
+
+
+def _read_region(request: dict, region: str) -> bytes:
+    handle = _handle(request, region)
+    path = Path(handle["path"])
+    try:
+        data = path.read_bytes()
+    except OSError as exc:
+        raise FileNotFoundError(f"input {region} is not readable: {exc}") from exc
+    # The digest is the point of the handle: without it "the adapter read the
+    # snapshot" only means "the adapter read a file".
+    if len(data) != handle["size"]:
+        raise ValueError(
+            f"input {region} is {len(data)} bytes, request declared {handle['size']}"
+        )
+    actual = _sha256(data)
+    if actual != handle["sha256"]:
+        raise ValueError(
+            f"input {region} digest {actual} does not match declared {handle['sha256']}"
+        )
+    return data
+
+
+def _model_regions(request: dict) -> List[dict]:
+    """Echo the host's region table back verbatim.
+
+    Anything else here is the adapter disagreeing with the host about what it
+    was given, which the host rejects rather than reconciles.
+    """
+    return [
+        {
+            "region": h["region"],
+            "size": h["size"],
+            "sha256": h["sha256"],
+            "virtual_address": h.get("virtual_address"),
+            "executable": h["executable"],
+        }
+        for h in request["inputs"]
+    ]
+
+
+def _region_va(request: dict, region: str) -> int:
+    return int(_handle(request, region).get("virtual_address") or 0)
+
+
+def _write_result(
+    path: Path,
+    status: str,
+    model: Optional[str] = None,
+    error: Optional[dict] = None,
+    resolved_backend: Optional[str] = None,
+    fallback_reason: Optional[str] = None,
+    diagnostics: Optional[List[dict]] = None,
+) -> None:
+    payload = {
+        "protocol_major": PROTOCOL_MAJOR,
+        "model_major": MODEL_VERSION,
+        "status": status,
+        "model": model,
+        "error": error,
+        "resolved_backend": resolved_backend,
+        "fallback_reason": fallback_reason,
+        "diagnostics": diagnostics or [],
+    }
+    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+# --------------------------------------------------------------------------
+# model v4 assembly
+# --------------------------------------------------------------------------
+
+
+def _diagnostic(code: str, message: str, subject: Optional[str] = None,
+                severity: str = "warning") -> dict:
+    return {"code": code, "severity": severity, "subject": subject, "message": message}
+
+
+def _name(text: str, provenance: str) -> dict:
+    # `confidence` stays null everywhere in this file. A number here would look
+    # calibrated, and none of these backends has anything to calibrate against.
+    return {"text": text, "provenance": provenance, "confidence": None}
+
+
+def _build_model(
+    request: dict,
+    capabilities: Dict[str, str],
+    libraries: List[dict],
+    classes: List[dict],
+    functions: List[dict],
+    object_pool: dict,
+    diagnostics: List[dict],
+) -> dict:
+    """Assemble a v4 model and add the diagnostic every unavailable domain owes.
+
+    Validation rejects an unavailable domain with nothing said about it, which
+    is deliberate: silence is indistinguishable from a producer that forgot to
+    look, and this is the one place that can tell the difference.
+    """
+    explained = {d.get("subject") for d in diagnostics}
+    for domain in DOMAINS:
+        if capabilities[domain] == UNAVAILABLE and domain not in explained:
+            diagnostics.append(
+                _diagnostic(
+                    "domain_not_recovered",
+                    f"this backend recovered no {domain.replace('_', ' ')}",
+                    subject=domain,
+                )
+            )
+    return {
+        "model_version": MODEL_VERSION,
+        "producer": request["producer"],
+        "input": {
+            "identity": request["identity"],
+            "regions": _model_regions(request),
+        },
+        "compatibility": request["compatibility"],
+        "capabilities": capabilities,
+        "libraries": sorted(libraries, key=lambda v: v["id"]),
+        "classes": sorted(classes, key=lambda v: v["id"]),
+        "functions": sorted(functions, key=lambda v: v["id"]),
+        "object_pool": object_pool,
+        "diagnostics": diagnostics,
+        "extensions": {},
+    }
+
+
+def _ordinal_pool(entries: List[dict]) -> dict:
+    """A pool whose indexes are positions in a list, not hardware slots.
+
+    `geometry` is absent and the index space is separately reported unavailable,
+    so a `ldr xN, [x27, #disp]` cannot be resolved through these.
+    """
+    return {"index_space": "ordinal", "geometry": None, "entries": entries}
+
+
+def _empty_pool() -> dict:
+    return _ordinal_pool([])
+
+
+# --------------------------------------------------------------------------
+# shared extraction
+# --------------------------------------------------------------------------
 
 
 def _extract_strings(data: bytes, min_len: int = 5, max_items: int = 20000) -> List[str]:
@@ -26,6 +280,8 @@ def _extract_strings(data: bytes, min_len: int = 5, max_items: int = 20000) -> L
     for m in re.finditer(rb"[ -~]{%d,}" % min_len, data):
         s = m.group(0).decode("utf-8", errors="ignore")
         if len(s) > 220:
+            continue
+        if not _usable_value(s):
             continue
         out.append(s)
         if len(out) >= max_items:
@@ -41,87 +297,19 @@ def _extract_strings(data: bytes, min_len: int = 5, max_items: int = 20000) -> L
     return uniq
 
 
-def _detect_snapshot_hash(vm_data: bytes, iso_data: bytes, fallback: str) -> str:
-    probe = (vm_data + iso_data)[:65536]
-    m = re.search(rb"([0-9a-f]{32})product\\s+no-code_comments", probe)
-    if m:
-        return m.group(1).decode("ascii", errors="ignore")
-    m2 = re.search(rb"\b([0-9a-f]{32})\b", probe)
-    if m2:
-        return m2.group(1).decode("ascii", errors="ignore")
-    return fallback
+def _library_uris(strings: List[str]) -> List[str]:
+    """Library URIs that appear as strings in the image.
 
-
-def _decode_bl_target(pc: int, word: int) -> Optional[int]:
-    if ((word >> 26) & 0x3F) != 0b100101:
-        return None
-    imm26 = word & 0x03FFFFFF
-    if imm26 & (1 << 25):
-        imm26 -= (1 << 26)
-    return pc + (imm26 << 2)
-
-
-def _is_frame_prologue(word: int) -> bool:
-    rt = word & 0x1F
-    rn = (word >> 5) & 0x1F
-    rt2 = (word >> 10) & 0x1F
-    is_store_pair = ((word >> 30) & 0x3) == 0b10
-    return is_store_pair and rt == 29 and rt2 == 30 and rn == 31
-
-
-def _recover_functions(instr: bytes, base_va: int) -> List[dict]:
-    starts: Set[int] = set()
-    if base_va:
-        starts.add(base_va)
-
-    instr_len = len(instr)
-    hi = base_va + instr_len
-
-    prologues: Set[int] = set()
-    call_target_counts: Dict[int, int] = {}
-    for off in range(0, max(0, instr_len - 3), 4):
-        word = struct.unpack_from("<I", instr, off)[0]
-        pc = base_va + off
-        tgt = _decode_bl_target(pc, word)
-        if tgt is not None and base_va <= tgt < hi and (tgt - base_va) % 4 == 0:
-            call_target_counts[tgt] = call_target_counts.get(tgt, 0) + 1
-
-        if _is_frame_prologue(word):
-            prologues.add(base_va + off)
-
-    starts.update(prologues)
-    for tgt, count in call_target_counts.items():
-        if tgt in prologues or count >= 2:
-            starts.add(tgt)
-
-    sorted_starts = sorted(starts)
-    funcs = []
-    for i, start in enumerate(sorted_starts):
-        nxt = sorted_starts[i + 1] if i + 1 < len(sorted_starts) else hi
-        size = max(4, min(nxt - start, 0x8000)) if nxt > start else 128
-        funcs.append(
-            {
-                "id": i,
-                "name": f"sub_{start:x}",
-                "owner_class": "Global",
-                "entry_va": int(start),
-                "size": int(size),
-                "code_section_va": int(base_va),
-                "name_kind": "placeholder",
-            }
-        )
-    return funcs
-
-
-def _collect_libraries(strings: List[str]) -> List[str]:
+    There is no fallback. A snapshot whose data image contains no `package:` URI
+    yields no libraries, because the alternative is emitting one library named
+    after an app that may not exist.
+    """
     out: List[str] = []
     seen: Set[str] = set()
     for s in strings:
         if s.startswith("package:") and ".dart" in s and len(s) < 200 and s not in seen:
             seen.add(s)
             out.append(s)
-    if not out:
-        out = ["package:app/main.dart"]
     return out[:512]
 
 
@@ -151,172 +339,6 @@ def _selector_from_string(s: str) -> Optional[str]:
     return cleaned
 
 
-def _entrypoint_selector_from_name(name: str) -> Optional[str]:
-    selector = _selector_from_string(name or "")
-    if not selector:
-        return None
-    lower = selector.strip().lower()
-    if (
-        lower == "main"
-        or lower.endswith(".main")
-        or lower.endswith("::main")
-        or lower.endswith("_main")
-        or lower == "runapp"
-        or lower.endswith(".runapp")
-    ):
-        return selector
-    return None
-
-
-def _bootflow_candidates_from_name(
-    name: str, owner_class: str, library_uri: str
-) -> List[Tuple[str, str, str]]:
-    selector = _selector_from_string(name or "")
-    if not selector:
-        return []
-    lower = selector.strip().lower()
-    owner_lower = (owner_class or "").strip().lower()
-    library_lower = (library_uri or "").strip().lower()
-    out: List[Tuple[str, str, str]] = []
-
-    if (
-        lower == "main"
-        or lower.endswith(".main")
-        or lower.endswith("::main")
-        or lower.endswith("_main")
-    ):
-        out.append(("EntryPointCandidate", selector, f"entrypoint:{selector}"))
-        out.append(("BootMainCandidate", selector, f"bootflow:main:{selector}"))
-
-    if lower == "runapp" or lower.endswith(".runapp"):
-        out.append(("EntryPointCandidate", selector, f"entrypoint:{selector}"))
-        out.append(("BootRunAppCandidate", selector, f"bootflow:runapp:{selector}"))
-
-    if lower in {
-        "didpushrouteinformation",
-        "didpushroute",
-        "didpoproute",
-        "setnewroutepath",
-        "parserouteinformation",
-        "ongenerateroute",
-        "onunknownroute",
-        "onnewintent",
-        "handleintent",
-    }:
-        out.append(("DeepLinkHandlerCandidate", selector, f"bootflow:deeplink:{selector}"))
-
-    looks_activity_owner = "activity" in owner_lower or "flutterjni" in owner_lower
-    looks_activity_lib = (
-        "activity" in library_lower
-        or "android" in library_lower
-        or library_lower.startswith("package:flutter/src/embedding")
-    )
-    if lower in {"onnewintent", "handleintent"}:
-        out.append(("ActivityHandlerCandidate", selector, f"bootflow:activity:{selector}"))
-    elif lower in {"oncreate", "onstart", "onresume", "onpause", "onstop"} and (
-        looks_activity_owner or looks_activity_lib
-    ):
-        out.append(("ActivityHandlerCandidate", selector, f"bootflow:activity:{selector}"))
-
-    bootstrap_like_owner = (
-        "binding" in owner_lower
-        or "engine" in owner_lower
-        or "jni" in owner_lower
-        or "bootstrap" in owner_lower
-        or owner_lower == "global"
-        or owner_lower.endswith("binding")
-    )
-    bootstrap_like_library = (
-        library_lower.endswith("/main.dart")
-        or library_lower.startswith("package:flutter/")
-        or "/bootstrap" in library_lower
-        or "/engine" in library_lower
-    )
-    if lower in {
-        "ensureinitialized",
-        "nativeensureinitialized",
-        "startinitialization",
-        "ensureinitializationcomplete",
-    } and (
-        lower != "ensureinitialized"
-        or bootstrap_like_owner
-        or bootstrap_like_library
-    ):
-        out.append(("BootstrapInitCandidate", selector, f"bootflow:init:{selector}"))
-
-    deduped: List[Tuple[str, str, str]] = []
-    seen: Set[Tuple[str, str]] = set()
-    for decoded_kind, sel, value in out:
-        key = (decoded_kind, sel.lower())
-        if key in seen:
-            continue
-        seen.add(key)
-        deduped.append((decoded_kind, sel, value))
-    return deduped
-
-
-def _pool_entries(strings: List[str]) -> List[dict]:
-    entries = []
-    for i, s in enumerate(strings):
-        decoded_kind = "String"
-        selector = _selector_from_string(s)
-        library_uri = None
-        if s.startswith("package:") and ".dart" in s:
-            decoded_kind = "LibraryUri"
-            library_uri = s
-        elif selector is not None:
-            decoded_kind = "SelectorString"
-
-        entries.append(
-            {
-                "index": i,
-                "kind": "String",
-                "value": s,
-                "decoded_kind": decoded_kind,
-                "selector": selector,
-                "target_va": None,
-                "owner_class": None,
-                "library_uri": library_uri,
-                "confidence": 0.4,
-                "source": "internal",
-            }
-        )
-    return entries
-
-
-def _append_synthetic_pool_entries(base: List[dict], synthetic: List[dict]) -> List[dict]:
-    out = list(base)
-    next_index = len(out)
-    seen: Set[Tuple[Optional[str], Optional[str], Optional[int], Optional[str], Optional[str]]] = set()
-    for e in out:
-        seen.add(
-            (
-                e.get("decoded_kind"),
-                e.get("selector"),
-                e.get("target_va"),
-                e.get("owner_class"),
-                e.get("library_uri"),
-            )
-        )
-
-    for e in synthetic:
-        key = (
-            e.get("decoded_kind"),
-            e.get("selector"),
-            e.get("target_va"),
-            e.get("owner_class"),
-            e.get("library_uri"),
-        )
-        if key in seen:
-            continue
-        seen.add(key)
-        entry = dict(e)
-        entry["index"] = next_index
-        next_index += 1
-        out.append(entry)
-    return out
-
-
 def _normalize_library_uri(raw: str) -> Optional[str]:
     t = raw.strip()
     if not t:
@@ -326,15 +348,163 @@ def _normalize_library_uri(raw: str) -> Optional[str]:
     return None
 
 
-def _sanitize_owner_class(raw: str) -> Optional[str]:
+def _sanitize_class_name(raw: str) -> Optional[str]:
     t = raw.strip()
     if not t:
         return None
     t = re.sub(r"<.*?>", "", t)
     t = "".join(ch for ch in t if ch.isalnum() or ch in "_$")
-    if not t:
+    if not t or _is_placeholder(t):
         return None
     return t
+
+
+# --------------------------------------------------------------------------
+# internal backend: string carving plus prologue scanning
+# --------------------------------------------------------------------------
+
+
+def _decode_bl_target(pc: int, word: int) -> Optional[int]:
+    if ((word >> 26) & 0x3F) != 0b100101:
+        return None
+    imm26 = word & 0x03FFFFFF
+    if imm26 & (1 << 25):
+        imm26 -= 1 << 26
+    return pc + (imm26 << 2)
+
+
+def _is_frame_prologue(word: int) -> bool:
+    rt = word & 0x1F
+    rn = (word >> 5) & 0x1F
+    rt2 = (word >> 10) & 0x1F
+    is_store_pair = ((word >> 30) & 0x3) == 0b10
+    return is_store_pair and rt == 29 and rt2 == 30 and rn == 31
+
+
+def _recover_code_ranges(instr: bytes, base_va: int) -> List[dict]:
+    """Code ranges from frame prologues and call targets.
+
+    Every range here is a guess about where a function begins, so each one is
+    `heuristic` and none of them carries a name: there is no name evidence in a
+    prologue, and `sub_1234` was never one.
+    """
+    starts: Set[int] = set()
+    if base_va:
+        starts.add(base_va)
+
+    instr_len = len(instr)
+    hi = base_va + instr_len
+
+    prologues: Set[int] = set()
+    call_target_counts: Dict[int, int] = {}
+    for off in range(0, max(0, instr_len - 3), 4):
+        word = struct.unpack_from("<I", instr, off)[0]
+        pc = base_va + off
+        tgt = _decode_bl_target(pc, word)
+        if tgt is not None and base_va <= tgt < hi and (tgt - base_va) % 4 == 0:
+            call_target_counts[tgt] = call_target_counts.get(tgt, 0) + 1
+        if _is_frame_prologue(word):
+            prologues.add(base_va + off)
+
+    starts.update(prologues)
+    for tgt, count in call_target_counts.items():
+        if tgt in prologues or count >= 2:
+            starts.add(tgt)
+
+    sorted_starts = sorted(s for s in starts if base_va <= s < hi)
+    out: List[dict] = []
+    for i, start in enumerate(sorted_starts):
+        nxt = sorted_starts[i + 1] if i + 1 < len(sorted_starts) else hi
+        size = min(nxt - start, 0x8000)
+        if size <= 0:
+            continue
+        out.append(
+            {
+                "id": len(out),
+                "name": None,
+                "owner": None,
+                "code": {"start_va": int(start), "size": int(size)},
+                "code_section_va": int(base_va),
+                "provenance": HEURISTIC,
+            }
+        )
+    return out
+
+
+def _build_internal_model(request: dict) -> dict:
+    vm_data = _read_region(request, VM_DATA)
+    iso_data = _read_region(request, ISOLATE_DATA)
+    iso_instr = _read_region(request, ISOLATE_INSTRUCTIONS)
+    iso_va = _region_va(request, ISOLATE_INSTRUCTIONS)
+
+    strings = _extract_strings(vm_data + iso_data)
+    uris = _library_uris(strings)
+    functions = _recover_code_ranges(iso_instr, iso_va)
+    entries = [
+        {
+            "index": i,
+            "kind": "string",
+            "value": s,
+            "target_va": None,
+            "provenance": HEURISTIC,
+            "confidence": None,
+        }
+        for i, s in enumerate(strings)
+    ]
+
+    capabilities = {
+        "libraries": PARTIAL if uris else UNAVAILABLE,
+        "classes": UNAVAILABLE,
+        "class_relationships": UNAVAILABLE,
+        "functions": PARTIAL if functions else UNAVAILABLE,
+        "function_names": UNAVAILABLE,
+        "object_pool": PARTIAL if entries else UNAVAILABLE,
+        "pool_index_space": UNAVAILABLE,
+    }
+    diagnostics = [
+        _diagnostic(
+            "domain_not_recovered",
+            "this backend does not deserialize the snapshot, so no class table is reachable",
+            subject="classes",
+        ),
+        _diagnostic(
+            "domain_not_recovered",
+            "no function names are recoverable from instruction bytes alone",
+            subject="function_names",
+        ),
+        _diagnostic(
+            "domain_not_recovered",
+            "entries are carved strings in carve order, so no ObjectPool index space was established",
+            subject="pool_index_space",
+        ),
+    ]
+    if functions:
+        diagnostics.insert(
+            0,
+            _diagnostic(
+                "domain_heuristic_only",
+                "code ranges come from frame-prologue and call-target scanning, not from a snapshot parser",
+                subject="functions",
+            ),
+        )
+
+    return _build_model(
+        request,
+        capabilities,
+        libraries=[
+            {"id": i, "uri": uri, "display_name": None, "provenance": HEURISTIC}
+            for i, uri in enumerate(uris)
+        ],
+        classes=[],
+        functions=functions,
+        object_pool=_ordinal_pool(entries),
+        diagnostics=diagnostics,
+    )
+
+
+# --------------------------------------------------------------------------
+# blutter backend
+# --------------------------------------------------------------------------
 
 
 def _extract_blutter_function_name(head_line: str) -> Optional[str]:
@@ -357,9 +527,7 @@ def _extract_blutter_function_name(head_line: str) -> Optional[str]:
                 text = text[len(prefix) :].strip()
                 changed = True
 
-    if text.startswith("set "):
-        text = text[4:].strip()
-    elif text.startswith("get "):
+    if text.startswith("set ") or text.startswith("get "):
         text = text[4:].strip()
 
     left = text.split("(", 1)[0].strip()
@@ -378,145 +546,107 @@ def _extract_blutter_function_name(head_line: str) -> Optional[str]:
         return None
     token = re.sub(r"<.*?>", "", token)
     token = token.rstrip("{")
-    return token or None
+    if not _usable_value(token):
+        return None
+    return token
 
 
-def _parse_blutter_class_decl(line: str) -> Optional[Tuple[str, str]]:
+def _parse_blutter_class_decl(line: str) -> Optional[Tuple[Optional[str], Optional[str]]]:
+    """`(class, super)` for a class declaration, or `None` for a non-declaration.
+
+    `class :: {` is blutter's header for a library's top-level members. It is not
+    a class, so it returns `(None, None)`: the functions under it have no owner
+    rather than an owner called `Global`.
+    """
     t = line.strip()
     if t == "class :: {":
-        return ("Global", "Object")
+        return (None, None)
     m = re.match(
         r"^(?:abstract class|class|enum)\s+([^\s<{]+)(?:<[^>]*>)?(?:\s+extends\s+([^\s<{]+))?",
         t,
     )
     if not m:
         return None
-    cls = _sanitize_owner_class(m.group(1) or "")
+    cls = _sanitize_class_name(m.group(1) or "")
     if not cls:
         return None
-    sup = _sanitize_owner_class(m.group(2) or "Object") or "Object"
-    return (cls, sup)
+    return (cls, _sanitize_class_name(m.group(2) or ""))
 
 
-def _parse_blutter_function_ref(text: str) -> Optional[Tuple[str, str, str]]:
-    m = re.search(r"\[([^\]]+)\]\s+([^:]+)::([^\s(]+)", text)
-    if not m:
-        return None
-    lib = _normalize_library_uri(m.group(1) or "")
-    owner = _sanitize_owner_class(m.group(2) or "")
-    sel = _selector_from_string(m.group(3) or "")
-    if not lib or not owner or not sel:
-        return None
-    return (lib, owner, sel)
+def _parse_blutter_pp(pool_path: Path) -> List[str]:
+    """Pool slot text in the order blutter printed it.
 
-
-def _parse_blutter_pp(pool_path: Path) -> List[dict]:
+    Blutter prints `[pp+0xNN]`, so a hardware index is arguably derivable from
+    the documented ARM64 AOT layout. It is not derived here: this producer has
+    no way to confirm those displacements are PP-relative for the snapshot in
+    hand, and a wrong index space silently mis-resolves every pool reference.
+    The entries stay ordinal and the index space stays unavailable.
+    """
     if not pool_path.exists():
         return []
-
-    entries: List[dict] = []
-    line_re = re.compile(r"^\[pp\+0x([0-9a-fA-F]+)\]\s+(.*)$")
-    unlink_re = re.compile(r"UnlinkedCall:\s*0x([0-9a-fA-F]+)\s*-\s*(.*)$")
-
+    line_re = re.compile(r"^\[pp\+0x[0-9a-fA-F]+\]\s+(.*)$")
+    out: List[str] = []
     for raw_line in pool_path.read_text(encoding="utf-8", errors="ignore").splitlines():
         m = line_re.match(raw_line.strip())
         if not m:
             continue
-        value = (m.group(2) or "").strip()
-        decoded_kind = "BlutterPoolEntry"
-        selector = None
-        target_va = None
-        owner_class = None
-        library_uri = None
-
-        m_unlink = unlink_re.search(value)
-        if m_unlink:
-            decoded_kind = "BlutterUnlinkedCall"
-            try:
-                target_va = int(m_unlink.group(1), 16)
-            except Exception:
-                target_va = None
-            ref = _parse_blutter_function_ref(m_unlink.group(2) or "")
-            if ref is not None:
-                library_uri, owner_class, selector = ref
-        else:
-            ref = _parse_blutter_function_ref(value)
-            if ref is not None:
-                decoded_kind = "BlutterFunctionRef"
-                library_uri, owner_class, selector = ref
-
-        entries.append(
-            {
-                "index": len(entries),
-                "kind": "String",
-                "value": value,
-                "decoded_kind": decoded_kind,
-                "selector": selector,
-                "target_va": target_va,
-                "owner_class": owner_class,
-                "library_uri": library_uri,
-                "confidence": 0.8 if decoded_kind in ("BlutterUnlinkedCall", "BlutterFunctionRef") else 0.6,
-                "source": "blutter",
-            }
-        )
-    return entries
+        value = (m.group(1) or "").strip()
+        if _usable_value(value):
+            out.append(value)
+    return out
 
 
-def _parse_blutter_asm(asm_dir: Path) -> Tuple[List[dict], List[dict], List[dict], List[dict]]:
+def _parse_blutter_asm(asm_dir: Path) -> Tuple[List[dict], List[dict], List[dict]]:
     if not asm_dir.exists() or not asm_dir.is_dir():
-        raise RuntimeError(f"blutter asm directory not found: {asm_dir}")
+        raise BackendFailed(f"blutter asm directory not found: {asm_dir}")
 
     header_re = re.compile(r"^//\s*lib:\s*.*?,\s*url:\s*(\S+)\s*$")
     addr_re = re.compile(r"//\s*\*\*\s*addr:\s*(0x[0-9a-fA-F]+),\s*size:\s*(0x[0-9a-fA-F]+)")
 
-    libraries: Dict[str, dict] = {}
-    classes: Dict[Tuple[str, str], dict] = {}
+    library_ids: Dict[str, int] = {}
+    class_ids: Dict[Tuple[Optional[int], str], int] = {}
+    class_supers: Dict[int, str] = {}
+    class_names: Dict[str, int] = {}
     functions: List[dict] = []
     seen_entry: Set[int] = set()
-    entrypoint_candidates: List[dict] = []
-    seen_bootflow_target: Set[Tuple[int, str, str]] = set()
 
-    def ensure_library(uri: str) -> str:
-        normalized = _normalize_library_uri(uri) or uri
-        if normalized not in libraries:
-            libraries[normalized] = {
-                "id": len(libraries),
-                "uri": normalized,
-                "name_display": normalized,
-            }
-        return normalized
+    def ensure_library(uri: str) -> Optional[int]:
+        normalized = _normalize_library_uri(uri)
+        if normalized is None:
+            return None
+        if normalized not in library_ids:
+            library_ids[normalized] = len(library_ids)
+        return library_ids[normalized]
 
-    def ensure_class(uri: str, cls: str, super_name: str = "Object") -> str:
-        owner = _sanitize_owner_class(cls) or "Global"
-        key = (uri, owner)
-        if key not in classes:
-            classes[key] = {
-                "id": len(classes),
-                "name": owner,
-                "super": _sanitize_owner_class(super_name) or "Object",
-                "lib": uri,
-            }
-        return owner
+    def ensure_class(library: Optional[int], name: str, super_name: Optional[str]) -> int:
+        key = (library, name)
+        if key not in class_ids:
+            class_ids[key] = len(class_ids)
+            class_names.setdefault(name, class_ids[key])
+        if super_name:
+            class_supers[class_ids[key]] = super_name
+        return class_ids[key]
 
     for dart_file in sorted(asm_dir.rglob("*.dart")):
-        current_lib = ensure_library("package:app/main.dart")
-        current_class = ensure_class(current_lib, "Global", "Object")
+        current_lib: Optional[int] = None
+        current_class: Optional[int] = None
         pending_name: Optional[str] = None
-        pending_owner: str = current_class
-        pending_lib: str = current_lib
+        pending_owner: Optional[int] = None
 
         for line in dart_file.read_text(encoding="utf-8", errors="ignore").splitlines():
             m_header = header_re.match(line.strip())
             if m_header:
                 current_lib = ensure_library(m_header.group(1).strip())
-                current_class = ensure_class(current_lib, "Global", "Object")
+                current_class = None
                 pending_name = None
                 continue
 
             decl = _parse_blutter_class_decl(line)
             if decl is not None:
                 cls_name, super_name = decl
-                current_class = ensure_class(current_lib, cls_name, super_name)
+                current_class = (
+                    ensure_class(current_lib, cls_name, super_name) if cls_name else None
+                )
                 pending_name = None
                 continue
 
@@ -526,7 +656,6 @@ def _parse_blutter_asm(asm_dir: Path) -> Tuple[List[dict], List[dict], List[dict
                 if head_name:
                     pending_name = head_name
                     pending_owner = current_class
-                    pending_lib = current_lib
 
             m_addr = addr_re.search(line)
             if not m_addr:
@@ -534,56 +663,47 @@ def _parse_blutter_asm(asm_dir: Path) -> Tuple[List[dict], List[dict], List[dict
             try:
                 entry = int(m_addr.group(1), 16)
                 size = int(m_addr.group(2), 16)
-            except Exception:
+            except ValueError:
                 continue
             if entry in seen_entry:
                 pending_name = None
                 continue
             seen_entry.add(entry)
 
-            owner = ensure_class(pending_lib, pending_owner, "Object")
-            name = pending_name or f"sub_{entry:x}"
             functions.append(
                 {
                     "id": len(functions),
-                    "name": name,
-                    "owner_class": owner,
-                    "entry_va": entry,
-                    "size": max(size, 4),
+                    # Scraped out of blutter's rendered source, so a guess about
+                    # the text, never `exact`.
+                    "name": _name(pending_name, HEURISTIC) if pending_name else None,
+                    "owner": pending_owner if pending_name else current_class,
+                    "code": {"start_va": entry, "size": max(size, 1)},
                     "code_section_va": 0,
-                    "name_kind": "placeholder" if name.startswith("sub_") else "heuristic",
+                    "provenance": DERIVED,
                 }
             )
-            for decoded_kind, selector, value in _bootflow_candidates_from_name(
-                name, owner, pending_lib
-            ):
-                key = (entry, decoded_kind, selector.lower())
-                if key in seen_bootflow_target:
-                    continue
-                seen_bootflow_target.add(key)
-                entrypoint_candidates.append(
-                    {
-                        "index": 0,
-                        "kind": "String",
-                        "value": value,
-                        "decoded_kind": decoded_kind,
-                        "selector": selector,
-                        "target_va": int(entry),
-                        "owner_class": owner,
-                        "library_uri": pending_lib,
-                        "confidence": 0.85,
-                        "source": "synthetic",
-                    }
-                )
             pending_name = None
+            pending_owner = None
 
-    libs = sorted(libraries.values(), key=lambda v: int(v["id"]))
-    clss = sorted(classes.values(), key=lambda v: int(v["id"]))
-    if not libs:
-        libs = [{"id": 0, "uri": "package:app/main.dart", "name_display": "package:app/main.dart"}]
-    if not clss:
-        clss = [{"id": 0, "name": "Global", "super": "Object", "lib": libs[0]["uri"]}]
-    return libs, clss, functions, entrypoint_candidates
+    libraries = [
+        {"id": lid, "uri": uri, "display_name": None, "provenance": DERIVED}
+        for uri, lid in library_ids.items()
+    ]
+    classes = []
+    for (library, name), cid in class_ids.items():
+        super_name = class_supers.get(cid)
+        super_id = class_names.get(super_name) if super_name else None
+        classes.append(
+            {
+                "id": cid,
+                "name": name,
+                "library": library,
+                # Only an edge whose target is a class we actually recovered.
+                "super_class": super_id if super_id is not None and super_id != cid else None,
+                "provenance": DERIVED,
+            }
+        )
+    return libraries, classes, functions
 
 
 def _runner_mode(cmd: List[str]) -> str:
@@ -621,7 +741,7 @@ def _resolve_blutter_runner() -> Optional[List[str]]:
 def _run_blutter_dump(input_path: Optional[str], libapp_path: Optional[str]) -> Path:
     runner = _resolve_blutter_runner()
     if not runner:
-        raise RuntimeError(
+        raise BackendUnavailable(
             "blutter runner not found. set FLUTTERDEC_BLUTTER_CMD or FLUTTERDEC_BLUTTER_PY, or install blutter.py"
         )
 
@@ -630,16 +750,15 @@ def _run_blutter_dump(input_path: Optional[str], libapp_path: Optional[str]) -> 
 
     if mode == "blutter_py":
         if not input_path:
-            raise RuntimeError("blutter.py backend needs --input-path")
-        indir = input_path
-        cmd = runner + [indir, str(out_dir), "--no-analysis"]
+            raise BackendFailed("blutter.py backend needs --input-path")
+        cmd = runner + [input_path, str(out_dir), "--no-analysis"]
     elif mode == "blutter_bin":
         if not libapp_path:
-            raise RuntimeError("blutter binary backend needs --libapp-path")
+            raise BackendFailed("blutter binary backend needs --libapp-path")
         cmd = runner + ["-i", libapp_path, "-o", str(out_dir)]
     else:
         if not input_path:
-            raise RuntimeError("custom blutter backend needs --input-path")
+            raise BackendFailed("custom blutter backend needs --input-path")
         cmd = runner + [input_path, str(out_dir)]
 
     lock_dir = Path.home() / ".cache" / "flutterdec"
@@ -656,7 +775,7 @@ def _run_blutter_dump(input_path: Optional[str], libapp_path: Optional[str]) -> 
         )
         fcntl.flock(lock_fp.fileno(), fcntl.LOCK_UN)
     if proc.returncode != 0:
-        raise RuntimeError(
+        raise BackendFailed(
             "blutter failed with status {}\nstdout:\n{}\nstderr:\n{}".format(
                 proc.returncode, proc.stdout, proc.stderr
             )
@@ -664,38 +783,99 @@ def _run_blutter_dump(input_path: Optional[str], libapp_path: Optional[str]) -> 
     return out_dir
 
 
-def _build_blutter_model(
-    vm_data: bytes,
-    iso_data: bytes,
-    default_snapshot_hash: str,
-    default_version: str,
-    input_path: Optional[str],
-    libapp_path: Optional[str],
-) -> dict:
+def _build_blutter_model(request: dict, input_path: Optional[str],
+                         libapp_path: Optional[str]) -> dict:
     blutter_out = _run_blutter_dump(input_path, libapp_path)
-    asm_dir = blutter_out / "asm"
-    libs, classes, funcs, entrypoint_candidates = _parse_blutter_asm(asm_dir)
-    if not funcs:
-        raise RuntimeError("blutter output did not contain recoverable functions")
+    libraries, classes, functions = _parse_blutter_asm(blutter_out / "asm")
+    if not functions:
+        raise BackendFailed("blutter output did not contain recoverable code ranges")
 
-    pool_entries = _parse_blutter_pp(blutter_out / "pp.txt")
-    if not pool_entries:
-        pool_entries = _pool_entries(_extract_strings(vm_data + iso_data))
-    if entrypoint_candidates:
-        pool_entries = _append_synthetic_pool_entries(pool_entries, entrypoint_candidates)
+    # Blutter reports addresses in the isolate instruction image, which is the
+    # region the host declared; the model has to name the region base it means.
+    iso_va = _region_va(request, ISOLATE_INSTRUCTIONS)
+    iso_size = _handle(request, ISOLATE_INSTRUCTIONS)["size"]
+    kept: List[dict] = []
+    dropped = 0
+    for f in functions:
+        start = f["code"]["start_va"]
+        if not (iso_va <= start < iso_va + iso_size):
+            dropped += 1
+            continue
+        f["code"]["size"] = min(f["code"]["size"], iso_va + iso_size - start)
+        f["code_section_va"] = iso_va
+        f["id"] = len(kept)
+        kept.append(f)
+    if not kept:
+        raise BackendFailed(
+            "no blutter code range fell inside the isolate instruction region the host declared"
+        )
 
-    snapshot_hash = _detect_snapshot_hash(vm_data, iso_data, default_snapshot_hash)
-    return {
-        "schema_version": 3,
-        "adapter_kind": "blutter_bridge_model_v1",
-        "dart_version": default_version,
-        "snapshot_hash": snapshot_hash,
-        "arch": "arm64",
-        "libraries": libs,
-        "classes": classes,
-        "functions": funcs,
-        "object_pool": pool_entries,
+    pool_values = _parse_blutter_pp(blutter_out / "pp.txt")
+    entries = [
+        {
+            "index": i,
+            "kind": "string",
+            "value": value,
+            "target_va": None,
+            "provenance": HEURISTIC,
+            "confidence": None,
+        }
+        for i, value in enumerate(pool_values)
+    ]
+
+    named = sum(1 for f in kept if f["name"] is not None)
+    has_supers = any(c["super_class"] is not None for c in classes)
+    diagnostics = [
+        _diagnostic(
+            "domain_heuristic_only",
+            "function names are scraped from blutter's rendered source, not read from the snapshot",
+            subject="function_names",
+        )
+    ]
+    if dropped:
+        diagnostics.append(
+            _diagnostic(
+                "record_discarded",
+                f"{dropped} blutter code ranges fell outside the declared isolate instruction region",
+                subject="functions",
+            )
+        )
+    if entries:
+        diagnostics.append(
+            _diagnostic(
+                "domain_not_recovered",
+                "blutter prints pool slots in dump order; no ObjectPool index space was established",
+                subject="pool_index_space",
+            )
+        )
+
+    capabilities = {
+        "libraries": PARTIAL if libraries else UNAVAILABLE,
+        "classes": PARTIAL if classes else UNAVAILABLE,
+        "class_relationships": PARTIAL if (classes and has_supers) else UNAVAILABLE,
+        "functions": PARTIAL,
+        "function_names": PARTIAL if named else UNAVAILABLE,
+        "object_pool": PARTIAL if entries else UNAVAILABLE,
+        "pool_index_space": UNAVAILABLE,
     }
+    if capabilities["function_names"] == UNAVAILABLE:
+        diagnostics = [d for d in diagnostics if d.get("subject") != "function_names"]
+    if not classes:
+        classes = []
+    return _build_model(
+        request,
+        capabilities,
+        libraries=libraries,
+        classes=classes,
+        functions=kept,
+        object_pool=_ordinal_pool(entries),
+        diagnostics=diagnostics,
+    )
+
+
+# --------------------------------------------------------------------------
+# r2flutter backend
+# --------------------------------------------------------------------------
 
 
 def _resolve_r2flutter_runner() -> Optional[List[str]]:
@@ -722,10 +902,10 @@ def _r2flutter_timeout() -> int:
 def _r2flutter_json(runner: List[str], target: str, flag: str):
     """Run one r2flutter action and parse its JSON.
 
-    r2flutter emits one action per invocation and writes radare2 loader warnings to
-    stderr, so stdout is parsed on its own. Six invocations happen per model build and
-    each one loads the whole binary, so a wedged radare2 would otherwise hang the
-    adapter, and the core waiting on it, indefinitely.
+    r2flutter emits one action per invocation and writes radare2 loader warnings
+    to stderr, so stdout is parsed on its own. Several invocations happen per
+    model build and each one loads the whole binary, so a wedged radare2 would
+    otherwise hang the adapter, and the core waiting on it, indefinitely.
     """
     try:
         proc = subprocess.run(
@@ -737,337 +917,370 @@ def _r2flutter_json(runner: List[str], target: str, flag: str):
             timeout=_r2flutter_timeout(),
         )
     except OSError as exc:
-        raise RuntimeError(f"could not launch r2flutter ({' '.join(runner)}): {exc}") from exc
+        raise BackendUnavailable(f"could not launch r2flutter ({' '.join(runner)}): {exc}") from exc
     except subprocess.TimeoutExpired as exc:
-        raise RuntimeError(f"r2flutter {flag} timed out after {exc.timeout}s") from exc
+        raise BackendFailed(f"r2flutter {flag} timed out after {exc.timeout}s") from exc
     if proc.returncode != 0:
-        raise RuntimeError(
+        raise BackendFailed(
             f"r2flutter {flag} failed ({proc.returncode}): {proc.stderr.strip()[:400]}"
         )
     try:
         return json.loads(proc.stdout)
     except json.JSONDecodeError as exc:
-        raise RuntimeError(f"r2flutter {flag} did not emit JSON: {exc}") from exc
+        raise BackendFailed(f"r2flutter {flag} did not emit JSON: {exc}") from exc
 
 
 _R2F_POOL_ENTRY_RE = re.compile(r"\bentry=(\d+)\b")
 _R2F_IT_METHOD_RE = re.compile(r"^method\.(?:(?P<owner>.+)\.)?(?P<name>[^.]+)$")
 
 
-def _r2flutter_functions(instruction_table: dict, isolate_instr_va: int) -> List[dict]:
-    """Map the AOT instruction table onto ProgramModel functions.
+def _r2flutter_functions(instruction_table: dict, iso_va: int, iso_size: int,
+                         class_ids: Dict[str, int]) -> Tuple[List[dict], int]:
+    """Map the AOT instruction table onto v4 functions.
 
-    Entry addresses and names come straight out of the snapshot, so every name is
-    `exact`. Sizes are not serialized; the gap to the next entry is the usual
-    approximation and is what the disassembler needs.
+    Entry addresses and names come out of the snapshot, so a name that is there
+    is `exact`. Sizes are not serialized: the gap to the next entry is the usual
+    approximation, which is why the record's own provenance is `derived` even
+    when its name is not.
     """
     entries = sorted(
         (e for e in instruction_table.get("entries", []) if e.get("address")),
         key=lambda e: e["address"],
     )
     out: List[dict] = []
+    dropped = 0
     for i, e in enumerate(entries):
         start = int(e["address"])
-        nxt = int(entries[i + 1]["address"]) if i + 1 < len(entries) else start + 0x40
-        raw_name = (e.get("name") or "").strip() or f"sub_{start:x}"
-        owner = "Global"
-        m = _R2F_IT_METHOD_RE.match(raw_name)
-        if m and m.group("owner"):
-            owner = m.group("owner")
+        if not (iso_va <= start < iso_va + iso_size):
+            dropped += 1
+            continue
+        nxt = int(entries[i + 1]["address"]) if i + 1 < len(entries) else iso_va + iso_size
+        size = min(max(nxt - start, 4), 0x8000, iso_va + iso_size - start)
+        raw_name = (e.get("name") or "").strip()
+        owner = None
+        name = None
+        if _usable_value(raw_name):
+            m = _R2F_IT_METHOD_RE.match(raw_name)
+            if m and m.group("owner"):
+                owner = class_ids.get(m.group("owner"))
+            name = _name(raw_name, EXACT)
         out.append(
             {
-                "id": i,
-                "name": raw_name,
-                "owner_class": owner,
-                "entry_va": start,
-                "size": max(4, min(nxt - start, 0x8000)),
-                "code_section_va": int(isolate_instr_va or 0),
-                "name_kind": "exact",
+                "id": len(out),
+                "name": name,
+                "owner": owner,
+                "code": {"start_va": start, "size": int(size)},
+                "code_section_va": iso_va,
+                "provenance": DERIVED,
             }
         )
-    return out
+    return out, dropped
+
+
+def _r2flutter_classes(classes: List[dict]) -> Tuple[List[dict], Dict[str, int]]:
+    """Project r2flutter classes onto v4 classes.
+
+    r2flutter does not attribute classes to libraries, so `library` stays null
+    rather than pointing at a URI recovered from somewhere else entirely.
+    """
+    named: List[str] = []
+    seen: Set[str] = set()
+    for c in classes:
+        name = _sanitize_class_name(c.get("name") or "")
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        named.append(name)
+    ids = {name: i for i, name in enumerate(named)}
+    out = []
+    for name in named:
+        raw_super = next(
+            (c.get("super") for c in classes if _sanitize_class_name(c.get("name") or "") == name),
+            None,
+        )
+        super_name = _sanitize_class_name(raw_super or "")
+        super_id = ids.get(super_name) if super_name else None
+        out.append(
+            {
+                "id": ids[name],
+                "name": name,
+                "library": None,
+                "super_class": super_id if super_id is not None and super_id != ids[name] else None,
+                "provenance": EXACT,
+            }
+        )
+    return out, ids
 
 
 def _r2flutter_pool(strings: List[dict]) -> List[dict]:
-    """Build ObjectPool entries keyed by the real entry index.
+    """ObjectPool entries keyed by the real entry index.
 
     r2flutter reports, per string, the pool slots that reference it as
     `pool=<ref> index=<n> entry=<E> pp_off=<disp>`. `entry` is the authoritative
     index a `ldr xN, [x27, #pp_off]` resolves to, which is exactly the key the
     decompiler joins on. Nothing here is positional or guessed.
     """
-    out: List[dict] = []
+    by_index: Dict[int, dict] = {}
     for s in strings:
         value = s.get("value")
-        if not isinstance(value, str) or not value:
+        if not isinstance(value, str) or not _usable_value(value):
             continue
-        selector = _selector_from_string(value)
-        library_uri = _normalize_library_uri(value)
-        if library_uri is not None:
-            decoded_kind = "LibraryUri"
-        elif selector is not None:
-            decoded_kind = "SelectorString"
-        else:
-            decoded_kind = "String"
+        kind = "selector" if _selector_from_string(value) else "string"
         for ref in s.get("refs", []):
             if ref.get("kind") != "object_pool.entry":
                 continue
             m = _R2F_POOL_ENTRY_RE.search(ref.get("name") or "")
             if not m:
                 continue
-            out.append(
+            index = int(m.group(1))
+            # One slot holds one object. A second claim on the same index is a
+            # contradiction, and the host rejects duplicates outright.
+            by_index.setdefault(
+                index,
                 {
-                    "index": int(m.group(1)),
-                    "kind": "TwoByteString" if s.get("two_byte") else "OneByteString",
+                    "index": index,
+                    "kind": kind,
                     "value": value,
-                    "decoded_kind": decoded_kind,
-                    "selector": selector,
                     "target_va": None,
-                    "owner_class": None,
-                    "library_uri": library_uri,
-                    "confidence": 1.0,
-                    "source": "vm",
-                }
+                    "provenance": EXACT,
+                    "confidence": None,
+                },
             )
-    out.sort(key=lambda e: e["index"])
-    return out
+    return [by_index[i] for i in sorted(by_index)]
 
 
-def _r2flutter_super_name(value) -> str:
-    """Normalize r2flutter superclass metadata to ProgramModel's string field."""
-    if isinstance(value, str):
-        name = value.strip()
-        if name:
-            return name
-    if isinstance(value, dict):
-        name = value.get("name")
-        if isinstance(name, str):
-            name = name.strip()
-            if name:
-                return name
-    # ProgramModel v3 requires a non-null superclass string. "Object" is only
-    # a placeholder for unresolved r2flutter metadata, not recovered data.
-    return "Object"
-
-
-def _r2flutter_classes(classes: List[dict]) -> List[dict]:
-    """Project r2flutter classes onto ProgramModel classes.
-
-    r2flutter does not attribute classes to libraries, so library URIs are recovered
-    from pool strings instead and classes stay library-less rather than being given
-    an invented owner.
-    """
-    out: List[dict] = []
-    for i, c in enumerate(classes):
-        name = (c.get("name") or "").strip()
-        if not name:
-            continue
-        out.append(
-            {
-                "id": i,
-                "name": name,
-                "super": _r2flutter_super_name(c.get("super")),
-                "lib": "",
-            }
-        )
-    return out
-
-
-def _build_r2flutter_model(default_snapshot_hash: str, default_version: str,
-                           input_path: Optional[str], libapp_path: Optional[str],
-                           isolate_instr_va: int) -> dict:
+def _build_r2flutter_model(request: dict, input_path: Optional[str],
+                           libapp_path: Optional[str]) -> dict:
     runner = _resolve_r2flutter_runner()
     if runner is None:
-        raise RuntimeError(
+        raise BackendUnavailable(
             "r2flutter not found; set FLUTTERDEC_R2FLUTTER_CMD or FLUTTERDEC_R2FLUTTER_BIN, "
             "or put r2flutter on PATH"
         )
     target = libapp_path or input_path
     if not target:
-        raise RuntimeError("r2flutter backend needs --libapp-path or --input-path")
+        raise BackendFailed("r2flutter backend needs --libapp-path or --input-path")
 
-    header = _r2flutter_json(runner, target, "-jH")
+    iso_va = _region_va(request, ISOLATE_INSTRUCTIONS)
+    iso_size = _handle(request, ISOLATE_INSTRUCTIONS)["size"]
+
+    classes, class_ids = _r2flutter_classes(_r2flutter_json(runner, target, "-jc"))
     instruction_table = _r2flutter_json(runner, target, "-ji")
-    functions = _r2flutter_functions(instruction_table, isolate_instr_va)
+    functions, dropped = _r2flutter_functions(instruction_table, iso_va, iso_size, class_ids)
     if not functions:
-        raise RuntimeError("r2flutter recovered no instruction-table entries")
+        raise BackendFailed("r2flutter recovered no instruction-table entries in the declared region")
 
-    # `-jxz` is the reliable pool-referenced string set with its slot back-references;
-    # that is what the pool index space needs.
+    # `-jxz` is the reliable pool-referenced string set with its slot
+    # back-references; that is what the pool index space needs.
     pool_strings = _r2flutter_json(runner, target, "-jxz")
-    object_pool = _r2flutter_pool(pool_strings)
-    classes = _r2flutter_classes(_r2flutter_json(runner, target, "-jc"))
+    pool_entries = _r2flutter_pool(pool_strings)
 
-    # Library URIs mostly live in the data image rather than the pool, so the wider
-    # carved set is the only place to find them. They drive `--function-scope` and
-    # package prioritisation, not naming, so the looser extraction is acceptable here.
+    # Library URIs mostly live in the data image rather than the pool, so the
+    # wider carved set is the only place to find them. They drive
+    # `--function-scope` and package prioritisation, not naming, which is why a
+    # carved URI is `heuristic` while an instruction-table name is not.
     try:
         all_strings = _r2flutter_json(runner, target, "-jzz")
-    except RuntimeError:
+    except BackendFailed:
         all_strings = pool_strings
-    libs = _collect_libraries(
+    uris = _library_uris(
         [s.get("value", "") for s in all_strings if isinstance(s.get("value"), str)]
     )
-    libraries = [{"id": i, "uri": lib, "name_display": lib} for i, lib in enumerate(libs)]
-    if not classes:
-        classes = [{"id": 0, "name": "Global", "super": "Object", "lib": libs[0]}]
+    libraries = [
+        {"id": i, "uri": uri, "display_name": None, "provenance": HEURISTIC}
+        for i, uri in enumerate(uris)
+    ]
 
     # Only claim an authoritative pool index space when the ObjectPool image was
-    # actually reconstructed. r2flutter reports `error` for snapshots whose pool fill
-    # payload it cannot decode, and a guessed geometry there would silently
+    # actually reconstructed. r2flutter reports an error for snapshots whose pool
+    # fill payload it cannot decode, and a guessed geometry there would silently
     # mis-resolve every pool reference.
-    pool_geometry = None
+    geometry = None
     try:
         pp = _r2flutter_json(runner, target, "-jp")
         if isinstance(pp, dict) and "entries_offset" in pp and "word_size" in pp:
-            pool_geometry = {
+            geometry = {
                 "entries_offset": int(pp["entries_offset"]),
                 "word_size": int(pp["word_size"]),
             }
-    except RuntimeError:
-        pool_geometry = None
-    if pool_geometry is None:
-        object_pool = []
+    except BackendFailed:
+        geometry = None
 
-    model = {
-        "schema_version": 3,
-        "adapter_kind": "r2flutter_snapshot_v1",
-        "dart_version": header.get("dart_version") or default_version,
-        "snapshot_hash": header.get("hash") or default_snapshot_hash,
-        "arch": "arm64",
-        "libraries": libraries,
-        "classes": classes,
-        "functions": functions,
-        "object_pool": object_pool,
+    diagnostics: List[dict] = []
+    if dropped:
+        diagnostics.append(
+            _diagnostic(
+                "record_discarded",
+                f"{dropped} instruction-table entries fell outside the declared isolate instruction region",
+                subject="functions",
+            )
+        )
+    if geometry is None:
+        pool_entries = []
+        diagnostics.append(
+            _diagnostic(
+                "domain_not_recovered",
+                "r2flutter could not reconstruct the ObjectPool image, so no entry is addressable",
+                subject="object_pool",
+            )
+        )
+        object_pool = _empty_pool()
+    elif not pool_entries:
+        # Geometry without a single entry describes an index space nothing
+        # occupies; claiming `hardware` there would be a claim about no data.
+        object_pool = _empty_pool()
+        diagnostics.append(
+            _diagnostic(
+                "domain_not_recovered",
+                "r2flutter reconstructed the pool image but no slot referenced a usable string",
+                subject="object_pool",
+            )
+        )
+    else:
+        object_pool = {
+            "index_space": "hardware",
+            "geometry": geometry,
+            "entries": pool_entries,
+        }
+    if uris:
+        diagnostics.append(
+            _diagnostic(
+                "domain_heuristic_only",
+                "library URIs are carved from the data image, not read from a library table",
+                subject="libraries",
+            )
+        )
+
+    unnamed = sum(1 for f in functions if f["name"] is None)
+    has_supers = any(c["super_class"] is not None for c in classes)
+    capabilities = {
+        "libraries": PARTIAL if libraries else UNAVAILABLE,
+        "classes": PARTIAL if classes else UNAVAILABLE,
+        "class_relationships": PARTIAL if (classes and has_supers) else UNAVAILABLE,
+        # Sizes are the gap to the next entry, so the domain is never complete.
+        "functions": PARTIAL,
+        "function_names": UNAVAILABLE
+        if unnamed == len(functions)
+        else PARTIAL,
+        "object_pool": PARTIAL if pool_entries else UNAVAILABLE,
+        "pool_index_space": COMPLETE if geometry is not None and pool_entries else UNAVAILABLE,
     }
-    # The schema types `pool_geometry` as an object, so omit the key rather than
-    # emitting null: absence is how an adapter declines to claim a real index space.
-    if pool_geometry is not None:
-        model["pool_geometry"] = pool_geometry
-    return model
+    return _build_model(
+        request,
+        capabilities,
+        libraries=libraries,
+        classes=classes,
+        functions=functions,
+        object_pool=object_pool,
+        diagnostics=diagnostics,
+    )
 
 
-def _normalize_backend(raw: str) -> str:
-    t = (raw or "auto").strip().lower()
-    if t in ("auto", "internal", "blutter", "r2flutter"):
-        return t
-    return "auto"
+# --------------------------------------------------------------------------
+# entrypoint
+# --------------------------------------------------------------------------
+
+BACKEND_ORDER = ("r2flutter", "blutter", "internal")
+
+BUILDERS = {
+    "r2flutter": _build_r2flutter_model,
+    "blutter": _build_blutter_model,
+    "internal": lambda request, _input_path, _libapp_path: _build_internal_model(request),
+}
 
 
-def _drop_nulls(value):
-    """Strip keys whose value is null, recursively.
-
-    Optional model fields are typed concretely in schemas/adapter.schema.json, so an
-    explicit null fails validation where an absent key passes. The Rust side treats
-    both as `None`, so omitting is free and makes the schema mean something.
-    """
-    if isinstance(value, dict):
-        return {k: _drop_nulls(v) for k, v in value.items() if v is not None}
-    if isinstance(value, list):
-        return [_drop_nulls(v) for v in value]
-    return value
+def _run_backend(name: str, request: dict, input_path: Optional[str],
+                 libapp_path: Optional[str]) -> dict:
+    return BUILDERS[name](request, input_path, libapp_path)
 
 
-def _write_model(path: str, payload: dict) -> None:
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(_drop_nulls(payload), f, indent=2)
-
-
-def entrypoint(default_snapshot_hash: str = "unknown", default_version: str = "unknown") -> int:
+def entrypoint() -> int:
     p = argparse.ArgumentParser()
-    p.add_argument("--vm-data", required=True)
-    p.add_argument("--isolate-data", required=True)
-    p.add_argument("--vm-instr", required=True)
-    p.add_argument("--isolate-instr", required=True)
-    p.add_argument("--vm-instr-va", type=int, default=0)
-    p.add_argument("--isolate-instr-va", type=int, default=0)
+    p.add_argument("--request", required=True)
+    p.add_argument("--result", required=True)
     p.add_argument("--input-path")
     p.add_argument("--libapp-path")
-    p.add_argument("--out", required=True)
     args = p.parse_args()
 
-    vm_data = _read_bytes(args.vm_data)
-    iso_data = _read_bytes(args.isolate_data)
-    iso_instr = _read_bytes(args.isolate_instr)
+    result_path = Path(args.result)
+    try:
+        request = _load_request(Path(args.request))
+    except ValueError as exc:
+        _write_result(
+            result_path,
+            "unsupported",
+            error={"code": "unsupported_protocol", "message": str(exc)},
+        )
+        return 1
 
-    backend = _normalize_backend(os.getenv("FLUTTERDEC_ADAPTER_BACKEND", "auto"))
+    requested = request["requested_backend"]
+    output = request["output"]
 
-    # `auto` prefers r2flutter: it deserializes the snapshot, so it is the only
-    # backend that yields exact names plus a real ObjectPool index space. Each
-    # backend falls through to the next when its tooling is absent.
-    if backend in ("auto", "r2flutter"):
+    if requested == "auto":
+        order = list(BACKEND_ORDER)
+    elif requested in BUILDERS:
+        order = [requested]
+    else:
+        _write_result(
+            result_path,
+            "unsupported",
+            error={
+                "code": "unsupported_protocol",
+                "message": f"unknown requested backend {requested!r}",
+            },
+        )
+        return 1
+
+    fallback_reason: Optional[str] = None
+    notes: List[dict] = []
+    last_error: Optional[Tuple[str, str]] = None
+
+    for name in order:
         try:
-            payload = _build_r2flutter_model(
-                default_snapshot_hash,
-                default_version,
-                args.input_path,
-                args.libapp_path,
-                args.isolate_instr_va,
+            model = _run_backend(name, request, args.input_path, args.libapp_path)
+        except BackendUnavailable as exc:
+            last_error = ("unsupported_snapshot", f"{name}: {exc}")
+            if requested == "auto" and fallback_reason is None:
+                fallback_reason = "backend_unavailable"
+            notes.append(
+                _diagnostic("domain_unsupported", f"{name} backend unavailable: {exc}",
+                            subject=name, severity="info")
             )
-            _write_model(args.out, payload)
-            return 0
-        except Exception as exc:
-            if backend == "r2flutter":
-                print(f"[adapter] r2flutter backend required but failed: {exc}", file=sys.stderr)
-                return 1
-            print(f"[adapter] r2flutter backend unavailable: {exc}", file=sys.stderr)
+            continue
+        except (BackendFailed, FileNotFoundError, ValueError, OSError) as exc:
+            last_error = ("parse_failed", f"{name}: {exc}")
+            if requested == "auto" and fallback_reason is None:
+                fallback_reason = "backend_failed"
+            notes.append(
+                _diagnostic("domain_not_recovered", f"{name} backend failed: {exc}",
+                            subject=name, severity="warning")
+            )
+            continue
 
-    if backend in ("auto", "blutter"):
         try:
-            payload = _build_blutter_model(
-                vm_data,
-                iso_data,
-                default_snapshot_hash,
-                default_version,
-                args.input_path,
-                args.libapp_path,
+            Path(output).write_text(json.dumps(model), encoding="utf-8")
+        except OSError as exc:
+            _write_result(
+                result_path,
+                "failed",
+                error={"code": "output_write_failed", "message": str(exc)},
             )
-            _write_model(args.out, payload)
-            return 0
-        except Exception as exc:
-            if backend == "blutter":
-                raise
-            print(
-                f"[adapter] blutter backend unavailable, fallback to internal: {exc}",
-                file=sys.stderr,
-            )
+            return 1
 
-    strings = _extract_strings(vm_data + iso_data)
-    snapshot_hash = _detect_snapshot_hash(vm_data, iso_data, default_snapshot_hash)
+        _write_result(
+            result_path,
+            "ok",
+            model=output,
+            resolved_backend=name,
+            fallback_reason=fallback_reason,
+            diagnostics=notes + model["diagnostics"],
+        )
+        return 0
 
-    libs = _collect_libraries(strings)
-    funcs = _recover_functions(iso_instr, args.isolate_instr_va)
-    if not funcs:
-        funcs = [
-            {
-                "id": 0,
-                "name": "entry",
-                "owner_class": "Global",
-                "entry_va": int(args.isolate_instr_va or 0x1000),
-                "size": 128,
-                "code_section_va": int(args.isolate_instr_va or 0x1000),
-                "name_kind": "heuristic",
-            }
-        ]
-
-    payload = {
-        "schema_version": 3,
-        "adapter_kind": "dynamic_snapshot_string_model_v1",
-        "dart_version": default_version,
-        "snapshot_hash": snapshot_hash,
-        "arch": "arm64",
-        "libraries": [{"id": i, "uri": lib, "name_display": lib} for i, lib in enumerate(libs)],
-        "classes": [{"id": 0, "name": "Global", "super": "Object", "lib": libs[0]}],
-        "functions": funcs,
-        # Carved strings, indexed by carve order. This is NOT the ObjectPool index
-        # space, which is why `pool_geometry` is omitted entirely: the core then
-        # declines to resolve `pool[N]` rather than attaching an unrelated string.
-        "object_pool": _pool_entries(strings),
-    }
-
-    _write_model(args.out, payload)
-
-    return 0
+    code, message = last_error or ("internal", "no backend ran")
+    _write_result(result_path, "failed", error={"code": code, "message": message},
+                  diagnostics=notes)
+    return 1
 
 
 if __name__ == "__main__":

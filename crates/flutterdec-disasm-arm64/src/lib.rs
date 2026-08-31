@@ -1,10 +1,15 @@
 use capstone::arch::arm64::ArchMode;
 use capstone::prelude::*;
-use flutterdec_adapter::{FunctionInfo, PoolGeometry, ProgramModel};
+use flutterdec_adapter::model::{
+    Function, PoolEntryKind, PoolGeometry, PoolIndexSpace, ProgramModel,
+};
 use regex::Regex;
 use serde::Serialize;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::LazyLock;
+
+pub mod hints;
+pub use hints::{Hint, HintKind, HintOrigin, HintProvenance, ProgramHints};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct AsmInstruction {
@@ -18,11 +23,32 @@ pub struct AsmInstruction {
 #[derive(Debug, Clone, Serialize)]
 pub struct FunctionDisassembly {
     pub function_id: u64,
-    pub function_name: String,
-    pub owner_class: String,
+    /// `None` when the model recovered no name. Downstream renders a label from
+    /// the entry address instead of the model handing one over, so an
+    /// address-derived string can never be mistaken for a recovered name.
+    pub function_name: Option<String>,
+    /// `None` for a top-level function and for one whose owner was not
+    /// recovered. The model distinguishes those; this record does not need to.
+    pub owner_class: Option<String>,
     pub entry_va: u64,
     pub size: u64,
     pub instructions: Vec<AsmInstruction>,
+}
+
+impl FunctionDisassembly {
+    /// A label to print. Derived from the entry address when there is no name,
+    /// which is a fact about where the code is, not a claim about what it is.
+    pub fn display_name(&self) -> String {
+        match &self.function_name {
+            Some(name) => name.clone(),
+            None => format!("fn_0x{:x}", self.entry_va),
+        }
+    }
+
+    /// The owner to print, or the empty string when there is none.
+    pub fn owner_label(&self) -> &str {
+        self.owner_class.as_deref().unwrap_or("")
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -34,9 +60,9 @@ pub struct FunctionPriorityComponent {
 #[derive(Debug, Clone, Serialize)]
 pub struct FunctionPriorityBreakdown {
     pub function_id: u64,
-    pub function_name: String,
-    pub owner_class: String,
-    pub library_uri: String,
+    pub function_name: Option<String>,
+    pub owner_class: Option<String>,
+    pub library_uri: Option<String>,
     pub entry_va: u64,
     pub total_score: i32,
     pub components: Vec<FunctionPriorityComponent>,
@@ -212,21 +238,22 @@ fn annotation_for(mnemonic: &str, op_str: &str, pool: &mut PoolRefResolver) -> S
 }
 
 fn decode_function(
-    func: &FunctionInfo,
+    model: &ProgramModel,
+    func: &Function,
     iso_instr: &[u8],
     iso_base_va: u64,
     cs: Option<&Capstone>,
     pool_geometry: Option<PoolGeometry>,
 ) -> Option<FunctionDisassembly> {
-    if func.entry_va < iso_base_va {
+    if func.code.start_va < iso_base_va {
         return None;
     }
-    let rel = (func.entry_va - iso_base_va) as usize;
+    let rel = (func.code.start_va - iso_base_va) as usize;
     if rel >= iso_instr.len() {
         return None;
     }
 
-    let requested = usize::try_from(func.size).unwrap_or(0);
+    let requested = usize::try_from(func.code.size).unwrap_or(0);
     let size = requested.min(iso_instr.len() - rel);
     if size < 4 {
         return None;
@@ -237,7 +264,7 @@ fn decode_function(
     let mut pool = PoolRefResolver::new(pool_geometry);
 
     if let Some(cs) = cs {
-        if let Ok(insns) = cs.disasm_all(code, func.entry_va) {
+        if let Ok(insns) = cs.disasm_all(code, func.code.start_va) {
             for ins in insns.iter() {
                 let bytes = ins.bytes();
                 let word = if bytes.len() >= 4 {
@@ -269,7 +296,7 @@ fn decode_function(
                 iso_instr[rel + off + 2],
                 iso_instr[rel + off + 3],
             ]);
-            let pc = func.entry_va + off as u64;
+            let pc = func.code.start_va + off as u64;
             instructions.push(AsmInstruction {
                 va: pc,
                 word,
@@ -282,22 +309,22 @@ fn decode_function(
     }
 
     Some(FunctionDisassembly {
-        function_id: func.id,
-        function_name: func.name.clone(),
-        owner_class: func.owner_class.clone(),
-        entry_va: func.entry_va,
+        function_id: u64::from(func.id.0),
+        function_name: func.name_text().map(str::to_string),
+        owner_class: model.owner_name(func).map(str::to_string),
+        entry_va: func.code.start_va,
         size: size as u64,
         instructions,
     })
 }
 
-fn build_owner_library_lookup(model: &ProgramModel) -> HashMap<String, String> {
-    let mut out = HashMap::new();
-    for class in &model.classes {
-        out.entry(class.name.clone())
-            .or_insert_with(|| class.library_uri.clone());
-    }
-    out
+/// The library URI a function's owning class belongs to, when both are known.
+///
+/// v3 keyed this on the owner *name* through a string map, so two classes with
+/// the same name in different libraries collided and whichever was seen first
+/// won. Typed ids remove the question.
+fn function_library_uri<'a>(model: &'a ProgramModel, func: &Function) -> Option<&'a str> {
+    model.owner_library_uri(func)
 }
 
 fn decode_bl_target(pc: u64, word: u32) -> Option<u64> {
@@ -388,101 +415,64 @@ fn deep_link_signal_score(text: &str) -> i32 {
     deep_link_signal_score_lower(&text.to_ascii_lowercase())
 }
 
-fn entrypoint_signal_score(entry: &flutterdec_adapter::ObjectPoolEntry) -> i32 {
-    let mut score = 0i32;
-    let decoded_kind_lower = entry
-        .decoded_kind
-        .as_deref()
-        .map(str::trim)
-        .unwrap_or("")
-        .to_ascii_lowercase();
-    let library_lower = entry
-        .library_uri
-        .as_deref()
-        .map(str::trim)
-        .unwrap_or("")
-        .to_ascii_lowercase();
-
-    score += match decoded_kind_lower.as_str() {
-        "entrypointcandidate" => 5000,
-        "bootmaincandidate" => 6200,
-        "bootrunappcandidate" => 3800,
-        "deeplinkhandlercandidate" => 2600,
-        "activityhandlercandidate" => 2400,
-        "bootstrapinitcandidate" => 1800,
-        "manifestmaincandidate" => 5400,
-        "manifestrunappcandidate" => 3200,
-        "manifestdeeplinkcandidate" => 2100,
-        "manifestactivitycandidate" => 1900,
-        "manifestbootstrapcandidate" => 1400,
-        _ => 0,
+/// How strongly one host-derived hint argues that its address is worth
+/// disassembling first.
+///
+/// Scored from the hint's typed kind and origin. v3 read the same signal out of
+/// a `decoded_kind` string and a `value` prefix on a synthetic pool entry, which
+/// meant any producer that wrote `"BootMainCandidate"` into a pool slot could
+/// set analysis priority. A hint cannot be produced by an adapter at all.
+fn hint_signal_score(hint: &Hint) -> i32 {
+    let mut score = match (hint.kind, hint.origin) {
+        (HintKind::BootMain, HintOrigin::AndroidManifest) => 5400,
+        (HintKind::BootMain, _) => 6200,
+        (HintKind::EntryPoint, _) => 5000,
+        (HintKind::BootRunApp, HintOrigin::AndroidManifest) => 3200,
+        (HintKind::BootRunApp, _) => 3800,
+        (HintKind::DeepLinkHandler, HintOrigin::AndroidManifest) => 2100,
+        (HintKind::DeepLinkHandler, _) => 2600,
+        (HintKind::ActivityHandler, HintOrigin::AndroidManifest) => 1900,
+        (HintKind::ActivityHandler, _) => 2400,
+        (HintKind::BootstrapInit, HintOrigin::AndroidManifest) => 1400,
+        (HintKind::BootstrapInit, _) => 1800,
     };
 
-    let value_lower = entry.value.trim().to_ascii_lowercase();
-    if value_lower.starts_with("entrypoint:") {
-        score += 1800;
-    } else if value_lower.starts_with("bootflow:main:") {
-        score += 2200;
-    } else if value_lower.starts_with("bootflow:runapp:") {
-        score += 1200;
-    } else if value_lower.starts_with("bootflow:deeplink:") {
-        score += 900;
-    } else if value_lower.starts_with("bootflow:activity:") {
-        score += 800;
-    } else if value_lower.starts_with("bootflow:init:") {
-        score += 700;
-    } else if value_lower.starts_with("manifest:main") {
-        score += 1800;
-    } else if value_lower.starts_with("manifest:runapp") {
-        score += 1000;
-    } else if value_lower.starts_with("manifest:deeplink") {
-        score += 700;
-    } else if value_lower.starts_with("manifest:activity") {
-        score += 650;
-    } else if value_lower.starts_with("manifest:bootstrap") {
-        score += 520;
+    let selector_lower = hint.selector.trim().to_ascii_lowercase();
+    if is_main_like_name(&selector_lower) {
+        score += 3200;
+    } else if selector_is_runapp_like(&selector_lower) {
+        score += 500;
     }
 
-    if let Some(selector) = entry.selector.as_deref() {
-        let selector_lower = selector.trim().to_ascii_lowercase();
-        if is_main_like_name(&selector_lower) {
-            score += 3200;
-        } else if selector_lower == "runapp" || selector_lower.ends_with(".runapp") {
-            score += 500;
-        }
-    }
-
-    // Framework/stdlib metadata is useful for graph seeding, but app-owned
-    // handlers should dominate capped reverse-engineering output.
-    let framework_weighted_kind = matches!(
-        decoded_kind_lower.as_str(),
-        "deeplinkhandlercandidate"
-            | "activityhandlercandidate"
-            | "bootstrapinitcandidate"
-            | "manifestdeeplinkcandidate"
-            | "manifestactivitycandidate"
-            | "manifestbootstrapcandidate"
+    // Framework and stdlib handlers are useful for graph seeding, but app-owned
+    // ones should dominate capped reverse-engineering output.
+    let framework_weighted = matches!(
+        hint.kind,
+        HintKind::DeepLinkHandler | HintKind::ActivityHandler | HintKind::BootstrapInit
     );
-    if framework_weighted_kind && library_lower.starts_with("package:flutter/") {
+    let library_lower = hint
+        .library_uri
+        .as_deref()
+        .unwrap_or("")
+        .trim()
+        .to_ascii_lowercase();
+    if framework_weighted && library_lower.starts_with("package:flutter/") {
         score /= 4;
-    } else if framework_weighted_kind && library_lower.starts_with("dart:") {
+    } else if framework_weighted && library_lower.starts_with("dart:") {
         score /= 5;
     }
-
     score
 }
 
-fn selector_signal_score(entry: &flutterdec_adapter::ObjectPoolEntry) -> i32 {
-    let selector = entry
-        .selector
-        .as_deref()
-        .map(str::trim)
-        .filter(|v| !v.is_empty())
-        .map(|v| v.to_ascii_lowercase());
-    let Some(selector) = selector else {
+/// How strongly a pool entry's own value argues for its target address.
+///
+/// Only entries the adapter authored, only their real decoded value, and only
+/// when the pool actually addresses code.
+fn pool_selector_signal_score(value: &str, library_lower: &str) -> i32 {
+    let selector = value.trim().to_ascii_lowercase();
+    if selector.is_empty() {
         return 0;
-    };
-
+    }
     let mut score = match selector.as_str() {
         "runapp" => 1600,
         "createstate" => 1500,
@@ -506,16 +496,9 @@ fn selector_signal_score(entry: &flutterdec_adapter::ObjectPoolEntry) -> i32 {
     if score == 0 {
         return 0;
     }
-
-    let lib = entry
-        .library_uri
-        .as_deref()
-        .map(str::trim)
-        .unwrap_or("")
-        .to_ascii_lowercase();
-    if lib.starts_with("package:flutter/") {
+    if library_lower.starts_with("package:flutter/") {
         score /= 4;
-    } else if lib.starts_with("dart:") {
+    } else if library_lower.starts_with("dart:") {
         score /= 5;
     }
     score
@@ -560,133 +543,98 @@ fn selector_is_bootstrap_like(selector_lower: &str) -> bool {
     )
 }
 
-fn infer_bootflow_categories(entry: &flutterdec_adapter::ObjectPoolEntry) -> HashSet<&'static str> {
-    let mut categories = HashSet::new();
-    let decoded_kind_lower = entry
-        .decoded_kind
-        .as_deref()
-        .map(str::trim)
-        .unwrap_or("")
-        .to_ascii_lowercase();
-    let value_lower = entry.value.trim().to_ascii_lowercase();
-    let selector_lower = entry
-        .selector
-        .as_deref()
-        .map(str::trim)
-        .unwrap_or("")
-        .to_ascii_lowercase();
-
-    if matches!(
-        decoded_kind_lower.as_str(),
-        "entrypointcandidate" | "bootmaincandidate" | "manifestmaincandidate"
-    ) || value_lower.starts_with("entrypoint:")
-        || value_lower.starts_with("bootflow:main:")
-        || value_lower.starts_with("manifest:main")
-        || is_main_like_name(&selector_lower)
-    {
-        categories.insert("main");
-    }
-
-    if matches!(
-        decoded_kind_lower.as_str(),
-        "bootrunappcandidate" | "manifestrunappcandidate"
-    ) || value_lower.starts_with("bootflow:runapp:")
-        || value_lower.starts_with("manifest:runapp")
-        || selector_is_runapp_like(&selector_lower)
-    {
-        categories.insert("runapp");
-    }
-
-    if matches!(
-        decoded_kind_lower.as_str(),
-        "deeplinkhandlercandidate" | "manifestdeeplinkcandidate"
-    ) || value_lower.starts_with("bootflow:deeplink:")
-        || value_lower.starts_with("manifest:deeplink")
-        || selector_is_deeplink_like(&selector_lower)
-    {
-        categories.insert("deeplink");
-    }
-
-    if matches!(
-        decoded_kind_lower.as_str(),
-        "activityhandlercandidate" | "manifestactivitycandidate"
-    ) || value_lower.starts_with("bootflow:activity:")
-        || value_lower.starts_with("manifest:activity")
-        || selector_is_activity_like(&selector_lower)
-    {
-        categories.insert("activity");
-    }
-
-    if matches!(
-        decoded_kind_lower.as_str(),
-        "bootstrapinitcandidate" | "manifestbootstrapcandidate"
-    ) || value_lower.starts_with("bootflow:init:")
-        || value_lower.starts_with("manifest:bootstrap")
-        || selector_is_bootstrap_like(&selector_lower)
-    {
-        categories.insert("bootstrap");
-    }
-
-    categories
-}
-
+/// Which bootflow categories are claimed for each code address.
+///
+/// Two independent sources, kept apart: host-derived hints, which name a
+/// category directly, and pool entries the adapter authored, whose decoded
+/// selector implies one. Neither can write into the other.
 fn build_target_va_bootflow_categories(
     model: &ProgramModel,
+    hints: &ProgramHints,
 ) -> HashMap<u64, HashSet<&'static str>> {
-    let mut out = HashMap::new();
-    for entry in &model.object_pool {
-        let Some(target_va) = entry.target_va else {
+    let mut out: HashMap<u64, HashSet<&'static str>> = HashMap::new();
+    for hint in hints.iter() {
+        let Some(target_va) = hint.target_va else {
             continue;
         };
-        let inferred = infer_bootflow_categories(entry);
-        if inferred.is_empty() {
-            continue;
-        }
         out.entry(target_va)
-            .or_insert_with(HashSet::new)
-            .extend(inferred);
+            .or_default()
+            .insert(hint.kind.category());
     }
+    for (target_va, selector) in pool_code_selectors(model) {
+        let lower = selector.trim().to_ascii_lowercase();
+        let categories = out.entry(target_va).or_default();
+        if is_main_like_name(&lower) {
+            categories.insert("main");
+        }
+        if selector_is_runapp_like(&lower) {
+            categories.insert("runapp");
+        }
+        if selector_is_deeplink_like(&lower) {
+            categories.insert("deeplink");
+        }
+        if selector_is_activity_like(&lower) {
+            categories.insert("activity");
+        }
+        if selector_is_bootstrap_like(&lower) {
+            categories.insert("bootstrap");
+        }
+    }
+    out.retain(|_, categories| !categories.is_empty());
     out
 }
 
-fn build_target_va_priority_hints(model: &ProgramModel) -> HashMap<u64, i32> {
-    let mut out = HashMap::new();
-    for entry in &model.object_pool {
-        let Some(target_va) = entry.target_va else {
+/// Pool entries that both name something and point at code.
+///
+/// Restricted to a pool whose index space is hardware: an ordinal pool is a
+/// producer's own list, and a `target_va` in one is still an address the
+/// producer recovered, so it is kept, but nothing here reads the index.
+fn pool_code_selectors(model: &ProgramModel) -> Vec<(u64, &str)> {
+    model
+        .object_pool
+        .entries
+        .iter()
+        .filter(|e| matches!(e.kind, PoolEntryKind::Code | PoolEntryKind::Selector))
+        .filter_map(|e| Some((e.target_va?, e.value.as_deref()?)))
+        .collect()
+}
+
+fn build_target_va_priority_hints(model: &ProgramModel, hints: &ProgramHints) -> HashMap<u64, i32> {
+    let mut out: HashMap<u64, i32> = HashMap::new();
+    let mut bump = |va: u64, score: i32| {
+        if score <= 0 {
+            return;
+        }
+        let clamped = score.min(6000);
+        let slot = out.entry(va).or_insert(0);
+        if clamped > *slot {
+            *slot = clamped;
+        }
+    };
+
+    for hint in hints.iter() {
+        let Some(target_va) = hint.target_va else {
             continue;
         };
-        let mut score = 0i32;
-        score += entrypoint_signal_score(entry);
-        score += selector_signal_score(entry);
-        score += deep_link_signal_score(&entry.value);
-        score += entry
-            .decoded_kind
-            .as_deref()
-            .map(deep_link_signal_score)
-            .unwrap_or(0);
-        score += entry
-            .selector
-            .as_deref()
-            .map(deep_link_signal_score)
-            .unwrap_or(0);
-        score += entry
+        let mut score = hint_signal_score(hint);
+        score += deep_link_signal_score(&hint.selector);
+        score += hint
             .owner_class
             .as_deref()
             .map(deep_link_signal_score)
             .unwrap_or(0);
-        score += entry
+        score += hint
             .library_uri
             .as_deref()
             .map(deep_link_signal_score)
             .unwrap_or(0);
-        if score <= 0 {
-            continue;
-        }
-        let clamped = score.min(6000);
-        let slot = out.entry(target_va).or_insert(0);
-        if clamped > *slot {
-            *slot = clamped;
-        }
+        bump(target_va, score);
+    }
+
+    for (target_va, value) in pool_code_selectors(model) {
+        let mut score = pool_selector_signal_score(value, "");
+        score += deep_link_signal_score(value);
+        bump(target_va, score);
     }
     out
 }
@@ -765,12 +713,11 @@ fn is_bootstrap_like_name(name_lower: &str) -> bool {
 
 fn build_app_package_boosts(
     model: &ProgramModel,
-    owner_library: &HashMap<String, String>,
     preferred_packages: &HashSet<String>,
 ) -> HashMap<String, i32> {
     let mut counts: HashMap<String, usize> = HashMap::new();
     for f in &model.functions {
-        let Some(uri) = owner_library.get(&f.owner_class) else {
+        let Some(uri) = function_library_uri(model, f) else {
             continue;
         };
         let Some(pkg) = package_name_from_library_uri(uri) else {
@@ -824,19 +771,19 @@ fn build_app_package_boosts(
 }
 
 fn collect_direct_call_targets(
-    func: &FunctionInfo,
+    func: &Function,
     iso_instr: &[u8],
     iso_base_va: u64,
     known_entries: &HashSet<u64>,
 ) -> Vec<u64> {
-    if func.entry_va < iso_base_va {
+    if func.code.start_va < iso_base_va {
         return Vec::new();
     }
-    let rel = (func.entry_va - iso_base_va) as usize;
+    let rel = (func.code.start_va - iso_base_va) as usize;
     if rel >= iso_instr.len() {
         return Vec::new();
     }
-    let requested = usize::try_from(func.size).unwrap_or(0);
+    let requested = usize::try_from(func.code.size).unwrap_or(0);
     let max_scan = requested.min(iso_instr.len() - rel).min(0x400);
     if max_scan < 4 {
         return Vec::new();
@@ -852,7 +799,7 @@ fn collect_direct_call_targets(
             iso_instr[rel + off + 2],
             iso_instr[rel + off + 3],
         ]);
-        let pc = func.entry_va + off as u64;
+        let pc = func.code.start_va + off as u64;
         if let Some(target) = decode_bl_target(pc, word) {
             if known_entries.contains(&target) && seen.insert(target) {
                 out.push(target);
@@ -864,11 +811,11 @@ fn collect_direct_call_targets(
 }
 
 fn build_call_adjacency(
-    candidates: &[&FunctionInfo],
+    candidates: &[&Function],
     iso_instr: &[u8],
     iso_base_va: u64,
 ) -> HashMap<u64, Vec<u64>> {
-    let known_entries: HashSet<u64> = candidates.iter().map(|f| f.entry_va).collect();
+    let known_entries: HashSet<u64> = candidates.iter().map(|f| f.code.start_va).collect();
     if known_entries.is_empty() {
         return HashMap::new();
     }
@@ -877,26 +824,28 @@ fn build_call_adjacency(
     for f in candidates {
         let callees = collect_direct_call_targets(f, iso_instr, iso_base_va, &known_entries);
         if !callees.is_empty() {
-            adjacency.insert(f.entry_va, callees);
+            adjacency.insert(f.code.start_va, callees);
         }
     }
     adjacency
 }
 
 fn build_entrypoint_frontier_scores(
-    candidates: &[&FunctionInfo],
+    candidates: &[&Function],
     target_va_hints: &HashMap<u64, i32>,
     adjacency: &HashMap<u64, Vec<u64>>,
 ) -> HashMap<u64, i32> {
     let mut seeds = HashSet::new();
     for f in candidates {
-        let name_lower = f.name.to_ascii_lowercase();
+        // An unnamed function seeds only on an address hint. There is no name to
+        // pattern-match, and inventing one is what put `main` on arbitrary code.
+        let name_lower = f.name_text().unwrap_or("").to_ascii_lowercase();
         if is_main_like_name(&name_lower)
             || name_lower.contains("runapp")
             || name_lower.contains("ensureinitialized")
-            || target_va_hints.get(&f.entry_va).copied().unwrap_or(0) >= 1200
+            || target_va_hints.get(&f.code.start_va).copied().unwrap_or(0) >= 1200
         {
-            seeds.insert(f.entry_va);
+            seeds.insert(f.code.start_va);
         }
     }
     if seeds.is_empty() {
@@ -969,8 +918,8 @@ struct FunctionScoreStats {
 }
 
 fn function_priority(
-    func: &FunctionInfo,
-    owner_library: &HashMap<String, String>,
+    model: &ProgramModel,
+    func: &Function,
     target_va_hints: &HashMap<u64, i32>,
     app_package_boosts: &HashMap<String, i32>,
     preferred_packages: &HashSet<String>,
@@ -979,8 +928,11 @@ fn function_priority(
 ) -> (i32, Vec<(String, i32)>) {
     let mut score = 0i32;
     let mut components = Vec::new();
-    let name_lower = func.name.to_ascii_lowercase();
-    let owner_lower = func.owner_class.to_ascii_lowercase();
+    // An unrecovered name scores as an empty string rather than as a
+    // stand-in: `sub_1000` used to earn a generic-name penalty *and* look like
+    // a name, and neither was true.
+    let name_lower = func.name_text().unwrap_or("").to_ascii_lowercase();
+    let owner_lower = model.owner_name(func).unwrap_or("").to_ascii_lowercase();
     let mut library_kind = PriorityLibraryKind::Unknown;
 
     if has_no_isolate_marker(&name_lower) || has_no_isolate_marker(&owner_lower) {
@@ -988,7 +940,7 @@ fn function_priority(
         push_component(&mut components, "no_isolate_marker_penalty", -650);
     }
 
-    if looks_generic_name(&name_lower) {
+    if name_lower.is_empty() || looks_generic_name(&name_lower) {
         score -= 40;
         push_component(&mut components, "generic_name_penalty", -40);
     } else {
@@ -1013,15 +965,15 @@ fn function_priority(
         score -= 90;
         push_component(&mut components, "private_name_penalty", -90);
     }
-    if func.size <= 16 && looks_generic_name(&name_lower) {
+    if func.code.size <= 16 && (name_lower.is_empty() || looks_generic_name(&name_lower)) {
         score -= 80;
         push_component(&mut components, "tiny_generic_penalty", -80);
     }
-    if func.size <= 8 && (name_lower.starts_with("closure_") || name_lower.starts_with('_')) {
+    if func.code.size <= 8 && (name_lower.starts_with("closure_") || name_lower.starts_with('_')) {
         score -= 220;
         push_component(&mut components, "tiny_wrapper_penalty", -220);
     }
-    let size_bonus = function_size_bonus(func.size);
+    let size_bonus = function_size_bonus(func.code.size);
     score += size_bonus;
     push_component(&mut components, "function_size_bonus", size_bonus);
     if is_main_like_name(&name_lower) {
@@ -1047,7 +999,7 @@ fn function_priority(
     score += owner_deeplink;
     push_component(&mut components, "owner_deeplink_signal", owner_deeplink);
 
-    if let Some(uri) = owner_library.get(&func.owner_class) {
+    if let Some(uri) = function_library_uri(model, func) {
         let uri_lower = uri.to_ascii_lowercase();
         library_kind = priority_library_kind(&uri_lower);
         if uri_lower.ends_with("/main.dart") || uri_lower.ends_with("main.dart") {
@@ -1118,11 +1070,11 @@ fn function_priority(
             PriorityLibraryKind::Unknown => {}
         }
     }
-    if let Some(extra) = target_va_hints.get(&func.entry_va) {
+    if let Some(extra) = target_va_hints.get(&func.code.start_va) {
         score += *extra;
         push_component(&mut components, "pool_target_va_hint", *extra);
     }
-    if let Some(extra) = entrypoint_frontier_scores.get(&func.entry_va) {
+    if let Some(extra) = entrypoint_frontier_scores.get(&func.code.start_va) {
         if name_lower.starts_with("closure_") {
             let boosted = *extra / 8;
             score += boosted;
@@ -1149,7 +1101,7 @@ fn function_priority(
     }
     if stats.call_out_degree > 0 {
         let mut call_bonus = (stats.call_out_degree.min(6) as i32) * 60;
-        if func.size <= 16 {
+        if func.code.size <= 16 {
             call_bonus /= 2;
         }
         score += call_bonus;
@@ -1165,20 +1117,42 @@ fn function_priority(
 
 struct RankedCandidate<'a> {
     index: usize,
-    func: &'a FunctionInfo,
-    library_uri: String,
+    func: &'a Function,
+    owner_class: Option<String>,
+    library_uri: Option<String>,
     score: i32,
     out_degree: usize,
     components: Vec<(String, i32)>,
 }
 
+impl RankedCandidate<'_> {
+    fn entry_va(&self) -> u64 {
+        self.func.code.start_va
+    }
+
+    fn name_key(&self) -> String {
+        self.func.name_text().unwrap_or("").to_ascii_lowercase()
+    }
+
+    fn owner_name_key(&self) -> String {
+        format!(
+            "{}::{}",
+            self.owner_class
+                .as_deref()
+                .unwrap_or("")
+                .to_ascii_lowercase(),
+            self.name_key()
+        )
+    }
+}
+
 fn to_breakdown(candidate: &RankedCandidate<'_>) -> FunctionPriorityBreakdown {
     FunctionPriorityBreakdown {
-        function_id: candidate.func.id,
-        function_name: candidate.func.name.clone(),
-        owner_class: candidate.func.owner_class.clone(),
+        function_id: u64::from(candidate.func.id.0),
+        function_name: candidate.func.name_text().map(str::to_string),
+        owner_class: candidate.owner_class.clone(),
         library_uri: candidate.library_uri.clone(),
-        entry_va: candidate.func.entry_va,
+        entry_va: candidate.entry_va(),
         total_score: candidate.score,
         components: candidate
             .components
@@ -1193,36 +1167,40 @@ fn to_breakdown(candidate: &RankedCandidate<'_>) -> FunctionPriorityBreakdown {
 
 fn rank_candidates<'a>(
     model: &'a ProgramModel,
+    hints: &ProgramHints,
     iso_instr: &[u8],
     iso_base_va: u64,
     focus_prefix: Option<&str>,
     max_functions: Option<usize>,
     preferred_packages: &[String],
 ) -> Vec<RankedCandidate<'a>> {
-    let owner_library = build_owner_library_lookup(model);
-    let target_va_hints = build_target_va_priority_hints(model);
+    let target_va_hints = build_target_va_priority_hints(model, hints);
     let preferred_package_set = preferred_packages
         .iter()
         .filter_map(|v| normalize_package_filter(v))
         .collect::<HashSet<_>>();
-    let app_package_boosts =
-        build_app_package_boosts(model, &owner_library, &preferred_package_set);
+    let app_package_boosts = build_app_package_boosts(model, &preferred_package_set);
     let candidates = model
         .functions
         .iter()
         .enumerate()
         .filter(|(_, f)| {
-            if let Some(prefix) = focus_prefix {
-                f.name.starts_with(prefix) || f.owner_class.starts_with(prefix)
-            } else {
-                true
-            }
+            let Some(prefix) = focus_prefix else {
+                return true;
+            };
+            // A focus prefix filters on recovered names only. An unnamed
+            // function matches nothing rather than matching a synthesized label.
+            f.name_text().is_some_and(|n| n.starts_with(prefix))
+                || model.owner_name(f).is_some_and(|o| o.starts_with(prefix))
         })
         .collect::<Vec<_>>();
     let mut name_occurrences: HashMap<String, usize> = HashMap::new();
     for (_, func) in &candidates {
+        let Some(name) = func.name_text() else {
+            continue;
+        };
         *name_occurrences
-            .entry(func.name.to_ascii_lowercase())
+            .entry(name.to_ascii_lowercase())
             .or_insert(0) += 1;
     }
     let (frontier_scores, call_out_degree) = if max_functions.is_some() {
@@ -1243,38 +1221,42 @@ fn rank_candidates<'a>(
     let mut ranked = candidates
         .into_iter()
         .map(|(index, func)| {
-            let library_uri = owner_library
-                .get(&func.owner_class)
-                .cloned()
-                .unwrap_or_default();
+            let owner_class = model.owner_name(func).map(str::to_string);
+            let library_uri = function_library_uri(model, func).map(str::to_string);
+            let out_degree = call_out_degree
+                .get(&func.code.start_va)
+                .copied()
+                .unwrap_or(0);
             if max_functions.is_some() {
                 let (score, components) = function_priority(
+                    model,
                     func,
-                    &owner_library,
                     &target_va_hints,
                     &app_package_boosts,
                     &preferred_package_set,
                     &frontier_scores,
                     FunctionScoreStats {
-                        call_out_degree: call_out_degree.get(&func.entry_va).copied().unwrap_or(0),
-                        name_occurrences: name_occurrences
-                            .get(&func.name.to_ascii_lowercase())
-                            .copied()
+                        call_out_degree: out_degree,
+                        name_occurrences: func
+                            .name_text()
+                            .and_then(|n| name_occurrences.get(&n.to_ascii_lowercase()).copied())
                             .unwrap_or(1),
                     },
                 );
                 RankedCandidate {
                     index,
                     func,
+                    owner_class,
                     library_uri,
                     score,
-                    out_degree: call_out_degree.get(&func.entry_va).copied().unwrap_or(0),
+                    out_degree,
                     components,
                 }
             } else {
                 RankedCandidate {
                     index,
                     func,
+                    owner_class,
                     library_uri,
                     score: 0,
                     out_degree: 0,
@@ -1288,7 +1270,7 @@ fn rank_candidates<'a>(
         ranked.sort_by(|a, b| {
             b.score
                 .cmp(&a.score)
-                .then(b.func.size.cmp(&a.func.size))
+                .then(b.func.code.size.cmp(&a.func.code.size))
                 .then(b.out_degree.cmp(&a.out_degree))
                 .then(a.index.cmp(&b.index))
         });
@@ -1305,17 +1287,17 @@ fn collect_bootflow_seed_entry_vas(
 
     for category in BOOTFLOW_SEED_CATEGORY_ORDER {
         let Some(candidate) = ranked.iter().find(|candidate| {
-            if selected.contains(&candidate.func.entry_va) {
+            if selected.contains(&candidate.entry_va()) {
                 return false;
             }
             target_va_bootflow_categories
-                .get(&candidate.func.entry_va)
+                .get(&candidate.entry_va())
                 .is_some_and(|categories| categories.contains(category))
         }) else {
             continue;
         };
-        selected.insert(candidate.func.entry_va);
-        out.push(candidate.func.entry_va);
+        selected.insert(candidate.entry_va());
+        out.push(candidate.entry_va());
     }
 
     out
@@ -1323,6 +1305,7 @@ fn collect_bootflow_seed_entry_vas(
 
 pub fn rank_program_functions(
     model: &ProgramModel,
+    hints: &ProgramHints,
     iso_instr: &[u8],
     iso_base_va: u64,
     focus_prefix: Option<&str>,
@@ -1330,6 +1313,7 @@ pub fn rank_program_functions(
 ) -> Vec<FunctionPriorityBreakdown> {
     rank_candidates(
         model,
+        hints,
         iso_instr,
         iso_base_va,
         focus_prefix,
@@ -1343,6 +1327,7 @@ pub fn rank_program_functions(
 
 pub fn disassemble_program(
     model: &ProgramModel,
+    hints: &ProgramHints,
     iso_instr: &[u8],
     iso_base_va: u64,
     focus_prefix: Option<&str>,
@@ -1350,6 +1335,7 @@ pub fn disassemble_program(
 ) -> Vec<FunctionDisassembly> {
     disassemble_program_with_priorities_and_package_hints(
         model,
+        hints,
         iso_instr,
         iso_base_va,
         focus_prefix,
@@ -1360,8 +1346,26 @@ pub fn disassemble_program(
     .0
 }
 
+/// The pool geometry a pool reference may be resolved through.
+///
+/// `None` unless the producer claimed a hardware index space *and* supplied the
+/// layout. An ordinal pool resolves to nothing, which is why disassembly prints
+/// `poolOff[...]` rather than attaching whichever string happened to sit at that
+/// position in the producer's list.
+fn resolvable_pool_geometry(model: &ProgramModel) -> Option<PoolGeometry> {
+    match model.object_pool.index_space {
+        PoolIndexSpace::Hardware => model.object_pool.geometry,
+        PoolIndexSpace::Ordinal => None,
+    }
+}
+
+// Eight parameters, all of them independent inputs a caller genuinely chooses:
+// bundling them into a struct would move the same list one level down without
+// making any call site clearer.
+#[allow(clippy::too_many_arguments)]
 pub fn disassemble_program_with_priorities_and_package_hints(
     model: &ProgramModel,
+    hints: &ProgramHints,
     iso_instr: &[u8],
     iso_base_va: u64,
     focus_prefix: Option<&str>,
@@ -1372,9 +1376,10 @@ pub fn disassemble_program_with_priorities_and_package_hints(
     let mut out = Vec::new();
     let mut priorities = Vec::new();
     let cs = build_capstone();
-    let pool_geometry = model.pool_geometry;
+    let pool_geometry = resolvable_pool_geometry(model);
     let ranked = rank_candidates(
         model,
+        hints,
         iso_instr,
         iso_base_va,
         focus_prefix,
@@ -1387,7 +1392,7 @@ pub fn disassemble_program_with_priorities_and_package_hints(
         const DIVERSITY_FIRST_PASS_MAX_PER_OWNER_NAME: usize = 1;
 
         let bootflow_seed_entry_vas = if seed_bootflow_categories {
-            let target_va_bootflow_categories = build_target_va_bootflow_categories(model);
+            let target_va_bootflow_categories = build_target_va_bootflow_categories(model, hints);
             collect_bootflow_seed_entry_vas(&ranked, &target_va_bootflow_categories)
         } else {
             Vec::new()
@@ -1404,11 +1409,12 @@ pub fn disassemble_program_with_priorities_and_package_hints(
             }
             let Some(candidate) = ranked
                 .iter()
-                .find(|candidate| candidate.func.entry_va == seed_entry_va)
+                .find(|candidate| candidate.entry_va() == seed_entry_va)
             else {
                 continue;
             };
             if let Some(d) = decode_function(
+                model,
                 candidate.func,
                 iso_instr,
                 iso_base_va,
@@ -1418,15 +1424,11 @@ pub fn disassemble_program_with_priorities_and_package_hints(
                 out.push(d);
                 priorities.push(to_breakdown(candidate));
                 selected_entry_vas.insert(seed_entry_va);
-                let name_key = candidate.func.name.to_ascii_lowercase();
-                let owner_name_key = format!(
-                    "{}::{}",
-                    candidate.func.owner_class.to_ascii_lowercase(),
-                    name_key
-                );
-                *selected_name_counts.entry(name_key).or_insert(0) += 1;
+                *selected_name_counts
+                    .entry(candidate.name_key())
+                    .or_insert(0) += 1;
                 *selected_owner_name_counts
-                    .entry(owner_name_key)
+                    .entry(candidate.owner_name_key())
                     .or_insert(0) += 1;
             }
         }
@@ -1435,27 +1437,28 @@ pub fn disassemble_program_with_priorities_and_package_hints(
             if out.len() >= max {
                 break;
             }
-            if selected_entry_vas.contains(&candidate.func.entry_va) {
+            if selected_entry_vas.contains(&candidate.entry_va()) {
                 continue;
             }
-            let name_key = candidate.func.name.to_ascii_lowercase();
-            let owner_name_key = format!(
-                "{}::{}",
-                candidate.func.owner_class.to_ascii_lowercase(),
-                name_key
-            );
+            let name_key = candidate.name_key();
+            let owner_name_key = candidate.owner_name_key();
+            // Unnamed functions have no name to be diverse about, so the
+            // per-name caps do not apply to them.
+            let capped = !name_key.is_empty();
             let name_seen = selected_name_counts.get(&name_key).copied().unwrap_or(0);
             let owner_name_seen = selected_owner_name_counts
                 .get(&owner_name_key)
                 .copied()
                 .unwrap_or(0);
-            if name_seen >= DIVERSITY_FIRST_PASS_MAX_PER_NAME
-                || owner_name_seen >= DIVERSITY_FIRST_PASS_MAX_PER_OWNER_NAME
+            if capped
+                && (name_seen >= DIVERSITY_FIRST_PASS_MAX_PER_NAME
+                    || owner_name_seen >= DIVERSITY_FIRST_PASS_MAX_PER_OWNER_NAME)
             {
                 deferred.push(candidate);
                 continue;
             }
             if let Some(d) = decode_function(
+                model,
                 candidate.func,
                 iso_instr,
                 iso_base_va,
@@ -1464,7 +1467,7 @@ pub fn disassemble_program_with_priorities_and_package_hints(
             ) {
                 out.push(d);
                 priorities.push(to_breakdown(&candidate));
-                selected_entry_vas.insert(candidate.func.entry_va);
+                selected_entry_vas.insert(candidate.entry_va());
                 *selected_name_counts.entry(name_key).or_insert(0) += 1;
                 *selected_owner_name_counts
                     .entry(owner_name_key)
@@ -1476,10 +1479,11 @@ pub fn disassemble_program_with_priorities_and_package_hints(
             if out.len() >= max {
                 break;
             }
-            if selected_entry_vas.contains(&candidate.func.entry_va) {
+            if selected_entry_vas.contains(&candidate.entry_va()) {
                 continue;
             }
             if let Some(d) = decode_function(
+                model,
                 candidate.func,
                 iso_instr,
                 iso_base_va,
@@ -1488,12 +1492,13 @@ pub fn disassemble_program_with_priorities_and_package_hints(
             ) {
                 out.push(d);
                 priorities.push(to_breakdown(&candidate));
-                selected_entry_vas.insert(candidate.func.entry_va);
+                selected_entry_vas.insert(candidate.entry_va());
             }
         }
     } else {
         for candidate in ranked {
             if let Some(d) = decode_function(
+                model,
                 candidate.func,
                 iso_instr,
                 iso_base_va,
@@ -1511,6 +1516,7 @@ pub fn disassemble_program_with_priorities_and_package_hints(
 
 pub fn disassemble_program_with_priorities(
     model: &ProgramModel,
+    hints: &ProgramHints,
     iso_instr: &[u8],
     iso_base_va: u64,
     focus_prefix: Option<&str>,
@@ -1518,6 +1524,7 @@ pub fn disassemble_program_with_priorities(
 ) -> (Vec<FunctionDisassembly>, Vec<FunctionPriorityBreakdown>) {
     disassemble_program_with_priorities_and_package_hints(
         model,
+        hints,
         iso_instr,
         iso_base_va,
         focus_prefix,
@@ -1530,7 +1537,198 @@ pub fn disassemble_program_with_priorities(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use flutterdec_adapter::{ClassInfo, LibraryInfo, ObjectPoolEntry};
+    use flutterdec_adapter::model::{
+        Capabilities, CapabilityLevel, Class, ClassId, CodeRange, CompatibilityBinding, Function,
+        FunctionId, InputRegion, InputRegionName, Library, LibraryId, Name, ObjectPool,
+        ObservedInput, PoolEntry, PoolEntryKind, PoolIndexSpace, Producer, ProducerTrust,
+        Provenance, MODEL_VERSION,
+    };
+    use flutterdec_adapter::primitives::Sha256Digest;
+    use flutterdec_loader::identity::{SnapshotIdentity, SnapshotKind, TargetArch};
+
+    /// Fixture builders for v4 models.
+    ///
+    /// The disassembler never validates a model, so these skip the host-selected
+    /// bookkeeping that [`flutterdec_adapter::validate`] checks and populate only
+    /// what ranking and decoding read. What they cannot do is invent a name or an
+    /// owner: an unnamed function is `fun(id, None, ...)`, which is the case these
+    /// tests exist to cover.
+    fn lib(id: u32, uri: &str) -> Library {
+        Library {
+            id: LibraryId(id),
+            uri: uri.to_string(),
+            display_name: None,
+            provenance: Provenance::Exact,
+        }
+    }
+
+    fn cls(id: u32, name: &str, library: Option<u32>) -> Class {
+        Class {
+            id: ClassId(id),
+            name: name.to_string(),
+            library: library.map(LibraryId),
+            super_class: None,
+            provenance: Provenance::Exact,
+        }
+    }
+
+    fn fun(id: u32, name: Option<&str>, owner: Option<u32>, start_va: u64, size: u64) -> Function {
+        Function {
+            id: FunctionId(id),
+            name: name.map(Name::exact),
+            owner: owner.map(ClassId),
+            code: CodeRange { start_va, size },
+            code_section_va: start_va,
+            provenance: Provenance::Exact,
+        }
+    }
+
+    fn pool_string(index: u64, value: &str) -> PoolEntry {
+        PoolEntry {
+            index,
+            kind: PoolEntryKind::String,
+            value: Some(value.to_string()),
+            target_va: None,
+            provenance: Provenance::Exact,
+            confidence: None,
+        }
+    }
+
+    fn pool_selector(index: u64, selector: &str, target_va: u64) -> PoolEntry {
+        PoolEntry {
+            index,
+            kind: PoolEntryKind::Selector,
+            value: Some(selector.to_string()),
+            target_va: Some(target_va),
+            provenance: Provenance::Exact,
+            confidence: None,
+        }
+    }
+
+    fn ordinal_pool(entries: Vec<PoolEntry>) -> ObjectPool {
+        ObjectPool {
+            index_space: PoolIndexSpace::Ordinal,
+            geometry: None,
+            entries,
+        }
+    }
+
+    fn hardware_pool(entries: Vec<PoolEntry>) -> ObjectPool {
+        ObjectPool {
+            index_space: PoolIndexSpace::Hardware,
+            geometry: Some(ARM64_POOL_GEOMETRY),
+            entries,
+        }
+    }
+
+    fn hint(
+        kind: HintKind,
+        origin: HintOrigin,
+        selector: &str,
+        target_va: Option<u64>,
+        owner_class: Option<&str>,
+        library_uri: Option<&str>,
+    ) -> Hint {
+        Hint {
+            kind,
+            origin,
+            provenance: HintProvenance::Heuristic,
+            selector: selector.to_string(),
+            target_va,
+            owner_class: owner_class.map(str::to_string),
+            library_uri: library_uri.map(str::to_string),
+            detail: String::new(),
+        }
+    }
+
+    fn program_hints(entries: Vec<Hint>) -> ProgramHints {
+        let mut hints = ProgramHints::new();
+        for entry in entries {
+            hints.push(entry);
+        }
+        hints
+    }
+
+    /// Score one function the way `rank_candidates` would, resolving its owner
+    /// and library through the model instead of through a name-keyed side table.
+    fn score(
+        model: &ProgramModel,
+        id: u32,
+        frontier: &HashMap<u64, i32>,
+        preferred: &HashSet<String>,
+    ) -> (i32, Vec<(String, i32)>) {
+        let func = model
+            .functions
+            .iter()
+            .find(|f| f.id == FunctionId(id))
+            .expect("fixture function");
+        function_priority(
+            model,
+            func,
+            &HashMap::new(),
+            &HashMap::new(),
+            preferred,
+            frontier,
+            FunctionScoreStats {
+                call_out_degree: 0,
+                name_occurrences: 1,
+            },
+        )
+    }
+
+    fn test_model(
+        libraries: Vec<Library>,
+        classes: Vec<Class>,
+        functions: Vec<Function>,
+        object_pool: ObjectPool,
+    ) -> ProgramModel {
+        let digest = Sha256Digest::of(b"disasm fixture");
+        ProgramModel {
+            model_version: MODEL_VERSION,
+            producer: Producer {
+                id: "disasm-fixture".to_string(),
+                version: "0".to_string(),
+                artifact_sha256: digest.clone(),
+                trust: ProducerTrust::Untrusted,
+            },
+            input: ObservedInput {
+                identity: SnapshotIdentity::from_header(
+                    TargetArch::Arm64,
+                    "80a49c7111088100a233b2ae788e1f48",
+                    SnapshotKind::FullAot,
+                    "product arm64 compressed-pointers",
+                ),
+                regions: vec![InputRegion {
+                    region: InputRegionName::IsolateInstructions,
+                    size: u64::MAX / 2,
+                    sha256: digest.clone(),
+                    virtual_address: Some(0),
+                    executable: true,
+                }],
+            },
+            compatibility: CompatibilityBinding {
+                record_sha256: digest.clone(),
+                parser_family_id: "fixture".to_string(),
+                profile_id: "fixture".to_string(),
+                profile_sha256: digest,
+            },
+            capabilities: Capabilities {
+                libraries: CapabilityLevel::Partial,
+                classes: CapabilityLevel::Partial,
+                class_relationships: CapabilityLevel::Unavailable,
+                functions: CapabilityLevel::Partial,
+                function_names: CapabilityLevel::Partial,
+                object_pool: CapabilityLevel::Partial,
+                pool_index_space: CapabilityLevel::Unavailable,
+            },
+            libraries,
+            classes,
+            functions,
+            object_pool,
+            diagnostics: Vec::new(),
+            extensions: Default::default(),
+        }
+    }
 
     /// Word encodings lifted from a real Dart 3.9.2 `libapp.so`; ground-truth pool
     /// indices were cross-checked against an independent ObjectPool decoder.
@@ -1545,35 +1743,16 @@ mod tests {
     }
 
     fn pool_probe_model(pool_geometry: Option<PoolGeometry>) -> ProgramModel {
-        ProgramModel {
-            schema_version: 3,
-            adapter_kind: "test".to_string(),
-            dart_version: "3.9.2".to_string(),
-            snapshot_hash: "h".to_string(),
-            arch: "arm64".to_string(),
-            libraries: vec![LibraryInfo {
-                id: 0,
-                uri: "package:app/main.dart".to_string(),
-                name_display: "package:app/main.dart".to_string(),
-            }],
-            classes: vec![ClassInfo {
-                id: 0,
-                name: "Global".to_string(),
-                super_name: "Object".to_string(),
-                library_uri: "package:app/main.dart".to_string(),
-            }],
-            functions: vec![FunctionInfo {
-                id: 0,
-                name: "poolProbe".to_string(),
-                owner_class: "Global".to_string(),
-                entry_va: 0x1000,
-                size: 16,
-                code_section_va: 0x1000,
-                name_kind: None,
-            }],
-            object_pool: Vec::new(),
-            pool_geometry,
-        }
+        let pool = match pool_geometry {
+            Some(_) => hardware_pool(Vec::new()),
+            None => ordinal_pool(Vec::new()),
+        };
+        test_model(
+            vec![lib(0, "package:app/main.dart")],
+            vec![cls(0, "AppRoot", Some(0))],
+            vec![fun(0, Some("poolProbe"), Some(0), 0x1000, 16)],
+            pool,
+        )
     }
 
     fn annotations_for_words(
@@ -1581,9 +1760,9 @@ mod tests {
         geometry: Option<PoolGeometry>,
     ) -> Vec<(String, String)> {
         let mut model = pool_probe_model(geometry);
-        model.functions[0].size = (words.len() * 4) as u64;
+        model.functions[0].code.size = (words.len() * 4) as u64;
         let bytes: Vec<u8> = words.iter().flat_map(|w| w.to_le_bytes()).collect();
-        let d = disassemble_program(&model, &bytes, 0x1000, None, None);
+        let d = disassemble_program(&model, &ProgramHints::new(), &bytes, 0x1000, None, None);
         d.first()
             .map(|f| {
                 f.instructions
@@ -1728,748 +1907,296 @@ mod tests {
 
     #[test]
     fn disassembles_simple_function() {
-        let model = ProgramModel {
-            schema_version: 2,
-            adapter_kind: "test".to_string(),
-            dart_version: "unknown".to_string(),
-            snapshot_hash: "h".to_string(),
-            arch: "arm64".to_string(),
-            libraries: vec![LibraryInfo {
-                id: 0,
-                uri: "package:app/main.dart".to_string(),
-                name_display: "package:app/main.dart".to_string(),
-            }],
-            classes: vec![ClassInfo {
-                id: 0,
-                name: "Global".to_string(),
-                super_name: "Object".to_string(),
-                library_uri: "package:app/main.dart".to_string(),
-            }],
-            functions: vec![FunctionInfo {
-                id: 0,
-                name: "entry".to_string(),
-                owner_class: "Global".to_string(),
-                entry_va: 0x1000,
-                size: 8,
-                code_section_va: 0x1000,
-                name_kind: None,
-            }],
-            pool_geometry: None,
-            object_pool: vec![ObjectPoolEntry {
-                index: 0,
-                kind: "String".to_string(),
-                value: "x".to_string(),
-                decoded_kind: None,
-                selector: None,
-                target_va: None,
-                owner_class: None,
-                library_uri: None,
-                confidence: None,
-                source: None,
-            }],
-        };
+        let model = test_model(
+            vec![lib(0, "package:app/main.dart")],
+            vec![cls(0, "AppRoot", Some(0))],
+            vec![fun(0, Some("entry"), Some(0), 0x1000, 8)],
+            ordinal_pool(vec![pool_string(0, "x")]),
+        );
+        let hints = program_hints(vec![]);
         let bytes = vec![0xc0, 0x03, 0x5f, 0xd6, 0xc0, 0x03, 0x5f, 0xd6];
-        let d = disassemble_program(&model, &bytes, 0x1000, None, None);
+        let d = disassemble_program(&model, &hints, &bytes, 0x1000, None, None);
         assert_eq!(d.len(), 1);
         assert_eq!(d[0].instructions[0].mnemonic, "ret");
     }
 
     #[test]
     fn prioritizes_main_like_name_when_max_functions_is_limited() {
-        let model = ProgramModel {
-            schema_version: 2,
-            adapter_kind: "test".to_string(),
-            dart_version: "unknown".to_string(),
-            snapshot_hash: "h".to_string(),
-            arch: "arm64".to_string(),
-            libraries: vec![
-                LibraryInfo {
-                    id: 0,
-                    uri: "package:flutter/src/widgets/binding.dart".to_string(),
-                    name_display: "package:flutter/src/widgets/binding.dart".to_string(),
-                },
-                LibraryInfo {
-                    id: 1,
-                    uri: "package:app/main.dart".to_string(),
-                    name_display: "package:app/main.dart".to_string(),
-                },
+        let model = test_model(
+            vec![
+                lib(0, "package:flutter/src/widgets/binding.dart"),
+                lib(1, "package:app/main.dart"),
             ],
-            classes: vec![
-                ClassInfo {
-                    id: 0,
-                    name: "WidgetsBinding".to_string(),
-                    super_name: "Object".to_string(),
-                    library_uri: "package:flutter/src/widgets/binding.dart".to_string(),
-                },
-                ClassInfo {
-                    id: 1,
-                    name: "Global".to_string(),
-                    super_name: "Object".to_string(),
-                    library_uri: "package:app/main.dart".to_string(),
-                },
+            vec![
+                cls(0, "WidgetsBinding", Some(0)),
+                cls(1, "AppRoot", Some(1)),
             ],
-            functions: vec![
-                FunctionInfo {
-                    id: 0,
-                    name: "sub_1000".to_string(),
-                    owner_class: "WidgetsBinding".to_string(),
-                    entry_va: 0x1000,
-                    size: 4,
-                    code_section_va: 0x1000,
-                    name_kind: None,
-                },
-                FunctionInfo {
-                    id: 1,
-                    name: "main".to_string(),
-                    owner_class: "Global".to_string(),
-                    entry_va: 0x1004,
-                    size: 4,
-                    code_section_va: 0x1000,
-                    name_kind: None,
-                },
+            vec![
+                fun(0, None, Some(0), 0x1000, 4),
+                fun(1, Some("main"), Some(1), 0x1004, 4),
             ],
-            pool_geometry: None,
-            object_pool: vec![ObjectPoolEntry {
-                index: 0,
-                kind: "String".to_string(),
-                value: "x".to_string(),
-                decoded_kind: None,
-                selector: None,
-                target_va: None,
-                owner_class: None,
-                library_uri: None,
-                confidence: None,
-                source: None,
-            }],
-        };
+            ordinal_pool(vec![pool_string(0, "x")]),
+        );
+        let hints = program_hints(vec![]);
         let bytes = vec![0xc0, 0x03, 0x5f, 0xd6, 0xc0, 0x03, 0x5f, 0xd6];
-        let d = disassemble_program(&model, &bytes, 0x1000, None, Some(1));
+        let d = disassemble_program(&model, &hints, &bytes, 0x1000, None, Some(1));
         assert_eq!(d.len(), 1);
-        assert_eq!(d[0].function_name, "main");
+        assert_eq!(d[0].function_name.as_deref(), Some("main"));
     }
 
     #[test]
     fn prioritizes_app_main_library_for_generic_names_when_limited() {
-        let model = ProgramModel {
-            schema_version: 2,
-            adapter_kind: "test".to_string(),
-            dart_version: "unknown".to_string(),
-            snapshot_hash: "h".to_string(),
-            arch: "arm64".to_string(),
-            libraries: vec![
-                LibraryInfo {
-                    id: 0,
-                    uri: "package:flutter/src/widgets/heroes.dart".to_string(),
-                    name_display: "package:flutter/src/widgets/heroes.dart".to_string(),
-                },
-                LibraryInfo {
-                    id: 1,
-                    uri: "package:app/main.dart".to_string(),
-                    name_display: "package:app/main.dart".to_string(),
-                },
+        let model = test_model(
+            vec![
+                lib(0, "package:flutter/src/widgets/heroes.dart"),
+                lib(1, "package:app/main.dart"),
             ],
-            classes: vec![
-                ClassInfo {
-                    id: 0,
-                    name: "RenderErrorBox".to_string(),
-                    super_name: "Object".to_string(),
-                    library_uri: "package:flutter/src/widgets/heroes.dart".to_string(),
-                },
-                ClassInfo {
-                    id: 1,
-                    name: "Global".to_string(),
-                    super_name: "Object".to_string(),
-                    library_uri: "package:app/main.dart".to_string(),
-                },
+            vec![
+                cls(0, "RenderErrorBox", Some(0)),
+                cls(1, "AppRoot", Some(1)),
             ],
-            functions: vec![
-                FunctionInfo {
-                    id: 0,
-                    name: "sub_a000".to_string(),
-                    owner_class: "RenderErrorBox".to_string(),
-                    entry_va: 0x2000,
-                    size: 4,
-                    code_section_va: 0x2000,
-                    name_kind: None,
-                },
-                FunctionInfo {
-                    id: 1,
-                    name: "sub_b000".to_string(),
-                    owner_class: "Global".to_string(),
-                    entry_va: 0x2004,
-                    size: 4,
-                    code_section_va: 0x2000,
-                    name_kind: None,
-                },
+            vec![
+                fun(0, None, Some(0), 0x2000, 4),
+                fun(1, None, Some(1), 0x2004, 4),
             ],
-            pool_geometry: None,
-            object_pool: vec![ObjectPoolEntry {
-                index: 0,
-                kind: "String".to_string(),
-                value: "x".to_string(),
-                decoded_kind: None,
-                selector: None,
-                target_va: None,
-                owner_class: None,
-                library_uri: None,
-                confidence: None,
-                source: None,
-            }],
-        };
+            ordinal_pool(vec![pool_string(0, "x")]),
+        );
+        let hints = program_hints(vec![]);
         let bytes = vec![0xc0, 0x03, 0x5f, 0xd6, 0xc0, 0x03, 0x5f, 0xd6];
-        let d = disassemble_program(&model, &bytes, 0x2000, None, Some(1));
+        let d = disassemble_program(&model, &hints, &bytes, 0x2000, None, Some(1));
         assert_eq!(d.len(), 1);
-        assert_eq!(d[0].function_name, "sub_b000");
+        assert_eq!(d[0].entry_va, 0x2004);
+        assert_eq!(d[0].function_name, None);
     }
 
     #[test]
     fn prioritizes_deeplink_and_activity_handler_names_when_limited() {
-        let model = ProgramModel {
-            schema_version: 2,
-            adapter_kind: "test".to_string(),
-            dart_version: "unknown".to_string(),
-            snapshot_hash: "h".to_string(),
-            arch: "arm64".to_string(),
-            libraries: vec![LibraryInfo {
-                id: 0,
-                uri: "package:app/navigation.dart".to_string(),
-                name_display: "package:app/navigation.dart".to_string(),
-            }],
-            classes: vec![ClassInfo {
-                id: 0,
-                name: "RouterHost".to_string(),
-                super_name: "Object".to_string(),
-                library_uri: "package:app/navigation.dart".to_string(),
-            }],
-            functions: vec![
-                FunctionInfo {
-                    id: 0,
-                    name: "sub_3000".to_string(),
-                    owner_class: "RouterHost".to_string(),
-                    entry_va: 0x3000,
-                    size: 4,
-                    code_section_va: 0x3000,
-                    name_kind: None,
-                },
-                FunctionInfo {
-                    id: 1,
-                    name: "handleIncomingIntent".to_string(),
-                    owner_class: "RouterHost".to_string(),
-                    entry_va: 0x3004,
-                    size: 4,
-                    code_section_va: 0x3000,
-                    name_kind: None,
-                },
+        let model = test_model(
+            vec![lib(0, "package:app/navigation.dart")],
+            vec![cls(0, "RouterHost", Some(0))],
+            vec![
+                fun(0, None, Some(0), 0x3000, 4),
+                fun(1, Some("handleIncomingIntent"), Some(0), 0x3004, 4),
             ],
-            pool_geometry: None,
-            object_pool: vec![ObjectPoolEntry {
-                index: 0,
-                kind: "String".to_string(),
-                value: "x".to_string(),
-                decoded_kind: None,
-                selector: None,
-                target_va: None,
-                owner_class: None,
-                library_uri: None,
-                confidence: None,
-                source: None,
-            }],
-        };
+            ordinal_pool(vec![pool_string(0, "x")]),
+        );
+        let hints = program_hints(vec![]);
         let bytes = vec![0xc0, 0x03, 0x5f, 0xd6, 0xc0, 0x03, 0x5f, 0xd6];
-        let d = disassemble_program(&model, &bytes, 0x3000, None, Some(1));
+        let d = disassemble_program(&model, &hints, &bytes, 0x3000, None, Some(1));
         assert_eq!(d.len(), 1);
-        assert_eq!(d[0].function_name, "handleIncomingIntent");
+        assert_eq!(d[0].function_name.as_deref(), Some("handleIncomingIntent"));
     }
 
     #[test]
     fn prioritizes_pool_target_va_with_deeplink_selector_when_limited() {
-        let model = ProgramModel {
-            schema_version: 2,
-            adapter_kind: "test".to_string(),
-            dart_version: "unknown".to_string(),
-            snapshot_hash: "h".to_string(),
-            arch: "arm64".to_string(),
-            libraries: vec![LibraryInfo {
-                id: 0,
-                uri: "package:app/main.dart".to_string(),
-                name_display: "package:app/main.dart".to_string(),
-            }],
-            classes: vec![ClassInfo {
-                id: 0,
-                name: "Global".to_string(),
-                super_name: "Object".to_string(),
-                library_uri: "package:app/main.dart".to_string(),
-            }],
-            functions: vec![
-                FunctionInfo {
-                    id: 0,
-                    name: "sub_4000".to_string(),
-                    owner_class: "Global".to_string(),
-                    entry_va: 0x4000,
-                    size: 4,
-                    code_section_va: 0x4000,
-                    name_kind: None,
-                },
-                FunctionInfo {
-                    id: 1,
-                    name: "sub_4004".to_string(),
-                    owner_class: "Global".to_string(),
-                    entry_va: 0x4004,
-                    size: 4,
-                    code_section_va: 0x4000,
-                    name_kind: None,
-                },
+        let model = test_model(
+            vec![lib(0, "package:app/main.dart")],
+            vec![cls(0, "AppRoot", Some(0))],
+            vec![
+                fun(0, None, Some(0), 0x4000, 4),
+                fun(1, None, Some(0), 0x4004, 4),
             ],
-            pool_geometry: None,
-            object_pool: vec![
-                ObjectPoolEntry {
-                    index: 0,
-                    kind: "String".to_string(),
-                    value: "android.intent.action.VIEW".to_string(),
-                    decoded_kind: Some("selector".to_string()),
-                    selector: Some("onNewIntent".to_string()),
-                    target_va: Some(0x4004),
-                    owner_class: Some("MainActivity".to_string()),
-                    library_uri: Some("package:app/main.dart".to_string()),
-                    confidence: None,
-                    source: None,
-                },
-                ObjectPoolEntry {
-                    index: 1,
-                    kind: "String".to_string(),
-                    value: "x".to_string(),
-                    decoded_kind: None,
-                    selector: None,
-                    target_va: None,
-                    owner_class: None,
-                    library_uri: None,
-                    confidence: None,
-                    source: None,
-                },
-            ],
-        };
+            ordinal_pool(vec![
+                pool_selector(0, "onNewIntent", 0x4004),
+                pool_string(1, "x"),
+            ]),
+        );
+        let hints = program_hints(vec![]);
         let bytes = vec![0xc0, 0x03, 0x5f, 0xd6, 0xc0, 0x03, 0x5f, 0xd6];
-        let d = disassemble_program(&model, &bytes, 0x4000, None, Some(1));
+        let d = disassemble_program(&model, &hints, &bytes, 0x4000, None, Some(1));
         assert_eq!(d.len(), 1);
-        assert_eq!(d[0].function_name, "sub_4004");
+        assert_eq!(d[0].entry_va, 0x4004);
+        assert_eq!(d[0].function_name, None);
     }
 
     #[test]
     fn prioritizes_entrypoint_candidate_target_va_when_names_are_generic() {
-        let model = ProgramModel {
-            schema_version: 2,
-            adapter_kind: "test".to_string(),
-            dart_version: "unknown".to_string(),
-            snapshot_hash: "h".to_string(),
-            arch: "arm64".to_string(),
-            libraries: vec![LibraryInfo {
-                id: 0,
-                uri: "package:app/main.dart".to_string(),
-                name_display: "package:app/main.dart".to_string(),
-            }],
-            classes: vec![ClassInfo {
-                id: 0,
-                name: "Global".to_string(),
-                super_name: "Object".to_string(),
-                library_uri: "package:app/main.dart".to_string(),
-            }],
-            functions: vec![
-                FunctionInfo {
-                    id: 0,
-                    name: "sub_5000".to_string(),
-                    owner_class: "Global".to_string(),
-                    entry_va: 0x5000,
-                    size: 4,
-                    code_section_va: 0x5000,
-                    name_kind: None,
-                },
-                FunctionInfo {
-                    id: 1,
-                    name: "sub_5004".to_string(),
-                    owner_class: "Global".to_string(),
-                    entry_va: 0x5004,
-                    size: 4,
-                    code_section_va: 0x5000,
-                    name_kind: None,
-                },
+        let model = test_model(
+            vec![lib(0, "package:app/main.dart")],
+            vec![cls(0, "AppRoot", Some(0))],
+            vec![
+                fun(0, None, Some(0), 0x5000, 4),
+                fun(1, None, Some(0), 0x5004, 4),
             ],
-            pool_geometry: None,
-            object_pool: vec![ObjectPoolEntry {
-                index: 0,
-                kind: "String".to_string(),
-                value: "entrypoint:main".to_string(),
-                decoded_kind: Some("EntryPointCandidate".to_string()),
-                selector: Some("main".to_string()),
-                target_va: Some(0x5004),
-                owner_class: Some("Global".to_string()),
-                library_uri: Some("package:app/main.dart".to_string()),
-                confidence: None,
-                source: None,
-            }],
-        };
+            ordinal_pool(vec![]),
+        );
+        let hints = program_hints(vec![hint(
+            HintKind::EntryPoint,
+            HintOrigin::ModelNamePattern,
+            "main",
+            Some(0x5004),
+            Some("AppRoot"),
+            Some("package:app/main.dart"),
+        )]);
         let bytes = vec![0xc0, 0x03, 0x5f, 0xd6, 0xc0, 0x03, 0x5f, 0xd6];
-        let d = disassemble_program(&model, &bytes, 0x5000, None, Some(1));
+        let d = disassemble_program(&model, &hints, &bytes, 0x5000, None, Some(1));
         assert_eq!(d.len(), 1);
-        assert_eq!(d[0].function_name, "sub_5004");
+        assert_eq!(d[0].entry_va, 0x5004);
+        assert_eq!(d[0].function_name, None);
     }
 
     #[test]
     fn prioritizes_boot_main_candidate_target_va_when_names_are_generic() {
-        let model = ProgramModel {
-            schema_version: 2,
-            adapter_kind: "test".to_string(),
-            dart_version: "unknown".to_string(),
-            snapshot_hash: "h".to_string(),
-            arch: "arm64".to_string(),
-            libraries: vec![LibraryInfo {
-                id: 0,
-                uri: "package:app/main.dart".to_string(),
-                name_display: "package:app/main.dart".to_string(),
-            }],
-            classes: vec![ClassInfo {
-                id: 0,
-                name: "Global".to_string(),
-                super_name: "Object".to_string(),
-                library_uri: "package:app/main.dart".to_string(),
-            }],
-            functions: vec![
-                FunctionInfo {
-                    id: 0,
-                    name: "sub_50a0".to_string(),
-                    owner_class: "Global".to_string(),
-                    entry_va: 0x50a0,
-                    size: 4,
-                    code_section_va: 0x50a0,
-                    name_kind: None,
-                },
-                FunctionInfo {
-                    id: 1,
-                    name: "sub_50a4".to_string(),
-                    owner_class: "Global".to_string(),
-                    entry_va: 0x50a4,
-                    size: 4,
-                    code_section_va: 0x50a0,
-                    name_kind: None,
-                },
+        let model = test_model(
+            vec![lib(0, "package:app/main.dart")],
+            vec![cls(0, "AppRoot", Some(0))],
+            vec![
+                fun(0, None, Some(0), 0x50a0, 4),
+                fun(1, None, Some(0), 0x50a4, 4),
             ],
-            pool_geometry: None,
-            object_pool: vec![ObjectPoolEntry {
-                index: 0,
-                kind: "String".to_string(),
-                value: "bootflow:main:main".to_string(),
-                decoded_kind: Some("BootMainCandidate".to_string()),
-                selector: Some("main".to_string()),
-                target_va: Some(0x50a4),
-                owner_class: Some("Global".to_string()),
-                library_uri: Some("package:app/main.dart".to_string()),
-                confidence: None,
-                source: None,
-            }],
-        };
+            ordinal_pool(vec![]),
+        );
+        let hints = program_hints(vec![hint(
+            HintKind::BootMain,
+            HintOrigin::ModelNamePattern,
+            "main",
+            Some(0x50a4),
+            Some("AppRoot"),
+            Some("package:app/main.dart"),
+        )]);
         let bytes = vec![0xc0, 0x03, 0x5f, 0xd6, 0xc0, 0x03, 0x5f, 0xd6];
-        let d = disassemble_program(&model, &bytes, 0x50a0, None, Some(1));
+        let d = disassemble_program(&model, &hints, &bytes, 0x50a0, None, Some(1));
         assert_eq!(d.len(), 1);
-        assert_eq!(d[0].function_name, "sub_50a4");
+        assert_eq!(d[0].entry_va, 0x50a4);
+        assert_eq!(d[0].function_name, None);
     }
 
     #[test]
     fn prioritizes_manifest_main_candidate_target_va_when_names_are_generic() {
-        let model = ProgramModel {
-            schema_version: 2,
-            adapter_kind: "test".to_string(),
-            dart_version: "unknown".to_string(),
-            snapshot_hash: "h".to_string(),
-            arch: "arm64".to_string(),
-            libraries: vec![LibraryInfo {
-                id: 0,
-                uri: "package:app/main.dart".to_string(),
-                name_display: "package:app/main.dart".to_string(),
-            }],
-            classes: vec![ClassInfo {
-                id: 0,
-                name: "Global".to_string(),
-                super_name: "Object".to_string(),
-                library_uri: "package:app/main.dart".to_string(),
-            }],
-            functions: vec![
-                FunctionInfo {
-                    id: 0,
-                    name: "sub_50aa".to_string(),
-                    owner_class: "Global".to_string(),
-                    entry_va: 0x50aa,
-                    size: 4,
-                    code_section_va: 0x50aa,
-                    name_kind: None,
-                },
-                FunctionInfo {
-                    id: 1,
-                    name: "sub_50ae".to_string(),
-                    owner_class: "Global".to_string(),
-                    entry_va: 0x50ae,
-                    size: 4,
-                    code_section_va: 0x50aa,
-                    name_kind: None,
-                },
+        let model = test_model(
+            vec![lib(0, "package:app/main.dart")],
+            vec![cls(0, "AppRoot", Some(0))],
+            vec![
+                fun(0, None, Some(0), 0x50aa, 4),
+                fun(1, None, Some(0), 0x50ae, 4),
             ],
-            pool_geometry: None,
-            object_pool: vec![ObjectPoolEntry {
-                index: 0,
-                kind: "String".to_string(),
-                value: "manifest:main-launcher".to_string(),
-                decoded_kind: Some("ManifestMainCandidate".to_string()),
-                selector: Some("main".to_string()),
-                target_va: Some(0x50ae),
-                owner_class: Some("Global".to_string()),
-                library_uri: Some("package:app/main.dart".to_string()),
-                confidence: None,
-                source: None,
-            }],
-        };
+            ordinal_pool(vec![]),
+        );
+        let hints = program_hints(vec![hint(
+            HintKind::BootMain,
+            HintOrigin::AndroidManifest,
+            "main",
+            Some(0x50ae),
+            Some("AppRoot"),
+            Some("package:app/main.dart"),
+        )]);
         let bytes = vec![0xc0, 0x03, 0x5f, 0xd6, 0xc0, 0x03, 0x5f, 0xd6];
-        let d = disassemble_program(&model, &bytes, 0x50aa, None, Some(1));
+        let d = disassemble_program(&model, &hints, &bytes, 0x50aa, None, Some(1));
         assert_eq!(d.len(), 1);
-        assert_eq!(d[0].function_name, "sub_50ae");
+        assert_eq!(d[0].entry_va, 0x50ae);
+        assert_eq!(d[0].function_name, None);
     }
 
     #[test]
     fn prioritizes_deeplink_candidate_target_va_when_names_are_generic() {
-        let model = ProgramModel {
-            schema_version: 2,
-            adapter_kind: "test".to_string(),
-            dart_version: "unknown".to_string(),
-            snapshot_hash: "h".to_string(),
-            arch: "arm64".to_string(),
-            libraries: vec![LibraryInfo {
-                id: 0,
-                uri: "package:app/router.dart".to_string(),
-                name_display: "package:app/router.dart".to_string(),
-            }],
-            classes: vec![ClassInfo {
-                id: 0,
-                name: "RouterHost".to_string(),
-                super_name: "Object".to_string(),
-                library_uri: "package:app/router.dart".to_string(),
-            }],
-            functions: vec![
-                FunctionInfo {
-                    id: 0,
-                    name: "sub_50b0".to_string(),
-                    owner_class: "RouterHost".to_string(),
-                    entry_va: 0x50b0,
-                    size: 4,
-                    code_section_va: 0x50b0,
-                    name_kind: None,
-                },
-                FunctionInfo {
-                    id: 1,
-                    name: "sub_50b4".to_string(),
-                    owner_class: "RouterHost".to_string(),
-                    entry_va: 0x50b4,
-                    size: 4,
-                    code_section_va: 0x50b0,
-                    name_kind: None,
-                },
+        let model = test_model(
+            vec![lib(0, "package:app/router.dart")],
+            vec![cls(0, "RouterHost", Some(0))],
+            vec![
+                fun(0, None, Some(0), 0x50b0, 4),
+                fun(1, None, Some(0), 0x50b4, 4),
             ],
-            pool_geometry: None,
-            object_pool: vec![ObjectPoolEntry {
-                index: 0,
-                kind: "String".to_string(),
-                value: "bootflow:deeplink:onNewIntent".to_string(),
-                decoded_kind: Some("DeepLinkHandlerCandidate".to_string()),
-                selector: Some("onNewIntent".to_string()),
-                target_va: Some(0x50b4),
-                owner_class: Some("RouterHost".to_string()),
-                library_uri: Some("package:app/router.dart".to_string()),
-                confidence: None,
-                source: None,
-            }],
-        };
+            ordinal_pool(vec![]),
+        );
+        let hints = program_hints(vec![hint(
+            HintKind::DeepLinkHandler,
+            HintOrigin::ModelNamePattern,
+            "onNewIntent",
+            Some(0x50b4),
+            Some("RouterHost"),
+            Some("package:app/router.dart"),
+        )]);
         let bytes = vec![0xc0, 0x03, 0x5f, 0xd6, 0xc0, 0x03, 0x5f, 0xd6];
-        let d = disassemble_program(&model, &bytes, 0x50b0, None, Some(1));
+        let d = disassemble_program(&model, &hints, &bytes, 0x50b0, None, Some(1));
         assert_eq!(d.len(), 1);
-        assert_eq!(d[0].function_name, "sub_50b4");
+        assert_eq!(d[0].entry_va, 0x50b4);
+        assert_eq!(d[0].function_name, None);
     }
 
     #[test]
     fn prefers_app_deeplink_candidate_over_framework_deeplink_candidate() {
-        let model = ProgramModel {
-            schema_version: 2,
-            adapter_kind: "test".to_string(),
-            dart_version: "unknown".to_string(),
-            snapshot_hash: "h".to_string(),
-            arch: "arm64".to_string(),
-            libraries: vec![
-                LibraryInfo {
-                    id: 0,
-                    uri: "package:app/router.dart".to_string(),
-                    name_display: "package:app/router.dart".to_string(),
-                },
-                LibraryInfo {
-                    id: 1,
-                    uri: "package:flutter/src/widgets/app.dart".to_string(),
-                    name_display: "package:flutter/src/widgets/app.dart".to_string(),
-                },
+        let model = test_model(
+            vec![
+                lib(0, "package:app/router.dart"),
+                lib(1, "package:flutter/src/widgets/app.dart"),
             ],
-            classes: vec![
-                ClassInfo {
-                    id: 0,
-                    name: "AppRouterHost".to_string(),
-                    super_name: "Object".to_string(),
-                    library_uri: "package:app/router.dart".to_string(),
-                },
-                ClassInfo {
-                    id: 1,
-                    name: "WidgetsBindingObserver".to_string(),
-                    super_name: "Object".to_string(),
-                    library_uri: "package:flutter/src/widgets/app.dart".to_string(),
-                },
+            vec![
+                cls(0, "AppRouterHost", Some(0)),
+                cls(1, "WidgetsBindingObserver", Some(1)),
             ],
-            functions: vec![
-                FunctionInfo {
-                    id: 0,
-                    name: "sub_50c0".to_string(),
-                    owner_class: "AppRouterHost".to_string(),
-                    entry_va: 0x50c0,
-                    size: 4,
-                    code_section_va: 0x50c0,
-                    name_kind: None,
-                },
-                FunctionInfo {
-                    id: 1,
-                    name: "sub_50c4".to_string(),
-                    owner_class: "WidgetsBindingObserver".to_string(),
-                    entry_va: 0x50c4,
-                    size: 4,
-                    code_section_va: 0x50c0,
-                    name_kind: None,
-                },
+            vec![
+                fun(0, None, Some(0), 0x50c0, 4),
+                fun(1, None, Some(1), 0x50c4, 4),
             ],
-            pool_geometry: None,
-            object_pool: vec![
-                ObjectPoolEntry {
-                    index: 0,
-                    kind: "String".to_string(),
-                    value: "bootflow:deeplink:onNewIntent".to_string(),
-                    decoded_kind: Some("DeepLinkHandlerCandidate".to_string()),
-                    selector: Some("onNewIntent".to_string()),
-                    target_va: Some(0x50c0),
-                    owner_class: Some("AppRouterHost".to_string()),
-                    library_uri: Some("package:app/router.dart".to_string()),
-                    confidence: None,
-                    source: None,
-                },
-                ObjectPoolEntry {
-                    index: 1,
-                    kind: "String".to_string(),
-                    value: "bootflow:deeplink:didPushRouteInformation".to_string(),
-                    decoded_kind: Some("DeepLinkHandlerCandidate".to_string()),
-                    selector: Some("didPushRouteInformation".to_string()),
-                    target_va: Some(0x50c4),
-                    owner_class: Some("WidgetsBindingObserver".to_string()),
-                    library_uri: Some("package:flutter/src/widgets/app.dart".to_string()),
-                    confidence: None,
-                    source: None,
-                },
-            ],
-        };
+            ordinal_pool(vec![]),
+        );
+        let hints = program_hints(vec![
+            hint(
+                HintKind::DeepLinkHandler,
+                HintOrigin::ModelNamePattern,
+                "onNewIntent",
+                Some(0x50c0),
+                Some("AppRouterHost"),
+                Some("package:app/router.dart"),
+            ),
+            hint(
+                HintKind::DeepLinkHandler,
+                HintOrigin::ModelNamePattern,
+                "didPushRouteInformation",
+                Some(0x50c4),
+                Some("WidgetsBindingObserver"),
+                Some("package:flutter/src/widgets/app.dart"),
+            ),
+        ]);
         let bytes = vec![0xc0, 0x03, 0x5f, 0xd6, 0xc0, 0x03, 0x5f, 0xd6];
-        let d = disassemble_program(&model, &bytes, 0x50c0, None, Some(1));
+        let d = disassemble_program(&model, &hints, &bytes, 0x50c0, None, Some(1));
         assert_eq!(d.len(), 1);
-        assert_eq!(d[0].function_name, "sub_50c0");
+        assert_eq!(d[0].entry_va, 0x50c0);
+        assert_eq!(d[0].function_name, None);
     }
 
     #[test]
     fn seeds_bootflow_categories_in_capped_selection() {
-        let model = ProgramModel {
-            schema_version: 2,
-            adapter_kind: "test".to_string(),
-            dart_version: "unknown".to_string(),
-            snapshot_hash: "h".to_string(),
-            arch: "arm64".to_string(),
-            libraries: vec![LibraryInfo {
-                id: 0,
-                uri: "package:app/router.dart".to_string(),
-                name_display: "package:app/router.dart".to_string(),
-            }],
-            classes: vec![ClassInfo {
-                id: 0,
-                name: "RouterHost".to_string(),
-                super_name: "Object".to_string(),
-                library_uri: "package:app/router.dart".to_string(),
-            }],
-            functions: vec![
-                FunctionInfo {
-                    id: 0,
-                    name: "sub_5200".to_string(),
-                    owner_class: "RouterHost".to_string(),
-                    entry_va: 0x5200,
-                    size: 4,
-                    code_section_va: 0x5200,
-                    name_kind: None,
-                },
-                FunctionInfo {
-                    id: 1,
-                    name: "sub_5204".to_string(),
-                    owner_class: "RouterHost".to_string(),
-                    entry_va: 0x5204,
-                    size: 4,
-                    code_section_va: 0x5200,
-                    name_kind: None,
-                },
-                FunctionInfo {
-                    id: 2,
-                    name: "sub_5208".to_string(),
-                    owner_class: "RouterHost".to_string(),
-                    entry_va: 0x5208,
-                    size: 4,
-                    code_section_va: 0x5200,
-                    name_kind: None,
-                },
+        let model = test_model(
+            vec![lib(0, "package:app/router.dart")],
+            vec![cls(0, "RouterHost", Some(0))],
+            vec![
+                fun(0, None, Some(0), 0x5200, 4),
+                fun(1, None, Some(0), 0x5204, 4),
+                fun(2, None, Some(0), 0x5208, 4),
             ],
-            pool_geometry: None,
-            object_pool: vec![
-                ObjectPoolEntry {
-                    index: 0,
-                    kind: "String".to_string(),
-                    value: "bootflow:main:main".to_string(),
-                    decoded_kind: Some("BootMainCandidate".to_string()),
-                    selector: Some("main".to_string()),
-                    target_va: Some(0x5200),
-                    owner_class: Some("RouterHost".to_string()),
-                    library_uri: Some("package:app/router.dart".to_string()),
-                    confidence: None,
-                    source: None,
-                },
-                ObjectPoolEntry {
-                    index: 1,
-                    kind: "String".to_string(),
-                    value: "bootflow:main:main".to_string(),
-                    decoded_kind: Some("BootMainCandidate".to_string()),
-                    selector: Some("main".to_string()),
-                    target_va: Some(0x5204),
-                    owner_class: Some("RouterHost".to_string()),
-                    library_uri: Some("package:app/router.dart".to_string()),
-                    confidence: None,
-                    source: None,
-                },
-                ObjectPoolEntry {
-                    index: 2,
-                    kind: "String".to_string(),
-                    value: "bootflow:deeplink:onNewIntent".to_string(),
-                    decoded_kind: Some("DeepLinkHandlerCandidate".to_string()),
-                    selector: Some("onNewIntent".to_string()),
-                    target_va: Some(0x5208),
-                    owner_class: Some("RouterHost".to_string()),
-                    library_uri: Some("package:app/router.dart".to_string()),
-                    confidence: None,
-                    source: None,
-                },
-            ],
-        };
+            ordinal_pool(vec![]),
+        );
+        let hints = program_hints(vec![
+            hint(
+                HintKind::BootMain,
+                HintOrigin::ModelNamePattern,
+                "main",
+                Some(0x5200),
+                Some("RouterHost"),
+                Some("package:app/router.dart"),
+            ),
+            hint(
+                HintKind::BootMain,
+                HintOrigin::ModelNamePattern,
+                "main",
+                Some(0x5204),
+                Some("RouterHost"),
+                Some("package:app/router.dart"),
+            ),
+            hint(
+                HintKind::DeepLinkHandler,
+                HintOrigin::ModelNamePattern,
+                "onNewIntent",
+                Some(0x5208),
+                Some("RouterHost"),
+                Some("package:app/router.dart"),
+            ),
+        ]);
         let bytes = vec![
             0xc0, 0x03, 0x5f, 0xd6, 0xc0, 0x03, 0x5f, 0xd6, 0xc0, 0x03, 0x5f, 0xd6,
         ];
-        let d = disassemble_program(&model, &bytes, 0x5200, None, Some(2));
+        let d = disassemble_program(&model, &hints, &bytes, 0x5200, None, Some(2));
         assert_eq!(d.len(), 2);
         let selected = d.iter().map(|f| f.entry_va).collect::<HashSet<_>>();
         assert!(
@@ -2484,97 +2211,48 @@ mod tests {
 
     #[test]
     fn can_disable_bootflow_category_seeding() {
-        let model = ProgramModel {
-            schema_version: 2,
-            adapter_kind: "test".to_string(),
-            dart_version: "unknown".to_string(),
-            snapshot_hash: "h".to_string(),
-            arch: "arm64".to_string(),
-            libraries: vec![LibraryInfo {
-                id: 0,
-                uri: "package:app/router.dart".to_string(),
-                name_display: "package:app/router.dart".to_string(),
-            }],
-            classes: vec![ClassInfo {
-                id: 0,
-                name: "RouterHost".to_string(),
-                super_name: "Object".to_string(),
-                library_uri: "package:app/router.dart".to_string(),
-            }],
-            functions: vec![
-                FunctionInfo {
-                    id: 0,
-                    name: "sub_5300".to_string(),
-                    owner_class: "RouterHost".to_string(),
-                    entry_va: 0x5300,
-                    size: 4,
-                    code_section_va: 0x5300,
-                    name_kind: None,
-                },
-                FunctionInfo {
-                    id: 1,
-                    name: "sub_5304".to_string(),
-                    owner_class: "RouterHost".to_string(),
-                    entry_va: 0x5304,
-                    size: 4,
-                    code_section_va: 0x5300,
-                    name_kind: None,
-                },
-                FunctionInfo {
-                    id: 2,
-                    name: "sub_5308".to_string(),
-                    owner_class: "RouterHost".to_string(),
-                    entry_va: 0x5308,
-                    size: 4,
-                    code_section_va: 0x5300,
-                    name_kind: None,
-                },
+        let model = test_model(
+            vec![lib(0, "package:app/router.dart")],
+            vec![cls(0, "RouterHost", Some(0))],
+            vec![
+                fun(0, None, Some(0), 0x5300, 4),
+                fun(1, None, Some(0), 0x5304, 4),
+                fun(2, None, Some(0), 0x5308, 4),
             ],
-            pool_geometry: None,
-            object_pool: vec![
-                ObjectPoolEntry {
-                    index: 0,
-                    kind: "String".to_string(),
-                    value: "bootflow:main:main".to_string(),
-                    decoded_kind: Some("BootMainCandidate".to_string()),
-                    selector: Some("main".to_string()),
-                    target_va: Some(0x5300),
-                    owner_class: Some("RouterHost".to_string()),
-                    library_uri: Some("package:app/router.dart".to_string()),
-                    confidence: None,
-                    source: None,
-                },
-                ObjectPoolEntry {
-                    index: 1,
-                    kind: "String".to_string(),
-                    value: "bootflow:main:main".to_string(),
-                    decoded_kind: Some("BootMainCandidate".to_string()),
-                    selector: Some("main".to_string()),
-                    target_va: Some(0x5304),
-                    owner_class: Some("RouterHost".to_string()),
-                    library_uri: Some("package:app/router.dart".to_string()),
-                    confidence: None,
-                    source: None,
-                },
-                ObjectPoolEntry {
-                    index: 2,
-                    kind: "String".to_string(),
-                    value: "bootflow:deeplink:onNewIntent".to_string(),
-                    decoded_kind: Some("DeepLinkHandlerCandidate".to_string()),
-                    selector: Some("onNewIntent".to_string()),
-                    target_va: Some(0x5308),
-                    owner_class: Some("RouterHost".to_string()),
-                    library_uri: Some("package:app/router.dart".to_string()),
-                    confidence: None,
-                    source: None,
-                },
-            ],
-        };
+            ordinal_pool(vec![]),
+        );
+        let hints = program_hints(vec![
+            hint(
+                HintKind::BootMain,
+                HintOrigin::ModelNamePattern,
+                "main",
+                Some(0x5300),
+                Some("RouterHost"),
+                Some("package:app/router.dart"),
+            ),
+            hint(
+                HintKind::BootMain,
+                HintOrigin::ModelNamePattern,
+                "main",
+                Some(0x5304),
+                Some("RouterHost"),
+                Some("package:app/router.dart"),
+            ),
+            hint(
+                HintKind::DeepLinkHandler,
+                HintOrigin::ModelNamePattern,
+                "onNewIntent",
+                Some(0x5308),
+                Some("RouterHost"),
+                Some("package:app/router.dart"),
+            ),
+        ]);
         let bytes = vec![
             0xc0, 0x03, 0x5f, 0xd6, 0xc0, 0x03, 0x5f, 0xd6, 0xc0, 0x03, 0x5f, 0xd6,
         ];
         let (d, _) = disassemble_program_with_priorities_and_package_hints(
             &model,
+            &hints,
             &bytes,
             0x5300,
             None,
@@ -2594,321 +2272,83 @@ mod tests {
 
     #[test]
     fn prioritizes_lifecycle_selector_target_va_when_names_are_generic() {
-        let model = ProgramModel {
-            schema_version: 2,
-            adapter_kind: "test".to_string(),
-            dart_version: "unknown".to_string(),
-            snapshot_hash: "h".to_string(),
-            arch: "arm64".to_string(),
-            libraries: vec![LibraryInfo {
-                id: 0,
-                uri: "package:spotube/main.dart".to_string(),
-                name_display: "package:spotube/main.dart".to_string(),
-            }],
-            classes: vec![ClassInfo {
-                id: 0,
-                name: "Global".to_string(),
-                super_name: "Object".to_string(),
-                library_uri: "package:spotube/main.dart".to_string(),
-            }],
-            functions: vec![
-                FunctionInfo {
-                    id: 0,
-                    name: "sub_5100".to_string(),
-                    owner_class: "Global".to_string(),
-                    entry_va: 0x5100,
-                    size: 4,
-                    code_section_va: 0x5100,
-                    name_kind: None,
-                },
-                FunctionInfo {
-                    id: 1,
-                    name: "sub_5104".to_string(),
-                    owner_class: "Global".to_string(),
-                    entry_va: 0x5104,
-                    size: 4,
-                    code_section_va: 0x5100,
-                    name_kind: None,
-                },
+        let model = test_model(
+            vec![lib(0, "package:spotube/main.dart")],
+            vec![cls(0, "AppRoot", Some(0))],
+            vec![
+                fun(0, None, Some(0), 0x5100, 4),
+                fun(1, None, Some(0), 0x5104, 4),
             ],
-            pool_geometry: None,
-            object_pool: vec![ObjectPoolEntry {
-                index: 0,
-                kind: "String".to_string(),
-                value: "createState".to_string(),
-                decoded_kind: Some("BlutterUnlinkedCall".to_string()),
-                selector: Some("createState".to_string()),
-                target_va: Some(0x5104),
-                owner_class: Some("MyApp".to_string()),
-                library_uri: Some("package:spotube/main.dart".to_string()),
-                confidence: None,
-                source: None,
-            }],
-        };
+            ordinal_pool(vec![pool_selector(0, "createState", 0x5104)]),
+        );
+        let hints = program_hints(vec![]);
         let bytes = vec![0xc0, 0x03, 0x5f, 0xd6, 0xc0, 0x03, 0x5f, 0xd6];
-        let d = disassemble_program(&model, &bytes, 0x5100, None, Some(1));
+        let d = disassemble_program(&model, &hints, &bytes, 0x5100, None, Some(1));
         assert_eq!(d.len(), 1);
-        assert_eq!(d[0].function_name, "sub_5104");
+        assert_eq!(d[0].entry_va, 0x5104);
+        assert_eq!(d[0].function_name, None);
     }
 
     #[test]
     fn prioritizes_top_app_package_when_names_are_generic() {
-        let model = ProgramModel {
-            schema_version: 2,
-            adapter_kind: "test".to_string(),
-            dart_version: "unknown".to_string(),
-            snapshot_hash: "h".to_string(),
-            arch: "arm64".to_string(),
-            libraries: vec![
-                LibraryInfo {
-                    id: 0,
-                    uri: "package:other_pkg/core.dart".to_string(),
-                    name_display: "package:other_pkg/core.dart".to_string(),
-                },
-                LibraryInfo {
-                    id: 1,
-                    uri: "package:app_pkg/feature.dart".to_string(),
-                    name_display: "package:app_pkg/feature.dart".to_string(),
-                },
+        let model = test_model(
+            vec![
+                lib(0, "package:other_pkg/core.dart"),
+                lib(1, "package:app_pkg/feature.dart"),
             ],
-            classes: vec![
-                ClassInfo {
-                    id: 0,
-                    name: "OtherCls".to_string(),
-                    super_name: "Object".to_string(),
-                    library_uri: "package:other_pkg/core.dart".to_string(),
-                },
-                ClassInfo {
-                    id: 1,
-                    name: "AppCls".to_string(),
-                    super_name: "Object".to_string(),
-                    library_uri: "package:app_pkg/feature.dart".to_string(),
-                },
+            vec![cls(0, "OtherCls", Some(0)), cls(1, "AppCls", Some(1))],
+            vec![
+                fun(0, None, Some(0), 0x2000, 4),
+                fun(1, None, Some(1), 0x2004, 4),
+                fun(2, None, Some(1), 0x2008, 4),
+                fun(3, None, Some(1), 0x200c, 4),
+                fun(4, None, Some(1), 0x2010, 4),
+                fun(5, None, Some(1), 0x2014, 4),
+                fun(6, None, Some(1), 0x2018, 4),
+                fun(7, None, Some(1), 0x201c, 4),
+                fun(8, None, Some(1), 0x2020, 4),
             ],
-            functions: vec![
-                FunctionInfo {
-                    id: 0,
-                    name: "sub_2000".to_string(),
-                    owner_class: "OtherCls".to_string(),
-                    entry_va: 0x2000,
-                    size: 4,
-                    code_section_va: 0x2000,
-                    name_kind: None,
-                },
-                FunctionInfo {
-                    id: 1,
-                    name: "sub_2004".to_string(),
-                    owner_class: "AppCls".to_string(),
-                    entry_va: 0x2004,
-                    size: 4,
-                    code_section_va: 0x2000,
-                    name_kind: None,
-                },
-                FunctionInfo {
-                    id: 2,
-                    name: "sub_2008".to_string(),
-                    owner_class: "AppCls".to_string(),
-                    entry_va: 0x2008,
-                    size: 4,
-                    code_section_va: 0x2000,
-                    name_kind: None,
-                },
-                FunctionInfo {
-                    id: 3,
-                    name: "sub_200c".to_string(),
-                    owner_class: "AppCls".to_string(),
-                    entry_va: 0x200c,
-                    size: 4,
-                    code_section_va: 0x2000,
-                    name_kind: None,
-                },
-                FunctionInfo {
-                    id: 4,
-                    name: "sub_2010".to_string(),
-                    owner_class: "AppCls".to_string(),
-                    entry_va: 0x2010,
-                    size: 4,
-                    code_section_va: 0x2000,
-                    name_kind: None,
-                },
-                FunctionInfo {
-                    id: 5,
-                    name: "sub_2014".to_string(),
-                    owner_class: "AppCls".to_string(),
-                    entry_va: 0x2014,
-                    size: 4,
-                    code_section_va: 0x2000,
-                    name_kind: None,
-                },
-                FunctionInfo {
-                    id: 6,
-                    name: "sub_2018".to_string(),
-                    owner_class: "AppCls".to_string(),
-                    entry_va: 0x2018,
-                    size: 4,
-                    code_section_va: 0x2000,
-                    name_kind: None,
-                },
-                FunctionInfo {
-                    id: 7,
-                    name: "sub_201c".to_string(),
-                    owner_class: "AppCls".to_string(),
-                    entry_va: 0x201c,
-                    size: 4,
-                    code_section_va: 0x2000,
-                    name_kind: None,
-                },
-                FunctionInfo {
-                    id: 8,
-                    name: "sub_2020".to_string(),
-                    owner_class: "AppCls".to_string(),
-                    entry_va: 0x2020,
-                    size: 4,
-                    code_section_va: 0x2000,
-                    name_kind: None,
-                },
-            ],
-            pool_geometry: None,
-            object_pool: vec![ObjectPoolEntry {
-                index: 0,
-                kind: "String".to_string(),
-                value: "x".to_string(),
-                decoded_kind: None,
-                selector: None,
-                target_va: None,
-                owner_class: None,
-                library_uri: None,
-                confidence: None,
-                source: None,
-            }],
-        };
+            ordinal_pool(vec![pool_string(0, "x")]),
+        );
+        let hints = program_hints(vec![]);
         let bytes = [0xc0u8, 0x03, 0x5f, 0xd6].repeat(9);
-        let d = disassemble_program(&model, &bytes, 0x2000, None, Some(1));
+        let d = disassemble_program(&model, &hints, &bytes, 0x2000, None, Some(1));
         assert_eq!(d.len(), 1);
-        assert_eq!(d[0].owner_class, "AppCls");
+        assert_eq!(d[0].owner_class.as_deref(), Some("AppCls"));
     }
 
     #[test]
     fn prioritizes_larger_function_when_names_are_generic_and_scores_tie() {
-        let model = ProgramModel {
-            schema_version: 2,
-            adapter_kind: "test".to_string(),
-            dart_version: "unknown".to_string(),
-            snapshot_hash: "h".to_string(),
-            arch: "arm64".to_string(),
-            libraries: vec![LibraryInfo {
-                id: 0,
-                uri: "package:app/main.dart".to_string(),
-                name_display: "package:app/main.dart".to_string(),
-            }],
-            classes: vec![ClassInfo {
-                id: 0,
-                name: "Global".to_string(),
-                super_name: "Object".to_string(),
-                library_uri: "package:app/main.dart".to_string(),
-            }],
-            functions: vec![
-                FunctionInfo {
-                    id: 0,
-                    name: "sub_1000".to_string(),
-                    owner_class: "Global".to_string(),
-                    entry_va: 0x1000,
-                    size: 8,
-                    code_section_va: 0x1000,
-                    name_kind: None,
-                },
-                FunctionInfo {
-                    id: 1,
-                    name: "sub_1010".to_string(),
-                    owner_class: "Global".to_string(),
-                    entry_va: 0x1010,
-                    size: 0x100,
-                    code_section_va: 0x1000,
-                    name_kind: None,
-                },
+        let model = test_model(
+            vec![lib(0, "package:app/main.dart")],
+            vec![cls(0, "AppRoot", Some(0))],
+            vec![
+                fun(0, None, Some(0), 0x1000, 8),
+                fun(1, None, Some(0), 0x1010, 0x100),
             ],
-            pool_geometry: None,
-            object_pool: vec![ObjectPoolEntry {
-                index: 0,
-                kind: "String".to_string(),
-                value: "x".to_string(),
-                decoded_kind: None,
-                selector: None,
-                target_va: None,
-                owner_class: None,
-                library_uri: None,
-                confidence: None,
-                source: None,
-            }],
-        };
+            ordinal_pool(vec![pool_string(0, "x")]),
+        );
+        let hints = program_hints(vec![]);
         let bytes = [0xc0u8, 0x03, 0x5f, 0xd6].repeat(68);
-        let d = disassemble_program(&model, &bytes, 0x1000, None, Some(1));
+        let d = disassemble_program(&model, &hints, &bytes, 0x1000, None, Some(1));
         assert_eq!(d.len(), 1);
-        assert_eq!(d[0].function_name, "sub_1010");
+        assert_eq!(d[0].entry_va, 0x1010);
+        assert_eq!(d[0].function_name, None);
     }
 
     #[test]
     fn prioritizes_hub_function_by_call_out_degree_when_names_are_generic() {
-        let model = ProgramModel {
-            schema_version: 2,
-            adapter_kind: "test".to_string(),
-            dart_version: "unknown".to_string(),
-            snapshot_hash: "h".to_string(),
-            arch: "arm64".to_string(),
-            libraries: vec![LibraryInfo {
-                id: 0,
-                uri: "package:app/main.dart".to_string(),
-                name_display: "package:app/main.dart".to_string(),
-            }],
-            classes: vec![ClassInfo {
-                id: 0,
-                name: "Global".to_string(),
-                super_name: "Object".to_string(),
-                library_uri: "package:app/main.dart".to_string(),
-            }],
-            functions: vec![
-                FunctionInfo {
-                    id: 0,
-                    name: "sub_1000".to_string(),
-                    owner_class: "Global".to_string(),
-                    entry_va: 0x1000,
-                    size: 12,
-                    code_section_va: 0x1000,
-                    name_kind: None,
-                },
-                FunctionInfo {
-                    id: 1,
-                    name: "sub_1010".to_string(),
-                    owner_class: "Global".to_string(),
-                    entry_va: 0x1010,
-                    size: 4,
-                    code_section_va: 0x1000,
-                    name_kind: None,
-                },
-                FunctionInfo {
-                    id: 2,
-                    name: "sub_1020".to_string(),
-                    owner_class: "Global".to_string(),
-                    entry_va: 0x1020,
-                    size: 4,
-                    code_section_va: 0x1000,
-                    name_kind: None,
-                },
+        let model = test_model(
+            vec![lib(0, "package:app/main.dart")],
+            vec![cls(0, "AppRoot", Some(0))],
+            vec![
+                fun(0, None, Some(0), 0x1000, 12),
+                fun(1, None, Some(0), 0x1010, 4),
+                fun(2, None, Some(0), 0x1020, 4),
             ],
-            pool_geometry: None,
-            object_pool: vec![ObjectPoolEntry {
-                index: 0,
-                kind: "String".to_string(),
-                value: "x".to_string(),
-                decoded_kind: None,
-                selector: None,
-                target_va: None,
-                owner_class: None,
-                library_uri: None,
-                confidence: None,
-                source: None,
-            }],
-        };
+            ordinal_pool(vec![pool_string(0, "x")]),
+        );
+        let hints = program_hints(vec![]);
         let bytes = vec![
             0x04, 0x00, 0x00, 0x94, // bl #0x1010
             0x07, 0x00, 0x00, 0x94, // bl #0x1020
@@ -2920,140 +2360,48 @@ mod tests {
             0xc0, 0x03, 0x5f, 0xd6, // filler
             0xc0, 0x03, 0x5f, 0xd6, // 0x1020 ret
         ];
-        let d = disassemble_program(&model, &bytes, 0x1000, None, Some(1));
+        let d = disassemble_program(&model, &hints, &bytes, 0x1000, None, Some(1));
         assert_eq!(d.len(), 1);
-        assert_eq!(d[0].function_name, "sub_1000");
+        assert_eq!(d[0].entry_va, 0x1000);
+        assert_eq!(d[0].function_name, None);
     }
 
     #[test]
     fn penalizes_repeated_named_functions_for_capped_selection() {
-        let model = ProgramModel {
-            schema_version: 2,
-            adapter_kind: "test".to_string(),
-            dart_version: "unknown".to_string(),
-            snapshot_hash: "h".to_string(),
-            arch: "arm64".to_string(),
-            libraries: vec![LibraryInfo {
-                id: 0,
-                uri: "package:app/main.dart".to_string(),
-                name_display: "package:app/main.dart".to_string(),
-            }],
-            classes: vec![ClassInfo {
-                id: 0,
-                name: "Global".to_string(),
-                super_name: "Object".to_string(),
-                library_uri: "package:app/main.dart".to_string(),
-            }],
-            functions: vec![
-                FunctionInfo {
-                    id: 0,
-                    name: "processUpdate".to_string(),
-                    owner_class: "Global".to_string(),
-                    entry_va: 0x1000,
-                    size: 32,
-                    code_section_va: 0x1000,
-                    name_kind: None,
-                },
-                FunctionInfo {
-                    id: 1,
-                    name: "processUpdate".to_string(),
-                    owner_class: "Global".to_string(),
-                    entry_va: 0x1020,
-                    size: 32,
-                    code_section_va: 0x1000,
-                    name_kind: None,
-                },
-                FunctionInfo {
-                    id: 2,
-                    name: "processUpdate".to_string(),
-                    owner_class: "Global".to_string(),
-                    entry_va: 0x1040,
-                    size: 32,
-                    code_section_va: 0x1000,
-                    name_kind: None,
-                },
-                FunctionInfo {
-                    id: 3,
-                    name: "startCLI".to_string(),
-                    owner_class: "Global".to_string(),
-                    entry_va: 0x1060,
-                    size: 32,
-                    code_section_va: 0x1000,
-                    name_kind: None,
-                },
+        let model = test_model(
+            vec![lib(0, "package:app/main.dart")],
+            vec![cls(0, "AppRoot", Some(0))],
+            vec![
+                fun(0, Some("processUpdate"), Some(0), 0x1000, 32),
+                fun(1, Some("processUpdate"), Some(0), 0x1020, 32),
+                fun(2, Some("processUpdate"), Some(0), 0x1040, 32),
+                fun(3, Some("startCLI"), Some(0), 0x1060, 32),
             ],
-            pool_geometry: None,
-            object_pool: vec![ObjectPoolEntry {
-                index: 0,
-                kind: "String".to_string(),
-                value: "x".to_string(),
-                decoded_kind: None,
-                selector: None,
-                target_va: None,
-                owner_class: None,
-                library_uri: None,
-                confidence: None,
-                source: None,
-            }],
-        };
+            ordinal_pool(vec![pool_string(0, "x")]),
+        );
+        let hints = program_hints(vec![]);
         let bytes = [0xc0u8, 0x03, 0x5f, 0xd6].repeat(40);
-        let d = disassemble_program(&model, &bytes, 0x1000, None, Some(1));
+        let d = disassemble_program(&model, &hints, &bytes, 0x1000, None, Some(1));
         assert_eq!(d.len(), 1);
-        assert_eq!(d[0].function_name, "startCLI");
+        assert_eq!(d[0].function_name.as_deref(), Some("startCLI"));
     }
 
     #[test]
     fn penalizes_no_isolate_markers_in_name_or_owner() {
-        let clean = FunctionInfo {
-            id: 0,
-            name: "sub_6000".to_string(),
-            owner_class: "Global".to_string(),
-            entry_va: 0x6000,
-            size: 32,
-            code_section_va: 0x6000,
-            name_kind: None,
-        };
-        let noisy = FunctionInfo {
-            id: 1,
-            name: "sub_6010".to_string(),
-            owner_class: "Global no isolate".to_string(),
-            entry_va: 0x6010,
-            size: 32,
-            code_section_va: 0x6000,
-            name_kind: None,
-        };
-
-        let mut owner_library = HashMap::new();
-        owner_library.insert("Global".to_string(), "package:app/main.dart".to_string());
-        owner_library.insert(
-            "Global no isolate".to_string(),
-            "package:app/main.dart".to_string(),
+        let model = test_model(
+            vec![lib(0, "package:app/main.dart")],
+            vec![
+                cls(0, "AppRoot", Some(0)),
+                cls(1, "AppRoot no isolate", Some(0)),
+            ],
+            vec![
+                fun(0, None, Some(0), 0x6000, 32),
+                fun(1, None, Some(1), 0x6010, 32),
+            ],
+            ordinal_pool(Vec::new()),
         );
-
-        let (clean_score, clean_components) = function_priority(
-            &clean,
-            &owner_library,
-            &HashMap::new(),
-            &HashMap::new(),
-            &HashSet::new(),
-            &HashMap::new(),
-            FunctionScoreStats {
-                call_out_degree: 0,
-                name_occurrences: 1,
-            },
-        );
-        let (noisy_score, noisy_components) = function_priority(
-            &noisy,
-            &owner_library,
-            &HashMap::new(),
-            &HashMap::new(),
-            &HashSet::new(),
-            &HashMap::new(),
-            FunctionScoreStats {
-                call_out_degree: 0,
-                name_occurrences: 1,
-            },
-        );
+        let (clean_score, clean_components) = score(&model, 0, &HashMap::new(), &HashSet::new());
+        let (noisy_score, noisy_components) = score(&model, 1, &HashMap::new(), &HashSet::new());
 
         assert!(
             noisy_components
@@ -3075,59 +2423,24 @@ mod tests {
 
     #[test]
     fn penalizes_dart_isolate_library_more_than_generic_stdlib() {
-        let isolate_func = FunctionInfo {
-            id: 0,
-            name: "sub_6100".to_string(),
-            owner_class: "IsolateWorker".to_string(),
-            entry_va: 0x6100,
-            size: 32,
-            code_section_va: 0x6100,
-            name_kind: None,
-        };
-        let core_func = FunctionInfo {
-            id: 1,
-            name: "sub_6110".to_string(),
-            owner_class: "CoreWorker".to_string(),
-            entry_va: 0x6110,
-            size: 32,
-            code_section_va: 0x6100,
-            name_kind: None,
-        };
-
-        let mut owner_library = HashMap::new();
-        owner_library.insert(
-            "IsolateWorker".to_string(),
-            "dart:isolate-patch/isolate_patch.dart".to_string(),
+        let model = test_model(
+            vec![
+                lib(0, "dart:isolate-patch/isolate_patch.dart"),
+                lib(1, "dart:core-patch/core_patch.dart"),
+            ],
+            vec![
+                cls(0, "IsolateWorker", Some(0)),
+                cls(1, "CoreWorker", Some(1)),
+            ],
+            vec![
+                fun(0, None, Some(0), 0x6100, 32),
+                fun(1, None, Some(1), 0x6110, 32),
+            ],
+            ordinal_pool(Vec::new()),
         );
-        owner_library.insert(
-            "CoreWorker".to_string(),
-            "dart:core-patch/core_patch.dart".to_string(),
-        );
-
-        let (isolate_score, isolate_components) = function_priority(
-            &isolate_func,
-            &owner_library,
-            &HashMap::new(),
-            &HashMap::new(),
-            &HashSet::new(),
-            &HashMap::new(),
-            FunctionScoreStats {
-                call_out_degree: 0,
-                name_occurrences: 1,
-            },
-        );
-        let (core_score, core_components) = function_priority(
-            &core_func,
-            &owner_library,
-            &HashMap::new(),
-            &HashMap::new(),
-            &HashSet::new(),
-            &HashMap::new(),
-            FunctionScoreStats {
-                call_out_degree: 0,
-                name_occurrences: 1,
-            },
-        );
+        let (isolate_score, isolate_components) =
+            score(&model, 0, &HashMap::new(), &HashSet::new());
+        let (core_score, core_components) = score(&model, 1, &HashMap::new(), &HashSet::new());
 
         assert!(
             isolate_components
@@ -3149,59 +2462,25 @@ mod tests {
 
     #[test]
     fn preferred_package_bonus_beats_non_preferred_package_for_generic_names() {
-        let preferred_func = FunctionInfo {
-            id: 0,
-            name: "sub_7100".to_string(),
-            owner_class: "SpotubeCore".to_string(),
-            entry_va: 0x7100,
-            size: 64,
-            code_section_va: 0x7000,
-            name_kind: None,
-        };
-        let dep_func = FunctionInfo {
-            id: 1,
-            name: "sub_7200".to_string(),
-            owner_class: "ProviderCore".to_string(),
-            entry_va: 0x7200,
-            size: 64,
-            code_section_va: 0x7000,
-            name_kind: None,
-        };
-        let mut owner_library = HashMap::new();
-        owner_library.insert(
-            "SpotubeCore".to_string(),
-            "package:spotube/main.dart".to_string(),
-        );
-        owner_library.insert(
-            "ProviderCore".to_string(),
-            "package:provider/src/provider.dart".to_string(),
+        let model = test_model(
+            vec![
+                lib(0, "package:spotube/main.dart"),
+                lib(1, "package:provider/src/provider.dart"),
+            ],
+            vec![
+                cls(0, "SpotubeCore", Some(0)),
+                cls(1, "ProviderCore", Some(1)),
+            ],
+            vec![
+                fun(0, None, Some(0), 0x7100, 64),
+                fun(1, None, Some(1), 0x7200, 64),
+            ],
+            ordinal_pool(Vec::new()),
         );
         let preferred = HashSet::from(["spotube".to_string()]);
+        let (preferred_score, preferred_components) = score(&model, 0, &HashMap::new(), &preferred);
+        let (dep_score, dep_components) = score(&model, 1, &HashMap::new(), &preferred);
 
-        let (preferred_score, preferred_components) = function_priority(
-            &preferred_func,
-            &owner_library,
-            &HashMap::new(),
-            &HashMap::new(),
-            &preferred,
-            &HashMap::new(),
-            FunctionScoreStats {
-                call_out_degree: 0,
-                name_occurrences: 1,
-            },
-        );
-        let (dep_score, dep_components) = function_priority(
-            &dep_func,
-            &owner_library,
-            &HashMap::new(),
-            &HashMap::new(),
-            &preferred,
-            &HashMap::new(),
-            FunctionScoreStats {
-                call_out_degree: 0,
-                name_occurrences: 1,
-            },
-        );
         assert!(
             preferred_components
                 .iter()
@@ -3222,58 +2501,24 @@ mod tests {
 
     #[test]
     fn app_bootstrap_context_outranks_framework_bootstrap_context() {
-        let app_func = FunctionInfo {
-            id: 0,
-            name: "ensureInitialized".to_string(),
-            owner_class: "AppBootstrap".to_string(),
-            entry_va: 0x7300,
-            size: 64,
-            code_section_va: 0x7300,
-            name_kind: None,
-        };
-        let framework_func = FunctionInfo {
-            id: 1,
-            name: "ensureInitialized".to_string(),
-            owner_class: "WidgetsFlutterBinding".to_string(),
-            entry_va: 0x7310,
-            size: 64,
-            code_section_va: 0x7300,
-            name_kind: None,
-        };
-        let mut owner_library = HashMap::new();
-        owner_library.insert(
-            "AppBootstrap".to_string(),
-            "package:app/main.dart".to_string(),
+        let model = test_model(
+            vec![
+                lib(0, "package:app/main.dart"),
+                lib(1, "package:flutter/src/widgets/binding.dart"),
+            ],
+            vec![
+                cls(0, "AppBootstrap", Some(0)),
+                cls(1, "WidgetsFlutterBinding", Some(1)),
+            ],
+            vec![
+                fun(0, Some("ensureInitialized"), Some(0), 0x7300, 64),
+                fun(1, Some("ensureInitialized"), Some(1), 0x7310, 64),
+            ],
+            ordinal_pool(Vec::new()),
         );
-        owner_library.insert(
-            "WidgetsFlutterBinding".to_string(),
-            "package:flutter/src/widgets/binding.dart".to_string(),
-        );
-
-        let (app_score, app_components) = function_priority(
-            &app_func,
-            &owner_library,
-            &HashMap::new(),
-            &HashMap::new(),
-            &HashSet::new(),
-            &HashMap::new(),
-            FunctionScoreStats {
-                call_out_degree: 0,
-                name_occurrences: 1,
-            },
-        );
-        let (framework_score, framework_components) = function_priority(
-            &framework_func,
-            &owner_library,
-            &HashMap::new(),
-            &HashMap::new(),
-            &HashSet::new(),
-            &HashMap::new(),
-            FunctionScoreStats {
-                call_out_degree: 0,
-                name_occurrences: 1,
-            },
-        );
+        let (app_score, app_components) = score(&model, 0, &HashMap::new(), &HashSet::new());
+        let (framework_score, framework_components) =
+            score(&model, 1, &HashMap::new(), &HashSet::new());
 
         assert!(app_components
             .iter()
@@ -3289,56 +2534,21 @@ mod tests {
 
     #[test]
     fn app_frontier_context_outranks_framework_frontier_context() {
-        let app_func = FunctionInfo {
-            id: 0,
-            name: "sub_7400".to_string(),
-            owner_class: "AppRoot".to_string(),
-            entry_va: 0x7400,
-            size: 64,
-            code_section_va: 0x7400,
-            name_kind: None,
-        };
-        let framework_func = FunctionInfo {
-            id: 1,
-            name: "sub_7410".to_string(),
-            owner_class: "FrameworkRoot".to_string(),
-            entry_va: 0x7410,
-            size: 64,
-            code_section_va: 0x7400,
-            name_kind: None,
-        };
-        let mut owner_library = HashMap::new();
-        owner_library.insert("AppRoot".to_string(), "package:app/main.dart".to_string());
-        owner_library.insert(
-            "FrameworkRoot".to_string(),
-            "package:flutter/src/widgets/app.dart".to_string(),
+        let model = test_model(
+            vec![
+                lib(0, "package:app/main.dart"),
+                lib(1, "package:flutter/src/widgets/app.dart"),
+            ],
+            vec![cls(0, "AppRoot", Some(0)), cls(1, "FrameworkRoot", Some(1))],
+            vec![
+                fun(0, None, Some(0), 0x7400, 64),
+                fun(1, None, Some(1), 0x7410, 64),
+            ],
+            ordinal_pool(Vec::new()),
         );
-        let frontier_scores = HashMap::from([(0x7400, 900), (0x7410, 900)]);
-
-        let (app_score, app_components) = function_priority(
-            &app_func,
-            &owner_library,
-            &HashMap::new(),
-            &HashMap::new(),
-            &HashSet::new(),
-            &frontier_scores,
-            FunctionScoreStats {
-                call_out_degree: 0,
-                name_occurrences: 1,
-            },
-        );
-        let (framework_score, framework_components) = function_priority(
-            &framework_func,
-            &owner_library,
-            &HashMap::new(),
-            &HashMap::new(),
-            &HashSet::new(),
-            &frontier_scores,
-            FunctionScoreStats {
-                call_out_degree: 0,
-                name_occurrences: 1,
-            },
-        );
+        let frontier = HashMap::from([(0x7400, 900), (0x7410, 900)]);
+        let (app_score, app_components) = score(&model, 0, &frontier, &HashSet::new());
+        let (framework_score, framework_components) = score(&model, 1, &frontier, &HashSet::new());
 
         assert!(app_components
             .iter()
@@ -3355,53 +2565,35 @@ mod tests {
     #[test]
     fn preferred_package_boost_overrides_count_only_package_ranking() {
         let mut functions = Vec::new();
-        for i in 0..20u64 {
-            functions.push(FunctionInfo {
-                id: i,
-                name: format!("dep_{i}"),
-                owner_class: "ProviderCore".to_string(),
-                entry_va: 0x8000 + (i * 4),
-                size: 32,
-                code_section_va: 0x8000,
-                name_kind: None,
-            });
+        for i in 0..20u32 {
+            functions.push(fun(
+                i,
+                Some(&format!("dep_{i}")),
+                Some(1),
+                0x8000 + u64::from(i) * 4,
+                32,
+            ));
         }
-        for i in 0..3u64 {
-            functions.push(FunctionInfo {
-                id: 100 + i,
-                name: format!("app_{i}"),
-                owner_class: "AppCore".to_string(),
-                entry_va: 0x9000 + (i * 4),
-                size: 32,
-                code_section_va: 0x8000,
-                name_kind: None,
-            });
+        for i in 0..3u32 {
+            functions.push(fun(
+                100 + i,
+                Some(&format!("app_{i}")),
+                Some(0),
+                0x9000 + u64::from(i) * 4,
+                32,
+            ));
         }
-
-        let model = ProgramModel {
-            schema_version: 2,
-            adapter_kind: "test".to_string(),
-            dart_version: "unknown".to_string(),
-            snapshot_hash: "h".to_string(),
-            arch: "arm64".to_string(),
-            libraries: Vec::new(),
-            classes: Vec::new(),
+        let model = test_model(
+            vec![
+                lib(0, "package:spotube/main.dart"),
+                lib(1, "package:provider/src/provider.dart"),
+            ],
+            vec![cls(0, "AppCore", Some(0)), cls(1, "ProviderCore", Some(1))],
             functions,
-            pool_geometry: None,
-            object_pool: Vec::new(),
-        };
-        let owner_library = HashMap::from([
-            (
-                "ProviderCore".to_string(),
-                "package:provider/src/provider.dart".to_string(),
-            ),
-            (
-                "AppCore".to_string(),
-                "package:spotube/main.dart".to_string(),
-            ),
-        ]);
+            ordinal_pool(Vec::new()),
+        );
         let preferred = HashSet::from(["spotube".to_string()]);
-        let boosts = build_app_package_boosts(&model, &owner_library, &preferred);
+        let boosts = build_app_package_boosts(&model, &preferred);
         let provider = boosts.get("provider").copied().unwrap_or(0);
         let spotube = boosts.get("spotube").copied().unwrap_or(0);
         assert!(
@@ -3412,203 +2604,73 @@ mod tests {
 
     #[test]
     fn prioritizes_entrypoint_frontier_callee_when_names_are_generic() {
-        let model = ProgramModel {
-            schema_version: 2,
-            adapter_kind: "test".to_string(),
-            dart_version: "unknown".to_string(),
-            snapshot_hash: "h".to_string(),
-            arch: "arm64".to_string(),
-            libraries: vec![LibraryInfo {
-                id: 0,
-                uri: "package:app/main.dart".to_string(),
-                name_display: "package:app/main.dart".to_string(),
-            }],
-            classes: vec![ClassInfo {
-                id: 0,
-                name: "Global".to_string(),
-                super_name: "Object".to_string(),
-                library_uri: "package:app/main.dart".to_string(),
-            }],
-            functions: vec![
-                FunctionInfo {
-                    id: 0,
-                    name: "sub_1000".to_string(),
-                    owner_class: "Global".to_string(),
-                    entry_va: 0x1000,
-                    size: 4,
-                    code_section_va: 0x1000,
-                    name_kind: None,
-                },
-                FunctionInfo {
-                    id: 1,
-                    name: "sub_1004".to_string(),
-                    owner_class: "Global".to_string(),
-                    entry_va: 0x1004,
-                    size: 4,
-                    code_section_va: 0x1000,
-                    name_kind: None,
-                },
-                FunctionInfo {
-                    id: 2,
-                    name: "sub_1008".to_string(),
-                    owner_class: "Global".to_string(),
-                    entry_va: 0x1008,
-                    size: 4,
-                    code_section_va: 0x1000,
-                    name_kind: None,
-                },
+        let model = test_model(
+            vec![lib(0, "package:app/main.dart")],
+            vec![cls(0, "AppRoot", Some(0))],
+            vec![
+                fun(0, None, Some(0), 0x1000, 4),
+                fun(1, None, Some(0), 0x1004, 4),
+                fun(2, None, Some(0), 0x1008, 4),
             ],
-            pool_geometry: None,
-            object_pool: vec![ObjectPoolEntry {
-                index: 0,
-                kind: "String".to_string(),
-                value: "entrypoint:main".to_string(),
-                decoded_kind: Some("EntryPointCandidate".to_string()),
-                selector: Some("main".to_string()),
-                target_va: Some(0x1000),
-                owner_class: Some("Global".to_string()),
-                library_uri: Some("package:app/main.dart".to_string()),
-                confidence: None,
-                source: None,
-            }],
-        };
+            ordinal_pool(vec![]),
+        );
+        let hints = program_hints(vec![hint(
+            HintKind::EntryPoint,
+            HintOrigin::ModelNamePattern,
+            "main",
+            Some(0x1000),
+            Some("AppRoot"),
+            Some("package:app/main.dart"),
+        )]);
         let bytes = vec![
             0x02, 0x00, 0x00, 0x94, // bl #0x1008
             0xc0, 0x03, 0x5f, 0xd6, // ret
             0xc0, 0x03, 0x5f, 0xd6, // ret
         ];
-        let d = disassemble_program(&model, &bytes, 0x1000, None, Some(2));
+        let d = disassemble_program(&model, &hints, &bytes, 0x1000, None, Some(2));
         assert_eq!(d.len(), 2);
-        assert_eq!(d[0].function_name, "sub_1000");
-        assert_eq!(d[1].function_name, "sub_1008");
+        assert_eq!(d[0].entry_va, 0x1000);
+        assert_eq!(d[0].function_name, None);
+        assert_eq!(d[1].entry_va, 0x1008);
+        assert_eq!(d[1].function_name, None);
     }
 
     #[test]
     fn capped_selection_prefers_diversity_before_duplicate_owner_name() {
-        let model = ProgramModel {
-            schema_version: 2,
-            adapter_kind: "test".to_string(),
-            dart_version: "unknown".to_string(),
-            snapshot_hash: "h".to_string(),
-            arch: "arm64".to_string(),
-            libraries: vec![LibraryInfo {
-                id: 0,
-                uri: "package:app/main.dart".to_string(),
-                name_display: "package:app/main.dart".to_string(),
-            }],
-            classes: vec![ClassInfo {
-                id: 0,
-                name: "Global".to_string(),
-                super_name: "Object".to_string(),
-                library_uri: "package:app/main.dart".to_string(),
-            }],
-            functions: vec![
-                FunctionInfo {
-                    id: 0,
-                    name: "main".to_string(),
-                    owner_class: "Global".to_string(),
-                    entry_va: 0x7000,
-                    size: 4,
-                    code_section_va: 0x7000,
-                    name_kind: None,
-                },
-                FunctionInfo {
-                    id: 1,
-                    name: "main".to_string(),
-                    owner_class: "Global".to_string(),
-                    entry_va: 0x7004,
-                    size: 4,
-                    code_section_va: 0x7000,
-                    name_kind: None,
-                },
-                FunctionInfo {
-                    id: 2,
-                    name: "startCLI".to_string(),
-                    owner_class: "Global".to_string(),
-                    entry_va: 0x7008,
-                    size: 4,
-                    code_section_va: 0x7000,
-                    name_kind: None,
-                },
+        let model = test_model(
+            vec![lib(0, "package:app/main.dart")],
+            vec![cls(0, "AppRoot", Some(0))],
+            vec![
+                fun(0, Some("main"), Some(0), 0x7000, 4),
+                fun(1, Some("main"), Some(0), 0x7004, 4),
+                fun(2, Some("startCLI"), Some(0), 0x7008, 4),
             ],
-            pool_geometry: None,
-            object_pool: vec![ObjectPoolEntry {
-                index: 0,
-                kind: "String".to_string(),
-                value: "x".to_string(),
-                decoded_kind: None,
-                selector: None,
-                target_va: None,
-                owner_class: None,
-                library_uri: None,
-                confidence: None,
-                source: None,
-            }],
-        };
+            ordinal_pool(vec![pool_string(0, "x")]),
+        );
+        let hints = program_hints(vec![]);
         let bytes = [0xc0u8, 0x03, 0x5f, 0xd6].repeat(3);
-        let d = disassemble_program(&model, &bytes, 0x7000, None, Some(2));
+        let d = disassemble_program(&model, &hints, &bytes, 0x7000, None, Some(2));
         assert_eq!(d.len(), 2);
-        assert_eq!(d[0].function_name, "main");
-        assert_eq!(d[1].function_name, "startCLI");
+        assert_eq!(d[0].function_name.as_deref(), Some("main"));
+        assert_eq!(d[1].function_name.as_deref(), Some("startCLI"));
     }
 
     #[test]
     fn capped_selection_backfills_deferred_duplicates_when_needed() {
-        let model = ProgramModel {
-            schema_version: 2,
-            adapter_kind: "test".to_string(),
-            dart_version: "unknown".to_string(),
-            snapshot_hash: "h".to_string(),
-            arch: "arm64".to_string(),
-            libraries: vec![LibraryInfo {
-                id: 0,
-                uri: "package:app/main.dart".to_string(),
-                name_display: "package:app/main.dart".to_string(),
-            }],
-            classes: vec![ClassInfo {
-                id: 0,
-                name: "Global".to_string(),
-                super_name: "Object".to_string(),
-                library_uri: "package:app/main.dart".to_string(),
-            }],
-            functions: vec![
-                FunctionInfo {
-                    id: 0,
-                    name: "main".to_string(),
-                    owner_class: "Global".to_string(),
-                    entry_va: 0x7100,
-                    size: 4,
-                    code_section_va: 0x7100,
-                    name_kind: None,
-                },
-                FunctionInfo {
-                    id: 1,
-                    name: "main".to_string(),
-                    owner_class: "Global".to_string(),
-                    entry_va: 0x7104,
-                    size: 4,
-                    code_section_va: 0x7100,
-                    name_kind: None,
-                },
+        let model = test_model(
+            vec![lib(0, "package:app/main.dart")],
+            vec![cls(0, "AppRoot", Some(0))],
+            vec![
+                fun(0, Some("main"), Some(0), 0x7100, 4),
+                fun(1, Some("main"), Some(0), 0x7104, 4),
             ],
-            pool_geometry: None,
-            object_pool: vec![ObjectPoolEntry {
-                index: 0,
-                kind: "String".to_string(),
-                value: "x".to_string(),
-                decoded_kind: None,
-                selector: None,
-                target_va: None,
-                owner_class: None,
-                library_uri: None,
-                confidence: None,
-                source: None,
-            }],
-        };
+            ordinal_pool(vec![pool_string(0, "x")]),
+        );
+        let hints = program_hints(vec![]);
         let bytes = [0xc0u8, 0x03, 0x5f, 0xd6].repeat(2);
-        let d = disassemble_program(&model, &bytes, 0x7100, None, Some(2));
+        let d = disassemble_program(&model, &hints, &bytes, 0x7100, None, Some(2));
         assert_eq!(d.len(), 2);
-        assert_eq!(d[0].function_name, "main");
-        assert_eq!(d[1].function_name, "main");
+        assert_eq!(d[0].function_name.as_deref(), Some("main"));
+        assert_eq!(d[1].function_name.as_deref(), Some("main"));
     }
 }

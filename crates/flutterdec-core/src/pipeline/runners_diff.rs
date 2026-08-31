@@ -1,18 +1,31 @@
 use std::collections::BTreeSet;
 
-fn function_descriptor(
-    func: &flutterdec_adapter::FunctionInfo,
-    class_to_library: &HashMap<String, String>,
-) -> String {
-    let raw_library_uri = class_to_library
-        .get(&func.owner_class)
-        .map(String::as_str)
-        .unwrap_or("");
-    let library_uri = canonicalize_library_uri_for_diff(raw_library_uri);
+/// A stable identity for one function across two snapshots.
+///
+/// Unrecovered parts are the empty segment rather than a stand-in, so a
+/// function that gained a name between builds reads as one added and one
+/// removed descriptor instead of silently matching a different `sub_` label.
+fn function_descriptor(model: &ProgramModel, func: &flutterdec_adapter::model::Function) -> String {
+    let library_uri =
+        canonicalize_library_uri_for_diff(model.owner_library_uri(func).unwrap_or(""));
+    let owner = model.owner_name(func).unwrap_or("");
+    let name = func.name_text().unwrap_or("");
     if library_uri.is_empty() {
-        return format!("{}::{}", func.owner_class, func.name);
+        return format!("{}::{}", owner, name);
     }
-    format!("{}::{}::{}", library_uri, func.owner_class, func.name)
+    format!("{}::{}::{}", library_uri, owner, name)
+}
+
+/// The Dart version for the report, from the loader's profile table.
+///
+/// The adapter no longer supplies one: a semantic version is an alias of the
+/// snapshot hash, and the host is the side that holds the hash-to-version table.
+fn dart_version_label(bundle: &SnapshotBundle) -> String {
+    bundle
+        .dart_profile
+        .as_ref()
+        .map(|p| p.dart_version.clone())
+        .unwrap_or_else(|| "unavailable".to_string())
 }
 
 fn canonicalize_library_uri_for_diff(uri: &str) -> String {
@@ -28,11 +41,10 @@ fn canonicalize_library_uri_for_diff(uri: &str) -> String {
 }
 
 fn collect_function_descriptors(model: &ProgramModel) -> BTreeSet<String> {
-    let class_to_library = build_class_library_lookup(model);
     model
         .functions
         .iter()
-        .map(|func| function_descriptor(func, &class_to_library))
+        .map(|func| function_descriptor(model, func))
         .collect::<BTreeSet<_>>()
 }
 
@@ -89,18 +101,18 @@ pub fn run_diff(
 
     let old_loaded = load_model(repo_root, &old_bundle, opt.adapter_backend)?;
     let new_loaded = load_model(repo_root, &new_bundle, opt.adapter_backend)?;
-    let old_snapshot_hash_match = enforce_snapshot_hash_match(
-        opt.require_snapshot_hash_match,
-        "old input",
-        &old_bundle.snapshot_hash,
-        &old_loaded.model.snapshot_hash,
-    )?;
-    let new_snapshot_hash_match = enforce_snapshot_hash_match(
-        opt.require_snapshot_hash_match,
-        "new input",
-        &new_bundle.snapshot_hash,
-        &new_loaded.model.snapshot_hash,
-    )?;
+    // The model echoes the host identity and validation already rejected any
+    // model that changed it, so a mismatch here is impossible by construction
+    // rather than something to re-check against an adapter-authored string.
+    let old_snapshot_hash_match = old_bundle.identity.is_exact();
+    let new_snapshot_hash_match = new_bundle.identity.is_exact();
+    if opt.require_snapshot_hash_match && !(old_snapshot_hash_match && new_snapshot_hash_match) {
+        bail!(
+            "--require-snapshot-hash-match: snapshot identity is not header-derived (old={}, new={})",
+            old_snapshot_hash_match,
+            new_snapshot_hash_match
+        );
+    }
     let old_model = old_loaded.model;
     let new_model = new_loaded.model;
 
@@ -128,13 +140,13 @@ pub fn run_diff(
     let report = DiffReport {
         old_input_path: old_bundle.input_path.display().to_string(),
         new_input_path: new_bundle.input_path.display().to_string(),
-        old_snapshot_hash: old_bundle.snapshot_hash,
-        new_snapshot_hash: new_bundle.snapshot_hash,
+        old_snapshot_hash: old_bundle.snapshot_hash.clone(),
+        new_snapshot_hash: new_bundle.snapshot_hash.clone(),
         old_snapshot_hash_match,
         new_snapshot_hash_match,
         require_snapshot_hash_match: opt.require_snapshot_hash_match,
-        old_dart_version: old_model.dart_version,
-        new_dart_version: new_model.dart_version,
+        old_dart_version: dart_version_label(&old_bundle),
+        new_dart_version: dart_version_label(&new_bundle),
         function_scope: opt.function_scope.as_str().to_string(),
         app_packages: opt.app_packages.clone(),
         old_function_count: old_descriptors.len(),

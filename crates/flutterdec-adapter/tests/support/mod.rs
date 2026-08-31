@@ -139,14 +139,14 @@ pub fn maximal_model() -> ProgramModel {
             Class {
                 id: ClassId(1),
                 name: "Object".to_string(),
-                library: LibraryId(1),
+                library: Some(LibraryId(1)),
                 super_class: None,
                 provenance: Provenance::Exact,
             },
             Class {
                 id: ClassId(2),
                 name: "App".to_string(),
-                library: LibraryId(2),
+                library: Some(LibraryId(2)),
                 super_class: Some(ClassId(1)),
                 provenance: Provenance::Exact,
             },

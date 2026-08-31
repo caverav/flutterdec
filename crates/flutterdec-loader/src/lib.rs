@@ -768,7 +768,7 @@ mod tests {
         const SYM: usize = 24;
 
         let mut out = vec![0u8; 128];
-        let mut place = |out: &mut Vec<u8>, bytes: &[u8]| -> (u64, u64) {
+        let place = |out: &mut Vec<u8>, bytes: &[u8]| -> (u64, u64) {
             let at = out.len() as u64;
             out.extend_from_slice(bytes);
             (at, bytes.len() as u64)
@@ -806,7 +806,7 @@ mod tests {
         }
 
         let mut shstrtab = vec![0u8];
-        let mut section_name = |shstrtab: &mut Vec<u8>, name: &str| -> u32 {
+        let section_name = |shstrtab: &mut Vec<u8>, name: &str| -> u32 {
             let at = shstrtab.len() as u32;
             shstrtab.extend_from_slice(name.as_bytes());
             shstrtab.push(0);

@@ -379,6 +379,7 @@ version = "0.1.0-alpha.4"
 dependencies = [
  "capstone",
  "flutterdec-adapter",
+ "flutterdec-loader",
  "regex",
  "serde",
 ]
