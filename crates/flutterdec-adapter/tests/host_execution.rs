@@ -577,6 +577,7 @@ fn an_invocation_sees_a_private_directory_and_nothing_of_the_host() {
         "LANG",
         "LC_ALL",
         "PYTHON",
+        "XDG_CACHE_HOME",
         "FLUTTERDEC_BLUTTER_CMD",
         "FLUTTERDEC_BLUTTER_PY",
         "FLUTTERDEC_R2FLUTTER_CMD",

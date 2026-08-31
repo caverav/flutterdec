@@ -355,11 +355,18 @@ variant, and the ones that mean "no process was created" answer `true` to
 
 The child that does run gets a private invocation directory (mode `0700`) holding
 read-only input handles under `in/`, its output under `out/`, and its own `HOME` and
-`TMPDIR`; a cleared environment plus a small allowlist (`PATH`, locale, and the
-variables the checked-in producer reads to find an external backend); `/dev/null` on
-stdin; its own session and process group; and close-on-exec on every inherited
-descriptor above the standard three. The directory is removed on every path, including
-timeout and including one an adapter deliberately made unwritable.
+`TMPDIR`; a cleared environment plus a small allowlist (`PATH`, locale, `XDG_CACHE_HOME`,
+and the variables the checked-in producer reads to find an external backend);
+`/dev/null` on stdin; its own session and process group; and close-on-exec on every
+inherited descriptor above the standard three. The directory is removed on every path,
+including timeout and including one an adapter deliberately made unwritable.
+
+`XDG_CACHE_HOME` is the one variable that lets a backend keep something across runs, and
+it is passed through rather than set because the choice is the operator's. With it
+unset, an external backend that builds itself on first use caches inside the private
+workspace and rebuilds on every invocation; with it set, it caches where the operator
+already keeps caches. The Blutter bridge is the backend this matters to: its wrapper
+keys its source cache on `XDG_CACHE_HOME`, falling back to `$HOME/.cache`.
 
 The host holds an overall wall-clock deadline and caps stdout, stderr, the result
 document and the model. On a timeout or a cap breach it signals the whole process group,
