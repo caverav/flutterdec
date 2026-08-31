@@ -112,7 +112,11 @@ struct Prefix {
 
 impl Prefix {
     fn new() -> Self {
-        Self::with_variant(ARTIFACT_RELATIVE, std::env::consts::OS, std::env::consts::ARCH)
+        Self::with_variant(
+            ARTIFACT_RELATIVE,
+            std::env::consts::OS,
+            std::env::consts::ARCH,
+        )
     }
 
     /// `variant_path`, `host_os` and `host_arch` are what the fixture registry
@@ -129,13 +133,18 @@ impl Prefix {
 
         // Only release-distributed files are copied in: the binary and the
         // package data. Nothing from the checkout is linked or referenced.
-        fs::copy(env!("CARGO_BIN_EXE_flutterdec"), root.join("bin/flutterdec"))
-            .expect("copy release binary");
+        fs::copy(
+            env!("CARGO_BIN_EXE_flutterdec"),
+            root.join("bin/flutterdec"),
+        )
+        .expect("copy release binary");
 
         let producer = format!("#!/bin/sh\ntouch '{}'\nexit 3\n", marker.display());
         let producer_path = root.join("share/flutterdec/adapters/python/adapter_template.py");
         fs::write(&producer_path, &producer).expect("write producer");
-        let mut perms = fs::metadata(&producer_path).expect("metadata").permissions();
+        let mut perms = fs::metadata(&producer_path)
+            .expect("metadata")
+            .permissions();
         perms.set_mode(0o755);
         fs::set_permissions(&producer_path, perms).expect("chmod producer");
 
@@ -152,8 +161,11 @@ impl Prefix {
             }
         }))
         .expect("serialize profile");
-        fs::write(root.join("share/flutterdec/data/fixture-profile.json"), &profile)
-            .expect("write profile");
+        fs::write(
+            root.join("share/flutterdec/data/fixture-profile.json"),
+            &profile,
+        )
+        .expect("write profile");
 
         let registry = serde_json::json!({
             "version": 1,
@@ -282,7 +294,6 @@ fn record_json(
     })
 }
 
-
 /// Run a command, retrying while a freshly copied binary is still reported busy.
 ///
 /// Tests run as parallel threads in one process, and a thread that forks while
@@ -367,7 +378,11 @@ fn installs_and_lists_from_a_packaged_prefix_with_no_checkout_in_sight() {
         .expect("metadata")
         .permissions()
         .mode();
-    assert_eq!(mode & 0o777, 0o755, "the installed artifact is not executable");
+    assert_eq!(
+        mode & 0o777,
+        0o755,
+        "the installed artifact is not executable"
+    );
 
     let list = prefix.list();
     assert_eq!(code(&list), 0, "list failed: {}", stderr(&list));
@@ -480,6 +495,67 @@ fn concurrent_installs_produce_exactly_one_install() {
         prefix.settled_store_files(),
         "concurrent installs left temporary files behind"
     );
+}
+
+/// The race above can pass by luck: if the first process finishes before the
+/// last one starts, timing serialized the work and the lock proved nothing. So
+/// hold the store lock here and require a real install to wait for it.
+#[test]
+fn an_install_waits_for_the_store_lock() {
+    let prefix = Prefix::new();
+    fs::create_dir_all(prefix.store()).expect("mkdir store");
+    let lock_path = prefix.store().join(".lock");
+    let lock = fs::OpenOptions::new()
+        .create(true)
+        .read(true)
+        .write(true)
+        .truncate(false)
+        .open(&lock_path)
+        .expect("open store lock");
+    assert_eq!(
+        unsafe { libc::flock(std::os::unix::io::AsRawFd::as_raw_fd(&lock), libc::LOCK_EX) },
+        0,
+        "could not take the store lock"
+    );
+
+    let mut child = loop {
+        match prefix
+            .cmd()
+            .args(["adapter", "install", "--dart-hash", HASH, "--json"])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+        {
+            Ok(child) => break child,
+            Err(err) if err.raw_os_error() == Some(26) => {
+                std::thread::sleep(std::time::Duration::from_millis(20))
+            }
+            Err(err) => panic!("spawn adapter install: {err}"),
+        }
+    };
+
+    // Long enough for an unlocked install to have finished several times over.
+    for _ in 0..25 {
+        std::thread::sleep(std::time::Duration::from_millis(80));
+        assert!(
+            child.try_wait().expect("poll install").is_none(),
+            "the install did not wait for the store lock"
+        );
+    }
+    assert!(
+        store_files(&prefix.store()).is_empty(),
+        "the install published while the store was locked: {:?}",
+        store_files(&prefix.store())
+    );
+
+    assert_eq!(
+        unsafe { libc::flock(std::os::unix::io::AsRawFd::as_raw_fd(&lock), libc::LOCK_UN) },
+        0
+    );
+    let output = child.wait_with_output().expect("wait for install");
+    assert_eq!(code(&output), 0, "{}", stderr(&output));
+    assert_eq!(json(&output)["idempotent"], Value::Bool(false));
+    assert_eq!(store_files(&prefix.store()), prefix.settled_store_files());
 }
 
 #[test]
@@ -602,7 +678,10 @@ fn a_store_directory_that_is_a_symlink_out_of_the_store_is_refused() {
         stderr(&output)
     );
     assert!(
-        fs::read_dir(&outside).expect("read outside").next().is_none(),
+        fs::read_dir(&outside)
+            .expect("read outside")
+            .next()
+            .is_none(),
         "the install wrote through the symbolic link"
     );
 }
@@ -684,7 +763,11 @@ fn a_wrong_host_or_target_is_refused() {
         "x64",
     ]);
     assert_ne!(code(&output), 0);
-    assert!(stderr(&output).contains("targets x64"), "{}", stderr(&output));
+    assert!(
+        stderr(&output).contains("targets x64"),
+        "{}",
+        stderr(&output)
+    );
     assert!(store_files(&prefix.store()).is_empty());
 }
 
@@ -747,7 +830,12 @@ fn list_reports_missing_corrupt_and_unavailable_states() {
     bytes[last] = b'9';
     fs::write(prefix.artifact(), &bytes).expect("corrupt artifact");
     let list = prefix.list();
-    assert_eq!(code(&list), 2, "a corrupt store exited 0: {}", stdout(&list));
+    assert_eq!(
+        code(&list),
+        2,
+        "a corrupt store exited 0: {}",
+        stdout(&list)
+    );
     let rows = json(&list);
     assert_eq!(rows[0]["state"], text("corrupt"));
     assert!(rows[0]["detail"]
@@ -912,12 +1000,12 @@ fn a_prefix_without_package_data_says_so_instead_of_guessing() {
     );
 }
 
-/// `info` has to resolve the same registry, the same profile, and the same
-/// store as `adapter install` and `adapter list`, or the store is only a
-/// bookkeeping exercise. The proof is behavioral: the installed artifact in
-/// *this* store is the file `info` executes.
+/// `info` and `decompile` have to resolve the same registry, the same profile,
+/// and the same store as `adapter install` and `adapter list`, or the store is
+/// only a bookkeeping exercise. The proof is behavioral: the installed artifact
+/// in *this* store is the file they execute.
 #[test]
-fn info_resolves_the_same_registry_profile_and_store() {
+fn info_and_decompile_resolve_the_same_registry_profile_and_store() {
     let prefix = Prefix::new();
     let libapp = prefix.root().join("libapp.so");
     fs::write(&libapp, synthetic_libapp(HASH, FEATURES)).expect("write libapp");
@@ -975,6 +1063,37 @@ fn info_resolves_the_same_registry_profile_and_store() {
     assert!(
         !prefix.marker.exists(),
         "info ran an artifact from another store"
+    );
+
+    // `decompile` resolves the same two locations. The fixture producer writes
+    // no model, so both runs fail, but they fail at different points: with no
+    // store the artifact is unavailable, and with the install the artifact runs.
+    let out = prefix.root().join("out");
+    let out_arg = out.to_str().expect("path").to_string();
+    let empty = prefix.run_with(
+        &[(
+            "FLUTTERDEC_ADAPTER_STORE",
+            prefix.root().join("nowhere").to_str().expect("path"),
+        )],
+        &["decompile", &input, "-o", &out_arg],
+    );
+    assert_ne!(code(&empty), 0);
+    assert!(
+        stderr(&empty).contains("adapter artifact") && stderr(&empty).contains("unavailable"),
+        "decompile did not look for the artifact in the resolved store: {}",
+        stderr(&empty)
+    );
+    assert!(
+        !prefix.marker.exists(),
+        "decompile ran an uninstalled artifact"
+    );
+
+    let installed = prefix.run(&["decompile", &input, "-o", &out_arg]);
+    assert_ne!(code(&installed), 0, "the fixture producer emits no model");
+    assert!(
+        prefix.marker.exists(),
+        "decompile did not execute the artifact from the resolved store: {}",
+        stderr(&installed)
     );
 }
 
@@ -1037,7 +1156,7 @@ fn synthetic_libapp(hash: &str, features: &str) -> Vec<u8> {
     }
 
     let mut shstrtab = vec![0u8];
-    let mut section_name = |shstrtab: &mut Vec<u8>, name: &str| -> u32 {
+    let section_name = |shstrtab: &mut Vec<u8>, name: &str| -> u32 {
         let at = shstrtab.len() as u32;
         shstrtab.extend_from_slice(name.as_bytes());
         shstrtab.push(0);
@@ -1070,7 +1189,14 @@ fn synthetic_libapp(hash: &str, features: &str) -> Vec<u8> {
         out.extend_from_slice(&hdr);
     };
     section(0, 0, 0, 0, 0, 0);
-    section(symtab_name, 2, symtab_off, symtab.len() as u64, 2, SYM as u64);
+    section(
+        symtab_name,
+        2,
+        symtab_off,
+        symtab.len() as u64,
+        2,
+        SYM as u64,
+    );
     section(strtab_name, 3, strtab_off, strtab.len() as u64, 0, 0);
     section(shstrtab_name, 3, shstrtab_off, shstrtab.len() as u64, 0, 0);
 
