@@ -20,8 +20,8 @@ fn registry_error(error: RegistryError) -> anyhow::Error {
 }
 
 /// Select a record only after the identity's FullAOT/header gate passes.
-fn select_registry(repo_root: &Path, bundle: &SnapshotBundle) -> Result<RegistrySelection> {
-    let registry = CompatibilityRegistry::load_from_root(repo_root).map_err(registry_error)?;
+fn select_registry(layout: &Layout, bundle: &SnapshotBundle) -> Result<RegistrySelection> {
+    let registry = CompatibilityRegistry::load(&layout.registry_path()).map_err(registry_error)?;
     registry
         .select(&bundle.identity)
         .map_err(registry_error)
@@ -33,12 +33,12 @@ fn select_registry(repo_root: &Path, bundle: &SnapshotBundle) -> Result<Registry
 /// (for example an `info` report for a non-FullAOT input); a selected record
 /// with a bad profile is an error, never an unverified fallback.
 fn attach_registry_profile(
-    repo_root: &Path,
+    layout: &Layout,
     bundle: &mut SnapshotBundle,
 ) -> Result<Option<RegistrySelection>> {
-    let selection = select_registry(repo_root, bundle)?;
+    let selection = select_registry(layout, bundle)?;
     let profile = selection
-        .load_profile(repo_root)
+        .load_profile(layout.data_dir())
         .map_err(registry_error)?;
     bundle.dart_profile = Some(profile);
     Ok(Some(selection))
@@ -127,19 +127,22 @@ fn require_exact_selection(bundle: &SnapshotBundle) -> Result<ExactSelectionKey>
 }
 
 fn load_model(
-    repo_root: &Path,
+    layout: &Layout,
     bundle: &SnapshotBundle,
     backend: AdapterBackend,
 ) -> Result<LoadedModel> {
     // Before the registry is read, before a path is resolved, before anything
     // is spawned.
     require_exact_selection(bundle)?;
-    let selection = select_registry(repo_root, bundle)?;
+    let selection = select_registry(layout, bundle)?;
+    // Profiles come out of the read-only package data; executables come out of
+    // the writable store. Resolving both against one root is what made the
+    // adapter store part of the source checkout.
     let profile = selection
-        .load_profile(repo_root)
+        .load_profile(layout.data_dir())
         .map_err(registry_error)?;
     let artifact = selection
-        .resolve_current_artifact(repo_root)
+        .resolve_current_artifact(layout.store_dir())
         .map_err(registry_error)?;
     let producer = producer_for(&artifact.path, &selection, &artifact)?;
     let compatibility = compatibility_binding(&selection, &profile)?;

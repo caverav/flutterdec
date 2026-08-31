@@ -26,7 +26,9 @@
         "riscv32",
         "riscv64"
       ],
-      "forbidden_features": ["no-compressed-pointers"],
+      "forbidden_features": [
+        "no-compressed-pointers"
+      ],
       "sdk_aliases": [
         {
           "ecosystem": "dart",
@@ -55,33 +57,36 @@
           {
             "host_os": "linux",
             "host_arch": "x86_64",
-            "path": "adapters/installed/dart_adapter_80a49c7111088100a233b2ae788e1f48",
-            "size": 246,
-            "sha256": "f7bc62871642feeb360da3d25a255c1bf534cd4774fc48acd00a7dbeaf945604",
-            "provenance": "local-template"
+            "path": "artifacts/dart_adapter_80a49c7111088100a233b2ae788e1f48",
+            "size": 43767,
+            "sha256": "67f7980651c04b055569acd6c0c0dba578de82998df4691602f93089b5a3c3a5",
+            "provenance": "checked-in reference producer, published by adapter install"
           },
           {
             "host_os": "macos",
             "host_arch": "x86_64",
-            "path": "adapters/installed/dart_adapter_80a49c7111088100a233b2ae788e1f48",
-            "size": 246,
-            "sha256": "f7bc62871642feeb360da3d25a255c1bf534cd4774fc48acd00a7dbeaf945604",
-            "provenance": "local-template"
+            "path": "artifacts/dart_adapter_80a49c7111088100a233b2ae788e1f48",
+            "size": 43767,
+            "sha256": "67f7980651c04b055569acd6c0c0dba578de82998df4691602f93089b5a3c3a5",
+            "provenance": "checked-in reference producer, published by adapter install"
           },
           {
             "host_os": "macos",
             "host_arch": "aarch64",
-            "path": "adapters/installed/dart_adapter_80a49c7111088100a233b2ae788e1f48",
-            "size": 246,
-            "sha256": "f7bc62871642feeb360da3d25a255c1bf534cd4774fc48acd00a7dbeaf945604",
-            "provenance": "local-template"
+            "path": "artifacts/dart_adapter_80a49c7111088100a233b2ae788e1f48",
+            "size": 43767,
+            "sha256": "67f7980651c04b055569acd6c0c0dba578de82998df4691602f93089b5a3c3a5",
+            "provenance": "checked-in reference producer, published by adapter install"
           }
         ]
       },
       "evidence": {
         "source": "data/dart-profiles.json",
         "provenance": "checked-in-profile-and-fixture",
-        "references": ["LocalSend 1.17.0 sample", "r2flutter offsets.json"]
+        "references": [
+          "LocalSend 1.17.0 sample",
+          "r2flutter offsets.json"
+        ]
       },
       "trust_tier": "verified",
       "protocol_major": 1,
@@ -112,7 +117,9 @@
         "riscv32",
         "riscv64"
       ],
-      "forbidden_features": ["no-compressed-pointers"],
+      "forbidden_features": [
+        "no-compressed-pointers"
+      ],
       "sdk_aliases": [
         {
           "ecosystem": "dart",
@@ -136,33 +143,36 @@
           {
             "host_os": "linux",
             "host_arch": "x86_64",
-            "path": "adapters/installed/dart_adapter_ace654289f5abc240509fc941453ebc5",
-            "size": 246,
-            "sha256": "f7bc62871642feeb360da3d25a255c1bf534cd4774fc48acd00a7dbeaf945604",
-            "provenance": "local-template"
+            "path": "artifacts/dart_adapter_ace654289f5abc240509fc941453ebc5",
+            "size": 43767,
+            "sha256": "67f7980651c04b055569acd6c0c0dba578de82998df4691602f93089b5a3c3a5",
+            "provenance": "checked-in reference producer, published by adapter install"
           },
           {
             "host_os": "macos",
             "host_arch": "x86_64",
-            "path": "adapters/installed/dart_adapter_ace654289f5abc240509fc941453ebc5",
-            "size": 246,
-            "sha256": "f7bc62871642feeb360da3d25a255c1bf534cd4774fc48acd00a7dbeaf945604",
-            "provenance": "local-template"
+            "path": "artifacts/dart_adapter_ace654289f5abc240509fc941453ebc5",
+            "size": 43767,
+            "sha256": "67f7980651c04b055569acd6c0c0dba578de82998df4691602f93089b5a3c3a5",
+            "provenance": "checked-in reference producer, published by adapter install"
           },
           {
             "host_os": "macos",
             "host_arch": "aarch64",
-            "path": "adapters/installed/dart_adapter_ace654289f5abc240509fc941453ebc5",
-            "size": 246,
-            "sha256": "f7bc62871642feeb360da3d25a255c1bf534cd4774fc48acd00a7dbeaf945604",
-            "provenance": "local-template"
+            "path": "artifacts/dart_adapter_ace654289f5abc240509fc941453ebc5",
+            "size": 43767,
+            "sha256": "67f7980651c04b055569acd6c0c0dba578de82998df4691602f93089b5a3c3a5",
+            "provenance": "checked-in reference producer, published by adapter install"
           }
         ]
       },
       "evidence": {
         "source": "data/dart-profiles.json",
         "provenance": "checked-in-profile-and-fixture",
-        "references": ["Immich 3.1.0 sample", "r2flutter offsets.json"]
+        "references": [
+          "Immich 3.1.0 sample",
+          "r2flutter offsets.json"
+        ]
       },
       "trust_tier": "verified",
       "protocol_major": 1,

@@ -385,7 +385,7 @@ fn try_collect_engine_fingerprint(input_path: &Path, bundle_arch: &str) -> Engin
 }
 
 fn resolve_local_engine_symbol_targets(
-    repo_root: &Path,
+    symbols_dir: &Path,
     input_path: &Path,
     bundle_arch: &str,
     engine_context: &EngineFingerprintContext,
@@ -406,7 +406,7 @@ fn resolve_local_engine_symbol_targets(
         None
     };
 
-    match resolve_local_symbol_cache_paths(repo_root, bundle_arch, build_id, flutter_version) {
+    match resolve_local_symbol_cache_paths(symbols_dir, bundle_arch, build_id, flutter_version) {
         Ok(resolution) => EngineSymbolIngestion {
             enabled: true,
             match_kind: resolution.match_kind,
@@ -958,7 +958,7 @@ fn apply_function_scope_filter(
 }
 
 pub fn run_info(
-    repo_root: &Path,
+    layout: &Layout,
     input_path: &Path,
     adapter_backend: AdapterBackend,
 ) -> Result<InfoOutput> {
@@ -970,13 +970,13 @@ pub fn run_info(
     // adapter artifact or invents a profile.
     let identity_rejection = bundle.identity.exact_selection_key().err();
     let registry_selection = if identity_rejection.is_none() {
-        attach_registry_profile(repo_root, &mut bundle).ok().flatten()
+        attach_registry_profile(layout, &mut bundle).ok().flatten()
     } else {
         None
     };
     let adapter_installed = registry_selection
         .as_ref()
-        .and_then(|selection| selection.resolve_current_artifact(repo_root).ok())
+        .and_then(|selection| selection.resolve_current_artifact(layout.store_dir()).ok())
         .is_some();
     let manifest_inspection = if let Some(apk) = apk_session.as_ref() {
         inspect_android_manifest_from_apk_session(apk)
@@ -1040,7 +1040,7 @@ pub fn run_info(
     };
 
     if adapter_installed {
-        if let Ok(loaded) = load_model(repo_root, &bundle, adapter_backend) {
+        if let Ok(loaded) = load_model(layout, &bundle, adapter_backend) {
             let registry_record_present = true;
             let model = loaded.model;
             // The model was validated against the host identity before it got
@@ -1224,16 +1224,16 @@ fn apply_target_function_filter(
 }
 
 pub fn run_decompile(
-    repo_root: &Path,
+    layout: &Layout,
     input_path: &Path,
     opt: &DecompileOptions,
 ) -> Result<QualityReport> {
     let apk_session = open_apk_session_if_input_is_apk(input_path)?;
     let mut bundle =
         load_snapshot_bundle_with_optional_apk_session(input_path, apk_session.as_ref())?;
-    attach_registry_profile(repo_root, &mut bundle)?
+    attach_registry_profile(layout, &mut bundle)?
         .ok_or_else(|| anyhow!("no compatibility registry record selected"))?;
-    let loaded_model = load_model(repo_root, &bundle, opt.adapter_backend)?;
+    let loaded_model = load_model(layout, &bundle, opt.adapter_backend)?;
     let adapter_exec_path = loaded_model.adapter_exec.display().to_string();
     let registry_record = loaded_model.compatibility_record.clone();
     let sdk_aliases = loaded_model.profile.aliases.clone();
@@ -1263,7 +1263,7 @@ pub fn run_decompile(
     let engine_context =
         try_collect_engine_fingerprint_with_apk_session(input_path, apk_session.as_ref(), &bundle.arch);
     let mut engine_symbol_ingestion =
-        resolve_local_engine_symbol_targets(repo_root, input_path, &bundle.arch, &engine_context);
+        resolve_local_engine_symbol_targets(layout.symbols_dir(), input_path, &bundle.arch, &engine_context);
     let manifest_inspection = if let Some(apk) = apk_session.as_ref() {
         inspect_android_manifest_from_apk_session(apk)
     } else {
@@ -2288,12 +2288,14 @@ pub fn run_decompile(
     Ok(report)
 }
 
-pub fn available_adapters(repo_root: &Path) -> Result<Vec<(String, String, String, bool)>> {
-    let entries = list_adapters(repo_root)?;
-    Ok(entries
-        .into_iter()
-        .map(|(e, installed)| (e.snapshot_hash, e.version, e.adapter, installed))
-        .collect())
+/// The verified state of every adapter the registry authorizes on this host.
+///
+/// Existence is not a state here: `store::inspect` reads and hashes each
+/// installed artifact against the record that authorized it.
+pub fn available_adapters(layout: &Layout) -> Result<Vec<StoreEntry>> {
+    let registry = CompatibilityRegistry::load(&layout.registry_path())
+        .map_err(|err| anyhow!("read compatibility registry: {}", err))?;
+    store::inspect(layout, &registry).map_err(|err| anyhow!("inspect adapter store: {}", err))
 }
 
 #[cfg(test)]
