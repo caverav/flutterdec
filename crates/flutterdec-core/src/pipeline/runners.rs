@@ -961,6 +961,7 @@ pub fn run_info(
     layout: &Layout,
     input_path: &Path,
     adapter_backend: AdapterBackend,
+    adapter_timeout_seconds: Option<u64>,
 ) -> Result<InfoOutput> {
     let apk_session = open_apk_session_if_input_is_apk(input_path)?;
     let mut bundle =
@@ -1000,7 +1001,7 @@ pub fn run_info(
     // authorized adapter that fails is reported as a failure rather than
     // dropped: an `info` that silently omits the model fields looks exactly
     // like a snapshot with nothing in it.
-    let loaded = load_program(layout, &mut bundle, adapter_backend);
+    let loaded = load_program(layout, &mut bundle, adapter_backend, adapter_timeout_seconds);
     let mut out = InfoOutput {
         input_path: bundle.input_path.display().to_string(),
         libapp_path: bundle.libapp_path.display().to_string(),
@@ -1239,7 +1240,12 @@ pub fn run_decompile(
     // One selection decision. An identity or a registry that authorizes no
     // adapter reaches core recovery here rather than stopping the command; an
     // adapter that ran and failed still stops it.
-    let loaded_model = load_program(layout, &mut bundle, opt.adapter_backend)?;
+    let loaded_model = load_program(
+        layout,
+        &mut bundle,
+        opt.adapter_backend,
+        opt.adapter_timeout_seconds,
+    )?;
     let provider = provider_report(&loaded_model, &bundle, opt.adapter_backend);
     let registry_record = loaded_model.compatibility_record.clone();
     let sdk_aliases = loaded_model

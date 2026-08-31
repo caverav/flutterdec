@@ -61,6 +61,9 @@ pub struct DecompileOptions {
     pub function_scope: FunctionScope,
     pub app_packages: Vec<String>,
     pub adapter_backend: AdapterBackend,
+    /// Wall-clock deadline for one adapter invocation. `None` keeps the host
+    /// default.
+    pub adapter_timeout_seconds: Option<u64>,
     pub require_snapshot_hash_match: bool,
     pub analysis_profile: DecompileAnalysisProfile,
     pub engine_options: DecompileEngineOptions,
@@ -95,6 +98,8 @@ impl FunctionTarget {
 pub struct DiffOptions {
     pub out_dir: PathBuf,
     pub adapter_backend: AdapterBackend,
+    /// Wall-clock deadline for one adapter invocation, applied to each side.
+    pub adapter_timeout_seconds: Option<u64>,
     pub function_scope: FunctionScope,
     pub app_packages: Vec<String>,
     pub require_snapshot_hash_match: bool,

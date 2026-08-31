@@ -230,7 +230,7 @@ fn assert_stops_before_lookup(identity: SnapshotIdentity, expected: IdentityReje
     let repo = poisoned_registry_repo();
     let mut bundle = bundle(identity);
 
-    let loaded = load_program(&repo.layout, &mut bundle, AdapterBackend::Auto)
+    let loaded = load_program(&repo.layout, &mut bundle, AdapterBackend::Auto, None)
         .expect("a rejected identity is answered by core recovery");
 
     assert_eq!(
@@ -277,7 +277,7 @@ fn assert_pinned_external_is_refused(identity: SnapshotIdentity, expected: Ident
     let repo = poisoned_registry_repo();
     let mut bundle = bundle(identity);
 
-    let err = load_program(&repo.layout, &mut bundle, AdapterBackend::R2Flutter)
+    let err = load_program(&repo.layout, &mut bundle, AdapterBackend::R2Flutter, None)
         .expect_err("a pinned external backend cannot be served by core recovery");
 
     let rendered = format!("{err:#}");
@@ -339,7 +339,7 @@ fn a_full_aot_snapshot_reaches_selection_and_execution() {
     let repo = valid_registry_repo();
     let mut bundle = bundle(full_aot());
 
-    let err = load_program(&repo.layout, &mut bundle, AdapterBackend::Auto)
+    let err = load_program(&repo.layout, &mut bundle, AdapterBackend::Auto, None)
         .expect_err("the spy adapter cannot produce a model");
 
     assert!(
@@ -364,7 +364,7 @@ fn an_explicitly_internal_run_selects_nothing_and_executes_nothing() {
     let repo = valid_registry_repo();
     let mut bundle = bundle(full_aot());
 
-    let loaded = load_program(&repo.layout, &mut bundle, AdapterBackend::Internal)
+    let loaded = load_program(&repo.layout, &mut bundle, AdapterBackend::Internal, None)
         .expect("internal recovery does not depend on a registry");
 
     assert_eq!(
@@ -391,7 +391,7 @@ fn an_unknown_hash_is_recovered_by_core_rather_than_refused() {
         FEATURES,
     ));
 
-    let loaded = load_program(&repo.layout, &mut bundle, AdapterBackend::Auto)
+    let loaded = load_program(&repo.layout, &mut bundle, AdapterBackend::Auto, None)
         .expect("an unknown hash is answered by core recovery");
 
     assert_eq!(
@@ -420,7 +420,7 @@ fn a_rejected_identity_is_not_downgraded_to_an_untrusted_run() {
     let repo = valid_registry_repo();
     let mut bundle = bundle(full_jit());
 
-    let loaded = load_program(&repo.layout, &mut bundle, AdapterBackend::Auto)
+    let loaded = load_program(&repo.layout, &mut bundle, AdapterBackend::Auto, None)
         .expect("a FullJIT snapshot is answered by core recovery");
 
     assert_eq!(
