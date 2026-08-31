@@ -1024,6 +1024,7 @@ pub fn run_info(
             .as_ref()
             .and_then(|selection| selection.record_sha256().ok()),
         registry_record_present: Some(registry_selection.is_some()),
+        adapter_containment: None,
         snapshot_identity_is_exact: Some(bundle.identity.is_exact()),
         identity_rejection: identity_rejection.as_ref().map(ToString::to_string),
         model_capabilities: None,
@@ -1067,6 +1068,7 @@ pub fn run_info(
             out.compatibility_record_sha256 =
                 Some(loaded.compatibility.record_sha256.to_string());
             out.registry_record_present = Some(registry_record_present);
+            out.adapter_containment = Some(loaded.containment.clone());
             out.snapshot_identity_is_exact = Some(identity_is_exact);
             out.compatibility_warnings = Some(warnings);
             out.model_capabilities = Some(capability_map(&model.capabilities));
@@ -1235,6 +1237,7 @@ pub fn run_decompile(
         .ok_or_else(|| anyhow!("no compatibility registry record selected"))?;
     let loaded_model = load_model(layout, &bundle, opt.adapter_backend)?;
     let adapter_exec_path = loaded_model.adapter_exec.display().to_string();
+    let containment = loaded_model.containment.clone();
     let registry_record = loaded_model.compatibility_record.clone();
     let sdk_aliases = loaded_model.profile.aliases.clone();
     let requested_backend = opt.adapter_backend;
@@ -1914,6 +1917,10 @@ pub fn run_decompile(
             "backend_mismatch": backend_mismatch,
             "require_snapshot_hash_match": opt.require_snapshot_hash_match,
             "adapter_exec_path": adapter_exec_path,
+            // What the host actually established for the child it ran. A
+            // control that is not here as `applied` was not in force, and the
+            // host says so rather than leaving the reader to assume.
+            "containment": containment,
             "artifact_id": &registry_record.artifact.id,
             "parser_family_id": &registry_record.parser_family.id,
             "profile_id": &registry_record.profile.id,

@@ -8,7 +8,10 @@ use flutterdec_adapter::model::{
 use flutterdec_adapter::primitives::Sha256Digest;
 use flutterdec_adapter::protocol::{BackendId, FallbackReason, RequestedBackend};
 use flutterdec_adapter::store::{self, StoreEntry};
-use flutterdec_adapter::{run_adapter, AdapterInput, AdapterRegionInput};
+use flutterdec_adapter::{
+    run_adapter, AdapterInput, AdapterRegionInput, ContainmentReport, HostAuthorization, HostError,
+    LibappSource, Limits,
+};
 use flutterdec_decompiler::{emit_program_with_runtime_stubs, PseudocodeArtifact};
 use flutterdec_disasm_arm64::{
     disassemble_program_with_priorities_and_package_hints, FunctionDisassembly,
@@ -242,6 +245,9 @@ pub struct InfoOutput {
     pub producer_trust: Option<String>,
     pub compatibility_record_sha256: Option<String>,
     pub registry_record_present: Option<bool>,
+    /// Which containment controls were established for the adapter child, as
+    /// the child itself reported them. Absent when no adapter ran.
+    pub adapter_containment: Option<ContainmentReport>,
     /// Whether the snapshot identity came out of a real header. Replaces the v3
     /// "does the adapter agree about the hash" check, which compared a host fact
     /// against a string the adapter chose.
