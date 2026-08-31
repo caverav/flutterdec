@@ -181,7 +181,7 @@ Arguments:
 - `--include-branches`
 - `--nearest-max-distance <N>` (default `8192`)
 - `--require-exec-match`
-- `--register-local-cache` (copy the generated target summary into `symbols/` and register it in `symbols/manifest.json` for later auto-ingestion)
+- `--register-local-cache` (copy the generated target summary into the resolved symbol cache and register it in its `manifest.json` for later auto-ingestion; see Resolved locations)
 - `--json`
 
 ## `flutterdec adapter`
@@ -189,11 +189,48 @@ Arguments:
 Install:
 
 ```bash
-flutterdec adapter install --dart-hash <HASH>
+flutterdec adapter install --dart-hash <HASH> [--target-arch <ARCH>] [--from <PATH>] [--json]
 ```
+
+- `--dart-hash <HASH>`: 32 lowercase hexadecimal characters, as `info` reports it
+- `--target-arch <ARCH>`: required only when one hash has records for more than one target
+- `--from <PATH>`: publish this artifact instead of the packaged producer. It must still match the
+  digest and size the compatibility record declares
+- `--json`: print the installation record as JSON
+
+The compatibility registry is the only install authority: a hash with no record, a record that serves
+no artifact variant for this host, a requested target the record does not serve, a profile whose digest
+no longer matches, a source that is not a regular file, and any bytes that do not match the record's
+declared digest and size are all refused with a nonzero exit and no store write. The published path is
+store-relative and contained, so an absolute path, `..`, or a symlinked directory in the chain is
+refused rather than followed.
+
+Output names the store path, the artifact and profile digests, the host variant, the target, the
+compatibility record digest, the protocol/model majors, and whether the result was idempotent
+(`installed` or `already-installed`). Installing the same content twice writes nothing.
 
 List:
 
 ```bash
-flutterdec adapter list
+flutterdec adapter list [--json]
 ```
+
+Reports one row per compatibility record, with a state that is verified rather than inferred from file
+existence: `verified`, `missing`, `corrupt`, `incompatible`, or `unavailable`. Exit status is 2 when any
+entry is `missing` or `corrupt`, 0 otherwise, and nonzero with a message when the store's own state file
+cannot be read.
+
+## Resolved locations
+
+Neither directory depends on the current working directory.
+
+- Read-only package data (`adapters/registry.json`, `data/*.json`, the packaged producer):
+  `FLUTTERDEC_DATA_DIR`, else `<binary>/../share/flutterdec`, else `<binary>`, else `<binary>/../..`.
+  The first candidate that actually holds `adapters/registry.json` wins, and an override that holds
+  none is an error rather than a fallback.
+- Writable adapter store: `FLUTTERDEC_ADAPTER_STORE`, else `$XDG_DATA_HOME/flutterdec/adapters`, else
+  `$HOME/.local/share/flutterdec/adapters`.
+- Local symbol cache: `FLUTTERDEC_SYMBOL_CACHE`, else `<data home>/flutterdec/symbols`.
+
+`FLUTTERDEC_INSTALL_FAIL_BEFORE=<lock|stage|publish_artifact|publish_state>` fails an install on purpose
+before a named publish step. It exists so the "no partial state" guarantee can be tested.
