@@ -155,8 +155,10 @@ For APK inputs, `info` reports Android startup summary fields such as:
 If adapter metadata is available, `info` also reports package and compatibility signals such as:
 
 - `app_package_counts_top`
-- `adapter_kind`
-- `adapter_snapshot_hash_match`
+- `requested_backend`, `resolved_backend`, `backend_fallback_reason`
+- `producer_id`, `producer_trust`, `compatibility_record_sha256`
+- `snapshot_identity_is_exact`
+- `model_capabilities`
 - `compatibility_warnings`
 
 2. Install the adapter for the detected Dart hash:
@@ -359,19 +361,26 @@ Adapter backend selection:
 - `--adapter-backend internal`: force the internal adapter only
 - `--adapter-backend blutter`: require the Blutter backend and fail if unavailable
 - `--adapter-backend r2-flutter`: require the r2flutter backend and fail if unavailable
-- `--require-snapshot-hash-match`: fail when the adapter-reported snapshot hash does not match the loader snapshot hash
+- `--require-snapshot-hash-match`: fail unless the snapshot identity came from a real header
 
 What the backends actually recover:
 
 | Backend | Function names | Classes | ObjectPool |
 | --- | --- | --- | --- |
-| `internal` | none (`sub_<addr>` placeholders) | none | carved strings, no real index space |
-| `blutter` | exact, from Blutter dumps | yes | Blutter `pp.txt` entries |
-| `r2flutter` | exact, from the AOT instruction table | yes, with fields and methods | real slots, resolvable from `x27` displacements |
+| `internal` | none at all; code ranges are unnamed | none | carved strings, ordinal index space |
+| `blutter` | scraped from Blutter's rendered source, heuristic | yes | Blutter `pp.txt` entries, ordinal index space |
+| `r2flutter` | exact, from the AOT instruction table | yes, library attribution unavailable | real slots, resolvable from `x27` displacements |
 
-Only backends that recover the real `ObjectPool` layout report `pool_geometry`. Without
-it `flutterdec` leaves pool references unresolved rather than attaching a value from an
-unrelated index space, and says so in `report.json.pool_metadata.hints_suppressed_reason`.
+The model says which of these it did: every domain carries a capability level
+(`complete` / `partial` / `unavailable`) and every recovered fact carries a provenance
+(`exact` / `derived` / `heuristic`). A function whose name was not recovered has no
+name rather than a `sub_<addr>` placeholder, and `flutterdec` labels it from its entry
+address at emit time.
+
+Only a backend that recovers the real `ObjectPool` layout claims a hardware index
+space. Without one, `flutterdec` leaves pool references unresolved rather than
+attaching a value from an unrelated index space, and says so in
+`report.json.pool_metadata.hints_suppressed_reason`.
 
 r2flutter backend environment knobs:
 

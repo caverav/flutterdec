@@ -215,7 +215,7 @@ Important detail:
 - `crates/flutterdec-ir`: LLIR construction and CFG recovery
 - `crates/flutterdec-decompiler`: structured pseudo Dart emission and readability passes
 - `adapters/python/adapter_template.py`: default adapter implementation
-- `schemas/adapter.schema.json`: adapter JSON contract schema
+- `schemas/program-model-v4.schema.json`: generated JSON Schema for ProgramModel v4
 
 ## Data models
 
@@ -246,41 +246,78 @@ SnapshotBundle {
 }
 ```
 
-### ProgramModel
+### ProgramModel v4
 
-Produced by adapter. Main fields:
+Produced by the adapter. v4 is the only accepted contract: `ProgramModel::from_json`
+rejects a document carrying `schema_version` as a legacy v2/v3 model, and there is no
+migration path. Fields:
 
-- `schema_version`
-- `adapter_kind`
-- `dart_version`
-- `snapshot_hash`
-- `arch`
-- `libraries[]`
-- `classes[]`
-- `functions[]`
-- `object_pool[]`
-- `pool_geometry` (optional; see "Pool index space" below)
+- `model_version` (always 4)
+- `producer` (id, version, artifact SHA-256, host-assigned trust)
+- `input` (the host's snapshot identity plus the region table with digests)
+- `compatibility` (record digest, parser family, profile id and digest)
+- `capabilities` (per-domain `complete` / `partial` / `unavailable`)
+- `libraries[]`, `classes[]`, `functions[]`
+- `object_pool` (index space, optional geometry, entries)
+- `diagnostics[]`
+- `extensions` (the only object that accepts undeclared keys)
 
-Schema compatibility:
+Three properties are what separate it from v3:
 
-- v2 and v3 are accepted by core
-- v3 adds richer semantic metadata while preserving v2 compatibility defaults
+- **Unknown is representable.** A function name is `Option`, a class's library is
+  `Option`, a superclass edge is `Option`. A function whose name was not recovered has
+  no name, rather than being called `sub_1234`.
+- **Every fact carries provenance.** `exact`, `derived`, or `heuristic`, and only a
+  heuristic fact may carry a `confidence`. Per-domain capabilities say how much of a
+  domain was recovered, and validation rejects a model whose capability claims
+  contradict its contents.
+- **The host decides, the adapter reports.** Identity, producer, and compatibility are
+  compared against what the host selected. An adapter cannot promote its own trust,
+  change which snapshot it was given, or claim a different compatibility record.
 
-Minimal example:
+Minimal example, from a producer that recovered code ranges and nothing else:
 
 ```json
 {
-  "schema_version": 3,
-  "adapter_kind": "dynamic_snapshot_string_model_v1",
-  "dart_version": "unknown",
-  "snapshot_hash": "63f9...abcd",
-  "arch": "arm64",
-  "libraries": [{"id": 0, "uri": "package:app/main.dart", "name_display": "package:app/main.dart"}],
-  "classes": [{"id": 0, "name": "Global", "super": "Object", "lib": "package:app/main.dart"}],
-  "functions": [{"id": 0, "name": "sub_656c1c", "owner_class": "Global", "entry_va": 6640668, "size": 320, "code_section_va": 6635520, "name_kind": "placeholder"}],
-  "object_pool": [{"index": 0, "kind": "String", "value": "package:app/main.dart", "decoded_kind": "LibraryUri", "library_uri": "package:app/main.dart", "confidence": 0.4, "source": "internal"}]
+  "model_version": 4,
+  "producer": {"id": "flutterdec-local-python", "version": "unknown", "artifact_sha256": "9f2c...", "trust": "local"},
+  "input": {
+    "identity": {"hash": "63f9...", "hash_source": "header", "kind": "full_aot", "target_arch": "arm64",
+                 "features": {"raw": "product arm64 compressed-pointers", "normalized": ["arm64", "compressed-pointers", "product"]},
+                 "pointer_compression": "compressed"},
+    "regions": [{"region": "isolate_instructions", "size": 8192, "sha256": "1a2b...", "virtual_address": 6635520, "executable": true}]
+  },
+  "compatibility": {"record_sha256": "44de...", "parser_family_id": "flutterdec-local-python", "profile_id": "3.9.0", "profile_sha256": "7b10..."},
+  "capabilities": {"libraries": "partial", "classes": "unavailable", "class_relationships": "unavailable",
+                   "functions": "partial", "function_names": "unavailable", "object_pool": "partial", "pool_index_space": "unavailable"},
+  "libraries": [{"id": 0, "uri": "package:app/main.dart", "display_name": null, "provenance": "heuristic"}],
+  "classes": [],
+  "functions": [{"id": 0, "name": null, "owner": null, "code": {"start_va": 6640668, "size": 320},
+                 "code_section_va": 6635520, "provenance": "heuristic"}],
+  "object_pool": {"index_space": "ordinal", "geometry": null,
+                  "entries": [{"index": 0, "kind": "string", "value": "package:app/main.dart",
+                               "target_va": null, "provenance": "heuristic", "confidence": null}]},
+  "diagnostics": [{"code": "domain_not_recovered", "severity": "warning", "subject": "function_names",
+                   "message": "no function names are recoverable from instruction bytes alone"}],
+  "extensions": {}
 }
 ```
+
+### Adapter protocol v1
+
+One adapter run is one process invocation. The host writes the four snapshot regions
+into a scratch directory along with a request document, runs the adapter there, and
+reads back a result document plus the model.
+
+The request carries the protocol and model majors, the host's identity, the producer
+and compatibility records to echo, the requested backend, one relative
+`InputHandle` per region (path, size, SHA-256, load address), and the output path.
+Snapshot bytes are never embedded: a request for a half-gigabyte snapshot is a few
+hundred bytes. There is no session, no JSON-RPC lifecycle, and no persistent worker.
+
+The result carries the same two majors, a structured status (`ok` / `unsupported` /
+`failed`), the model path on success, a stable error code on failure, the backend that
+actually ran, an optional fallback reason, and diagnostics.
 
 ### FunctionDisassembly
 
@@ -376,36 +413,51 @@ The current Python template adapter:
 - recovers function starts with simple ARM64 heuristics
 - builds object pool from extracted strings
 - can run in `auto|internal|blutter|r2flutter` backend mode (`auto` tries r2flutter, then Blutter, then internal)
-- in Blutter mode, parses `asm/*.dart` and `pp.txt` and synthesizes `EntryPointCandidate` pool metadata for `main`/`runApp`-like functions
+- in Blutter mode, parses `asm/*.dart` and `pp.txt`; a declaration it cannot parse yields a function with no name, not a synthesized one
 - in r2flutter mode, shells out to `r2flutter -jH/-ji/-jc/-jxz/-jzz/-jp` and maps the AOT instruction table, class table, and ObjectPool-referenced strings onto the model
-- emits schema version 3 JSON
+- emits ProgramModel v4 and an adapter protocol v1 result
+
+No backend invents a library, class, function name, or pool index it did not recover.
+When a domain comes back empty it is reported `unavailable` with a diagnostic saying
+why, which is what lets a reader tell "this snapshot has no such thing" apart from
+"this backend cannot see it".
 
 ### Pool index space
 
-`ObjectPoolEntry.index` must be a real `ObjectPool` entry index, i.e. the value a
-`ldr xN, [x27, #disp]` resolves to. An adapter asserts this by emitting
-`pool_geometry` (`entries_offset`, `word_size`); core then converts displacements with
-`index = (disp - entries_offset) / word_size`.
+`object_pool.index_space` says what an entry's `index` counts. `hardware` means a real
+`ObjectPool` entry index, the value a `ldr xN, [x27, #disp]` resolves to; it requires
+`geometry` (`entries_offset`, `word_size`), and core converts displacements with
+`index = (disp - entries_offset) / word_size`. `ordinal` means a position in the
+producer's own list, which carries no address meaning at all.
 
-Adapters that cannot recover the pool layout must omit `pool_geometry`. The internal
-adapter is one: its `object_pool` is carved strings numbered by carve order, which has
-nothing to do with the hardware index space. Core detects the absence and skips pool
-value/semantic hints entirely rather than joining two unrelated index spaces, which
-would attach real-looking strings to the wrong slots. `report.json.pool_metadata`
-records `index_space_authoritative`, the geometry, and `hints_suppressed_reason`.
+The internal backend is ordinal: its entries are carved strings numbered by carve
+order, which has nothing to do with the hardware index space. Core reads the declared
+index space and skips pool value and semantic hints entirely rather than joining two
+unrelated index spaces, which would attach real-looking strings to the wrong slots.
+Validation makes the two consistent by construction: `hardware` without geometry is
+rejected, and `ordinal` with geometry is rejected. `report.json.pool_metadata` records
+`index_space_authoritative`, the geometry, and `hints_suppressed_reason`.
 
-Validation in Rust enforces:
+Validation in Rust enforces, before any model reaches core analysis:
 
-- schema version is 2 or 3
-- arch equals `arm64`
-- non-empty function list
+- `model_version` is 4; a `schema_version` field is a legacy model and is rejected
+- identity, producer, compatibility, and the region table match what the host selected
+- no duplicate ids or pool indexes, no dangling references, no superclass cycles
+- canonical ascending order for every collection, so equal models serialize equal
+- no placeholder strings standing in for unrecovered names
+- confidence only on heuristic facts, and only within `[0, 1]`
+- capability claims that match the model's contents, and a diagnostic for every
+  unavailable domain
+- checked arithmetic on every address: no overflowing or empty code range, every range
+  inside a declared executable region, every pool target inside one too
 
 Execution model:
 
-- core creates temporary files for snapshot blobs
-- adapter is invoked as a child process with explicit file paths
-- adapter writes JSON to output path
-- Rust side parses and validates that JSON
+- core writes the four snapshot regions and a protocol v1 request into a scratch dir
+- the adapter runs there as a child process, given only relative paths
+- the adapter writes the model to the requested output path and a result document
+- Rust parses the result, checks it answers the request, then parses and validates
+  the model against the host's own view before returning it
 
 Why process-based adapters:
 
@@ -418,7 +470,7 @@ Key functions:
 - `run_adapter`
 - `resolve_adapter_exec`
 - `install_adapter`
-- `validate_model`
+- `validate::validate`
 
 ## 3) Disassembler
 
@@ -439,8 +491,8 @@ Important behavior:
     majority of pool traffic in real binaries
   - page bases are tracked per function and dropped on any write to the register or on
     control flow, so a stale base can never invent a slot
-  - without `pool_geometry` the annotation is `poolOff[<byte displacement>]` instead,
-    which is honest about what is known and never matches a value hint
+  - with an ordinal index space the annotation is `poolOff[<byte displacement>]`
+    instead, which is honest about what is known and never matches a value hint
 
 Filtering behavior:
 
@@ -671,7 +723,7 @@ File naming convention:
 
 - input metadata
 - counts for libraries, classes, functions, pool entries
-- `adapter_schema.function_name_kind_breakdown` (exact/external/heuristic/placeholder/unknown/unspecified)
+- `model.function_name_provenance` (exact/derived/heuristic/unnamed)
 - `adapter_selection` trace (requested backend, resolved backend, adapter exec, manifest mapping, snapshot hash match, and strict hash-match enforcement flag)
 - `compatibility` summary (adapter schema support, manifest-entry presence, snapshot hash alignment, and warning list)
 - embedded `quality` object

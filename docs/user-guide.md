@@ -171,9 +171,11 @@ For APK inputs, `info` also reports Android startup summary fields:
 If adapter metadata is available, `info` also reports:
 
 - `app_package_counts_top`
-- `adapter_kind`
+- `requested_backend`, `resolved_backend`, `backend_fallback_reason`
+- `producer_id`, `producer_trust`, `compatibility_record_sha256`
 - `manifest_entry_present`
-- `adapter_snapshot_hash_match`
+- `snapshot_identity_is_exact`
+- `model_capabilities` (per-domain `complete` / `partial` / `unavailable`)
 - `compatibility_warnings`
 
 2. Install the adapter for the detected Dart hash:
@@ -302,18 +304,25 @@ Adapter backend options:
 - `--adapter-backend internal`: force internal adapter only
 - `--adapter-backend blutter`: require Blutter bridge backend with no fallback
 - `--adapter-backend r2-flutter`: require the r2flutter backend with no fallback
-- `--require-snapshot-hash-match`: fail if adapter snapshot hash does not match loader snapshot hash
+- `--require-snapshot-hash-match`: fail unless the snapshot identity came from a real header
+
+Requested and resolved backend are separate facts. `auto` may fall back, and the
+result says which backend answered and why it differed; a named backend either runs or
+fails, never silently substituted. Both appear in `info` output and in
+`report.json.adapter_selection`.
 
 Backend choice decides how much is actually recovered. The internal adapter carves
-strings and scans prologues: every function comes out as `sub_<addr>` and its
-`object_pool` is a list of carved strings, not real pool slots. `r2flutter` and
-`blutter` parse the snapshot, so they return exact Dart names and a real `ObjectPool`.
+strings and scans prologues: it recovers code ranges with no names at all, and its
+`object_pool` is a list of carved strings in an ordinal index space, not real pool
+slots. Its `model_capabilities` say so: `function_names: unavailable`,
+`pool_index_space: unavailable`. `r2flutter` and `blutter` parse the snapshot, so they
+return real Dart names, and `r2flutter` can return a hardware `ObjectPool`.
 
-Only a backend that reports `pool_geometry` lets `flutterdec` turn a `pool[N]`
-reference in the disassembly into a value. Without it, pool references are left
-unresolved on purpose, and `report.json.pool_metadata.hints_suppressed_reason`
-explains why. Check `pool_metadata.index_space_authoritative` if pseudocode has fewer
-string literals than you expected.
+Only a hardware pool index space lets `flutterdec` turn a `pool[N]` reference in the
+disassembly into a value. With an ordinal pool, references are left unresolved on
+purpose, and `report.json.pool_metadata.hints_suppressed_reason` explains why. Check
+`pool_metadata.index_space_authoritative` if pseudocode has fewer string literals than
+you expected.
 
 r2flutter backend environment variables:
 
