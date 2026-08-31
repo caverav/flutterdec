@@ -2492,12 +2492,12 @@ mod apk_startup_tests {
                     executable: true,
                 }],
             },
-            compatibility: CompatibilityBinding {
+            compatibility: Some(CompatibilityBinding {
                 record_sha256: digest.clone(),
                 parser_family_id: "fixture".to_string(),
                 profile_id: "fixture".to_string(),
                 profile_sha256: digest,
-            },
+            }),
             capabilities: Capabilities {
                 libraries: CapabilityLevel::Partial,
                 classes: CapabilityLevel::Partial,

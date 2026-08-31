@@ -90,7 +90,7 @@ pub fn host() -> HostSelectedContext {
     HostSelectedContext {
         identity: identity(),
         producer: producer(),
-        compatibility: compatibility(),
+        compatibility: Some(compatibility()),
         regions: regions(),
     }
 }
@@ -108,7 +108,7 @@ pub fn maximal_model() -> ProgramModel {
             identity: identity(),
             regions: regions(),
         },
-        compatibility: compatibility(),
+        compatibility: Some(compatibility()),
         capabilities: Capabilities {
             libraries: CapabilityLevel::Complete,
             classes: CapabilityLevel::Complete,

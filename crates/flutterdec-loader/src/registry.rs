@@ -147,6 +147,14 @@ pub enum RegistryError {
     Ambiguous(String),
     InvalidRecord(String),
     Profile(String),
+    /// The record names an artifact this host has not installed.
+    ///
+    /// Kept apart from [`Self::Artifact`] because the two ask the operator for
+    /// different things: this one is "run `adapter install`", and that one is
+    /// "the bytes in your store are not the bytes the registry authorized".
+    /// Only this one is a condition a host may answer by recovering the program
+    /// itself.
+    ArtifactAbsent(String),
     Artifact(String),
 }
 
@@ -169,6 +177,7 @@ impl fmt::Display for RegistryError {
             Self::Ambiguous(detail) => write!(f, "ambiguous compatibility registry selection: {detail}"),
             Self::InvalidRecord(detail) => write!(f, "invalid compatibility registry record: {detail}"),
             Self::Profile(detail) => write!(f, "profile artifact rejected: {detail}"),
+            Self::ArtifactAbsent(detail) => write!(f, "adapter artifact unavailable: {detail}"),
             Self::Artifact(detail) => write!(f, "adapter artifact rejected: {detail}"),
         }
     }
@@ -545,10 +554,19 @@ impl RegistrySelection {
             .find(|variant| variant.host_os == host_os && variant.host_arch == host_arch)
             .cloned()
             .ok_or_else(|| {
-                RegistryError::Artifact(format!(
+                RegistryError::ArtifactAbsent(format!(
                     "no artifact variant for host {host_os}/{host_arch}"
                 ))
             })?;
+        // Absence is checked before containment so that "never installed" does
+        // not arrive as the same canonicalization failure as "points outside the
+        // store". A path that escapes is still refused below.
+        if validate_relative_path(&variant.path).is_ok() && !root.join(&variant.path).exists() {
+            return Err(RegistryError::ArtifactAbsent(format!(
+                "adapter artifact {} is not installed",
+                root.join(&variant.path).display()
+            )));
+        }
         let path = resolve_contained(root, &variant.path, "adapter artifact")?;
         verify_file(
             &path,
