@@ -15,3 +15,8 @@ serde_json.workspace = true
 flutterdec-core = { path = "../flutterdec-core" }
 flutterdec-adapter = { path = "../flutterdec-adapter" }
 flutterdec-loader = { path = "../flutterdec-loader" }
+
+[dev-dependencies]
+tempfile.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
