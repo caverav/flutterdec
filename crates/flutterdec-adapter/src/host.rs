@@ -635,6 +635,12 @@ fn authorize(input: &AdapterInput<'_>, exec_path: &Path) -> Result<AdapterReques
     }
 
     authorize_artifact(exec_path, authorization.store_root, variant)?;
+    // Known ceiling: the bytes are digested by path and executed by path, so a
+    // writer with access to the store could swap the file between the two.
+    // Closing that would mean holding one descriptor across both and execing it,
+    // which has no portable form; the store is the boundary that keeps the
+    // window unreachable, since it is only written by a registry-authorized
+    // install under an exclusive lock.
     let artifact_bytes = read_bounded(
         exec_path,
         "artifact",
