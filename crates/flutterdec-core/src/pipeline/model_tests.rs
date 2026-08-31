@@ -19,6 +19,10 @@ use super::*;
 use flutterdec_loader::identity::{
     HashSource, IdentityRejection, SnapshotIdentity, SnapshotKind, TargetArch,
 };
+use flutterdec_loader::registry::{
+    canonical_feature_fingerprint, ArtifactReference, CompatibilityEvidence, HostArtifactVariant,
+    ParserFamilyReference, ProfileReference, TrustTier,
+};
 use std::path::PathBuf;
 use tempfile::TempDir;
 

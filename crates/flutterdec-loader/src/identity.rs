@@ -155,11 +155,8 @@ impl FeatureEvidence {
 
     /// All architecture tokens the VM declared, in normalized order.
     pub fn declared_targets(&self) -> Vec<String> {
-        const ARCH_TOKENS: [&str; 6] = ["ia32", "x64", "arm", "arm64", "riscv32", "riscv64"];
-        self.normalized
-            .iter()
-            .filter(|token| ARCH_TOKENS.contains(&token.as_str()))
-            .cloned()
+        self.declared_target_tokens()
+            .map(ToString::to_string)
             .collect()
     }
 
@@ -168,7 +165,15 @@ impl FeatureEvidence {
     /// These are the values `Dart::FeaturesString` can append; anything else in
     /// the string is a build flag, not an architecture.
     pub fn declared_target(&self) -> Option<&str> {
-        self.declared_targets().first().map(String::as_str)
+        self.declared_target_tokens().next()
+    }
+
+    fn declared_target_tokens(&self) -> impl Iterator<Item = &str> {
+        const ARCH_TOKENS: [&str; 6] = ["ia32", "x64", "arm", "arm64", "riscv32", "riscv64"];
+        self.normalized
+            .iter()
+            .map(String::as_str)
+            .filter(|token| ARCH_TOKENS.contains(token))
     }
 
     pub fn pointer_compression(&self) -> PointerCompression {
