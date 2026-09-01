@@ -392,6 +392,19 @@ pub fn stderr(output: &Output) -> String {
     String::from_utf8_lossy(&output.stderr).to_string()
 }
 
+/// The machine-readable half of a failure, as the CLI printed it.
+///
+/// Returned rather than asserted on with `contains`, so a case that prints the
+/// wrong category fails with the category it did print instead of with "the
+/// string was not found".
+pub fn category(output: &Output) -> String {
+    stderr(output)
+        .lines()
+        .find_map(|line| line.strip_prefix("error category: "))
+        .unwrap_or("<no category printed>")
+        .to_string()
+}
+
 pub fn json(output: &Output) -> Value {
     serde_json::from_str(&stdout(output))
         .unwrap_or_else(|err| panic!("stdout is not JSON ({err}): {}", stdout(output)))

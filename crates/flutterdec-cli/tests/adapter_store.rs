@@ -1019,3 +1019,246 @@ fn an_install_for_one_record_does_not_authorize_another_sharing_its_artifact() {
         "the run mutated read-only package data"
     );
 }
+
+/// Rewrite one field of the fixture registry in place.
+///
+/// A record that fails validation cannot be built through the rig's
+/// `record_json`, because that function exists to produce a *valid* record.
+fn edit_registry(prefix: &Prefix, edit: impl FnOnce(&mut Value)) {
+    let path = prefix.share().join("adapters/registry.json");
+    let mut registry: Value =
+        serde_json::from_slice(&fs::read(&path).expect("read registry")).expect("registry is JSON");
+    edit(&mut registry);
+    fs::write(
+        &path,
+        serde_json::to_vec_pretty(&registry).expect("serialize registry"),
+    )
+    .expect("write registry");
+}
+
+/// Every store failure an operator can reach names what went wrong.
+///
+/// `error category:` is the half of the failure a script matches on, so a
+/// condition the code already models as a variant reporting `unclassified` is
+/// the same as reporting nothing. Each case is driven through the packaged
+/// binary because the category is only real if it survives the CLI's own error
+/// plumbing.
+struct Case<'a> {
+    /// What the operator did, for the assertion message to name.
+    what: &'a str,
+    args: Vec<&'a str>,
+    env: Vec<(&'a str, &'a str)>,
+    expected: &'a str,
+}
+
+#[test]
+fn every_store_failure_reports_its_own_category() {
+    let bytes_prefix = Prefix::new();
+    let wrong_bytes = bytes_prefix.root().join("not-the-authorized-bytes");
+    fs::write(&wrong_bytes, "#!/bin/sh\nexit 0\n").expect("write source");
+    let wrong_bytes = wrong_bytes.to_str().expect("path").to_string();
+    let absent = bytes_prefix.root().join("no-such-source");
+    let absent = absent.to_str().expect("path").to_string();
+
+    let cases = vec![
+        Case {
+            what: "a well-formed hash the registry does not carry",
+            args: vec!["adapter", "install", "--dart-hash", OTHER_HASH],
+            env: vec![],
+            expected: "store_no_record",
+        },
+        Case {
+            what: "a hash that is not a hash",
+            args: vec!["adapter", "install", "--dart-hash", "not-a-hash"],
+            env: vec![],
+            expected: "store_invalid_input",
+        },
+        Case {
+            what: "artifact bytes the record did not authorize",
+            args: vec![
+                "adapter",
+                "install",
+                "--dart-hash",
+                HASH,
+                "--from",
+                &wrong_bytes,
+            ],
+            env: vec![],
+            expected: "store_artifact_digest_mismatch",
+        },
+        Case {
+            what: "an artifact source that is not there",
+            args: vec!["adapter", "install", "--dart-hash", HASH, "--from", &absent],
+            env: vec![],
+            expected: "store_artifact_source_rejected",
+        },
+        Case {
+            what: "a target the record does not serve",
+            args: vec![
+                "adapter",
+                "install",
+                "--dart-hash",
+                HASH,
+                "--target-arch",
+                "x64",
+            ],
+            env: vec![],
+            expected: "store_incompatible",
+        },
+        Case {
+            what: "an install cut short before the lock",
+            args: vec!["adapter", "install", "--dart-hash", HASH],
+            env: vec![("FLUTTERDEC_INSTALL_FAIL_BEFORE", "lock")],
+            expected: "store_install_interrupted",
+        },
+        Case {
+            what: "an install cut short before staging",
+            args: vec!["adapter", "install", "--dart-hash", HASH],
+            env: vec![("FLUTTERDEC_INSTALL_FAIL_BEFORE", "stage")],
+            expected: "store_install_interrupted",
+        },
+        Case {
+            what: "an install cut short before the artifact rename",
+            args: vec!["adapter", "install", "--dart-hash", HASH],
+            env: vec![("FLUTTERDEC_INSTALL_FAIL_BEFORE", "publish_artifact")],
+            expected: "store_install_interrupted",
+        },
+        Case {
+            what: "an install cut short before the state rename",
+            args: vec!["adapter", "install", "--dart-hash", HASH],
+            env: vec![("FLUTTERDEC_INSTALL_FAIL_BEFORE", "publish_state")],
+            expected: "store_install_interrupted",
+        },
+        Case {
+            what: "an injection point that is not a publish step",
+            args: vec!["adapter", "install", "--dart-hash", HASH],
+            env: vec![("FLUTTERDEC_INSTALL_FAIL_BEFORE", "not-a-step")],
+            expected: "store_invalid_input",
+        },
+    ];
+
+    for Case {
+        what,
+        args,
+        env,
+        expected,
+    } in cases
+    {
+        // A fresh prefix per case: an injected failure that rolled back is only
+        // a rollback if nothing before it left state behind.
+        let prefix = Prefix::new();
+        let output = prefix.run_with(&env, &args);
+        assert_ne!(code(&output), 0, "{what} succeeded");
+        assert_eq!(
+            category(&output),
+            expected,
+            "{what}: {}",
+            stderr(&output).trim()
+        );
+    }
+}
+
+/// A record `adapter list` and `info` both have to read reports the same
+/// category through both.
+///
+/// The two commands take different routes to the same registry, and the
+/// listing route used to flatten its typed error into a string, so the same
+/// traversing record answered `registry_invalid_record` through `info` and
+/// `unclassified` through the listing. The category is what a script keys on;
+/// two answers for one condition means there is no key.
+#[test]
+fn adapter_list_and_info_report_one_category_for_a_record_that_fails_validation() {
+    let prefix = Prefix::new();
+    edit_registry(&prefix, |registry| {
+        registry["records"][0]["profile"]["path"] = text("../../../etc/passwd");
+    });
+    let libapp = prefix.root().join("libapp.so");
+    fs::write(&libapp, synthetic_libapp(HASH, FEATURES)).expect("write libapp");
+    let input = libapp.to_str().expect("path").to_string();
+
+    let list = prefix.run(&["adapter", "list", "--json"]);
+    let info = prefix.run(&["info", &input, "--json"]);
+    assert_ne!(code(&list), 0, "a traversing record listed cleanly");
+    assert_ne!(code(&info), 0, "a traversing record was accepted by info");
+    assert_eq!(
+        category(&list),
+        "registry_invalid_record",
+        "adapter list: {}",
+        stderr(&list).trim()
+    );
+    assert_eq!(
+        category(&list),
+        category(&info),
+        "one record, two categories\nadapter list: {}\ninfo: {}",
+        stderr(&list).trim(),
+        stderr(&info).trim()
+    );
+}
+
+/// A binary carried out of its packaged prefix says so with a category.
+///
+/// Resolution happens before any subcommand runs, so this is the one failure an
+/// operator can hit without the product having read anything at all — and the
+/// one most likely to be hit by a broken install rather than by bad input.
+#[test]
+fn a_binary_outside_its_prefix_names_the_layout_failure() {
+    let prefix = Prefix::new();
+    // Deep enough that neither `<exe>/../share/flutterdec`, `<exe>`, nor
+    // `<exe>/../..` can hold package data.
+    let lonely = prefix.root().join("carried/away/bin");
+    fs::create_dir_all(&lonely).expect("mkdir");
+    let binary = lonely.join("flutterdec");
+    fs::copy(prefix.root().join("bin/flutterdec"), &binary).expect("copy binary");
+    let mut perms = fs::metadata(&binary).expect("metadata").permissions();
+    perms.set_mode(0o755);
+    fs::set_permissions(&binary, perms).expect("chmod");
+
+    let mut cmd = std::process::Command::new(&binary);
+    cmd.env_clear()
+        .env("PATH", "/usr/bin:/bin")
+        .env("HOME", prefix.root().join("home"))
+        .current_dir(prefix.root().join("cwd"))
+        .args(["adapter", "list"]);
+    let output = run(&mut cmd);
+    assert_ne!(code(&output), 0, "a binary with no package data listed");
+    assert_eq!(
+        category(&output),
+        "layout_no_data_directory",
+        "{}",
+        stderr(&output).trim()
+    );
+
+    // An override that names a directory holding no registry is its own
+    // condition: it never falls back, so it must not report as "nothing found".
+    let mut cmd = std::process::Command::new(&binary);
+    cmd.env_clear()
+        .env("PATH", "/usr/bin:/bin")
+        .env("HOME", prefix.root().join("home"))
+        .env("FLUTTERDEC_DATA_DIR", prefix.root().join("cwd"))
+        .current_dir(prefix.root().join("cwd"))
+        .args(["adapter", "list"]);
+    let output = run(&mut cmd);
+    assert_ne!(code(&output), 0, "an empty override was accepted");
+    assert_eq!(
+        category(&output),
+        "layout_data_dir_override_invalid",
+        "{}",
+        stderr(&output).trim()
+    );
+
+    // No home and no store override: the writable half cannot be placed.
+    let mut cmd = std::process::Command::new(&binary);
+    cmd.env_clear()
+        .env("PATH", "/usr/bin:/bin")
+        .env("FLUTTERDEC_DATA_DIR", prefix.share())
+        .current_dir(prefix.root().join("cwd"))
+        .args(["adapter", "list"]);
+    let output = run(&mut cmd);
+    assert_ne!(code(&output), 0, "a run with no data home was accepted");
+    assert_eq!(
+        category(&output),
+        "layout_no_data_home",
+        "{}",
+        stderr(&output).trim()
+    );
+}
