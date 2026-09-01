@@ -217,10 +217,14 @@ pub enum HostError {
     /// The verified bytes could not be held as an executable image whose
     /// contents are provably immutable, so nothing was executed.
     ///
-    /// Only reachable where the host has an anonymous file to hold them in. The
-    /// alternative to this refusal would be executing something a same-user
-    /// process could still reach and rewrite through `/proc`, which is the one
-    /// thing the pathless image exists to prevent.
+    /// Reachable on every platform, each for its own reason. Where anonymous
+    /// files exist the host could not create one, write all of it, seal it, or
+    /// read the whole seal set back off the descriptor it was about to execute.
+    /// Where they do not, the host could not create and freeze the image's
+    /// pathname — or found, in the child and immediately before `execve`, that
+    /// the pathname no longer resolved to the descriptor it verified, or was no
+    /// longer frozen. The alternative to this refusal is executing bytes nobody
+    /// checked.
     ImageNotSealed(String),
     /// The private workspace could not be built or torn down.
     Workspace(String),
