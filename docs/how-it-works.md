@@ -342,8 +342,8 @@ rather than substituting.
 Selection can end without an adapter to run, and there are five ways it does:
 the operator pinned `internal`, the identity gate refused the snapshot, no
 compatibility record covers it, a record exists but not for this target or
-feature tuple (or two records claim it), or a record authorizes an artifact that
-is not installed. None of those is a fact about a broken installation, and none
+feature tuple (or two records claim it), or a record authorizes an artifact the
+store ledger does not record as installed for it. None of those is a fact about a broken installation, and none
 of them is a reason to stop.
 
 Core recovers what instruction bytes can support: code ranges from AArch64 frame
@@ -384,6 +384,18 @@ producer record and compatibility binding to follow from the record; and every s
 region and the output handle to be usable. Each refusal is a distinct `HostError`
 variant, and the ones that mean "no process was created" answer `true` to
 `HostError::is_pre_spawn`.
+
+It also requires the store ledger to hold an installation for *this* record on this
+host. A file that satisfies every check above is still only a file: two records can name
+one artifact path with one digest — the shipped registry has exactly that pair — so
+installing for one of them leaves bytes on disk that the other's checks all pass.
+`<store>/store.json` is what records which record an install was authorized under, and it
+is the same ledger `adapter list` reports from, so a record the listing calls
+`unavailable` cannot execute and a record it calls `verified` is not refused for want of
+an install. The refusal is `HostError::NotInstalled`, carrying the `EntryState` the
+listing would print. Digest verification is unchanged and still runs: the ledger says an
+install happened, the digest says the bytes are the authorized ones, and both are
+required.
 
 The bytes that run are the bytes that were checked, and a mode bit is not what makes
 that true: the owner of a `0500` file can `chmod` it back, rename it, unlink it, or drop
