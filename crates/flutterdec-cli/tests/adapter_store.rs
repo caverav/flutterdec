@@ -858,3 +858,164 @@ fn info_and_the_decompile_report_state_which_containment_controls_were_establish
         "info and report.json disagree about what was established"
     );
 }
+
+/// The feature tuple both shipped records declare, as a snapshot header spells
+/// it. Order is not significant: the selection key normalizes before comparing.
+const SHIPPED_FEATURES: &str = "product no-code_comments compressed-pointers arm64 android";
+
+/// The store ledger, as JSON, for an observation to be reported alongside.
+fn ledger(store: &Path) -> Value {
+    match fs::read(store.join("store.json")) {
+        Ok(bytes) => serde_json::from_slice(&bytes).expect("store.json is JSON"),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Value::Null,
+        Err(err) => panic!("read store.json: {err}"),
+    }
+}
+
+/// The `adapter list` row for one snapshot hash.
+fn row_for<'a>(rows: &'a Value, hash: &str) -> &'a Value {
+    rows.as_array()
+        .expect("rows")
+        .iter()
+        .find(|row| row["snapshot_hash"] == text(hash))
+        .unwrap_or_else(|| panic!("no row for {hash}: {rows}"))
+}
+
+/// Installing for one record must not authorize a different record that names
+/// identical artifact bytes, and what `adapter list` reports must be what
+/// `info` does — in both directions.
+///
+/// This drives the *shipped* registry rather than the fixture because that is
+/// where the two records collide: both name `artifacts/flutterdec-local-python`
+/// with the same digest, so the file on disk cannot tell them apart. Only the
+/// store ledger records which record something was installed for, and it is the
+/// ledger `adapter list` reports from.
+#[test]
+fn an_install_for_one_record_does_not_authorize_another_sharing_its_artifact() {
+    let prefix = Prefix::new();
+    let checkout = checkout_root();
+    let checkout_before = tree_digests(&checkout.join("adapters"));
+    let store = prefix.root().join("shipped-store");
+    let env = [
+        ("FLUTTERDEC_DATA_DIR", checkout.to_str().expect("path")),
+        (
+            "FLUTTERDEC_ADAPTER_STORE",
+            store.to_str().expect("store path"),
+        ),
+    ];
+
+    let install = prefix.run_with(
+        &env,
+        &["adapter", "install", "--dart-hash", OTHER_HASH, "--json"],
+    );
+    assert_eq!(code(&install), 0, "install failed: {}", stderr(&install));
+
+    // Exactly one record is installed, and the ledger says which one.
+    let claimed = ledger(&store);
+    assert_eq!(
+        claimed["adapters"].as_array().map(Vec::len),
+        Some(1),
+        "store.json: {claimed:#}"
+    );
+    assert_eq!(
+        claimed["adapters"][0]["snapshot_hash"],
+        text(OTHER_HASH),
+        "store.json: {claimed:#}"
+    );
+
+    let rows = json(&prefix.run_with(&env, &["adapter", "list", "--json"]));
+    assert_eq!(
+        row_for(&rows, OTHER_HASH)["state"],
+        text("verified"),
+        "store.json: {claimed:#}\nrows: {rows:#}"
+    );
+    assert_eq!(
+        row_for(&rows, HASH)["state"],
+        text("unavailable"),
+        "store.json: {claimed:#}\nrows: {rows:#}"
+    );
+    // Both records really do name one file, which is what makes an existence
+    // check unable to answer this.
+    assert_eq!(
+        row_for(&rows, HASH)["artifact_path"],
+        row_for(&rows, OTHER_HASH)["artifact_path"],
+        "the shipped records no longer share an artifact path: {rows:#}"
+    );
+
+    let libapp = prefix.root().join("other-record-libapp.so");
+    fs::write(&libapp, synthetic_libapp(HASH, SHIPPED_FEATURES)).expect("write libapp");
+    let input = libapp.to_str().expect("path").to_string();
+
+    let info = prefix.run_with(&env, &["info", &input, "--json"]);
+    let report = json(&info);
+    assert_eq!(
+        report["snapshot_hash"],
+        text(HASH),
+        "the fixture snapshot does not match the uninstalled record: {report:#}"
+    );
+    assert_eq!(
+        report["registry_record_present"],
+        Value::Bool(true),
+        "the uninstalled record was not selected at all: {report:#}"
+    );
+    // The split: `adapter list` calls this record unavailable, so nothing may
+    // report it as a registered adapter that executed.
+    assert_eq!(
+        report["adapter_installed"],
+        Value::Bool(false),
+        "info claims an install the ledger does not hold\nstore.json: {claimed:#}\ninfo: {report:#}"
+    );
+    assert_eq!(
+        report["provider"]["adapter_executed"],
+        Value::Bool(false),
+        "an adapter installed for {OTHER_HASH} executed for {HASH}\nstore.json: {claimed:#}\ninfo: {report:#}"
+    );
+    assert_ne!(
+        report["provider"]["producer_trust"],
+        text("registered"),
+        "an unavailable record produced a registered producer\nstore.json: {claimed:#}\ninfo: {report:#}"
+    );
+
+    // The other direction: once the ledger does hold this record, `list` says
+    // verified and authorization does not refuse for want of an installation.
+    let install = prefix.run_with(&env, &["adapter", "install", "--dart-hash", HASH, "--json"]);
+    assert_eq!(code(&install), 0, "install failed: {}", stderr(&install));
+    let claimed = ledger(&store);
+    assert_eq!(
+        claimed["adapters"].as_array().map(Vec::len),
+        Some(2),
+        "store.json: {claimed:#}"
+    );
+
+    let rows = json(&prefix.run_with(&env, &["adapter", "list", "--json"]));
+    assert_eq!(
+        row_for(&rows, HASH)["state"],
+        text("verified"),
+        "store.json: {claimed:#}\nrows: {rows:#}"
+    );
+
+    let info = prefix.run_with(&env, &["info", &input, "--json"]);
+    let report = json(&info);
+    assert_eq!(
+        report["adapter_installed"],
+        Value::Bool(true),
+        "info did not see the install\nstore.json: {claimed:#}\ninfo: {report:#}"
+    );
+    assert_eq!(
+        report["provider"]["adapter_executed"],
+        Value::Bool(true),
+        "a verified record did not execute\nstore.json: {claimed:#}\ninfo: {report:#}\nstderr: {}",
+        stderr(&info)
+    );
+    assert_eq!(
+        report["provider"]["producer_trust"],
+        text("registered"),
+        "store.json: {claimed:#}\ninfo: {report:#}"
+    );
+
+    assert_eq!(
+        checkout_before,
+        tree_digests(&checkout.join("adapters")),
+        "the run mutated read-only package data"
+    );
+}
