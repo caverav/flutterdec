@@ -558,3 +558,52 @@ mod tests {
         );
     }
 }
+
+/// The image boundary, forced to fail where the image is a frozen file.
+///
+/// The refusal has to be the same shape as the anonymous one: typed, before any
+/// process exists, and leaving nothing behind that a later caller could mistake
+/// for an executable.
+#[cfg(all(test, not(target_os = "linux")))]
+mod tests {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+
+    #[test]
+    fn an_image_that_cannot_be_written_is_refused_before_anything_runs() {
+        let scratch = tempfile::TempDir::new().expect("tempdir");
+        // A directory the invocation cannot create inside, which is what a host
+        // with no room, no permission, or a read-only workspace would look like.
+        std::fs::set_permissions(scratch.path(), std::fs::Permissions::from_mode(0o500))
+            .expect("seal the scratch directory");
+        let argv = vec![CString::new("adapter").expect("no NUL")];
+        let envp = vec![CString::new("PATH=/nonexistent").expect("no NUL")];
+
+        let err = ExecImage::prepare("adapter", b"\x7fELF", scratch.path(), argv, envp)
+            .err()
+            .expect("an image that cannot be written must not become an executable");
+
+        let HostError::ImageNotSealed(detail) = &err else {
+            panic!("a failed image was reported as something else: {err}");
+        };
+        assert!(
+            detail.contains("materialize the image at"),
+            "the refusal does not say what failed: {detail}"
+        );
+        assert!(
+            err.is_pre_spawn(),
+            "a refusal with no child was not classified as pre-spawn: {err}"
+        );
+
+        std::fs::set_permissions(scratch.path(), std::fs::Permissions::from_mode(0o700))
+            .expect("reopen the scratch directory");
+        let left_behind: Vec<_> = std::fs::read_dir(scratch.path())
+            .expect("read the scratch directory")
+            .map(|entry| entry.expect("entry").path())
+            .collect();
+        assert!(
+            left_behind.is_empty(),
+            "a refused image still named a file: {left_behind:?}"
+        );
+    }
+}
