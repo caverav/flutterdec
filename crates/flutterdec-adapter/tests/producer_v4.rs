@@ -543,10 +543,10 @@ asm.mkdir(parents=True, exist_ok=True)
     // The runner is pointed at through the adapter's own environment rather than
     // this process's, so concurrent tests cannot see it.
     // The producer library is reached through an absolute path baked in here,
-    // not relative to the running file. The host executes a private copy of the
-    // verified artifact, so nothing beside the artifact in the store is on the
-    // running script's import path, and a bridge that assumed otherwise would
-    // be reaching for bytes no record ever authorized.
+    // not relative to the running file. The host executes the verified artifact
+    // from a descriptor with no pathname, so the running script has no directory
+    // at all on its import path, and a bridge that assumed otherwise would be
+    // reaching for bytes no record ever authorized.
     let library = root.join("python");
     fs::create_dir_all(&library).expect("mkdir library");
     fs::copy(

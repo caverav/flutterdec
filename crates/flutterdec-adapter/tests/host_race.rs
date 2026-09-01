@@ -7,9 +7,10 @@
 //! log, the impostor to another, and exactly one of those files may exist when
 //! the run is over.
 //!
-//! The swap is synchronized rather than timed. The host stops between
-//! materializing its private copy and creating the child, this test replaces the
-//! store file while it is stopped, and only then releases it. So the swap is
+//! The swap is synchronized rather than timed. The host stops between holding
+//! the verified bytes as a nameless executable descriptor and creating the
+//! child, this test replaces the store file while it is stopped, and only then
+//! releases it. So the swap is
 //! provably inside the window an attacker would need, instead of being a race
 //! this test might lose.
 //!
@@ -124,7 +125,7 @@ fn run_once(
                 .expect_err("the fixture adapter writes no result")
         });
 
-        // The host has verified the artifact and materialized its private copy
+        // The host has verified the artifact and is holding it as a descriptor
         // by the time this file appears, and has not created a child yet.
         wait_for(&dir.join("ready"), "the pre-spawn rendezvous");
         fs::write(&installed.exec, impostor).expect("replace the store artifact");
