@@ -744,6 +744,14 @@ succeed()
 /// unlink because the host froze it. Either way the answer to "can the bytes
 /// behind this name change while they run" is no, and it is answered by the
 /// kernel rather than by a mode bit.
+///
+/// Then it goes one step further, where the platform allows it: the freeze is a
+/// *user* flag, this process is the owner, so it clears the flag and replaces
+/// its own image behind its own back. That is the ceiling the frozen-pathname
+/// platform has, it is exercised here rather than described in a comment, and
+/// what the host is required to do about it is report it — `image_integrity` is
+/// `Applied` only for the sealed anonymous inode, and names `UF_IMMUTABLE` and
+/// who can clear it everywhere else.
 #[test]
 fn a_shebang_adapter_runs_from_an_image_that_cannot_be_repointed() {
     let rig = Rig::new(
@@ -760,6 +768,10 @@ for base, _dirs, files in os.walk(os.getcwd()):
             pass
 
 image = sys.argv[0]
+# Read before anything below touches the image: the point of the digest is what
+# the interpreter was handed, and the last thing this adapter does is replace
+# that file behind its own back.
+digest = hashlib.sha256(pathlib.Path(image).read_bytes()).hexdigest()
 
 def attempt(action):
     try:
@@ -779,9 +791,32 @@ mutations = {
     "unlink": attempt(lambda: os.unlink(image)),
 }
 
+
+def thaw():
+    chflags = getattr(os, "chflags", None)
+    if chflags is None:
+        raise OSError("this platform has no chflags")
+    chflags(image, 0)
+
+
+# Unlink and recreate rather than write in place: the interpreter is still
+# reading this file through the descriptor it opened, and rewriting the bytes
+# underneath it would be a test of the interpreter.
+def replace():
+    os.unlink(image)
+    with open(image, "wb") as handle:
+        handle.write(b'#!/bin/sh\nexit 9\n')
+    os.chmod(image, 0o755)
+
+
+mutations["chflags"] = attempt(thaw)
+mutations["replace_after_chflags"] = (
+    attempt(replace) if mutations["chflags"] == "succeeded" else "not attempted"
+)
+
 sidecar("image").write_text(json.dumps({
-    "argv0": sys.argv[0],
-    "sha256": hashlib.sha256(pathlib.Path(sys.argv[0]).read_bytes()).hexdigest(),
+    "argv0": image,
+    "sha256": digest,
     "workspace_executables": executables,
     "cwd": os.getcwd(),
     "mutations": mutations,
@@ -846,6 +881,11 @@ succeed()
             "the adapter was started from a filesystem pathname: {}",
             image.argv0
         );
+        assert!(
+            run.containment.image_integrity.is_applied(),
+            "an image the host sealed and read the seals back off was not reported as one: {:?}",
+            run.containment.image_integrity
+        );
     }
 
     // Elsewhere a descriptor cannot be executed, so the image is a path — and
@@ -870,6 +910,49 @@ succeed()
             "the executable in the workspace is not the image the adapter is running: {:?} against {}",
             image.workspace_executables,
             image.argv0
+        );
+
+        // The observed ceiling. The owner of the image cleared the host's flag
+        // and put other bytes at the name, which is exactly the attack the
+        // report has to stay honest about.
+        let outcome = |step: &str| -> String {
+            image
+                .mutations
+                .get(step)
+                .unwrap_or_else(|| {
+                    panic!("the adapter did not report {step}: {:?}", image.mutations)
+                })
+                .clone()
+        };
+        assert_eq!(
+            outcome("chflags"),
+            "succeeded",
+            "the image's freeze could not be cleared by its own owner, so this platform is stronger than the host reports: {:?}",
+            image.mutations
+        );
+        assert_eq!(
+            outcome("replace_after_chflags"),
+            "succeeded",
+            "the image could not be replaced once unfrozen, so this platform is stronger than the host reports: {:?}",
+            image.mutations
+        );
+
+        // So the host must not have claimed the guarantee it does not have.
+        let flutterdec_adapter::ControlState::Unavailable { reason } =
+            &run.containment.image_integrity
+        else {
+            panic!(
+                "the host reported a sealed image on a platform where the owner just replaced it: {:?}",
+                run.containment.image_integrity
+            );
+        };
+        assert!(
+            reason.contains("UF_IMMUTABLE"),
+            "the reported image integrity does not name the flag it rests on: {reason}"
+        );
+        assert!(
+            reason.contains("clear"),
+            "the reported image integrity does not say the flag is the owner's to clear: {reason}"
         );
     }
 }
