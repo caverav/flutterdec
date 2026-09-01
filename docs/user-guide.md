@@ -175,6 +175,7 @@ If adapter metadata is available, `info` also reports:
 - `producer_id`, `producer_trust`, `compatibility_record_sha256`
 - `manifest_entry_present`
 - `snapshot_identity_is_exact`
+- `identity_rejection` (why no adapter could be selected, when none could)
 - `model_capabilities` (per-domain `complete` / `partial` / `unavailable`)
 - `compatibility_warnings`
 
