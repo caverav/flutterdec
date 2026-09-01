@@ -242,6 +242,10 @@ struct ChildPlan {
     process_count_isolated: u64,
     max_descriptors: u64,
     isolate_network: bool,
+    /// Whether the host confines a process the moment it makes an unprivileged
+    /// user namespace. Read before the fork, because the child may not read
+    /// files between `fork` and `exec`.
+    userns_is_confined: bool,
 }
 
 const NOT_REQUESTED: u64 = u64::MAX;
@@ -315,23 +319,64 @@ type RlimitResource = libc::c_int;
 /// uid, so entering one resets that count and a budget computed against the
 /// host's count would no longer bound anything.
 ///
+/// The user-namespace route is skipped entirely where the host confines a
+/// process for taking it. Some kernels answer an unprivileged
+/// `CLONE_NEWUSER` by putting the caller under a mandatory access control
+/// profile instead of by refusing it, and such a profile decides what may be
+/// executed by *pathname* — which an anonymous image does not have. Taking the
+/// namespace there would buy an empty route table with the ability to start the
+/// adapter at all, so the control is reported unavailable rather than bought at
+/// that price.
+///
 /// # Safety
 /// Called between `fork` and `exec`. Only makes syscalls.
 #[cfg(target_os = "linux")]
-unsafe fn isolate_network() -> (i32, bool) {
+unsafe fn isolate_network(userns_is_confined: bool) -> (i32, bool) {
     if libc::unshare(libc::CLONE_NEWNET) == 0 {
         return (CODE_APPLIED, false);
     }
     let first = errno();
-    if libc::unshare(libc::CLONE_NEWUSER | libc::CLONE_NEWNET) == 0 {
+    if !userns_is_confined && libc::unshare(libc::CLONE_NEWUSER | libc::CLONE_NEWNET) == 0 {
         return (CODE_APPLIED, true);
     }
     (first, false)
 }
 
 #[cfg(not(target_os = "linux"))]
-unsafe fn isolate_network() -> (i32, bool) {
+unsafe fn isolate_network(_userns_is_confined: bool) -> (i32, bool) {
     (CODE_UNSUPPORTED, false)
+}
+
+/// Where the kernel says whether an unprivileged user namespace costs the
+/// caller its freedom to execute.
+#[cfg(target_os = "linux")]
+const USERNS_CONFINEMENT_SWITCH: &str = "/proc/sys/kernel/apparmor_restrict_unprivileged_userns";
+
+/// Read as `false` when the switch is absent: a host that does not have the
+/// restriction is a host where the namespace is free.
+#[cfg(target_os = "linux")]
+fn userns_is_confined() -> bool {
+    fs::read_to_string(USERNS_CONFINEMENT_SWITCH)
+        .map(|value| confinement_is_on(&value))
+        .unwrap_or(false)
+}
+
+#[cfg(not(target_os = "linux"))]
+fn userns_is_confined() -> bool {
+    false
+}
+
+/// The switch as the kernel writes it: a single number and a newline, where
+/// anything other than zero turns the confinement on.
+#[cfg(target_os = "linux")]
+fn confinement_is_on(value: &str) -> bool {
+    match value.trim().parse::<i64>() {
+        Ok(setting) => setting != 0,
+        // An unreadable setting is treated as on. Losing an empty route table
+        // is a reported, recoverable loss; losing the ability to execute the
+        // verified image is not.
+        Err(_) => true,
+    }
 }
 
 /// Apply the plan and report each outcome. Runs in the forked child.
@@ -414,7 +459,7 @@ unsafe fn apply_plan(plan: &ChildPlan) {
     // task ends up in decides what the budget has to be.
     let mut own_user_namespace = false;
     if plan.isolate_network {
-        let (code, entered) = isolate_network();
+        let (code, entered) = isolate_network(plan.userns_is_confined);
         codes[SLOT_NETWORK] = code;
         own_user_namespace = entered;
     }
@@ -589,6 +634,7 @@ impl Containment {
                 process_count_isolated,
                 max_descriptors: limits.max_descriptors,
                 isolate_network: limits.isolate_network,
+                userns_is_confined: userns_is_confined(),
             },
             read_end,
             write_end: Some(write_end),
@@ -752,5 +798,23 @@ mod tests {
     #[test]
     fn the_status_record_fits_one_atomic_pipe_write() {
         assert_eq!(STATUS_BYTES, 96);
+    }
+
+    /// The switch that decides whether the user-namespace route to an empty
+    /// route table is affordable. Reading it wrong in the permissive direction
+    /// costs the run: on a host that answers `CLONE_NEWUSER` with a mandatory
+    /// access control profile, the child that took the namespace can no longer
+    /// execute an image that has no pathname.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_host_that_confines_unprivileged_user_namespaces_is_recognized() {
+        assert!(confinement_is_on("1\n"), "the restriction was read as off");
+        assert!(confinement_is_on("2\n"), "any nonzero setting is on");
+        assert!(!confinement_is_on("0\n"), "an off switch was read as on");
+        assert!(!confinement_is_on("  0  "), "surrounding space changed it");
+        assert!(
+            confinement_is_on("unexpected"),
+            "an unreadable setting must fail towards keeping the run alive"
+        );
     }
 }
