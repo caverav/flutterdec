@@ -78,13 +78,33 @@ fn drain<R: Read + Send + 'static>(
     })
 }
 
+/// Spawn, tolerating a file the kernel still considers open for writing.
+///
+/// The host writes the verified adapter into its private workspace and executes
+/// it immediately. The descriptor it wrote through is closed by then, but any
+/// other thread that forked while it was open holds a copy until that child
+/// execs, and the kernel answers `ETXTBSY` for as long as one exists. That is a
+/// property of the host being multi-threaded, not of the artifact, so it is
+/// waited out rather than reported.
+fn spawn_retrying_busy_text(command: &mut Command) -> std::io::Result<std::process::Child> {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        match command.spawn() {
+            Err(err) if err.raw_os_error() == Some(libc::ETXTBSY) && Instant::now() < deadline => {
+                thread::sleep(POLL_INTERVAL);
+            }
+            other => return other,
+        }
+    }
+}
+
 /// Start the command, hold it to its limits, and reap it.
 pub(crate) fn run(mut command: Command, limits: &Limits) -> Result<Execution, HostError> {
     let containment = Containment::prepare(limits)
         .map_err(|err| HostError::Spawn(format!("create the containment status pipe: {err}")))?;
     containment.install(&mut command);
 
-    let mut child = match command.spawn() {
+    let mut child = match spawn_retrying_busy_text(&mut command) {
         Ok(child) => child,
         // Nothing was created, so there is nothing to describe.
         Err(err) => return Err(HostError::Spawn(err.to_string())),
