@@ -265,7 +265,7 @@ migration path. Fields:
 - `diagnostics[]`
 - `extensions` (the only object that accepts undeclared keys)
 
-Three properties are what separate it from v3:
+Four properties are what separate it from v3:
 
 - **Unknown is representable.** A function name is `Option`, a class's library is
   `Option`, a superclass edge is `Option`. A function whose name was not recovered has
