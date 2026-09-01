@@ -1,0 +1,115 @@
+name: ZV Probe
+
+on:
+  push:
+    branches:
+      - "probe/**"
+
+permissions:
+  contents: read
+
+jobs:
+  head:
+    name: head (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Validator exploit probe
+        if: always()
+        run: cargo test -p flutterdec-adapter --test zv_exploit -- --nocapture --test-threads=1
+      - name: host_workspace_race
+        if: always()
+        run: cargo test -p flutterdec-adapter --test host_workspace_race -- --nocapture
+      - name: host_execution
+        if: always()
+        run: cargo test -p flutterdec-adapter --test host_execution
+      - name: host_race
+        if: always()
+        run: cargo test -p flutterdec-adapter --test host_race
+      - name: host_gates
+        if: always()
+        run: cargo test -p flutterdec-adapter --test host_gates
+      - name: image unit tests
+        if: always()
+        run: cargo test -p flutterdec-adapter --lib
+
+  mut-identity:
+    name: "mutation - delete the pre-exec identity check (${{ matrix.os }})"
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Neuter is_the_verified_image
+        run: |
+          python3 - <<'PY'
+          import pathlib
+          p = pathlib.Path("crates/flutterdec-adapter/src/host/image.rs")
+          text = p.read_text()
+          anchor = "    unsafe fn is_the_verified_image(&self) -> bool {\n"
+          assert anchor in text, "anchor missing"
+          p.write_text(text.replace(anchor, anchor + "        return true;\n", 1))
+          PY
+          git --no-pager diff --stat
+      - name: host_workspace_race (MUST FAIL)
+        if: always()
+        run: |
+          if cargo test -p flutterdec-adapter --test host_workspace_race -- --nocapture; then
+            echo "MUTANT SURVIVED"; exit 1
+          else
+            echo "MUTANT KILLED"
+          fi
+      - name: validator exploit probe (MUST FAIL)
+        if: always()
+        run: |
+          if cargo test -p flutterdec-adapter --test zv_exploit -- --nocapture --test-threads=1; then
+            echo "MUTANT SURVIVED"; exit 1
+          else
+            echo "MUTANT KILLED"
+          fi
+
+  mut-report:
+    name: "mutation - hardcode image_integrity at the reporting site (${{ matrix.os }})"
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Hardcode the reported state in Containment::collect
+        run: |
+          python3 - <<'PY'
+          import pathlib
+          p = pathlib.Path("crates/flutterdec-adapter/src/sandbox.rs")
+          text = p.read_text()
+          anchor = "            image_integrity,\n"
+          assert text.count(anchor) == 1, text.count(anchor)
+          p.write_text(text.replace(
+              anchor,
+              "            image_integrity: ControlState::Applied { limit: None },\n",
+              1,
+          ))
+          PY
+          git --no-pager diff --stat
+      - name: host_execution (MUST FAIL)
+        if: always()
+        run: |
+          if cargo test -p flutterdec-adapter --test host_execution; then
+            echo "MUTANT SURVIVED"; exit 1
+          else
+            echo "MUTANT KILLED"
+          fi
+      - name: validator exploit probe (records what the mutant reports)
+        if: always()
+        run: cargo test -p flutterdec-adapter --test zv_exploit -- --nocapture --test-threads=1 || true
