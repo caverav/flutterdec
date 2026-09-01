@@ -358,14 +358,35 @@ fn an_attacker_who_walks_the_invocation_workspace_finds_no_executable_to_subvert
         digest, &authorized_digest,
         "the executed image was not the verified artifact"
     );
-    assert!(
-        !argv0.contains("flutterdec-adapter-"),
-        "the adapter was executed under a workspace pathname: {argv0}"
-    );
-    // What the kernel hands a `#!` interpreter when the image is a descriptor:
-    // a name for the descriptor itself, which exists only inside the child.
-    assert!(
-        argv0.starts_with("/dev/fd/") || argv0.starts_with("/proc/self/fd/"),
-        "the adapter was executed under a filesystem pathname: {argv0}"
-    );
+    #[cfg(target_os = "linux")]
+    {
+        assert!(
+            !argv0.contains("flutterdec-adapter-"),
+            "the adapter was executed under a workspace pathname: {argv0}"
+        );
+        // What the kernel hands a `#!` interpreter when the image is a
+        // descriptor: a name for the descriptor itself, which exists only
+        // inside the child.
+        assert!(
+            argv0.starts_with("/dev/fd/") || argv0.starts_with("/proc/self/fd/"),
+            "the adapter was executed under a filesystem pathname: {argv0}"
+        );
+    }
+
+    // Where the image has to be a path, the loop closes the other way: the one
+    // thing the attacker found and could not touch is the one that ran. The two
+    // spellings can differ by the platform's own symlinks, so the final
+    // component is what is compared.
+    #[cfg(not(target_os = "linux"))]
+    {
+        let name = argv0
+            .rsplit('/')
+            .next()
+            .expect("argv[0] has a final component");
+        let found = &workspace_candidates[0]["path"];
+        assert!(
+            found.ends_with(name),
+            "the adapter ran from something other than the image the attacker failed to subvert: {argv0} against {found}"
+        );
+    }
 }
