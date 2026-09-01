@@ -208,7 +208,8 @@ fn an_unknown_snapshot_is_recovered_by_core_with_no_adapter_execution() {
     assert_eq!(code(&repeat), 0, "{}", stderr(&repeat));
     let repeated = read_json(&second.join("report.json"));
     assert_eq!(
-        repeated["adapter_selection"]["provider"], summary["adapter_selection"]["provider"],
+        comparable_across_runs(&repeated["adapter_selection"]["provider"]),
+        comparable_across_runs(&summary["adapter_selection"]["provider"]),
         "two identical runs described the provider differently"
     );
     assert_eq!(repeated["counts"], summary["counts"]);
@@ -269,7 +270,8 @@ fn an_exact_snapshot_runs_the_authorized_adapter_and_reports_the_binding() {
     assert_eq!(code(&decompile), 0, "{}", stderr(&decompile));
     let summary = read_json(&out.join("report.json"));
     assert_eq!(
-        summary["adapter_selection"]["provider"], provider,
+        comparable_across_runs(&summary["adapter_selection"]["provider"]),
+        comparable_across_runs(&provider),
         "info and report.json describe the same run differently"
     );
     assert_eq!(

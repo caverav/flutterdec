@@ -852,24 +852,9 @@ fn info_and_the_decompile_report_state_which_containment_controls_were_establish
         &summary["adapter_selection"]["provider"]["containment"],
         "decompile report.json",
     );
-    // What was *established* has to agree; one number in it cannot. The process
-    // budget is the host's own task count plus an allowance, and these are two
-    // separate runs of the binary, so the host's count is free to move between
-    // them. Comparing it would be asserting that nothing else on the machine
-    // started or exited, which is not a claim about this product.
-    let established = |containment: &Value| {
-        let mut object = containment.as_object().expect("containment object").clone();
-        let budget = object
-            .get_mut("process_count")
-            .expect("a process budget")
-            .as_object_mut()
-            .expect("a control object");
-        budget.insert("limit".into(), Value::from("a snapshot of the host"));
-        Value::Object(object)
-    };
     assert_eq!(
-        established(&summary["adapter_selection"]["provider"]["containment"]),
-        established(&report["adapter_containment"]),
+        comparable_across_runs(&summary["adapter_selection"]["provider"]["containment"]),
+        comparable_across_runs(&report["adapter_containment"]),
         "info and report.json disagree about what was established"
     );
 }
