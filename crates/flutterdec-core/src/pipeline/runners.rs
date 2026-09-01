@@ -1912,12 +1912,6 @@ pub fn run_decompile(
             "artifact_sha256": producer.artifact_sha256.to_string(),
             "trust": producer_trust_label(producer.trust)
         },
-        "compatibility": {
-            "record_sha256": compatibility.record_sha256.to_string(),
-            "parser_family_id": compatibility.parser_family_id,
-            "profile_id": compatibility.profile_id,
-            "profile_sha256": compatibility.profile_sha256.to_string()
-        },
         "model": {
             "model_version": model.model_version,
             "name_pattern_hints": model_name_hints,
@@ -1949,6 +1943,14 @@ pub fn run_decompile(
             "error": engine_context.error
         },
         "compatibility": {
+            // The binding lives in this object rather than a second
+            // `"compatibility"` key: a duplicate key is not an error in a JSON
+            // object literal, the later value simply wins, and these four
+            // fields were being dropped from the report.
+            "record_sha256": compatibility.record_sha256.to_string(),
+            "parser_family_id": compatibility.parser_family_id,
+            "profile_id": compatibility.profile_id,
+            "profile_sha256": compatibility.profile_sha256.to_string(),
             "status": compatibility_status,
             "model": {
                 "version": model.model_version,
