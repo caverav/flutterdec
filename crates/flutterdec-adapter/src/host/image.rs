@@ -30,11 +30,21 @@
 //! `fexecve` and no `execveat`. So the image is a file inside the invocation's
 //! own private directory, created `O_EXCL` at mode `0500`, and then made
 //! immutable through the descriptor this module holds. While that flag is set
-//! the name cannot be written through, truncated, renamed, or unlinked, which is
-//! what closes the gap between checking bytes and running them. The known
-//! ceiling is that the flag is a *user* flag: the owner may clear it, and on
-//! Darwin an attacker running as the same user is the owner. It is the strongest
-//! the platform offers, and it is bounded, reported, and never used on Linux.
+//! the name cannot be written through, truncated, renamed, or unlinked.
+//!
+//! That is not the same guarantee, because the flag is a *user* flag: its owner
+//! may clear it, and a same-user attacker is the owner. So the child re-checks,
+//! in the instant before `execve` and after every containment control is in
+//! place, that the pathname it is about to execute still resolves to the
+//! descriptor the host verified and is still frozen. A name that has been
+//! re-pointed or thawed is not executed at all, and the run ends as a typed
+//! pre-spawn refusal with no process.
+//!
+//! What that check does not cover is the residue: an owner who clears the flag
+//! and rewrites the bytes *in place* leaves the same inode, so the identity half
+//! of the check would still match. The freeze half is what catches it, and an
+//! owner can also re-set the flag. So the Darwin image is narrowed as far as the
+//! platform allows and is never sealed.
 //!
 //! Scripts keep working. On Linux that is the reason the descriptor is inherited
 //! rather than closed on exec: the kernel hands a `#!` interpreter `/dev/fd/N`
@@ -62,6 +72,17 @@ const EMPTY_PATH: &[u8] = b"\0";
 /// kernel is an error rather than a no-op, so it is tried and then dropped.
 #[cfg(target_os = "linux")]
 const MFD_EXEC: libc::c_uint = 0x0010;
+
+/// What the child reports instead of executing, when the pathname it was about
+/// to execute is no longer the image the host verified.
+///
+/// The standard library carries whatever a pre-exec hook returns back to the
+/// parent as a bare integer and nothing else, so this has to be a number no
+/// syscall can produce. A real `EACCES` from `execve` would otherwise be read as
+/// a subverted image, and a subverted image would be reported as an ordinary
+/// failure to start a process.
+#[cfg(not(target_os = "linux"))]
+const IMAGE_REPLACED: i32 = 0x7fff_0001;
 
 /// A verified adapter image plus the exact `argv` and `envp` it is executed
 /// with.
@@ -116,6 +137,49 @@ impl ExecImage {
         })
     }
 
+    /// Why the child never became the adapter.
+    ///
+    /// Everything the kernel refuses is a spawn failure. The pre-exec identity
+    /// check is not: nothing was executed, the host caught the image being
+    /// re-pointed or thawed between verifying it and running it, and that is a
+    /// refusal about the image rather than about creating a process.
+    pub(crate) fn spawn_refusal(&self, err: std::io::Error) -> HostError {
+        #[cfg(not(target_os = "linux"))]
+        if err.raw_os_error() == Some(IMAGE_REPLACED) {
+            return HostError::ImageNotSealed(format!(
+                "the image at {} is no longer the file the host verified: it was re-pointed or unfrozen between the digest and the exec, so nothing was executed",
+                self.image_path.to_string_lossy()
+            ));
+        }
+        HostError::Spawn(err.to_string())
+    }
+
+    /// Whether the pathname about to be executed is still the image.
+    ///
+    /// Darwin executes a name, and the flag welded to that name is the owner's
+    /// to clear. So the name is compared against the descriptor the host has
+    /// held since it verified the bytes — same device, same inode — and the
+    /// freeze is required to still be on it. Anything else means someone has
+    /// already taken hold of the name, and nothing is executed.
+    ///
+    /// # Safety
+    /// Called between `fork` and `exec`. Allocates nothing, takes no locks, and
+    /// calls only `fstat` and `stat`.
+    #[cfg(not(target_os = "linux"))]
+    unsafe fn is_the_verified_image(&self) -> bool {
+        let mut held: libc::stat = std::mem::zeroed();
+        if libc::fstat(self.fd.as_raw_fd(), &mut held) != 0 {
+            return false;
+        }
+        let mut named: libc::stat = std::mem::zeroed();
+        if libc::stat(self.image_path.as_ptr(), &mut named) != 0 {
+            return false;
+        }
+        held.st_dev == named.st_dev
+            && held.st_ino == named.st_ino
+            && named.st_flags & libc::UF_IMMUTABLE != 0
+    }
+
     /// Replace the calling process with the image.
     ///
     /// Returns only when the execution failed, and then returns why.
@@ -143,12 +207,20 @@ impl ExecImage {
                 libc::AT_EMPTY_PATH,
             );
         }
+        // The last thing before the image replaces this process, so no window
+        // is left between deciding and doing: every containment control is
+        // already established and nothing else runs in this child afterwards.
         #[cfg(not(target_os = "linux"))]
-        libc::execve(
-            self.image_path.as_ptr(),
-            self.argv_ptrs.as_ptr(),
-            self.envp_ptrs.as_ptr(),
-        );
+        {
+            if !self.is_the_verified_image() {
+                return std::io::Error::from_raw_os_error(IMAGE_REPLACED);
+            }
+            libc::execve(
+                self.image_path.as_ptr(),
+                self.argv_ptrs.as_ptr(),
+                self.envp_ptrs.as_ptr(),
+            );
+        }
         std::io::Error::last_os_error()
     }
 }

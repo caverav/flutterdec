@@ -117,14 +117,17 @@ pub(crate) fn run(
     // Registered after the containment hook so it runs after it: every limit,
     // every isolation step and the status record all have to be in place before
     // the image replaces the child, and this call does not return.
+    let refusal = Arc::clone(&image);
     unsafe {
         command.pre_exec(move || Err(image.exec()));
     }
 
     let mut child = match spawn_retrying_busy_text(&mut command) {
         Ok(child) => child,
-        // Nothing was created, so there is nothing to describe.
-        Err(err) => return Err(HostError::Spawn(err.to_string())),
+        // Nothing was created, so there is nothing to describe. The image knows
+        // whether this is a failure to start a process or its own refusal to
+        // execute something that is no longer the verified bytes.
+        Err(err) => return Err(refusal.spawn_refusal(err)),
     };
     let pid = child.id();
 
