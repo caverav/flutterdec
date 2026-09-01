@@ -550,6 +550,29 @@
         assert_eq!(uncomparable, 1);
     }
 
+    /// A class whose library did not parse is a supported v4 state, and the
+    /// owner is not a library URI. Dropping the empty library segment would
+    /// leave `AppRoot::main`, which reads back as the library `AppRoot` and
+    /// files the function under a package derived from the class name.
+    #[test]
+    fn an_unrecovered_library_is_an_empty_segment_not_the_owner() {
+        let model = test_model(
+            Vec::new(),
+            vec![cls(0, "AppRoot", None)],
+            vec![fun(0, named("main"), Some(0), 0x1000, 16)],
+            ordinal_pool(Vec::new()),
+        );
+
+        let (descriptors, uncomparable) = collect_function_descriptors(&model);
+        assert!(descriptors.contains("::AppRoot::main"));
+        assert_eq!(uncomparable, 0);
+
+        let counts = collect_diff_package_counts(&descriptors.iter().cloned().collect::<Vec<_>>());
+        assert_eq!(counts.len(), 1);
+        assert_eq!(counts[0].package, "unknown");
+        assert_eq!(counts[0].functions, 1);
+    }
+
     #[test]
     fn canonicalizes_flutter_build_file_uri_in_descriptors() {
         let model = test_model(
