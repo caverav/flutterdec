@@ -9,6 +9,12 @@
 //! overall deadline, bounded output, and a process group the host can terminate
 //! whole.
 //!
+//! The bytes that run are the bytes that were checked. The store artifact is
+//! read once, digested from that buffer, and then written into the private
+//! workspace as an owner-only executable; the child is that private copy. The
+//! owner-writable store path is never opened again, so replacing the file in the
+//! store after verification changes nothing about the process that starts.
+//!
 //! The registry record is the authority throughout. The host re-derives the
 //! record digest, the profile digest, the artifact digest, the host variant, the
 //! target and feature tuple, and the protocol and model majors from the record
@@ -42,7 +48,7 @@ use std::io::Read;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 mod exec;
 use exec::Completion;
@@ -54,9 +60,31 @@ const OUTPUT_DIR: &str = "out";
 const HOME_DIR: &str = "home";
 const TEMP_DIR: &str = "tmp";
 const ARTIFACT_DIR: &str = "artifact";
+/// Where the verified adapter bytes are materialized. The copy executed by the
+/// run lives here and nowhere else.
+const EXEC_DIR: &str = "exec";
+/// Used when the store path has no usable final component.
+const EXEC_FALLBACK_NAME: &str = "adapter";
 const OUTPUT_MODEL_PATH: &str = "out/model.json";
 const REQUEST_PATH: &str = "request.json";
 const RESULT_PATH: &str = "result.json";
+
+/// Test hook: rendezvous with another process after the verified bytes have
+/// been materialized and before the child is created.
+///
+/// Proving that replacing the store artifact cannot change which bytes execute
+/// requires the replacement to land inside that window, and the window is a few
+/// microseconds wide. Polling for it is a timing gamble; this makes it a
+/// synchronization point. The host creates `<dir>/ready` and blocks until
+/// `<dir>/go` appears or the wait times out.
+///
+/// It can only delay a run. Nothing here reads, re-reads, or re-resolves the
+/// artifact, so an operator who sets it cannot change what executes; they can
+/// only stall their own process.
+pub const PRESPAWN_RENDEZVOUS_VAR: &str = "FLUTTERDEC_ADAPTER_PRESPAWN_RENDEZVOUS";
+
+/// How long the rendezvous waits before giving up as a pre-spawn failure.
+const RENDEZVOUS_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// The host variables an adapter may see.
 ///
@@ -556,11 +584,26 @@ fn read_bounded(path: &Path, document: &str, limit: u64) -> Result<Vec<u8>, Host
     Ok(bytes)
 }
 
+/// What the pre-spawn checks approved: the request, and the exact bytes they
+/// verified.
+///
+/// The bytes travel with the request on purpose. A digest proves something
+/// about the file that was read; it proves nothing about the file that is later
+/// opened by the same path. Carrying the verified bytes out of authorization is
+/// what lets the caller execute *those* rather than whatever the store path
+/// resolves to next.
+struct Authorized {
+    request: AdapterRequest,
+    /// The digest-verified artifact, read exactly once.
+    artifact: Vec<u8>,
+}
+
 /// Every integrity and compatibility check, in the order they can be decided.
 ///
-/// Returns the request that the checks approved. Nothing here creates a process,
-/// writes outside a caller-owned buffer, or consults the adapter.
-fn authorize(input: &AdapterInput<'_>, exec_path: &Path) -> Result<AdapterRequest, HostError> {
+/// Returns the request that the checks approved together with the artifact
+/// bytes they verified. Nothing here creates a process, writes outside a
+/// caller-owned buffer, or consults the adapter.
+fn authorize(input: &AdapterInput<'_>, exec_path: &Path) -> Result<Authorized, HostError> {
     // The identity gate first, so a snapshot that may not select an adapter
     // never reaches a registry record, a digest, or the filesystem.
     let key = input
@@ -635,12 +678,11 @@ fn authorize(input: &AdapterInput<'_>, exec_path: &Path) -> Result<AdapterReques
     }
 
     authorize_artifact(exec_path, authorization.store_root, variant)?;
-    // Known ceiling: the bytes are digested by path and executed by path, so a
-    // writer with access to the store could swap the file between the two.
-    // Closing that would mean holding one descriptor across both and execing it,
-    // which has no portable form; the store is the boundary that keeps the
-    // window unreachable, since it is only written by a registry-authorized
-    // install under an exclusive lock.
+    // This read is the only time the store path is opened. The bytes it returns
+    // are what gets digested, and the same buffer is what the caller writes into
+    // the private workspace and executes, so a writer with access to the store
+    // has nothing left to race against: replacing the file after this point
+    // changes a path nobody reads again.
     let artifact_bytes = read_bounded(
         exec_path,
         "artifact",
@@ -707,7 +749,10 @@ fn authorize(input: &AdapterInput<'_>, exec_path: &Path) -> Result<AdapterReques
         )));
     }
 
-    build_request(input)
+    Ok(Authorized {
+        request: build_request(input)?,
+        artifact: artifact_bytes,
+    })
 }
 
 /// The executable must be the file the record named, inside the store, and
@@ -854,7 +899,14 @@ impl Workspace {
         // explicitly rather than left to whatever the umask happened to be.
         fs::set_permissions(workspace.path(), fs::Permissions::from_mode(0o700))
             .map_err(|err| HostError::Workspace(format!("seal the invocation directory: {err}")))?;
-        for name in [INPUT_DIR, OUTPUT_DIR, HOME_DIR, TEMP_DIR, ARTIFACT_DIR] {
+        for name in [
+            INPUT_DIR,
+            OUTPUT_DIR,
+            HOME_DIR,
+            TEMP_DIR,
+            ARTIFACT_DIR,
+            EXEC_DIR,
+        ] {
             let path = workspace.path().join(name);
             std::os::unix::fs::DirBuilderExt::mode(&mut fs::DirBuilder::new(), 0o700)
                 .create(&path)
@@ -879,6 +931,48 @@ impl Workspace {
             .map_err(|err| HostError::Workspace(format!("seal {}: {err}", path.display())))?;
         Ok(path)
     }
+
+    /// Materialize the verified adapter bytes as the file this run will execute.
+    ///
+    /// Mode `0500`: readable and executable by the owner, writable by nobody at
+    /// all, inside a directory only the owner can traverse. The copy is created
+    /// once from a buffer the host already verified, so the bytes that end up on
+    /// disk here cannot be anything other than the authorized ones, and nothing
+    /// outside this process can reach the file to change them afterwards.
+    fn write_executable(&self, relative: &str, bytes: &[u8]) -> Result<PathBuf, HostError> {
+        let path = self.path().join(relative);
+        fs::write(&path, bytes).map_err(|err| {
+            HostError::Workspace(format!("materialize {}: {err}", path.display()))
+        })?;
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o500))
+            .map_err(|err| HostError::Workspace(format!("seal {}: {err}", path.display())))?;
+        Ok(path)
+    }
+}
+
+/// Block between materializing the verified copy and creating the child, when a
+/// test asked for it. See [`PRESPAWN_RENDEZVOUS_VAR`].
+fn prespawn_rendezvous() -> Result<(), HostError> {
+    let Some(dir) = std::env::var_os(PRESPAWN_RENDEZVOUS_VAR).filter(|value| !value.is_empty())
+    else {
+        return Ok(());
+    };
+    let dir = PathBuf::from(dir);
+    let ready = dir.join("ready");
+    fs::write(&ready, b"ready")
+        .map_err(|err| HostError::Workspace(format!("signal {}: {err}", ready.display())))?;
+    let go = dir.join("go");
+    let deadline = Instant::now() + RENDEZVOUS_TIMEOUT;
+    while !go.exists() {
+        if Instant::now() >= deadline {
+            return Err(HostError::Workspace(format!(
+                "the pre-spawn rendezvous at {} was never released",
+                dir.display()
+            )));
+        }
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    Ok(())
 }
 
 /// Restore write permission everywhere before removal.
@@ -921,11 +1015,26 @@ impl Drop for Workspace {
 /// Every gate runs before the child exists, the child runs inside a private
 /// workspace under an explicit set of limits, and the model is validated against
 /// host facts before it is handed back.
+///
+/// `exec_path` names the artifact to authorize, not the file that is executed.
+/// The bytes it holds are read and verified once and then executed out of the
+/// private workspace, so the store path is never reopened after verification.
 pub fn run_adapter(exec_path: &Path, input: &AdapterInput<'_>) -> Result<AdapterRun, HostError> {
-    let request = authorize(input, exec_path)?;
+    let Authorized { request, artifact } = authorize(input, exec_path)?;
 
     let workspace = Workspace::create()?;
     let work = workspace.path().to_path_buf();
+
+    // The verified bytes become a private, owner-only executable before anything
+    // else is written, and that copy is what the command below names. Keeping
+    // the original file name means an interpreter, an `argv[0]` check and a
+    // diagnostic all still see the artifact the registry authorized.
+    let exec_name = exec_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty())
+        .unwrap_or(EXEC_FALLBACK_NAME);
+    let private_exec = workspace.write_executable(&format!("{EXEC_DIR}/{exec_name}"), &artifact)?;
 
     let mut host_regions: Vec<InputRegion> = Vec::with_capacity(input.regions.len());
     for region in &input.regions {
@@ -944,7 +1053,7 @@ pub fn run_adapter(exec_path: &Path, input: &AdapterInput<'_>) -> Result<Adapter
     host_regions.sort_by_key(|region| region.region);
     workspace.write_readonly(REQUEST_PATH, &request.to_json())?;
 
-    let mut command = Command::new(exec_path);
+    let mut command = Command::new(&private_exec);
     command
         .current_dir(&work)
         .arg("--request")
@@ -985,6 +1094,7 @@ pub fn run_adapter(exec_path: &Path, input: &AdapterInput<'_>) -> Result<Adapter
         command.arg("--libapp-path").arg(path);
     }
 
+    prespawn_rendezvous()?;
     let execution = exec::run(command, &input.limits)?;
     let containment = execution.containment;
     match execution.completion {

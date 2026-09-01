@@ -381,6 +381,15 @@ region and the output handle to be usable. Each refusal is a distinct `HostError
 variant, and the ones that mean "no process was created" answer `true` to
 `HostError::is_pre_spawn`.
 
+The bytes that run are the bytes that were checked. The store artifact is read once,
+digested from that buffer, and then written into the private invocation directory as an
+owner-only executable (mode `0500`) under `exec/`; the child is that private copy. The
+owner-writable store path is never opened again after verification, so replacing the
+file in the store between the digest and the spawn changes nothing about which bytes
+execute. It also means an adapter is exactly one file: nothing else in the store is
+beside the running script, because nothing else in the store was authorized by the
+record.
+
 The child that does run gets a private invocation directory (mode `0700`) holding
 read-only input handles under `in/`, its output under `out/`, and its own `HOME` and
 `TMPDIR`; a cleared environment plus a small allowlist (`PATH`, locale, `XDG_CACHE_HOME`,
