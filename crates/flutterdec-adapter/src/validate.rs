@@ -376,7 +376,7 @@ fn check_regions(model: &ProgramModel) -> Check {
 fn check_host_facts(model: &ProgramModel, host: &HostSelectedContext) -> Check {
     let observed = &model.input.identity;
     let expected = &host.identity;
-    let identity_fields: [(&'static str, bool); 6] = [
+    let identity_fields: [(&'static str, bool); 7] = [
         ("snapshot hash", observed.hash == expected.hash),
         ("hash source", observed.hash_source == expected.hash_source),
         ("snapshot kind", observed.kind == expected.kind),
@@ -387,6 +387,13 @@ fn check_host_facts(model: &ProgramModel, host: &HostSelectedContext) -> Check {
         (
             "normalized features",
             observed.features.normalized == expected.features.normalized,
+        ),
+        // The raw header string is host-parsed too, so an adapter that echoes a
+        // different one has changed the input it was given even when the
+        // normalized list still agrees.
+        (
+            "raw features",
+            observed.features.raw == expected.features.raw,
         ),
         (
             "pointer compression",
