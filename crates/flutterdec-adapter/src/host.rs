@@ -9,11 +9,13 @@
 //! overall deadline, bounded output, and a process group the host can terminate
 //! whole.
 //!
-//! The bytes that run are the bytes that were checked. The store artifact is
-//! read once, digested from that buffer, and then written into the private
-//! workspace as an owner-only executable; the child is that private copy. The
-//! owner-writable store path is never opened again, so replacing the file in the
-//! store after verification changes nothing about the process that starts.
+//! The bytes that run are the bytes that were checked, and no pathname is
+//! involved in making that true. The store artifact is read once, digested from
+//! that buffer, and turned into an executable inode the host holds open; every
+//! pathname to that inode is gone before anything else happens, and the child is
+//! created from the descriptor with `execveat`. So there is nothing left to
+//! race: not the owner-writable store path, which is never opened again, and not
+//! a workspace copy, because none exists to find, `chmod`, rename, or overwrite.
 //!
 //! The registry record is the authority throughout. The host re-derives the
 //! record digest, the profile digest, the artifact digest, the host variant, the
@@ -42,6 +44,7 @@ use flutterdec_loader::registry::{
 };
 use serde::Serialize;
 use sha2::{Digest, Sha256};
+use std::ffi::{CString, OsStr, OsString};
 use std::fmt;
 use std::fs;
 use std::io::Read;
@@ -51,7 +54,9 @@ use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 mod exec;
+mod image;
 use exec::Completion;
+use image::{argument, ExecImage};
 
 /// The scratch layout one invocation sees. Every one of these is relative to the
 /// working directory, and the working directory is private to the invocation.
@@ -60,17 +65,19 @@ const OUTPUT_DIR: &str = "out";
 const HOME_DIR: &str = "home";
 const TEMP_DIR: &str = "tmp";
 const ARTIFACT_DIR: &str = "artifact";
-/// Where the verified adapter bytes are materialized. The copy executed by the
-/// run lives here and nowhere else.
-const EXEC_DIR: &str = "exec";
-/// Used when the store path has no usable final component.
+/// Used as `argv[0]` when the store path has no usable final component.
 const EXEC_FALLBACK_NAME: &str = "adapter";
+/// What `Command` is told to run, which is never reached: the last pre-exec hook
+/// executes the held image descriptor and does not return. It is a path that
+/// cannot exist so that a hook that somehow did not run fails loudly instead of
+/// starting something.
+const UNREACHABLE_PROGRAM: &str = "/nonexistent/flutterdec-adapter-image-descriptor";
 const OUTPUT_MODEL_PATH: &str = "out/model.json";
 const REQUEST_PATH: &str = "request.json";
 const RESULT_PATH: &str = "result.json";
 
-/// Test hook: rendezvous with another process after the verified bytes have
-/// been materialized and before the child is created.
+/// Test hook: rendezvous with another process after the verified bytes are held
+/// as a nameless executable descriptor and before the child is created.
 ///
 /// Proving that replacing the store artifact cannot change which bytes execute
 /// requires the replacement to land inside that window, and the window is a few
@@ -899,14 +906,7 @@ impl Workspace {
         // explicitly rather than left to whatever the umask happened to be.
         fs::set_permissions(workspace.path(), fs::Permissions::from_mode(0o700))
             .map_err(|err| HostError::Workspace(format!("seal the invocation directory: {err}")))?;
-        for name in [
-            INPUT_DIR,
-            OUTPUT_DIR,
-            HOME_DIR,
-            TEMP_DIR,
-            ARTIFACT_DIR,
-            EXEC_DIR,
-        ] {
+        for name in [INPUT_DIR, OUTPUT_DIR, HOME_DIR, TEMP_DIR, ARTIFACT_DIR] {
             let path = workspace.path().join(name);
             std::os::unix::fs::DirBuilderExt::mode(&mut fs::DirBuilder::new(), 0o700)
                 .create(&path)
@@ -931,27 +931,36 @@ impl Workspace {
             .map_err(|err| HostError::Workspace(format!("seal {}: {err}", path.display())))?;
         Ok(path)
     }
-
-    /// Materialize the verified adapter bytes as the file this run will execute.
-    ///
-    /// Mode `0500`: readable and executable by the owner, writable by nobody at
-    /// all, inside a directory only the owner can traverse. The copy is created
-    /// once from a buffer the host already verified, so the bytes that end up on
-    /// disk here cannot be anything other than the authorized ones, and nothing
-    /// outside this process can reach the file to change them afterwards.
-    fn write_executable(&self, relative: &str, bytes: &[u8]) -> Result<PathBuf, HostError> {
-        let path = self.path().join(relative);
-        fs::write(&path, bytes).map_err(|err| {
-            HostError::Workspace(format!("materialize {}: {err}", path.display()))
-        })?;
-        fs::set_permissions(&path, fs::Permissions::from_mode(0o500))
-            .map_err(|err| HostError::Workspace(format!("seal {}: {err}", path.display())))?;
-        Ok(path)
-    }
 }
 
-/// Block between materializing the verified copy and creating the child, when a
-/// test asked for it. See [`PRESPAWN_RENDEZVOUS_VAR`].
+/// The environment one invocation gets, as the `KEY=VALUE` entries `execve`
+/// takes.
+///
+/// An allowlist rather than a filter: `HOME`, `TMPDIR` and `PWD` point inside
+/// the private workspace, and nothing else reaches the child unless it is named
+/// in [`ENVIRONMENT_ALLOWLIST`].
+fn child_environment(work: &Path) -> Result<Vec<CString>, HostError> {
+    let mut entries = Vec::with_capacity(ENVIRONMENT_ALLOWLIST.len() + 3);
+    let mut push = |name: &str, value: &OsStr| -> Result<(), HostError> {
+        let mut entry = OsString::from(name);
+        entry.push("=");
+        entry.push(value);
+        entries.push(argument(&entry, "an environment entry")?);
+        Ok(())
+    };
+    push("HOME", work.join(HOME_DIR).as_os_str())?;
+    push("TMPDIR", work.join(TEMP_DIR).as_os_str())?;
+    push("PWD", work.as_os_str())?;
+    for name in ENVIRONMENT_ALLOWLIST {
+        if let Some(value) = std::env::var_os(name) {
+            push(name, &value)?;
+        }
+    }
+    Ok(entries)
+}
+
+/// Block between holding the verified image and creating the child, when a test
+/// asked for it. See [`PRESPAWN_RENDEZVOUS_VAR`].
 fn prespawn_rendezvous() -> Result<(), HostError> {
     let Some(dir) = std::env::var_os(PRESPAWN_RENDEZVOUS_VAR).filter(|value| !value.is_empty())
     else {
@@ -1017,24 +1026,22 @@ impl Drop for Workspace {
 /// host facts before it is handed back.
 ///
 /// `exec_path` names the artifact to authorize, not the file that is executed.
-/// The bytes it holds are read and verified once and then executed out of the
-/// private workspace, so the store path is never reopened after verification.
+/// The bytes it holds are read and verified once, and what runs is a descriptor
+/// onto those bytes with no pathname of its own, so neither the store path nor
+/// anything inside the workspace can change what executes after verification.
 pub fn run_adapter(exec_path: &Path, input: &AdapterInput<'_>) -> Result<AdapterRun, HostError> {
     let Authorized { request, artifact } = authorize(input, exec_path)?;
 
     let workspace = Workspace::create()?;
     let work = workspace.path().to_path_buf();
 
-    // The verified bytes become a private, owner-only executable before anything
-    // else is written, and that copy is what the command below names. Keeping
-    // the original file name means an interpreter, an `argv[0]` check and a
-    // diagnostic all still see the artifact the registry authorized.
+    // Kept as `argv[0]`, so an interpreter, an `argv[0]` check and a diagnostic
+    // all still see the artifact the registry authorized.
     let exec_name = exec_path
         .file_name()
         .and_then(|name| name.to_str())
         .filter(|name| !name.is_empty())
         .unwrap_or(EXEC_FALLBACK_NAME);
-    let private_exec = workspace.write_executable(&format!("{EXEC_DIR}/{exec_name}"), &artifact)?;
 
     let mut host_regions: Vec<InputRegion> = Vec::with_capacity(input.regions.len());
     for region in &input.regions {
@@ -1053,27 +1060,19 @@ pub fn run_adapter(exec_path: &Path, input: &AdapterInput<'_>) -> Result<Adapter
     host_regions.sort_by_key(|region| region.region);
     workspace.write_readonly(REQUEST_PATH, &request.to_json())?;
 
-    let mut command = Command::new(&private_exec);
-    command
-        .current_dir(&work)
-        .arg("--request")
-        .arg(REQUEST_PATH)
-        .arg("--result")
-        .arg(RESULT_PATH)
-        .env_clear()
-        .env("HOME", work.join(HOME_DIR))
-        .env("TMPDIR", work.join(TEMP_DIR))
-        .env("PWD", &work)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    for name in ENVIRONMENT_ALLOWLIST {
-        if let Some(value) = std::env::var_os(name) {
-            command.env(name, value);
-        }
-    }
+    // `argv` and the environment are assembled here rather than on `Command`,
+    // because the hook that finally execs runs between `fork` and `exec` and can
+    // do nothing but hand the kernel vectors that already exist.
+    let mut argv = vec![
+        argument(OsStr::new(exec_name), "the adapter name")?,
+        argument(OsStr::new("--request"), "an argument")?,
+        argument(OsStr::new(REQUEST_PATH), "an argument")?,
+        argument(OsStr::new("--result"), "an argument")?,
+        argument(OsStr::new(RESULT_PATH), "an argument")?,
+    ];
     if let Some(path) = input.input_path {
-        command.arg("--input-path").arg(absolute(path));
+        argv.push(argument(OsStr::new("--input-path"), "an argument")?);
+        argv.push(argument(absolute(path).as_os_str(), "the input path")?);
     }
     if let Some(source) = input.libapp {
         let path = match source {
@@ -1091,11 +1090,29 @@ pub fn run_adapter(exec_path: &Path, input: &AdapterInput<'_>) -> Result<Adapter
                 work.join(relative)
             }
         };
-        command.arg("--libapp-path").arg(path);
+        argv.push(argument(OsStr::new("--libapp-path"), "an argument")?);
+        argv.push(argument(path.as_os_str(), "the libapp path")?);
     }
 
+    // The verified bytes become an executable inode with no name, held open for
+    // the rest of the run. `Command` carries only what the standard library
+    // applies before a pre-exec hook: the working directory and the streams.
+    let image = ExecImage::prepare(
+        exec_name,
+        &artifact,
+        workspace.path(),
+        argv,
+        child_environment(&work)?,
+    )?;
+    let mut command = Command::new(UNREACHABLE_PROGRAM);
+    command
+        .current_dir(&work)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
     prespawn_rendezvous()?;
-    let execution = exec::run(command, &input.limits)?;
+    let execution = exec::run(command, &input.limits, std::sync::Arc::new(image))?;
     let containment = execution.containment;
     match execution.completion {
         Completion::Timeout { after } => return Err(HostError::Timeout { after }),

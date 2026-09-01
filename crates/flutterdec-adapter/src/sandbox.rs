@@ -59,7 +59,7 @@ const MAX_DESCRIPTOR_SCAN: u32 = 65_536;
 
 /// The descriptor the status pipe is moved to before the scan runs, so the scan
 /// has one contiguous range to close and no exception to test for.
-const STATUS_FD: RawFd = 3;
+pub(crate) const STATUS_FD: RawFd = 3;
 
 /// What one adapter invocation is allowed to consume.
 ///
