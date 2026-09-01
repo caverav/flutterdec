@@ -395,7 +395,23 @@ impl Authorized {
                 .version
                 .clone()
                 .unwrap_or_else(|| "unknown".to_string()),
-            artifact_sha256: Sha256Digest::of(&std::fs::read(&self.exec).expect("read artifact")),
+            // The bytes on disk when they are readable, so a case that rewrites
+            // the artifact still hands in a producer record that matches it.
+            // When the published path is not a readable file at all, fall back
+            // to what the record declares: the file-type gate is what such a
+            // case is about, and it runs long before the producer record.
+            // The file type is checked before the read because opening a FIFO
+            // blocks until someone writes to it, and one of the gate cases
+            // publishes exactly that.
+            artifact_sha256: match std::fs::symlink_metadata(&self.exec)
+                .ok()
+                .filter(|meta| meta.is_file())
+                .and_then(|_| std::fs::read(&self.exec).ok())
+            {
+                Some(bytes) => Sha256Digest::of(&bytes),
+                None => Sha256Digest::parse(&record.artifact.variants[0].sha256)
+                    .expect("the record declares a hex digest"),
+            },
             trust: ProducerTrust::Registered,
         }
     }

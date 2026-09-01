@@ -324,6 +324,56 @@ fn an_artifact_that_is_not_executable_is_refused() {
     );
 }
 
+/// A path can be contained, be the one the record names, and carry execute
+/// bits, and still not be a file.
+///
+/// The two shapes here are the ones that matter. A directory is what a broken
+/// install leaves behind; a FIFO is what someone puts there on purpose, because
+/// reading it blocks forever and would hang the host inside its own verification
+/// step. Both must be answered by the file-type gate specifically: any later
+/// check would mean the host had already committed to opening it.
+#[test]
+fn an_artifact_that_is_not_a_regular_file_is_refused() {
+    for shape in ["directory", "fifo"] {
+        let rig = Rig::new();
+        fs::remove_file(&rig.installed.exec).expect("remove the published artifact");
+        match shape {
+            "directory" => {
+                fs::create_dir(&rig.installed.exec).expect("publish a directory");
+                fs::set_permissions(&rig.installed.exec, fs::Permissions::from_mode(0o755))
+                    .expect("chmod the directory");
+            }
+            _ => mkfifo(&rig.installed.exec),
+        }
+
+        let record = rig.installed.record.clone();
+        let err = rig.refuse(&rig.input(&record));
+        let HostError::ArtifactNotExecutable(ref detail) = err else {
+            panic!("{shape}: wrong refusal: {err}");
+        };
+        assert!(
+            detail.contains("is not a regular file"),
+            "{shape}: the refusal does not name the file type: {detail}"
+        );
+    }
+}
+
+/// A named pipe with execute bits set, published where the record points.
+fn mkfifo(path: &Path) {
+    let raw = std::ffi::CString::new(path.as_os_str().as_encoded_bytes()).expect("path bytes");
+    let created = unsafe { libc::mkfifo(raw.as_ptr(), 0o755) };
+    assert_eq!(
+        created,
+        0,
+        "mkfifo {}: {}",
+        path.display(),
+        std::io::Error::last_os_error()
+    );
+    // `mkfifo` applies the umask, and the gate under test comes before the
+    // execute-bit check only if the execute bits are actually there.
+    fs::set_permissions(path, fs::Permissions::from_mode(0o755)).expect("chmod the fifo");
+}
+
 #[test]
 fn an_artifact_that_changed_since_it_was_registered_is_refused() {
     let rig = Rig::new();
