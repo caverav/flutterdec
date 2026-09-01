@@ -11,10 +11,19 @@
 //! The attacker here is a real process, not a thread pretending to be one. It
 //! waits for the host to reach the point where verification is complete and no
 //! child exists yet, walks the invocation workspace from the outside, and for
-//! every executable file it finds tries all four of overwrite, `chmod` and
-//! overwrite again, rename, and unlink. What it may do is proved rather than
-//! assumed: a decoy executable is planted in a directory scanned in the same
-//! pass, and the run is only evidence if the decoy was found and destroyed.
+//! every executable file it finds tries to clear the file flags, overwrite,
+//! `chmod` and overwrite again, rename, unlink, and replace. What it may do is
+//! proved rather than assumed: a decoy executable is planted in a directory
+//! scanned in the same pass, and the run is only evidence if the decoy was found
+//! and destroyed.
+//!
+//! Clearing the flags is the whole difference between the two platforms. Where
+//! the image is an anonymous descriptor there is nothing in the workspace to
+//! clear flags on. Where it is a frozen pathname the flag is a *user* flag and
+//! this attacker is the owner, so it really does get the name — and the property
+//! under test becomes the next one: the host notices, in the child and before
+//! `execve`, that the name is no longer the descriptor it verified, and executes
+//! nothing at all.
 //!
 //! This file holds one test on purpose: the rendezvous is selected by an
 //! environment variable, and a second test running beside it in the same binary
@@ -57,7 +66,7 @@ raise SystemExit(7)
 /// The attacker, which is deliberately not in a hurry and not clever: it waits
 /// for a synchronization point the host publishes, then walks directories.
 const ATTACKER: &str = r#"#!/usr/bin/env python3
-import json, os, pathlib, stat, sys, time
+import errno, json, os, pathlib, stat, sys, time
 
 ready, go, report, impostor, tmp_root, decoy = sys.argv[1:7]
 
@@ -92,6 +101,15 @@ for root in roots:
                 except OSError as err:
                     entry[key] = err.strerror
 
+            # First, because every refusal below is only interesting once the
+            # owner has taken back whatever the host welded to this name.
+            def clear_flags():
+                chflags = getattr(os, "chflags", None)
+                if chflags is None:
+                    raise OSError(errno.ENOSYS, "this platform has no chflags")
+                chflags(path, 0)
+
+            attempt("chflags_clear", clear_flags)
             attempt("overwrite", lambda: path.write_bytes(impostor_bytes))
             attempt("chmod", lambda: os.chmod(path, 0o777))
             # The point of the second write: an unwritable mode is not a
@@ -308,18 +326,23 @@ fn an_attacker_who_walks_the_invocation_workspace_finds_no_executable_to_subvert
         "the invocation workspace exposed an executable pathname: {workspace_candidates:?}"
     );
 
-    // Where a descriptor cannot be executed the image has to be a path, and the
-    // property becomes what the attacker got out of it. It found the name — the
-    // decoy above proves it destroys what it finds — and every single thing it
-    // tried to do to that name was refused by the kernel.
+    // Where a descriptor cannot be executed the image has to be a path, so the
+    // attacker found a name — and the flag welded to that name is its owner's to
+    // clear. Whether it got the image is not assumed either way: it is read back
+    // out of what the attacker itself reported, and the run is then held to the
+    // outcome that follows.
     #[cfg(not(target_os = "linux"))]
-    {
+    let subverted = {
         assert_eq!(
             workspace_candidates.len(),
             1,
             "the invocation workspace exposed something other than the frozen image: {workspace_candidates:?}"
         );
-        for entry in &workspace_candidates {
+        let entry = workspace_candidates[0];
+        let taken = entry["chflags_clear"] == "ok" && entry["replace"] == "ok";
+        if !taken {
+            // The freeze held, which is the stronger outcome. Then nothing the
+            // attacker tried may have worked.
             for step in [
                 "overwrite",
                 "chmod",
@@ -334,6 +357,35 @@ fn an_attacker_who_walks_the_invocation_workspace_finds_no_executable_to_subvert
                 );
             }
         }
+        taken
+    };
+    #[cfg(target_os = "linux")]
+    let subverted = false;
+
+    // Whatever else happened, the one thing that must never happen did not.
+    assert_eq!(
+        lines(&impostor_log),
+        Vec::new(),
+        "the attacker's bytes executed"
+    );
+
+    // The attacker got the name. Then the run must have ended before a process
+    // existed, with the host saying why, and nothing may have executed at all.
+    if subverted {
+        assert!(
+            matches!(err, HostError::ImageNotSealed(_)),
+            "the image was replaced under the host and the run was not refused as an image failure: {err}"
+        );
+        assert!(
+            err.is_pre_spawn(),
+            "a refusal that executed nothing was not classified as pre-spawn: {err}"
+        );
+        assert_eq!(
+            lines(&authorized_log),
+            Vec::new(),
+            "the host refused the run and something still executed"
+        );
+        return;
     }
 
     // The run itself: the authorized bytes executed, under a name that is not a
@@ -341,11 +393,6 @@ fn an_attacker_who_walks_the_invocation_workspace_finds_no_executable_to_subvert
     assert!(
         matches!(err, HostError::NoResult { .. }),
         "the authorized adapter did not run: {err}"
-    );
-    assert_eq!(
-        lines(&impostor_log),
-        Vec::new(),
-        "the attacker's bytes executed"
     );
     let ran = lines(&authorized_log);
     assert_eq!(
