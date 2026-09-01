@@ -107,6 +107,8 @@ pub fn checkout_root() -> PathBuf {
 /// A temporary release-style package prefix and an isolated home.
 pub struct Prefix {
     dir: TempDir,
+    /// `dir.path()` with every platform symlink resolved. See `root`.
+    root: PathBuf,
     /// Absolute path baked into the fixture producer, touched when it runs.
     pub marker: PathBuf,
 }
@@ -170,7 +172,8 @@ impl Prefix {
         producer_source: Option<&str>,
     ) -> Self {
         let dir = TempDir::new().expect("tempdir");
-        let root = dir.path();
+        let root = fs::canonicalize(dir.path()).expect("resolve the prefix root");
+        let root = root.as_path();
         let marker = root.join("producer_ran.marker");
         fs::create_dir_all(root.join("bin")).expect("mkdir bin");
         fs::create_dir_all(root.join("home")).expect("mkdir home");
@@ -243,11 +246,20 @@ impl Prefix {
         )
         .expect("write registry");
 
-        Self { dir, marker }
+        let root = root.to_path_buf();
+        Self { dir, root, marker }
     }
 
+    /// The prefix root, as the product will spell it back.
+    ///
+    /// The temporary directory can sit behind a platform symlink — Darwin hands
+    /// out `/var/folders/...` for a tree that really lives at
+    /// `/private/var/folders/...` — and anything the product canonicalizes comes
+    /// back in the resolved spelling. Resolving here once means every path this
+    /// rig derives is comparable to what the product reports, rather than every
+    /// assertion having to resolve for itself.
     pub fn root(&self) -> &Path {
-        self.dir.path()
+        &self.root
     }
 
     pub fn share(&self) -> PathBuf {
