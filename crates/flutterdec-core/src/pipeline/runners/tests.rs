@@ -545,7 +545,7 @@
 
         let descriptors = collect_function_descriptors(&model);
         assert!(descriptors.contains("package:spotube/main.dart::AppRoot::main"));
-        assert!(descriptors.contains("::"));
+        assert!(descriptors.contains("::::"));
     }
 
     #[test]
