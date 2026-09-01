@@ -57,7 +57,44 @@ fn install_named(identity: &SnapshotIdentity, file_name: Option<&str>) -> suppor
         identity,
         file_name,
     )
+}
 
+/// Install a producer that cannot discover any external backend.
+///
+/// The producer resolves r2flutter and blutter from `FLUTTERDEC_*` variables and
+/// then from `PATH`, and the spawned adapter inherits this test runner's
+/// environment. A machine with either tool installed would otherwise resolve a
+/// real backend, and the assertion would stop testing what it claims.
+///
+/// The neutralization is prepended to the producer source before it is
+/// published, so the artifact the record authorizes is the artifact that runs,
+/// and it only affects this adapter's own process rather than concurrent tests.
+fn install_without_external_backends(identity: &SnapshotIdentity) -> support::Authorized {
+    const NEUTRALIZE: &str = concat!(
+        "import os as _os\n",
+        "for _name in (\n",
+        "    \"FLUTTERDEC_R2FLUTTER_CMD\",\n",
+        "    \"FLUTTERDEC_R2FLUTTER_BIN\",\n",
+        "    \"FLUTTERDEC_BLUTTER_CMD\",\n",
+        "    \"FLUTTERDEC_BLUTTER_PY\",\n",
+        "):\n",
+        "    _os.environ.pop(_name, None)\n",
+        "_os.environ[\"PATH\"] = \"\"\n",
+    );
+
+    // After the `__future__` import, which Python requires to come first.
+    const ANCHOR: &str = "from __future__ import annotations\n";
+
+    let source = repo_root().join("adapters/python/adapter_template.py");
+    let producer = fs::read_to_string(&source).expect("read producer");
+    let (head, rest) = producer
+        .split_once(ANCHOR)
+        .expect("the producer imports __future__ annotations");
+    let dir = TempDir::new().expect("tempdir");
+    let neutralized = dir.path().join("adapter_template.py");
+    fs::write(&neutralized, format!("{head}{ANCHOR}{NEUTRALIZE}{rest}"))
+        .expect("write neutralized producer");
+    support::Authorized::install_named(&neutralized, identity, None)
 }
 
 struct Snapshot {
@@ -351,8 +388,8 @@ fn carved_strings_become_ordinal_pool_entries_never_hardware_ones() {
 #[test]
 fn a_pinned_backend_that_cannot_run_fails_instead_of_falling_back() {
     let identity = support::identity();
-    let installed = install(&identity);
-    // r2flutter is not on PATH in this environment, and the input path the
+    let installed = install_without_external_backends(&identity);
+    // The producer cannot resolve r2flutter at all, and the input path the
     // backend needs is absent, so it cannot run. Pinned means it must fail.
     let err = run(
         &installed,
@@ -369,9 +406,8 @@ fn a_pinned_backend_that_cannot_run_fails_instead_of_falling_back() {
 
 #[test]
 fn auto_falls_back_to_internal_and_says_why() {
-
     let identity = support::identity();
-    let installed = install(&identity);
+    let installed = install_without_external_backends(&identity);
     let run = run(
         &installed,
         &identity,
