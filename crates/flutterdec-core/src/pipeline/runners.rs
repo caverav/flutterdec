@@ -976,10 +976,16 @@ pub fn run_info(
     } else {
         None
     };
-    let adapter_installed = selection
-        .as_ref()
-        .and_then(|selection| selection.resolve_current_artifact(layout.store_dir()).ok())
-        .is_some();
+    // Both halves, because neither answers alone: the ledger says an adapter was
+    // installed for this record, and resolving says the file it named is still
+    // there. Reporting only the second called a record installed whenever some
+    // other record's install happened to publish the same artifact path.
+    let adapter_installed = selection.as_ref().is_some_and(|selection| {
+        selection
+            .resolve_current_artifact(layout.store_dir())
+            .is_ok()
+            && store::installed_for(layout.store_dir(), selection.record()).is_ok()
+    });
     let manifest_inspection = if let Some(apk) = apk_session.as_ref() {
         inspect_android_manifest_from_apk_session(apk)
     } else {

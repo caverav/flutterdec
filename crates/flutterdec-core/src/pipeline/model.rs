@@ -399,6 +399,27 @@ fn load_program(
             return recover_or_refuse(bundle, backend, error, Some(selection.record().clone()))
         }
     };
+    // Resolving the artifact answers "is there a file where this record says",
+    // and two records can name one file. Whether an adapter was installed *for
+    // this record* is a question only the store ledger answers, and it is the
+    // ledger `adapter list` reports from, so asking it here is what keeps the
+    // listing and the run from disagreeing. The host re-checks this before it
+    // spawns; the point of checking here as well is that an operator gets the
+    // same not-installed fallback they would get for any other record whose
+    // adapter is absent, rather than a hard failure that depends on whether
+    // some *other* record happens to share the artifact path.
+    if let Err((state, detail)) = store::installed_for(layout.store_dir(), selection.record()) {
+        // A ledger that claims nothing is an absent install, which is a fact
+        // about this host and recoverable. A ledger that contradicts the record
+        // is a broken installation, which stays loud.
+        let error = match state {
+            EntryState::Unavailable | EntryState::Missing => RegistryError::ArtifactAbsent(detail),
+            EntryState::Verified | EntryState::Corrupt | EntryState::Incompatible => {
+                RegistryError::Artifact(detail)
+            }
+        };
+        return recover_or_refuse(bundle, backend, error, Some(selection.record().clone()));
+    }
 
     // The profile is loaded only once a real artifact is going to run: a
     // verified profile is part of authorizing that run, and core recovery uses
