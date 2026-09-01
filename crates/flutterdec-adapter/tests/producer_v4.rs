@@ -84,6 +84,48 @@ fn install_named(hash: &str, file_name: Option<&str>) -> Installed {
     Installed { _dir: dir, exec }
 }
 
+/// Install an adapter that cannot discover any external backend.
+///
+/// The producer resolves r2flutter and blutter from `FLUTTERDEC_*` variables and
+/// then from `PATH`, and the installed wrapper inherits this test runner's
+/// environment. A developer machine with either tool installed would otherwise
+/// resolve a real backend and invalidate the assertion. The neutralization is
+/// done inside the adapter's own process, as the blutter bridge test does, so
+/// concurrent tests are unaffected.
+fn install_without_external_backends(hash: &str) -> Installed {
+    let installed = install(hash);
+    let adapters = installed
+        .exec
+        .parent()
+        .and_then(Path::parent)
+        .expect("the installed adapter lives under <root>/adapters/installed");
+    fs::create_dir_all(adapters.join("no-tools")).expect("mkdir no-tools");
+    fs::write(
+        &installed.exec,
+        r#"#!/usr/bin/env python3
+from pathlib import Path
+import os
+import sys
+root = Path(__file__).resolve().parents[1]
+for name in (
+    "FLUTTERDEC_R2FLUTTER_CMD",
+    "FLUTTERDEC_R2FLUTTER_BIN",
+    "FLUTTERDEC_BLUTTER_CMD",
+    "FLUTTERDEC_BLUTTER_PY",
+):
+    os.environ.pop(name, None)
+os.environ["PATH"] = str(root / "no-tools")
+sys.path.insert(0, str(root / "python"))
+import adapter_template
+if __name__ == "__main__":
+    raise SystemExit(adapter_template.entrypoint())
+"#,
+    )
+    .expect("write adapter exec");
+    set_executable(&installed.exec);
+    installed
+}
+
 /// The host's own producer record.
 ///
 /// `Local` is not a judgement call here: `run_adapter` refuses any identity that
@@ -395,10 +437,10 @@ fn carved_strings_become_ordinal_pool_entries_never_hardware_ones() {
 
 #[test]
 fn a_pinned_backend_that_cannot_run_fails_instead_of_falling_back() {
-    let installed = install("deadbeefdeadbeefdeadbeefdeadbeef");
+    let installed = install_without_external_backends("deadbeefdeadbeefdeadbeefdeadbeef");
     let identity = support::identity();
-    // r2flutter is not on PATH in this environment, and the input path the
-    // backend needs is absent, so it cannot run. Pinned means it must fail.
+    // The adapter cannot resolve r2flutter at all, so the backend cannot run.
+    // Pinned means it must fail rather than quietly answer as internal.
     let err = run(
         &installed,
         &identity,
@@ -414,7 +456,7 @@ fn a_pinned_backend_that_cannot_run_fails_instead_of_falling_back() {
 
 #[test]
 fn auto_falls_back_to_internal_and_says_why() {
-    let installed = install("deadbeefdeadbeefdeadbeefdeadbeef");
+    let installed = install_without_external_backends("deadbeefdeadbeefdeadbeefdeadbeef");
     let identity = support::identity();
     let run = run(
         &installed,
