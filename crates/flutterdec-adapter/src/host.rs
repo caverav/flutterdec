@@ -200,6 +200,19 @@ pub enum HostError {
         expected_size: u64,
         actual_size: u64,
     },
+    /// The store ledger holds no installation of this record for this host.
+    ///
+    /// Distinct from [`Self::ArtifactPathRejected`] and
+    /// [`Self::ArtifactDigestMismatch`], which are already satisfied when this
+    /// fires: the file is where the record says it is and hashes to what the
+    /// record declares, and it still was not installed for *this* record. Two
+    /// records can name one artifact path with one digest, so the file cannot
+    /// answer which record an install was for. The ledger can, and it is the
+    /// ledger `adapter list` reports from.
+    NotInstalled {
+        state: crate::store::EntryState,
+        detail: String,
+    },
     /// The runtime profile does not match the digest the record pinned.
     ProfileRejected(String),
     /// The producer record the caller built does not follow from the registry
@@ -305,6 +318,7 @@ impl HostError {
                 | Self::ArtifactPathRejected(_)
                 | Self::ArtifactNotExecutable(_)
                 | Self::ArtifactDigestMismatch { .. }
+                | Self::NotInstalled { .. }
                 | Self::ProfileRejected(_)
                 | Self::ProducerMismatch(_)
                 | Self::BindingMismatch(_)
@@ -376,6 +390,10 @@ impl fmt::Display for HostError {
             } => write!(
                 f,
                 "adapter artifact changed after registry verification: expected {expected_size} bytes with {expected}, got {actual_size} bytes with {actual}"
+            ),
+            Self::NotInstalled { state, detail } => write!(
+                f,
+                "the adapter store reports {state} for this compatibility record: {detail}"
             ),
             Self::ProfileRejected(detail) => write!(f, "runtime profile rejected: {detail}"),
             Self::ProducerMismatch(detail) => write!(f, "producer record rejected: {detail}"),
@@ -720,6 +738,17 @@ fn authorize(input: &AdapterInput<'_>, exec_path: &Path) -> Result<Authorized, H
             expected_size: variant.size,
             actual_size: artifact_bytes.len() as u64,
         });
+    }
+    // The digest proves these are the bytes the record declares. It cannot
+    // prove anything was installed *for this record*: two records can name one
+    // artifact path with one digest, and the shipped registry has exactly that
+    // pair, so a file that satisfies every check above may have been put there
+    // by an install for some other snapshot. The store ledger is what records
+    // which record an install was authorized under, and it is the same ledger
+    // `adapter list` reports from, so what an operator is shown and what may
+    // run cannot disagree.
+    if let Err((state, detail)) = crate::store::installed_for(authorization.store_root, record) {
+        return Err(HostError::NotInstalled { state, detail });
     }
     // The producer record travels to the adapter and into the model, so a digest
     // there that is not the digest of the file being executed would be a claim
