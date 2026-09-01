@@ -49,7 +49,7 @@
       "profile": {
         "id": "3.5.0",
         "path": "data/dart-profiles.json",
-        "sha256": "eb99e9b11a237a03f993ffb17a5472bb1bdc470953f2df785da457989985d30f"
+        "sha256": "a1ce86ebf936c3e780413090974b753520c1c8a9f1854d3a0367158d48f77e0f"
       },
       "artifact": {
         "id": "flutterdec-local-python",
@@ -135,7 +135,7 @@
       "profile": {
         "id": "3.9.0",
         "path": "data/dart-profiles.json",
-        "sha256": "eb99e9b11a237a03f993ffb17a5472bb1bdc470953f2df785da457989985d30f"
+        "sha256": "a1ce86ebf936c3e780413090974b753520c1c8a9f1854d3a0367158d48f77e0f"
       },
       "artifact": {
         "id": "flutterdec-local-python",

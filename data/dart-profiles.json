@@ -1,5 +1,5 @@
 {
-  "_comment": "Dart AOT snapshot layout profiles keyed by snapshot hash. Data imported from radareorg/r2flutter (MIT) offsets.json; see docs/research-decisions.md. Pure data: flutterdec reads it to name the Dart/Flutter version behind a snapshot hash and to report tag encoding, it does not deserialize with it.",
+  "_comment": "Dart AOT snapshot layout profiles keyed by profile id. Data imported from radareorg/r2flutter (MIT) offsets.json; see docs/research-decisions.md. Pure data: it holds no snapshot hashes and no hash-to-version mapping. A host compatibility registry record names the profile id it needs and pins this file's SHA-256; flutterdec reports tag encoding and layout from it, names no SDK version from it, and does not deserialize with it.",
   "_source": "https://github.com/radareorg/r2flutter (MIT), offsets.json",
   "_imported": "2026-07-24",
   "profiles": {
