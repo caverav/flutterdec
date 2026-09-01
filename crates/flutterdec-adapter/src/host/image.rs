@@ -44,12 +44,20 @@
 //! anonymous inode, and on Darwin answers `Unavailable` naming `UF_IMMUTABLE`
 //! and who can clear it.
 //!
-//! What that check does not cover is the residue: an owner who clears the flag
-//! and rewrites the bytes *in place* leaves the same inode, so the identity half
-//! of the check would still match. The freeze half is what catches it, and an
-//! owner can also re-set the flag. Hence "best effort" in the report — the
-//! Darwin image is narrowed as far as the platform allows and is never called
-//! sealed.
+//! What that check reaches is worth stating exactly, because it is narrower
+//! than it looks. Comparing device and inode against the held descriptor catches
+//! every attack that puts a *different* object at the name: unlink-and-replace,
+//! rename, a swap of one file for another, anything at all that moves the inode.
+//! Re-reading the flag catches a name left thawed. What neither half catches is
+//! an owner who clears the flag, rewrites the bytes through the *same* inode,
+//! and sets the flag again: afterwards the device matches, the inode matches and
+//! the flag is present, so the check passes and the rewritten bytes are what
+//! executes. Only re-reading the whole image between the check and the `execve`
+//! would see that, and the platform cannot make those two atomic, so it is not
+//! attempted. That residue is why [`ExecImage::integrity`] reports Darwin as
+//! best effort rather than as a guarantee: the image is narrowed as far as the
+//! platform allows, the state reached is named rather than claimed, and it is
+//! never called sealed.
 //!
 //! Scripts keep working. On Linux that is the reason the descriptor is inherited
 //! rather than closed on exec: the kernel hands a `#!` interpreter `/dev/fd/N`

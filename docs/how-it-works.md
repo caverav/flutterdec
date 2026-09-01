@@ -421,16 +421,25 @@ about to execute still resolves to the descriptor the host has held since it ver
 bytes (same device, same inode) and that the freeze is still on it. A name that has been
 re-pointed or thawed is not executed: the run ends as `HostError::ImageNotSealed` with no
 process created and the workspace removed as usual. The check allocates nothing, takes no
-locks, and is two `stat` calls. What it does not cover is an owner who clears the flag and
-rewrites the bytes in place without moving the inode; the freeze half of the check catches
-that, and an owner can re-set the flag.
+locks, and is two `stat` calls.
+
+What that reaches is narrower than it looks, and the exact edge matters. Comparing device
+and inode against the held descriptor catches every attack that puts a different object at
+the name: unlink-and-replace, rename, a swap of one file for another, anything at all that
+moves the inode. Re-reading the flag catches a name left thawed. What neither half catches
+is an owner who clears the flag, rewrites the bytes through the same inode, and sets the
+flag again: afterwards the device matches, the inode matches and the flag is present, so
+the check passes and the rewritten bytes are what executes. Only re-reading the whole image
+between the check and the `execve` would see that, and the platform cannot make those two
+atomic, so it is not attempted.
 
 So the state is reported rather than claimed. The containment report carries
 `image_integrity` alongside the other controls: `applied` only for the sealed anonymous
 inode whose whole seal set the host read back off the descriptor it executed, and
-`unavailable` on Darwin with a reason naming the pathname, `UF_IMMUTABLE`, and the fact
-that its owner can clear it. The Darwin image is narrowed as far as the platform allows
-and is never described as sealed.
+`unavailable` on Darwin with a reason naming the frozen pathname the image rests on,
+`UF_IMMUTABLE`, the fact that its owner can clear it, and that image integrity is
+therefore best effort. That residue is exactly what "best effort" is there to admit: the
+Darwin image is narrowed as far as the platform allows and is never described as sealed.
 
 Either way an adapter is exactly one file: nothing else in the store is beside the running
 script, because nothing else in the store was authorized by the record.
