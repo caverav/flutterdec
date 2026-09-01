@@ -659,6 +659,7 @@ pub const CONTROLS: &[&str] = &[
     "wall_clock_deadline",
     "process_group",
     "descriptor_isolation",
+    "image_integrity",
     "cpu_seconds",
     "file_size",
     "address_space",
