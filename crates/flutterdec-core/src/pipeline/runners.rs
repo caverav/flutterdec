@@ -1965,14 +1965,6 @@ pub fn run_decompile(
             "error": engine_context.error
         },
         "compatibility": {
-            // The binding lives in this object rather than a second
-            // `"compatibility"` key: a duplicate key is not an error in a JSON
-            // object literal, the later value simply wins, and these four
-            // fields were being dropped from the report.
-            "record_sha256": compatibility.record_sha256.to_string(),
-            "parser_family_id": compatibility.parser_family_id,
-            "profile_id": compatibility.profile_id,
-            "profile_sha256": compatibility.profile_sha256.to_string(),
             "status": compatibility_status,
             "record_sha256": &provider.compatibility_record_sha256,
             "parser_family_id": &provider.parser_family_id,
