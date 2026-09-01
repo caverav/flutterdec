@@ -266,7 +266,7 @@ which of these it was:
 | `internal_requested` | `--adapter-backend internal`; no registry read, no execution |
 | `identity_rejected` | not a FullAOT snapshot, or the hash did not come from a header |
 | `no_compatibility_record` | the identity is exact and no record covers it |
-| `compatibility_unsupported` | a record exists for the hash but not for this target or feature tuple, or the selection was ambiguous |
+| `compatibility_unsupported` | a record exists for the hash but not for this target or feature tuple |
 | `adapter_not_installed` | a record authorizes an artifact and none is installed |
 
 What core recovery produces: ARM64 code candidates from frame prologues and
@@ -275,9 +275,10 @@ does not: libraries, classes, class relationships, function names, the original
 entry function, and any ObjectPool index space, all of which stay `unavailable`
 with a diagnostic saying why.
 
-A malformed registry, a record that fails its own invariants, a profile that
-does not verify, and an artifact whose bytes are not the ones the registry
-authorized are *not* fallback conditions. They are integrity failures of the
+A malformed registry, two records claiming one snapshot (`registry_ambiguous`),
+a record that fails its own invariants, a profile that does not verify, and an
+artifact whose bytes are not the ones the registry authorized are *not* fallback
+conditions. They are integrity failures of the
 installation and they stop the command. So does an adapter that was authorized,
 spawned, and then failed.
 

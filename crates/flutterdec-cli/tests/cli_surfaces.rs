@@ -374,6 +374,87 @@ fn an_adapter_that_reports_the_wrong_identity_fails_with_its_own_category() {
     );
 }
 
+/// Two records claiming one snapshot fails both commands, before anything runs.
+///
+/// This is the registry refusal that must not look like the unknown-snapshot
+/// case above. That one exits 0 with a heuristic model and says so; this one
+/// means the operator's own registry cannot name a parser for a snapshot it may
+/// well have one for, so answering it with heuristics would be a wrong answer
+/// dressed up as an honest one.
+///
+/// The same prefix runs successfully first, so the zero exit code, the spawn and
+/// the artifacts are all known to be reachable; the second half then asks for
+/// exactly none of them.
+#[test]
+fn an_ambiguous_registry_fails_both_commands_before_any_adapter_runs() {
+    let prefix = Prefix::answering();
+    assert_eq!(code(&prefix.install()), 0);
+    let input = write_libapp(&prefix, "exact.so", HASH);
+    let control_out = out_dir(&prefix, "control");
+    let control_arg = control_out.to_str().expect("path").to_string();
+
+    // The control: this registry, this snapshot and this producer do work.
+    let control = prefix.run(&decompile_args(&input, &control_arg));
+    assert_eq!(code(&control), 0, "{}", stderr(&control));
+    assert!(control_out.join("report.json").exists());
+    assert_eq!(prefix.spawns(), 1);
+
+    // Now the record is written twice, which is the only difference.
+    let registry_path = prefix.share().join("adapters/registry.json");
+    let mut registry: Value =
+        serde_json::from_slice(&fs::read(&registry_path).expect("read registry"))
+            .expect("registry JSON");
+    let record = registry["records"][0].clone();
+    registry["records"]
+        .as_array_mut()
+        .expect("records array")
+        .push(record);
+    fs::write(
+        &registry_path,
+        serde_json::to_vec_pretty(&registry).expect("serialize registry"),
+    )
+    .expect("write ambiguous registry");
+
+    let out = out_dir(&prefix, "out");
+    let out_arg = out.to_str().expect("path").to_string();
+    let decompile = prefix.run(&decompile_args(&input, &out_arg));
+    assert_ne!(
+        code(&decompile),
+        0,
+        "an ambiguous registry produced a decompile: {}",
+        stderr(&decompile)
+    );
+    let message = stderr(&decompile);
+    assert!(
+        message.contains("error category: registry_ambiguous"),
+        "the failure category is not the ambiguity: {message}"
+    );
+    assert!(
+        !out.exists(),
+        "an ambiguous registry still wrote decompile artifacts"
+    );
+
+    let info = prefix.run(&["info", &input, "--json"]);
+    assert_ne!(code(&info), 0, "an ambiguous registry exited 0 from info");
+    assert_eq!(
+        json(&info)["adapter_error_category"],
+        text("registry_ambiguous")
+    );
+    assert_eq!(
+        json(&info)["provider"],
+        Value::Null,
+        "an ambiguous registry still reported a provider"
+    );
+
+    // Neither command reached a child, and neither of them fell back: the run
+    // count is still the control's single spawn.
+    assert_eq!(
+        prefix.spawns(),
+        1,
+        "an ambiguous registry executed an adapter"
+    );
+}
+
 /// A producer that never finishes is ended by the host deadline, and the
 /// command says so rather than hanging or reporting an empty snapshot.
 #[test]
