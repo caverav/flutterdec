@@ -889,6 +889,83 @@ fn artifact_matches(path: &Path, installed: &InstalledAdapter) -> Result<(), (En
     Ok(())
 }
 
+/// What the store ledger claims about `record` on this host.
+///
+/// Ledger only: nothing here reads the artifact. A published file is not an
+/// install. Two compatibility records can name one artifact path with one
+/// digest — the shipped registry has exactly that pair — so the file being
+/// present says that somebody installed something and not which record they
+/// installed it for. The ledger entry says, because it is keyed by the snapshot
+/// hash the install was authorized under.
+fn ledger_claim<'a>(
+    state: &'a StoreState,
+    record: &CompatibilityRecord,
+    variant: &HostArtifactVariant,
+    host_os: &str,
+    host_arch: &str,
+) -> Result<&'a InstalledAdapter, (EntryState, String)> {
+    let installed = state
+        .adapters
+        .iter()
+        .find(|entry| {
+            entry.snapshot_hash == record.snapshot_hash
+                && entry.host_os == host_os
+                && entry.host_arch == host_arch
+        })
+        .ok_or_else(|| {
+            (
+                EntryState::Unavailable,
+                "not installed in the local adapter store".to_string(),
+            )
+        })?;
+    if installed.sha256 != variant.sha256
+        || installed.size != variant.size
+        || installed.artifact_path != variant.path
+    {
+        return Err((
+            EntryState::Corrupt,
+            format!(
+                "installed record claims {} bytes with {} at {}, the compatibility record declares {} bytes with {} at {}",
+                installed.size,
+                installed.sha256,
+                installed.artifact_path,
+                variant.size,
+                variant.sha256,
+                variant.path
+            ),
+        ));
+    }
+    Ok(installed)
+}
+
+/// The ledger's claim for `record` on this host, loading the store state.
+///
+/// This is the authority `adapter list` reports from, exposed so that deciding
+/// whether an adapter may run and telling an operator whether one is installed
+/// are the same question answered once. The refusal carries the [`EntryState`]
+/// the listing would print for this record, so a caller can report the state in
+/// the operator's own vocabulary rather than inventing a second one.
+///
+/// Whether the bytes on disk are still the declared bytes is deliberately not
+/// asked here. Callers that are about to execute read and digest the artifact
+/// themselves, exactly once, and a second read would only widen the window
+/// between the check and the use.
+pub fn installed_for(
+    store_dir: &Path,
+    record: &CompatibilityRecord,
+) -> Result<InstalledAdapter, (EntryState, String)> {
+    let host_os = std::env::consts::OS;
+    let host_arch = std::env::consts::ARCH;
+    let state = load_state(store_dir).map_err(|err| (EntryState::Corrupt, err.to_string()))?;
+    let variant = variant_for_host(record, host_os, host_arch).ok_or_else(|| {
+        (
+            EntryState::Incompatible,
+            format!("no artifact variant for host {host_os}/{host_arch}"),
+        )
+    })?;
+    ledger_claim(&state, record, variant, host_os, host_arch).cloned()
+}
+
 /// The state of every record the registry authorizes, plus any installed
 /// adapter the registry no longer authorizes.
 ///
@@ -959,33 +1036,15 @@ pub fn inspect(
         row.expected_sha256 = Some(variant.sha256.clone());
         row.expected_size = Some(variant.size);
 
-        let installed = state.adapters.iter().find(|entry| {
-            entry.snapshot_hash == record.snapshot_hash
-                && entry.host_os == host_os
-                && entry.host_arch == host_arch
-        });
-        let Some(installed) = installed else {
-            row.detail = Some("not installed in the local adapter store".to_string());
-            rows.push(row);
-            continue;
+        let installed = match ledger_claim(&state, record, variant, host_os, host_arch) {
+            Ok(installed) => installed,
+            Err((state, detail)) => {
+                row.state = state;
+                row.detail = Some(detail);
+                rows.push(row);
+                continue;
+            }
         };
-        if installed.sha256 != variant.sha256
-            || installed.size != variant.size
-            || installed.artifact_path != variant.path
-        {
-            row.state = EntryState::Corrupt;
-            row.detail = Some(format!(
-                "installed record claims {} bytes with {} at {}, the compatibility record declares {} bytes with {} at {}",
-                installed.size,
-                installed.sha256,
-                installed.artifact_path,
-                variant.size,
-                variant.sha256,
-                variant.path
-            ));
-            rows.push(row);
-            continue;
-        }
         let path = layout.store_dir().join(&installed.artifact_path);
         match artifact_matches(&path, installed) {
             Ok(()) => row.state = EntryState::Verified,
