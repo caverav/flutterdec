@@ -8,7 +8,7 @@ use flutterdec_adapter::model::{
 };
 use flutterdec_adapter::primitives::Sha256Digest;
 use flutterdec_adapter::protocol::{BackendId, FallbackReason, RequestedBackend};
-use flutterdec_adapter::store::{self, StoreEntry};
+use flutterdec_adapter::store::{self, EntryState, StoreEntry};
 use flutterdec_adapter::validate;
 use flutterdec_adapter::{
     run_adapter, AdapterInput, AdapterRegionInput, ContainmentReport, HostAuthorization, HostError,
@@ -387,6 +387,7 @@ fn host_error_category(error: &HostError) -> &'static str {
         HostError::ArtifactPathRejected(_) => "artifact_path_rejected",
         HostError::ArtifactNotExecutable(_) => "artifact_not_executable",
         HostError::ArtifactDigestMismatch { .. } => "artifact_digest_mismatch",
+        HostError::NotInstalled { .. } => "adapter_not_installed",
         HostError::ProfileRejected(_) => "profile_rejected",
         HostError::ProducerMismatch(_) => "producer_mismatch",
         HostError::BindingMismatch(_) => "binding_mismatch",
