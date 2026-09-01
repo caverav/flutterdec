@@ -144,13 +144,36 @@ If this is your first run, this is the shortest useful path.
 flutterdec info ./sample.apk --json
 ```
 
-`info` resolves the Dart SDK version straight from the snapshot hash, with no adapter
-installed and no disassembly:
+`info` reads the snapshot identity out of the header with no adapter installed and no
+disassembly: `snapshot_hash`, `arch`, `snapshot_features`, `compressed_pointers`, and
+`registry_record_present`.
 
-- `dart_version` (for example `3.9.2`)
+The Dart profile fields come from the host registry record that the identity matched,
+and appear only once that record's adapter is installed, because the profile is
+SHA-256 verified as part of authorizing the run:
+
+- `dart_aliases`: zero or more SDK labels, each with its own `ecosystem`, `version`,
+  and `provenance`. They are provenance only and never select a parser or a profile.
+- `dart_version`: a display value, never an exact SDK claim. It is `unverified` when
+  the record carries aliases and `unavailable` when it carries none.
 - `dart_tag_style` (`CID_INT32`, `CID_SHIFT1`, or `OBJECT_HEADER`)
 
-Both are `null` for snapshot hashes not in the bundled table (`data/dart-profiles.json`).
+```json
+"dart_aliases": [
+  {"ecosystem": "dart", "version": "3.5.0", "provenance": "r2flutter-offsets"},
+  {"ecosystem": "flutter", "version": "3.24.0", "provenance": "sample-build-metadata"}
+],
+"dart_version": "unverified",
+"dart_tag_style": "OBJECT_HEADER"
+```
+
+All three are `null` when no registry record matches the snapshot identity, and when a
+matching record's adapter is not installed.
+
+The registry record is the only authority for SDK labels, so a snapshot with no record
+reports no alias at all — including hashes that an earlier version labelled from the
+bundled profile table. That is the accepted cost of keeping one authority: there is no
+second, weaker path that names a version from a hash.
 
 For APK inputs, `info` reports Android startup summary fields such as:
 
@@ -608,7 +631,7 @@ Recover readable behavior from Flutter AOT ARM64 binaries with enough semantic s
 
 ## Third-Party Credits
 
-- `data/dart-profiles.json`: Dart snapshot hash-to-version and layout table imported from
+- `data/dart-profiles.json`: Dart AOT snapshot layout profiles imported from
   [radareorg/r2flutter](https://github.com/radareorg/r2flutter) (MIT). Rationale in
   [docs/research-decisions.md](docs/research-decisions.md).
 - `--adapter-backend r2-flutter` drives the same project as an external tool; it is not
