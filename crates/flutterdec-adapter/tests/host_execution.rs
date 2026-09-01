@@ -95,13 +95,29 @@ struct Rig {
 impl Rig {
     /// `body` is appended to [`PRELUDE`] and is what the adapter actually does.
     fn new(body: &str) -> Self {
+        Self::named(body, None)
+    }
+
+    /// The same adapter, published under a file name the caller chooses.
+    fn named(body: &str, file_name: Option<&str>) -> Self {
         let dir = TempDir::new().expect("tempdir");
         let source = dir.path().join("hostile_adapter");
         fs::write(&source, format!("{PRELUDE}\n{body}")).expect("write hostile adapter");
         fs::set_permissions(&source, fs::Permissions::from_mode(0o755)).expect("chmod");
+        Self::publish(dir, &source, file_name)
+    }
 
+    /// An adapter that is already an executable file: a compiled one, rather
+    /// than a script the kernel hands to an interpreter.
+    fn built(dir: TempDir, executable: &Path) -> Self {
+        Self::publish(dir, executable, None)
+    }
+
+    /// Authorize `source` as this snapshot's adapter and prepare the answer a
+    /// well-behaved one would give.
+    fn publish(dir: TempDir, source: &Path, file_name: Option<&str>) -> Self {
         let identity = support::identity();
-        let installed = support::Authorized::install(&source, &identity);
+        let installed = support::Authorized::install_named(source, &identity, file_name);
         let input_path = dir.path().join("app.apk");
         fs::write(&input_path, b"not really a zip").expect("write input");
 
@@ -1109,4 +1125,161 @@ succeed()
             flutterdec_adapter::ControlState::Unavailable { .. }
         ));
     }
+}
+
+// -- VAL-HOST-007: the image is sealed or nothing runs ------------------------
+
+/// A native adapter, so the sealed descriptor is proved on the path where the
+/// kernel executes the image itself rather than handing its name to an
+/// interpreter.
+///
+/// It reports where the kernel thinks it came from. On Linux that is the
+/// anonymous file the host created, which has no directory entry anywhere, and
+/// the run still has to succeed end to end: a host that could only start scripts
+/// would be a host nobody could ship a compiled adapter to.
+const NATIVE_ADAPTER: &str = r#"
+#include <stdio.h>
+#include <string.h>
+#include <unistd.h>
+
+/* Reads the prepared model beside --input-path and answers the request. The
+   output handle is the one the host always issues, so no JSON parser is needed
+   to be a correct adapter. */
+int main(int argc, char **argv) {
+    const char *result = 0, *input = 0;
+    for (int i = 1; i + 1 < argc; i++) {
+        if (!strcmp(argv[i], "--result")) result = argv[++i];
+        else if (!strcmp(argv[i], "--input-path")) input = argv[++i];
+    }
+    if (!result || !input) return 2;
+
+    char link[4096];
+    ssize_t linked = readlink("/proc/self/exe", link, sizeof link - 1);
+    if (linked < 0) linked = 0;
+    link[linked] = 0;
+
+    char path[4096];
+    snprintf(path, sizeof path, "%s.image", input);
+    FILE *probe = fopen(path, "w");
+    if (!probe) return 3;
+    fprintf(probe, "{\"argv0\":\"%s\",\"exe\":\"%s\"}", argv[0], link);
+    fclose(probe);
+
+    snprintf(path, sizeof path, "%s.model", input);
+    FILE *prepared = fopen(path, "r");
+    if (!prepared) return 4;
+    FILE *model = fopen("out/model.json", "w");
+    if (!model) return 5;
+    char buffer[8192];
+    size_t got;
+    while ((got = fread(buffer, 1, sizeof buffer, prepared)) > 0)
+        fwrite(buffer, 1, got, model);
+    fclose(prepared);
+    fclose(model);
+
+    FILE *answer = fopen(result, "w");
+    if (!answer) return 6;
+    fputs("{\"protocol_major\":1,\"model_major\":4,\"status\":\"ok\","
+          "\"model\":\"out/model.json\",\"error\":null,"
+          "\"resolved_backend\":\"internal\",\"fallback_reason\":null,"
+          "\"diagnostics\":[]}", answer);
+    fclose(answer);
+    return 0;
+}
+"#;
+
+#[test]
+fn a_native_adapter_runs_from_the_sealed_descriptor() {
+    let dir = TempDir::new().expect("tempdir");
+    let source = dir.path().join("native_adapter.c");
+    let built = dir.path().join("native_adapter");
+    fs::write(&source, NATIVE_ADAPTER).expect("write the native adapter");
+    // `cc` is what linked this test binary, so a host that can build the suite
+    // can build a native adapter for it.
+    let compiler = std::env::var("CC").unwrap_or_else(|_| "cc".to_string());
+    let compiled = std::process::Command::new(&compiler)
+        .arg("-O0")
+        .arg("-o")
+        .arg(&built)
+        .arg(&source)
+        .output()
+        .unwrap_or_else(|err| panic!("run {compiler}: {err}"));
+    assert!(
+        compiled.status.success(),
+        "{compiler} refused the native adapter: {}",
+        String::from_utf8_lossy(&compiled.stderr)
+    );
+
+    let rig = Rig::built(dir, &built);
+    let run = rig.run(brisk()).expect("the native adapter succeeds");
+    assert!(run.model.functions.is_empty());
+
+    #[derive(serde::Deserialize)]
+    struct Image {
+        argv0: String,
+        exe: String,
+    }
+    let image: Image =
+        serde_json::from_slice(&fs::read(rig.sidecar("image")).expect("the adapter wrote a probe"))
+            .expect("the probe is JSON");
+    assert_eq!(
+        image.argv0, "flutterdec-local-python",
+        "the adapter was not started under the name the registry authorized"
+    );
+    if cfg!(target_os = "linux") {
+        assert!(
+            image.exe.starts_with("/memfd:flutterdec-adapter:"),
+            "a native adapter ran from something other than the anonymous image: {}",
+            image.exe
+        );
+    }
+}
+
+/// The kernel refusing to provide a sealed anonymous image is the end of the
+/// run, not the start of a fallback.
+///
+/// `memfd_create` will not accept a name longer than it can store, and the label
+/// is derived from the authorized artifact's file name, so publishing under a
+/// long enough name makes the real syscall fail on every kernel without a hook
+/// anywhere in the product. What follows has to be a typed pre-spawn refusal:
+/// the adapter records that it ran, and that record must not exist.
+#[test]
+#[cfg(target_os = "linux")]
+fn an_image_the_host_cannot_seal_refuses_the_run_instead_of_naming_a_file() {
+    let unnameable = "a".repeat(250);
+    let rig = Rig::named(
+        "sidecar(\"ran\").write_text(\"the adapter started\")\nsucceed()\n",
+        Some(&unnameable),
+    );
+
+    let err = rig
+        .run(brisk())
+        .expect_err("an image that cannot be sealed must not be executed");
+
+    let HostError::ImageNotSealed(ref detail) = err else {
+        panic!("wrong failure: {err}");
+    };
+    assert!(
+        detail.contains("create an anonymous executable image"),
+        "the refusal does not say what failed: {detail}"
+    );
+    assert!(
+        err.is_pre_spawn(),
+        "a refusal that started no child was not classified as pre-spawn: {err}"
+    );
+    assert!(
+        !rig.sidecar("ran").exists(),
+        "a child ran after the host refused to seal its image"
+    );
+    // Nothing was written next to the artifact either: the store holds what it
+    // held before the run.
+    let published: Vec<_> = fs::read_dir(rig.installed.store_root.join("artifacts"))
+        .expect("read the store")
+        .map(|entry| entry.expect("entry").file_name())
+        .collect();
+    assert_eq!(
+        published,
+        vec![std::ffi::OsString::from(&unnameable)],
+        "the refused run left something in the store"
+    );
 }
