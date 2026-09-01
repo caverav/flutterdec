@@ -177,6 +177,24 @@ fn valid_registry_repo() -> SpyRepo {
     repo.write_valid_registry();
     repo
 }
+/// The same repo with its one record written twice, so exactly one selection
+/// key is claimed by two records.
+fn ambiguous_registry_repo() -> SpyRepo {
+    let mut repo = SpyRepo::new("{}");
+    repo.write_valid_registry();
+    let record = repo.record.clone().expect("the valid registry has a record");
+    let registry = CompatibilityRegistry {
+        version: 1,
+        records: vec![record.clone(), record],
+    };
+    fs::write(
+        repo.root.join("adapters/registry.json"),
+        serde_json::to_vec_pretty(&registry).expect("serialize ambiguous registry"),
+    )
+    .expect("write ambiguous registry");
+    repo
+}
+
 /// A bundle carrying `identity`, with plausible regions so that nothing except
 /// the identity can decide the outcome.
 fn bundle(identity: SnapshotIdentity) -> SnapshotBundle {
@@ -356,6 +374,57 @@ fn a_full_aot_snapshot_reaches_selection_and_execution() {
     // snapshots nothing was authorized to parse, not a way to paper over a
     // producer that broke.
     assert_eq!(error_category(&err), "adapter_no_result", "{err:#}");
+}
+
+/// Two records claiming one snapshot is a broken installation, not a snapshot
+/// nothing can parse.
+///
+/// Auto mode is the arm that could hide it: every registry refusal that reaches
+/// core recovery exits successfully with a heuristic model, so classifying
+/// ambiguity as one of those would report a snapshot this host *does* have a
+/// parser for as one it does not, and would do it while exiting zero. The
+/// assertions are therefore that the run fails, that it fails with the typed
+/// refusal still attached and the stable category on it, and that nothing was
+/// selected, loaded or executed on the way there.
+#[test]
+fn an_ambiguous_registry_fails_closed_rather_than_recovering() {
+    let repo = ambiguous_registry_repo();
+    let mut bundle = bundle(full_aot());
+
+    let err = load_program(&repo.layout, &mut bundle, AdapterBackend::Auto, None)
+        .expect_err("an ambiguous registry is not an unsupported snapshot");
+
+    assert_eq!(error_category(&err), "registry_ambiguous", "{err:#}");
+    assert!(
+        err.chain().any(|cause| matches!(
+            cause.downcast_ref::<RegistryError>(),
+            Some(RegistryError::Ambiguous(_))
+        )),
+        "the typed registry refusal did not survive the context: {err:#}"
+    );
+    assert!(
+        !repo.spawned(),
+        "an ambiguous registry executed an adapter: {err:#}"
+    );
+    assert!(
+        bundle.dart_profile.is_none(),
+        "an ambiguous registry loaded a compatibility profile"
+    );
+}
+
+/// The control for the case above, and for every other registry refusal: a
+/// stringified error reports `unclassified`, so a category assertion is only
+/// evidence if some other refusal through the same path reports its own.
+#[test]
+fn a_registry_that_is_not_json_reports_its_own_category() {
+    let repo = poisoned_registry_repo();
+    let mut bundle = bundle(full_aot());
+
+    let err = load_program(&repo.layout, &mut bundle, AdapterBackend::Auto, None)
+        .expect_err("a registry that is not JSON is an installation failure");
+
+    assert_eq!(error_category(&err), "registry_malformed", "{err:#}");
+    assert!(!repo.spawned(), "a malformed registry executed an adapter");
 }
 
 /// An explicitly internal run reads nothing and executes nothing, even where a

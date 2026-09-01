@@ -26,8 +26,10 @@ pub enum CoreFallbackReason {
     IdentityRejected,
     /// The identity is exact and no compatibility record matches it.
     NoCompatibilityRecord,
-    /// A record exists and this host cannot act on it: wrong target, wrong
-    /// feature tuple, ambiguous, malformed, or a profile that did not verify.
+    /// A record exists for the snapshot hash and none of them covers this
+    /// snapshot: wrong target architecture, or a feature tuple no record was
+    /// written for. A registry that is malformed, ambiguous, or carries a
+    /// profile that does not verify is an installation failure, not this.
     CompatibilityUnsupported,
     /// A record authorizes an adapter and no verified artifact is installed.
     AdapterNotInstalled,
