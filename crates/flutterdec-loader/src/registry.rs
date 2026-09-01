@@ -413,9 +413,14 @@ impl CompatibilityRegistry {
                 record.target_arch.as_str(),
                 record.feature_fingerprint
             );
+            // Two records under one exact key is the same condition
+            // `select_key` reports when it finds more than one match, and it is
+            // named the same way here: a registry that cannot say which record
+            // covers a snapshot is ambiguous, not merely invalid. Nothing may
+            // treat it as "this snapshot is unsupported" and carry on.
             if !keys.insert(key.clone()) {
-                return Err(RegistryError::InvalidRecord(format!(
-                    "duplicate exact compatibility key {key}"
+                return Err(RegistryError::Ambiguous(format!(
+                    "two records share the exact compatibility key {key}"
                 )));
             }
         }
@@ -729,6 +734,41 @@ mod tests {
             "product compressed-pointers arm64",
         );
         assert!(registry.select(&identity).is_ok());
+    }
+
+    /// A registry that cannot say which record covers a snapshot says so, and
+    /// says it the same way whether the duplicate is caught while loading or
+    /// while selecting.
+    ///
+    /// The distinction is not cosmetic. `Ambiguous` is the one refusal a caller
+    /// must not answer with "this snapshot is unsupported": it is a fact about
+    /// the installation, and a caller that mislabels it hides a broken registry
+    /// behind a heuristic result.
+    #[test]
+    fn two_records_under_one_exact_key_are_ambiguous() {
+        let one = record(&["arm64", "compressed-pointers", "product"]);
+        let registry = CompatibilityRegistry {
+            version: REGISTRY_VERSION,
+            records: vec![one.clone(), one.clone()],
+        };
+        assert!(
+            matches!(registry.validate(), Err(RegistryError::Ambiguous(_))),
+            "validate reported {:?}",
+            registry.validate()
+        );
+        // Through the parse boundary too, since that is the only way the
+        // pipeline ever builds one.
+        let bytes = serde_json::to_vec(&registry).expect("serialize");
+        assert!(matches!(
+            CompatibilityRegistry::from_json(&bytes),
+            Err(RegistryError::Ambiguous(_))
+        ));
+        // The control: one record under that key loads and selects.
+        let single = CompatibilityRegistry {
+            version: REGISTRY_VERSION,
+            records: vec![one],
+        };
+        single.validate().expect("one record is not ambiguous");
     }
 
     #[test]
