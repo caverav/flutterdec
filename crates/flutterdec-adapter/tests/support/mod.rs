@@ -252,6 +252,61 @@ pub fn unavailable_model() -> ProgramModel {
     model
 }
 
+/// Record `record` as installed for this host, as `adapter install` leaves the
+/// store ledger.
+///
+/// Publishing bytes into the store is not installing them: the host authorizes
+/// against the ledger, so a rig that only copies a file describes a state the
+/// product never produces. Written directly rather than through
+/// `store::install` because these fixtures include artifact names the real
+/// installer cannot stage — a 250-character name leaves no room for its
+/// temporary suffix — and the sealing cases need exactly those. That the
+/// installer writes the entry the host accepts is proven where a full layout
+/// exists: `flutterdec-core`'s pipeline gate tests and the CLI store suite both
+/// install for real.
+///
+/// Overwrites whatever the ledger held, so a case can hand in a *different*
+/// record and get a store where the artifact is present and this record was
+/// never installed.
+pub fn write_ledger(
+    store_root: &std::path::Path,
+    record: &flutterdec_loader::registry::CompatibilityRecord,
+) {
+    use flutterdec_adapter::store::{InstalledAdapter, StoreState, STATE_FILE, STORE_VERSION};
+
+    let variant = record
+        .artifact
+        .variants
+        .iter()
+        .find(|variant| {
+            variant.host_os == std::env::consts::OS && variant.host_arch == std::env::consts::ARCH
+        })
+        .expect("the fixture record declares a variant for this host");
+    let state = StoreState {
+        version: STORE_VERSION,
+        adapters: vec![InstalledAdapter {
+            snapshot_hash: record.snapshot_hash.clone(),
+            target_arch: record.target_arch.as_str().to_string(),
+            host_os: variant.host_os.clone(),
+            host_arch: variant.host_arch.clone(),
+            artifact_id: record.artifact.id.clone(),
+            artifact_path: variant.path.clone(),
+            size: variant.size,
+            sha256: variant.sha256.clone(),
+            parser_family_id: record.parser_family.id.clone(),
+            profile_id: record.profile.id.clone(),
+            profile_sha256: record.profile.sha256.clone(),
+            compatibility_record_sha256: record.sha256().expect("record digest"),
+            protocol_major: record.protocol_major,
+            model_major: record.model_major,
+            source: "fixture".to_string(),
+        }],
+    };
+    let mut bytes = serde_json::to_vec_pretty(&state).expect("serialize store state");
+    bytes.push(b'\n');
+    std::fs::write(store_root.join(STATE_FILE), bytes).expect("write store ledger");
+}
+
 /// A registry-authorized adapter install.
 ///
 /// Everything the host checks before it spawns lives here and is consistent by
@@ -351,6 +406,7 @@ impl Authorized {
             model_major: 4,
         };
         record.validate().expect("the fixture record is valid");
+        write_ledger(&store_root, &record);
 
         Self {
             _dir: dir,

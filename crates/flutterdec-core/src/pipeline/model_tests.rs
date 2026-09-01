@@ -165,6 +165,17 @@ impl SpyRepo {
             serde_json::to_vec_pretty(&registry).expect("serialize test registry"),
         )
         .expect("write valid registry");
+        // A spy adapter sitting in the store is not an installed one. The host
+        // authorizes against the store ledger, so the rig installs through the
+        // real installer rather than leaving a file the product would refuse.
+        store::install(
+            &self.layout,
+            &registry,
+            HASH,
+            None,
+            Some(&exec_path),
+        )
+        .expect("install the spy adapter");
     }
 }
 
