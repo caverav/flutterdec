@@ -22,7 +22,7 @@ use flutterdec_disasm_arm64::{
 use flutterdec_ir::{build_program_ir, FunctionIr};
 use flutterdec_loader::dart_profile::{ResolvedDartProfile, SdkAlias};
 use flutterdec_loader::identity::IdentityRejection;
-use flutterdec_loader::layout::Layout;
+use flutterdec_loader::layout::{Layout, LayoutError};
 use flutterdec_loader::registry::RegistryError;
 use flutterdec_loader::{
     load_snapshot_bundle, load_snapshot_bundle_from_apk_session, ApkSession, SnapshotBundle,
@@ -366,6 +366,12 @@ pub fn error_category(error: &anyhow::Error) -> &'static str {
         if let Some(registry) = cause.downcast_ref::<RegistryError>() {
             return registry_error_category(registry);
         }
+        if let Some(store) = cause.downcast_ref::<store::StoreError>() {
+            return store_error_category(store);
+        }
+        if let Some(layout) = cause.downcast_ref::<LayoutError>() {
+            return layout_error_category(layout);
+        }
         if cause.downcast_ref::<IdentityRejection>().is_some() {
             return "identity_rejected";
         }
@@ -409,6 +415,36 @@ fn host_error_category(error: &HostError) -> &'static str {
         HostError::ModelRejected(_) => "adapter_model_rejected",
         HostError::ContainmentUnreported => "containment_unreported",
         HostError::Io(_) => "adapter_io",
+    }
+}
+
+/// Installing and inspecting the store, which fails for its own reasons: the
+/// registry authorizes nothing for the hash, the operator's bytes are not the
+/// authorized bytes, or a publish step was cut short and left nothing behind.
+fn store_error_category(error: &store::StoreError) -> &'static str {
+    match error {
+        store::StoreError::InvalidInput(_) => "store_invalid_input",
+        store::StoreError::NoRecord(_) => "store_no_record",
+        store::StoreError::Ambiguous(_) => "store_ambiguous",
+        store::StoreError::Incompatible(_) => "store_incompatible",
+        store::StoreError::Source(_) => "store_artifact_source_rejected",
+        store::StoreError::DigestMismatch { .. } => "store_artifact_digest_mismatch",
+        store::StoreError::Containment(_) => "store_path_rejected",
+        store::StoreError::Profile(_) => "store_profile_rejected",
+        store::StoreError::Malformed(_) => "store_state_malformed",
+        store::StoreError::Io(_) => "store_io",
+        store::StoreError::Injected(_) => "store_install_interrupted",
+    }
+}
+
+/// Deciding where the packaged data and the writable store are, which fails
+/// before any command runs when the binary was moved out of its prefix.
+fn layout_error_category(error: &LayoutError) -> &'static str {
+    match error {
+        LayoutError::Executable(_) => "layout_executable_unknown",
+        LayoutError::Override { .. } => "layout_data_dir_override_invalid",
+        LayoutError::NoDataDirectory { .. } => "layout_no_data_directory",
+        LayoutError::NoDataHome { .. } => "layout_no_data_home",
     }
 }
 
