@@ -144,7 +144,7 @@ impl fmt::Display for OutputStream {
 /// Why one adapter invocation was refused or did not produce a usable model.
 ///
 /// The split matters more than the count. Everything from
-/// [`Self::IdentityRejected`] through [`Self::OutputHandleRejected`] is a
+/// [`Self::IdentityRejected`] through [`Self::ImageNotSealed`] is a
 /// pre-spawn refusal: no process was created and nothing outside the host
 /// happened. Everything after it describes a child that ran.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -214,6 +214,14 @@ pub enum HostError {
     RequestRejected(String),
     /// The output handle is not a usable place to write a model.
     OutputHandleRejected(String),
+    /// The verified bytes could not be held as an executable image whose
+    /// contents are provably immutable, so nothing was executed.
+    ///
+    /// Only reachable where the host has an anonymous file to hold them in. The
+    /// alternative to this refusal would be executing something a same-user
+    /// process could still reach and rewrite through `/proc`, which is the one
+    /// thing the pathless image exists to prevent.
+    ImageNotSealed(String),
     /// The private workspace could not be built or torn down.
     Workspace(String),
     /// The child could not be created.
@@ -299,6 +307,7 @@ impl HostError {
                 | Self::InputRejected(_)
                 | Self::RequestRejected(_)
                 | Self::OutputHandleRejected(_)
+                | Self::ImageNotSealed(_)
         )
     }
 }
@@ -374,6 +383,10 @@ impl fmt::Display for HostError {
             Self::OutputHandleRejected(detail) => {
                 write!(f, "adapter output handle rejected: {detail}")
             }
+            Self::ImageNotSealed(detail) => write!(
+                f,
+                "the adapter image could not be sealed, so nothing was run: {detail}"
+            ),
             Self::Workspace(detail) => write!(f, "adapter workspace failed: {detail}"),
             Self::Spawn(detail) => write!(f, "adapter could not be started: {detail}"),
             Self::Timeout { after } => write!(

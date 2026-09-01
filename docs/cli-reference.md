@@ -303,7 +303,7 @@ The message is for a human and may be reworded; the token is stable.
   `artifact_path_rejected`, `artifact_not_executable`,
   `artifact_digest_mismatch`, `profile_rejected`, `producer_mismatch`,
   `binding_mismatch`, `input_rejected`, `request_rejected`,
-  `output_handle_rejected`
+  `output_handle_rejected`, `image_not_sealed`
 - a child ran: `spawn_failed`, `workspace_failed`, `adapter_timeout`,
   `adapter_output_limit_exceeded`, `adapter_crashed`, `adapter_no_result`,
   `adapter_document_too_large`, `adapter_malformed_document`,

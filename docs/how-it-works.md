@@ -395,6 +395,15 @@ returned. The child is created from that descriptor with `execveat(AT_EMPTY_PATH
 (`execve("/dev/fd/N")` where `execveat` does not exist), which resolves the inode and
 never a path.
 
+The two are alternatives per platform, not a fallback. On Linux the seals
+(`F_SEAL_WRITE`, `F_SEAL_GROW`, `F_SEAL_SHRINK`, `F_SEAL_SEAL`) are added and then read
+back with `F_GET_SEALS` before anything is executed, and a host that cannot create the
+anonymous file, write all of it, or prove the whole seal set refuses the run with
+`HostError::ImageNotSealed` before a process exists. It does not quietly execute a named
+file instead: that would withdraw the guarantee exactly on the kernels — old, or
+seccomp-restricted — where it is worth the most. The unlinked-file path is compiled only
+where anonymous files do not exist.
+
 Nothing is left to race. The owner-writable store path is never opened again after
 verification, and there is no invocation copy for a same-user process to find, `chmod`,
 rename, or overwrite. Scripts still work: the kernel hands a `#!` interpreter

@@ -13,10 +13,18 @@
 //! the caller does anything another process could synchronize against. On Linux
 //! the inode is an anonymous `memfd` that never had a name, sealed so its
 //! contents cannot change even for something that reaches the descriptor through
-//! `/proc`. Elsewhere it is a file created inside the invocation's private
-//! directory, opened, and unlinked before this module returns. The child is then
-//! created with `execveat(AT_EMPTY_PATH)` — `execve("/dev/fd/N")` on platforms
-//! without it — which resolves the descriptor, not a path.
+//! `/proc`, and the seals are read back before anything is executed. Elsewhere
+//! it is a file created inside the invocation's private directory, opened, and
+//! unlinked before this module returns. The child is then created with
+//! `execveat(AT_EMPTY_PATH)` — `execve("/dev/fd/N")` on platforms without it —
+//! which resolves the descriptor, not a path.
+//!
+//! There is no fallback between the two. A Linux host that cannot produce a
+//! sealed anonymous image refuses the run: falling back to a pathname there
+//! would quietly hand back the property the caller was promised, and it would do
+//! it exactly on the hosts — old kernels, restrictive seccomp policies — where
+//! the guarantee is worth the most. The unlinked-file path is compiled only
+//! where anonymous files do not exist at all.
 //!
 //! Scripts keep working, which is the reason the descriptor is inherited rather
 //! than closed on exec: the kernel hands a `#!` interpreter `/dev/fd/N` as the
@@ -144,11 +152,18 @@ pub(crate) fn argument(value: &OsStr, what: &str) -> Result<CString, HostError> 
     })
 }
 
+/// The image, or the reason there is not one.
+///
+/// Two implementations, not one implementation with a fallback: on Linux the
+/// only way to hold the bytes is a sealed anonymous file, and `scratch` is
+/// untouched because nothing here may put an executable pathname in it.
+#[cfg(target_os = "linux")]
+fn open_image(name: &str, bytes: &[u8], _scratch: &Path) -> Result<OwnedFd, HostError> {
+    anonymous_image(name, bytes).map(reserve)
+}
+
+#[cfg(not(target_os = "linux"))]
 fn open_image(name: &str, bytes: &[u8], scratch: &Path) -> Result<OwnedFd, HostError> {
-    #[cfg(target_os = "linux")]
-    if let Some(fd) = anonymous_image(name, bytes) {
-        return Ok(reserve(fd));
-    }
     unlinked_image(name, bytes, scratch).map(reserve)
 }
 
@@ -176,32 +191,109 @@ fn reserve(fd: OwnedFd) -> OwnedFd {
     unsafe { OwnedFd::from_raw_fd(moved) }
 }
 
+/// The seals an image carries before anything is allowed to execute it, and the
+/// names to say which one is missing.
+///
+/// Each is load-bearing. `F_SEAL_WRITE` is the content itself; `F_SEAL_GROW` and
+/// `F_SEAL_SHRINK` stop the size from moving under a mapping; `F_SEAL_SEAL`
+/// stops the set from being taken back off. Sealing is the contract rather than
+/// a nicety: a descriptor is reachable through `/proc/<pid>/fd` by anything
+/// running as the same user, and a seal is the one restriction that survives
+/// being reopened there.
+#[cfg(target_os = "linux")]
+const REQUIRED_SEALS: [(libc::c_int, &str); 4] = [
+    (libc::F_SEAL_WRITE, "F_SEAL_WRITE"),
+    (libc::F_SEAL_GROW, "F_SEAL_GROW"),
+    (libc::F_SEAL_SHRINK, "F_SEAL_SHRINK"),
+    (libc::F_SEAL_SEAL, "F_SEAL_SEAL"),
+];
+
 /// An inode that never had a pathname and can never be written again.
 ///
-/// `None` when the kernel will not provide one — an old kernel, or a seccomp
-/// policy that refuses the call — so the caller can fall back to a file it
-/// unlinks. Sealing is part of the contract rather than a nicety: a descriptor
-/// is reachable through `/proc/<pid>/fd` by anything running as the same user,
-/// and a seal is the one restriction that survives being reopened there.
+/// Every failure is returned, not absorbed. An old kernel, a seccomp policy that
+/// refuses `memfd_create`, a short write, a rejected seal: each of them means
+/// this host cannot make the promise the caller is relying on, and the run stops
+/// before a process exists rather than continuing with a weaker image.
 #[cfg(target_os = "linux")]
-fn anonymous_image(name: &str, bytes: &[u8]) -> Option<OwnedFd> {
-    let label = CString::new(format!("flutterdec-adapter:{name}")).ok()?;
+fn anonymous_image(name: &str, bytes: &[u8]) -> Result<OwnedFd, HostError> {
+    let label = CString::new(format!("flutterdec-adapter:{name}"))
+        .map_err(|_| refused("the adapter name contains a NUL byte"))?;
     let flags = libc::MFD_CLOEXEC | libc::MFD_ALLOW_SEALING;
+    // `MFD_EXEC` is rejected outright by kernels that predate it, so the ask is
+    // made once and then dropped. Both attempts failing is the kernel declining
+    // to provide an anonymous file at all.
     let mut raw = unsafe { libc::memfd_create(label.as_ptr(), flags | MFD_EXEC) };
     if raw < 0 {
         raw = unsafe { libc::memfd_create(label.as_ptr(), flags) };
     }
     if raw < 0 {
-        return None;
+        return Err(refused(&format!(
+            "create an anonymous executable image: {}",
+            std::io::Error::last_os_error()
+        )));
     }
     // Owned from here on, so every early return below closes it.
     let mut file = unsafe { File::from_raw_fd(raw) };
-    file.write_all(bytes).ok()?;
-    let seals = libc::F_SEAL_SEAL | libc::F_SEAL_SHRINK | libc::F_SEAL_GROW | libc::F_SEAL_WRITE;
-    if unsafe { libc::fcntl(raw, libc::F_ADD_SEALS, seals) } != 0 {
-        return None;
+    file.write_all(bytes).map_err(|err| {
+        refused(&format!(
+            "write {} byte(s) into the anonymous image: {err}",
+            bytes.len()
+        ))
+    })?;
+    seal(file)
+}
+
+/// Make the written bytes immutable, and read the seals back rather than
+/// assuming `F_ADD_SEALS` did what it was asked.
+///
+/// The verification is not ceremony. `F_ADD_SEALS` takes a mask, and a kernel
+/// that understands the call but not every bit in that mask would leave a
+/// descriptor that looks sealed and is not. What executes has to be a descriptor
+/// this host has seen the whole seal set on.
+#[cfg(target_os = "linux")]
+fn seal(file: File) -> Result<OwnedFd, HostError> {
+    let fd = file.as_raw_fd();
+    let mask = REQUIRED_SEALS
+        .iter()
+        .fold(0, |mask, (seal, _)| mask | *seal);
+    if unsafe { libc::fcntl(fd, libc::F_ADD_SEALS, mask) } != 0 {
+        return Err(refused(&format!(
+            "seal the anonymous image: {}",
+            std::io::Error::last_os_error()
+        )));
     }
-    Some(OwnedFd::from(file))
+    verify_seals(fd)?;
+    Ok(OwnedFd::from(file))
+}
+
+/// The seals actually present, checked against the ones that were required.
+#[cfg(target_os = "linux")]
+fn verify_seals(fd: libc::c_int) -> Result<(), HostError> {
+    let present = unsafe { libc::fcntl(fd, libc::F_GET_SEALS) };
+    if present < 0 {
+        return Err(refused(&format!(
+            "read the seals back from the anonymous image: {}",
+            std::io::Error::last_os_error()
+        )));
+    }
+    let missing: Vec<&str> = REQUIRED_SEALS
+        .iter()
+        .filter(|(seal, _)| present & seal == 0)
+        .map(|(_, name)| *name)
+        .collect();
+    if !missing.is_empty() {
+        return Err(refused(&format!(
+            "the anonymous image is missing {}",
+            missing.join(", ")
+        )));
+    }
+    Ok(())
+}
+
+/// Why the image could not be made, as the refusal the caller sees.
+#[cfg(target_os = "linux")]
+fn refused(detail: &str) -> HostError {
+    HostError::ImageNotSealed(detail.to_string())
 }
 
 /// A file that exists only long enough to be opened.
@@ -210,6 +302,10 @@ fn anonymous_image(name: &str, bytes: &[u8]) -> Option<OwnedFd> {
 /// owner can traverse, and it is unlinked before the descriptor is returned. The
 /// window in which the name exists is entirely inside this function: no caller
 /// has published the workspace, reached a rendezvous, or created a process yet.
+///
+/// Compiled only where there are no anonymous files. On Linux this does not
+/// exist, so no Linux code path can reach a pathname-backed executable.
+#[cfg(not(target_os = "linux"))]
 fn unlinked_image(name: &str, bytes: &[u8], scratch: &Path) -> Result<OwnedFd, HostError> {
     use std::fs;
     use std::os::unix::fs::OpenOptionsExt;
@@ -229,4 +325,177 @@ fn unlinked_image(name: &str, bytes: &[u8], scratch: &Path) -> Result<OwnedFd, H
     let opened = File::open(&path).map_err(|err| fail("open", err))?;
     fs::remove_file(&path).map_err(|err| fail("unlink", err))?;
     Ok(OwnedFd::from(opened))
+}
+
+/// The image boundary, forced to fail.
+///
+/// Both failures are made by the kernel rather than by a hook in the product:
+/// `memfd_create` rejects a label longer than it will store, and `F_ADD_SEALS`
+/// rejects a descriptor that was not created sealable. So these exercise the
+/// same syscalls a real run makes, in the same order, and what they observe is
+/// what a host with an unsealable kernel would observe.
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    use super::*;
+
+    /// Longer than the 249 bytes `memfd_create` will accept as a name, label
+    /// included, so both attempts fail with `EINVAL` on every kernel.
+    fn unnameable() -> String {
+        "a".repeat(250)
+    }
+
+    fn vectors() -> (Vec<CString>, Vec<CString>) {
+        (
+            vec![CString::new("adapter").expect("no NUL")],
+            vec![CString::new("PATH=/nonexistent").expect("no NUL")],
+        )
+    }
+
+    fn seals_on(fd: libc::c_int) -> libc::c_int {
+        let present = unsafe { libc::fcntl(fd, libc::F_GET_SEALS) };
+        assert!(present >= 0, "{}", std::io::Error::last_os_error());
+        present
+    }
+
+    /// A memfd created the way the product creates one, minus whichever part the
+    /// caller wants to break.
+    fn memfd(sealable: bool) -> File {
+        let label = CString::new("flutterdec-adapter-test").expect("no NUL");
+        let mut flags = libc::MFD_CLOEXEC;
+        if sealable {
+            flags |= libc::MFD_ALLOW_SEALING;
+        }
+        let raw = unsafe { libc::memfd_create(label.as_ptr(), flags) };
+        assert!(raw >= 0, "{}", std::io::Error::last_os_error());
+        unsafe { File::from_raw_fd(raw) }
+    }
+
+    #[test]
+    fn an_image_the_kernel_will_not_create_is_refused_before_anything_runs() {
+        let scratch = tempfile::TempDir::new().expect("tempdir");
+        let (argv, envp) = vectors();
+
+        let Err(err) = ExecImage::prepare(&unnameable(), b"\x7fELF", scratch.path(), argv, envp)
+        else {
+            panic!("an image the kernel refused became an executable");
+        };
+
+        let HostError::ImageNotSealed(detail) = &err else {
+            panic!("a failed image was reported as something else: {err}");
+        };
+        assert!(
+            detail.contains("create an anonymous executable image"),
+            "the refusal does not say what failed: {detail}"
+        );
+        assert!(
+            err.is_pre_spawn(),
+            "a refusal with no child was not classified as pre-spawn: {err}"
+        );
+        let left_behind: Vec<_> = std::fs::read_dir(scratch.path())
+            .expect("read the scratch directory")
+            .map(|entry| entry.expect("entry").path())
+            .collect();
+        assert!(
+            left_behind.is_empty(),
+            "the host fell back to a pathname: {left_behind:?}"
+        );
+    }
+
+    #[test]
+    fn a_descriptor_that_cannot_be_sealed_is_refused() {
+        let err = seal(memfd(false))
+            .expect_err("a descriptor that refuses seals must not become an executable");
+
+        let HostError::ImageNotSealed(detail) = &err else {
+            panic!("a rejected seal was reported as something else: {err}");
+        };
+        assert!(
+            detail.contains("seal the anonymous image"),
+            "the refusal does not say what failed: {detail}"
+        );
+        assert!(err.is_pre_spawn(), "not classified as pre-spawn: {err}");
+    }
+
+    /// The check that `F_ADD_SEALS` succeeding is not taken as proof.
+    #[test]
+    fn an_incomplete_seal_set_is_refused_and_names_what_is_missing() {
+        let file = memfd(true);
+        // Exactly the one seal a caller might think is the whole story.
+        assert_eq!(
+            0,
+            unsafe { libc::fcntl(file.as_raw_fd(), libc::F_ADD_SEALS, libc::F_SEAL_WRITE) },
+            "{}",
+            std::io::Error::last_os_error()
+        );
+
+        let err =
+            verify_seals(file.as_raw_fd()).expect_err("a partly sealed image must not be accepted");
+
+        let HostError::ImageNotSealed(detail) = &err else {
+            panic!("an incomplete seal set was reported as something else: {err}");
+        };
+        for missing in ["F_SEAL_GROW", "F_SEAL_SHRINK", "F_SEAL_SEAL"] {
+            assert!(
+                detail.contains(missing),
+                "the refusal does not name {missing}: {detail}"
+            );
+        }
+        assert!(
+            !detail.contains("F_SEAL_WRITE"),
+            "the refusal names a seal that is present: {detail}"
+        );
+    }
+
+    #[test]
+    fn a_prepared_image_carries_every_required_seal_and_leaves_no_pathname() {
+        let scratch = tempfile::TempDir::new().expect("tempdir");
+        let (argv, envp) = vectors();
+
+        let Ok(image) =
+            ExecImage::prepare("adapter", b"\x7fELF payload", scratch.path(), argv, envp)
+        else {
+            panic!("a sealable kernel must produce an image");
+        };
+
+        let present = seals_on(image.fd.as_raw_fd());
+        for (seal, name) in REQUIRED_SEALS {
+            assert!(
+                present & seal != 0,
+                "the image executed without {name} (seals {present:#x})"
+            );
+        }
+        // The seal is what it claims to be rather than a flag that reads back.
+        // A write is refused through the descriptor the host holds, and through
+        // the `/proc` path any process running as this user can reach.
+        let overwrite = b"overwritten";
+        let direct = unsafe {
+            libc::pwrite(
+                image.fd.as_raw_fd(),
+                overwrite.as_ptr().cast(),
+                overwrite.len(),
+                0,
+            )
+        };
+        assert_eq!(
+            -1, direct,
+            "the sealed image accepted a write through its own descriptor"
+        );
+        if let Ok(mut reopened) = std::fs::OpenOptions::new()
+            .write(true)
+            .open(format!("/proc/self/fd/{}", image.fd.as_raw_fd()))
+        {
+            assert!(
+                reopened.write_all(overwrite).is_err(),
+                "the sealed image accepted a write through /proc"
+            );
+        }
+        let left_behind: Vec<_> = std::fs::read_dir(scratch.path())
+            .expect("read the scratch directory")
+            .map(|entry| entry.expect("entry").path())
+            .collect();
+        assert!(
+            left_behind.is_empty(),
+            "a successful image still named a file: {left_behind:?}"
+        );
+    }
 }
