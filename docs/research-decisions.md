@@ -18,21 +18,29 @@
 
 ## Third-party data: `data/dart-profiles.json`
 
-Maps 61 Dart AOT snapshot hashes to 19 layout profiles (Dart version, object-header
-tag style, compressed word size, class-id table). Imported from
+19 Dart AOT snapshot layout profiles (object-header tag style, compressed word size,
+header geometry, class-id table), keyed by profile id. Imported from
 [radareorg/r2flutter](https://github.com/radareorg/r2flutter) (MIT), `offsets.json`.
+The file carries no snapshot hashes and no hash-to-version mapping: which snapshot a
+profile applies to is a host registry record's decision, and each record pins this
+file's path and its SHA-256.
 
-Why vendor rather than derive: the snapshot hash is an MD5 over Dart VM serializer
-sources, so the hash-to-version mapping cannot be computed from a binary. It has to be
-tabulated by building every SDK release, which is exactly the kind of maintenance work
-worth sharing instead of duplicating.
+Why vendor rather than derive: a snapshot's layout cannot be computed from the binary,
+because the snapshot hash is an MD5 over Dart VM serializer sources rather than over
+anything the layout describes. The profiles have to be tabulated by building every SDK
+release, which is exactly the kind of maintenance work worth sharing instead of
+duplicating.
 
 Why data and not code: it costs nothing to keep current, has no build or runtime
 dependency, and stays useful no matter which backend parses the snapshot. `flutterdec`
-uses it for identification only (`info.dart_version`, `report.json.dart_profile`); it
-does not deserialize snapshots with it.
+loads a profile to report snapshot layout (`report.json.dart_profile`) and to authorize
+an adapter run against a verified digest; it does not deserialize snapshots with it,
+and it never names an SDK version from it. SDK labels come from the matching registry
+record's `sdk_aliases` and are provenance only, so a snapshot with no record reports no
+alias at all rather than a version inferred from its hash.
 
-Two facts from that table constrain any future in-tree parser, including a native one:
+Two facts from these profiles constrain any future in-tree parser, including a native
+one:
 
 - there are three object-header tag encodings, not one (`CID_INT32` for Dart 2.10-2.13,
   `CID_SHIFT1` for 2.14-3.3, `OBJECT_HEADER` for 3.4.3+ and the 2.18.2 outlier)

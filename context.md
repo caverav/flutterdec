@@ -212,9 +212,12 @@ Current scope:
 - artifact file names cap the sanitized function-name stem at 160 bytes; recovered Dart
   names reach 305 bytes on real binaries and previously aborted the whole run with
   `File name too long (os error 36)` as soon as an adapter returned real names
-- `info` and `report.json` now name the Dart SDK version and object-header tag style
-  straight from the snapshot hash, with no adapter installed, using the vendored
-  `data/dart-profiles.json` (61 hashes, 19 layout profiles, imported from r2flutter, MIT)
+- `info` and `report.json` report the object-header tag style and snapshot layout from
+  the vendored `data/dart-profiles.json` (19 layout profiles keyed by profile id, no
+  snapshot hashes, imported from r2flutter, MIT), which a host registry record selects
+  by profile id and pins by SHA-256; SDK labels come from that record's `sdk_aliases`
+  as provenance only, so `dart_version` is `unverified`/`unavailable` rather than an
+  exact version, and a snapshot with no record reports no alias
 - decompile can now ingest `map-symbols` target JSON directly to inject mapped call names into pseudocode
 - external symbol names are normalized (including C++ demangle and runtime/native prefixes) before pseudocode emission
 - pseudocode call sites now include semantic intent comments for recognized stdlib/runtime/native targets
