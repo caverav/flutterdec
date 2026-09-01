@@ -540,12 +540,26 @@ asm.mkdir(parents=True, exist_ok=True)
 
     // The runner is pointed at through the adapter's own environment rather than
     // this process's, so concurrent tests cannot see it.
+    // The producer library is reached through an absolute path baked in here,
+    // not relative to the running file. The host executes a private copy of the
+    // verified artifact, so nothing beside the artifact in the store is on the
+    // running script's import path, and a bridge that assumed otherwise would
+    // be reaching for bytes no record ever authorized.
+    let library = root.join("python");
+    fs::create_dir_all(&library).expect("mkdir library");
+    fs::copy(
+        repo_root().join("adapters/python/adapter_template.py"),
+        library.join("adapter_template.py"),
+    )
+    .expect("stage producer library");
+
     let exec = root.join("artifacts/blutter_adapter");
     fs::write(
         &exec,
         format!(
-            "#!/usr/bin/env python3\nfrom pathlib import Path\nimport os\nimport sys\nroot = Path(__file__).resolve().parents[1]\nos.environ['FLUTTERDEC_BLUTTER_CMD'] = {:?}\nsys.path.insert(0, str(root / 'python'))\nimport adapter_template\nif __name__ == '__main__':\n    raise SystemExit(adapter_template.entrypoint())\n",
-            fake.display().to_string()
+            "#!/usr/bin/env python3\nimport os\nimport sys\nos.environ['FLUTTERDEC_BLUTTER_CMD'] = {:?}\nsys.path.insert(0, {:?})\nimport adapter_template\nif __name__ == '__main__':\n    raise SystemExit(adapter_template.entrypoint())\n",
+            fake.display().to_string(),
+            library.display().to_string()
         ),
     )
     .expect("write adapter exec");
@@ -553,15 +567,6 @@ asm.mkdir(parents=True, exist_ok=True)
 
     let identity = support::identity();
     let installed = support::Authorized::install_named(&exec, &identity, Some("blutter_adapter"));
-    // The wrapper resolves the producer library relative to its own parent's
-    // parent, so the library has to sit beside the published artifact's
-    // directory rather than beside the copy it was made from.
-    fs::create_dir_all(installed.store_root.join("python")).expect("mkdir published python");
-    fs::copy(
-        repo_root().join("adapters/python/adapter_template.py"),
-        installed.store_root.join("python/adapter_template.py"),
-    )
-    .expect("publish producer library");
     let mut snapshot = empty_snapshot();
     snapshot.isolate_instr = RET.repeat(16);
     let input = root.join("app.apk");
