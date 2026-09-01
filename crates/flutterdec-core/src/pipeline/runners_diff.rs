@@ -10,9 +10,10 @@ fn function_descriptor(model: &ProgramModel, func: &flutterdec_adapter::model::F
         canonicalize_library_uri_for_diff(model.owner_library_uri(func).unwrap_or(""));
     let owner = model.owner_name(func).unwrap_or("");
     let name = func.name_text().unwrap_or("");
-    if library_uri.is_empty() {
-        return format!("{}::{}", owner, name);
-    }
+    // Always three segments. Dropping the empty library segment would leave
+    // `owner::name`, and `descriptor_library_uri` reads everything before the
+    // first `::` as the library URI, so the owner class would be bucketed as a
+    // package instead of as unknown.
     format!("{}::{}::{}", library_uri, owner, name)
 }
 
