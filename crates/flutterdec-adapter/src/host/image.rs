@@ -33,18 +33,23 @@
 //! the name cannot be written through, truncated, renamed, or unlinked.
 //!
 //! That is not the same guarantee, because the flag is a *user* flag: its owner
-//! may clear it, and a same-user attacker is the owner. So the child re-checks,
-//! in the instant before `execve` and after every containment control is in
-//! place, that the pathname it is about to execute still resolves to the
-//! descriptor the host verified and is still frozen. A name that has been
-//! re-pointed or thawed is not executed at all, and the run ends as a typed
-//! pre-spawn refusal with no process.
+//! may clear it, and a same-user attacker is the owner. Two things follow, and
+//! both are here rather than in a comment. The child re-checks, in the instant
+//! before `execve` and after every containment control is in place, that the
+//! pathname it is about to execute still resolves to the descriptor the host
+//! verified and is still frozen; a name that has been re-pointed or thawed is
+//! not executed at all, and the run ends as a typed pre-spawn refusal with no
+//! process. And the state this platform actually reached is reported rather
+//! than claimed: [`ExecImage::integrity`] answers `Applied` only for the sealed
+//! anonymous inode, and on Darwin answers `Unavailable` naming `UF_IMMUTABLE`
+//! and who can clear it.
 //!
 //! What that check does not cover is the residue: an owner who clears the flag
 //! and rewrites the bytes *in place* leaves the same inode, so the identity half
 //! of the check would still match. The freeze half is what catches it, and an
-//! owner can also re-set the flag. So the Darwin image is narrowed as far as the
-//! platform allows and is never sealed.
+//! owner can also re-set the flag. Hence "best effort" in the report — the
+//! Darwin image is narrowed as far as the platform allows and is never called
+//! sealed.
 //!
 //! Scripts keep working. On Linux that is the reason the descriptor is inherited
 //! rather than closed on exec: the kernel hands a `#!` interpreter `/dev/fd/N`
@@ -56,6 +61,7 @@
 //! would give it the one capability the flag exists to deny.
 
 use super::HostError;
+use crate::sandbox::ControlState;
 use std::ffi::{CString, OsStr};
 use std::fs::File;
 use std::io::Write;
@@ -92,6 +98,10 @@ const IMAGE_REPLACED: i32 = 0x7fff_0001;
 /// and may not allocate: everything it needs has to already exist.
 pub(crate) struct ExecImage {
     fd: OwnedFd,
+    /// What this host established about the bytes it is about to run, as the
+    /// branch that built the image found it. Reported, not re-derived by the
+    /// caller from the platform name.
+    integrity: ControlState,
     /// Owns the bytes the pointer arrays below point at. Never read directly;
     /// the vectors of pointers are what `exec` passes to the kernel.
     _argv: Vec<CString>,
@@ -123,11 +133,12 @@ impl ExecImage {
         envp: Vec<CString>,
     ) -> Result<Self, HostError> {
         #[cfg(target_os = "linux")]
-        let fd = open_image(name, bytes, scratch)?;
+        let (fd, integrity) = open_image(name, bytes, scratch)?;
         #[cfg(not(target_os = "linux"))]
-        let (fd, image_path) = open_image(name, bytes, scratch)?;
+        let (fd, image_path, integrity) = open_image(name, bytes, scratch)?;
         Ok(Self {
             fd,
+            integrity,
             argv_ptrs: pointers(&argv),
             envp_ptrs: pointers(&envp),
             _argv: argv,
@@ -135,6 +146,15 @@ impl ExecImage {
             #[cfg(not(target_os = "linux"))]
             image_path,
         })
+    }
+
+    /// What the host actually established about the image, for the report.
+    ///
+    /// Cloned out of the value the image-building branch produced, so a platform
+    /// that reached a weaker state cannot be described by a caller that only
+    /// knows which platform it compiled for.
+    pub(crate) fn integrity(&self) -> ControlState {
+        self.integrity.clone()
     }
 
     /// Why the child never became the adapter.
@@ -264,14 +284,39 @@ pub(crate) fn argument(value: &OsStr, what: &str) -> Result<CString, HostError> 
 /// only way to hold the bytes is a sealed anonymous file, and `scratch` is
 /// untouched because nothing here may put an executable pathname in it.
 #[cfg(target_os = "linux")]
-fn open_image(name: &str, bytes: &[u8], _scratch: &Path) -> Result<OwnedFd, HostError> {
-    anonymous_image(name, bytes).map(reserve)
+fn open_image(
+    name: &str,
+    bytes: &[u8],
+    _scratch: &Path,
+) -> Result<(OwnedFd, ControlState), HostError> {
+    let fd = reserve(anonymous_image(name, bytes)?);
+    // Read off the descriptor that will actually be executed, which is not
+    // necessarily the one `anonymous_image` sealed: `reserve` may have moved it.
+    // The state reported below is what this read-back found, not what the
+    // platform is assumed to provide.
+    verify_seals(fd.as_raw_fd())?;
+    Ok((fd, ControlState::Applied { limit: None }))
 }
 
 #[cfg(not(target_os = "linux"))]
-fn open_image(name: &str, bytes: &[u8], scratch: &Path) -> Result<(OwnedFd, CString), HostError> {
+fn open_image(
+    name: &str,
+    bytes: &[u8],
+    scratch: &Path,
+) -> Result<(OwnedFd, CString, ControlState), HostError> {
     let (fd, path) = immutable_image(name, bytes, scratch)?;
-    Ok((reserve(fd), path))
+    // Said plainly, because it is less than the other branch establishes: what
+    // is in force here is a frozen name plus a check the child makes before it
+    // executes, and the freeze belongs to a user who may be the attacker.
+    //
+    // The invocation's own pathname is deliberately not in here. It is different
+    // on every run, and two runs of this product have to be able to report the
+    // same state; where the path matters — the refusal — it is in the error.
+    let reason = format!(
+        "{} cannot execute a descriptor, so the image is a pathname inside the invocation directory frozen with UF_IMMUTABLE; that flag is a user flag its owner can clear, so image integrity is best effort: the host re-checks the pathname against the descriptor it verified immediately before exec and refuses to execute anything else",
+        std::env::consts::OS
+    );
+    Ok((reserve(fd), path, ControlState::Unavailable { reason }))
 }
 
 /// Keep the image off the descriptor numbers the child reassigns.
