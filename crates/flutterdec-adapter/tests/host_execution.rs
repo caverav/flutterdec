@@ -700,6 +700,79 @@ succeed()
     );
 }
 
+// -- VAL-HOST-006: what the child actually is ---------------------------------
+
+/// A `#!` adapter is the awkward case for pathless execution and the one this
+/// project actually ships: the kernel cannot hand an interpreter a descriptor,
+/// so it hands it a name for one, and a host that got this wrong would either
+/// fail to start scripts at all or quietly fall back to naming a file.
+///
+/// The adapter reports what it is: the name it was started under, the digest of
+/// the bytes behind that name, and every executable file it can find anywhere in
+/// its own workspace. All three have to line up for "the verified bytes ran, and
+/// nothing on disk named them" to be true.
+#[test]
+fn a_shebang_adapter_runs_from_a_descriptor_with_no_pathname() {
+    let rig = Rig::new(
+        r#"import hashlib
+
+executables = []
+for base, _dirs, files in os.walk(os.getcwd()):
+    for name in files:
+        found = os.path.join(base, name)
+        try:
+            if os.stat(found).st_mode & 0o111:
+                executables.append(found)
+        except OSError:
+            pass
+
+sidecar("image").write_text(json.dumps({
+    "argv0": sys.argv[0],
+    "sha256": hashlib.sha256(pathlib.Path(sys.argv[0]).read_bytes()).hexdigest(),
+    "workspace_executables": executables,
+    "cwd": os.getcwd(),
+}))
+succeed()
+"#,
+    );
+
+    let run = rig.run(brisk()).expect("the shebang adapter succeeds");
+    assert!(run.model.functions.is_empty());
+
+    #[derive(serde::Deserialize)]
+    struct Image {
+        argv0: String,
+        sha256: String,
+        workspace_executables: Vec<String>,
+        cwd: String,
+    }
+    let image: Image =
+        serde_json::from_slice(&fs::read(rig.sidecar("image")).expect("the adapter wrote a probe"))
+            .expect("the probe is JSON");
+
+    let authorized = fs::read(&rig.installed.exec).expect("read the authorized artifact");
+    assert_eq!(
+        image.sha256,
+        support::hex_digest(&authorized),
+        "the interpreter read something other than the verified artifact"
+    );
+    assert!(
+        image.workspace_executables.is_empty(),
+        "the invocation workspace holds an executable pathname: {:?}",
+        image.workspace_executables
+    );
+    assert!(
+        !image.argv0.starts_with(&image.cwd),
+        "the adapter was started from a path inside its own workspace: {}",
+        image.argv0
+    );
+    assert!(
+        image.argv0.starts_with("/dev/fd/") || image.argv0.starts_with("/proc/self/fd/"),
+        "the adapter was started from a filesystem pathname: {}",
+        image.argv0
+    );
+}
+
 // -- VAL-HOST-004: platform containment claims --------------------------------
 
 fn successful_report(limits: Limits) -> (ContainmentReport, Rig) {
