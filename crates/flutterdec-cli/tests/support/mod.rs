@@ -670,6 +670,35 @@ pub const CONTROLS: &[&str] = &[
     "model_bytes",
 ];
 
+/// The same report with the one number in it that is not about this product
+/// blanked out.
+///
+/// The process budget is the host's own task count plus an allowance, so two
+/// runs of the binary see different budgets whenever anything else on the
+/// machine starts or exits between them. Comparing two runs is a claim about
+/// what the product established, not about how busy the machine was, so the
+/// budget's value is replaced and everything else — including whether the
+/// budget was established at all — is compared exactly.
+pub fn comparable_across_runs(report: &Value) -> Value {
+    match report {
+        Value::Object(fields) => Value::Object(
+            fields
+                .iter()
+                .map(|(key, value)| {
+                    if key == "process_count" && value.get("limit").is_some() {
+                        let mut control = value.as_object().expect("a control object").clone();
+                        control.insert("limit".into(), Value::from("a snapshot of the host"));
+                        return (key.clone(), Value::Object(control));
+                    }
+                    (key.clone(), comparable_across_runs(value))
+                })
+                .collect(),
+        ),
+        Value::Array(items) => Value::Array(items.iter().map(comparable_across_runs).collect()),
+        other => other.clone(),
+    }
+}
+
 pub fn assert_controls_are_accurate(containment: &Value, source: &str) {
     let object = containment
         .as_object()
