@@ -180,6 +180,15 @@ pub struct ContainmentReport {
     pub process_group: ControlState,
     /// Inherited descriptors above the three standard ones closed before `exec`.
     pub descriptor_isolation: ControlState,
+    /// What the host established about the bytes the child executed.
+    ///
+    /// `Applied` means an inode that never had a pathname and whose whole seal
+    /// set the host read back off the descriptor it executed. `Unavailable`
+    /// means the platform could not give that, and the reason says what it gave
+    /// instead and what the ceiling is. The value comes from the image itself,
+    /// so it describes what this run did rather than what the platform is
+    /// usually able to do.
+    pub image_integrity: ControlState,
     pub cpu_seconds: ControlState,
     pub file_size: ControlState,
     pub address_space: ControlState,
@@ -208,6 +217,7 @@ impl ContainmentReport {
             ("wall_clock_deadline", &self.wall_clock_deadline),
             ("process_group", &self.process_group),
             ("descriptor_isolation", &self.descriptor_isolation),
+            ("image_integrity", &self.image_integrity),
             ("cpu_seconds", &self.cpu_seconds),
             ("file_size", &self.file_size),
             ("address_space", &self.address_space),
@@ -663,7 +673,11 @@ impl Containment {
     /// Must be called once the child exists. Blocks until `exec` closes the
     /// write end, which is bounded: `exec` either happens or the child exits,
     /// and both close the descriptor.
-    pub(crate) fn collect(mut self, terminated: bool) -> ContainmentReport {
+    pub(crate) fn collect(
+        mut self,
+        terminated: bool,
+        image_integrity: ControlState,
+    ) -> ContainmentReport {
         // The parent's own copy of the write end would keep the pipe open
         // forever.
         drop(self.write_end.take());
@@ -714,6 +728,7 @@ impl Containment {
             },
             process_group: state(SLOT_SESSION, "a private session and process group"),
             descriptor_isolation: state(SLOT_DESCRIPTOR_ISOLATION, "descriptor isolation"),
+            image_integrity,
             cpu_seconds: state(SLOT_CPU, "a CPU time limit"),
             file_size: state(SLOT_FILE_SIZE, "a file size limit"),
             address_space: state(SLOT_ADDRESS_SPACE, "an address space limit"),
@@ -775,11 +790,23 @@ mod tests {
         let limits = Limits::default();
         let containment = Containment::prepare(&limits).expect("pipe");
         // Nothing was forked, so dropping the write end gives an empty read.
-        let report = containment.collect(false);
+        // The image's own state is not in that record and must survive it
+        // unchanged: the report carries what the image said, not what a missing
+        // record implies.
+        let integrity = ControlState::Applied { limit: None };
+        let report = containment.collect(false, integrity.clone());
+        assert_eq!(
+            report.image_integrity, integrity,
+            "the report did not carry the image's own state through"
+        );
         for (name, state) in report.controls() {
             match name {
                 // Host-side controls need no child cooperation.
-                "wall_clock_deadline" | "stdout_bytes" | "stderr_bytes" | "model_bytes" => {
+                "wall_clock_deadline"
+                | "stdout_bytes"
+                | "stderr_bytes"
+                | "model_bytes"
+                | "image_integrity" => {
                     assert!(
                         state.is_applied(),
                         "{name} is host-side and must be applied"

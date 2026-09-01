@@ -117,6 +117,10 @@ pub(crate) fn run(
     // Registered after the containment hook so it runs after it: every limit,
     // every isolation step and the status record all have to be in place before
     // the image replaces the child, and this call does not return.
+    // Read and kept before the image is handed to the hook: the state belongs
+    // to the image, and the only thing that may look at it afterwards is the
+    // report.
+    let integrity = image.integrity();
     let refusal = Arc::clone(&image);
     unsafe {
         command.pre_exec(move || Err(image.exec()));
@@ -208,6 +212,6 @@ pub(crate) fn run(
         completion: completion.expect("the loop only exits with a completion"),
         stdout,
         stderr,
-        containment: containment.collect(terminated),
+        containment: containment.collect(terminated, integrity),
     })
 }
