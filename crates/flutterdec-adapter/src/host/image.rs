@@ -13,24 +13,37 @@
 //! the caller does anything another process could synchronize against. On Linux
 //! the inode is an anonymous `memfd` that never had a name, sealed so its
 //! contents cannot change even for something that reaches the descriptor through
-//! `/proc`, and the seals are read back before anything is executed. Elsewhere
-//! it is a file created inside the invocation's private directory, opened, and
-//! unlinked before this module returns. The child is then created with
-//! `execveat(AT_EMPTY_PATH)` — `execve("/dev/fd/N")` on platforms without it —
-//! which resolves the descriptor, not a path.
+//! `/proc`, and the seals are read back before anything is executed. The child
+//! is then created with `execveat(AT_EMPTY_PATH)`, which resolves the
+//! descriptor and never a path.
 //!
-//! There is no fallback between the two. A Linux host that cannot produce a
+//! There is no fallback between the two on Linux. A host that cannot produce a
 //! sealed anonymous image refuses the run: falling back to a pathname there
 //! would quietly hand back the property the caller was promised, and it would do
 //! it exactly on the hosts — old kernels, restrictive seccomp policies — where
-//! the guarantee is worth the most. The unlinked-file path is compiled only
-//! where anonymous files do not exist at all.
+//! the guarantee is worth the most.
 //!
-//! Scripts keep working, which is the reason the descriptor is inherited rather
-//! than closed on exec: the kernel hands a `#!` interpreter `/dev/fd/N` as the
-//! script to read, and that name resolves through the child's own descriptor
-//! table. It is the image itself, read-only and sealed, so the child gaining a
-//! second way to look at its own code costs nothing.
+//! Darwin cannot execute a descriptor at all. `/dev/fd/N` there is not another
+//! name for the file: it is a node whose reported mode is the *descriptor's*
+//! access mode, so it never carries an execute bit and `execve` on it is refused
+//! with `EACCES` whether the file behind it is linked or not. There is no
+//! `fexecve` and no `execveat`. So the image is a file inside the invocation's
+//! own private directory, created `O_EXCL` at mode `0500`, and then made
+//! immutable through the descriptor this module holds. While that flag is set
+//! the name cannot be written through, truncated, renamed, or unlinked, which is
+//! what closes the gap between checking bytes and running them. The known
+//! ceiling is that the flag is a *user* flag: the owner may clear it, and on
+//! Darwin an attacker running as the same user is the owner. It is the strongest
+//! the platform offers, and it is bounded, reported, and never used on Linux.
+//!
+//! Scripts keep working. On Linux that is the reason the descriptor is inherited
+//! rather than closed on exec: the kernel hands a `#!` interpreter `/dev/fd/N`
+//! as the script to read, and that name resolves through the child's own
+//! descriptor table. It is the image itself, read-only and sealed, so the child
+//! gaining a second way to look at its own code costs nothing. On Darwin the
+//! interpreter is handed the image's own pathname, and the descriptor stays
+//! close-on-exec: handing the child a writable-flags handle on its own image
+//! would give it the one capability the flag exists to deny.
 
 use super::HostError;
 use std::ffi::{CString, OsStr};
@@ -64,8 +77,10 @@ pub(crate) struct ExecImage {
     _envp: Vec<CString>,
     argv_ptrs: Vec<*const libc::c_char>,
     envp_ptrs: Vec<*const libc::c_char>,
+    /// The image's own pathname, which is what Darwin executes because Darwin
+    /// cannot execute a descriptor. Immutable for as long as the run lasts.
     #[cfg(not(target_os = "linux"))]
-    fd_path: CString,
+    image_path: CString,
 }
 
 // The pointers are read-only views into `_argv`/`_envp`, which this value owns and
@@ -86,10 +101,10 @@ impl ExecImage {
         argv: Vec<CString>,
         envp: Vec<CString>,
     ) -> Result<Self, HostError> {
+        #[cfg(target_os = "linux")]
         let fd = open_image(name, bytes, scratch)?;
         #[cfg(not(target_os = "linux"))]
-        let fd_path = CString::new(format!("/dev/fd/{}", fd.as_raw_fd()))
-            .expect("a descriptor number has no NUL in it");
+        let (fd, image_path) = open_image(name, bytes, scratch)?;
         Ok(Self {
             fd,
             argv_ptrs: pointers(&argv),
@@ -97,7 +112,7 @@ impl ExecImage {
             _argv: argv,
             _envp: envp,
             #[cfg(not(target_os = "linux"))]
-            fd_path,
+            image_path,
         })
     }
 
@@ -112,20 +127,25 @@ impl ExecImage {
         // The containment plan marks every inherited descriptor close-on-exec,
         // including this one, and a `#!` adapter needs it open on the other
         // side: the interpreter is handed `/dev/fd/N` and nothing else names the
-        // script. Cleared last, so the sweep cannot undo it.
-        libc::fcntl(self.fd.as_raw_fd(), libc::F_SETFD, 0);
+        // script. Cleared last, so the sweep cannot undo it. Only where the
+        // child has a use for it — elsewhere the image's descriptor is the one
+        // handle that can lift its immutability, and the child gets no share of
+        // it.
         #[cfg(target_os = "linux")]
-        libc::syscall(
-            libc::SYS_execveat,
-            self.fd.as_raw_fd(),
-            EMPTY_PATH.as_ptr().cast::<libc::c_char>(),
-            self.argv_ptrs.as_ptr(),
-            self.envp_ptrs.as_ptr(),
-            libc::AT_EMPTY_PATH,
-        );
+        {
+            libc::fcntl(self.fd.as_raw_fd(), libc::F_SETFD, 0);
+            libc::syscall(
+                libc::SYS_execveat,
+                self.fd.as_raw_fd(),
+                EMPTY_PATH.as_ptr().cast::<libc::c_char>(),
+                self.argv_ptrs.as_ptr(),
+                self.envp_ptrs.as_ptr(),
+                libc::AT_EMPTY_PATH,
+            );
+        }
         #[cfg(not(target_os = "linux"))]
         libc::execve(
-            self.fd_path.as_ptr(),
+            self.image_path.as_ptr(),
             self.argv_ptrs.as_ptr(),
             self.envp_ptrs.as_ptr(),
         );
@@ -163,8 +183,9 @@ fn open_image(name: &str, bytes: &[u8], _scratch: &Path) -> Result<OwnedFd, Host
 }
 
 #[cfg(not(target_os = "linux"))]
-fn open_image(name: &str, bytes: &[u8], scratch: &Path) -> Result<OwnedFd, HostError> {
-    unlinked_image(name, bytes, scratch).map(reserve)
+fn open_image(name: &str, bytes: &[u8], scratch: &Path) -> Result<(OwnedFd, CString), HostError> {
+    let (fd, path) = immutable_image(name, bytes, scratch)?;
+    Ok((reserve(fd), path))
 }
 
 /// Keep the image off the descriptor numbers the child reassigns.
@@ -296,35 +317,59 @@ fn refused(detail: &str) -> HostError {
     HostError::ImageNotSealed(detail.to_string())
 }
 
-/// A file that exists only long enough to be opened.
+/// A file whose name stops being a way to change anything.
 ///
-/// It is created inside the invocation's own directory, which nobody but the
-/// owner can traverse, and it is unlinked before the descriptor is returned. The
-/// window in which the name exists is entirely inside this function: no caller
-/// has published the workspace, reached a rendezvous, or created a process yet.
+/// It is created inside the invocation's own directory with `O_EXCL`, written,
+/// reopened read-only, and then frozen through that descriptor: while the flag
+/// is set the kernel refuses a write, a truncation, a rename and an unlink
+/// through the name, so the name and the bytes stay welded together for the
+/// whole run. The flag is set through the descriptor rather than the path, so
+/// nothing between creating the file and freezing it is decided by re-resolving
+/// a string.
 ///
-/// Compiled only where there are no anonymous files. On Linux this does not
+/// Every step is a hard failure. This is the platform's whole guarantee, and a
+/// host that could not establish it would be executing a pathname anyone running
+/// as this user could re-point between the digest and the `exec`.
+///
+/// Compiled only where a descriptor cannot be executed. On Linux this does not
 /// exist, so no Linux code path can reach a pathname-backed executable.
 #[cfg(not(target_os = "linux"))]
-fn unlinked_image(name: &str, bytes: &[u8], scratch: &Path) -> Result<OwnedFd, HostError> {
+fn immutable_image(
+    name: &str,
+    bytes: &[u8],
+    scratch: &Path,
+) -> Result<(OwnedFd, CString), HostError> {
     use std::fs;
     use std::os::unix::fs::OpenOptionsExt;
 
     let path = scratch.join(format!(".image-{name}"));
     let fail = |what: &str, err: std::io::Error| {
-        HostError::Workspace(format!("{what} {}: {err}", path.display()))
+        HostError::ImageNotSealed(format!("{what} {}: {err}", path.display()))
     };
     let mut file = fs::OpenOptions::new()
         .write(true)
         .create_new(true)
         .mode(0o500)
         .open(&path)
-        .map_err(|err| fail("materialize", err))?;
-    file.write_all(bytes).map_err(|err| fail("write", err))?;
+        .map_err(|err| fail("materialize the image at", err))?;
+    file.write_all(bytes)
+        .map_err(|err| fail("write the image at", err))?;
     drop(file);
-    let opened = File::open(&path).map_err(|err| fail("open", err))?;
-    fs::remove_file(&path).map_err(|err| fail("unlink", err))?;
-    Ok(OwnedFd::from(opened))
+    let opened = File::open(&path).map_err(|err| fail("open the image at", err))?;
+    if unsafe { libc::fchflags(opened.as_raw_fd(), libc::UF_IMMUTABLE) } != 0 {
+        let err = std::io::Error::last_os_error();
+        // The name is already there and cannot be frozen, so it is taken back
+        // out before anything else can find it.
+        let _ = fs::remove_file(&path);
+        return Err(fail("make the image immutable at", err));
+    }
+    let as_argument = CString::new(path.as_os_str().as_bytes()).map_err(|_| {
+        HostError::ImageNotSealed(format!(
+            "the image path {} contains a NUL byte",
+            path.display()
+        ))
+    })?;
+    Ok((OwnedFd::from(opened), as_argument))
 }
 
 /// The image boundary, forced to fail.
