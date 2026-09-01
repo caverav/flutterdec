@@ -38,6 +38,12 @@ jobs:
       - name: image unit tests
         if: always()
         run: cargo test -p flutterdec-adapter --lib
+      - name: Residual in-place rewrite attack (records the outcome)
+        if: always()
+        run: ZV_ATTACK=inplace cargo test -p flutterdec-adapter --test zv_exploit -- --nocapture --test-threads=1 --exact zv_the_prespawn_attacker_is_reported_truthfully
+      - name: CLI JSON report probe
+        if: always()
+        run: cargo test -p flutterdec-cli --test zv_cli_report -- --nocapture
 
   mut-identity:
     name: "mutation - delete the pre-exec identity check (${{ matrix.os }})"
