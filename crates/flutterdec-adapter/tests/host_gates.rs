@@ -19,6 +19,7 @@ use flutterdec_adapter::protocol::RequestedBackend;
 use flutterdec_adapter::registry::{
     canonical_feature_fingerprint, CompatibilityRecord, HostArtifactVariant,
 };
+use flutterdec_adapter::store::EntryState;
 use flutterdec_adapter::{
     run_adapter, AdapterInput, AdapterRegionInput, HostAuthorization, HostError, LibappSource,
     Limits,
@@ -30,6 +31,10 @@ use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
 const RET: [u8; 4] = 0xD65F_03C0u32.to_le_bytes();
+
+/// The other snapshot the shipped registry has a record for. Its record names
+/// the same artifact path and the same digest as this rig's.
+const OTHER_HASH: &str = "ace654289f5abc240509fc941453ebc5";
 
 /// A rig whose adapter would run, loudly, if a gate ever let it.
 struct Rig {
@@ -386,6 +391,71 @@ fn an_artifact_that_changed_since_it_was_registered_is_refused() {
         matches!(err, HostError::ArtifactDigestMismatch { .. }),
         "wrong refusal: {err}"
     );
+}
+
+/// An install for one record does not authorize a different one, even when the
+/// two name the same artifact path with the same bytes.
+///
+/// The shipped registry has exactly that pair, so this is not a hypothetical:
+/// every check that reads the file — containment, the declared path, the mode,
+/// the digest — passes here, because the file *is* the file both records
+/// declare. What differs is who installed it, and the store ledger is the only
+/// thing that records that.
+#[test]
+fn an_install_for_another_record_does_not_authorize_this_one() {
+    let rig = Rig::new();
+    // Same artifact, same digest, same path: only the snapshot hash differs, so
+    // the store ends up holding an install that belongs to the other record.
+    let sibling = other_record(&rig, |record| {
+        record.snapshot_hash = OTHER_HASH.to_string();
+    });
+    support::write_ledger(&rig.installed.store_root, &sibling);
+
+    let record = rig.installed.record.clone();
+    let err = rig.refuse(&rig.input(&record));
+    let HostError::NotInstalled { state, ref detail } = err else {
+        panic!("wrong refusal: {err}");
+    };
+    assert_eq!(
+        state,
+        EntryState::Unavailable,
+        "the refusal does not report the state `adapter list` would: {detail}"
+    );
+    assert_eq!(
+        detail, "not installed in the local adapter store",
+        "the refusal does not name the condition"
+    );
+
+    // The other direction: the same rig, the same bytes, the same everything,
+    // with the ledger recording *this* record — and it runs. Without this the
+    // assertion above would also hold for a host that refused every record.
+    support::write_ledger(&rig.installed.store_root, &record);
+    let err = rig
+        .run(&rig.input(&record))
+        .expect_err("the spy adapter exits without a result");
+    assert!(
+        matches!(err, HostError::NoResult { .. }),
+        "an installed record was refused before it ran: {err}"
+    );
+    assert!(rig.spawned(), "an installed record did not reach the spy");
+}
+
+/// A ledger entry that contradicts the record it claims is a broken store, and
+/// it is reported as the same `corrupt` an operator sees in `adapter list`.
+#[test]
+fn a_ledger_entry_that_contradicts_the_record_is_refused_as_corrupt() {
+    let rig = Rig::new();
+    let stale = other_record(&rig, |record| {
+        record.artifact.variants[0].path = "artifacts/some-other-name".to_string();
+    });
+    support::write_ledger(&rig.installed.store_root, &stale);
+
+    let record = rig.installed.record.clone();
+    let err = rig.refuse(&rig.input(&record));
+    let HostError::NotInstalled { state, .. } = err else {
+        panic!("wrong refusal: {err}");
+    };
+    assert_eq!(state, EntryState::Corrupt, "wrong reported state");
 }
 
 #[test]
