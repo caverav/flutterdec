@@ -359,9 +359,13 @@ parser family and a profile that no registry ever selected. It goes through the
 same `validate` an adapter model does.
 
 The conditions that stay loud are the ones about the installation rather than
-about the snapshot: a malformed registry, a record that fails its own
-invariants, a profile that does not verify, an artifact whose bytes are not the
-authorized bytes, and any adapter that was authorized, spawned, and then failed.
+about the snapshot: a malformed registry, two records claiming one snapshot, a
+record that fails its own invariants, a profile that does not verify, an
+artifact whose bytes are not the authorized bytes, and any adapter that was
+authorized, spawned, and then failed. Ambiguity belongs on that list rather than
+with the unsupported-snapshot reasons: it says the registry cannot name a parser
+for a snapshot the host may well have one for, so recovering heuristically would
+answer a broken install with a plausible-looking result.
 A pinned external backend is also refused rather than answered, for the same
 reason the protocol refuses substitution inside a run.
 

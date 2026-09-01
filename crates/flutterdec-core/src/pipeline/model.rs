@@ -126,8 +126,15 @@ const CORE_FALLBACK_EFFECT: &str = "core recovered heuristic ARM64 code candidat
      no libraries, no classes, no function names, no original entry function, and no \
      authoritative ObjectPool index space";
 
+/// Keep the typed registry refusal downcastable through the context, for the
+/// same reason [`adapter_error`] does.
+///
+/// `anyhow!("...: {error}")` renders the same sentence and loses the type, which
+/// makes every `registry_*` error category unreachable: `error_category` can
+/// only classify what it can downcast, so a stringified refusal reports
+/// `unclassified` no matter which check refused it.
 fn registry_error(error: RegistryError) -> anyhow::Error {
-    anyhow!("compatibility registry selection failed: {}", error)
+    anyhow::Error::new(error).context("compatibility registry selection failed")
 }
 
 /// Keep the typed host refusal downcastable, and the identity rejection inside
@@ -227,21 +234,28 @@ fn pins_external_backend(backend: AdapterBackend) -> bool {
 /// Whether a registry refusal is a fact about *this snapshot* rather than about
 /// the host's own installed data.
 ///
-/// "No record for this hash", "no record for this target", "no record for this
-/// feature tuple" and "two records claim it" all mean the same thing to an
-/// operator: nothing here parses this snapshot, so core will do what it can. A
-/// malformed registry, a record that fails its own invariants, a profile that
-/// does not verify, or an artifact whose bytes are not the authorized bytes are
-/// integrity failures of the installation and must stay loud.
+/// "No record for this hash", "no record for this target" and "no record for
+/// this feature tuple" all mean the same thing to an operator: nothing here
+/// parses this snapshot, so core will do what it can. A malformed registry, a
+/// record that fails its own invariants, a profile that does not verify, an
+/// artifact whose bytes are not the authorized bytes, or two records claiming
+/// one snapshot are integrity failures of the installation and must stay loud.
+///
+/// Ambiguity is on that second list on purpose. "Two records claim this
+/// snapshot" is not a fact about the snapshot at all: it says the host's own
+/// registry cannot name a parser, and answering it with heuristic recovery would
+/// report a supported snapshot as an unsupported one and hide a broken install
+/// behind a plausible result.
 fn fallback_reason_for_registry(error: &RegistryError) -> Option<(CoreFallbackReason, String)> {
     let reason = match error {
         RegistryError::NoRecord(_) => CoreFallbackReason::NoCompatibilityRecord,
         RegistryError::Identity(_) => CoreFallbackReason::IdentityRejected,
-        RegistryError::TargetMismatch { .. }
-        | RegistryError::FeatureMismatch { .. }
-        | RegistryError::Ambiguous(_) => CoreFallbackReason::CompatibilityUnsupported,
+        RegistryError::TargetMismatch { .. } | RegistryError::FeatureMismatch { .. } => {
+            CoreFallbackReason::CompatibilityUnsupported
+        }
         RegistryError::ArtifactAbsent(_) => CoreFallbackReason::AdapterNotInstalled,
-        RegistryError::Malformed(_)
+        RegistryError::Ambiguous(_)
+        | RegistryError::Malformed(_)
         | RegistryError::UnsupportedVersion(_)
         | RegistryError::InvalidRecord(_)
         | RegistryError::Profile(_)
@@ -366,10 +380,15 @@ fn load_program(
         return load_core_fallback(bundle, CoreFallbackReason::InternalRequested, None, None);
     }
 
-    // Both of these can refuse for a reason that is about the snapshot rather
-    // than about the installation, and only those reasons reach core recovery.
-    let registry =
-        CompatibilityRegistry::load(&layout.registry_path()).map_err(registry_error)?;
+    // All three of these can refuse for a reason that is about the snapshot
+    // rather than about the installation, and only those reasons reach core
+    // recovery. Reading the registry goes through the same classifier as
+    // selecting from it, so which refusals are honest fallbacks is decided in
+    // exactly one place rather than by which call happened to fail first.
+    let registry = match CompatibilityRegistry::load(&layout.registry_path()) {
+        Ok(registry) => registry,
+        Err(error) => return recover_or_refuse(bundle, backend, error, None),
+    };
     let selection = match registry.select(&bundle.identity) {
         Ok(selection) => selection,
         Err(error) => return recover_or_refuse(bundle, backend, error, None),

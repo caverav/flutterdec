@@ -981,8 +981,11 @@ fn handle_map_symbols(layout: &Layout, cmd: MapSymbolsCmd) -> Result<()> {
 fn handle_adapter(layout: &Layout, cmd: AdapterCmd) -> Result<ExitCode> {
     match cmd.subcommand {
         AdapterSubcommand::Install(cmd) => {
+            // `anyhow::Error::new(..).context(..)` rather than a formatted
+            // message: the rendering is the same and the `RegistryError` stays
+            // downcastable, so the failure still reports its own category.
             let registry = CompatibilityRegistry::load(&layout.registry_path())
-                .map_err(|err| anyhow!("read compatibility registry: {}", err))?;
+                .map_err(|err| anyhow::Error::new(err).context("read compatibility registry"))?;
             let installation = store::install(
                 layout,
                 &registry,
