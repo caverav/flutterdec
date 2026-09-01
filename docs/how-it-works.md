@@ -385,32 +385,48 @@ region and the output handle to be usable. Each refusal is a distinct `HostError
 variant, and the ones that mean "no process was created" answer `true` to
 `HostError::is_pre_spawn`.
 
-The bytes that run are the bytes that were checked, and no pathname is involved in
-making that true. A mode bit would not be enough: the owner of a `0500` file can `chmod`
-it back, rename it, unlink it, or drop a different file at the same name. So the store
-artifact is read once, digested from that buffer, and turned into an executable inode
-the host holds open — an anonymous, write-sealed `memfd` on Linux, and elsewhere a file
-created inside the private invocation directory and unlinked before the descriptor is
-returned. The child is created from that descriptor with `execveat(AT_EMPTY_PATH)`
-(`execve("/dev/fd/N")` where `execveat` does not exist), which resolves the inode and
-never a path.
+The bytes that run are the bytes that were checked, and a mode bit is not what makes
+that true: the owner of a `0500` file can `chmod` it back, rename it, unlink it, or drop
+a different file at the same name. So the store artifact is read once, digested from that
+buffer, and turned into an executable inode the host holds open for the rest of the run.
 
-The two are alternatives per platform, not a fallback. On Linux the seals
-(`F_SEAL_WRITE`, `F_SEAL_GROW`, `F_SEAL_SHRINK`, `F_SEAL_SEAL`) are added and then read
-back with `F_GET_SEALS` before anything is executed, and a host that cannot create the
-anonymous file, write all of it, or prove the whole seal set refuses the run with
-`HostError::ImageNotSealed` before a process exists. It does not quietly execute a named
-file instead: that would withdraw the guarantee exactly on the kernels — old, or
-seccomp-restricted — where it is worth the most. The unlinked-file path is compiled only
-where anonymous files do not exist.
+On Linux that inode is an anonymous, write-sealed `memfd` that never had a name, and the
+child is created from the descriptor with `execveat(AT_EMPTY_PATH)`, which resolves the
+inode and never a path. The seals (`F_SEAL_WRITE`, `F_SEAL_GROW`, `F_SEAL_SHRINK`,
+`F_SEAL_SEAL`) are added and then read back with `F_GET_SEALS` before anything is
+executed, and a host that cannot create the anonymous file, write all of it, or prove the
+whole seal set refuses the run with `HostError::ImageNotSealed` before a process exists.
+It does not quietly execute a named file instead: that would withdraw the guarantee
+exactly on the kernels — old, or seccomp-restricted — where it is worth the most. There
+is no invocation copy for a same-user process to find, `chmod`, rename, or overwrite, and
+scripts still work because the kernel hands a `#!` interpreter `/dev/fd/N`, which is the
+held descriptor and not a name on any filesystem, so the descriptor is deliberately left
+open across the `exec`.
 
-Nothing is left to race. The owner-writable store path is never opened again after
-verification, and there is no invocation copy for a same-user process to find, `chmod`,
-rename, or overwrite. Scripts still work: the kernel hands a `#!` interpreter
-`/dev/fd/N`, which is the held descriptor and not a name on any filesystem, so the
-descriptor is deliberately left open across the `exec`. It also means an adapter is
-exactly one file: nothing else in the store is beside the running script, because
-nothing else in the store was authorized by the record.
+Darwin cannot execute a descriptor at all. `/dev/fd/N` there is not a second name for the
+file behind it: it is a node whose reported mode is the *descriptor's* access mode, so it
+never carries an execute bit, and `execve` on it is refused with `EACCES` whether the file
+is still linked or not. There is no `fexecve` and no `execveat`. So there the image is a
+file created `O_EXCL` at mode `0500` inside the private invocation directory, written,
+reopened read-only, and then made immutable through that descriptor rather than through
+its name. While the flag is set the kernel refuses a write, a truncation, a rename and an
+unlink through the name, so the name and the bytes stay welded together for the whole run;
+the freeze is lifted through the same descriptor when the workspace is removed. Failing to
+establish it is the same typed pre-spawn refusal, with the name taken back out. The known
+ceiling is that the flag is a user flag and its owner may clear it, and a same-user
+attacker is the owner — it is the strongest the platform offers, it is bounded, and it is
+never reached on Linux.
+
+Either way an adapter is exactly one file: nothing else in the store is beside the running
+script, because nothing else in the store was authorized by the record.
+
+One containment control has to give way to this. Asking for an empty route table without
+privileges means asking for a user namespace, and some kernels answer that by placing the
+caller under a mandatory access control profile instead of by refusing it. Such a profile
+decides what may be executed by pathname, which the Linux image does not have, so a child
+that took the namespace could no longer start the adapter. The host reads that switch
+before it forks and skips the user-namespace route where it is set, reporting network
+isolation unavailable rather than claiming it at the price of the run.
 
 The child that does run gets a private invocation directory (mode `0700`) holding
 read-only input handles under `in/`, its output under `out/`, and its own `HOME` and
