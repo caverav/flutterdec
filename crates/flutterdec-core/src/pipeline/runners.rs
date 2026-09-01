@@ -2304,9 +2304,14 @@ pub fn run_decompile(
 /// Existence is not a state here: `store::inspect` reads and hashes each
 /// installed artifact against the record that authorized it.
 pub fn available_adapters(layout: &Layout) -> Result<Vec<StoreEntry>> {
+    // `anyhow::Error::new(..).context(..)` rather than a formatted message: the
+    // rendering is identical, but the `RegistryError` and the `StoreError` stay
+    // downcastable, so a condition reports the same category here as it does
+    // through `info` or `adapter install`.
     let registry = CompatibilityRegistry::load(&layout.registry_path())
-        .map_err(|err| anyhow!("read compatibility registry: {}", err))?;
-    store::inspect(layout, &registry).map_err(|err| anyhow!("inspect adapter store: {}", err))
+        .map_err(|err| anyhow::Error::new(err).context("read compatibility registry"))?;
+    store::inspect(layout, &registry)
+        .map_err(|err| anyhow::Error::new(err).context("inspect adapter store"))
 }
 
 #[cfg(test)]
