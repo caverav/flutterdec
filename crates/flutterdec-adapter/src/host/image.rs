@@ -153,6 +153,20 @@ impl ExecImage {
     }
 }
 
+/// Lift the freeze through the descriptor that applied it.
+///
+/// The run is over by the time this happens, and the flag would otherwise
+/// outlive it: the invocation directory cannot be removed while something
+/// inside it refuses to be unlinked. Done through the descriptor rather than
+/// the name for the same reason it was set that way — the host does not decide
+/// what to unfreeze by re-resolving a string.
+#[cfg(not(target_os = "linux"))]
+impl Drop for ExecImage {
+    fn drop(&mut self) {
+        unsafe { libc::fchflags(self.fd.as_raw_fd(), 0) };
+    }
+}
+
 /// `argv`/`envp` as the null-terminated vector `execve` expects.
 fn pointers(values: &[CString]) -> Vec<*const libc::c_char> {
     values
