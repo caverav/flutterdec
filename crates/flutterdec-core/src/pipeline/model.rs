@@ -39,9 +39,13 @@ fn profile_binding(profile: Option<&ResolvedDartProfile>) -> (String, Sha256Dige
     let p = &resolved.profile;
     let mut cids = p.cids.iter().collect::<Vec<_>>();
     cids.sort();
+    // `dart_version` is deliberately absent. Layout buckets are sparse and
+    // resolved by floor, so several exact Dart versions share one
+    // `profile_version`. Including it would give those snapshots the same
+    // `profile_id` and different `profile_sha256` values, and the id is what
+    // this digest is supposed to pin.
     let canonical = format!(
-        "dart_version={};profile_version={};tag_style={};compressed_word_size={};header_fields={};max_alignment={};heap_object_tag={};cids={:?}",
-        resolved.dart_version,
+        "profile_version={};tag_style={};compressed_word_size={};header_fields={};max_alignment={};heap_object_tag={};cids={:?}",
         resolved.profile_version,
         p.tag_style.as_str(),
         p.compressed_word_size,
