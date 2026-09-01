@@ -1000,7 +1000,11 @@ fn prespawn_rendezvous() -> Result<(), HostError> {
 /// Restore write permission everywhere before removal.
 ///
 /// A hostile adapter that leaves an unwritable directory behind would otherwise
-/// defeat `remove_dir_all` and leak its own workspace onto the host.
+/// defeat `remove_dir_all` and leak its own workspace onto the host. On the
+/// platforms where the executable image is a frozen pathname rather than an
+/// anonymous descriptor, the freeze is lifted here too: it is the host's own
+/// flag, the run that needed it is over, and leaving it set would leak the
+/// workspace for exactly the same reason.
 fn force_writable(path: &Path) {
     let Ok(metadata) = fs::symlink_metadata(path) else {
         return;
@@ -1008,6 +1012,7 @@ fn force_writable(path: &Path) {
     if metadata.file_type().is_symlink() {
         return;
     }
+    unfreeze(path);
     let _ = fs::set_permissions(path, fs::Permissions::from_mode(0o700));
     if metadata.is_dir() {
         if let Ok(entries) = fs::read_dir(path) {
@@ -1017,6 +1022,18 @@ fn force_writable(path: &Path) {
         }
     }
 }
+
+/// Clear the immutability the image carried, where the platform has one.
+#[cfg(not(target_os = "linux"))]
+fn unfreeze(path: &Path) {
+    use std::os::unix::ffi::OsStrExt;
+    if let Ok(name) = std::ffi::CString::new(path.as_os_str().as_bytes()) {
+        unsafe { libc::chflags(name.as_ptr(), 0) };
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn unfreeze(_path: &Path) {}
 
 impl Drop for Workspace {
     fn drop(&mut self) {
