@@ -1,4 +1,4 @@
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{bail, Context, Result};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use flutterdec_adapter::store::{self, EntryState};
 use flutterdec_core::{
@@ -993,7 +993,7 @@ fn handle_adapter(layout: &Layout, cmd: AdapterCmd) -> Result<ExitCode> {
                 cmd.target_arch.as_deref(),
                 cmd.from.as_deref(),
             )
-            .map_err(|err| anyhow!("{}", err))?;
+            .map_err(anyhow::Error::new)?;
             if cmd.json {
                 println!("{}", serde_json::to_string_pretty(&installation)?);
             } else {
