@@ -15,10 +15,11 @@
 //! sweep the drain threads would never see end of file and the host would hang
 //! after a perfectly successful run.
 
+use super::image::ExecImage;
 use super::{HostError, OutputStream};
 use crate::sandbox::{kill_tree, Containment, ContainmentReport, Limits};
 use std::io::Read;
-use std::os::unix::process::ExitStatusExt;
+use std::os::unix::process::{CommandExt, ExitStatusExt};
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -80,12 +81,12 @@ fn drain<R: Read + Send + 'static>(
 
 /// Spawn, tolerating a file the kernel still considers open for writing.
 ///
-/// The host writes the verified adapter into its private workspace and executes
-/// it immediately. The descriptor it wrote through is closed by then, but any
-/// other thread that forked while it was open holds a copy until that child
-/// execs, and the kernel answers `ETXTBSY` for as long as one exists. That is a
-/// property of the host being multi-threaded, not of the artifact, so it is
-/// waited out rather than reported.
+/// Where the image is an ordinary inode rather than an anonymous one, the host
+/// writes it and executes it immediately. The descriptor it wrote through is
+/// closed by then, but any other thread that forked while it was open holds a
+/// copy until that child execs, and the kernel answers `ETXTBSY` for as long as
+/// one exists. That is a property of the host being multi-threaded, not of the
+/// artifact, so it is waited out rather than reported.
 fn spawn_retrying_busy_text(command: &mut Command) -> std::io::Result<std::process::Child> {
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
@@ -99,10 +100,26 @@ fn spawn_retrying_busy_text(command: &mut Command) -> std::io::Result<std::proce
 }
 
 /// Start the command, hold it to its limits, and reap it.
-pub(crate) fn run(mut command: Command, limits: &Limits) -> Result<Execution, HostError> {
+///
+/// `command` carries only what the standard library sets up before a pre-exec
+/// hook runs: the working directory and the three standard streams. What the
+/// child actually becomes is `image`, executed from its descriptor by the last
+/// hook registered here, with the arguments and environment the image was built
+/// with. The program named by `command` is never reached.
+pub(crate) fn run(
+    mut command: Command,
+    limits: &Limits,
+    image: Arc<ExecImage>,
+) -> Result<Execution, HostError> {
     let containment = Containment::prepare(limits)
         .map_err(|err| HostError::Spawn(format!("create the containment status pipe: {err}")))?;
     containment.install(&mut command);
+    // Registered after the containment hook so it runs after it: every limit,
+    // every isolation step and the status record all have to be in place before
+    // the image replaces the child, and this call does not return.
+    unsafe {
+        command.pre_exec(move || Err(image.exec()));
+    }
 
     let mut child = match spawn_retrying_busy_text(&mut command) {
         Ok(child) => child,
