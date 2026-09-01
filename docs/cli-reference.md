@@ -310,7 +310,21 @@ The message is for a human and may be reworded; the token is stable.
   `adapter_result_mismatch`, `adapter_model_path_mismatch`,
   `adapter_reported_failure`, `adapter_model_rejected`,
   `containment_unreported`, `adapter_io`
+- installing into or reading the adapter store: `store_invalid_input`,
+  `store_no_record`, `store_ambiguous`, `store_incompatible`,
+  `store_artifact_source_rejected`, `store_artifact_digest_mismatch`,
+  `store_path_rejected`, `store_profile_rejected`, `store_state_malformed`,
+  `store_io`, `store_install_interrupted`
+- resolving where the packaged data and the writable store are, before any
+  command runs: `layout_executable_unknown`,
+  `layout_data_dir_override_invalid`, `layout_no_data_directory`,
+  `layout_no_data_home`
 - `unclassified` for anything else
+
+The category does not depend on which command hit the condition. A registry
+record that fails validation reports `registry_invalid_record` through both
+`adapter list` and `info`, because the typed error is carried up rather than
+flattened into a message.
 
 ## Resolved locations
 
