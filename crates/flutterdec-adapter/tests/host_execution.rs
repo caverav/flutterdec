@@ -608,6 +608,17 @@ fn an_invocation_sees_a_private_directory_and_nothing_of_the_host() {
     ]
     .into_iter()
     .collect();
+    // Darwin's CoreFoundation writes this into its *own* environment while the
+    // library initializes, so it appears in any child that links it no matter
+    // what the host passed. It is the platform naming the user's text encoding
+    // in the child, not a host variable that leaked through: the host builds the
+    // child's environment vector explicitly and this name is not in it.
+    #[cfg(not(target_os = "linux"))]
+    let allowed = {
+        let mut allowed = allowed;
+        allowed.insert("__CF_USER_TEXT_ENCODING");
+        allowed
+    };
     for name in probe.env.keys() {
         assert!(
             allowed.contains(name.as_str()),
@@ -838,13 +849,29 @@ succeed()
     }
 
     // Elsewhere a descriptor cannot be executed, so the image is a path — and
-    // then it has to be the *only* executable path the invocation exposes.
+    // then it has to be the *only* executable path the invocation exposes. The
+    // two spellings can differ by the platform's own symlinks (`/var` against
+    // `/private/var`), so the final component is what is compared.
     #[cfg(not(target_os = "linux"))]
-    assert_eq!(
-        image.workspace_executables,
-        vec![image.argv0.clone()],
-        "the invocation workspace exposes an executable other than the frozen image"
-    );
+    {
+        let image_name = image
+            .argv0
+            .rsplit('/')
+            .next()
+            .expect("argv[0] has a final component");
+        assert_eq!(
+            image.workspace_executables.len(),
+            1,
+            "the invocation workspace exposes an executable other than the frozen image: {:?}",
+            image.workspace_executables
+        );
+        assert!(
+            image.workspace_executables[0].ends_with(image_name),
+            "the executable in the workspace is not the image the adapter is running: {:?} against {}",
+            image.workspace_executables,
+            image.argv0
+        );
+    }
 }
 
 // -- VAL-HOST-008: containment must not cost the ability to execute -----------
