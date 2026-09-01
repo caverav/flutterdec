@@ -299,10 +299,42 @@ fn an_attacker_who_walks_the_invocation_workspace_finds_no_executable_to_subvert
         .iter()
         .filter(|entry| entry["path"].contains("flutterdec-adapter-"))
         .collect();
+
+    // On Linux the image is an anonymous descriptor, so there is nothing in the
+    // workspace for the attacker to aim at in the first place.
+    #[cfg(target_os = "linux")]
     assert!(
         workspace_candidates.is_empty(),
         "the invocation workspace exposed an executable pathname: {workspace_candidates:?}"
     );
+
+    // Where a descriptor cannot be executed the image has to be a path, and the
+    // property becomes what the attacker got out of it. It found the name — the
+    // decoy above proves it destroys what it finds — and every single thing it
+    // tried to do to that name was refused by the kernel.
+    #[cfg(not(target_os = "linux"))]
+    {
+        assert_eq!(
+            workspace_candidates.len(),
+            1,
+            "the invocation workspace exposed something other than the frozen image: {workspace_candidates:?}"
+        );
+        for entry in &workspace_candidates {
+            for step in [
+                "overwrite",
+                "chmod",
+                "overwrite_after_chmod",
+                "rename",
+                "unlink",
+                "replace",
+            ] {
+                assert_ne!(
+                    entry[step], "ok",
+                    "a same-user attacker could {step} the running image: {entry:?}"
+                );
+            }
+        }
+    }
 
     // The run itself: the authorized bytes executed, under a name that is not a
     // path in the workspace the attacker just walked.
