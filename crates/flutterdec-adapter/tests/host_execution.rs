@@ -718,17 +718,23 @@ succeed()
 
 // -- VAL-HOST-006: what the child actually is ---------------------------------
 
-/// A `#!` adapter is the awkward case for pathless execution and the one this
-/// project actually ships: the kernel cannot hand an interpreter a descriptor,
-/// so it hands it a name for one, and a host that got this wrong would either
-/// fail to start scripts at all or quietly fall back to naming a file.
+/// A `#!` adapter is the awkward case and the one this project actually ships:
+/// the kernel cannot hand an interpreter a descriptor, so it hands it a name for
+/// one, and a host that got this wrong would either fail to start scripts at all
+/// or quietly fall back to a file anyone could re-point.
 ///
 /// The adapter reports what it is: the name it was started under, the digest of
-/// the bytes behind that name, and every executable file it can find anywhere in
-/// its own workspace. All three have to line up for "the verified bytes ran, and
-/// nothing on disk named them" to be true.
+/// the bytes behind that name, every executable file it can find in its own
+/// workspace, and what happened when it tried to change its own image through
+/// the only name it has. The last of those is the portable half of the property.
+/// Where the image is an anonymous descriptor the name is `/dev/fd/N` and the
+/// seals refuse the write; where the platform cannot execute a descriptor the
+/// name is a real path and the kernel refuses the write, the rename and the
+/// unlink because the host froze it. Either way the answer to "can the bytes
+/// behind this name change while they run" is no, and it is answered by the
+/// kernel rather than by a mode bit.
 #[test]
-fn a_shebang_adapter_runs_from_a_descriptor_with_no_pathname() {
+fn a_shebang_adapter_runs_from_an_image_that_cannot_be_repointed() {
     let rig = Rig::new(
         r#"import hashlib
 
@@ -742,11 +748,32 @@ for base, _dirs, files in os.walk(os.getcwd()):
         except OSError:
             pass
 
+image = sys.argv[0]
+
+def attempt(action):
+    try:
+        action()
+        return "succeeded"
+    except OSError as exc:
+        return exc.strerror or type(exc).__name__
+
+def overwrite():
+    with open(image, "r+b") as handle:
+        handle.write(b"\x00")
+        handle.flush()
+
+mutations = {
+    "overwrite": attempt(overwrite),
+    "rename": attempt(lambda: os.rename(image, image + ".moved")),
+    "unlink": attempt(lambda: os.unlink(image)),
+}
+
 sidecar("image").write_text(json.dumps({
     "argv0": sys.argv[0],
     "sha256": hashlib.sha256(pathlib.Path(sys.argv[0]).read_bytes()).hexdigest(),
     "workspace_executables": executables,
     "cwd": os.getcwd(),
+    "mutations": mutations,
 }))
 succeed()
 "#,
@@ -760,7 +787,9 @@ succeed()
         argv0: String,
         sha256: String,
         workspace_executables: Vec<String>,
+        #[allow(dead_code)]
         cwd: String,
+        mutations: std::collections::BTreeMap<String, String>,
     }
     let image: Image =
         serde_json::from_slice(&fs::read(rig.sidecar("image")).expect("the adapter wrote a probe"))
@@ -772,21 +801,91 @@ succeed()
         support::hex_digest(&authorized),
         "the interpreter read something other than the verified artifact"
     );
-    assert!(
-        image.workspace_executables.is_empty(),
-        "the invocation workspace holds an executable pathname: {:?}",
-        image.workspace_executables
+
+    // The portable half: whatever the name is, it is not a way to change what
+    // is running.
+    for step in ["overwrite", "rename", "unlink"] {
+        let outcome = image
+            .mutations
+            .get(step)
+            .unwrap_or_else(|| panic!("the adapter did not report {step}: {:?}", image.mutations));
+        assert_ne!(
+            outcome, "succeeded",
+            "the running adapter could {step} its own image through {}",
+            image.argv0
+        );
+    }
+
+    // The Linux half, which is stronger because the platform allows it: the
+    // image is not on any filesystem at all.
+    #[cfg(target_os = "linux")]
+    {
+        assert!(
+            image.workspace_executables.is_empty(),
+            "the invocation workspace holds an executable pathname: {:?}",
+            image.workspace_executables
+        );
+        assert!(
+            !image.argv0.starts_with(&image.cwd),
+            "the adapter was started from a path inside its own workspace: {}",
+            image.argv0
+        );
+        assert!(
+            image.argv0.starts_with("/dev/fd/") || image.argv0.starts_with("/proc/self/fd/"),
+            "the adapter was started from a filesystem pathname: {}",
+            image.argv0
+        );
+    }
+
+    // Elsewhere a descriptor cannot be executed, so the image is a path — and
+    // then it has to be the *only* executable path the invocation exposes.
+    #[cfg(not(target_os = "linux"))]
+    assert_eq!(
+        image.workspace_executables,
+        vec![image.argv0.clone()],
+        "the invocation workspace exposes an executable other than the frozen image"
     );
-    assert!(
-        !image.argv0.starts_with(&image.cwd),
-        "the adapter was started from a path inside its own workspace: {}",
-        image.argv0
+}
+
+// -- VAL-HOST-008: containment must not cost the ability to execute -----------
+
+/// The two halves of this host can be made to fight, and one kernel in ordinary
+/// use makes them fight.
+///
+/// Asking for an empty route table without privileges means asking for a user
+/// namespace, and some kernels answer that by placing the caller under a
+/// mandatory access control profile rather than by refusing. Such a profile
+/// decides what may be executed by *pathname*, and the image deliberately has
+/// none — so a child that took the namespace could no longer start the adapter
+/// at all, and every run on that host failed before a process existed.
+///
+/// The rule is that the run wins. An unavailable network control is a reported,
+/// bounded loss; a host that cannot execute a verified image is not a host.
+#[test]
+fn network_isolation_is_never_bought_with_the_ability_to_execute() {
+    let rig = Rig::new(
+        "succeed()
+",
     );
-    assert!(
-        image.argv0.starts_with("/dev/fd/") || image.argv0.starts_with("/proc/self/fd/"),
-        "the adapter was started from a filesystem pathname: {}",
-        image.argv0
-    );
+    let run = rig
+        .run(brisk())
+        .expect("the adapter runs whatever the host could or could not isolate");
+    assert!(run.model.functions.is_empty());
+
+    #[cfg(target_os = "linux")]
+    if fs::read_to_string("/proc/sys/kernel/apparmor_restrict_unprivileged_userns")
+        .map(|value| value.trim() != "0")
+        .unwrap_or(false)
+    {
+        assert!(
+            matches!(
+                run.containment.network,
+                flutterdec_adapter::ControlState::Unavailable { .. }
+            ),
+            "the host took a user namespace on a kernel that confines one, which is paid for with the ability to execute a pathless image: {:?}",
+            run.containment.network
+        );
+    }
 }
 
 // -- VAL-HOST-004: platform containment claims --------------------------------
