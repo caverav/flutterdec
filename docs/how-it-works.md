@@ -412,10 +412,25 @@ reopened read-only, and then made immutable through that descriptor rather than 
 its name. While the flag is set the kernel refuses a write, a truncation, a rename and an
 unlink through the name, so the name and the bytes stay welded together for the whole run;
 the freeze is lifted through the same descriptor when the workspace is removed. Failing to
-establish it is the same typed pre-spawn refusal, with the name taken back out. The known
-ceiling is that the flag is a user flag and its owner may clear it, and a same-user
-attacker is the owner — it is the strongest the platform offers, it is bounded, and it is
-never reached on Linux.
+establish it is the same typed pre-spawn refusal, with the name taken back out.
+
+That is less than Linux gets, because the flag is a user flag and its owner may clear it —
+and a same-user attacker is the owner. Two things follow. The child re-checks, immediately
+before `execve` and after every containment control is in place, that the pathname it is
+about to execute still resolves to the descriptor the host has held since it verified the
+bytes (same device, same inode) and that the freeze is still on it. A name that has been
+re-pointed or thawed is not executed: the run ends as `HostError::ImageNotSealed` with no
+process created and the workspace removed as usual. The check allocates nothing, takes no
+locks, and is two `stat` calls. What it does not cover is an owner who clears the flag and
+rewrites the bytes in place without moving the inode; the freeze half of the check catches
+that, and an owner can re-set the flag.
+
+So the state is reported rather than claimed. The containment report carries
+`image_integrity` alongside the other controls: `applied` only for the sealed anonymous
+inode whose whole seal set the host read back off the descriptor it executed, and
+`unavailable` on Darwin with a reason naming the pathname, `UF_IMMUTABLE`, and the fact
+that its owner can clear it. The Darwin image is narrowed as far as the platform allows
+and is never described as sealed.
 
 Either way an adapter is exactly one file: nothing else in the store is beside the running
 script, because nothing else in the store was authorized by the record.
