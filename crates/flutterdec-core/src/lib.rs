@@ -393,6 +393,7 @@ fn host_error_category(error: &HostError) -> &'static str {
         HostError::InputRejected(_) => "input_rejected",
         HostError::RequestRejected(_) => "request_rejected",
         HostError::OutputHandleRejected(_) => "output_handle_rejected",
+        HostError::ImageNotSealed(_) => "image_not_sealed",
         HostError::Workspace(_) => "workspace_failed",
         HostError::Spawn(_) => "spawn_failed",
         HostError::Timeout { .. } => "adapter_timeout",
