@@ -19,7 +19,9 @@ use flutterdec_adapter::model::{
     Provenance,
 };
 use flutterdec_adapter::protocol::{BackendId, RequestedBackend};
-use flutterdec_adapter::{run_adapter, AdapterInput, AdapterRegionInput, AdapterRun, Limits};
+use flutterdec_adapter::{
+    run_adapter, AdapterInput, AdapterRegionInput, AdapterRun, LibappSource, Limits,
+};
 use flutterdec_loader::identity::SnapshotIdentity;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -673,23 +675,24 @@ asm.mkdir(parents=True, exist_ok=True)
         .all(|e| e.target_va.is_none()));
 }
 
-/// Install the real producer with a fake `r2flutter` wired in, plus a dummy
-/// target file for it to be pointed at.
+/// Publish the real producer with a fake `r2flutter` wired in, plus a dummy
+/// target for it to be pointed at.
 ///
 /// `classes_json` is what the fake answers for `-jc`. Everything else answers
 /// the least the backend needs to build a model: one instruction-table entry
-/// inside the declared isolate region, no strings, and a `-jp` failure so no
-/// pool geometry is claimed.
-fn install_with_fake_r2flutter(hash: &str, classes_json: &str) -> (Installed, PathBuf) {
-    let installed = install(hash);
-    let adapters = installed
-        .exec
-        .parent()
-        .and_then(Path::parent)
-        .expect("the installed adapter lives under <root>/adapters/installed")
-        .to_path_buf();
-
-    let fake = adapters.join("fake_r2flutter");
+/// inside the declared isolate region, no strings, and a failure for `-jp` so
+/// no pool geometry is claimed.
+///
+/// The wiring is prepended to the producer source before publication, as the
+/// no-backends install does, because the record content-addresses the artifact:
+/// editing the published file afterwards would fail the digest gate instead of
+/// running.
+fn install_with_fake_r2flutter(
+    identity: &SnapshotIdentity,
+    classes_json: &str,
+) -> (support::Authorized, TempDir, PathBuf) {
+    let dir = TempDir::new().expect("tempdir");
+    let fake = dir.path().join("fake_r2flutter");
     fs::write(
         &fake,
         format!(
@@ -714,31 +717,30 @@ else:
     set_executable(&fake);
 
     // `FLUTTERDEC_R2FLUTTER_CMD` outranks `_BIN` and `PATH` in the producer's
-    // resolver, so a real r2flutter on the developer's machine cannot win.
+    // resolver, so a real r2flutter on this machine cannot win the lookup.
+    const ANCHOR: &str = "from __future__ import annotations\n";
+    let source = repo_root().join("adapters/python/adapter_template.py");
+    let producer = fs::read_to_string(&source).expect("read producer");
+    let (head, rest) = producer
+        .split_once(ANCHOR)
+        .expect("the producer imports __future__ annotations");
+    let wired = dir.path().join("adapter_template.py");
     fs::write(
-        &installed.exec,
-        r#"#!/usr/bin/env python3
-from pathlib import Path
-import os
-import sys
-root = Path(__file__).resolve().parents[1]
-os.environ["FLUTTERDEC_R2FLUTTER_CMD"] = str(root / "fake_r2flutter")
-sys.path.insert(0, str(root / "python"))
-import adapter_template
-if __name__ == "__main__":
-    raise SystemExit(adapter_template.entrypoint())
-"#,
+        &wired,
+        format!(
+            "{head}{ANCHOR}import os as _os\n_os.environ[\"FLUTTERDEC_R2FLUTTER_CMD\"] = {:?}\n{rest}",
+            fake.to_str().expect("utf-8 fake path"),
+        ),
     )
-    .expect("write adapter exec");
-    set_executable(&installed.exec);
+    .expect("write wired producer");
 
-    let target = adapters.join("libapp.so");
+    let target = dir.path().join("libapp.so");
     fs::write(&target, b"dummy").expect("write dummy target");
-    (installed, target)
+    (support::Authorized::install(&wired, identity), dir, target)
 }
 
 fn run_r2flutter(
-    installed: &Installed,
+    installed: &support::Authorized,
     identity: &SnapshotIdentity,
     snapshot: &Snapshot,
     target: &Path,
@@ -747,15 +749,17 @@ fn run_r2flutter(
         &installed.exec,
         &AdapterInput {
             identity,
-            producer: producer(&installed.exec),
-            compatibility: compatibility(),
+            authorization: installed.authorization(),
+            producer: installed.producer(),
+            compatibility: installed.binding(),
             regions: regions(snapshot),
             input_path: None,
-            libapp_path: Some(target),
+            libapp: Some(LibappSource::File(target)),
             requested_backend: RequestedBackend::Fixed(BackendId::R2Flutter),
+            limits: Limits::default(),
         },
     )
-    .map_err(|err| format!("{err:#}"))
+    .map_err(|err| err.to_string())
 }
 
 #[test]
@@ -763,15 +767,15 @@ fn a_structured_superclass_links_when_r2flutter_resolved_it_and_stays_null_when_
     // r2flutter emits `super` as an object. It fills in `name` itself when the
     // reference resolves, so `Child` here is a superclass it could not name and
     // `Widget` is one it could.
-    let (installed, target) = install_with_fake_r2flutter(
-        "deadbeefdeadbeefdeadbeefdeadbeef",
+    let identity = support::identity();
+    let (installed, _dir, target) = install_with_fake_r2flutter(
+        &identity,
         r#"[
         {"name": "Child", "super": {"type_ref": 35836}},
         {"name": "Widget", "super": {"ref": 12, "name": "StatefulWidget"}},
         {"name": "StatefulWidget"}
     ]"#,
     );
-    let identity = support::identity();
     let run = run_r2flutter(&installed, &identity, &empty_snapshot(), &target)
         .expect("the r2flutter backend runs against the fake");
 
@@ -805,14 +809,14 @@ fn a_structured_superclass_links_when_r2flutter_resolved_it_and_stays_null_when_
 fn class_relationships_stay_unavailable_when_no_superclass_resolves() {
     // Both shapes r2flutter emits for a superclass it could not name. Neither
     // is an edge, so the domain has nothing partial about it.
-    let (installed, target) = install_with_fake_r2flutter(
-        "deadbeefdeadbeefdeadbeefdeadbeef",
+    let identity = support::identity();
+    let (installed, _dir, target) = install_with_fake_r2flutter(
+        &identity,
         r#"[
         {"name": "Child", "super": {"type_ref": 35836}},
         {"name": "Widget", "super": {"ref": 987}}
     ]"#,
     );
-    let identity = support::identity();
     let run = run_r2flutter(&installed, &identity, &empty_snapshot(), &target)
         .expect("the r2flutter backend runs against the fake");
 
@@ -829,6 +833,8 @@ fn class_relationships_stay_unavailable_when_no_superclass_resolves() {
         model.capabilities.class_relationships,
         CapabilityLevel::Unavailable
     );
+}
+
 /// The registry content-addresses the producer that ships with it, so editing
 /// one and not the other publishes a record no install can satisfy.
 ///
