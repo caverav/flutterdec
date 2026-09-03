@@ -833,6 +833,23 @@ def _r2flutter_pool(strings: List[dict]) -> List[dict]:
     return out
 
 
+def _r2flutter_super_name(value) -> str:
+    """Normalize r2flutter superclass metadata to ProgramModel's string field."""
+    if isinstance(value, str):
+        name = value.strip()
+        if name:
+            return name
+    if isinstance(value, dict):
+        name = value.get("name")
+        if isinstance(name, str):
+            name = name.strip()
+            if name:
+                return name
+    # ProgramModel v3 requires a non-null superclass string. "Object" is only
+    # a placeholder for unresolved r2flutter metadata, not recovered data.
+    return "Object"
+
+
 def _r2flutter_classes(classes: List[dict]) -> List[dict]:
     """Project r2flutter classes onto ProgramModel classes.
 
@@ -849,7 +866,7 @@ def _r2flutter_classes(classes: List[dict]) -> List[dict]:
             {
                 "id": i,
                 "name": name,
-                "super": (c.get("super") or "Object"),
+                "super": _r2flutter_super_name(c.get("super")),
                 "lib": "",
             }
         )

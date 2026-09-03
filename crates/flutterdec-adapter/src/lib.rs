@@ -460,4 +460,98 @@ asm_dir.mkdir(parents=True, exist_ok=True)
             "generic onResume in non-activity owner should not be tagged as activity handler"
         );
     }
+
+    #[test]
+    fn run_adapter_r2flutter_backend_normalizes_structured_superclass() {
+        let td = tempdir().expect("tempdir");
+        let root = td.path();
+        let python_dir = root.join("python");
+        fs::create_dir_all(&python_dir).expect("mkdir python");
+
+        let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .canonicalize()
+            .expect("canonicalize repo root");
+        let template_src = repo_root.join("adapters/python/adapter_template.py");
+        fs::copy(&template_src, python_dir.join("adapter_template.py"))
+            .expect("copy adapter template");
+
+        let fake_r2flutter = root.join("fake_r2flutter");
+        fs::write(
+            &fake_r2flutter,
+            r#"#!/usr/bin/env python3
+import json
+import sys
+
+if "-jH" in sys.argv:
+    value = {
+        "dart_version": "3.6.2",
+        "hash": "testhash",
+    }
+elif "-ji" in sys.argv:
+    value = {
+        "entries": [
+            {
+                "index": 0,
+                "address": 4096,
+                "name": "method.Child.test",
+            }
+        ]
+    }
+elif "-jxz" in sys.argv:
+    value = []
+elif "-jc" in sys.argv:
+    value = [
+        {
+            "name": "Child",
+            "super": {"type_ref": 35836},
+        }
+    ]
+else:
+    raise SystemExit(1)
+
+print(json.dumps(value))
+"#,
+        )
+        .expect("write fake r2flutter");
+        let mut fake_perms = fs::metadata(&fake_r2flutter)
+            .expect("metadata")
+            .permissions();
+        fake_perms.set_mode(0o755);
+        fs::set_permissions(&fake_r2flutter, fake_perms).expect("chmod fake r2flutter");
+
+        let exec = root.join("adapter_exec.py");
+        fs::write(
+            &exec,
+            "#!/usr/bin/env python3\nfrom pathlib import Path\nimport os\nimport sys\nroot = Path(__file__).resolve().parent\nos.environ['FLUTTERDEC_R2FLUTTER_BIN'] = str(root / 'fake_r2flutter')\nsys.path.insert(0, str(root / 'python'))\nimport adapter_template\nif __name__ == '__main__':\n    raise SystemExit(adapter_template.entrypoint(default_snapshot_hash='testhash', default_version='unknown'))\n",
+        )
+        .expect("write exec");
+        let mut perms = fs::metadata(&exec).expect("metadata").permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&exec, perms).expect("chmod exec");
+
+        let input_file = root.join("libapp.so");
+        fs::write(&input_file, b"dummy").expect("write dummy input");
+
+        let vm_data = vec![0u8; 64];
+        let iso_data = vec![0u8; 64];
+        let vm_instr = vec![0u8; 16];
+        let iso_instr = vec![0u8; 16];
+        let input = AdapterInput {
+            input_path: Some(&input_file),
+            libapp_path: None,
+            vm_data: &vm_data,
+            isolate_data: &iso_data,
+            vm_instr: &vm_instr,
+            isolate_instr: &iso_instr,
+            vm_instr_va: 0,
+            isolate_instr_va: 0,
+            backend: Some("r2flutter"),
+        };
+
+        let model = run_adapter(&exec, &input).expect("run adapter");
+        assert_eq!(model.classes.len(), 1);
+        assert_eq!(model.classes[0].name, "Child");
+        assert_eq!(model.classes[0].super_name, "Object");
+    }
 }
