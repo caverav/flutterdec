@@ -505,6 +505,10 @@ elif "-jc" in sys.argv:
         {
             "name": "Child",
             "super": {"type_ref": 35836},
+        },
+        {
+            "name": "Widget",
+            "super": {"ref": 12, "name": "StatefulWidget"},
         }
     ]
 else:
@@ -523,7 +527,7 @@ print(json.dumps(value))
         let exec = root.join("adapter_exec.py");
         fs::write(
             &exec,
-            "#!/usr/bin/env python3\nfrom pathlib import Path\nimport os\nimport sys\nroot = Path(__file__).resolve().parent\nos.environ['FLUTTERDEC_R2FLUTTER_BIN'] = str(root / 'fake_r2flutter')\nsys.path.insert(0, str(root / 'python'))\nimport adapter_template\nif __name__ == '__main__':\n    raise SystemExit(adapter_template.entrypoint(default_snapshot_hash='testhash', default_version='unknown'))\n",
+            "#!/usr/bin/env python3\nfrom pathlib import Path\nimport os\nimport sys\nroot = Path(__file__).resolve().parent\nos.environ['FLUTTERDEC_R2FLUTTER_CMD'] = str(root / 'fake_r2flutter')\nsys.path.insert(0, str(root / 'python'))\nimport adapter_template\nif __name__ == '__main__':\n    raise SystemExit(adapter_template.entrypoint(default_snapshot_hash='testhash', default_version='unknown'))\n",
         )
         .expect("write exec");
         let mut perms = fs::metadata(&exec).expect("metadata").permissions();
@@ -550,8 +554,10 @@ print(json.dumps(value))
         };
 
         let model = run_adapter(&exec, &input).expect("run adapter");
-        assert_eq!(model.classes.len(), 1);
+        assert_eq!(model.classes.len(), 2);
         assert_eq!(model.classes[0].name, "Child");
         assert_eq!(model.classes[0].super_name, "Object");
+        assert_eq!(model.classes[1].name, "Widget");
+        assert_eq!(model.classes[1].super_name, "StatefulWidget");
     }
 }
