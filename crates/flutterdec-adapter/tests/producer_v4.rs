@@ -15,7 +15,8 @@
 mod support;
 
 use flutterdec_adapter::model::{
-    CapabilityLevel, Domain, PoolIndexSpace, Producer, ProducerTrust, ProgramModel, Provenance,
+    CapabilityLevel, ClassId, Domain, PoolIndexSpace, Producer, ProducerTrust, ProgramModel,
+    Provenance,
 };
 use flutterdec_adapter::model::{CompatibilityBinding, InputRegionName};
 use flutterdec_adapter::primitives::Sha256Digest;
@@ -710,4 +711,162 @@ asm.mkdir(parents=True, exist_ok=True)
         .entries
         .iter()
         .all(|e| e.target_va.is_none()));
+}
+
+/// Install the real producer with a fake `r2flutter` wired in, plus a dummy
+/// target file for it to be pointed at.
+///
+/// `classes_json` is what the fake answers for `-jc`. Everything else answers
+/// the least the backend needs to build a model: one instruction-table entry
+/// inside the declared isolate region, no strings, and a `-jp` failure so no
+/// pool geometry is claimed.
+fn install_with_fake_r2flutter(hash: &str, classes_json: &str) -> (Installed, PathBuf) {
+    let installed = install(hash);
+    let adapters = installed
+        .exec
+        .parent()
+        .and_then(Path::parent)
+        .expect("the installed adapter lives under <root>/adapters/installed")
+        .to_path_buf();
+
+    let fake = adapters.join("fake_r2flutter");
+    fs::write(
+        &fake,
+        format!(
+            r#"#!/usr/bin/env python3
+import json
+import sys
+
+if "-jc" in sys.argv:
+    print(json.dumps({classes_json}))
+elif "-ji" in sys.argv:
+    print(json.dumps({{"entries": [{{"index": 0, "address": {iso}, "name": "method.Widget.build"}}]}}))
+elif "-jxz" in sys.argv or "-jzz" in sys.argv:
+    print(json.dumps([]))
+else:
+    raise SystemExit(1)
+"#,
+            classes_json = classes_json,
+            iso = ISO_INSTR_VA,
+        ),
+    )
+    .expect("write fake r2flutter");
+    set_executable(&fake);
+
+    // `FLUTTERDEC_R2FLUTTER_CMD` outranks `_BIN` and `PATH` in the producer's
+    // resolver, so a real r2flutter on the developer's machine cannot win.
+    fs::write(
+        &installed.exec,
+        r#"#!/usr/bin/env python3
+from pathlib import Path
+import os
+import sys
+root = Path(__file__).resolve().parents[1]
+os.environ["FLUTTERDEC_R2FLUTTER_CMD"] = str(root / "fake_r2flutter")
+sys.path.insert(0, str(root / "python"))
+import adapter_template
+if __name__ == "__main__":
+    raise SystemExit(adapter_template.entrypoint())
+"#,
+    )
+    .expect("write adapter exec");
+    set_executable(&installed.exec);
+
+    let target = adapters.join("libapp.so");
+    fs::write(&target, b"dummy").expect("write dummy target");
+    (installed, target)
+}
+
+fn run_r2flutter(
+    installed: &Installed,
+    identity: &SnapshotIdentity,
+    snapshot: &Snapshot,
+    target: &Path,
+) -> Result<AdapterRun, String> {
+    run_adapter(
+        &installed.exec,
+        &AdapterInput {
+            identity,
+            producer: producer(&installed.exec),
+            compatibility: compatibility(),
+            regions: regions(snapshot),
+            input_path: None,
+            libapp_path: Some(target),
+            requested_backend: RequestedBackend::Fixed(BackendId::R2Flutter),
+        },
+    )
+    .map_err(|err| format!("{err:#}"))
+}
+
+#[test]
+fn a_structured_superclass_links_when_r2flutter_resolved_it_and_stays_null_when_it_did_not() {
+    // r2flutter emits `super` as an object. It fills in `name` itself when the
+    // reference resolves, so `Child` here is a superclass it could not name and
+    // `Widget` is one it could.
+    let (installed, target) = install_with_fake_r2flutter(
+        "deadbeefdeadbeefdeadbeefdeadbeef",
+        r#"[
+        {"name": "Child", "super": {"type_ref": 35836}},
+        {"name": "Widget", "super": {"ref": 12, "name": "StatefulWidget"}},
+        {"name": "StatefulWidget"}
+    ]"#,
+    );
+    let identity = support::identity();
+    let run = run_r2flutter(&installed, &identity, &empty_snapshot(), &target)
+        .expect("the r2flutter backend runs against the fake");
+
+    assert_eq!(run.resolved_backend, BackendId::R2Flutter);
+    let model = &run.model;
+    assert_no_fabrications(model);
+    assert_unavailable_domains_are_explained(model);
+
+    let by_name = |name: &str| {
+        model
+            .classes
+            .iter()
+            .find(|c| c.name == name)
+            .unwrap_or_else(|| panic!("class {name} is missing from the model"))
+    };
+
+    // An unresolved reference is no edge, not an edge to `Object`. Inventing
+    // one would assert a hierarchy the snapshot never stated.
+    assert_eq!(by_name("Child").super_class, None);
+    assert_eq!(
+        by_name("Widget").super_class,
+        Some(ClassId(by_name("StatefulWidget").id.0))
+    );
+    assert_eq!(
+        model.capabilities.class_relationships,
+        CapabilityLevel::Partial
+    );
+}
+
+#[test]
+fn class_relationships_stay_unavailable_when_no_superclass_resolves() {
+    // Both shapes r2flutter emits for a superclass it could not name. Neither
+    // is an edge, so the domain has nothing partial about it.
+    let (installed, target) = install_with_fake_r2flutter(
+        "deadbeefdeadbeefdeadbeefdeadbeef",
+        r#"[
+        {"name": "Child", "super": {"type_ref": 35836}},
+        {"name": "Widget", "super": {"ref": 987}}
+    ]"#,
+    );
+    let identity = support::identity();
+    let run = run_r2flutter(&installed, &identity, &empty_snapshot(), &target)
+        .expect("the r2flutter backend runs against the fake");
+
+    let model = &run.model;
+    assert_no_fabrications(model);
+    assert_unavailable_domains_are_explained(model);
+
+    assert_eq!(model.classes.len(), 2);
+    assert!(model.classes.iter().all(|c| c.super_class.is_none()));
+    // The class table itself was read, so classes are partial while the
+    // relationships between them are not there at all.
+    assert_eq!(model.capabilities.classes, CapabilityLevel::Partial);
+    assert_eq!(
+        model.capabilities.class_relationships,
+        CapabilityLevel::Unavailable
+    );
 }
