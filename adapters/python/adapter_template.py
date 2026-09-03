@@ -977,6 +977,23 @@ def _r2flutter_functions(instruction_table: dict, iso_va: int, iso_size: int,
     return out, dropped
 
 
+def _r2flutter_super_name(value) -> Optional[str]:
+    """Superclass name from r2flutter metadata, or None when it is unresolved.
+
+    r2flutter emits `super` as an object that may carry `ref`, `type_ref` and
+    `name`. Only `name` is a recovered name: r2flutter fills it in itself when
+    the reference resolves, so a bare `ref`/`type_ref` means its own lookup
+    failed. v4 reports that as no superclass rather than inventing `Object`.
+    """
+    if isinstance(value, str):
+        return _sanitize_class_name(value)
+    if isinstance(value, dict):
+        name = value.get("name")
+        if isinstance(name, str):
+            return _sanitize_class_name(name)
+    return None
+
+
 def _r2flutter_classes(classes: List[dict]) -> Tuple[List[dict], Dict[str, int]]:
     """Project r2flutter classes onto v4 classes.
 
@@ -998,7 +1015,7 @@ def _r2flutter_classes(classes: List[dict]) -> Tuple[List[dict], Dict[str, int]]
             (c.get("super") for c in classes if _sanitize_class_name(c.get("name") or "") == name),
             None,
         )
-        super_name = _sanitize_class_name(raw_super or "")
+        super_name = _r2flutter_super_name(raw_super)
         super_id = ids.get(super_name) if super_name else None
         out.append(
             {

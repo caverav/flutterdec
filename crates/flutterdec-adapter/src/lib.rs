@@ -393,5 +393,4 @@ mod tests {
         assert_eq!(manifest.entries.len(), 1);
         assert_eq!(manifest.entries[0].snapshot_hash, "abcd1234");
     }
-
 }
