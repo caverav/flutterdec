@@ -1,3 +1,10 @@
+/// The implicit path into the entry block: the call that entered the function.
+///
+/// Not a block id. It stands in the DFS predecessor map for an incoming path no
+/// `succs` list can name, so a loop back into the entry block is two paths there
+/// rather than one.
+pub(super) const IMPLICIT_ENTRY_PRED: usize = usize::MAX;
+
 impl<'a> FuncEmitter<'a> {
     fn strip_wrapped_expr(expr: &str) -> &str {
         let mut cur = expr.trim();
@@ -176,10 +183,17 @@ impl<'a> FuncEmitter<'a> {
 
     fn escape_hint_text(value: &str) -> String {
         let mut escaped = String::new();
-        for c in value.chars() {
+        let chars = value.chars().collect::<Vec<_>>();
+        for (index, c) in chars.iter().copied().enumerate() {
             match c {
                 '\\' => escaped.push_str("\\\\"),
                 '"' => escaped.push_str("\\\""),
+                '$' => escaped.push_str("\\$"),
+                '/' if chars.get(index.wrapping_sub(1)) == Some(&'*')
+                    || chars.get(index + 1) == Some(&'/') =>
+                {
+                    escaped.push_str("\\u{2f}")
+                }
                 '\n' => escaped.push_str("\\n"),
                 '\r' => escaped.push_str("\\r"),
                 '\t' => escaped.push_str("\\t"),
@@ -187,6 +201,30 @@ impl<'a> FuncEmitter<'a> {
             }
         }
         escaped
+    }
+
+    fn recovered_comment_data(value: &str) -> String {
+        let collides = value
+            .split(|c: char| !c.is_ascii_alphanumeric() && c != '_')
+            .any(is_emitter_owned_name);
+        if collides
+            || value.contains(['"', '$', '\n', '\r', '\t'])
+            || value.contains("*/")
+            || value.contains("//")
+        {
+            format!("\"{}\"", Self::escape_hint_text(value))
+        } else {
+            value.to_string()
+        }
+    }
+
+    fn recovered_intent_comment(value: &str) -> String {
+        let rendered = Self::recovered_comment_data(value);
+        if rendered != value {
+            format!("intent: {rendered}")
+        } else {
+            value.to_string()
+        }
     }
 
     fn render_pool_value_hint(&self, expr: &str) -> String {
@@ -306,7 +344,7 @@ impl<'a> FuncEmitter<'a> {
             let Some(symbol) = self.symbol_names.get(&va) else {
                 continue;
             };
-            let call_name = sanitize_name(symbol);
+            let call_name = sanitize_symbol_name(symbol);
             if Self::is_generic_call_name(&call_name) {
                 continue;
             }
@@ -326,9 +364,19 @@ impl<'a> FuncEmitter<'a> {
     /// so those reads are left bare. The flag covers `emit_runtime_stub_call`
     /// too, which renders from inside here.
     pub(super) fn emit_call(&mut self, ins_target: &str, va: u64, indent: usize) {
+        let kind = if normalize_target(ins_target).starts_with('x') {
+            RenderedCallKind::Indirect
+        } else {
+            RenderedCallKind::Direct
+        };
+        let line_count = self.lines.len();
         self.rendering_call = true;
         self.emit_call_body(ins_target, va, indent);
         self.rendering_call = false;
+        debug_assert_eq!(self.lines.len(), line_count + 1);
+        if let Some(id) = self.line_ids.last().copied() {
+            self.rendered_call_kinds.insert(id, kind);
+        }
     }
 
     fn emit_call_body(&mut self, ins_target: &str, va: u64, indent: usize) {
@@ -450,7 +498,7 @@ impl<'a> FuncEmitter<'a> {
                     ),
                 );
                 self.clobber_call_registers(va);
-                self.state.reg_values.insert("x0".to_string(), tname);
+                self.state.bind("x0".to_string(), tname, false);
                 return;
             }
             let named_target = named_indirect_target(&target);
@@ -500,7 +548,7 @@ impl<'a> FuncEmitter<'a> {
                 self.semantic_indirect_calls += 1;
                 let mut comments = Vec::new();
                 if let Some(v) = intent {
-                    comments.push(v);
+                    comments.push(Self::recovered_intent_comment(&v));
                 }
                 comments.push(format!("indirect via: {}", named_target));
                 if target_value != named_target {
@@ -534,7 +582,7 @@ impl<'a> FuncEmitter<'a> {
                         .unwrap_or_else(|| target_call_name.clone());
                 let mut comments = Vec::new();
                 if let Some(v) = target_intent {
-                    comments.push(v);
+                    comments.push(Self::recovered_intent_comment(&v));
                 }
                 comments.push(format!("indirect via: {}", named_target));
                 if target_value != named_target {
@@ -556,7 +604,10 @@ impl<'a> FuncEmitter<'a> {
                 self.dispatch_selector_calls += 1;
                 let (dispatch_name, constructor_like) = fallback_call_name_from_selector(&selector);
                 let mut comments = Vec::new();
-                comments.push(format!("selector: {}", selector));
+                comments.push(format!(
+                    "selector: {}",
+                    Self::recovered_comment_data(&selector)
+                ));
                 if constructor_like {
                     comments.push("heuristic: constructor-like selector".to_string());
                 }
@@ -583,7 +634,10 @@ impl<'a> FuncEmitter<'a> {
                     &selector_context_values,
                     &self.pool_value_hints,
                 ) {
-                    comments.push(format!("selector candidate, unverified: {candidate}"));
+                    comments.push(format!(
+                        "selector candidate, unverified: {}",
+                        Self::recovered_comment_data(&candidate)
+                    ));
                 }
                 if named_target != "dispatchTarget" && target_value != named_target {
                     comments.push(format!(
@@ -681,7 +735,7 @@ impl<'a> FuncEmitter<'a> {
             let call_name = if let Some(hex) = target.strip_prefix("0x") {
                 if let Ok(va) = u64::from_str_radix(hex, 16) {
                     if let Some(name) = self.symbol_names.get(&va) {
-                        sanitize_name(name)
+                        sanitize_symbol_name(name)
                     } else {
                         format!("fn_{}", target)
                     }
@@ -706,7 +760,7 @@ impl<'a> FuncEmitter<'a> {
             }
             let mut comments = Vec::new();
             if let Some(v) = intent {
-                comments.push(v);
+                comments.push(Self::recovered_intent_comment(&v));
             }
             if emitted_call_name != call_name {
                 comments.push(format!("was: {}", call_name));
@@ -728,7 +782,7 @@ impl<'a> FuncEmitter<'a> {
             );
         }
         self.clobber_call_registers(va);
-        self.state.reg_values.insert("x0".to_string(), tname);
+        self.state.bind("x0".to_string(), tname, false);
     }
 
     /// Emits a call into a known runtime stub, modelled from the SDK rather than
@@ -750,7 +804,7 @@ impl<'a> FuncEmitter<'a> {
         let name = self
             .symbol_names
             .get(&va)
-            .map(|n| sanitize_name(n))
+            .map(|n| sanitize_symbol_name(n))
             .unwrap_or_else(|| format!("fn_0x{va:x}"));
         if effect.writes_result {
             self.push_line(indent, &format!("final {tname} = {name}();"));
@@ -761,9 +815,7 @@ impl<'a> FuncEmitter<'a> {
             self.clobber_call_registers(call_va);
         }
         if effect.writes_result {
-            self.state
-                .reg_values
-                .insert("x0".to_string(), tname.to_string());
+            self.state.bind("x0".to_string(), tname.to_string(), false);
         }
     }
 
@@ -905,100 +957,6 @@ impl<'a> FuncEmitter<'a> {
         }
     }
 
-    /// A line reduced to what the later passes cannot change: register spellings
-    /// canonicalised, every other identifier blanked, punctuation and numbers
-    /// kept.
-    ///
-    /// The rename pass rewrites `arg0` to `receiver` and `x9` to `reg9`, so
-    /// neither raw text nor a token list survives it. What does survive is the
-    /// shape, and that is enough to line the rendered body up against the
-    /// finished one.
-    fn line_alignment_signature(line: &str) -> String {
-        // `clean_expr` runs over every line between the two sequences and is
-        // idempotent, so normalising both sides through it lets a line that was
-        // only tidied still pair with itself.
-        let code = Self::clean_expr(strip_join_annotation_span(line));
-        let bytes = code.as_bytes();
-        let mut out = String::with_capacity(code.len());
-        let mut index = 0usize;
-        while index < bytes.len() {
-            if !bytes[index].is_ascii_alphabetic() && bytes[index] != b'_' {
-                out.push(bytes[index] as char);
-                index += 1;
-                continue;
-            }
-            let start = index;
-            while index < bytes.len() && Self::is_ident_char(bytes[index] as char) {
-                index += 1;
-            }
-            match canonical_register_spelling(&code[start..index]) {
-                Some(reg) => out.push_str(&reg),
-                None => out.push('#'),
-            }
-        }
-        out
-    }
-
-    /// Map each rendered line to the finished line it became, or to `None` when
-    /// a rewrite consumed it.
-    ///
-    /// Both sequences are the same body in the same order, because the passes
-    /// between them rewrite lines in place, drop some and add others but never
-    /// reorder. A resynchronising walk is therefore enough, and no pairing can
-    /// cross an earlier one. `WINDOW` bounds the resync, so a run of changes
-    /// longer than it costs one rendered line rather than a guess across it.
-    ///
-    /// Matching on content alone was the previous design and it was wrong. One
-    /// `if (reg2 <= 0) {` looks like every other, so an anchor rendered late in
-    /// a duplicated body matched the first such line in the function and
-    /// annotated a read whose register was dropped by a merge, not by the call
-    /// the record named. The value was genuine and the site was not.
-    fn align_rendered_lines(rendered: &[String], finished: &[String]) -> Vec<Option<usize>> {
-        const WINDOW: usize = 64;
-        let render_signatures: Vec<String> =
-            rendered.iter().map(|line| Self::line_alignment_signature(line)).collect();
-        let finish_signatures: Vec<String> =
-            finished.iter().map(|line| Self::line_alignment_signature(line)).collect();
-        let mut mapping = vec![None; rendered.len()];
-        let (mut left, mut right) = (0usize, 0usize);
-        while left < render_signatures.len() && right < finish_signatures.len() {
-            if render_signatures[left] == finish_signatures[right] {
-                mapping[left] = Some(right);
-                left += 1;
-                right += 1;
-                continue;
-            }
-            // Smallest combined skip that resynchronises, so a one-line
-            // deletion costs one line rather than dragging the rest along.
-            let mut resynced = None;
-            'search: for distance in 1..WINDOW {
-                for skip in 0..=distance {
-                    let (l, r) = (left + skip, right + distance - skip);
-                    if l < render_signatures.len()
-                        && r < finish_signatures.len()
-                        && render_signatures[l] == finish_signatures[r]
-                    {
-                        resynced = Some((l, r));
-                        break 'search;
-                    }
-                }
-            }
-            match resynced {
-                Some((l, r)) => {
-                    left = l;
-                    right = r;
-                }
-                // A rewrite this pass cannot see through. Drop the one rendered
-                // line and keep going rather than abandoning the rest of the
-                // function: both indices still only ever move forward, so the
-                // alignment stays monotone and no later pairing can cross an
-                // earlier one.
-                None => left += 1,
-            }
-        }
-        mapping
-    }
-
     /// Append the pre-call value beside each unresolved read of a register an
     /// ordinary call clobbered, and record what was appended.
     ///
@@ -1007,37 +965,68 @@ impl<'a> FuncEmitter<'a> {
     /// annotation is left alone rather than given a second, competing one.
     ///
     /// Every annotation goes on the line the read was actually rendered on,
-    /// found by alignment rather than by search: an anchor whose line no rewrite
-    /// left intact is dropped, because the alternative is putting a real value
+    /// found by that line's identity and never by what any line says: a body can
+    /// hold any number of byte-identical lines, and an anchor still resolves to
+    /// the one it was captured on. An anchor whose line no rewrite left intact is
+    /// rejected with a reason, because the alternative is putting a real value
     /// beside a read that never lost it.
     pub(super) fn append_call_annotations(&mut self) {
         if self.call_annotation_anchors.is_empty() {
             return;
         }
-        let mapping = Self::align_rendered_lines(&self.render_lines, &self.lines);
+        self.assert_line_identity();
+        let placed = self.finished_line_positions();
         let mut inserts: Vec<(usize, usize, String, usize)> = Vec::new();
         let mut omissions: Vec<(u64, String, String, &'static str, usize, usize)> = Vec::new();
+        let mut rejections: Vec<(u64, String, &'static str, String)> = Vec::new();
         // Snapshotted before insertion, so an annotation cannot vouch for its own
         // identifiers. Same reason as the join site.
         let live = live_identifier_tokens(&self.lines);
         for (anchor_index, anchor) in self.call_annotation_anchors.iter().enumerate() {
-            let Some(Some(line_index)) = mapping.get(anchor.line_index).copied() else {
+            // Counted here, where the candidate exists, so that every path out
+            // of this loop owes an outcome. A `continue` that skipped one would
+            // leave it unaccounted rather than invisible.
+            self.call_provenance.candidates_considered += 1;
+            let Some(line_index) = self.finished_line_of_render(anchor.line_index, &placed) else {
+                // The line the read was rendered on is not in the artifact: a
+                // rewrite consumed it, or it was never part of the rendered
+                // body. Either way this annotation has no site, and saying so is
+                // what keeps it from being reattached to a line that merely
+                // reads the same.
+                rejections.push((
+                    anchor.call_va,
+                    anchor.register.clone(),
+                    "anchor_line_dropped",
+                    anchor.value.clone(),
+                ));
                 continue;
             };
             let line = &self.lines[line_index];
             let Some(token_end) = Self::first_register_token_end(line, &anchor.register) else {
+                // The line survived but the read did not, so there is nothing on
+                // it for the value to describe.
+                rejections.push((
+                    anchor.call_va,
+                    anchor.register.clone(),
+                    "register_absent_from_line",
+                    anchor.value.clone(),
+                ));
                 continue;
             };
             // The join pass ran first. Two annotations on one register spelling
             // would read as a chain of independently valid values, so the site
             // that got there first keeps it.
-            if annotation_at(&line.as_bytes()[token_end..]).is_some() {
-                continue;
-            }
-            if inserts
-                .iter()
-                .any(|(existing, at, _, _)| *existing == line_index && *at == token_end)
+            if annotation_at(&line.as_bytes()[token_end..]).is_some()
+                || inserts
+                    .iter()
+                    .any(|(existing, at, _, _)| *existing == line_index && *at == token_end)
             {
+                rejections.push((
+                    anchor.call_va,
+                    anchor.register.clone(),
+                    "coordinate_already_claimed",
+                    anchor.value.clone(),
+                ));
                 continue;
             }
             // Same capture-before-naming gap as the join and loop sites: bring the
@@ -1100,6 +1089,18 @@ impl<'a> FuncEmitter<'a> {
             }
             inserts.push((line_index, token_end, annotation, anchor_index));
         }
+        for (call_va, register, reason, rendered) in rejections {
+            record_filter_rejection(
+                &mut self.call_provenance,
+                FilterRejection {
+                    loss_site: CALL_LOSS_SITE,
+                    site_key: SiteKey(CALL_LOSS_SITE, call_va),
+                    register,
+                    reason,
+                    rendered,
+                },
+            );
+        }
         for (call_va, register, rendered, reason, line_len, planned_len) in omissions {
             record_cap_omission(
                 &mut self.call_provenance,
@@ -1122,12 +1123,17 @@ impl<'a> FuncEmitter<'a> {
         });
         for (line_index, at, annotation, anchor_index) in &inserts {
             self.lines[*line_index].insert_str(*at, annotation);
+            self.call_provenance.annotations_emitted += 1;
             if !audit_enabled() {
                 continue;
             }
             let anchor = &self.call_annotation_anchors[*anchor_index];
             self.call_provenance.records.push(PendingAnnotationRecord {
                 loss_site: CALL_LOSS_SITE,
+                // The line this insertion wrote to, not a line that reads like
+                // it. Nothing after this pass moves a line, so the coordinate the
+                // audit publishes is the one the annotation occupies.
+                output_line: *line_index,
                 // Both keys come off the anchor that produced this insertion,
                 // never off a second walk of the IR, so the record cannot name a
                 // real site that is not the site this annotation was emitted at.
@@ -1208,20 +1214,21 @@ impl<'a> FuncEmitter<'a> {
                 }
             }
         }
-        // The map records only edges a `succs` list names, so the implicit path
-        // into the entry block is absent. That would matter if the entry block
-        // were also the target of a back edge: it would show one predecessor, the
-        // merge below would decline, and bindings written by the loop body would
-        // describe the header on the first iteration only.
+        // A `succs` list names no edge into the entry block from outside the
+        // function, so the implicit path the call itself takes is recorded here as
+        // the distinct incoming path it is. Without it an entry block that is also
+        // the target of a back edge shows one predecessor, the merge below
+        // declines, and a register the loop body writes keeps the binding it had
+        // on the first iteration: the entry state, which describes the first pass
+        // and no other.
         //
-        // It does not occur. Across 14,129 functions on the two sample binaries,
-        // the entry block is the target of a branch or jump exactly zero times,
-        // because a Dart AOT prologue -- the frame push and the stack-limit check
-        // -- always precedes any loop header, so a header is never block 0. The
-        // structured emitter also merges at a loop header before rendering the
-        // body regardless of predecessor count, so only this fallback would be
-        // affected. Adding a sentinel predecessor here would be untestable
-        // against real input; if the shape ever appears, this is where to add it.
+        // The sentinel is not a block id, writes nothing and has no predecessors
+        // of its own, so it adds a path without adding state. An entry block no
+        // edge targets therefore still shows exactly one path and keeps the
+        // one-predecessor fast path, as does every ordinary block.
+        if let Some(entry) = self.ir.blocks.first().map(|b| b.id) {
+            preds.entry(entry).or_default().push(IMPLICIT_ENTRY_PRED);
+        }
         self.dfs_preds = Some(preds);
     }
 
@@ -1266,7 +1273,12 @@ impl<'a> FuncEmitter<'a> {
             self.emit_wrapped_loop(id, indent, depth);
             return;
         }
-        if depth >= 12 {
+        if depth >= DFS_MAX_DEPTH {
+            let source = self.current_source_block();
+            let target = TraversalTarget::Block {
+                start_va: self.block_start_va(id),
+            };
+            self.record_traversal_event(TraversalEventKind::DfsDepthOmission, source, target);
             self.push_line(indent, "// depth-limited block");
             return;
         }
@@ -1279,6 +1291,11 @@ impl<'a> FuncEmitter<'a> {
             return;
         }
         if self.inline_visits.get(&id).copied().unwrap_or(0) >= self.visit_limit(id) {
+            let source = self.current_source_block();
+            let target = TraversalTarget::Block {
+                start_va: self.block_start_va(id),
+            };
+            self.record_traversal_event(TraversalEventKind::DfsVisitOmission, source, target);
             self.emit_omitted_path(indent, Some(id));
             return;
         }
@@ -1325,7 +1342,7 @@ impl<'a> FuncEmitter<'a> {
                         // A pool load rebinds the register, so whatever a call
                         // took from it earlier no longer describes it.
                         self.state.call_clobbers.remove(&dst);
-                        self.state.reg_values.insert(dst, Self::clean_expr(rhs));
+                        self.state.bind(dst, Self::clean_expr(rhs), false);
                     }
                 }
                 IROp::Branch => {
@@ -1358,7 +1375,7 @@ impl<'a> FuncEmitter<'a> {
                             self.emit_block(tid, indent + 1, depth + 1);
                             self.state = saved;
                         } else {
-                            self.emit_omitted_path(indent + 1, Some(tid));
+                            self.emit_unrenderable_successor(indent + 1, tid, depth + 1);
                         }
                     } else {
                         let target = normalize_target(&ins.target);
@@ -1366,23 +1383,41 @@ impl<'a> FuncEmitter<'a> {
                             self.push_line(indent + 1, "/* external branch */");
                         } else {
                             self.unresolved_cf += 1;
-                            self.push_line(indent + 1, "// unresolved branch target");
+                            self.push_line(
+                                indent + 1,
+                                &format!("// {UNRESOLVED_BRANCH_TARGET_NOTE}"),
+                            );
                         }
                     }
                     self.push_line(indent, "}");
 
+                    // The not-taken edge is stated whatever it is. Skipping the arm
+                    // when the successor was already emitted read as "control ends
+                    // here", which is the one thing the graph does not say.
                     if let Some(fid) = false_id {
+                        self.push_line(indent, "else {");
                         if self.can_inline(fid, depth + 1) {
-                            self.push_line(indent, "else {");
                             let saved = self.state.clone();
                             self.emit_block(fid, indent + 1, depth + 1);
                             self.state = saved;
-                            self.push_line(indent, "}");
-                        } else if !self.emitted.contains(&fid) {
-                            self.push_line(indent, "else {");
-                            self.emit_omitted_path(indent + 1, Some(fid));
-                            self.push_line(indent, "}");
+                        } else {
+                            self.emit_unrenderable_successor(indent + 1, fid, depth + 1);
                         }
+                        self.push_line(indent, "}");
+                    }
+
+                    // A malformed/extended branch may carry more successors
+                    // than the instruction can render as taken/not-taken arms.
+                    // Preserve every additional path as a helper request; the
+                    // helper ledger will either emit it or record the cap event
+                    // that explains why it remains reachable-unemitted.
+                    for extra in block
+                        .succs
+                        .iter()
+                        .copied()
+                        .filter(|succ| Some(*succ) != true_id && Some(*succ) != false_id)
+                    {
+                        self.emit_omitted_path(indent, Some(extra));
                     }
 
                     self.active_stack.pop();
@@ -1393,14 +1428,8 @@ impl<'a> FuncEmitter<'a> {
                     if let Some(tid) = target_id {
                         if self.can_inline(tid, depth + 1) {
                             self.emit_block(tid, indent, depth + 1);
-                        } else if self.active_stack.contains(&tid) {
-                            if self.loop_context.contains(&tid) {
-                                self.push_line(indent, "continue;");
-                            } else {
-                                self.loop_back_edges.insert(tid);
-                            }
-                        } else if !self.emitted.contains(&tid) {
-                            self.emit_omitted_path(indent, Some(tid));
+                        } else {
+                            self.emit_unrenderable_successor(indent, tid, depth + 1);
                         }
                     } else {
                         let target = normalize_target(&ins.target);
@@ -1408,7 +1437,14 @@ impl<'a> FuncEmitter<'a> {
                             self.push_line(indent, &format!("return tailCall_{}();", target));
                         } else {
                             self.unresolved_cf += 1;
-                            self.push_line(indent, "// unresolved jump");
+                            self.push_line(indent, &format!("// {UNRESOLVED_JUMP_NOTE}"));
+                        }
+                        // The graph is the partition authority. If it still
+                        // names successors while the instruction target cannot
+                        // be resolved to one of them, retain those paths as
+                        // helpers instead of silently losing reachable blocks.
+                        for successor in &block.succs {
+                            self.emit_omitted_path(indent, Some(*successor));
                         }
                     }
                     self.active_stack.pop();
@@ -1419,6 +1455,22 @@ impl<'a> FuncEmitter<'a> {
                         .capped_reg_value("x0")
                         .unwrap_or_else(|| "null".to_string());
                     self.push_line(indent, &format!("return {};", ret));
+                    self.active_stack.pop();
+                    return;
+                }
+                // The same two unknown control effects the structured emitter
+                // renders, in the same words: a fallback that returned or tail
+                // called here would state a destination the structured path
+                // refused to state, so the two would disagree about what the
+                // program does.
+                IROp::IndirectBranch => {
+                    self.unresolved_cf += 1;
+                    self.push_line(indent, &format!("// {}", indirect_branch_note(&ins.target)));
+                    self.active_stack.pop();
+                    return;
+                }
+                IROp::Trap => {
+                    self.push_line(indent, &format!("// {}", TRAP_NOTE));
                     self.active_stack.pop();
                     return;
                 }
@@ -1438,14 +1490,15 @@ impl<'a> FuncEmitter<'a> {
             if block.succs.len() == 1 {
                 if self.can_inline(next, depth + 1) {
                     self.emit_block(next, indent, depth + 1);
-                } else if self.active_stack.contains(&next) {
-                    if self.loop_context.contains(&next) {
-                        self.push_line(indent, "continue;");
-                    } else {
-                        self.loop_back_edges.insert(next);
-                    }
-                } else if !self.emitted.contains(&next) {
-                    self.emit_omitted_path(indent, Some(next));
+                } else {
+                    self.emit_unrenderable_successor(indent, next, depth + 1);
+                }
+            } else {
+                // No instruction supplied a condition for these graph edges.
+                // They cannot be rendered as invented arms, but each path must
+                // remain explicit and auditable rather than disappearing.
+                for successor in &block.succs {
+                    self.emit_omitted_path(indent, Some(*successor));
                 }
             }
         }

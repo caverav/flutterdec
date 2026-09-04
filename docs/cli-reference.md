@@ -87,6 +87,65 @@ Quality-gate options:
 - `--max-indirect-call-ratio <R>` (default `0.30`)
 - `--min-disassembly-ratio <R>` (default `0.80`)
 
+### Emission diagnostics in `quality.json`
+
+`quality.json.emission` is program-level block-ledger diagnostic accounting for
+the functions in that output. Every value is a non-negative integer. Function
+counters count functions, event counters count keyed traversal events, and
+block counters count final block identities. They are not decompiled instruction
+counts.
+
+Structured-emission function counters:
+
+| Field under `quality.json.emission` | Unit | Meaning |
+| --- | --- | --- |
+| `structured_declines` | functions | Functions for which structured emission declined and the DFS emitter was used. This is the sum of the five primary-cause counters below. |
+| `structured_rollbacks` | functions | Declined functions whose structured attempt had already changed emitter state, so that attempt was rolled back before DFS emission. This is the sum of `repeat_budget`, `structured_depth_budget`, and `coverage_mismatch`. |
+| `irreducible` | functions | Structured attempts declined before mutation because region analysis rejected the graph as irreducible. |
+| `unsupported_region` | functions | Structured attempts declined before mutation because a reachable successor shape had no structured rendering rule. |
+| `repeat_budget` | functions | Structured attempts declined after a shared region would exceed the repeat budget or cross a loop header. |
+| `structured_depth_budget` | functions | Structured attempts declined after the structured walk reached its nesting-depth budget. |
+| `coverage_mismatch` | functions | Structured attempts declined after the walk finished without emitting every reachable block. |
+
+Traversal-event counters:
+
+| Field under `quality.json.emission` | Unit | Meaning |
+| --- | --- | --- |
+| `dfs_depth_omissions` | traversal events | DFS edges omitted because the walk was already at its depth budget. |
+| `dfs_visit_omissions` | traversal events | DFS edges omitted because the target had reached its visit budget. The target block may still have been emitted elsewhere. |
+| `helper_cap_omissions` | traversal events | Helper paths omitted because the helper-definition budget was exhausted. |
+
+Final block-ledger counters:
+
+| Field under `quality.json.emission` | Unit | Meaning |
+| --- | --- | --- |
+| `structured_emitted_blocks` | blocks | Final block identities emitted by the structured walk. |
+| `dfs_emitted_blocks` | blocks | Final block identities emitted by the DFS walk. |
+| `guard_pruned_blocks` | blocks | Block identities removed by guard pruning. |
+| `noreturn_pruned_blocks` | blocks | Block identities removed after a no-return path was identified. |
+| `retained_unreachable_blocks` | blocks | Final block identities retained in the valid graph but unreachable from the function entry and therefore not emitted. |
+| `reachable_unemitted_blocks` | blocks | Final block identities reachable from the function entry but not emitted. Each has a ledger explanation that links it to a traversal event through valid graph edges. |
+| `invalid_cfg_rejected_functions` | functions | Functions whose invalid raw CFG was rejected before it could enter the valid block partition. |
+
+The per-function `block_ledger` in `ir/*.json` tracks immutable block identities
+through dense-id stages and remaps. For a valid source graph, each terminal block
+identity has exactly one final disposition: structured-emitted, DFS-emitted,
+guard-pruned, no-return-pruned, retained-unreachable, or reachable-unemitted.
+An invalid graph is reported separately and does not carry a partial valid-graph
+partition.
+
+Do not compare `quality.json.emission.reachable_unemitted_blocks` directly with
+`quality.json.omitted_path_markers`. The former counts distinct final block
+identities with a ledger disposition. The latter counts emitted source lines
+containing an `omitted complex path` marker. One marker can summarize paths, and
+a traversal event can name a block that was emitted elsewhere, so neither text
+markers nor event totals are block counts.
+
+`report.json.record_split.rejected_invalid_ir` counts input function records for
+which record splitting was abandoned because the graph built from the record
+failed the shared block-identity validation. The record is left unsplit. This is
+a record count, not a count of rejected or decompiled instructions.
+
 Analysis-engine profile:
 
 - `--analysis-profile <light|balanced>` (default `balanced`)

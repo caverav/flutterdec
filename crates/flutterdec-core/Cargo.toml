@@ -4,6 +4,12 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[features]
+# Serialization-span visibility for the benchmark harness. Off in every product
+# build. Forwards to the decompiler so one flag turns on both nested spans and
+# a partially instrumented graph is not expressible.
+bench-spans = ["flutterdec-decompiler/bench-spans"]
+
 [dependencies]
 anyhow.workspace = true
 serde.workspace = true
@@ -19,4 +25,11 @@ flutterdec-loader = { path = "../flutterdec-loader" }
 flutterdec-adapter = { path = "../flutterdec-adapter" }
 flutterdec-disasm-arm64 = { path = "../flutterdec-disasm-arm64" }
 flutterdec-ir = { path = "../flutterdec-ir" }
+flutterdec-decompiler = { path = "../flutterdec-decompiler" }
+
+[dev-dependencies]
+# Both are already regular dependencies of this crate; an integration test can
+# only reach dev-dependencies, so they are named again rather than added.
+serde_json.workspace = true
+tempfile.workspace = true
 flutterdec-decompiler = { path = "../flutterdec-decompiler" }

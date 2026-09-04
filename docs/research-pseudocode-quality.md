@@ -3512,42 +3512,21 @@ is an estimate of anything beyond these two binaries. In particular the `call` s
 annotations are small enough that a third sample could move them by an order of magnitude in either
 direction without contradicting anything published here.
 
-### Retained raw artifacts
+### Raw-artifact boundary
 
-Every cell above comes from one of these. Digests are of the artifact, not of a corpus - the emitted
-corpora are hundreds of megabytes on tmpfs and were deleted after scanning, which is why the scans
-and the audit streams are what is kept.
+The raw corpora and scan ledgers behind this historical section were not
+committed. They are therefore not a public reproduction surface, and private
+runtime paths are intentionally not cited here. Treat the corpus counts above
+as historical observations, not as independently reproducible repository
+evidence.
 
-Re-derived at `a7119ab` for this section, under `~/.zenith/evidence/record-016/`:
-
-| artifact | what it carries |
-|---|---|
-| `run.sh` | the exact driver: flags, serial order, `df` preflight, `rc` and manifest assertions |
-| `A-{localsend,immich}-scan.json` | files, lines, longest line, longest span, annotations by literal, all four violation counts |
-| `A-{localsend,immich}-scan-spans.txt` | the full span inventory, one line per distinct span with its count |
-| `A-{localsend,immich}-quality.json` | every quality counter for the candidate |
-| `audit-{localsend,immich}.jsonl` | one record per annotation, plus the per-function omission summaries |
-| `coverage-ledger.json` | the two per-sample ledgers rebuilt from the above |
-| `A-{localsend,immich}.stderr` | both 0 bytes, which is the assertion the runs were clean |
-| `df.log` | `/tmp` free space before and after each run |
-| `evidence.sha256`, `candidate-binary.sha256` | digests of all of the above, and of the candidate binary |
-
-Retained from the round's own measurement, under `~/.zenith/evidence/cap-and-ledger/`:
-
-| artifact | what it carries |
-|---|---|
-| `R-{localsend,immich}-scan.json` | the `ff07207` reference scan - the reference column of the per-site table |
-| `R-{localsend,immich}-quality.json` | the reference quality counters the candidate is compared against |
-| `A2-{localsend,immich}-scan*.txt/json` | the wave-2 candidate scan, span inventories byte-identical to the `a7119ab` re-derivation |
-| `B-{localsend,immich}-scan-spans.txt` | the uncapped control's span inventory |
-| `C-{localsend,immich}-scan*.json` | the lowered-cap corpus, including every over-cap line |
-| `Bp-{localsend,immich}-scan*.json` | the lowered-cap pair's uncapped twin |
-| `audit-c-{localsend,immich}.jsonl` | the lowered-cap audit stream, source of the 5,246 and 8,630 drop rows |
-| `coverage-ledger-lowered-caps.json` | the lowered-cap ledger |
-| `binaries.sha256`, `evidence.sha256`, `run.sh`, `runc.sh`, `rescan.sh`, `df.log` | build identities, artifact digests and the drivers |
-
-The `quality.json` comparison and the gate derivation also have retained copies under
-`~/.zenith/evidence/gate-counters/` as `q-{cand,ref}-{ls,im}.quality.json`.
+The behavior that remains current is covered by repository-contained tests,
+the protected oracle inventory, and the checksum-bound repeated-block record in
+[`research-data/repeated-block-characterization.txt`](research-data/repeated-block-characterization.txt),
+bound by [`research-data/SHA256SUMS`](research-data/SHA256SUMS).
+Current real-binary compatibility evidence is separately retained in
+[`compat-baseline-real-binary.md`](compat-baseline-real-binary.md) and
+[`compat-evidence/`](compat-evidence/).
 
 ## R30. The fabricated signature, and why trimming it is the wrong fix
 

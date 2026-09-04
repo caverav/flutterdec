@@ -1,0 +1,3337 @@
+{
+  "adapter_kind": "dynamic_snapshot_string_model_v1",
+  "adapter_schema": {
+    "compatibility_mode": "native_v3",
+    "function_name_kind_breakdown": {
+      "exact": 0,
+      "external": 0,
+      "heuristic": 0,
+      "placeholder": 5800,
+      "unknown": 0,
+      "unspecified": 0
+    },
+    "function_name_kind_count": 5800,
+    "pool_confidence_count": 19875,
+    "pool_source_count": 19875,
+    "schema_version": 3
+  },
+  "adapter_selection": {
+    "adapter_exec_path": "<repo>/adapters/installed/dart_adapter_80a49c7111088100a233b2ae788e1f48",
+    "backend_mismatch": false,
+    "manifest_entry_adapter": "dart_adapter_80a49c7111088100a233b2ae788e1f48",
+    "manifest_entry_version": "unknown",
+    "requested_backend": "internal",
+    "require_snapshot_hash_match": false,
+    "resolved_backend": "internal",
+    "resolved_from_adapter_kind": "dynamic_snapshot_string_model_v1",
+    "snapshot_hash": {
+      "adapter_model": "80a49c7111088100a233b2ae788e1f48",
+      "bundle": "80a49c7111088100a233b2ae788e1f48",
+      "match": true
+    }
+  },
+  "analysis": {
+    "engine": {
+      "apk_startup_analysis": true,
+      "bootflow_category_seeds": true,
+      "canonical_model_symbols": true,
+      "pool_semantic_hints": true,
+      "pool_value_hints": true,
+      "semantic_reporting": true
+    },
+    "profile": "balanced"
+  },
+  "android_manifest": {
+    "activities": [
+      "io.flutter.plugins.urllauncher.WebViewActivity",
+      "org.localsend.localsend_app.MainActivity"
+    ],
+    "activity_count": 2,
+    "application_name": null,
+    "confidence": {
+      "activities": "high",
+      "deeplink": "high",
+      "launcher": "high",
+      "package_name": "high"
+    },
+    "deeplink_activities": [],
+    "deeplink_activity_count": 0,
+    "deeplink_entries": [
+      "*/*"
+    ],
+    "deeplink_entry_count": 1,
+    "launcher_activities": [
+      "org.localsend.localsend_app.MainActivity"
+    ],
+    "launcher_activity_count": 1,
+    "main_launcher": true,
+    "package_name": "org.localsend.localsend_app",
+    "parse_error": null,
+    "parse_mode": "binary_axml",
+    "present": true,
+    "synthetic_bootflow_hints": 0,
+    "view_browsable": false
+  },
+  "android_startup": {
+    "bootstrap_chain": {
+      "complete": false,
+      "missing_steps": [
+        "activity_on_create",
+        "delegate_on_attach",
+        "flutter_engine_ctor",
+        "loader_start_initialization",
+        "loader_ensure_initialization_complete",
+        "jni_attach"
+      ],
+      "path_count": 3,
+      "paths": [
+        {
+          "anchor_component_name": null,
+          "anchor_confidence": "low",
+          "anchor_kind": "stage_terminal",
+          "call_chain": [
+            {
+              "class_descriptor": "Lb8/a;",
+              "class_name": "b8.a",
+              "method_name": "j",
+              "owner_kind": "app",
+              "stage": null
+            },
+            {
+              "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+              "class_name": "io.flutter.embedding.engine.FlutterJNI",
+              "method_name": "runBundleAndSnapshotFromLibrary",
+              "owner_kind": "framework",
+              "stage": "dart_entrypoint_execute"
+            }
+          ],
+          "complete": false,
+          "confidence": "high",
+          "entry_class_descriptor": "Lb8/a;",
+          "entry_class_name": "b8.a",
+          "entry_method_name": "j",
+          "missing_steps": [
+            "activity_on_create",
+            "delegate_on_attach",
+            "flutter_engine_ctor",
+            "loader_start_initialization",
+            "loader_ensure_initialization_complete",
+            "jni_attach"
+          ],
+          "owner_kind": "app",
+          "source_dex": "classes.dex",
+          "stages": [
+            "dart_entrypoint_execute"
+          ]
+        },
+        {
+          "anchor_component_name": null,
+          "anchor_confidence": "low",
+          "anchor_kind": "stage_terminal",
+          "call_chain": [
+            {
+              "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+              "class_name": "io.flutter.embedding.engine.FlutterJNI",
+              "method_name": "performNativeAttach",
+              "owner_kind": "framework",
+              "stage": null
+            },
+            {
+              "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+              "class_name": "io.flutter.embedding.engine.FlutterJNI",
+              "method_name": "nativeAttach",
+              "owner_kind": "framework",
+              "stage": "jni_attach"
+            }
+          ],
+          "complete": false,
+          "confidence": "low",
+          "entry_class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+          "entry_class_name": "io.flutter.embedding.engine.FlutterJNI",
+          "entry_method_name": "performNativeAttach",
+          "missing_steps": [
+            "activity_on_create",
+            "delegate_on_attach",
+            "flutter_engine_ctor",
+            "loader_start_initialization",
+            "loader_ensure_initialization_complete",
+            "dart_entrypoint_execute"
+          ],
+          "owner_kind": "framework",
+          "source_dex": "classes.dex",
+          "stages": [
+            "jni_attach"
+          ]
+        },
+        {
+          "anchor_component_name": null,
+          "anchor_confidence": "low",
+          "anchor_kind": "stage_terminal",
+          "call_chain": [
+            {
+              "class_descriptor": "Lio/flutter/embedding/engine/a;",
+              "class_name": "io.flutter.embedding.engine.a",
+              "method_name": "f",
+              "owner_kind": "framework",
+              "stage": null
+            },
+            {
+              "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+              "class_name": "io.flutter.embedding.engine.FlutterJNI",
+              "method_name": "attachToNative",
+              "owner_kind": "framework",
+              "stage": "jni_attach"
+            }
+          ],
+          "complete": false,
+          "confidence": "low",
+          "entry_class_descriptor": "Lio/flutter/embedding/engine/a;",
+          "entry_class_name": "io.flutter.embedding.engine.a",
+          "entry_method_name": "f",
+          "missing_steps": [
+            "activity_on_create",
+            "delegate_on_attach",
+            "flutter_engine_ctor",
+            "loader_start_initialization",
+            "loader_ensure_initialization_complete",
+            "dart_entrypoint_execute"
+          ],
+          "owner_kind": "framework",
+          "source_dex": "classes.dex",
+          "stages": [
+            "jni_attach"
+          ]
+        }
+      ],
+      "source_count": 3,
+      "sources": [
+        {
+          "class_descriptor": "Lb8/a;",
+          "class_name": "b8.a",
+          "complete": false,
+          "confidence": "high",
+          "method_name": "j",
+          "missing_steps": [
+            "activity_on_create",
+            "delegate_on_attach",
+            "flutter_engine_ctor",
+            "loader_start_initialization",
+            "loader_ensure_initialization_complete",
+            "jni_attach"
+          ],
+          "owner_kind": "app",
+          "source_dex": "classes.dex",
+          "stages": [
+            "dart_entrypoint_execute"
+          ]
+        },
+        {
+          "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+          "class_name": "io.flutter.embedding.engine.FlutterJNI",
+          "complete": false,
+          "confidence": "high",
+          "method_name": "performNativeAttach",
+          "missing_steps": [
+            "activity_on_create",
+            "delegate_on_attach",
+            "flutter_engine_ctor",
+            "loader_start_initialization",
+            "loader_ensure_initialization_complete",
+            "dart_entrypoint_execute"
+          ],
+          "owner_kind": "framework",
+          "source_dex": "classes.dex",
+          "stages": [
+            "jni_attach"
+          ]
+        },
+        {
+          "class_descriptor": "Lio/flutter/embedding/engine/a;",
+          "class_name": "io.flutter.embedding.engine.a",
+          "complete": false,
+          "confidence": "high",
+          "method_name": "f",
+          "missing_steps": [
+            "activity_on_create",
+            "delegate_on_attach",
+            "flutter_engine_ctor",
+            "loader_start_initialization",
+            "loader_ensure_initialization_complete",
+            "dart_entrypoint_execute"
+          ],
+          "owner_kind": "framework",
+          "source_dex": "classes.dex",
+          "stages": [
+            "jni_attach"
+          ]
+        }
+      ]
+    },
+    "confidence": "high",
+    "dart_entrypoint_count": 0,
+    "dart_entrypoints": [],
+    "dex_file_count": 1,
+    "dex_files": [
+      "classes.dex"
+    ],
+    "enabled": true,
+    "flutter_activity_classes": [],
+    "flutter_activity_count": 0,
+    "jni_bootstrap": [
+      {
+        "class_descriptor": "Ld8/d;",
+        "class_name": "d8.d",
+        "confidence": "high",
+        "method_name": "f",
+        "source_dex": "classes.dex",
+        "stage": "jni_init",
+        "target_method": "init"
+      },
+      {
+        "class_descriptor": "Ld8/d$a;",
+        "class_name": "d8.d$a",
+        "confidence": "high",
+        "method_name": "b",
+        "source_dex": "classes.dex",
+        "stage": "jni_load_library",
+        "target_method": "loadLibrary"
+      },
+      {
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "high",
+        "method_name": "init",
+        "source_dex": "classes.dex",
+        "stage": "jni_native_init",
+        "target_method": "nativeInit"
+      },
+      {
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "high",
+        "method_name": "performNativeAttach",
+        "source_dex": "classes.dex",
+        "stage": "jni_native_attach",
+        "target_method": "nativeAttach"
+      },
+      {
+        "class_descriptor": "Lio/flutter/embedding/engine/a;",
+        "class_name": "io.flutter.embedding.engine.a",
+        "confidence": "high",
+        "method_name": "f",
+        "source_dex": "classes.dex",
+        "stage": "jni_attach_to_native",
+        "target_method": "attachToNative"
+      }
+    ],
+    "jni_bootstrap_count": 5,
+    "parse_error_count": 20,
+    "parse_errors": [
+      "androidx.appcompat.app.k:r -> Dalvik decode panic on inline metadata",
+      "androidx.appcompat.widget.g0:e -> Dalvik decode panic on inline metadata",
+      "androidx.appcompat.widget.t0:<clinit> -> Dalvik decode panic on inline metadata",
+      "androidx.appcompat.widget.t:<clinit> -> Dalvik decode panic on inline metadata",
+      "androidx.appcompat.widget.t:a -> Dalvik decode panic on inline metadata",
+      "androidx.constraintlayout.widget.ConstraintLayout$b:<init> -> Dalvik decode panic on inline metadata",
+      "androidx.constraintlayout.widget.a:c -> Dalvik decode panic on inline metadata",
+      "androidx.constraintlayout.widget.a:d -> Dalvik decode panic on inline metadata",
+      "androidx.constraintlayout.widget.c:a -> Dalvik decode panic on inline metadata",
+      "androidx.constraintlayout.widget.d$b:b -> Dalvik decode panic on inline metadata",
+      "androidx.constraintlayout.widget.d$c:b -> Dalvik decode panic on inline metadata",
+      "androidx.constraintlayout.widget.d$e:b -> Dalvik decode panic on inline metadata",
+      "androidx.constraintlayout.widget.d:<clinit> -> Dalvik decode panic on inline metadata",
+      "androidx.constraintlayout.widget.d:p -> Dalvik decode panic on inline metadata",
+      "androidx.constraintlayout.widget.d:e -> Dalvik decode panic on inline metadata",
+      "androidx.constraintlayout.widget.d:n -> Dalvik decode panic on inline metadata",
+      "androidx.constraintlayout.widget.i:<clinit> -> Dalvik decode panic on inline metadata",
+      "androidx.core.content.res.b:<clinit> -> Dalvik decode panic on inline metadata",
+      "androidx.core.content.res.f$a:<init> -> Dalvik decode panic on inline metadata",
+      "androidx.core.content.res.f$a:<init> -> Dalvik decode panic on inline metadata"
+    ],
+    "present": true,
+    "startup_method_count": 183,
+    "startup_methods": [
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lb8/a;",
+        "class_name": "b8.a",
+        "confidence": "medium",
+        "method_name": "<init>",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "isAttached"
+      },
+      {
+        "category": "dart_entrypoint_execute",
+        "class_descriptor": "Lb8/a;",
+        "class_name": "b8.a",
+        "confidence": "high",
+        "method_name": "j",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "runBundleAndSnapshotFromLibrary"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lb8/a;",
+        "class_name": "b8.a",
+        "confidence": "medium",
+        "method_name": "m",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "isAttached"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lb8/a;",
+        "class_name": "b8.a",
+        "confidence": "medium",
+        "method_name": "m",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "notifyLowMemoryWarning"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lb8/a;",
+        "class_name": "b8.a",
+        "confidence": "medium",
+        "method_name": "n",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "setPlatformMessageHandler"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lb8/a;",
+        "class_name": "b8.a",
+        "confidence": "medium",
+        "method_name": "o",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "setPlatformMessageHandler"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lb8/c;",
+        "class_name": "b8.c",
+        "confidence": "medium",
+        "method_name": "h",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "dispatchEmptyPlatformMessage"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lb8/c;",
+        "class_name": "b8.c",
+        "confidence": "medium",
+        "method_name": "h",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "dispatchPlatformMessage"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lb8/c;",
+        "class_name": "b8.c",
+        "confidence": "medium",
+        "method_name": "l",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "invokePlatformMessageEmptyResponseCallback"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lb8/c;",
+        "class_name": "b8.c",
+        "confidence": "medium",
+        "method_name": "m",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "cleanupMessageData"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lb8/c$g;",
+        "class_name": "b8.c$g",
+        "confidence": "medium",
+        "method_name": "a",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "invokePlatformMessageEmptyResponseCallback"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lb8/c$g;",
+        "class_name": "b8.c$g",
+        "confidence": "medium",
+        "method_name": "a",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "invokePlatformMessageResponseCallback"
+      },
+      {
+        "category": "jni_init",
+        "class_descriptor": "Ld8/d;",
+        "class_name": "d8.d",
+        "confidence": "high",
+        "method_name": "f",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "init"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Ld8/d$a;",
+        "class_name": "d8.d$a",
+        "confidence": "medium",
+        "method_name": "b",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "updateRefreshRate"
+      },
+      {
+        "category": "jni_load_library",
+        "class_descriptor": "Ld8/d$a;",
+        "class_name": "d8.d$a",
+        "confidence": "high",
+        "method_name": "b",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "loadLibrary"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Ld8/d$a;",
+        "class_name": "d8.d$a",
+        "confidence": "medium",
+        "method_name": "c",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "prefetchDefaultFontManager"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "a",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "lambda$decodeImage$0"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "addEngineLifecycleListener",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "ensureRunningOnMainThread"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "addIsDisplayingFlutterUiListener",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "ensureRunningOnMainThread"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "attachToNative",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "ensureNotAttachedToNative"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "attachToNative",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "ensureRunningOnMainThread"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "attachToNative",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "performNativeAttach"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "cleanupMessageData",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "nativeCleanupMessageData"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "createOverlaySurface",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "ensureRunningOnMainThread"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "deferredComponentInstallFailure",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "ensureRunningOnMainThread"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "deferredComponentInstallFailure",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "nativeDeferredComponentInstallFailure"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "destroyOverlaySurfaces",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "ensureRunningOnMainThread"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "detachFromNativeAndReleaseResources",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "ensureAttachedToNative"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "detachFromNativeAndReleaseResources",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "ensureRunningOnMainThread"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "detachFromNativeAndReleaseResources",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "nativeDestroy"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "dispatchEmptyPlatformMessage",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "ensureRunningOnMainThread"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "dispatchEmptyPlatformMessage",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "isAttached"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "dispatchEmptyPlatformMessage",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "nativeDispatchEmptyPlatformMessage"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "dispatchPlatformMessage",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "ensureRunningOnMainThread"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "dispatchPlatformMessage",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "isAttached"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "dispatchPlatformMessage",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "nativeDispatchPlatformMessage"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "dispatchPointerDataPacket",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "ensureAttachedToNative"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "dispatchPointerDataPacket",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "ensureRunningOnMainThread"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "dispatchPointerDataPacket",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "nativeDispatchPointerDataPacket"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "dispatchSemanticsAction",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "dispatchSemanticsAction"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "dispatchSemanticsAction",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "ensureAttachedToNative"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "dispatchSemanticsAction",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "ensureRunningOnMainThread"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "dispatchSemanticsAction",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "nativeDispatchSemanticsAction"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "getBitmap",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "ensureAttachedToNative"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "getBitmap",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "ensureRunningOnMainThread"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "getBitmap",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "nativeGetBitmap"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "getIsSoftwareRenderingEnabled",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "nativeGetIsSoftwareRenderingEnabled"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "handlePlatformMessage",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "nativeCleanupMessageData"
+      },
+      {
+        "category": "jni_native_init",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "high",
+        "method_name": "init",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "nativeInit"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "invokePlatformMessageEmptyResponseCallback",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "isAttached"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "invokePlatformMessageEmptyResponseCallback",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "nativeInvokePlatformMessageEmptyResponseCallback"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "invokePlatformMessageResponseCallback",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "isAttached"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "invokePlatformMessageResponseCallback",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "nativeInvokePlatformMessageResponseCallback"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "isCodePointEmoji",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "nativeFlutterTextUtilsIsEmoji"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "isCodePointEmojiModifier",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "nativeFlutterTextUtilsIsEmojiModifier"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "isCodePointEmojiModifierBase",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "nativeFlutterTextUtilsIsEmojiModifierBase"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "isCodePointRegionalIndicator",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "nativeFlutterTextUtilsIsRegionalIndicator"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "isCodePointVariantSelector",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "nativeFlutterTextUtilsIsVariationSelector"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "lambda$decodeImage$0",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "nativeImageHeaderCallback"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "loadDartDeferredLibrary",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "ensureAttachedToNative"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "loadDartDeferredLibrary",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "ensureRunningOnMainThread"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "loadDartDeferredLibrary",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "nativeLoadDartDeferredLibrary"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "markTextureFrameAvailable",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "ensureAttachedToNative"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "markTextureFrameAvailable",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "ensureRunningOnMainThread"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "markTextureFrameAvailable",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "nativeMarkTextureFrameAvailable"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "notifyLowMemoryWarning",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "ensureAttachedToNative"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "notifyLowMemoryWarning",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "ensureRunningOnMainThread"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "notifyLowMemoryWarning",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "nativeNotifyLowMemoryWarning"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "onBeginFrame",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "ensureRunningOnMainThread"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "onDisplayOverlaySurface",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "ensureRunningOnMainThread"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "onDisplayPlatformView",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "ensureRunningOnMainThread"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "onEndFrame",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "ensureRunningOnMainThread"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "onFirstFrame",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "ensureRunningOnMainThread"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "onRenderingStopped",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "ensureRunningOnMainThread"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "onSurfaceChanged",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "ensureAttachedToNative"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "onSurfaceChanged",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "ensureRunningOnMainThread"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "onSurfaceChanged",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "nativeSurfaceChanged"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "onSurfaceCreated",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "ensureAttachedToNative"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "onSurfaceCreated",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "ensureRunningOnMainThread"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "onSurfaceCreated",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "nativeSurfaceCreated"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "onSurfaceDestroyed",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "ensureAttachedToNative"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "onSurfaceDestroyed",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "ensureRunningOnMainThread"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "onSurfaceDestroyed",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "nativeSurfaceDestroyed"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "onSurfaceDestroyed",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "onRenderingStopped"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "onSurfaceWindowChanged",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "ensureAttachedToNative"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "onSurfaceWindowChanged",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "ensureRunningOnMainThread"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "onSurfaceWindowChanged",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "nativeSurfaceWindowChanged"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "onVsync",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "nativeOnVsync"
+      },
+      {
+        "category": "jni_native_attach",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "high",
+        "method_name": "performNativeAttach",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "nativeAttach"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "prefetchDefaultFontManager",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "nativePrefetchDefaultFontManager"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "registerImageTexture",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "ensureAttachedToNative"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "registerImageTexture",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "ensureRunningOnMainThread"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "registerImageTexture",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "nativeRegisterImageTexture"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "registerTexture",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "ensureAttachedToNative"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "registerTexture",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "ensureRunningOnMainThread"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "registerTexture",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "nativeRegisterTexture"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "removeEngineLifecycleListener",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "ensureRunningOnMainThread"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "removeIsDisplayingFlutterUiListener",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "ensureRunningOnMainThread"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "runBundleAndSnapshotFromLibrary",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "ensureAttachedToNative"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "runBundleAndSnapshotFromLibrary",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "ensureRunningOnMainThread"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "runBundleAndSnapshotFromLibrary",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "nativeRunBundleAndSnapshotFromLibrary"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "scheduleFrame",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "ensureAttachedToNative"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "scheduleFrame",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "ensureRunningOnMainThread"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "scheduleFrame",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "nativeScheduleFrame"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "setAccessibilityDelegate",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "ensureRunningOnMainThread"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "setAccessibilityFeatures",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "ensureAttachedToNative"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "setAccessibilityFeatures",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "ensureRunningOnMainThread"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "setAccessibilityFeatures",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "nativeSetAccessibilityFeatures"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "setDeferredComponentManager",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "ensureRunningOnMainThread"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "setLocalizationPlugin",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "ensureRunningOnMainThread"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "setPlatformMessageHandler",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "ensureRunningOnMainThread"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "setPlatformViewsController",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "ensureRunningOnMainThread"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "setRefreshRateFPS",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "updateRefreshRate"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "setSemanticsEnabled",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "ensureAttachedToNative"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "setSemanticsEnabled",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "ensureRunningOnMainThread"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "setSemanticsEnabled",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "nativeSetSemanticsEnabled"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "setViewportMetrics",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "ensureAttachedToNative"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "setViewportMetrics",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "ensureRunningOnMainThread"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "setViewportMetrics",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "nativeSetViewportMetrics"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "spawn",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "ensureAttachedToNative"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "spawn",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "ensureRunningOnMainThread"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "spawn",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "nativeSpawn"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "unregisterTexture",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "ensureAttachedToNative"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "unregisterTexture",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "ensureRunningOnMainThread"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "unregisterTexture",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "nativeUnregisterTexture"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "updateCustomAccessibilityActions",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "ensureRunningOnMainThread"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "updateDisplayMetrics",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "nativeUpdateDisplayMetrics"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "updateJavaAssetManager",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "ensureAttachedToNative"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "updateJavaAssetManager",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "ensureRunningOnMainThread"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "updateJavaAssetManager",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "nativeUpdateJavaAssetManager"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "updateRefreshRate",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "nativeUpdateRefreshRate"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "confidence": "medium",
+        "method_name": "updateSemantics",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "ensureRunningOnMainThread"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/FlutterJNI$c;",
+        "class_name": "io.flutter.embedding.engine.FlutterJNI$c",
+        "confidence": "medium",
+        "method_name": "a",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "<init>"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/a;",
+        "class_name": "io.flutter.embedding.engine.a",
+        "confidence": "medium",
+        "method_name": "<init>",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "addEngineLifecycleListener"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/a;",
+        "class_name": "io.flutter.embedding.engine.a",
+        "confidence": "medium",
+        "method_name": "<init>",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "isAttached"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/a;",
+        "class_name": "io.flutter.embedding.engine.a",
+        "confidence": "medium",
+        "method_name": "<init>",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "setDeferredComponentManager"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/a;",
+        "class_name": "io.flutter.embedding.engine.a",
+        "confidence": "medium",
+        "method_name": "<init>",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "setLocalizationPlugin"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/a;",
+        "class_name": "io.flutter.embedding.engine.a",
+        "confidence": "medium",
+        "method_name": "<init>",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "setPlatformViewsController"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/a;",
+        "class_name": "io.flutter.embedding.engine.a",
+        "confidence": "medium",
+        "method_name": "A",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "spawn"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/a;",
+        "class_name": "io.flutter.embedding.engine.a",
+        "confidence": "medium",
+        "method_name": "a",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "updateDisplayMetrics"
+      },
+      {
+        "category": "jni_attach_to_native",
+        "class_descriptor": "Lio/flutter/embedding/engine/a;",
+        "class_name": "io.flutter.embedding.engine.a",
+        "confidence": "high",
+        "method_name": "f",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "attachToNative"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/a;",
+        "class_name": "io.flutter.embedding.engine.a",
+        "confidence": "medium",
+        "method_name": "g",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "detachFromNativeAndReleaseResources"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/a;",
+        "class_name": "io.flutter.embedding.engine.a",
+        "confidence": "medium",
+        "method_name": "g",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "removeEngineLifecycleListener"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/a;",
+        "class_name": "io.flutter.embedding.engine.a",
+        "confidence": "medium",
+        "method_name": "g",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "setDeferredComponentManager"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/a;",
+        "class_name": "io.flutter.embedding.engine.a",
+        "confidence": "medium",
+        "method_name": "z",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "isAttached"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/f;",
+        "class_name": "io.flutter.embedding.engine.f",
+        "confidence": "medium",
+        "method_name": "onHeaderDecoded",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "a"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/renderer/FlutterRenderer;",
+        "class_name": "io.flutter.embedding.engine.renderer.FlutterRenderer",
+        "confidence": "medium",
+        "method_name": "<init>",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "addIsDisplayingFlutterUiListener"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/renderer/FlutterRenderer;",
+        "class_name": "io.flutter.embedding.engine.renderer.FlutterRenderer",
+        "confidence": "medium",
+        "method_name": "A",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "onSurfaceDestroyed"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/renderer/FlutterRenderer;",
+        "class_name": "io.flutter.embedding.engine.renderer.FlutterRenderer",
+        "confidence": "medium",
+        "method_name": "B",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "onSurfaceChanged"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/renderer/FlutterRenderer;",
+        "class_name": "io.flutter.embedding.engine.renderer.FlutterRenderer",
+        "confidence": "medium",
+        "method_name": "C",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "onSurfaceWindowChanged"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/renderer/FlutterRenderer;",
+        "class_name": "io.flutter.embedding.engine.renderer.FlutterRenderer",
+        "confidence": "medium",
+        "method_name": "D",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "unregisterTexture"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/renderer/FlutterRenderer;",
+        "class_name": "io.flutter.embedding.engine.renderer.FlutterRenderer",
+        "confidence": "medium",
+        "method_name": "j",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "addIsDisplayingFlutterUiListener"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/renderer/FlutterRenderer;",
+        "class_name": "io.flutter.embedding.engine.renderer.FlutterRenderer",
+        "confidence": "medium",
+        "method_name": "m",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "dispatchPointerDataPacket"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/renderer/FlutterRenderer;",
+        "class_name": "io.flutter.embedding.engine.renderer.FlutterRenderer",
+        "confidence": "medium",
+        "method_name": "o",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "getIsSoftwareRenderingEnabled"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/renderer/FlutterRenderer;",
+        "class_name": "io.flutter.embedding.engine.renderer.FlutterRenderer",
+        "confidence": "medium",
+        "method_name": "q",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "registerImageTexture"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/renderer/FlutterRenderer;",
+        "class_name": "io.flutter.embedding.engine.renderer.FlutterRenderer",
+        "confidence": "medium",
+        "method_name": "t",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "registerTexture"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/renderer/FlutterRenderer;",
+        "class_name": "io.flutter.embedding.engine.renderer.FlutterRenderer",
+        "confidence": "medium",
+        "method_name": "u",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "removeIsDisplayingFlutterUiListener"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/renderer/FlutterRenderer;",
+        "class_name": "io.flutter.embedding.engine.renderer.FlutterRenderer",
+        "confidence": "medium",
+        "method_name": "w",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "scheduleFrame"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/renderer/FlutterRenderer;",
+        "class_name": "io.flutter.embedding.engine.renderer.FlutterRenderer",
+        "confidence": "medium",
+        "method_name": "x",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "setSemanticsEnabled"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/renderer/FlutterRenderer;",
+        "class_name": "io.flutter.embedding.engine.renderer.FlutterRenderer",
+        "confidence": "medium",
+        "method_name": "y",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "setViewportMetrics"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/renderer/FlutterRenderer;",
+        "class_name": "io.flutter.embedding.engine.renderer.FlutterRenderer",
+        "confidence": "medium",
+        "method_name": "z",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "onSurfaceCreated"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/renderer/FlutterRenderer;",
+        "class_name": "io.flutter.embedding.engine.renderer.FlutterRenderer",
+        "confidence": "medium",
+        "method_name": "z",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "onSurfaceWindowChanged"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/renderer/FlutterRenderer$f;",
+        "class_name": "io.flutter.embedding.engine.renderer.FlutterRenderer$f",
+        "confidence": "medium",
+        "method_name": "d",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "isAttached"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/renderer/FlutterRenderer$g;",
+        "class_name": "io.flutter.embedding.engine.renderer.FlutterRenderer$g",
+        "confidence": "medium",
+        "method_name": "run",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "isAttached"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/renderer/FlutterRenderer$g;",
+        "class_name": "io.flutter.embedding.engine.renderer.FlutterRenderer$g",
+        "confidence": "medium",
+        "method_name": "run",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "unregisterTexture"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/embedding/engine/renderer/f;",
+        "class_name": "io.flutter.embedding.engine.renderer.f",
+        "confidence": "medium",
+        "method_name": "scheduleFrame",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "markTextureFrameAvailable"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/plugin/editing/a;",
+        "class_name": "io.flutter.plugin.editing.a",
+        "confidence": "medium",
+        "method_name": "c",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "isCodePointEmoji"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/plugin/editing/a;",
+        "class_name": "io.flutter.plugin.editing.a",
+        "confidence": "medium",
+        "method_name": "d",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "isCodePointEmojiModifier"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/plugin/editing/a;",
+        "class_name": "io.flutter.plugin.editing.a",
+        "confidence": "medium",
+        "method_name": "e",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "isCodePointEmojiModifierBase"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/plugin/editing/a;",
+        "class_name": "io.flutter.plugin.editing.a",
+        "confidence": "medium",
+        "method_name": "g",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "isCodePointRegionalIndicator"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/plugin/editing/a;",
+        "class_name": "io.flutter.plugin.editing.a",
+        "confidence": "medium",
+        "method_name": "i",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "isCodePointVariantSelector"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/plugin/editing/b;",
+        "class_name": "io.flutter.plugin.editing.b",
+        "confidence": "medium",
+        "method_name": "<init>",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "<init>"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/view/FlutterCallbackInformation;",
+        "class_name": "io.flutter.view.FlutterCallbackInformation",
+        "confidence": "medium",
+        "method_name": "lookupCallbackInformation",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "nativeLookupCallbackInformation"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/view/e;",
+        "class_name": "io.flutter.view.e",
+        "confidence": "medium",
+        "method_name": "f",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "setRefreshRateFPS"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/view/e;",
+        "class_name": "io.flutter.view.e",
+        "confidence": "medium",
+        "method_name": "g",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "setAsyncWaitForVsyncDelegate"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/view/e$b;",
+        "class_name": "io.flutter.view.e$b",
+        "confidence": "medium",
+        "method_name": "onDisplayChanged",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "setRefreshRateFPS"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lio/flutter/view/e$c;",
+        "class_name": "io.flutter.view.e$c",
+        "confidence": "medium",
+        "method_name": "doFrame",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "onVsync"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lm8/a;",
+        "class_name": "m8.a",
+        "confidence": "medium",
+        "method_name": "b",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "dispatchSemanticsAction"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lm8/a;",
+        "class_name": "m8.a",
+        "confidence": "medium",
+        "method_name": "c",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "dispatchSemanticsAction"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lm8/a;",
+        "class_name": "m8.a",
+        "confidence": "medium",
+        "method_name": "d",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "setSemanticsEnabled"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lm8/a;",
+        "class_name": "m8.a",
+        "confidence": "medium",
+        "method_name": "e",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "setSemanticsEnabled"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lm8/a;",
+        "class_name": "m8.a",
+        "confidence": "medium",
+        "method_name": "f",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "setAccessibilityFeatures"
+      },
+      {
+        "category": "embedding_call",
+        "class_descriptor": "Lm8/a;",
+        "class_name": "m8.a",
+        "confidence": "medium",
+        "method_name": "g",
+        "source_dex": "classes.dex",
+        "target_class": "Lio/flutter/embedding/engine/FlutterJNI;",
+        "target_class_name": "io.flutter.embedding.engine.FlutterJNI",
+        "target_method": "setAccessibilityDelegate"
+      }
+    ],
+    "synthetic_bootflow_hints": 3
+  },
+  "arch": "arm64",
+  "bootflow_discovery": {
+    "activity": [
+      {
+        "decoded_kind": "SelectorString",
+        "library_uri": "",
+        "owner_class": "",
+        "selector": "onPause",
+        "source": "adapter",
+        "target_va": null,
+        "value": "onPause"
+      },
+      {
+        "decoded_kind": "SelectorString",
+        "library_uri": "",
+        "owner_class": "",
+        "selector": "onResume",
+        "source": "adapter",
+        "target_va": null,
+        "value": "onResume"
+      }
+    ],
+    "activity_count": 2,
+    "bootstrap": [
+      {
+        "decoded_kind": "SelectorString",
+        "library_uri": "",
+        "owner_class": "",
+        "selector": "ensureInitialized",
+        "source": "adapter",
+        "target_va": null,
+        "value": "ensureInitialized"
+      },
+      {
+        "decoded_kind": "StartupBootstrapCandidate",
+        "library_uri": "apk:classes.dex",
+        "owner_class": "b8.a",
+        "selector": "init",
+        "source": "apk_startup",
+        "target_va": null,
+        "value": "bootflow:init:apk_startup"
+      }
+    ],
+    "bootstrap_count": 2,
+    "deeplink": [
+      {
+        "decoded_kind": "SelectorString",
+        "library_uri": "",
+        "owner_class": "",
+        "selector": "didPopRoute",
+        "source": "adapter",
+        "target_va": null,
+        "value": "didPopRoute("
+      },
+      {
+        "decoded_kind": "SelectorString",
+        "library_uri": "",
+        "owner_class": "",
+        "selector": "didPushRouteInformation",
+        "source": "adapter",
+        "target_va": null,
+        "value": "didPushRouteInformation"
+      }
+    ],
+    "deeplink_count": 2,
+    "main": [
+      {
+        "decoded_kind": "StartupMainCandidate",
+        "library_uri": "apk:classes.dex",
+        "owner_class": "b8.a",
+        "selector": "main",
+        "source": "apk_startup",
+        "target_va": null,
+        "value": "bootflow:main:apk_startup"
+      }
+    ],
+    "main_count": 1,
+    "runapp": [
+      {
+        "decoded_kind": "StartupRunAppCandidate",
+        "library_uri": "apk:classes.dex",
+        "owner_class": "b8.a",
+        "selector": "runApp",
+        "source": "apk_startup",
+        "target_va": null,
+        "value": "bootflow:runapp:apk_startup"
+      }
+    ],
+    "runapp_count": 1
+  },
+  "call_fallback": {
+    "dispatch_invoke": 0,
+    "dispatch_target_invoke": 6623,
+    "dynamic_call": 0,
+    "generic_invoke": 4084
+  },
+  "compatibility": {
+    "manifest_entry_present": true,
+    "schema": {
+      "supported": true,
+      "supported_versions": [
+        2,
+        3
+      ],
+      "version": 3
+    },
+    "snapshot_hash_match": true,
+    "snapshot_hash_match_required": false,
+    "status": "ok",
+    "warnings": []
+  },
+  "counts": {
+    "classes": 1,
+    "disassembled_functions": 5800,
+    "functions": 5800,
+    "functions_total": 5800,
+    "libraries": 512,
+    "object_pool": 19875
+  },
+  "dart_profile": {
+    "compressed_word_size": 4,
+    "dart_version": "3.5.0",
+    "header_fields": 5,
+    "max_alignment": 16,
+    "profile_version": "3.5.0",
+    "tag_style": "OBJECT_HEADER"
+  },
+  "dart_version": "unknown",
+  "engine_fingerprint_context": {
+    "build_id": "67d6564b8d334123ab2f76cbe8615dc2688a7cf8",
+    "candidate_dart_version": null,
+    "candidate_flutter_version": null,
+    "confidence": "medium",
+    "detected": true,
+    "dyn_symbol_count": 511,
+    "error": null,
+    "exec_section_count": 2,
+    "machine": "AArch64",
+    "machine_id": 183,
+    "machine_matches_bundle_arch": true,
+    "source": "apk:lib/arm64-v8a/libflutter.so",
+    "symbol_count": 0
+  },
+  "engine_symbol_ingestion": {
+    "applied_target_count": 0,
+    "enabled": true,
+    "error": null,
+    "loaded_paths": [],
+    "manifest_path": "<repo>/symbols/manifest.json",
+    "match_kind": null
+  },
+  "extra_symbol_elfs": [],
+  "extra_symbol_map_targets": [],
+  "function_scope": {
+    "app_package_count_total": 1,
+    "app_package_counts_top": [
+      {
+        "functions": 5800,
+        "package": "markdown"
+      }
+    ],
+    "app_packages": [],
+    "categories": {
+      "app": 5800,
+      "framework": 0,
+      "stdlib": 0,
+      "unknown": 0
+    },
+    "excluded": 0,
+    "excluded_by_app_package": 0,
+    "priority_package_hints": [
+      "localsend",
+      "localsend_app"
+    ],
+    "selected": "all",
+    "total_after_filter": 5800,
+    "total_before_filter": 5800
+  },
+  "ghidra_script": {
+    "enabled": false,
+    "path": null,
+    "pool_comment_count": 0,
+    "symbol_count": 0
+  },
+  "ida_script": {
+    "enabled": false,
+    "path": null,
+    "pool_comment_count": 0,
+    "symbol_count": 0
+  },
+  "include_nearest_symbol_map": false,
+  "input": "<input>",
+  "libapp": "lib/arm64-v8a/libapp.so",
+  "name_resolution": {
+    "final_quality": {
+      "exact": 1073,
+      "external": 0,
+      "heuristic": 0,
+      "placeholder": 4727
+    },
+    "merge": {
+      "inserted": 0,
+      "replaced": 1073,
+      "replaced_to_exact": 1073,
+      "replaced_to_external": 0,
+      "replaced_to_heuristic": 0,
+      "replaced_to_placeholder": 0,
+      "skipped": 0
+    }
+  },
+  "pool_metadata": {
+    "geometry": null,
+    "hints_suppressed_reason": "adapter reported no pool_geometry; pool entry indices are not in the hardware index space, so pool value/semantic hints were not applied",
+    "index_space_authoritative": false,
+    "total_entries": 19875,
+    "with_library_uri": 742,
+    "with_owner_class": 3,
+    "with_selector": 15187,
+    "with_target_va": 0
+  },
+  "pool_semantic_hints": 0,
+  "pool_target_symbols": 0,
+  "pool_value_hints": 0,
+  "prioritization": {
+    "enabled": false,
+    "focus": null,
+    "selected": [
+      {
+        "components": [],
+        "entry_va": 6318912,
+        "function_id": 0,
+        "function_name": "sub_606b40",
+        "library_uri": "package:markdown/src/inline_syntaxes/decode_html_syntax.dart",
+        "owner_class": "Global",
+        "total_score": 0
+      },
+      {
+        "components": [],
+        "entry_va": 6319040,
+        "function_id": 1,
+        "function_name": "sub_606bc0",
+        "library_uri": "package:markdown/src/inline_syntaxes/decode_html_syntax.dart",
+        "owner_class": "Global",
+        "total_score": 0
+      },
+      {
+        "components": [],
+        "entry_va": 6319420,
+        "function_id": 2,
+        "function_name": "sub_606d3c",
+        "library_uri": "package:markdown/src/inline_syntaxes/decode_html_syntax.dart",
+        "owner_class": "Global",
+        "total_score": 0
+      },
+      {
+        "components": [],
+        "entry_va": 6319644,
+        "function_id": 3,
+        "function_name": "sub_606e1c",
+        "library_uri": "package:markdown/src/inline_syntaxes/decode_html_syntax.dart",
+        "owner_class": "Global",
+        "total_score": 0
+      },
+      {
+        "components": [],
+        "entry_va": 6320256,
+        "function_id": 4,
+        "function_name": "sub_607080",
+        "library_uri": "package:markdown/src/inline_syntaxes/decode_html_syntax.dart",
+        "owner_class": "Global",
+        "total_score": 0
+      },
+      {
+        "components": [],
+        "entry_va": 6320416,
+        "function_id": 5,
+        "function_name": "sub_607120",
+        "library_uri": "package:markdown/src/inline_syntaxes/decode_html_syntax.dart",
+        "owner_class": "Global",
+        "total_score": 0
+      },
+      {
+        "components": [],
+        "entry_va": 6320480,
+        "function_id": 6,
+        "function_name": "sub_607160",
+        "library_uri": "package:markdown/src/inline_syntaxes/decode_html_syntax.dart",
+        "owner_class": "Global",
+        "total_score": 0
+      },
+      {
+        "components": [],
+        "entry_va": 6320516,
+        "function_id": 7,
+        "function_name": "sub_607184",
+        "library_uri": "package:markdown/src/inline_syntaxes/decode_html_syntax.dart",
+        "owner_class": "Global",
+        "total_score": 0
+      },
+      {
+        "components": [],
+        "entry_va": 6320636,
+        "function_id": 8,
+        "function_name": "sub_6071fc",
+        "library_uri": "package:markdown/src/inline_syntaxes/decode_html_syntax.dart",
+        "owner_class": "Global",
+        "total_score": 0
+      },
+      {
+        "components": [],
+        "entry_va": 6321340,
+        "function_id": 9,
+        "function_name": "sub_6074bc",
+        "library_uri": "package:markdown/src/inline_syntaxes/decode_html_syntax.dart",
+        "owner_class": "Global",
+        "total_score": 0
+      },
+      {
+        "components": [],
+        "entry_va": 6321920,
+        "function_id": 10,
+        "function_name": "sub_607700",
+        "library_uri": "package:markdown/src/inline_syntaxes/decode_html_syntax.dart",
+        "owner_class": "Global",
+        "total_score": 0
+      },
+      {
+        "components": [],
+        "entry_va": 6323148,
+        "function_id": 11,
+        "function_name": "sub_607bcc",
+        "library_uri": "package:markdown/src/inline_syntaxes/decode_html_syntax.dart",
+        "owner_class": "Global",
+        "total_score": 0
+      },
+      {
+        "components": [],
+        "entry_va": 6323696,
+        "function_id": 12,
+        "function_name": "sub_607df0",
+        "library_uri": "package:markdown/src/inline_syntaxes/decode_html_syntax.dart",
+        "owner_class": "Global",
+        "total_score": 0
+      },
+      {
+        "components": [],
+        "entry_va": 6324084,
+        "function_id": 13,
+        "function_name": "sub_607f74",
+        "library_uri": "package:markdown/src/inline_syntaxes/decode_html_syntax.dart",
+        "owner_class": "Global",
+        "total_score": 0
+      },
+      {
+        "components": [],
+        "entry_va": 6324784,
+        "function_id": 14,
+        "function_name": "sub_608230",
+        "library_uri": "package:markdown/src/inline_syntaxes/decode_html_syntax.dart",
+        "owner_class": "Global",
+        "total_score": 0
+      },
+      {
+        "components": [],
+        "entry_va": 6325336,
+        "function_id": 15,
+        "function_name": "sub_608458",
+        "library_uri": "package:markdown/src/inline_syntaxes/decode_html_syntax.dart",
+        "owner_class": "Global",
+        "total_score": 0
+      },
+      {
+        "components": [],
+        "entry_va": 6325808,
+        "function_id": 16,
+        "function_name": "sub_608630",
+        "library_uri": "package:markdown/src/inline_syntaxes/decode_html_syntax.dart",
+        "owner_class": "Global",
+        "total_score": 0
+      },
+      {
+        "components": [],
+        "entry_va": 6325964,
+        "function_id": 17,
+        "function_name": "sub_6086cc",
+        "library_uri": "package:markdown/src/inline_syntaxes/decode_html_syntax.dart",
+        "owner_class": "Global",
+        "total_score": 0
+      },
+      {
+        "components": [],
+        "entry_va": 6326268,
+        "function_id": 18,
+        "function_name": "sub_6087fc",
+        "library_uri": "package:markdown/src/inline_syntaxes/decode_html_syntax.dart",
+        "owner_class": "Global",
+        "total_score": 0
+      },
+      {
+        "components": [],
+        "entry_va": 6326528,
+        "function_id": 19,
+        "function_name": "sub_608900",
+        "library_uri": "package:markdown/src/inline_syntaxes/decode_html_syntax.dart",
+        "owner_class": "Global",
+        "total_score": 0
+      },
+      {
+        "components": [],
+        "entry_va": 6326540,
+        "function_id": 20,
+        "function_name": "sub_60890c",
+        "library_uri": "package:markdown/src/inline_syntaxes/decode_html_syntax.dart",
+        "owner_class": "Global",
+        "total_score": 0
+      },
+      {
+        "components": [],
+        "entry_va": 6326552,
+        "function_id": 21,
+        "function_name": "sub_608918",
+        "library_uri": "package:markdown/src/inline_syntaxes/decode_html_syntax.dart",
+        "owner_class": "Global",
+        "total_score": 0
+      },
+      {
+        "components": [],
+        "entry_va": 6326652,
+        "function_id": 22,
+        "function_name": "sub_60897c",
+        "library_uri": "package:markdown/src/inline_syntaxes/decode_html_syntax.dart",
+        "owner_class": "Global",
+        "total_score": 0
+      },
+      {
+        "components": [],
+        "entry_va": 6326916,
+        "function_id": 23,
+        "function_name": "sub_608a84",
+        "library_uri": "package:markdown/src/inline_syntaxes/decode_html_syntax.dart",
+        "owner_class": "Global",
+        "total_score": 0
+      },
+      {
+        "components": [],
+        "entry_va": 6327676,
+        "function_id": 24,
+        "function_name": "sub_608d7c",
+        "library_uri": "package:markdown/src/inline_syntaxes/decode_html_syntax.dart",
+        "owner_class": "Global",
+        "total_score": 0
+      },
+      {
+        "components": [],
+        "entry_va": 6327720,
+        "function_id": 25,
+        "function_name": "sub_608da8",
+        "library_uri": "package:markdown/src/inline_syntaxes/decode_html_syntax.dart",
+        "owner_class": "Global",
+        "total_score": 0
+      },
+      {
+        "components": [],
+        "entry_va": 6328360,
+        "function_id": 26,
+        "function_name": "sub_609028",
+        "library_uri": "package:markdown/src/inline_syntaxes/decode_html_syntax.dart",
+        "owner_class": "Global",
+        "total_score": 0
+      },
+      {
+        "components": [],
+        "entry_va": 6328580,
+        "function_id": 27,
+        "function_name": "sub_609104",
+        "library_uri": "package:markdown/src/inline_syntaxes/decode_html_syntax.dart",
+        "owner_class": "Global",
+        "total_score": 0
+      },
+      {
+        "components": [],
+        "entry_va": 6328948,
+        "function_id": 28,
+        "function_name": "sub_609274",
+        "library_uri": "package:markdown/src/inline_syntaxes/decode_html_syntax.dart",
+        "owner_class": "Global",
+        "total_score": 0
+      },
+      {
+        "components": [],
+        "entry_va": 6329392,
+        "function_id": 29,
+        "function_name": "sub_609430",
+        "library_uri": "package:markdown/src/inline_syntaxes/decode_html_syntax.dart",
+        "owner_class": "Global",
+        "total_score": 0
+      },
+      {
+        "components": [],
+        "entry_va": 6329404,
+        "function_id": 30,
+        "function_name": "sub_60943c",
+        "library_uri": "package:markdown/src/inline_syntaxes/decode_html_syntax.dart",
+        "owner_class": "Global",
+        "total_score": 0
+      },
+      {
+        "components": [],
+        "entry_va": 6329476,
+        "function_id": 31,
+        "function_name": "sub_609484",
+        "library_uri": "package:markdown/src/inline_syntaxes/decode_html_syntax.dart",
+        "owner_class": "Global",
+        "total_score": 0
+      },
+      {
+        "components": [],
+        "entry_va": 6329684,
+        "function_id": 32,
+        "function_name": "sub_609554",
+        "library_uri": "package:markdown/src/inline_syntaxes/decode_html_syntax.dart",
+        "owner_class": "Global",
+        "total_score": 0
+      },
+      {
+        "components": [],
+        "entry_va": 6329916,
+        "function_id": 33,
+        "function_name": "sub_60963c",
+        "library_uri": "package:markdown/src/inline_syntaxes/decode_html_syntax.dart",
+        "owner_class": "Global",
+        "total_score": 0
+      },
+      {
+        "components": [],
+        "entry_va": 6330140,
+        "function_id": 34,
+        "function_name": "sub_60971c",
+        "library_uri": "package:markdown/src/inline_syntaxes/decode_html_syntax.dart",
+        "owner_class": "Global",
+        "total_score": 0
+      },
+      {
+        "components": [],
+        "entry_va": 6330868,
+        "function_id": 35,
+        "function_name": "sub_6099f4",
+        "library_uri": "package:markdown/src/inline_syntaxes/decode_html_syntax.dart",
+        "owner_class": "Global",
+        "total_score": 0
+      },
+      {
+        "components": [],
+        "entry_va": 6331248,
+        "function_id": 36,
+        "function_name": "sub_609b70",
+        "library_uri": "package:markdown/src/inline_syntaxes/decode_html_syntax.dart",
+        "owner_class": "Global",
+        "total_score": 0
+      },
+      {
+        "components": [],
+        "entry_va": 6331492,
+        "function_id": 37,
+        "function_name": "sub_609c64",
+        "library_uri": "package:markdown/src/inline_syntaxes/decode_html_syntax.dart",
+        "owner_class": "Global",
+        "total_score": 0
+      },
+      {
+        "components": [],
+        "entry_va": 6331624,
+        "function_id": 38,
+        "function_name": "sub_609ce8",
+        "library_uri": "package:markdown/src/inline_syntaxes/decode_html_syntax.dart",
+        "owner_class": "Global",
+        "total_score": 0
+      },
+      {
+        "components": [],
+        "entry_va": 6332088,
+        "function_id": 39,
+        "function_name": "sub_609eb8",
+        "library_uri": "package:markdown/src/inline_syntaxes/decode_html_syntax.dart",
+        "owner_class": "Global",
+        "total_score": 0
+      },
+      {
+        "components": [],
+        "entry_va": 6332420,
+        "function_id": 40,
+        "function_name": "sub_60a004",
+        "library_uri": "package:markdown/src/inline_syntaxes/decode_html_syntax.dart",
+        "owner_class": "Global",
+        "total_score": 0
+      },
+      {
+        "components": [],
+        "entry_va": 6332488,
+        "function_id": 41,
+        "function_name": "sub_60a048",
+        "library_uri": "package:markdown/src/inline_syntaxes/decode_html_syntax.dart",
+        "owner_class": "Global",
+        "total_score": 0
+      },
+      {
+        "components": [],
+        "entry_va": 6332616,
+        "function_id": 42,
+        "function_name": "sub_60a0c8",
+        "library_uri": "package:markdown/src/inline_syntaxes/decode_html_syntax.dart",
+        "owner_class": "Global",
+        "total_score": 0
+      },
+      {
+        "components": [],
+        "entry_va": 6332748,
+        "function_id": 43,
+        "function_name": "sub_60a14c",
+        "library_uri": "package:markdown/src/inline_syntaxes/decode_html_syntax.dart",
+        "owner_class": "Global",
+        "total_score": 0
+      },
+      {
+        "components": [],
+        "entry_va": 6333600,
+        "function_id": 44,
+        "function_name": "sub_60a4a0",
+        "library_uri": "package:markdown/src/inline_syntaxes/decode_html_syntax.dart",
+        "owner_class": "Global",
+        "total_score": 0
+      },
+      {
+        "components": [],
+        "entry_va": 6333728,
+        "function_id": 45,
+        "function_name": "sub_60a520",
+        "library_uri": "package:markdown/src/inline_syntaxes/decode_html_syntax.dart",
+        "owner_class": "Global",
+        "total_score": 0
+      },
+      {
+        "components": [],
+        "entry_va": 6333740,
+        "function_id": 46,
+        "function_name": "sub_60a52c",
+        "library_uri": "package:markdown/src/inline_syntaxes/decode_html_syntax.dart",
+        "owner_class": "Global",
+        "total_score": 0
+      },
+      {
+        "components": [],
+        "entry_va": 6334272,
+        "function_id": 47,
+        "function_name": "sub_60a740",
+        "library_uri": "package:markdown/src/inline_syntaxes/decode_html_syntax.dart",
+        "owner_class": "Global",
+        "total_score": 0
+      },
+      {
+        "components": [],
+        "entry_va": 6334320,
+        "function_id": 48,
+        "function_name": "sub_60a770",
+        "library_uri": "package:markdown/src/inline_syntaxes/decode_html_syntax.dart",
+        "owner_class": "Global",
+        "total_score": 0
+      },
+      {
+        "components": [],
+        "entry_va": 6334436,
+        "function_id": 49,
+        "function_name": "sub_60a7e4",
+        "library_uri": "package:markdown/src/inline_syntaxes/decode_html_syntax.dart",
+        "owner_class": "Global",
+        "total_score": 0
+      },
+      {
+        "components": [],
+        "entry_va": 6334772,
+        "function_id": 50,
+        "function_name": "sub_60a934",
+        "library_uri": "package:markdown/src/inline_syntaxes/decode_html_syntax.dart",
+        "owner_class": "Global",
+        "total_score": 0
+      },
+      {
+        "components": [],
+        "entry_va": 6336136,
+        "function_id": 51,
+        "function_name": "sub_60ae88",
+        "library_uri": "package:markdown/src/inline_syntaxes/decode_html_syntax.dart",
+        "owner_class": "Global",
+        "total_score": 0
+      },
+      {
+        "components": [],
+        "entry_va": 6336444,
+        "function_id": 52,
+        "function_name": "sub_60afbc",
+        "library_uri": "package:markdown/src/inline_syntaxes/decode_html_syntax.dart",
+        "owner_class": "Global",
+        "total_score": 0
+      },
+      {
+        "components": [],
+        "entry_va": 6336588,
+        "function_id": 53,
+        "function_name": "sub_60b04c",
+        "library_uri": "package:markdown/src/inline_syntaxes/decode_html_syntax.dart",
+        "owner_class": "Global",
+        "total_score": 0
+      },
+      {
+        "components": [],
+        "entry_va": 6336824,
+        "function_id": 54,
+        "function_name": "sub_60b138",
+        "library_uri": "package:markdown/src/inline_syntaxes/decode_html_syntax.dart",
+        "owner_class": "Global",
+        "total_score": 0
+      },
+      {
+        "components": [],
+        "entry_va": 6337284,
+        "function_id": 55,
+        "function_name": "sub_60b304",
+        "library_uri": "package:markdown/src/inline_syntaxes/decode_html_syntax.dart",
+        "owner_class": "Global",
+        "total_score": 0
+      },
+      {
+        "components": [],
+        "entry_va": 6337668,
+        "function_id": 56,
+        "function_name": "sub_60b484",
+        "library_uri": "package:markdown/src/inline_syntaxes/decode_html_syntax.dart",
+        "owner_class": "Global",
+        "total_score": 0
+      },
+      {
+        "components": [],
+        "entry_va": 6337680,
+        "function_id": 57,
+        "function_name": "sub_60b490",
+        "library_uri": "package:markdown/src/inline_syntaxes/decode_html_syntax.dart",
+        "owner_class": "Global",
+        "total_score": 0
+      },
+      {
+        "components": [],
+        "entry_va": 6339076,
+        "function_id": 58,
+        "function_name": "sub_60ba04",
+        "library_uri": "package:markdown/src/inline_syntaxes/decode_html_syntax.dart",
+        "owner_class": "Global",
+        "total_score": 0
+      },
+      {
+        "components": [],
+        "entry_va": 6339184,
+        "function_id": 59,
+        "function_name": "sub_60ba70",
+        "library_uri": "package:markdown/src/inline_syntaxes/decode_html_syntax.dart",
+        "owner_class": "Global",
+        "total_score": 0
+      },
+      {
+        "components": [],
+        "entry_va": 6339272,
+        "function_id": 60,
+        "function_name": "sub_60bac8",
+        "library_uri": "package:markdown/src/inline_syntaxes/decode_html_syntax.dart",
+        "owner_class": "Global",
+        "total_score": 0
+      },
+      {
+        "components": [],
+        "entry_va": 6339528,
+        "function_id": 61,
+        "function_name": "sub_60bbc8",
+        "library_uri": "package:markdown/src/inline_syntaxes/decode_html_syntax.dart",
+        "owner_class": "Global",
+        "total_score": 0
+      },
+      {
+        "components": [],
+        "entry_va": 6340308,
+        "function_id": 62,
+        "function_name": "sub_60bed4",
+        "library_uri": "package:markdown/src/inline_syntaxes/decode_html_syntax.dart",
+        "owner_class": "Global",
+        "total_score": 0
+      },
+      {
+        "components": [],
+        "entry_va": 6341084,
+        "function_id": 63,
+        "function_name": "sub_60c1dc",
+        "library_uri": "package:markdown/src/inline_syntaxes/decode_html_syntax.dart",
+        "owner_class": "Global",
+        "total_score": 0
+      }
+    ],
+    "selected_app_like_ratio": 1.0,
+    "selected_bootflow_coverage": {
+      "activity": {
+        "coverage": 0.0,
+        "discovered": 0,
+        "selected": 0
+      },
+      "any": {
+        "coverage": 0.0,
+        "discovered": 0,
+        "selected": 0
+      },
+      "bootstrap": {
+        "coverage": 0.0,
+        "discovered": 0,
+        "selected": 0
+      },
+      "deeplink": {
+        "coverage": 0.0,
+        "discovered": 0,
+        "selected": 0
+      },
+      "main": {
+        "coverage": 0.0,
+        "discovered": 0,
+        "selected": 0
+      },
+      "runapp": {
+        "coverage": 0.0,
+        "discovered": 0,
+        "selected": 0
+      }
+    },
+    "selected_bootflow_hits_top": [],
+    "selected_component_totals_top": [],
+    "selected_count": 5800,
+    "selected_other_app_count": 64,
+    "selected_package_count_total": 1,
+    "selected_package_counts_top": [
+      {
+        "functions": 64,
+        "package": "markdown"
+      }
+    ],
+    "selected_preferred_app_count": 0,
+    "selected_preferred_app_ratio": 0.0,
+    "selected_scope_mix": {
+      "app": 64,
+      "framework": 0,
+      "stdlib": 0,
+      "unknown": 0
+    },
+    "selected_unknown_library_count": 0
+  },
+  "quality": {
+    "block_helper_refs": 27097,
+    "disassembled_function_count": 5800,
+    "disassembly_ratio": 1.0,
+    "dispatch_selector_calls": 0,
+    "dispatch_table_calls": 4059,
+    "emission": {
+      "coverage_mismatch": 0,
+      "dfs_depth_omissions": 199441,
+      "dfs_emitted_blocks": 22277,
+      "dfs_visit_omissions": 25252,
+      "guard_pruned_blocks": 5302,
+      "helper_cap_omissions": 3847,
+      "invalid_cfg_rejected_functions": 0,
+      "irreducible": 0,
+      "noreturn_pruned_blocks": 13016,
+      "reachable_unemitted_blocks": 1499,
+      "repeat_budget": 301,
+      "retained_unreachable_blocks": 201006,
+      "structured_declines": 303,
+      "structured_depth_budget": 2,
+      "structured_emitted_blocks": 55019,
+      "structured_rollbacks": 303,
+      "unsupported_region": 0
+    },
+    "failures": [
+      "placeholder if-count exceeded threshold",
+      "unresolved control-flow count exceeded threshold"
+    ],
+    "function_count": 5800,
+    "indirect_call_ratio": 0.1620446340662947,
+    "indirect_calls": 39500,
+    "loop_backedge_markers": 77,
+    "mode": "strict",
+    "omitted_path_markers": 50,
+    "passed": false,
+    "placeholder_cond_markers": 2617,
+    "placeholder_ifs": 530,
+    "raw_arg_name_refs": 0,
+    "raw_register_calls": 6627,
+    "raw_register_name_refs": 690963,
+    "repeated_blocks": 9115,
+    "semantic_direct_calls": 0,
+    "semantic_indirect_calls": 0,
+    "target_va_symbol_calls": 0,
+    "total_calls": 243760,
+    "unlifted_instructions": 481,
+    "unresolved_cf": 521
+  },
+  "record_split": {
+    "enabled": false,
+    "functions_recovered": 0,
+    "records_declared": 5800,
+    "records_split": 0,
+    "rejected_branch_target": 0,
+    "rejected_invalid_ir": 0,
+    "rejected_no_block": 0,
+    "rejected_not_contained": 0
+  },
+  "selector_fallback": {
+    "top": [],
+    "total": 0,
+    "unique": 0
+  },
+  "semantic_intent": {
+    "constructor_calls": 0,
+    "framework": 0,
+    "native": 0,
+    "runtime": 0,
+    "selector_tagged": 0,
+    "stdlib": 0
+  },
+  "semantic_rewrite": {
+    "direct": 0,
+    "dispatch_fallback": 0,
+    "indirect": 0,
+    "indirect_ratio": 0.0,
+    "ratio": 0.0,
+    "target_va_symbol": 0,
+    "total": 0
+  },
+  "shared_stub_naming": {
+    "allocation_named": 1059,
+    "compressed_pointers": true,
+    "functions_scanned": 5800,
+    "model": "dynamic_snapshot_string_model_v1",
+    "named": 1073,
+    "noreturn_pruned_blocks": 13016,
+    "noreturn_pruned_functions": 2262,
+    "noreturn_pruned_instructions": 32676,
+    "noreturn_skipped_invalid_ir": 0,
+    "snapshot_dart_version": "3.5.0",
+    "status": "named"
+  },
+  "snapshot_hash": "80a49c7111088100a233b2ae788e1f48",
+  "standard_model_symbols": 0,
+  "symbol_merge": {
+    "inserted": 0,
+    "replaced_generic": 1073,
+    "skipped": 0
+  },
+  "target_selection": {
+    "enabled": false,
+    "kind": null,
+    "matched_count": 0,
+    "scope_overridden": false,
+    "selector": null,
+    "value": null
+  }
+}

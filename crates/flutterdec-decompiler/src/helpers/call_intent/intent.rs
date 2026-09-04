@@ -138,7 +138,7 @@ pub(super) fn is_generic_symbol_placeholder(name: &str) -> bool {
 }
 
 pub(super) fn fallback_call_name_from_selector(selector: &str) -> (String, bool) {
-    let normalized = sanitize_name(selector);
+    let normalized = sanitize_symbol_name(selector);
     if looks_constructor_like_selector(selector) {
         return (format!("{}.new", normalized), true);
     }
@@ -279,7 +279,12 @@ fn intent_display_path(intent: &str) -> Option<String> {
     ] {
         if let Some(path) = trimmed.strip_prefix(prefix) {
             if !path.is_empty() {
-                return Some(path.to_string());
+                return Some(
+                    path.split('.')
+                        .map(sanitize_symbol_name)
+                        .collect::<Vec<_>>()
+                        .join("."),
+                );
             }
         }
     }

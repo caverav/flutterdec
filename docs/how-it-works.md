@@ -477,8 +477,30 @@ Leader and edge logic:
 - branch target becomes leader
 - branch fallthrough becomes leader
 - jump target becomes leader
-- return has no outgoing edge
+- `br Xn` is an unrecovered indirect branch: it ends the block, keeps the
+  register operand as provenance, and has no invented target or fallthrough edge
+- `brk` is a trap: it ends the block and has no fallthrough edge
+- return, indirect branch, and trap have no outgoing edge
 - non-terminator block falls through to next block
+
+The emitter preserves the same distinction. An unrecovered indirect branch is
+rendered as `// indirect branch through <register>: target not recovered` and
+increments unresolved control flow. A trap is rendered as
+`// trap: control does not continue`. Neither is rendered as a return or as a
+call to a guessed address.
+
+CFG relations are derived from graph edges, not virtual-address order:
+
+- a natural-loop back edge is an edge whose target dominates its source
+- latches, loop bodies, exits, and forward entries follow from that relation
+- address ordering is used only as a deterministic presentation tie-break
+- irreducible or unsupported graphs decline structured emission and use the
+  bounded DFS fallback
+
+Post-dominance is defined only for blocks that can reach an exit. Blocks in an
+endless cycle or another no-exit region receive an empty post-dominator set and
+therefore no fabricated follow node. A loop exit, when one exists, is derived
+from edges leaving the loop body.
 
 Key functions:
 
@@ -585,9 +607,31 @@ Recent readability features include:
 
 Fallback policy for complex unresolved regions:
 
-- summarize omitted paths once per function
-- return safe fallback values where needed
+- a structured attempt snapshots emitted lines, semantic state, counters,
+  helper state, and provenance before it mutates them
+- if structuring declines, restore that snapshot as one unit and emit the
+  function through DFS; only the typed decline record remains
+- bounded repeated regions may be rendered again only within the 16-block and
+  96-instruction budget; `repeated_blocks` counts these structured copies, not
+  duplication in DFS fallback
+- give each emitted helper call a matching definition
+- when the 64-definition helper budget is exhausted, replace only the
+  unresolved helper call with an explicit omission naming its block and list
+  that block once in the function summary
 - do not emit fake structure that implies false confidence
+
+The repeated-region budget and counter boundary are characterized by the
+checksum-bound repository record in
+[`research-data/repeated-block-characterization.txt`](research-data/repeated-block-characterization.txt),
+bound by [`research-data/SHA256SUMS`](research-data/SHA256SUMS).
+
+DFS state merging also treats a loop edge into function entry specially. The
+call into block 0 is an implicit incoming path in addition to every explicit
+back edge. Register, stack, expression, name, helper, counter, and provenance
+state are merged or invalidated across those paths before the entry block is
+reused. A loop-body value therefore cannot appear as a first-iteration
+constant. Ordinary blocks with one real predecessor keep the one-predecessor
+fast path.
 
 Key functions:
 
@@ -632,6 +676,18 @@ Metric formulas:
 
 - `disassembly_ratio = disassembled_function_count / function_count`
 - `indirect_call_ratio = indirect_calls / total_calls`
+- `total_calls` = rendered `IROp::Call` statements retained in completed
+  pseudocode artifacts. `indirect_calls` is the subset rendered from register
+  call targets. Both are derived from call provenance attached to line identity,
+  so a call copied from a nested `_block_N` helper counts once per surviving
+  rendered copy, while a removed helper definition does not count.
+- `unresolved_cf` = the number of unresolved-control-flow statements in the
+  emitted pseudocode: lines starting with `// indirect branch`,
+  `// unresolved branch target`, `// unresolved jump`, or `// invalid CFG`, which
+  is the whole body of a function whose control flow did not validate. It is
+  counted from the finished text, so a statement inside a `_block_N` helper body,
+  or copied into the caller when that helper is inlined, counts once per line you
+  can read.
 
 Gate mapping to CLI options:
 

@@ -1,0 +1,17 @@
+harness_ref                8e7f08096434b614a1e8dc6d3092ff6a67bb44c9
+patch_sha256               14413796ca8a89cc1328497b5c87629b1c55f945ec58e73eebb3838df0700460
+reference_product_ref      1371e42549472ec388f58bc1fd5dbdf96e8dcdd1
+candidate_product_ref      1371e42549472ec388f58bc1fd5dbdf96e8dcdd1
+reference_binary_sha256    bc06f2bf3243dd4861c70e9139c88708413c8de7eb336f933075352f78d63369
+candidate_binary_sha256    bc06f2bf3243dd4861c70e9139c88708413c8de7eb336f933075352f78d63369
+canonical_build_path       /tmp/flutterdec-bench-build/tree
+build_order                sequential, one side at a time in the canonical path
+identity_gate              passed: equal product commits and equal binary sha256
+matrix                     disclosed
+pairs                      15
+preliminary_warmups        3
+warmups_per_measured_pair  0
+pair_order                 alternating: reference first on even pairs, candidate first on odd
+pair_order_log             raw/pair-order.tsv
+pair_order_verified        yes
+correctness_documents      warmup-reference.json warmup-candidate.json

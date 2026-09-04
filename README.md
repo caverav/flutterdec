@@ -426,6 +426,10 @@ Main outputs under `-o <OUT_DIR>`:
 - `engine_symbol_ingestion` for auto-loaded local engine symbol cache matches keyed by `libflutter.so` build id
 - `bootflow_discovery` entries tagged by `source` (`adapter`, `manifest`, `apk_startup`)
 
+For the complete public emission-counter schema, units, block-ledger semantics,
+and record-split rejection diagnostics, see
+[`docs/cli-reference.md`](docs/cli-reference.md#emission-diagnostics-in-qualityjson).
+
 ## See The Pipeline
 
 The goal of these examples is simple: show original public source first, then show what `flutterdec` recovers from the shipped APK.
@@ -480,7 +484,7 @@ This source is ordinary app UI code. It builds a ping badge with `BoxConstraints
 
 <p align="center"><strong>Recovered 2: From The ZedSecure APK With flutterdec</strong></p>
 
-<p align="center"><strong>↓ ARM64</strong></p>
+<p align="center"><strong>Next: ARM64</strong></p>
 
 At the machine-code layer, the APK still looks like indirect selector dispatch through pool-loaded metadata and call targets.
 
@@ -489,7 +493,7 @@ At the machine-code layer, the APK still looks like indirect selector dispatch t
 </p>
 
 <p align="center">
-  <strong>↓ Function IR</strong>
+  <strong>Next: Function IR</strong>
 </p>
 
 <p align="center">
@@ -499,7 +503,7 @@ At the machine-code layer, the APK still looks like indirect selector dispatch t
 The IR stage makes the selector-bearing pool values explicit before readability passes.
 
 <p align="center">
-  <strong>↓ Pseudocode</strong>
+  <strong>Next: Pseudocode</strong>
 </p>
 
 <p align="center">

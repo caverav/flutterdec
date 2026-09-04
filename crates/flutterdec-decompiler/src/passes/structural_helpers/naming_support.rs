@@ -1,9 +1,23 @@
 impl<'a> FuncEmitter<'a> {
+    /// Rename `from` to `to` wherever it stands as a whole token in code.
+    ///
+    /// String literals are excluded: a recovered pool string mentioning `arg0` is
+    /// program data, and renaming inside it would rewrite what the binary said.
+    ///
+    /// Comments are not excluded, deliberately. A rename is a total substitution
+    /// of one identifier the emitter itself rendered, and the emitter's comments
+    /// quote the expressions it rendered - `target: (arg1.f8)`, `was: ...`. Left
+    /// out of the rename, those keep naming an identifier the body no longer has,
+    /// which is the drift `identifier_renames` exists to prevent. A rename cannot
+    /// change the parse of the code either way, since a comment is not code.
     pub(super) fn replace_identifier_token(line: &str, from: &str, to: &str) -> String {
         if from.is_empty() || from == to {
             return line.to_string();
         }
+        rewrite_outside_string_literals(line, |code| Self::replace_token_in_code(code, from, to))
+    }
 
+    fn replace_token_in_code(line: &str, from: &str, to: &str) -> String {
         let bytes = line.as_bytes();
         let from_bytes = from.as_bytes();
         let mut out: Vec<u8> = Vec::with_capacity(bytes.len() + to.len());

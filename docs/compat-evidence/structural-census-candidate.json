@@ -1,0 +1,33 @@
+{
+  "counts": {
+    "block_helper_call": 27097,
+    "branch_target_comment": 7911,
+    "break_statement": 1038,
+    "classid_helper": 11841,
+    "continue_statement": 9130,
+    "control_rejoin_comment": 202669,
+    "dispatch_table_comment": 25275,
+    "helper_call_fn_va": 12697,
+    "helper_call_sub": 135670,
+    "if_statement": 316776,
+    "indirect_via_comment": 6623,
+    "loop_backedge_comment": 77,
+    "omitted_path_comment": 50,
+    "pool_offset_ref": 29867,
+    "pseudocode_files": 5800,
+    "pseudocode_lines": 2099918,
+    "register_operand": 692215,
+    "return_statement": 69577,
+    "selector_call": 25275,
+    "smitag_helper": 15910,
+    "thread_field_ref": 49140,
+    "trap_comment": 7262,
+    "unrecovered_indirect_branch": 520,
+    "unrecovered_indirect_branch_statement_prefix": 521,
+    "unrecovered_receiver": 11793,
+    "value_hint_comment": 143,
+    "while_statement": 1704,
+    "write_barrier_helper": 21571
+  },
+  "label": "candidate"
+}

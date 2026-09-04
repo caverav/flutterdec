@@ -1,4 +1,134 @@
+/// What a `brk` renders as. A trap is not a return and not a throw the source
+/// program wrote, so it is reported as the effect it is rather than as any
+/// source construct.
+pub(super) const TRAP_NOTE: &str = "trap: control does not continue";
+
+/// What a `br Xn` renders as, naming the value control left through when the
+/// operand survived. Deliberately not a `return`, a `goto` or a `tailCall_`:
+/// every one of those names a destination that was never recovered.
+pub(super) fn indirect_branch_note(target: &str) -> String {
+    let via = target.trim();
+    if via.is_empty() {
+        format!("{INDIRECT_BRANCH_NOTE_PREFIX}: target not recovered")
+    } else {
+        format!("{INDIRECT_BRANCH_NOTE_PREFIX} through {via}: target not recovered")
+    }
+}
+
+/// The three statements that report unresolved control flow, by the prefix each
+/// one starts with. One spelling for the emission site and for the counter, so
+/// the count cannot drift from the text it counts.
+pub(super) const INDIRECT_BRANCH_NOTE_PREFIX: &str = "indirect branch";
+/// A conditional branch whose taken target resolved to no block.
+pub(super) const UNRESOLVED_BRANCH_TARGET_NOTE: &str = "unresolved branch target";
+/// An unconditional jump whose target resolved to no block and to no address.
+pub(super) const UNRESOLVED_JUMP_NOTE: &str = "unresolved jump";
+
+/// Unresolved control flow in a finished body, counted from the body itself.
+///
+/// The walk's own increments cannot be the artifact's number: a block rendered
+/// into a helper body is rendered by a nested emitter whose counters are
+/// discarded, and `inline_helper_calls` then copies that body to every call
+/// site, so text the artifact carries was never counted anywhere. Counting the
+/// finished lines is the one scope a reader can recount from the artifact, and
+/// it holds whatever the emission path was: an annotation spliced into a marker
+/// keeps its prefix, so it stays counted.
+pub(super) fn unresolved_cf_statements(lines: &[String]) -> usize {
+    lines
+        .iter()
+        .filter(|line| {
+            let text = line.trim_start();
+            let Some(comment) = text.strip_prefix("// ") else {
+                return false;
+            };
+            comment.starts_with(INDIRECT_BRANCH_NOTE_PREFIX)
+                || comment.starts_with(UNRESOLVED_BRANCH_TARGET_NOTE)
+                || comment.starts_with(UNRESOLVED_JUMP_NOTE)
+        })
+        .count()
+}
+
+/// What an edge into a block the walk already rendered says.
+///
+/// The DFS fallback emits a block once per path that reaches it, and Dart has no
+/// `goto`, so an edge back into a block already written above cannot be rendered
+/// where it occurs. Naming the block keeps the edge in the artifact; emitting
+/// nothing dropped it, and a `return` or a `tailCall_` there would state an exit
+/// the graph does not contain.
+pub(super) fn rejoin_note(id: usize) -> String {
+    format!("control rejoins block {id}: already emitted above")
+}
+
+/// How deep the DFS walk nests before it stops inlining successors.
+pub(super) const DFS_MAX_DEPTH: usize = 12;
+
+/// Why the DFS walk will not inline a successor at this site.
+///
+/// Split out of `can_inline` rather than re-derived beside it: the omission
+/// event has to name the budget that actually refused, and a second copy of the
+/// same conditions is a copy that can drift.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum InlineRefusal {
+    /// Already at the depth budget.
+    Depth,
+    /// The block is being emitted further up this path.
+    Active,
+    /// The block has been emitted as often as its visit budget allows.
+    VisitBudget,
+    /// The edge names a block the function does not contain. The identity gate
+    /// at the public entry points refuses such a graph before emission, so this
+    /// is defensive.
+    UnknownBlock,
+}
+
 impl<'a> FuncEmitter<'a> {
+    /// The one rendering of a successor this walk cannot emit at this site.
+    ///
+    /// Every reason is stated rather than skipped: a back edge to the loop being
+    /// rendered as `continue;`, a back edge to any other active block as a
+    /// recorded back edge plus a rejoin note, a block not yet emitted as its
+    /// omission helper, and a block already emitted as a rejoin note. Falling
+    /// through with no statement is what silently dropped the edge.
+    ///
+    /// `depth` is the depth the successor would have been emitted at, which is
+    /// what decides whether the depth budget or the visit budget refused it.
+    pub(super) fn emit_unrenderable_successor(&mut self, indent: usize, id: usize, depth: usize) {
+        if self.loop_context.contains(&id) {
+            self.push_line(indent, "continue;");
+            return;
+        }
+        if self.active_stack.contains(&id) {
+            // A back edge, not a budget: the walk is already inside this block.
+            self.loop_back_edges.insert(id);
+        } else if let Some(kind) = self.budget_refusal(id, depth) {
+            let source = self.current_source_block();
+            let target = TraversalTarget::Block {
+                start_va: self.block_start_va(id),
+            };
+            self.record_traversal_event(kind, source, target);
+        }
+        if self.emitted.contains(&id) {
+            self.push_line(indent, &format!("// {}", rejoin_note(id)));
+        } else {
+            self.emit_omitted_path(indent, Some(id));
+        }
+    }
+
+    /// Which budget refused this edge, if a budget is what refused it.
+    ///
+    /// A block already emitted elsewhere is rendered as a rejoin note rather
+    /// than as a helper, and that is still an edge this walk did not follow: the
+    /// event says which budget stopped it, and says nothing about whether the
+    /// block was emitted. Being inside the block is not a budget, so it gets no
+    /// event.
+    pub(super) fn budget_refusal(&self, to: usize, depth: usize) -> Option<TraversalEventKind> {
+        match self.inline_refusal(to, depth) {
+            Some(InlineRefusal::Depth) => Some(TraversalEventKind::DfsDepthOmission),
+            Some(InlineRefusal::VisitBudget) => Some(TraversalEventKind::DfsVisitOmission),
+            Some(InlineRefusal::Active) | Some(InlineRefusal::UnknownBlock) | None => None,
+        }
+    }
+
     pub(super) fn branch_condition(&self, mnemonic: &str, ops: &[String]) -> Option<String> {
         if mnemonic.starts_with("b.") {
             if let Some(cmp) = &self.state.last_cmp {
@@ -36,17 +166,33 @@ impl<'a> FuncEmitter<'a> {
         self.va_to_id.get(&parsed).copied()
     }
 
-    pub(super) fn can_inline(&self, to: usize, depth: usize) -> bool {
-        if depth >= 12 {
-            return false;
+    pub(super) fn inline_refusal(&self, to: usize, depth: usize) -> Option<InlineRefusal> {
+        if depth >= DFS_MAX_DEPTH {
+            return Some(InlineRefusal::Depth);
         }
         if self.active_stack.contains(&to) {
-            return false;
+            return Some(InlineRefusal::Active);
         }
         if self.inline_visits.get(&to).copied().unwrap_or(0) >= self.visit_limit(to) {
-            return false;
+            return Some(InlineRefusal::VisitBudget);
         }
-        self.block_by_id.contains_key(&to)
+        if !self.block_by_id.contains_key(&to) {
+            return Some(InlineRefusal::UnknownBlock);
+        }
+        None
+    }
+
+    pub(super) fn can_inline(&self, to: usize, depth: usize) -> bool {
+        self.inline_refusal(to, depth).is_none()
+    }
+
+    fn dfs_dominates(&self, dominator: usize, block: usize) -> bool {
+        let dom = self.dfs_dominators.get_or_init(|| {
+            let (succs, preds, reachable) = reachable_edges(self.ir);
+            dominators(&succs, &preds, &reachable)
+        });
+        dom.get(block)
+            .is_some_and(|dominators| dominators.contains(&dominator))
     }
 
     pub(super) fn has_backedge_pred(&self, id: usize) -> bool {
@@ -55,7 +201,7 @@ impl<'a> FuncEmitter<'a> {
         };
         for pred in &block.preds {
             if let Some(pb) = self.block_by_id.get(pred) {
-                if pb.succs.contains(&id) && pb.start_va >= block.start_va {
+                if pb.succs.contains(&id) && self.dfs_dominates(id, *pred) {
                     return true;
                 }
             }
@@ -64,17 +210,13 @@ impl<'a> FuncEmitter<'a> {
     }
 
     pub(super) fn has_forward_pred(&self, id: usize) -> bool {
-        let Some(block) = self.block_by_id.get(&id) else {
+        let Some(pred) = self.active_stack.last().copied() else {
             return false;
         };
-        for pred in &block.preds {
-            if let Some(pb) = self.block_by_id.get(pred) {
-                if pb.succs.contains(&id) && pb.start_va < block.start_va {
-                    return true;
-                }
-            }
-        }
-        false
+        self.block_by_id
+            .get(&pred)
+            .is_some_and(|block| block.succs.contains(&id))
+            && !self.dfs_dominates(id, pred)
     }
 
     pub(super) fn should_wrap_loop_header(&self, id: usize, depth: usize) -> bool {

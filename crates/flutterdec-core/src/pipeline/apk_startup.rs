@@ -752,6 +752,7 @@ fn collect_bootstrap_chain_paths(
             .cmp(&b.source_dex)
             .then_with(|| a.class_name.cmp(&b.class_name))
             .then_with(|| a.method_name.cmp(&b.method_name))
+            .then_with(|| a.class_descriptor.cmp(&b.class_descriptor))
     });
 
     let mut paths = Vec::new();
@@ -999,6 +1000,7 @@ fn build_bootstrap_chain_evidence(
             .then_with(|| a.source_dex.cmp(&b.source_dex))
             .then_with(|| a.class_name.cmp(&b.class_name))
             .then_with(|| a.method_name.cmp(&b.method_name))
+            .then_with(|| a.class_descriptor.cmp(&b.class_descriptor))
     });
 
     let paths = collect_bootstrap_chain_paths(
@@ -2599,6 +2601,63 @@ mod apk_startup_tests {
             .dart_entrypoints
             .iter()
             .any(|entry| entry.function_name.as_deref() == Some("main")));
+    }
+
+    #[test]
+    fn bootstrap_report_order_uses_class_descriptor_as_the_final_tie_breaker() {
+        let keys = ["Lz/Tied;", "La/Tied;"].map(|descriptor| {
+            ScannedMethodKey::new("classes.dex", descriptor, "same.Name", "start")
+        });
+        let scan = StartupScanResult {
+            classes: Vec::new(),
+            method_defs: keys
+                .iter()
+                .cloned()
+                .map(|key| ScannedMethodDef { key })
+                .collect(),
+            method_refs: keys
+                .iter()
+                .map(|key| ScannedStartupMethodRef {
+                    source_dex: key.source_dex.clone(),
+                    class_descriptor: key.class_descriptor.clone(),
+                    class_name: key.class_name.clone(),
+                    method_name: key.method_name.clone(),
+                    target_class: FLUTTER_LOADER_DESC.to_string(),
+                    target_class_name: "io.flutter.embedding.engine.loader.FlutterLoader"
+                        .to_string(),
+                    target_method: "startInitialization".to_string(),
+                })
+                .collect(),
+            app_method_invokes: Vec::new(),
+            dart_entrypoints: Vec::new(),
+            parse_errors: Vec::new(),
+        };
+
+        let evidence = finalize_android_startup_evidence(
+            vec!["classes.dex".to_string()],
+            Vec::new(),
+            vec![scan],
+            &StartupManifestContext::default(),
+        );
+        let expected = vec!["La/Tied;", "Lz/Tied;"];
+        assert_eq!(
+            evidence
+                .bootstrap_chain
+                .sources
+                .iter()
+                .map(|source| source.class_descriptor.as_str())
+                .collect::<Vec<_>>(),
+            expected
+        );
+        assert_eq!(
+            evidence
+                .bootstrap_chain
+                .paths
+                .iter()
+                .map(|path| path.entry_class_descriptor.as_str())
+                .collect::<Vec<_>>(),
+            expected
+        );
     }
 
     #[test]

@@ -2,12 +2,26 @@ use flutterdec_disasm_arm64::{AsmInstruction, FunctionDisassembly};
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 
+mod validate;
+pub use validate::{rebuild_edges, validate_block_identity, validate_canonical_cfg, CfgDefect};
+
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub enum IROp {
     Call,
     Branch,
     Jump,
     Return,
+    /// `br Xn`: an indirect branch with no link. Architecturally the block ends
+    /// and control leaves through a register value this pipeline does not
+    /// recover, so the operation carries no edge in either direction: no
+    /// fallthrough, and no guessed target. It is deliberately not `Jump` and not
+    /// `Return`; both would name a destination the instruction stream does not
+    /// state, and `br` is how a dispatch stub or a tail call leaves a function.
+    IndirectBranch,
+    /// `brk #imm`: a breakpoint instruction exception. Control does not continue
+    /// past it, so the block ends with no successors at all. Distinct from
+    /// `Return`, which resumes the caller: a trap resumes nothing.
+    Trap,
     LoadPool,
     /// Dart AOT runtime bookkeeping the source program never expressed:
     /// recognised instruction groups that carry no user-level semantics and
@@ -82,23 +96,64 @@ pub struct FunctionIr {
     pub blocks: Vec<BasicBlock>,
 }
 
-fn parse_target_hex(s: &str) -> Option<u64> {
-    let mut last = None;
-    for token in s.split(|c: char| c.is_whitespace() || c == ',') {
-        let t = token.trim().trim_start_matches('#');
-        if let Some(hex) = t.strip_prefix("0x") {
-            if let Ok(v) = u64::from_str_radix(hex, 16) {
-                last = Some(v);
-                continue;
-            }
-        }
-        if t.chars().all(|c| c.is_ascii_hexdigit()) && t.len() > 6 {
-            if let Ok(v) = u64::from_str_radix(t, 16) {
-                last = Some(v);
-            }
-        }
+/// Stage-local identity facts produced while building one function. Kept out of
+/// `FunctionIr` so its public schema remains unchanged; artifact writers may
+/// attach the additive ledger explicitly.
+#[derive(Debug, Clone, Default)]
+pub struct IrBuildAccounting {
+    pub built: Vec<(usize, u64)>,
+    pub guard_pruned: Vec<(usize, u64)>,
+    pub guard_remaps: Vec<(usize, u64, usize)>,
+}
+
+fn parse_target_literal(token: &str) -> Option<u64> {
+    let value = token.trim().strip_prefix('#').unwrap_or(token.trim());
+    if let Some(hex) = value
+        .strip_prefix("0x")
+        .or_else(|| value.strip_prefix("0X"))
+    {
+        return u64::from_str_radix(hex, 16).ok();
     }
-    last
+    if value.chars().all(|c| c.is_ascii_digit()) {
+        return value.parse().ok();
+    }
+    if value.chars().all(|c| c.is_ascii_hexdigit())
+        && value.chars().any(|c| c.is_ascii_alphabetic())
+    {
+        return u64::from_str_radix(value, 16).ok();
+    }
+    None
+}
+
+fn is_branch_register(token: &str) -> bool {
+    if matches!(token, "xzr" | "wzr") {
+        return true;
+    }
+    token
+        .strip_prefix('x')
+        .or_else(|| token.strip_prefix('w'))
+        .and_then(|digits| digits.parse::<u8>().ok())
+        .is_some_and(|register| register <= 31)
+}
+
+fn parse_direct_target(operands: &str) -> Option<u64> {
+    let mut operands = operands.split(',').map(str::trim);
+    let target = match (
+        operands.next(),
+        operands.next(),
+        operands.next(),
+        operands.next(),
+    ) {
+        (Some(target), None, None, None) => target,
+        (Some(register), Some(target), None, None) if is_branch_register(register) => target,
+        (Some(register), Some(bit), Some(target), None)
+            if is_branch_register(register) && parse_target_literal(bit).is_some() =>
+        {
+            target
+        }
+        _ => return None,
+    };
+    parse_target_literal(target)
 }
 
 fn llir_from_disasm(d: &FunctionDisassembly) -> Vec<LlirInstr> {
@@ -164,6 +219,17 @@ fn llir_from_disasm(d: &FunctionDisassembly) -> Vec<LlirInstr> {
                 "ret" => {
                     op = IROp::Return;
                 }
+                // The register is kept as provenance for the emitters, which
+                // report which value control left through. It is never parsed as
+                // an address: `parse_direct_target` rejects a register name, and no
+                // edge is derived from it.
+                "br" => {
+                    op = IROp::IndirectBranch;
+                    target = ins.op_str.clone();
+                }
+                "brk" => {
+                    op = IROp::Trap;
+                }
                 "ldr"
                     if ins.annotation.starts_with("pool[")
                         || ins.annotation.starts_with("poolOff[") =>
@@ -185,7 +251,7 @@ fn llir_from_disasm(d: &FunctionDisassembly) -> Vec<LlirInstr> {
         .collect()
 }
 
-pub fn build_function_ir(d: &FunctionDisassembly) -> FunctionIr {
+fn build_function_ir_accounted(d: &FunctionDisassembly) -> (FunctionIr, IrBuildAccounting) {
     let llir = llir_from_disasm(d);
     let mut leaders = BTreeSet::new();
     let mut by_va = BTreeMap::new();
@@ -202,19 +268,24 @@ pub fn build_function_ir(d: &FunctionDisassembly) -> FunctionIr {
         // resurrecting the edge the check elision removed.
         match ins.op {
             IROp::Branch | IROp::Jump => {
-                if let Some(t) = parse_target_hex(&ins.target) {
+                if let Some(t) = parse_direct_target(&ins.target) {
                     leaders.insert(t);
                 }
                 if let Some(next) = llir.get(idx + 1) {
                     leaders.insert(next.va);
                 }
             }
-            IROp::Return => {
+            // A return, an indirect branch and a trap all end the path. The
+            // following instruction is only reached by some other edge, so it
+            // needs a leader of its own; without one it is glued onto the
+            // terminating block and that block's control effect is replaced by
+            // whatever the absorbed code ends with.
+            IROp::Return | IROp::IndirectBranch | IROp::Trap => {
                 if let Some(next) = llir.get(idx + 1) {
                     leaders.insert(next.va);
                 }
             }
-            _ => {}
+            IROp::Call | IROp::LoadPool | IROp::RuntimeCheck | IROp::Other => {}
         }
     }
 
@@ -258,7 +329,7 @@ pub fn build_function_ir(d: &FunctionDisassembly) -> FunctionIr {
         if let Some(last) = last {
             match last.op {
                 IROp::Branch => {
-                    if let Some(t) = parse_target_hex(&last.target) {
+                    if let Some(t) = parse_direct_target(&last.target) {
                         if let Some(id) = start_to_id.get(&t) {
                             succs.push(*id);
                         }
@@ -268,14 +339,19 @@ pub fn build_function_ir(d: &FunctionDisassembly) -> FunctionIr {
                     }
                 }
                 IROp::Jump => {
-                    if let Some(t) = parse_target_hex(&last.target) {
+                    if let Some(t) = parse_direct_target(&last.target) {
                         if let Some(id) = start_to_id.get(&t) {
                             succs.push(*id);
                         }
                     }
                 }
-                IROp::Return => {}
-                _ => {
+                // No successor may be invented here. A return leaves the
+                // function, an indirect branch leaves through a value that was
+                // not recovered, and a trap leaves through an exception.
+                IROp::Return | IROp::IndirectBranch | IROp::Trap => {}
+                // A call returns to the next instruction, and the remaining
+                // classes are not terminators, so all of them fall through.
+                IROp::Call | IROp::LoadPool | IROp::RuntimeCheck | IROp::Other => {
                     if i + 1 < blocks.len() {
                         succs.push(blocks[i + 1].id);
                     }
@@ -283,8 +359,9 @@ pub fn build_function_ir(d: &FunctionDisassembly) -> FunctionIr {
             }
         }
 
-        succs.sort_unstable();
-        succs.dedup();
+        // Left exactly as derived, duplicates and all: a conditional whose target
+        // is its own fallthrough names one block twice. `rebuild_edges` below is
+        // the one place that decides what a canonical edge list looks like.
         blocks[i].succs = succs;
     }
 
@@ -310,7 +387,7 @@ pub fn build_function_ir(d: &FunctionDisassembly) -> FunctionIr {
                 // The guard edge as it was before elision.
                 for ins in &blocks[i].instrs {
                     if ins.op == IROp::RuntimeCheck {
-                        if let Some(t) = parse_target_hex(&ins.target) {
+                        if let Some(t) = parse_direct_target(&ins.target) {
                             if let Some(id) = start_to_id.get(&t) {
                                 targets.push(*id);
                             }
@@ -331,11 +408,14 @@ pub fn build_function_ir(d: &FunctionDisassembly) -> FunctionIr {
     };
     let with_guard = reach(&blocks, true);
     let without_guard = reach(&blocks, false);
+    let built = blocks.iter().map(|b| (b.id, b.start_va)).collect();
 
     let mut remap = BTreeMap::new();
     let mut kept = Vec::with_capacity(blocks.len());
+    let mut guard_pruned = Vec::new();
     for (i, b) in blocks.into_iter().enumerate() {
         if with_guard[i] && !without_guard[i] {
+            guard_pruned.push((b.id, b.start_va));
             continue;
         }
         remap.insert(b.id, kept.len());
@@ -344,46 +424,85 @@ pub fn build_function_ir(d: &FunctionDisassembly) -> FunctionIr {
     let mut blocks = kept;
     for (i, b) in blocks.iter_mut().enumerate() {
         b.id = i;
+        // Remapped, not dropped: the ids move, the edges do not change. Dropping
+        // an edge is `rebuild_edges`'s job and only for a target that no longer
+        // exists at all.
         b.succs = b
             .succs
             .iter()
             .filter_map(|s| remap.get(s).copied())
             .collect();
     }
+    // The only place edges become canonical, on this path and on every later
+    // mutation path: successors sorted and unique, predecessors derived from them
+    // in full so the two sides cannot disagree.
+    rebuild_edges(&mut blocks);
 
-    for i in 0..blocks.len() {
-        let succs = blocks[i].succs.clone();
-        let pred_id = blocks[i].id;
-        for s in succs {
-            if let Some(target) = blocks.iter_mut().find(|b| b.id == s) {
-                target.preds.push(pred_id);
-            }
-        }
-    }
-
-    for b in &mut blocks {
-        b.preds.sort_unstable();
-        b.preds.dedup();
-    }
-
-    FunctionIr {
+    let ir = FunctionIr {
         function_id: d.function_id,
         name: d.function_name.clone(),
         entry_va: d.entry_va,
         blocks,
-    }
+    };
+    // The builder is the origin of every graph the pipeline analyses, including
+    // after the slow-path prune above has removed blocks and remapped every id,
+    // so its own output is held to the ruler its consumers apply. Costs nothing
+    // in a release build; fires in every test and every debug run.
+    debug_assert_eq!(
+        validate_canonical_cfg(&ir),
+        Ok(()),
+        "the builder produced a graph its consumers cannot index"
+    );
+    let guard_remaps = ir
+        .blocks
+        .iter()
+        .map(|block| {
+            let old_id = remap
+                .iter()
+                .find_map(|(old, new)| (*new == block.id).then_some(*old))
+                .expect("every retained block was remapped");
+            (old_id, block.start_va, block.id)
+        })
+        .collect();
+    (
+        ir,
+        IrBuildAccounting {
+            built,
+            guard_pruned,
+            guard_remaps,
+        },
+    )
+}
+
+pub fn build_function_ir(d: &FunctionDisassembly) -> FunctionIr {
+    build_function_ir_accounted(d).0
+}
+
+pub fn build_program_ir_with_accounting(
+    disasm: &[FunctionDisassembly],
+) -> Vec<(FunctionIr, IrBuildAccounting)> {
+    disasm.iter().map(build_function_ir_accounted).collect()
 }
 
 pub fn build_program_ir(disasm: &[FunctionDisassembly]) -> Vec<FunctionIr> {
     disasm.iter().map(build_function_ir).collect()
 }
 
+// The ARM64 control-effect ruler. A separate, digest-protected file rather than
+// part of `mod tests` below, because this file is product source that later
+// work edits, so a digest over it would fire on legitimate change. This
+// declaration is the only thing that compiles that file and cannot be digested
+// either, so `scripts/check-oracle-inventory.py` proves it by compilation.
+#[cfg(test)]
+#[path = "tests/control_effects.rs"]
+mod control_effect_tests;
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use flutterdec_disasm_arm64::AsmInstruction;
 
-    fn ins(va: u64, mnemonic: &str, op_str: &str) -> AsmInstruction {
+    pub(super) fn ins(va: u64, mnemonic: &str, op_str: &str) -> AsmInstruction {
         AsmInstruction {
             va,
             word: 0,

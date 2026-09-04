@@ -309,7 +309,16 @@ pub(super) fn build_pool_target_symbols(
     pool_value_hints: &HashMap<u64, String>,
 ) -> HashMap<u64, String> {
     let mut out = HashMap::new();
-    for (idx, hint) in pool_semantic_hints {
+    // Pool index order, not map order. Two pool entries can name the same
+    // `target_va` with different owners or selectors, and the `or_insert` below
+    // keeps whichever arrived first; reading a `HashMap` for that would let the
+    // process's hash seed choose the symbol a function is emitted under. Lowest
+    // pool index wins, which is a property of the snapshot rather than of the
+    // run.
+    let mut indices = pool_semantic_hints.keys().copied().collect::<Vec<u64>>();
+    indices.sort_unstable();
+    for idx in &indices {
+        let hint = &pool_semantic_hints[idx];
         let Some(target_va) = hint.target_va else {
             continue;
         };
@@ -628,4 +637,67 @@ fn sanitize_symbol_token_stream(input: &str) -> String {
         }
     }
     out.trim_matches('_').to_string()
+}
+
+#[cfg(test)]
+mod pool_target_symbol_order_tests {
+    use super::*;
+
+    fn hint(selector: &str, owner: &str, target_va: u64) -> PoolSemanticHint {
+        PoolSemanticHint {
+            selector: Some(selector.to_string()),
+            owner_class: Some(owner.to_string()),
+            library_uri: Some("package:flutter/src/widgets/framework.dart".to_string()),
+            target_va: Some(target_va),
+        }
+    }
+
+    /// When two pool entries name the same target, the lower pool index decides
+    /// the symbol.
+    ///
+    /// Sixty-four independent ties rather than one. A single tie is decided by
+    /// this process's hash seed, so before the ordering fix one tie came out
+    /// right about half the time and the test would have been a coin flip in CI.
+    /// Sixty-four of them make the unordered reading fail with probability
+    /// `1 - 2^-64`, which is the difference between a test and a lottery ticket.
+    #[test]
+    fn the_lowest_pool_index_names_a_target_two_entries_share() {
+        const TIES: u64 = 64;
+        let mut hints = HashMap::new();
+        for tie in 0..TIES {
+            let target_va = 0x4000 + tie * 0x10;
+            // Interleaved so neither the low nor the high index is uniformly the
+            // one inserted first, and so the two indices are not adjacent.
+            hints.insert(tie * 4 + 1, hint("ping", "Alpha", target_va));
+            hints.insert(tie * 4 + 2, hint("pong", "Omega", target_va));
+        }
+
+        let out = build_pool_target_symbols(&hints, &HashMap::new());
+
+        assert_eq!(out.len(), TIES as usize, "one symbol per shared target");
+        for tie in 0..TIES {
+            let target_va = 0x4000 + tie * 0x10;
+            assert_eq!(
+                out.get(&target_va).map(String::as_str),
+                Some("flutter_widgets_Alpha_ping"),
+                "tie {tie} at {target_va:#x} was decided by map order, not by pool index"
+            );
+        }
+    }
+
+    /// The tie-break is the pool index and not the spelling of the candidate: the
+    /// same two entries with the indices swapped produce the other name.
+    #[test]
+    fn swapping_the_indices_swaps_the_winner() {
+        let mut hints = HashMap::new();
+        hints.insert(9, hint("ping", "Alpha", 0x4000));
+        hints.insert(4, hint("pong", "Omega", 0x4000));
+
+        let out = build_pool_target_symbols(&hints, &HashMap::new());
+
+        assert_eq!(
+            out.get(&0x4000).map(String::as_str),
+            Some("flutter_widgets_Omega_pong")
+        );
+    }
 }

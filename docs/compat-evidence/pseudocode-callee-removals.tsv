@@ -1,0 +1,216 @@
+file	class	callee_renderings_lost	wholly_vanished_callees	removed_lines	added_lines	candidate_marker	ir_reference_only_instructions	lost_edge_effects	vanished_callee_names	lost_rendering_detail
+00033_sub_60963c.dartpseudo	vanished_behind_indirect_branch	4	1	22	12	indirect_branch_only	0	disposition_RetainedUnreachable:2;lost_edge_after_IndirectBranch:2	sub_d50264	sub_d50264:4
+00054_sub_60b138.dartpseudo	fewer_renderings_same_callees	2	0	72	40	trap_only	0			sub_d4fcf4:2
+00069_sub_60c8dc.dartpseudo	fewer_renderings_same_callees	8	0	304	727	trap_only	2			sub_60d744:6;sub_d4fcf4:2
+00078_sub_60dbb8.dartpseudo	fewer_renderings_same_callees	6	0	56	41	trap_only	2			sub_60cbfc:3;sub_d51b44:3
+00088_sub_60ee08.dartpseudo	fewer_renderings_same_callees	2	0	44	35	trap_only	2			sub_60b304:1;sub_d4fcf4:1
+00096_sub_60f780.dartpseudo	vanished_behind_indirect_branch	12	2	46	26	indirect_branch_only	0	disposition_RetainedUnreachable:4;lost_edge_after_IndirectBranch:4	sub_60f8bc;sub_bbe8a0	sub_60f8bc:4;sub_bbe8a0:8
+00100_sub_61123c.dartpseudo	fewer_renderings_same_callees	3	0	56	48	trap_only	2			sub_60971c:1;sub_d4fcf4:1;sub_d51b44:1
+00110_sub_612d8c.dartpseudo	fewer_renderings_same_callees	2	0	63	110	trap_only	2			sub_60ba70:2
+00115_sub_613bb8.dartpseudo	fewer_renderings_same_callees	24	0	251	50	trap_only	2			sel2:4;sel64036:2;sel86715:5;sub_613f88:4;sub_8a0018:2;sub_8fd1b0:2;sub_d4fcf4:3;sub_d502a4:2
+00121_sub_6149b8.dartpseudo	fewer_renderings_same_callees	5	0	252	309	none	0			sub_d4fd18:5
+00122_sub_614c04.dartpseudo	fewer_renderings_same_callees	12	0	197	367	none	0			sub_614608:10;sub_6149b8:2
+00124_sub_61507c.dartpseudo	vanished_behind_indirect_branch	6	3	26	10	indirect_branch_only	0	disposition_RetainedUnreachable:3;lost_edge_after_IndirectBranch:3	sub_61511c;sub_615220;sub_d50264	sub_61511c:2;sub_615220:2;sub_d50264:2
+00131_sub_6158d4.dartpseudo	fewer_renderings_same_callees	22	0	165	44	trap_only	2			sel108068:3;sel108089:3;sel66721:3;sub_d4fb90:1;sub_d4fcf4:3;sub_d50a6c:6;sub_d51b44:3
+00140_sub_6167e8.dartpseudo	vanished_behind_indirect_branch	2	1	15	8	indirect_branch_only	0	disposition_RetainedUnreachable:4;lost_edge_after_IndirectBranch:1	sub_d50264	sub_d50264:2
+00219_sub_62bdc8.dartpseudo	fewer_renderings_same_callees	9	0	116	95	trap_only	2			fn_0x62c138:1;fn_0x62c19c:1;fn_0x62c618:1;sel1814:1;sub_60971c:1;sub_d4fcf4:3;sub_d51b44:1
+00232_sub_62d9d4.dartpseudo	fewer_renderings_same_callees	2	0	261	2703	trap_only	2			sub_b0e1f8:2
+00249_sub_62f4d8.dartpseudo	vanished_behind_trap	6	1	57	33	trap_only	0	disposition_RetainedUnreachable:1;lost_edge_after_Trap:1	fn_0x62f620	fn_0x62f620:3;sub_d4fcf4:3
+00304_sub_633a5c.dartpseudo	fewer_renderings_same_callees	14	0	253	62	trap_only	2			sub_607bcc:2;sub_8fa244:1;sub_d4fca4:11
+00324_sub_6359c0.dartpseudo	vanished_behind_indirect_branch	2	1	12	7	indirect_branch_only	0	disposition_RetainedUnreachable:1;lost_edge_after_IndirectBranch:1	fn_0x635a28	fn_0x635a28:2
+00349_sub_638590.dartpseudo	vanished_behind_indirect_branch	2	1	12	7	indirect_branch_only	0	disposition_RetainedUnreachable:1;lost_edge_after_IndirectBranch:1	fn_0x6385fc	fn_0x6385fc:2
+00358_sub_63a2bc.dartpseudo	vanished_behind_indirect_branch	2	1	12	7	indirect_branch_only	0	disposition_RetainedUnreachable:1;lost_edge_after_IndirectBranch:1	fn_0x63a328	fn_0x63a328:2
+00359_sub_63a428.dartpseudo	fewer_renderings_same_callees	39	0	341	74	trap_only	2			sel64036:3;sel86715:5;sub_6155d8:3;sub_63a860:4;sub_64763c:3;sub_7d3514:3;sub_9a9864:3;sub_d4cdd0:3;sub_d4fca4:1;sub_d4fcf4:7;sub_d502e4:1;sub_d50e6c:3
+00368_sub_63b330.dartpseudo	fewer_renderings_same_callees	3	0	40	28	trap_only	0			sub_d4fb90:3
+00378_sub_63e3c4.dartpseudo	fewer_renderings_same_callees	10	0	65	31	trap_only	2			sub_607df0:5;sub_d4eb60:5
+00389_sub_646668.dartpseudo	fewer_renderings_same_callees	3	0	68	40	trap_only	2			sub_d4fcf4:3
+00395_sub_6471e4.dartpseudo	vanished_behind_indirect_branch	59	8	387	38	indirect_branch_only	0	dispatch_selector_rendering:1;disposition_RetainedUnreachable:7;lost_edge_after_IndirectBranch:7	sel0;sub_647004;sub_88be0c;sub_8e89b4;sub_8fd1b0;sub_9023ec;sub_c34df4;sub_d4fb90	sel0:8;sub_647004:15;sub_88be0c:4;sub_8e89b4:4;sub_8fd1b0:4;sub_9023ec:4;sub_c34df4:12;sub_d4fb90:8
+00402_sub_647a78.dartpseudo	vanished_behind_indirect_branch	2	1	12	7	indirect_branch_only	0	disposition_RetainedUnreachable:1;lost_edge_after_IndirectBranch:1	fn_0x647ae4	fn_0x647ae4:2
+00416_sub_64949c.dartpseudo	fewer_renderings_same_callees	15	0	98	40	trap_only	2			fn_0x6496a8:3;sub_60d5b4:3;sub_648a6c:3;sub_8ea0dc:3;sub_d4fcf4:3
+00448_sub_64e8e8.dartpseudo	vanished_behind_indirect_branch	20	2	72	66	indirect_branch_only	0	disposition_RetainedUnreachable:2;lost_edge_after_IndirectBranch:2	sub_d50aa8;sub_d50e6c	sub_d50aa8:10;sub_d50e6c:10
+00451_sub_64f1ac.dartpseudo	vanished_behind_indirect_branch	4	2	13	13	indirect_branch_only	0	disposition_RetainedUnreachable:3;lost_edge_after_IndirectBranch:2	fn_0x64f23c;sub_d4fb90	fn_0x64f23c:2;sub_d4fb90:2
+00462_sub_6503e0.dartpseudo	vanished_behind_indirect_branch	2	1	12	7	indirect_branch_only	0	disposition_RetainedUnreachable:1;lost_edge_after_IndirectBranch:1	sub_650454	sub_650454:2
+00465_sub_6516f8.dartpseudo	vanished_behind_indirect_branch_and_trap	10	2	144	4	indirect_branch_only	0	disposition_RetainedUnreachable:4;lost_edge_after_IndirectBranch:4;lost_edge_after_Trap:4	fn_0x651bb0;sub_d4fcf4	fn_0x651bb0:4;sub_d4fcf4:6
+00466_sub_65228c.dartpseudo	vanished_behind_indirect_branch	2	1	6	8	indirect_branch_only	0	disposition_RetainedUnreachable:1;lost_edge_after_IndirectBranch:1	sub_654144	sub_654144:2
+00509_sub_65a340.dartpseudo	vanished_behind_indirect_branch	4	1	19	7	indirect_branch_only	0	disposition_RetainedUnreachable:2;lost_edge_after_IndirectBranch:1	sub_d50e6c	sub_d50e6c:4
+00568_sub_66c640.dartpseudo	fewer_renderings_same_callees	10	0	75	33	trap_only	2			sel1845:2;sub_66c8f0:1;sub_66dba8:1;sub_66de58:2;sub_66dfd0:2;sub_670878:2
+00607_sub_66f50c.dartpseudo	vanished_behind_trap	7	1	151	85	trap_only	2	disposition_RetainedUnreachable:1;lost_edge_after_Trap:1	sub_d4fcc8	sub_66f8a0:4;sub_d4fcc8:2;sub_d4fcf4:1
+00652_sub_673cd4.dartpseudo	fewer_renderings_same_callees	23	0	237	52	trap_only	2			sel64036:3;sel66721:3;sel67735:3;sel86715:6;sub_d4fcf4:7;sub_d71b54:1
+00669_sub_675804.dartpseudo	vanished_behind_indirect_branch	12	3	73	29	indirect_branch_only	0	disposition_RetainedUnreachable:3;lost_edge_after_IndirectBranch:3	sub_649874;sub_658dc4;sub_67595c	sub_649874:4;sub_658dc4:4;sub_67595c:4
+00677_sub_677ea8.dartpseudo	vanished_behind_indirect_branch	2	1	6	8	indirect_branch_only	0	disposition_RetainedUnreachable:1;lost_edge_after_IndirectBranch:1	sub_6a363c	sub_6a363c:2
+00681_sub_678288.dartpseudo	vanished_behind_indirect_branch	4	2	21	3	indirect_branch_only	0	disposition_RetainedUnreachable:2;lost_edge_after_IndirectBranch:2	sub_66db24;sub_d4fbf8	sub_66db24:2;sub_d4fbf8:2
+00683_sub_678744.dartpseudo	vanished_behind_indirect_branch	269	18	1485	6	indirect_branch_only	0	disposition_RetainedUnreachable:20;lost_edge_after_IndirectBranch:20	fn_0x68f1b8;sub_60971c;sub_60d5b4;sub_634bc0;sub_635cd4;sub_63b508;sub_63c79c;sub_678bb0;sub_6b0204;sub_6b02e0;sub_6c0248;sub_6c0488;sub_c7c584;sub_d4fb90;sub_d50284;sub_d50aa8;sub_d50e6c;sub_d51b44	fn_0x68f1b8:24;sub_60971c:17;sub_60d5b4:17;sub_634bc0:11;sub_635cd4:17;sub_63b508:15;sub_63c79c:11;sub_678bb0:1;sub_6b0204:11;sub_6b02e0:1;sub_6c0248:1;sub_6c0488:14;sub_c7c584:24;sub_d4fb90:28;sub_d50284:13;sub_d50aa8:14;sub_d50e6c:28;sub_d51b44:22
+00695_sub_67b5f4.dartpseudo	vanished_behind_indirect_branch	2	1	12	7	indirect_branch_only	0	disposition_RetainedUnreachable:1;lost_edge_after_IndirectBranch:1	fn_0x67b65c	fn_0x67b65c:2
+00699_sub_67ba54.dartpseudo	vanished_behind_indirect_branch	2	1	12	7	indirect_branch_only	0	disposition_RetainedUnreachable:1;lost_edge_after_IndirectBranch:1	fn_0x67babc	fn_0x67babc:2
+00724_sub_67e90c.dartpseudo	vanished_behind_indirect_branch	27	5	465	4	indirect_branch_only	0	disposition_RetainedUnreachable:8;lost_edge_after_IndirectBranch:8	fn_0x67ece4;sub_60bed4;sub_61341c;sub_c03b50;sub_d4fd18	fn_0x67ece4:2;sub_60bed4:2;sub_61341c:12;sub_c03b50:8;sub_d4fd18:3
+00731_sub_67f510.dartpseudo	vanished_behind_trap	4	1	275	29058	trap_only	2	disposition_RetainedUnreachable:2;lost_edge_after_Trap:2	sub_d4fcc8	sub_d4fcc8:4
+00736_sub_680478.dartpseudo	vanished_behind_indirect_branch	5	1	31	26	indirect_branch_only	0	disposition_RetainedUnreachable:1;lost_edge_after_IndirectBranch:1	sub_d4fb90	sub_d4fb90:5
+00779_sub_689ca4.dartpseudo	vanished_behind_indirect_branch_and_trap	22	2	138	2	indirect_branch_only	0	dispatch_selector_rendering:1;disposition_RetainedUnreachable:2;lost_edge_after_IndirectBranch:1;lost_edge_after_Trap:2	sel2051;sub_d4fcf4	sel2051:11;sub_d4fcf4:11
+00783_sub_68a1f0.dartpseudo	fewer_renderings_same_callees	12	0	276	180	trap_only	2			sub_60971c:5;sub_ba5410:3;sub_d4fd18:1;sub_d51b44:3
+00797_sub_68b34c.dartpseudo	vanished_behind_indirect_branch	2	1	12	7	indirect_branch_only	0	disposition_RetainedUnreachable:1;lost_edge_after_IndirectBranch:1	fn_0x68b3b4	fn_0x68b3b4:2
+00800_sub_68b648.dartpseudo	vanished_behind_indirect_branch	2	1	12	7	indirect_branch_only	0	disposition_RetainedUnreachable:1;lost_edge_after_IndirectBranch:1	fn_0x68b6b0	fn_0x68b6b0:2
+00802_sub_68b8a0.dartpseudo	vanished_behind_indirect_branch	2	1	12	7	indirect_branch_only	0	disposition_RetainedUnreachable:1;lost_edge_after_IndirectBranch:1	fn_0x68b908	fn_0x68b908:2
+00811_sub_68c6fc.dartpseudo	vanished_behind_indirect_branch	44	3	407	3	indirect_branch_only	0	disposition_RetainedUnreachable:3;lost_edge_after_IndirectBranch:3	sub_635c58;sub_68bb80;sub_68c8c8	sub_635c58:4;sub_68bb80:20;sub_68c8c8:20
+00822_sub_68e600.dartpseudo	vanished_behind_indirect_branch	40	1	362	8	indirect_branch_only	0	disposition_RetainedUnreachable:4;lost_edge_after_IndirectBranch:2	sub_d50e6c	sub_d50e6c:40
+00830_sub_6912a4.dartpseudo	vanished_behind_indirect_branch	34	5	190	4	indirect_branch_only	0	disposition_RetainedUnreachable:5;lost_edge_after_IndirectBranch:5	sub_6914a0;sub_696734;sub_6a201c;sub_8b4c60;sub_d4fca4	sub_6914a0:12;sub_696734:12;sub_6a201c:4;sub_8b4c60:2;sub_d4fca4:4
+00842_sub_693758.dartpseudo	vanished_behind_indirect_branch	14	4	366	5	indirect_branch_only	0	dispatch_selector_rendering:2;disposition_RetainedUnreachable:2;lost_edge_after_IndirectBranch:2	sel53085;sel7462;sub_695eac;sub_d50aa8	sel53085:1;sel7462:8;sub_695eac:1;sub_d50aa8:4
+00845_sub_694774.dartpseudo	fewer_renderings_same_callees	41	0	258	65	trap_only	2			fn_0x694ad4:3;fn_0x694f54:1;fn_0x7c9bb4:3;sel64036:3;sel86715:5;sub_6155d8:3;sub_8a0018:3;sub_8fab14:3;sub_c3a03c:3;sub_d4fcf4:7;sub_d50aa8:1;sub_d50e6c:6
+00847_sub_6955f8.dartpseudo	fewer_renderings_same_callees	4	0	128	40	trap_only	2			sub_d4fb90:1;sub_d4fcf4:3
+00861_sub_697700.dartpseudo	fewer_renderings_same_callees	22	0	251	183	trap_only	2			sub_607bcc:2;sub_60d5b4:2;sub_616cd8:11;sub_8f6518:7
+00893_sub_69b73c.dartpseudo	fewer_renderings_same_callees	1	0	72	43	trap_only	2			sub_61341c:1
+00912_sub_69d854.dartpseudo	fewer_renderings_same_callees	3	0	356	400	none	0			sel4803:2;sub_69daac:1
+00958_sub_6a2230.dartpseudo	fewer_renderings_same_callees	4	0	235	272	none	0			sub_6a2434:4
+01011_sub_6aa224.dartpseudo	fewer_renderings_same_callees	2	0	58	33	trap_only	2			sub_60a14c:1;sub_d5632c:1
+01056_sub_6b1228.dartpseudo	fewer_renderings_same_callees	3	0	183	216	none	0			sub_609eb8:3
+01067_sub_6b30b4.dartpseudo	vanished_behind_indirect_branch	2	1	12	7	indirect_branch_only	0	disposition_RetainedUnreachable:1;lost_edge_after_IndirectBranch:1	sub_6b3120	sub_6b3120:2
+01111_sub_6b9240.dartpseudo	vanished_behind_trap	51	5	420	20	trap_only	0	dispatch_selector_rendering:1;disposition_RetainedUnreachable:4;lost_edge_after_Trap:4	fn_0x6b962c;sel64036;sub_60b138;sub_6b94bc;sub_6b967c	fn_0x6b962c:12;sel64036:6;sub_60b138:12;sub_6b9240:6;sub_6b94bc:2;sub_6b967c:12;sub_d4fcf4:1
+01113_sub_6b967c.dartpseudo	fewer_renderings_same_callees	16	0	480	2020	trap_only	2			sub_6163d0:10;sub_d4fcf4:6
+01123_sub_6bb30c.dartpseudo	vanished_behind_indirect_branch	4	1	32	7	indirect_branch_only	0	disposition_RetainedUnreachable:1;lost_edge_after_IndirectBranch:1	fn_0x6bb394	fn_0x6bb394:4
+01126_sub_6bb5d0.dartpseudo	vanished_behind_indirect_branch	4	1	32	8	indirect_branch_only	0	disposition_RetainedUnreachable:6;lost_edge_after_IndirectBranch:3	sub_d50e6c	sub_d50e6c:4
+01134_sub_6bd680.dartpseudo	vanished_behind_indirect_branch	24	3	133	9	indirect_branch_only	0	disposition_RetainedUnreachable:6;lost_edge_after_IndirectBranch:3	sub_61511c;sub_615220;sub_d50264	sub_61511c:8;sub_615220:8;sub_d50264:8
+01168_sub_6c1b28.dartpseudo	vanished_behind_indirect_branch	2	1	21	7	indirect_branch_only	0	disposition_RetainedUnreachable:2;lost_edge_after_IndirectBranch:1	sub_6dc4f0	sub_6dc4f0:2
+01184_sub_6c3e8c.dartpseudo	fewer_renderings_same_callees	1	0	58	41	trap_only	2			sub_d50284:1
+01185_sub_6c3fd8.dartpseudo	fewer_renderings_same_callees	5	0	100	48	trap_only	2			sub_d50284:5
+01188_sub_6c487c.dartpseudo	fewer_renderings_same_callees	14	0	331	989	trap_only	2			sub_60e628:7;sub_d4fcf4:7
+01194_sub_6c73e4.dartpseudo	fewer_renderings_same_callees	2	0	22	2	indirect_branch_only	0			sub_6c73e4:2
+01195_sub_6c74e0.dartpseudo	vanished_behind_indirect_branch	4	1	50	2	indirect_branch_only	0	disposition_RetainedUnreachable:1;lost_edge_after_IndirectBranch:1	sub_6c73e4	sub_6c73e4:4
+01223_sub_6cce14.dartpseudo	fewer_renderings_same_callees	23	0	231	56	trap_only	2			sel64036:3;sel66721:3;sel67735:3;sel86715:6;sub_d4fcf4:7;sub_d71b54:1
+01239_sub_6cf3bc.dartpseudo	fewer_renderings_same_callees	55	0	289	105	trap_only	2			fn_0x6cf7d0:15;fn_0x6cfb90:3;fn_0x6d0280:3;fn_0x6d0374:3;fn_0x6d0380:3;sel65395:3;sel66823:3;sub_6c0488:3;sub_d4fbf8:6;sub_d4fcf4:3;sub_d50264:2;sub_d50a6c:3;sub_d50aa8:1;sub_d50e6c:1;sub_d51b44:3
+01267_sub_6d6bd0.dartpseudo	fewer_renderings_same_callees	6	0	212	231	none	0			sel11861:1;sel20967:3;sel30073:2
+01292_sub_6ddfc4.dartpseudo	vanished_behind_indirect_branch	4	2	26	2	indirect_branch_only	0	dispatch_selector_rendering:1;disposition_RetainedUnreachable:1;lost_edge_after_IndirectBranch:1	sel11369;sub_6de09c	sel11369:2;sub_6de09c:2
+01300_sub_6df29c.dartpseudo	vanished_behind_indirect_branch	2	1	6	8	indirect_branch_only	0	disposition_RetainedUnreachable:2;lost_edge_after_IndirectBranch:1	sub_6df3c4	sub_6df3c4:2
+01326_sub_6e178c.dartpseudo	fewer_renderings_same_callees	10	0	63	46	trap_only	2			fn_0x6e1c98:3;sub_6c0248:3;sub_6e201c:1;sub_d4fcf4:1;sub_d50284:1;sub_d50e6c:1
+01343_sub_6e4c6c.dartpseudo	fewer_renderings_same_callees	16	0	314	277	none	0			sub_d50264:16
+01371_sub_6ee658.dartpseudo	fewer_renderings_same_callees	120	0	693	661	none	0			fn_0x6ee868:18;sel101808:42;sel101858:42;sel6646:18
+01485_sub_76a84c.dartpseudo	fewer_renderings_same_callees	1	0	18	14	trap_only	2			sub_d4fcf4:1
+01538_sub_772604.dartpseudo	vanished_behind_indirect_branch	2	1	14	8	indirect_branch_only	0	disposition_RetainedUnreachable:1;lost_edge_after_IndirectBranch:1	sub_7726b4	sub_7726b4:2
+01539_sub_7726b4.dartpseudo	vanished_behind_indirect_branch_and_trap	35	5	279	6	indirect_branch_only	0	dispatch_selector_rendering:2;disposition_RetainedUnreachable:3;lost_edge_after_IndirectBranch:3;lost_edge_after_Trap:3	fn_0x777e74;sel64036;sel66823;sub_63ee98;sub_772c00	fn_0x777e74:2;sel64036:15;sel66823:14;sub_63ee98:2;sub_772c00:2
+01540_sub_772c00.dartpseudo	dispatch_selector_rendering_only	18	1	144	116	indirect_branch_only	0	dispatch_selector_rendering:1	sel4096	sel4096:18
+01551_sub_7781e4.dartpseudo	fewer_renderings_same_callees	6	0	76	55	trap_only	2			sel1814:3;sub_d4fcf4:3
+01569_sub_799d40.dartpseudo	fewer_renderings_same_callees	3	0	38	26	trap_only	2			fn_0x799ed4:1;sel86171:1;sub_695a1c:1
+01620_sub_7bdb68.dartpseudo	vanished_behind_indirect_branch_and_trap	16	2	48	7	indirect_branch_only	0	disposition_RetainedUnreachable:2;lost_edge_after_IndirectBranch:1;lost_edge_after_Trap:1	fn_0x7bdc34;sub_d4fcf4	fn_0x7bdc34:8;sub_d4fcf4:8
+01701_sub_7c94a8.dartpseudo	vanished_behind_indirect_branch	20	2	114	68	indirect_branch_only	0	disposition_RetainedUnreachable:2;lost_edge_after_IndirectBranch:2	sub_902920;sub_d5630c	sub_902920:10;sub_d5630c:10
+01702_sub_7c96b4.dartpseudo	vanished_behind_indirect_branch	20	2	114	68	indirect_branch_only	0	disposition_RetainedUnreachable:2;lost_edge_after_IndirectBranch:2	sub_902968;sub_d5630c	sub_902968:10;sub_d5630c:10
+01703_sub_7c98c0.dartpseudo	vanished_behind_indirect_branch	20	2	114	68	indirect_branch_only	0	disposition_RetainedUnreachable:3;lost_edge_after_IndirectBranch:2	sub_9029b0;sub_d5630c	sub_9029b0:10;sub_d5630c:10
+01708_sub_7cbe74.dartpseudo	vanished_behind_indirect_branch_and_trap	72	2	148	22	indirect_branch_only	0	disposition_RetainedUnreachable:3;lost_edge_after_IndirectBranch:1;lost_edge_after_Trap:2	sub_7cbfd4;sub_d4fcf4	sub_7cbe74:18;sub_7cbfd4:18;sub_d4fcf4:36
+01709_sub_7cbfd4.dartpseudo	vanished_behind_indirect_branch_and_trap	72	2	148	22	indirect_branch_only	0	disposition_RetainedUnreachable:3;lost_edge_after_IndirectBranch:1;lost_edge_after_Trap:2	sub_7cc134;sub_d4fcf4	sub_7cbfd4:18;sub_7cc134:18;sub_d4fcf4:36
+01710_sub_7cc134.dartpseudo	vanished_behind_indirect_branch_and_trap	72	2	148	22	indirect_branch_only	0	disposition_RetainedUnreachable:3;lost_edge_after_IndirectBranch:1;lost_edge_after_Trap:2	sub_7cc294;sub_d4fcf4	sub_7cc134:18;sub_7cc294:18;sub_d4fcf4:36
+01711_sub_7cc294.dartpseudo	vanished_behind_indirect_branch_and_trap	126	3	318	128	indirect_branch_only	0	disposition_RetainedUnreachable:6;lost_edge_after_IndirectBranch:1;lost_edge_after_Trap:5	fn_0x7cc474;sub_627f10;sub_d4fcf4	fn_0x7cc474:18;sub_627f10:36;sub_7cc294:18;sub_d4fcf4:54
+01715_sub_7cd630.dartpseudo	fewer_renderings_same_callees	1	0	33	28	trap_only	2			sub_7cd7e4:1
+01722_sub_7cf1e4.dartpseudo	vanished_behind_indirect_branch	4	2	17	7	indirect_branch_only	0	disposition_RetainedUnreachable:2;lost_edge_after_IndirectBranch:2	sub_7cf2b0;sub_d5630c	sub_7cf2b0:2;sub_d5630c:2
+01723_sub_7cf2b0.dartpseudo	dispatch_selector_rendering_only	2	1	16	8	indirect_branch_only	0	dispatch_selector_rendering:1	sel70954	sel70954:2
+01749_sub_7d244c.dartpseudo	fewer_renderings_same_callees	4	0	45	19	trap_only	2			sel63431:1;sel80775:1;sub_8fa244:1;sub_d4fcf4:1
+01750_sub_7d27b8.dartpseudo	fewer_renderings_same_callees	3	0	56	28	trap_only	2			sub_6155d8:1;sub_7d1e08:1;sub_d4fcf4:1
+01759_sub_7d673c.dartpseudo	fewer_renderings_same_callees	4	0	306	278	trap_only	4			sub_60b304:2;sub_d4fcf4:2
+01760_sub_7dc940.dartpseudo	fewer_renderings_same_callees	22	0	469	1291	trap_only	2			sub_6163d0:12;sub_d4fcf4:10
+01838_sub_7ebba4.dartpseudo	fewer_renderings_same_callees	8	0	281	2826	trap_only	2			sub_d4fcf4:8
+01844_sub_7ec53c.dartpseudo	fewer_renderings_same_callees	40	0	426	512	none	0			fn_0x7ec838:20;fn_0x7eca04:20
+01902_sub_7f6184.dartpseudo	fewer_renderings_same_callees	28	0	498	483	none	0			sub_7f0418:14;sub_d51a9c:14
+01918_sub_7f9c84.dartpseudo	fewer_renderings_same_callees	4	0	51	33	trap_only	2			sel1814:1;sel64036:1;sub_d4fcf4:2
+01926_sub_7fcb80.dartpseudo	vanished_behind_trap	33	3	114	3	trap_only	0	disposition_RetainedUnreachable:15;lost_edge_after_Trap:15	sub_799758;sub_7c05cc;sub_7fcf9c	sub_799758:16;sub_7c05cc:16;sub_7fcf9c:1
+01932_sub_7fdc48.dartpseudo	fewer_renderings_same_callees	3	0	46	24	trap_only	2			sub_799758:2;sub_7998d8:1
+01988_sub_808b18.dartpseudo	fewer_renderings_same_callees	1	0	38	26	trap_only	2			sub_d50264:1
+02076_sub_819ea0.dartpseudo	fewer_renderings_same_callees	10	0	300	405	none	0			sub_609028:2;sub_69fe74:4;sub_d502a4:2;sub_d50e6c:2
+02112_sub_820c54.dartpseudo	fewer_renderings_same_callees	5	0	56	29	trap_only	2			sub_7d3514:2;sub_820c54:2;sub_d4fd18:1
+02227_sub_831eac.dartpseudo	vanished_behind_indirect_branch	4	1	32	8	indirect_branch_only	0	disposition_RetainedUnreachable:4;lost_edge_after_IndirectBranch:2	sub_d50e6c	sub_d50e6c:4
+02466_sub_8743cc.dartpseudo	fewer_renderings_same_callees	15	0	278	138	trap_only	2			sub_799854:5;sub_afbb70:3;sub_d50264:4;sub_d51b44:3
+02469_sub_87553c.dartpseudo	fewer_renderings_same_callees	10	0	117	127	none	0			sub_d507fc:5;sub_d51a9c:5
+02478_sub_878b20.dartpseudo	fewer_renderings_same_callees	43	0	389	199	trap_only	2			sub_60971c:6;sub_64756c:12;sub_6ddfc4:1;sub_7f0418:2;sub_7f048c:2;sub_d4fcf4:6;sub_d4fd18:2;sub_d50a6c:6;sub_d51b44:6
+02483_sub_87d2d0.dartpseudo	fewer_renderings_same_callees	8	0	193	197	none	0			sub_d507fc:6;sub_d51a9c:2
+02499_sub_88144c.dartpseudo	fewer_renderings_same_callees	8	0	71	30	trap_only	2			sel1814:1;sel64036:3;sub_d4fca4:1;sub_d4fcf4:3
+02500_sub_88160c.dartpseudo	vanished_behind_indirect_branch_and_trap	21	2	313	2	indirect_branch_only	0	disposition_RetainedUnreachable:4;lost_edge_after_IndirectBranch:4;lost_edge_after_Trap:4	sub_7998d8;sub_d4fcf4	sub_7998d8:4;sub_d4fcf4:17
+02503_sub_881d10.dartpseudo	fewer_renderings_same_callees	6	0	55	22	trap_only	2			sel108068:1;sel108089:1;sel66721:1;sub_60e628:1;sub_d4fca4:1;sub_d4fcf4:1
+02521_sub_884b68.dartpseudo	fewer_renderings_same_callees	5	0	53	18	trap_only	2			sel64036:1;sel86715:1;sub_d4fcf4:3
+02529_sub_88be0c.dartpseudo	fewer_renderings_same_callees	45	0	330	86	trap_only	2			sel64036:8;sel86715:5;sub_609c64:5;sub_60ba04:8;sub_60bbc8:1;sub_60c4d8:1;sub_b0211c:4;sub_d4fcf4:13
+02546_sub_89002c.dartpseudo	vanished_behind_indirect_branch	4	3	19	3	indirect_branch_only	0	dispatch_selector_rendering:1;disposition_RetainedUnreachable:2;lost_edge_after_IndirectBranch:2	sel67732;sub_8252d4;sub_885d0c	sel67732:2;sub_8252d4:1;sub_885d0c:1
+02589_sub_89f854.dartpseudo	fewer_renderings_same_callees	36	0	387	57	trap_only	2			sel86715:10;sub_60d5b4:5;sub_686c6c:5;sub_d51b44:16
+02690_sub_8be024.dartpseudo	fewer_renderings_same_callees	1	0	161	167	none	0			sub_8be310:1
+02699_sub_8bf570.dartpseudo	fewer_renderings_same_callees	7	0	73	25	trap_only	2			sub_6155d8:1;sub_7d20d4:4;sub_87fb04:1;sub_d4fcf4:1
+02763_sub_8d1534.dartpseudo	fewer_renderings_same_callees	2	0	92	37	trap_only	2			sel17009:2
+02820_sub_8e6f78.dartpseudo	fewer_renderings_same_callees	19	0	174	38	trap_only	2			sel1814:7;sel64036:2;sub_60e628:3;sub_d4fca4:5;sub_d4fcf4:2
+02830_sub_8e97a8.dartpseudo	fewer_renderings_same_callees	12	0	107	24	trap_only	2			sel1814:3;sel64036:3;sub_d4fcf4:6
+02834_sub_8eb424.dartpseudo	fewer_renderings_same_callees	5	0	22	53	none	0			sub_65022c:5
+02859_sub_8f4e40.dartpseudo	vanished_behind_indirect_branch	8	2	68	20	indirect_branch_only	0	disposition_RetainedUnreachable:3;lost_edge_after_IndirectBranch:2	sub_66eb9c;sub_8f50ac	sub_66eb9c:4;sub_8f50ac:4
+02877_sub_8fa5dc.dartpseudo	fewer_renderings_same_callees	12	0	127	29	trap_only	2			sel1814:3;sel64036:6;sub_d4fca4:3
+02908_sub_903560.dartpseudo	fewer_renderings_same_callees	2	0	74	28	trap_only	2			sub_6155d8:1;sub_d4fcf4:1
+02922_sub_9082e4.dartpseudo	fewer_renderings_same_callees	9	0	122	24	trap_only	2			sel1814:3;sel64036:6
+02953_sub_90bc50.dartpseudo	fewer_renderings_same_callees	3	0	126	39	trap_only	2			sub_d4fcf4:1;sub_d50e6c:2
+02965_sub_90dc84.dartpseudo	fewer_renderings_same_callees	24	0	166	50	trap_only	2			sel180:20;sub_d4fcf4:4
+02971_sub_90eae4.dartpseudo	fewer_renderings_same_callees	10	0	409	594	none	0			sel212:10
+03058_sub_91e454.dartpseudo	fewer_renderings_same_callees	5	0	74	53	trap_only	2			sel0:1;sub_60971c:1;sub_d4fcf4:1;sub_d4fd18:1;sub_d51b44:1
+03088_sub_9242ac.dartpseudo	fewer_renderings_same_callees	2	0	133	17463	trap_only	6			sub_60971c:1;sub_d4fcf4:1
+03089_sub_92567c.dartpseudo	fewer_renderings_same_callees	2	0	26	40	trap_only	0			sub_6c1858:2
+03100_sub_926ab8.dartpseudo	vanished_behind_trap	3	3	18	13	trap_only	0	disposition_RetainedUnreachable:3;lost_edge_after_Trap:3	sub_6c0c60;sub_91b3d4;sub_92411c	sub_6c0c60:1;sub_91b3d4:1;sub_92411c:1
+03123_sub_93699c.dartpseudo	vanished_behind_trap	2	2	48	12	trap_only	0	disposition_RetainedUnreachable:2;lost_edge_after_Trap:2	sub_d50a6c;sub_d51b44	sub_d50a6c:1;sub_d51b44:1
+03131_sub_939a5c.dartpseudo	fewer_renderings_same_callees	34	0	318	46	trap_only	2			sub_939c5c:10;sub_d50264:11;sub_d502c4:13
+03162_sub_945384.dartpseudo	fewer_renderings_same_callees	1	0	66	52	trap_only	2			sub_d4fcf4:1
+03170_sub_9459d0.dartpseudo	fewer_renderings_same_callees	167	0	811	70	trap_only	2			sel0:1;sel942:54;sub_60963c:16;sub_60d5b4:1;sub_6471e4:38;sub_940f1c:1;sub_d4fcf4:3;sub_d50284:1;sub_d502a4:52
+03177_sub_9480b8.dartpseudo	fewer_renderings_same_callees	6	0	132	41	trap_only	4			sub_940ffc:1;sub_d4fcf4:2;sub_d50e6c:3
+03271_sub_96fe90.dartpseudo	fewer_renderings_same_callees	5	0	100	86	trap_only	2			sub_6c4288:1;sub_7cefd8:1;sub_9038dc:1;sub_d4fcf4:1;sub_d50e6c:1
+03272_sub_970278.dartpseudo	fewer_renderings_same_callees	2	0	36	32	trap_only	2			sub_970278:2
+03275_sub_9717d8.dartpseudo	fewer_renderings_same_callees	6	0	60	33	trap_only	2			sel25767:2;sub_6c0248:2;sub_d4fca4:2
+03362_sub_97fefc.dartpseudo	fewer_renderings_same_callees	8	0	212	237	none	0			sel5728:2;sel81879:2;sub_d50e6c:4
+03365_sub_980c50.dartpseudo	fewer_renderings_same_callees	16	0	206	199	none	0			sel5728:4;sel81879:4;sub_d50e6c:8
+03493_sub_998b24.dartpseudo	fewer_renderings_same_callees	7	0	121	104	trap_only	2			fn_0x998fb4:1;sub_60b138:1;sub_7d3514:1;sub_7d62f4:3;sub_d4fcf4:1
+03508_sub_99b980.dartpseudo	fewer_renderings_same_callees	2	0	34	26	trap_only	2			sel63328:2
+03555_sub_9a9f54.dartpseudo	fewer_renderings_same_callees	2	0	49	44	trap_only	2			sub_ae28f0:2
+03741_sub_9ca028.dartpseudo	fewer_renderings_same_callees	72	0	719	685	trap_only	2			fn_0x9ca2a0:18;fn_0x9ca2ac:18;fn_0x9ca2d8:18;sel5109:18
+03859_sub_9e436c.dartpseudo	vanished_behind_indirect_branch	584	30	1968	13	indirect_branch_only	0	dispatch_selector_rendering:13;disposition_RetainedUnreachable:149;lost_edge_after_IndirectBranch:149	sel61193;sel65395;sel66823;sel72147;sel89354;sel90969;sel91022;sel92887;sel94965;sel95018;sel95071;sel95124;sel95442;sub_60d5b4;sub_61341c;sub_6155d8;sub_65b060;sub_65d3e4;sub_8307d8;sub_8368f4;sub_9148f0;sub_9157fc;sub_9a9864;sub_9e9774;sub_d4fb90;sub_d50284;sub_d50a6c;sub_d50aa8;sub_d50e6c;sub_d51b44	sel61193:82;sel65395:8;sel66823:8;sel72147:74;sel89354:8;sel90969:14;sel91022:8;sel92887:14;sel94965:8;sel95018:8;sel95071:8;sel95124:4;sel95442:24;sub_60d5b4:14;sub_61341c:14;sub_6155d8:8;sub_65b060:24;sub_65d3e4:8;sub_8307d8:4;sub_8368f4:2;sub_9148f0:12;sub_9157fc:82;sub_9a9864:8;sub_9e9774:8;sub_d4fb90:4;sub_d50284:2;sub_d50a6c:24;sub_d50aa8:2;sub_d50e6c:76;sub_d51b44:24
+03885_sub_9eff58.dartpseudo	vanished_behind_indirect_branch	16	4	120	4	indirect_branch_only	0	disposition_RetainedUnreachable:7;lost_edge_after_IndirectBranch:7	fn_0x9f35a8;sub_60d5b4;sub_d502a4;sub_d50aa8	fn_0x9f35a8:2;sub_60d5b4:8;sub_d502a4:4;sub_d50aa8:2
+03959_sub_a037a4.dartpseudo	vanished_behind_indirect_branch	2	1	6	8	indirect_branch_only	0	disposition_RetainedUnreachable:1;lost_edge_after_IndirectBranch:1	fn_0xa03800	fn_0xa03800:2
+03983_sub_a0d0d4.dartpseudo	vanished_behind_indirect_branch	20	2	79	7	indirect_branch_only	0	disposition_RetainedUnreachable:2;lost_edge_after_IndirectBranch:2	sub_65b448;sub_d50e6c	sub_65b448:10;sub_d50e6c:10
+03996_sub_a11228.dartpseudo	vanished_behind_indirect_branch	4	1	22	1	indirect_branch_only	0	disposition_RetainedUnreachable:4;lost_edge_after_IndirectBranch:4	sub_d50304	sub_d50304:4
+04004_sub_a13b38.dartpseudo	fewer_renderings_same_callees	3	0	397	502	none	0			sub_d4fd18:3
+04024_sub_a1a0bc.dartpseudo	fewer_renderings_same_callees	24	0	292	229	none	0			sub_6a05dc:8;sub_7bef54:4;sub_7c8100:4;sub_d50264:4;sub_d51a9c:4
+04099_sub_a336d4.dartpseudo	fewer_renderings_same_callees	12	0	550	704	none	0			sub_8801c8:10;sub_d50264:2
+04172_sub_a4d938.dartpseudo	vanished_behind_indirect_branch	2	2	3	1	indirect_branch_only	0	disposition_RetainedUnreachable:2;lost_edge_after_IndirectBranch:2	sub_6a07a8;sub_983450	sub_6a07a8:1;sub_983450:1
+04234_sub_a682b8.dartpseudo	fewer_renderings_same_callees	2	0	79	43	trap_only	2			sel86715:1;sub_d4fcf4:1
+04254_sub_a70120.dartpseudo	vanished_behind_indirect_branch	2	1	12	7	indirect_branch_only	0	disposition_RetainedUnreachable:1;lost_edge_after_IndirectBranch:1	fn_0xa70188	fn_0xa70188:2
+04286_sub_a7fb1c.dartpseudo	fewer_renderings_same_callees	4	0	55	37	trap_only	2			sub_6130f8:1;sub_614c04:3
+04374_sub_a94a24.dartpseudo	fewer_renderings_same_callees	111	0	569	315	trap_only	2			sub_6155d8:7;sub_629cdc:3;sub_696408:18;sub_6c0488:3;sub_9a9864:7;sub_c7c684:9;sub_d4fa4c:10;sub_d4fb90:1;sub_d4fbf8:1;sub_d502a4:2;sub_d50a6c:13;sub_d50e6c:24;sub_d51b44:13
+04394_sub_aa1d74.dartpseudo	fewer_renderings_same_callees	10	0	2037	2123	none	0			sub_d51a9c:10
+04510_sub_add340.dartpseudo	fewer_renderings_same_callees	2	0	39	45	trap_only	2			sub_6dd400:1;sub_d4fcf4:1
+04604_sub_b06cec.dartpseudo	fewer_renderings_same_callees	6	0	361	1300	trap_only	30			sub_6163d0:3;sub_d4fcf4:3
+04606_sub_b0e1f8.dartpseudo	fewer_renderings_same_callees	6	0	362	843	trap_only	2			sub_6163d0:3;sub_d4fcf4:3
+04616_sub_b118b0.dartpseudo	vanished_behind_indirect_branch	6	3	17	9	indirect_branch_only	0	disposition_RetainedUnreachable:6;lost_edge_after_IndirectBranch:3	sub_6ae994;sub_6aeef4;sub_7632d0	sub_6ae994:2;sub_6aeef4:2;sub_7632d0:2
+04632_sub_b189b4.dartpseudo	vanished_behind_indirect_branch	2	1	12	7	indirect_branch_only	0	disposition_RetainedUnreachable:1;lost_edge_after_IndirectBranch:1	fn_0xb18a1c	fn_0xb18a1c:2
+04633_sub_b18bb0.dartpseudo	vanished_behind_indirect_branch	6	3	17	9	indirect_branch_only	0	disposition_RetainedUnreachable:3;lost_edge_after_IndirectBranch:3	sub_7632d0;sub_b1879c;sub_b189b4	sub_7632d0:2;sub_b1879c:2;sub_b189b4:2
+04637_sub_b199ec.dartpseudo	vanished_behind_trap	2	1	33	26	trap_only	2	disposition_RetainedUnreachable:1;lost_edge_after_Trap:1	fn_0xb19b74	fn_0xb19b74:1;sub_d4fcf4:1
+04688_sub_b3e240.dartpseudo	vanished_behind_indirect_branch_and_trap	18	2	665	13	indirect_branch_only	0	dispatch_selector_rendering:1;disposition_RetainedUnreachable:1;lost_edge_after_IndirectBranch:1;lost_edge_after_Trap:1	sel101608;sub_b3da0c	sel101608:6;sub_b3da0c:12
+04692_sub_b400ec.dartpseudo	fewer_renderings_same_callees	3	0	352	391	none	0			sub_7c1588:2;sub_7c2898:1
+04711_sub_b53a60.dartpseudo	vanished_behind_trap	1	1	6	1	trap_only	0	disposition_RetainedUnreachable:1;lost_edge_after_Trap:1	fn_0xb53aa8	fn_0xb53aa8:1
+04747_sub_b5e29c.dartpseudo	fewer_renderings_same_callees	3	0	156	1289	trap_only	2			sel141:1;sub_d4fd18:1;sub_d51b44:1
+04752_sub_b60558.dartpseudo	fewer_renderings_same_callees	2	0	46	31	trap_only	2			sub_d4fcf4:2
+04797_sub_b6a4b4.dartpseudo	fewer_renderings_same_callees	76	0	562	226	trap_only	2			sub_60971c:31;sub_d4fcf4:31;sub_d51b44:14
+04851_sub_b855f4.dartpseudo	vanished_behind_trap	8	8	12	6	trap_only	0	dispatch_selector_rendering:4;disposition_RetainedUnreachable:4;lost_edge_after_Trap:4	sel3620;sel4608;sel4621;sel4668;sub_b849f0;sub_b84a8c;sub_b84b28;sub_b84bc4	sel3620:1;sel4608:1;sel4621:1;sel4668:1;sub_b849f0:1;sub_b84a8c:1;sub_b84b28:1;sub_b84bc4:1
+04852_sub_b85998.dartpseudo	vanished_behind_trap	8	8	12	6	trap_only	0	dispatch_selector_rendering:4;disposition_RetainedUnreachable:4;lost_edge_after_Trap:4	fn_0xb85bdc;sel3620;sel4608;sel4621;sel4668;sub_b84dfc;sub_b84e98;sub_b84f34	fn_0xb85bdc:1;sel3620:1;sel4608:1;sel4621:1;sel4668:1;sub_b84dfc:1;sub_b84e98:1;sub_b84f34:1
+04869_sub_b88e5c.dartpseudo	fewer_renderings_same_callees	2	0	40	44	trap_only	0			sub_b88e5c:2
+04870_sub_b8914c.dartpseudo	fewer_renderings_same_callees	1	0	14	17	trap_only	0			sub_b8914c:1
+04936_sub_b9d04c.dartpseudo	fewer_renderings_same_callees	2	0	133	127	trap_only	2			sub_d4fcf4:1;sub_d51b44:1
+04962_sub_ba3bb8.dartpseudo	fewer_renderings_same_callees	48	0	400	191	trap_only	2			sub_ba0b44:22;sub_ba3874:7;sub_ba3ee8:19
+04979_sub_ba8c18.dartpseudo	vanished_behind_trap	1	1	9	12	trap_only	0	disposition_RetainedUnreachable:1;lost_edge_after_Trap:1	fn_0xba8d94	fn_0xba8d94:1
+04987_sub_ba97f8.dartpseudo	vanished_behind_indirect_branch	101	2	687	80	indirect_branch_only	0	disposition_RetainedUnreachable:2;lost_edge_after_IndirectBranch:2	fn_0xba99cc;fn_0xba99d8	fn_0xba99cc:48;fn_0xba99d8:38;sub_ba97f8:15
+05027_sub_bb7a78.dartpseudo	vanished_behind_trap	1	1	11	14	trap_only	0	disposition_RetainedUnreachable:6;lost_edge_after_Trap:1	sub_d50e6c	sub_d50e6c:1
+05032_sub_bb9458.dartpseudo	fewer_renderings_same_callees	5	0	75	15	trap_only	2			sub_60b138:1;sub_d4fcf4:3;sub_d51820:1
+05033_sub_bb95a8.dartpseudo	fewer_renderings_same_callees	18	0	166	40	trap_only	2			sel1814:7;sel64036:1;sub_60b138:3;sub_60c8dc:6;sub_60cc80:1
+05040_sub_bbd37c.dartpseudo	fewer_renderings_same_callees	1	0	57	52	trap_only	2			sub_d4fcf4:1
+05046_sub_bbff10.dartpseudo	fewer_renderings_same_callees	1	0	57	52	trap_only	2			sub_d4fcf4:1
+05100_sub_bcced8.dartpseudo	fewer_renderings_same_callees	1	0	235	2669	trap_only	2			sub_b0e1f8:1
+05107_sub_bcdadc.dartpseudo	fewer_renderings_same_callees	11	0	128	204	trap_only	2			fn_0xbcea8c:2;fn_0xbceb20:1;sub_ba015c:5;sub_bcce48:2;sub_d51820:1
+05111_sub_bce5d4.dartpseudo	fewer_renderings_same_callees	6	0	370	2583	trap_only	2			sub_b0e1f8:6
+05261_sub_c08748.dartpseudo	fewer_renderings_same_callees	11	0	183	102	trap_only	2			sub_b7a720:11
+05278_sub_c1000c.dartpseudo	fewer_renderings_same_callees	2	0	61	106	trap_only	2			sub_60e628:1;sub_d4fcf4:1
+05289_sub_c15644.dartpseudo	fewer_renderings_same_callees	2	0	43	18	trap_only	2			sel3885:1;sub_d4fcf4:1
+05352_sub_c35dac.dartpseudo	vanished_behind_trap	2	2	14	6	trap_only	0	dispatch_selector_rendering:1;disposition_RetainedUnreachable:1;lost_edge_after_Trap:1	sel1221;sub_607bcc	sel1221:1;sub_607bcc:1
+05481_sub_c72c28.dartpseudo	fewer_renderings_same_callees	16	0	206	108	trap_only	2			sub_607bcc:11;sub_d50aa8:5
+05525_sub_c8a0d0.dartpseudo	fewer_renderings_same_callees	8	0	76	35	trap_only	2			sub_c8a2a4:8
+05535_sub_c90310.dartpseudo	fewer_renderings_same_callees	5	0	43	28	trap_only	2			sub_d4fcf4:5
+05541_sub_c91c9c.dartpseudo	fewer_renderings_same_callees	4	0	151	54	trap_only	2			sub_d4fd18:4
+05576_sub_cf7284.dartpseudo	fewer_renderings_same_callees	2	0	69	64	trap_only	2			sub_d4cdd0:2
+05620_sub_d261c4.dartpseudo	fewer_renderings_same_callees	27	0	330	54	trap_only	2			sub_d263d8:1;sub_d26f2c:1;sub_d50264:3;sub_d50284:11;sub_d51820:11
+05636_sub_d2e154.dartpseudo	fewer_renderings_same_callees	155	0	733	122	trap_only	2			sub_60971c:18;sub_635cd4:18;sub_6c0248:24;sub_6c0488:3;sub_90eaa8:15;sub_90ee78:15;sub_94ff28:3;sub_d4fb90:23;sub_d50aa8:3;sub_d50e6c:15;sub_d51b44:18
+05644_sub_d314ec.dartpseudo	fewer_renderings_same_callees	38	0	220	50	trap_only	2			fn_0xd31988:1;fn_0xd319b8:1;fn_0xd31aa8:9;sel108068:1;sel108089:1;sel66721:1;sub_60d5b4:1;sub_64edc8:9;sub_6c0248:10;sub_6c0488:1;sub_ac7e24:1;sub_d4fbf8:1;sub_d4fcf4:1
+05710_sub_d4f048.dartpseudo	fewer_renderings_same_callees	1	0	36	18	trap_only	2			sub_6dc4f0:1
+05777_sub_d524cc.dartpseudo	vanished_behind_indirect_branch_and_trap	1	1	10	1	trap_only	0	disposition_RetainedUnreachable:1;lost_edge_after_IndirectBranch:1;lost_edge_after_Trap:1	fn_0xbac050	fn_0xbac050:1
+05791_sub_d563dc.dartpseudo	vanished_behind_indirect_branch	6	1	76	7	indirect_branch_only	0	disposition_RetainedUnreachable:1;lost_edge_after_IndirectBranch:1	sub_d51a9c	sub_d51a9c:6
+05797_sub_d715cc.dartpseudo	vanished_behind_indirect_branch	1	1	9	5	indirect_branch_only	0	disposition_RetainedUnreachable:2;lost_edge_after_IndirectBranch:1	sub_d5630c	sub_d5630c:1

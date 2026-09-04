@@ -8,6 +8,12 @@ members = [
   "crates/flutterdec-ir",
   "crates/flutterdec-decompiler",
 ]
+# The benchmark harness is deliberately not a member. It depends on
+# `flutterdec-decompiler` and `flutterdec-core` with `bench-spans` on, and
+# workspace feature unification would then turn that instrumentation on for
+# every product build and test in the workspace. It stays buildable on its own
+# with `--manifest-path crates/flutterdec-bench/Cargo.toml`.
+exclude = ["crates/flutterdec-bench"]
 resolver = "2"
 
 [workspace.package]

@@ -46,11 +46,67 @@ jobs:
       - name: Lint shell scripts
         run: nix develop -c ./scripts/lint-shell.sh
 
+      # The checker self-tests and the annotation and provenance plant tests are
+      # Python, so without this lane they were enforced only by
+      # `scripts/ci-check.sh` on a developer machine. Run through the flake
+      # because the script needs `mapfile -d`, which macOS bash 3.2 lacks.
+      - name: Lint Python scripts
+        run: nix develop -c ./scripts/lint-python.sh
+
+      # The pre-measurement identity gate decides whether a benchmark run is
+      # comparable at all, and its regression suite is plain bash with no
+      # toolchain of its own, so it is invoked exactly as `scripts/ci-check.sh`
+      # invokes it.
+      - name: Benchmark identity gate
+        run: ./scripts/bench-identity-gate-test.sh
+
       - name: Clippy
         run: nix develop -c cargo clippy --workspace --all-targets -- -D warnings
+
+      # Named targets, not --workspace: `autotests = false` or a deleted file
+      # would leave --workspace passing with a quietly smaller suite.
+      - name: Oracle loader guard
+        run: nix develop -c cargo test -p flutterdec-decompiler --test provenance_audit --test loop_entry_provenance_audit --test arm64_control_effects --test cfg_identity --test dfs_loop_address_invariance --test entry_loop_state_merge --test helper_syntax_boundaries --test rewrite_boundaries --test unmodelled_write_effects --test register_width_provenance --test atomic_rmw_effects --test annotation_anchor_identity --test provenance_accounting --test block_ledger_contract
+
+      - name: Core oracle loader guard
+        run: nix develop -c cargo test -p flutterdec-core --test pipeline_determinism
+
+      - name: IR oracle loader guard
+        run: nix develop -c cargo test -p flutterdec-ir --test branch_target_radix
+
+      # The compiled inventory, not the loader source text. A comment, a `cfg`
+      # that is never true, or a macro that swallows its argument leaves a hook
+      # byte-identical while removing the oracle it loads from the build.
+      - name: Compiled oracle inventory
+        run: nix develop -c python3 scripts/check-oracle-inventory.py
+
+      # The auxiliary resource inventory: the benchmark harness digests plus the
+      # allocator and phase-stack loaders that the resource ruler depends on.
+      # Separate protocol, separate digest table, same fail-closed shape.
+      - name: Resource ruler inventory
+        run: nix develop -c python3 scripts/check-resource-ruler.py
 
       - name: Test
         run: nix develop -c cargo test --workspace
 
       - name: Build release CLI
         run: nix develop -c cargo build -p flutterdec-cli --release
+
+      # The benchmark harness is its own workspace root, so every `--workspace`
+      # and root `--all` lane above stops at its manifest. That exclusion is what
+      # keeps its `bench-spans` instrumentation out of the product checks, and it
+      # is also why the harness needs its own three lanes here.
+      - name: Benchmark harness format
+        run: nix develop -c cargo fmt --manifest-path crates/flutterdec-bench/Cargo.toml --all --check
+
+      - name: Benchmark harness clippy
+        run: nix develop -c cargo clippy --manifest-path crates/flutterdec-bench/Cargo.toml --all-targets -- -D warnings
+
+      # Linux only, and not a weakened lane: the harness reads its peak RSS from
+      # `/proc/self/status`, and `host_identity_is_readable_on_this_platform`
+      # asserts that value is present, so the suite is Linux-only by
+      # construction. `scripts/ci-check.sh` is a Linux gate, this runs the same
+      # command there, and it fails the job when it fails.
+      - name: Benchmark harness tests
+        if: runner.os == 'Linux'
+        run: nix develop -c cargo test --manifest-path crates/flutterdec-bench/Cargo.toml

@@ -401,6 +401,11 @@ Most users should start by reading:
 - `report.json.android_startup`
 - `quality.json`
 
+The [CLI reference](cli-reference.md#emission-diagnostics-in-qualityjson)
+defines every `quality.json.emission` counter and unit, explains the block
+ledger and omitted-path marker scopes, and documents
+`report.json.record_split.rejected_invalid_ir`.
+
 
 ## Reading Value Annotations In The Pseudocode
 

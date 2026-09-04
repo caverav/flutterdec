@@ -34,9 +34,13 @@ impl<'a> FuncEmitter<'a> {
             let mut depth = 0i32;
             let mut j = i;
             while j < lines.len() {
-                let line = &lines[j];
-                depth += line.chars().filter(|&c| c == '{').count() as i32;
-                depth -= line.chars().filter(|&c| c == '}').count() as i32;
+                // Braces the emitter wrote, only. Brace counting is the whole
+                // structure this scan has, so one brace inside a recovered pool
+                // string or inside a comment used to end a helper body early:
+                // the definition stopped being seen as a definition, and its
+                // live call was rewritten into a "helper budget exhausted" note
+                // for a budget that was never reached.
+                depth += code_brace_delta(&lines[j]);
                 if depth == 0 {
                     break;
                 }

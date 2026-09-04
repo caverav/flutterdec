@@ -42,42 +42,6 @@ fn normalize_file_name(name: &str) -> String {
     out
 }
 
-fn is_ident_char(c: char) -> bool {
-    c.is_ascii_alphanumeric() || c == '_'
-}
-
-fn count_ident_token(hay: &str, token: &str) -> usize {
-    if token.is_empty() {
-        return 0;
-    }
-
-    let mut count = 0usize;
-    let bytes = hay.as_bytes();
-    let token_bytes = token.as_bytes();
-    let mut i = 0usize;
-    while i + token_bytes.len() <= bytes.len() {
-        if bytes[i..].starts_with(token_bytes) {
-            let prev_ok = if i == 0 {
-                true
-            } else {
-                !is_ident_char(bytes[i - 1] as char)
-            };
-            let next_i = i + token_bytes.len();
-            let next_ok = if next_i >= bytes.len() {
-                true
-            } else {
-                !is_ident_char(bytes[next_i] as char)
-            };
-            if prev_ok && next_ok {
-                count += 1;
-                i = next_i;
-                continue;
-            }
-        }
-        i += 1;
-    }
-    count
-}
 
 #[cfg(test)]
 mod helpers_tests {
@@ -86,7 +50,10 @@ mod helpers_tests {
     #[test]
     fn count_ident_token_handles_utf8_text() {
         let hay = r#"dynamic x = local; final s = "Možete"; local = 2;"#;
-        assert_eq!(count_ident_token(hay, "local"), 2);
+        assert_eq!(
+            flutterdec_decompiler::count_code_identifier_tokens(hay, "local"),
+            2
+        );
     }
 
     #[test]

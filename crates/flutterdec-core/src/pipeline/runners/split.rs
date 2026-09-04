@@ -16,6 +16,11 @@ pub(super) struct SplitStats {
     /// Candidates abandoned because the preceding piece had no block. Should stay
     /// zero: it is reported so that a regression is visible rather than silent.
     pub(super) rejected_no_block: usize,
+    /// Records abandoned because the graph built from them failed the shared
+    /// identity ruler. Should stay zero for the same reason as `rejected_no_block`:
+    /// the builder is the only producer here, so a nonzero count is a builder
+    /// regression and must be visible rather than silently changing what is split.
+    pub(super) rejected_invalid_ir: usize,
 }
 
 /// Splits a function record that spans more than one real function.
@@ -86,15 +91,43 @@ fn split_points(record: &FunctionDisassembly, stats: &mut SplitStats) -> Vec<usi
         return Vec::new();
     }
 
-    let ir = build_function_ir(record);
-    let branch_targets = branch_targets(&ir);
+    accepted_splits(record, &build_function_ir(record), candidates, stats)
+}
+
+/// Clauses 3 and 4 against a built graph.
+///
+/// Split out from `split_points` so the identity gate below can be exercised
+/// against a graph that fails it. `build_function_ir` is the only producer in
+/// production, and it is held to that ruler itself, so nothing else can reach
+/// this with a malformed graph -- which is exactly why the gate needs a test that
+/// can.
+fn accepted_splits(
+    record: &FunctionDisassembly,
+    ir: &flutterdec_ir::FunctionIr,
+    candidates: Vec<usize>,
+    stats: &mut SplitStats,
+) -> Vec<usize> {
+    let instrs = &record.instructions;
+    // Before the two maps below, both of which are keyed on a block identity: a
+    // duplicate id or start address collapses an entry and the containment clause
+    // would then measure the reach of a block it never meant to walk, cutting a
+    // record in a place nothing justifies. Refusing to split is the conservative
+    // answer: the record still emits exactly as it does with splitting disabled.
+    if flutterdec_ir::validate_block_identity(ir).is_err() {
+        stats.rejected_invalid_ir += 1;
+        return Vec::new();
+    }
+    let branch_targets = branch_targets(ir);
     // Every instruction address to the block that contains it, not just block
-    // starts. `build_function_ir` opens a new block after `Branch`, `Jump` and
-    // `Return` only, so a candidate whose predecessor is `brk` is mid-block and has
-    // no leader of its own. That is not a corner: `brk` is what every raising stub
-    // ends with, so keying this on block starts silently abandoned the rest of the
-    // record. Taking the containing block instead over-approximates the piece,
-    // which can only reject candidates, never wrongly accept one.
+    // starts. `build_function_ir` opens a new block only after a terminator, so
+    // a candidate that follows anything else is mid-block and has no leader of
+    // its own, and keying this on block starts silently abandoned the rest of
+    // the record. Taking the containing block instead over-approximates the
+    // piece, which can only reject candidates, never wrongly accept one.
+    //
+    // `is_terminator` below and `IROp` now agree on which mnemonics those are,
+    // `brk` and `br` included, so a raising stub's successor really does get a
+    // leader; this mapping stays because the general mid-block case remains.
     let containing: std::collections::HashMap<u64, usize> = ir
         .blocks
         .iter()
@@ -263,11 +296,20 @@ fn byte_size(instrs: &[AsmInstruction]) -> u64 {
     }
 }
 
+// The splitter identity boundary. A separate, digest-protected file rather than
+// part of `mod tests` below, because this file is product source that later
+// work edits, so a digest over it would fire on legitimate change. This
+// declaration is the only thing that compiles that file and cannot be digested
+// either, so `scripts/check-oracle-inventory.py` proves it by compilation.
+#[cfg(test)]
+#[path = "split/identity_tests.rs"]
+mod split_identity_tests;
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn ins(va: u64, mnemonic: &str, op_str: &str) -> AsmInstruction {
+    pub(super) fn ins(va: u64, mnemonic: &str, op_str: &str) -> AsmInstruction {
         AsmInstruction {
             va,
             word: 0,
@@ -279,7 +321,7 @@ mod tests {
 
     /// One record holding two functions: a prologue, a `ret`, then a second
     /// prologue. The second is what the adapter never declared.
-    fn two_functions() -> FunctionDisassembly {
+    pub(super) fn two_functions() -> FunctionDisassembly {
         FunctionDisassembly {
             function_id: 7,
             function_name: "declaredName".to_string(),

@@ -272,12 +272,72 @@ fn shift_amount(operand: &str) -> Option<u32> {
     amount.trim().parse().ok()
 }
 
+/// Instructions whose destination is a register pair, so the effect summary
+/// names two registers rather than one.
+///
+/// `ldp` was the only pair form recognised, which left the second destination of
+/// every other one holding whatever the last modelled instruction put there:
+/// after `mov x1, #5`, `ldpsw x0, x1, [x2]` kept `5` bound to x1 and a later read
+/// rendered that literal as a resolved fact. `ldnp` is lifted and binds both
+/// halves itself, but this summary is also what the join merge
+/// (`registers_written_before`) and the call-clobber retirement read, so a
+/// destination missing here survives a join as well as a straight line. The
+/// atomic pair forms update both halves of the compare pair for the same reason.
+const PAIR_DESTINATION_MNEMONICS: [&str; 9] = [
+    "ldp", "ldnp", "ldpsw", "ldxp", "ldaxp", "casp", "caspa", "caspal", "caspl",
+];
+
+/// Atomic read-modify-write families whose loaded value lands in the *second*
+/// operand.
+///
+/// `LDADD <Xs>, <Xt>, [<Xn>]` adds Xs to the value in memory and writes the old
+/// memory value to Xt, so Xs is a pure source and the generic first-operand
+/// rule named the wrong register: after `mov x9, #0x2a`, `ldaddal x2, x9, [x3]`
+/// kept `0x2a` bound to x9 and a later read rendered that literal as a resolved
+/// fact. `swp` has the same shape. Capstone hands the mnemonic through
+/// verbatim, so every one of these reaches the emitter from a real binary.
+///
+/// `cas` is the other way round - `CAS <Xs>, <Xt>, [<Xn>]` returns the old
+/// value in Xs - so it keeps the generic rule, and the `casp` pair forms are in
+/// `PAIR_DESTINATION_MNEMONICS`.
+const ATOMIC_LOAD_DESTINATION_MNEMONICS: [&str; 9] = [
+    "ldadd", "ldclr", "ldeor", "ldset", "ldsmax", "ldsmin", "ldumax", "ldumin", "swp",
+];
+
+/// The register an atomic read-modify-write form loads the old memory value
+/// into, when it is one of the second-operand families.
+///
+/// The suffixes are the memory-ordering ones (`a` acquire, `l` release, `al`
+/// acquire-release) followed by the size (`b` byte, `h` halfword), which is
+/// every spelling the architecture defines for these. A prefix match alone is
+/// not enough: the 128-bit `ldclrp` family shares a prefix and writes a
+/// register pair, so an unrecognised suffix keeps the generic rule rather than
+/// claiming an operand this does not model.
+fn atomic_load_destination(mnemonic: &str, ops: &[String]) -> Option<String> {
+    if ops.len() < 3 {
+        return None;
+    }
+    let suffix = ATOMIC_LOAD_DESTINATION_MNEMONICS
+        .iter()
+        .find_map(|family| mnemonic.strip_prefix(family))?;
+    matches!(
+        suffix,
+        "" | "a" | "l" | "al" | "b" | "ab" | "lb" | "alb" | "h" | "ah" | "lh" | "alh"
+    )
+    .then(|| canonical_reg(&ops[1]))?
+}
+
 /// Registers an instruction overwrites.
 ///
 /// Anything not recognised as a pure read is treated as writing its first
 /// operands. That is deliberately over-approximate: naming a register that was
 /// not written drops a binding needlessly, which costs a `regN`, while missing one
 /// lets a stale value read as a resolved fact.
+///
+/// The width the destination is spelled at does not narrow this: `w3` and `x3`
+/// are one machine register, `canonical_reg` folds them onto one key, and a
+/// 32-bit write leaves the high half cleared rather than preserved, so the whole
+/// binding goes.
 pub(super) fn written_registers(mnemonic: &str, ops: &[String]) -> Vec<String> {
     // A pre- or post-indexed access writes the base register back, so the base is
     // a destination even for a store, which otherwise writes nothing. 2,346 and
@@ -294,8 +354,19 @@ pub(super) fn written_registers(mnemonic: &str, ops: &[String]) -> Vec<String> {
     if reads_only {
         return written;
     }
-    // Load-pair writes both destinations; everything else writes the first.
-    let count = if mnemonic == "ldp" { 2 } else { 1 };
+    // An atomic RMW writes the loaded value to its second operand and leaves
+    // the first one holding what it already held, so naming the first would
+    // both keep the stale binding and drop a live one.
+    if let Some(dst) = atomic_load_destination(mnemonic, ops) {
+        written.push(dst);
+        return written;
+    }
+    // A pair form writes both destinations; everything else writes the first.
+    let count = if PAIR_DESTINATION_MNEMONICS.contains(&mnemonic) {
+        2
+    } else {
+        1
+    };
     written.extend(ops.iter().take(count).filter_map(|o| canonical_reg(o)));
     written
 }

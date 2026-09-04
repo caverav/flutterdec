@@ -8,6 +8,27 @@
 pub(crate) const RESERVED_EMITTER_IDENTIFIERS: [&str; 6] =
     ["thread", "pool", "sp", "null", "flags", "dynamic"];
 
+/// Whether `name` is spelled the way the emitter spells a generated helper.
+///
+/// `_block_<digits>` is not a name the emitter chose freely: `append_helper_functions`
+/// writes it, `scan_helpers` reads it back, the omission notes and the report's
+/// helper counter key on it. It is also a perfectly ordinary private Dart
+/// identifier, so a snapshot's symbol table may hold one.
+pub(super) fn is_generated_helper_name(name: &str) -> bool {
+    name.strip_prefix("_block_")
+        .is_some_and(|rest| !rest.is_empty() && rest.bytes().all(|b| b.is_ascii_digit()))
+}
+
+/// Turn a recovered name into an identifier, keeping the generated helper
+/// namespace to the emitter.
+///
+/// A recovered symbol spelled `_block_999` rendered verbatim put a name nothing
+/// generated into the namespace the helper accounting reads: every call site
+/// read as a call to a helper with no definition anywhere in the artifact, and
+/// the report charged the reference to helper emission. Such a name is renamed
+/// rather than dropped - the digits survive, so the recovered symbol is still
+/// identifiable - and the renaming clears the `_block_` token entirely, because
+/// a mere prefix would leave it in the text the counter matches on.
 pub(super) fn sanitize_name(name: &str) -> String {
     let mut out = String::new();
     for c in name.chars() {
@@ -18,9 +39,46 @@ pub(super) fn sanitize_name(name: &str) -> String {
         }
     }
     if out.is_empty() {
-        "function".to_string()
+        return "function".to_string();
+    }
+    if let Some(digits) = out.strip_prefix("_block_") {
+        if is_generated_helper_name(&out) {
+            return format!("recovered_block{digits}");
+        }
+    }
+    out
+}
+
+pub(super) fn is_emitter_owned_name(name: &str) -> bool {
+    let numbered = |prefix: &str| {
+        name.strip_prefix(prefix)
+            .is_some_and(|rest| !rest.is_empty() && rest.bytes().all(|b| b.is_ascii_digit()))
+    };
+    RESERVED_EMITTER_IDENTIFIERS.contains(&name)
+        || is_generated_helper_name(name)
+        || [
+            "arg",
+            "x",
+            "reg",
+            "slot",
+            "local_",
+            "tmp",
+            "resultTmp",
+            "poolVal",
+            "stackSlot",
+            "t",
+        ]
+        .iter()
+        .any(|prefix| numbered(prefix))
+}
+
+/// Sanitize a recovered symbol without letting it enter an emitter namespace.
+pub(super) fn sanitize_symbol_name(name: &str) -> String {
+    let sanitized = sanitize_name(name);
+    if is_emitter_owned_name(&sanitized) {
+        format!("recovered_{sanitized}")
     } else {
-        out
+        sanitized
     }
 }
 pub(super) fn named_indirect_target(token: &str) -> String {

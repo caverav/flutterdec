@@ -1,0 +1,711 @@
+{
+  "schema": "flutterdec-bench/result/1",
+  "binding": {
+    "label": "post-correctness refresh candidate pair 6 second",
+    "product_ref": "5ba4b6d30604606c04b5b742eaf9469adc1c729d",
+    "harness_ref": "4c127aba4e74fb6f8d486c4cb066586bb0d74846",
+    "patch_sha256": "14413796ca8a89cc1328497b5c87629b1c55f945ec58e73eebb3838df0700460",
+    "binary_sha256": "ff696e5ed2857b17f30f7524aa57c246d959aa76eb9019d799820666f59532db",
+    "matrix": "disclosed",
+    "matrix_sha256": "76b617c62858e698710f0ab068c1a8b6d8458feedc83f3738a5f5664cfacbc43",
+    "held_out_seed_hex": null,
+    "disclosed_seed": 1592614637,
+    "profile": "release",
+    "warmups": 0,
+    "measured_runs": 1,
+    "correctness_checked": false,
+    "command": "/home/camilo/flutterdec/.worker-tmp/valmetric5-rerun/run-output/bin/timing/candidate/flutterdec-bench run --matrix disclosed --warmups 0 --runs 1 --correctness off --product-ref 5ba4b6d30604606c04b5b742eaf9469adc1c729d --harness-ref 4c127aba4e74fb6f8d486c4cb066586bb0d74846 --patch-sha256 14413796ca8a89cc1328497b5c87629b1c55f945ec58e73eebb3838df0700460 --binary-sha256 ff696e5ed2857b17f30f7524aa57c246d959aa76eb9019d799820666f59532db --label post-correctness refresh candidate pair 6 second --out /home/camilo/flutterdec/.worker-tmp/valmetric5-rerun/run-output/raw/candidate-6.json --samples /home/camilo/flutterdec/.worker-tmp/valmetric5-rerun/run-output/raw/candidate-6.tsv",
+    "threads": 1
+  },
+  "host": {
+    "hostname": "gentoo",
+    "kernel": "Linux 6.9.3-gentoo-dist",
+    "cpu_model": "AMD Ryzen 7 7700X 8-Core Processor",
+    "logical_cpus": 16
+  },
+  "limits": {
+    "timeout_seconds": 120,
+    "memory_limit_bytes": 2147483648,
+    "peak_rss_bytes": 74842112,
+    "within_memory_limit": true,
+    "runs_over_timeout": []
+  },
+  "timer": {
+    "overhead_nanos": 20,
+    "calibration_samples": 4096,
+    "reconciliation_tolerance": 0.020000,
+    "worst_unaccounted_fraction": 0.000581,
+    "reconciliation_failures": []
+  },
+  "cases": [
+    {
+      "case": "linear/64/base",
+      "topology": "linear",
+      "blocks": 64,
+      "load": "base",
+      "instructions_per_block": 9,
+      "instructions": 576,
+      "workload_sha256": "b47fff93c1ea80ff9f51ac2c447d6b8fe2afa6c69e2a84f1913f3a0942ae6625"
+    },
+    {
+      "case": "linear/64/light",
+      "topology": "linear",
+      "blocks": 64,
+      "load": "light",
+      "instructions_per_block": 11,
+      "instructions": 704,
+      "workload_sha256": "6ef713c4acb4436fd107e71e24af093567dcad35301e56bcd2164f6bea4c72c8"
+    },
+    {
+      "case": "linear/64/heavy",
+      "topology": "linear",
+      "blocks": 64,
+      "load": "heavy",
+      "instructions_per_block": 41,
+      "instructions": 2624,
+      "workload_sha256": "bd3a7d5df8e16f7f6c3ccce2e69db1f2b59910cc9df3d97969bf67c4ceb58fe2"
+    },
+    {
+      "case": "linear/256/base",
+      "topology": "linear",
+      "blocks": 256,
+      "load": "base",
+      "instructions_per_block": 9,
+      "instructions": 2304,
+      "workload_sha256": "6088e44f7ef52338dbda6b1cca8b0c0e2aaecdaad6c0f789c3472beb9a69ac28"
+    },
+    {
+      "case": "linear/256/light",
+      "topology": "linear",
+      "blocks": 256,
+      "load": "light",
+      "instructions_per_block": 11,
+      "instructions": 2816,
+      "workload_sha256": "771124e17acf203a71d1a8b92592fb5fc59e94e8a764b022b113430258e8bfc8"
+    },
+    {
+      "case": "linear/256/heavy",
+      "topology": "linear",
+      "blocks": 256,
+      "load": "heavy",
+      "instructions_per_block": 41,
+      "instructions": 10496,
+      "workload_sha256": "e51be18977a9887b75b071ef09ee74fe742d8f215deda6d62040bbc6fe028e8e"
+    },
+    {
+      "case": "linear/1024/base",
+      "topology": "linear",
+      "blocks": 1024,
+      "load": "base",
+      "instructions_per_block": 9,
+      "instructions": 9216,
+      "workload_sha256": "1e88addefd24c70ac55147a28ef17404117021d7fecc01cd837f2fdeea06c1b1"
+    },
+    {
+      "case": "linear/1024/light",
+      "topology": "linear",
+      "blocks": 1024,
+      "load": "light",
+      "instructions_per_block": 11,
+      "instructions": 11264,
+      "workload_sha256": "807efbcacc2d5d57b2c9ef4ea59b0dfe2ec405be3771b35d1118e0766ed10292"
+    },
+    {
+      "case": "linear/1024/heavy",
+      "topology": "linear",
+      "blocks": 1024,
+      "load": "heavy",
+      "instructions_per_block": 41,
+      "instructions": 41984,
+      "workload_sha256": "a9ef6205bd795e720fb57997880acee18657bbf72522860330c56156af917f50"
+    },
+    {
+      "case": "diamond-chain/64/base",
+      "topology": "diamond-chain",
+      "blocks": 64,
+      "load": "base",
+      "instructions_per_block": 9,
+      "instructions": 576,
+      "workload_sha256": "e45fea2bd00692f9699a23b3374a6b39188ac9cb17fe1cdbb3479bb560edf7d6"
+    },
+    {
+      "case": "diamond-chain/64/light",
+      "topology": "diamond-chain",
+      "blocks": 64,
+      "load": "light",
+      "instructions_per_block": 11,
+      "instructions": 704,
+      "workload_sha256": "edf27ef35adf8d7f907924c9eaa8630989026c3d634afb7c5b4fa76fc53fcc2b"
+    },
+    {
+      "case": "diamond-chain/64/heavy",
+      "topology": "diamond-chain",
+      "blocks": 64,
+      "load": "heavy",
+      "instructions_per_block": 41,
+      "instructions": 2624,
+      "workload_sha256": "2ee51a63499bd1b61cf26eb43dcc004d7aa73c3c0891dd3f83cf2f23e54cf31e"
+    },
+    {
+      "case": "diamond-chain/256/base",
+      "topology": "diamond-chain",
+      "blocks": 256,
+      "load": "base",
+      "instructions_per_block": 9,
+      "instructions": 2304,
+      "workload_sha256": "8a76bf3fdef4c2d632f7b6b90cb7d110e5b7968511b0d6ce0de7e86909c2571b"
+    },
+    {
+      "case": "diamond-chain/256/light",
+      "topology": "diamond-chain",
+      "blocks": 256,
+      "load": "light",
+      "instructions_per_block": 11,
+      "instructions": 2816,
+      "workload_sha256": "9c83f3176a04a8296b2256ad5b4c1c3f6fe22f5be250abc99a00f57ea0ad1a21"
+    },
+    {
+      "case": "diamond-chain/256/heavy",
+      "topology": "diamond-chain",
+      "blocks": 256,
+      "load": "heavy",
+      "instructions_per_block": 41,
+      "instructions": 10496,
+      "workload_sha256": "77f3e70108e747dac10105d9e924aff7e7cc73136e69707ce1200e4b113ee89e"
+    },
+    {
+      "case": "diamond-chain/1024/base",
+      "topology": "diamond-chain",
+      "blocks": 1024,
+      "load": "base",
+      "instructions_per_block": 9,
+      "instructions": 9216,
+      "workload_sha256": "2b6876794819495120a9e2e386d153e11cc2c18d815b3e99b8b73a9626ed89c3"
+    },
+    {
+      "case": "diamond-chain/1024/light",
+      "topology": "diamond-chain",
+      "blocks": 1024,
+      "load": "light",
+      "instructions_per_block": 11,
+      "instructions": 11264,
+      "workload_sha256": "306e9b1577b1b5becbf31149f1279caf1f92bd553342bd61b6517a61f3c7b08d"
+    },
+    {
+      "case": "diamond-chain/1024/heavy",
+      "topology": "diamond-chain",
+      "blocks": 1024,
+      "load": "heavy",
+      "instructions_per_block": 41,
+      "instructions": 41984,
+      "workload_sha256": "82069b3c0043a5af35702dbe537eb6b0b4419c7c353d4cd30b7c1f3a5088c42b"
+    },
+    {
+      "case": "fan-in/64/base",
+      "topology": "fan-in",
+      "blocks": 64,
+      "load": "base",
+      "instructions_per_block": 9,
+      "instructions": 576,
+      "workload_sha256": "9defc74fed4b40bcd0224b020aa0622026cb165ad3d387e594168ad06a314ce8"
+    },
+    {
+      "case": "fan-in/256/base",
+      "topology": "fan-in",
+      "blocks": 256,
+      "load": "base",
+      "instructions_per_block": 9,
+      "instructions": 2304,
+      "workload_sha256": "becf74f81436ed83159c312acbebd96d72aba8584e563674e57b441330ff6d6f"
+    },
+    {
+      "case": "fan-in/1024/base",
+      "topology": "fan-in",
+      "blocks": 1024,
+      "load": "base",
+      "instructions_per_block": 9,
+      "instructions": 9216,
+      "workload_sha256": "14cca0265737d553d97200a3e2de7fcfcc610e207ea160a9eec5911ab9370929"
+    },
+    {
+      "case": "nested-loop/64/base",
+      "topology": "nested-loop",
+      "blocks": 64,
+      "load": "base",
+      "instructions_per_block": 9,
+      "instructions": 576,
+      "workload_sha256": "7856b0911867a8adcde838b4690289db6a85472d2c0cc8b4742eb469bf1cb708"
+    },
+    {
+      "case": "nested-loop/256/base",
+      "topology": "nested-loop",
+      "blocks": 256,
+      "load": "base",
+      "instructions_per_block": 9,
+      "instructions": 2304,
+      "workload_sha256": "38c0ac0d6df803b776cb1aff52c571c8670b5e9691bc5833e362593f870c0d55"
+    },
+    {
+      "case": "nested-loop/1024/base",
+      "topology": "nested-loop",
+      "blocks": 1024,
+      "load": "base",
+      "instructions_per_block": 9,
+      "instructions": 9216,
+      "workload_sha256": "f9c24121e8b6f596ada53ab2fdcd4451464a404039cc5d95979fc68d6f678dad"
+    },
+    {
+      "case": "multi-exit/64/base",
+      "topology": "multi-exit",
+      "blocks": 64,
+      "load": "base",
+      "instructions_per_block": 9,
+      "instructions": 576,
+      "workload_sha256": "d10062004863198fc68a22f81178fedbf88e68ad1a21edcefaa2460e9d37d17a"
+    },
+    {
+      "case": "multi-exit/256/base",
+      "topology": "multi-exit",
+      "blocks": 256,
+      "load": "base",
+      "instructions_per_block": 9,
+      "instructions": 2304,
+      "workload_sha256": "cac2d774c31f5156026b4399af3817cb3e71a4029c341ab6def957609edfba2e"
+    },
+    {
+      "case": "multi-exit/1024/base",
+      "topology": "multi-exit",
+      "blocks": 1024,
+      "load": "base",
+      "instructions_per_block": 9,
+      "instructions": 9216,
+      "workload_sha256": "d717bcdd20717fdf323f28a9c083acb4987fac9dad9366de4b2ea90a594997e7"
+    },
+    {
+      "case": "no-exit/64/base",
+      "topology": "no-exit",
+      "blocks": 64,
+      "load": "base",
+      "instructions_per_block": 9,
+      "instructions": 576,
+      "workload_sha256": "362ba6690af1a9a2fd774c3d049a55aeb1d75f01c0fa21f1e378e73211806a97"
+    },
+    {
+      "case": "no-exit/256/base",
+      "topology": "no-exit",
+      "blocks": 256,
+      "load": "base",
+      "instructions_per_block": 9,
+      "instructions": 2304,
+      "workload_sha256": "3a36cde2da02681a1c27635cbcca15cd7acb8fec14c8008915814a6796bc4e1c"
+    },
+    {
+      "case": "no-exit/1024/base",
+      "topology": "no-exit",
+      "blocks": 1024,
+      "load": "base",
+      "instructions_per_block": 9,
+      "instructions": 9216,
+      "workload_sha256": "0b8aa448c5c3eb673a75c05226526313b421697b248fdd803fb51dd72be19f5b"
+    },
+    {
+      "case": "irreducible/64/base",
+      "topology": "irreducible",
+      "blocks": 64,
+      "load": "base",
+      "instructions_per_block": 9,
+      "instructions": 576,
+      "workload_sha256": "f06e6d92f2e01ca9ec5aed2ba93f8466bf52552d60313925bc50eae3d32cb5ff"
+    },
+    {
+      "case": "irreducible/256/base",
+      "topology": "irreducible",
+      "blocks": 256,
+      "load": "base",
+      "instructions_per_block": 9,
+      "instructions": 2304,
+      "workload_sha256": "2301f2abc57be4b378c7274e475071dbd02cc5de723b073c9799c08772a6bc1c"
+    },
+    {
+      "case": "irreducible/1024/base",
+      "topology": "irreducible",
+      "blocks": 1024,
+      "load": "base",
+      "instructions_per_block": 9,
+      "instructions": 9216,
+      "workload_sha256": "6546530ed16df2006ca4df518d2a0d32d9b2e0a4809b5a9a1ddba70875299ad3"
+    }
+  ],
+  "correctness_failures": [],
+  "runs": [
+    {
+      "run": 0,
+      "seconds": 14.831872,
+      "cases": [
+        {
+          "case": "linear/64/base",
+          "combined_nanos": 6015818,
+          "ir_nanos": 156075,
+          "cfg_nanos": 119746,
+          "emission_exclusive_nanos": 3976782,
+          "serialization_nanos": 1759718,
+          "span_sum_nanos": 6012321,
+          "unaccounted_fraction": 0.000581,
+          "serialized_bytes": 94234
+        },
+        {
+          "case": "linear/64/light",
+          "combined_nanos": 6115106,
+          "ir_nanos": 140245,
+          "cfg_nanos": 91733,
+          "emission_exclusive_nanos": 4149489,
+          "serialization_nanos": 1733549,
+          "span_sum_nanos": 6115016,
+          "unaccounted_fraction": 0.000015,
+          "serialized_bytes": 110652
+        },
+        {
+          "case": "linear/64/heavy",
+          "combined_nanos": 18911269,
+          "ir_nanos": 488775,
+          "cfg_nanos": 92626,
+          "emission_exclusive_nanos": 12042105,
+          "serialization_nanos": 6287603,
+          "span_sum_nanos": 18911109,
+          "unaccounted_fraction": 0.000008,
+          "serialized_bytes": 379779
+        },
+        {
+          "case": "linear/256/base",
+          "combined_nanos": 23930231,
+          "ir_nanos": 656933,
+          "cfg_nanos": 1372326,
+          "emission_exclusive_nanos": 15088658,
+          "serialization_nanos": 6812164,
+          "span_sum_nanos": 23930081,
+          "unaccounted_fraction": 0.000006,
+          "serialized_bytes": 372112
+        },
+        {
+          "case": "linear/256/light",
+          "combined_nanos": 25005655,
+          "ir_nanos": 745210,
+          "cfg_nanos": 1058112,
+          "emission_exclusive_nanos": 16424003,
+          "serialization_nanos": 6778160,
+          "span_sum_nanos": 25005485,
+          "unaccounted_fraction": 0.000007,
+          "serialized_bytes": 437826
+        },
+        {
+          "case": "linear/256/heavy",
+          "combined_nanos": 75464864,
+          "ir_nanos": 2808242,
+          "cfg_nanos": 1258190,
+          "emission_exclusive_nanos": 46717921,
+          "serialization_nanos": 24680351,
+          "span_sum_nanos": 75464704,
+          "unaccounted_fraction": 0.000002,
+          "serialized_bytes": 1514361
+        },
+        {
+          "case": "linear/1024/base",
+          "combined_nanos": 117090153,
+          "ir_nanos": 5928283,
+          "cfg_nanos": 23369932,
+          "emission_exclusive_nanos": 60522361,
+          "serialization_nanos": 27269297,
+          "span_sum_nanos": 117089873,
+          "unaccounted_fraction": 0.000002,
+          "serialized_bytes": 1484277
+        },
+        {
+          "case": "linear/1024/light",
+          "combined_nanos": 121858633,
+          "ir_nanos": 7735632,
+          "cfg_nanos": 22820973,
+          "emission_exclusive_nanos": 64450111,
+          "serialization_nanos": 26851667,
+          "span_sum_nanos": 121858383,
+          "unaccounted_fraction": 0.000002,
+          "serialized_bytes": 1747175
+        },
+        {
+          "case": "linear/1024/heavy",
+          "combined_nanos": 333236410,
+          "ir_nanos": 26864251,
+          "cfg_nanos": 21685836,
+          "emission_exclusive_nanos": 186159440,
+          "serialization_nanos": 98526603,
+          "span_sum_nanos": 333236130,
+          "unaccounted_fraction": 0.000001,
+          "serialized_bytes": 6053342
+        },
+        {
+          "case": "diamond-chain/64/base",
+          "combined_nanos": 7953743,
+          "ir_nanos": 134023,
+          "cfg_nanos": 113635,
+          "emission_exclusive_nanos": 5712425,
+          "serialization_nanos": 1993520,
+          "span_sum_nanos": 7953603,
+          "unaccounted_fraction": 0.000018,
+          "serialized_bytes": 95459
+        },
+        {
+          "case": "diamond-chain/64/light",
+          "combined_nanos": 8260224,
+          "ir_nanos": 135717,
+          "cfg_nanos": 109116,
+          "emission_exclusive_nanos": 6046086,
+          "serialization_nanos": 1969215,
+          "span_sum_nanos": 8260134,
+          "unaccounted_fraction": 0.000011,
+          "serialized_bytes": 111877
+        },
+        {
+          "case": "diamond-chain/64/heavy",
+          "combined_nanos": 22672412,
+          "ir_nanos": 394707,
+          "cfg_nanos": 106021,
+          "emission_exclusive_nanos": 15827916,
+          "serialization_nanos": 6343608,
+          "span_sum_nanos": 22672252,
+          "unaccounted_fraction": 0.000007,
+          "serialized_bytes": 381004
+        },
+        {
+          "case": "diamond-chain/256/base",
+          "combined_nanos": 31838199,
+          "ir_nanos": 678073,
+          "cfg_nanos": 1236018,
+          "emission_exclusive_nanos": 22131038,
+          "serialization_nanos": 7792920,
+          "span_sum_nanos": 31838049,
+          "unaccounted_fraction": 0.000005,
+          "serialized_bytes": 377063
+        },
+        {
+          "case": "diamond-chain/256/light",
+          "combined_nanos": 33184224,
+          "ir_nanos": 761881,
+          "cfg_nanos": 1207574,
+          "emission_exclusive_nanos": 23520816,
+          "serialization_nanos": 7693813,
+          "span_sum_nanos": 33184084,
+          "unaccounted_fraction": 0.000004,
+          "serialized_bytes": 442777
+        },
+        {
+          "case": "diamond-chain/256/heavy",
+          "combined_nanos": 91035934,
+          "ir_nanos": 2344223,
+          "cfg_nanos": 1239725,
+          "emission_exclusive_nanos": 62184254,
+          "serialization_nanos": 25267582,
+          "span_sum_nanos": 91035784,
+          "unaccounted_fraction": 0.000002,
+          "serialized_bytes": 1519312
+        },
+        {
+          "case": "diamond-chain/1024/base",
+          "combined_nanos": 149106369,
+          "ir_nanos": 6070321,
+          "cfg_nanos": 22363729,
+          "emission_exclusive_nanos": 89344946,
+          "serialization_nanos": 31327212,
+          "span_sum_nanos": 149106208,
+          "unaccounted_fraction": 0.000001,
+          "serialized_bytes": 1504216
+        },
+        {
+          "case": "diamond-chain/1024/light",
+          "combined_nanos": 156648273,
+          "ir_nanos": 7419773,
+          "cfg_nanos": 23241960,
+          "emission_exclusive_nanos": 95220439,
+          "serialization_nanos": 30765741,
+          "span_sum_nanos": 156647913,
+          "unaccounted_fraction": 0.000002,
+          "serialized_bytes": 1767114
+        },
+        {
+          "case": "diamond-chain/1024/heavy",
+          "combined_nanos": 402958110,
+          "ir_nanos": 26079617,
+          "cfg_nanos": 23133504,
+          "emission_exclusive_nanos": 251560188,
+          "serialization_nanos": 102184500,
+          "span_sum_nanos": 402957809,
+          "unaccounted_fraction": 0.000001,
+          "serialized_bytes": 6073281
+        },
+        {
+          "case": "fan-in/64/base",
+          "combined_nanos": 36622447,
+          "ir_nanos": 129525,
+          "cfg_nanos": 71025,
+          "emission_exclusive_nanos": 30845019,
+          "serialization_nanos": 5576758,
+          "span_sum_nanos": 36622327,
+          "unaccounted_fraction": 0.000003,
+          "serialized_bytes": 113196
+        },
+        {
+          "case": "fan-in/256/base",
+          "combined_nanos": 132630636,
+          "ir_nanos": 712417,
+          "cfg_nanos": 549128,
+          "emission_exclusive_nanos": 114622236,
+          "serialization_nanos": 16746704,
+          "span_sum_nanos": 132630485,
+          "unaccounted_fraction": 0.000001,
+          "serialized_bytes": 418556
+        },
+        {
+          "case": "fan-in/1024/base",
+          "combined_nanos": 1456979196,
+          "ir_nanos": 7082175,
+          "cfg_nanos": 10459312,
+          "emission_exclusive_nanos": 1387017602,
+          "serialization_nanos": 52419846,
+          "span_sum_nanos": 1456978935,
+          "unaccounted_fraction": 0.000000,
+          "serialized_bytes": 1610906
+        },
+        {
+          "case": "nested-loop/64/base",
+          "combined_nanos": 6938954,
+          "ir_nanos": 123443,
+          "cfg_nanos": 185130,
+          "emission_exclusive_nanos": 4701933,
+          "serialization_nanos": 1928328,
+          "span_sum_nanos": 6938834,
+          "unaccounted_fraction": 0.000017,
+          "serialized_bytes": 94965
+        },
+        {
+          "case": "nested-loop/256/base",
+          "combined_nanos": 28083888,
+          "ir_nanos": 659077,
+          "cfg_nanos": 2296323,
+          "emission_exclusive_nanos": 17724564,
+          "serialization_nanos": 7403804,
+          "span_sum_nanos": 28083768,
+          "unaccounted_fraction": 0.000004,
+          "serialized_bytes": 374379
+        },
+        {
+          "case": "nested-loop/1024/base",
+          "combined_nanos": 142053799,
+          "ir_nanos": 6331044,
+          "cfg_nanos": 36001944,
+          "emission_exclusive_nanos": 70409321,
+          "serialization_nanos": 29311298,
+          "span_sum_nanos": 142053607,
+          "unaccounted_fraction": 0.000001,
+          "serialized_bytes": 1492688
+        },
+        {
+          "case": "multi-exit/64/base",
+          "combined_nanos": 40243326,
+          "ir_nanos": 126870,
+          "cfg_nanos": 81424,
+          "emission_exclusive_nanos": 31809825,
+          "serialization_nanos": 8225057,
+          "span_sum_nanos": 40243176,
+          "unaccounted_fraction": 0.000004,
+          "serialized_bytes": 122982
+        },
+        {
+          "case": "multi-exit/256/base",
+          "combined_nanos": 169038047,
+          "ir_nanos": 707308,
+          "cfg_nanos": 590477,
+          "emission_exclusive_nanos": 149617795,
+          "serialization_nanos": 18122306,
+          "span_sum_nanos": 169037886,
+          "unaccounted_fraction": 0.000001,
+          "serialized_bytes": 423151
+        },
+        {
+          "case": "multi-exit/1024/base",
+          "combined_nanos": 1583749389,
+          "ir_nanos": 7223071,
+          "cfg_nanos": 10825775,
+          "emission_exclusive_nanos": 1511702211,
+          "serialization_nanos": 53998132,
+          "span_sum_nanos": 1583749189,
+          "unaccounted_fraction": 0.000000,
+          "serialized_bytes": 1618468
+        },
+        {
+          "case": "no-exit/64/base",
+          "combined_nanos": 6248658,
+          "ir_nanos": 126619,
+          "cfg_nanos": 53922,
+          "emission_exclusive_nanos": 4241803,
+          "serialization_nanos": 1826194,
+          "span_sum_nanos": 6248538,
+          "unaccounted_fraction": 0.000019,
+          "serialized_bytes": 94560
+        },
+        {
+          "case": "no-exit/256/base",
+          "combined_nanos": 24632099,
+          "ir_nanos": 674536,
+          "cfg_nanos": 469338,
+          "emission_exclusive_nanos": 16338913,
+          "serialization_nanos": 7149212,
+          "span_sum_nanos": 24631999,
+          "unaccounted_fraction": 0.000004,
+          "serialized_bytes": 373206
+        },
+        {
+          "case": "no-exit/1024/base",
+          "combined_nanos": 106226405,
+          "ir_nanos": 5989588,
+          "cfg_nanos": 6747903,
+          "emission_exclusive_nanos": 65142480,
+          "serialization_nanos": 28346294,
+          "span_sum_nanos": 106226265,
+          "unaccounted_fraction": 0.000001,
+          "serialized_bytes": 1488443
+        },
+        {
+          "case": "irreducible/64/base",
+          "combined_nanos": 1151403435,
+          "ir_nanos": 126279,
+          "cfg_nanos": 89018,
+          "emission_exclusive_nanos": 889724749,
+          "serialization_nanos": 261463219,
+          "span_sum_nanos": 1151403265,
+          "unaccounted_fraction": 0.000000,
+          "serialized_bytes": 1238919
+        },
+        {
+          "case": "irreducible/256/base",
+          "combined_nanos": 2756142811,
+          "ir_nanos": 703341,
+          "cfg_nanos": 1164111,
+          "emission_exclusive_nanos": 2299219910,
+          "serialization_nanos": 455055258,
+          "span_sum_nanos": 2756142620,
+          "unaccounted_fraction": 0.000000,
+          "serialized_bytes": 2365023
+        },
+        {
+          "case": "irreducible/1024/base",
+          "combined_nanos": 5555969658,
+          "ir_nanos": 6309854,
+          "cfg_nanos": 18831097,
+          "emission_exclusive_nanos": 5018494850,
+          "serialization_nanos": 512333556,
+          "span_sum_nanos": 5555969357,
+          "unaccounted_fraction": 0.000000,
+          "serialized_bytes": 3732878
+        }
+      ]
+    }
+  ]
+}

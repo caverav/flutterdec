@@ -14,37 +14,11 @@ impl<'a> FuncEmitter<'a> {
             })
     }
 
-    /// Length of the string literal starting at `i`, including both quotes.
-    ///
-    /// Recovered pool strings are real program data and frequently contain the same
-    /// punctuation these rewrites look for. `"... collected (nullptr). This is ..."` reads
-    /// as a parenthesised member access to a byte scanner, and simplifying it silently
-    /// edits a string that came out of the binary. Scanners copy literals verbatim.
-    fn string_literal_len(bytes: &[u8], i: usize) -> Option<usize> {
-        if bytes.get(i) != Some(&b'"') {
-            return None;
-        }
-        let mut j = i + 1;
-        while j < bytes.len() {
-            match bytes[j] {
-                b'\\' => j += 2,
-                b'"' => return Some(j + 1 - i),
-                _ => j += 1,
-            }
-        }
-        None
-    }
-
     fn simplify_wrapped_member_access_once(input: &str) -> String {
         let bytes = input.as_bytes();
         let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
         let mut i = 0usize;
         while i < bytes.len() {
-            if let Some(len) = Self::string_literal_len(bytes, i) {
-                out.extend_from_slice(&bytes[i..i + len]);
-                i += len;
-                continue;
-            }
             if i + 3 < bytes.len() && bytes[i] == b'(' && bytes[i + 1] == b'(' {
                 let mut depth = 0i32;
                 let mut j = i;
@@ -83,17 +57,26 @@ impl<'a> FuncEmitter<'a> {
         String::from_utf8(out).unwrap_or_else(|_| input.to_string())
     }
 
+    /// Whether the parenthesis at `i` opens an argument list rather than a
+    /// grouping.
+    ///
+    /// `f(a).b` has the same shape as `(a).b` to a scanner that only looks
+    /// forward, and unwrapping it produced `fa.b`: the call is gone and an
+    /// identifier the body never had is in its place. What separates the two is
+    /// the byte before the parenthesis - a name, or the end of one.
+    fn opens_an_argument_list(bytes: &[u8], i: usize) -> bool {
+        let Some(previous) = i.checked_sub(1).and_then(|prev| bytes.get(prev)) else {
+            return false;
+        };
+        Self::is_ident_char(*previous as char) || *previous == b')' || *previous == b']'
+    }
+
     fn simplify_parenthesized_member_access_once(input: &str) -> String {
         let bytes = input.as_bytes();
         let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
         let mut i = 0usize;
         while i < bytes.len() {
-            if let Some(len) = Self::string_literal_len(bytes, i) {
-                out.extend_from_slice(&bytes[i..i + len]);
-                i += len;
-                continue;
-            }
-            if bytes[i] == b'(' {
+            if bytes[i] == b'(' && !Self::opens_an_argument_list(bytes, i) {
                 let mut depth = 0i32;
                 let mut j = i;
                 while j < bytes.len() {
@@ -224,6 +207,52 @@ impl<'a> FuncEmitter<'a> {
         String::from_utf8(out).unwrap_or_else(|_| input.to_string())
     }
 
+    /// The single top-level equality in `inner`, as its byte offset and the
+    /// operator that negates it.
+    ///
+    /// Top level, because splitting on the first ` != ` in the text took one out
+    /// of a nested operand: `!((x != y) != (z != w))` became
+    /// `((x == y) != (z != w))`, which negates the wrong comparison and is a
+    /// different value, not a different spelling.
+    ///
+    /// Exactly one, with no top-level `&&`, `||` or conditional, because swapping
+    /// the operator is only the negation when the comparison is the whole
+    /// expression. `!(x || y != z)` is not `(x || y == z)`: the negation
+    /// distributes over the looser operator, so there is nothing to rewrite and
+    /// the explicit `!` stays.
+    fn top_level_equality(inner: &str) -> Option<(usize, &'static str)> {
+        let bytes = inner.as_bytes();
+        let mut depth = 0i32;
+        let mut found: Option<(usize, &'static str)> = None;
+        let mut i = 0usize;
+        while i < bytes.len() {
+            match bytes[i] {
+                b'(' | b'[' => depth += 1,
+                b')' | b']' => depth -= 1,
+                _ if depth == 0 => {
+                    if bytes[i..].starts_with(b" != ") || bytes[i..].starts_with(b" == ") {
+                        if found.is_some() {
+                            return None;
+                        }
+                        let negated = if bytes[i + 1] == b'!' { " == " } else { " != " };
+                        found = Some((i, negated));
+                        i += 4;
+                        continue;
+                    }
+                    if bytes[i..].starts_with(b"&&") || bytes[i..].starts_with(b"||") {
+                        return None;
+                    }
+                    if bytes[i] == b'?' {
+                        return None;
+                    }
+                }
+                _ => {}
+            }
+            i += 1;
+        }
+        found
+    }
+
     pub(super) fn rewrite_negated_comparisons(input: &str) -> String {
         let bytes = input.as_bytes();
         let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
@@ -252,20 +281,18 @@ impl<'a> FuncEmitter<'a> {
                         if let Some(inner) =
                             wrapped.strip_prefix('(').and_then(|s| s.strip_suffix(')'))
                         {
-                            if let Some((lhs, rhs)) = inner.split_once(" != ") {
-                                out.push(b'(');
-                                out.extend_from_slice(lhs.trim().as_bytes());
-                                out.extend_from_slice(b" == ");
-                                out.extend_from_slice(rhs.trim().as_bytes());
-                                out.push(b')');
-                                i = end_idx + 1;
-                                continue;
+                            // `!((a != b))` wraps its comparison twice, so the
+                            // redundant layers come off before asking what the
+                            // top level holds.
+                            let mut inner = inner;
+                            while let Some(stripped) = Self::strip_outer_parens_once(inner) {
+                                inner = stripped;
                             }
-                            if let Some((lhs, rhs)) = inner.split_once(" == ") {
+                            if let Some((at, negated)) = Self::top_level_equality(inner) {
                                 out.push(b'(');
-                                out.extend_from_slice(lhs.trim().as_bytes());
-                                out.extend_from_slice(b" != ");
-                                out.extend_from_slice(rhs.trim().as_bytes());
+                                out.extend_from_slice(inner[..at].trim().as_bytes());
+                                out.extend_from_slice(negated.as_bytes());
+                                out.extend_from_slice(inner[at + 4..].trim().as_bytes());
                                 out.push(b')');
                                 i = end_idx + 1;
                                 continue;
@@ -320,14 +347,49 @@ impl<'a> FuncEmitter<'a> {
         format!("{}if ({}) {{", " ".repeat(indent), cur)
     }
 
+    /// Text with every `needle` removed, unless the byte after a match continues
+    /// an identifier.
+    ///
+    /// ` + x28` must not eat the head of ` + x280`, and a plain `replace` has no
+    /// notion of where a token ends.
+    fn strip_token(text: &str, needle: &str) -> String {
+        let mut out = String::with_capacity(text.len());
+        let mut rest = text;
+        while let Some(at) = rest.find(needle) {
+            let after = rest[at + needle.len()..].chars().next();
+            out.push_str(&rest[..at]);
+            if after.is_some_and(Self::is_ident_char) {
+                out.push_str(needle);
+            }
+            rest = &rest[at + needle.len()..];
+        }
+        out.push_str(rest);
+        out
+    }
+
     pub(super) fn clean_expr(expr: String) -> String {
-        let mut s = expr;
-        s = s.replace(" + x28 /* lsl #32 */", "");
-        s = s.replace(" + x28", "");
-        s = Self::rewrite_negated_comparisons(&s);
-        s = Self::rewrite_bitfield_classid(&s);
-        s = normalize_pool_page_field_exprs(&s);
-        s = Self::simplify_wrapped_member_accesses(&s);
+        // The compressed-pointer strip is the one pattern that deliberately spans
+        // a comment the emitter rendered itself, so it runs where a comment is
+        // ordinary text. A string literal is still off limits: a recovered string
+        // reading `... + x28 ...` is program data.
+        let mut s = rewrite_outside_string_literals(&expr, |code| {
+            let stripped = Self::strip_token(code, " + x28 /* lsl #32 */");
+            Self::strip_token(&stripped, " + x28")
+        });
+        // The scanning rewrites see code only. Each one looks for punctuation and
+        // call shapes that occur in recovered strings and in the emitter's own
+        // comments as often as in code, and each is byte-preserving, so a pattern
+        // that straddles a boundary simply stops matching.
+        s = rewrite_code_spans(&s, |code| {
+            let mut c = Self::rewrite_negated_comparisons(code);
+            c = Self::rewrite_bitfield_classid(&c);
+            c = normalize_pool_page_field_exprs(&c);
+            Self::simplify_wrapped_member_accesses(&c)
+        });
+        // Whole-expression forms, matched by their exact shape rather than
+        // scanned for: an `if` line whose condition is wrapped, and a bare stack
+        // slot. Neither can fire on a fragment of a line that carries a literal
+        // or a comment, because neither shape survives the extra text.
         s = Self::simplify_wrapped_if_condition(&s);
         if let Some(stack_slot) = Self::normalize_stack_slot_expr(&s) {
             s = stack_slot;
@@ -392,5 +454,166 @@ mod expr_cleanup_utf8_tests {
         // The header sits below the tag and is named, not numbered.
         assert_eq!(FuncEmitter::field_expr("obj", -1), "obj._tag");
         assert_eq!(FuncEmitter::field_expr("obj", -8), "obj.m8");
+    }
+}
+
+/// The boundaries `clean_expr` may not cross, and the grouping it may not change.
+///
+/// These go straight at `clean_expr` because the shapes are not all reachable from
+/// a synthetic instruction stream: a line comment quoting an expression and a
+/// negation over two nested comparisons both come out of real bodies, and neither
+/// can be planted through the IR.
+#[cfg(test)]
+mod rewrite_boundary_tests {
+    use super::*;
+
+    /// A comment is the emitter's own statement about the line, so a cleanup
+    /// rewrite may read it but never edit it.
+    #[test]
+    fn cleanup_rewrites_code_and_leaves_comments_alone() {
+        let cases = [
+            // line comment
+            (
+                "  x = ((a)).b; // ((c)).d",
+                "  x = a.b; // ((c)).d",
+            ),
+            // block comment
+            (
+                "  x = ((a)).b /* ((c)).d */;",
+                "  x = a.b /* ((c)).d */;",
+            ),
+            // the class-id rewrite, in code and quoted in a comment
+            (
+                "  y = bitField(obj._tag, 0xc, 0x14); // bitField(a, 0xc, 0x14)",
+                "  y = classId(obj); // bitField(a, 0xc, 0x14)",
+            ),
+            // a negated comparison quoted in a comment
+            // The condition unwrapper needs the line to end with `) {`, so a
+            // trailing comment leaves the redundant parentheses in place. That
+            // is the conservative direction and the negation is still correct.
+            (
+                "  if (!((a != b))) { // !((c != d))",
+                "  if ((a == b)) { // !((c != d))",
+            ),
+        ];
+        for (input, expected) in cases {
+            assert_eq!(
+                FuncEmitter::clean_expr(input.to_string()),
+                expected,
+                "cleanup crossed a comment boundary: {input}"
+            );
+        }
+    }
+
+    /// A recovered string is program data, escapes included: a `\"` inside it does
+    /// not end the literal, so a scanner that mishandles it edits the tail of the
+    /// string as if it were code.
+    #[test]
+    fn cleanup_leaves_string_literals_alone_including_escaped_quotes() {
+        for input in [
+            r#"  x = "a \" ((y)).z";"#,
+            r#"  x = "bitField(a, 0xc, 0x14)";"#,
+            r#"  x = "!((p != q))";"#,
+            r#"  x = "p + x28";"#,
+            r#"  x = "sp[0x10] (value3 - 1)";"#,
+        ] {
+            assert_eq!(
+                FuncEmitter::clean_expr(input.to_string()),
+                input,
+                "cleanup edited a recovered string: {input}"
+            );
+        }
+    }
+
+    /// The compressed-pointer strip removes a whole token, and the modifier
+    /// comment is part of its pattern because the emitter rendered it.
+    #[test]
+    fn the_compressed_pointer_strip_stops_at_the_token_boundary() {
+        assert_eq!(FuncEmitter::clean_expr("(p + x28)".to_string()), "(p)");
+        assert_eq!(
+            FuncEmitter::clean_expr("(p + x28 /* lsl #32 */)".to_string()),
+            "(p)"
+        );
+        // Not the register: a longer name only starts with it.
+        assert_eq!(
+            FuncEmitter::clean_expr("(p + x281)".to_string()),
+            "(p + x281)"
+        );
+        // Inside a recovered string it is text, not an addition.
+        assert_eq!(
+            FuncEmitter::clean_expr(r#"  x = "p + x28";"#.to_string()),
+            r#"  x = "p + x28";"#
+        );
+    }
+
+    /// Negating a comparison is swapping its operator only when the comparison is
+    /// the whole expression. The nested case used to split on the first ` != ` in
+    /// the text, which sat inside the left operand, so the wrong comparison was
+    /// negated and the value changed.
+    #[test]
+    fn negation_rewrites_the_top_level_comparison_or_nothing() {
+        let cases = [
+            // An `if` line has its redundant condition parentheses stripped by
+            // the same pass, so the negation shows up unwrapped here.
+            ("if (!((a != b))) {", "if (a == b) {"),
+            ("if (!((a == b))) {", "if (a != b) {"),
+            // Two comparisons, one negation: only the outer one is negated.
+            (
+                "x = !((a != b) != (c != d));",
+                "x = ((a != b) == (c != d));",
+            ),
+            (
+                "x = !((a == b) == (c == d));",
+                "x = ((a == b) != (c == d));",
+            ),
+            // A looser operator at the top level: the negation does not
+            // distribute into one comparison, so the explicit `!` stays.
+            (
+                "x = !((a || b != c));",
+                "x = !((a || b != c));",
+            ),
+            (
+                "x = !((a && b == c));",
+                "x = !((a && b == c));",
+            ),
+            // A conditional value is not a comparison either.
+            (
+                "x = !((a ? b : c != d));",
+                "x = !((a ? b : c != d));",
+            ),
+            // Shifted operands keep their own parentheses on both sides.
+            (
+                "x = !(((a >> 1) != (b >>> 2)));",
+                "x = ((a >> 1) == (b >>> 2));",
+            ),
+        ];
+        for (input, expected) in cases {
+            assert_eq!(
+                FuncEmitter::clean_expr(input.to_string()),
+                expected,
+                "wrong negation for: {input}"
+            );
+        }
+    }
+
+    /// A member access is only unwrapped when the parentheses are redundant, so
+    /// an operator inside them keeps them.
+    #[test]
+    fn required_parentheses_are_kept() {
+        for (input, expected) in [
+            ("((arg0 + 1)).f7", "((arg0 + 1)).f7"),
+            ("((obj.f15)).f7", "obj.f15.f7"),
+            // A call is not a grouping: its argument list keeps its parentheses.
+            ("((f(a))).b", "f(a).b"),
+            ("(smiUntag(x)).f8", "smiUntag(x).f8"),
+            ("f(a).b", "f(a).b"),
+            ("((a & 0xff)).f8", "((a & 0xff)).f8"),
+        ] {
+            assert_eq!(
+                FuncEmitter::clean_expr(input.to_string()),
+                expected,
+                "wrong parenthesisation for: {input}"
+            );
+        }
     }
 }

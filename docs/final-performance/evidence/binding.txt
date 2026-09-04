@@ -1,0 +1,39 @@
+started_at 2026-08-19T04:19:28-04:00
+bound_at 2026-08-19T04:21:14-04:00
+seed_created_at 2026-08-19T04:21:14-04:00
+heldout_first_run_at 2026-08-19T04:31:55-04:00
+heldout_completed_at 2026-08-19T04:34:19-04:00
+ended_at 2026-08-19T04:35:30-04:00
+seed_non_disclosure seed and manifest were not printed or inspected before both product revisions were bound; seed disclosed only after all held-out pairs and resource runs completed
+reference_product_ref 630ec442d951aac5704ae80287367912bfbfc388
+reference_commit_time 2026-08-19T00:14:00-04:00
+reference_tree d6af5aa99fb395904a77fede73912ff60928a6b7
+candidate_product_ref 9b82e07fa62f97654aea5153d9fb6a2ef57a377a
+candidate_commit_time 2026-08-19T02:47:20-04:00
+candidate_tree c64cc91aad7f5cc798984726268a30b2bd7753dc
+accepted_timing_harness_ref 4c127aba4e74fb6f8d486c4cb066586bb0d74846
+accepted_timing_harness_tree 83e06014b368736c1921a0da7949c7b6a0b76e97
+timing_patch_sha256 14413796ca8a89cc1328497b5c87629b1c55f945ec58e73eebb3838df0700460
+accepted_resource_guard_ref f4eb2d87d0bc8649addce2a2522ee8a56e856ca1
+resource_harness_ref b0e615785b28e7e58aa06dd1b929dd58acf06e53
+resource_overlay_sha256 eda7c8bff8207fac64d3b9b9f4ce88e10e1805fb5a9a327453b94b079b437e0e
+timing_reference_binary_sha256 3d336d0000b5b88dda101d58412660b8fb737a76ba5fe7643905191c3f6b2098
+timing_candidate_binary_sha256 142253244fabb79894e9ab3622d93dc816623d92f8fa5dcbbc9a1b6b949046d5
+resource_reference_binary_sha256 bd3798a0c4e9e87a21fe862831844946564c86ab3f79e48fdb1a58c3a5e077ce
+resource_candidate_binary_sha256 878e1c868b5587275805afa9d922f697562843e3a830c966536828e5afc5ea10
+rustc_vv rustc 1.92.0 (ded5c06cf 2025-12-08) (built from a source tarball);binary: rustc;commit-hash: ded5c06cf21d2b93bffd5d884aa6e96934ee4234;commit-date: 2025-12-08;host: x86_64-unknown-linux-gnu;release: 1.92.0;LLVM version: 21.1.8;
+rustc_binary_sha256 f86a8652a9c6a4066ba361c4a646450dd53e1cde044e00f96cc940b40c80c12c
+cargo_vv cargo 1.92.0 (344c4567c 2025-10-21);release: 1.92.0;commit-hash: 344c4567c634a25837e3c3476aac08af84cf9203;commit-date: 2025-10-21;host: x86_64-unknown-linux-gnu;libgit2: 1.9.1 (sys:0.20.2 vendored);libcurl: 8.17.0 (sys:0.4.83+curl-8.15.0 system ssl:OpenSSL/3.6.0);os: Gentoo Linux 2.15.0 [64-bit];
+cargo_binary_sha256 14a9b2abc7db5614c61e2ecc956785ffdc072acdfb64b7f42e5f0bf26825479d
+nix_version nix (Nix) 2.34.3
+nix_binary_sha256 fc3250073f7b6275eb520fd500f420c266658c752d958ce27d7b8db1de252c87
+flake_lock_sha256 bfab35a904129b6cdc0240225bc0d524818a49ca3d1a4c89c99c096d7f726c3a
+rust_toolchain_sha256 a6a0bbd29ffaa8182dc22d1d9149709f1091e47df40ed96eb8a78a711c66a4ce
+CARGO_INCREMENTAL 0
+RUSTFLAGS unset
+CARGO_ENCODED_RUSTFLAGS unset
+warmups 3
+pairs 15
+pair_order alternating
+timeout_seconds 120
+memory_limit_bytes 2147483648

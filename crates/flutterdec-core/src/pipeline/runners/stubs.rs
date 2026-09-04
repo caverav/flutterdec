@@ -528,11 +528,17 @@ fn immediate(op_str: &str) -> Option<u64> {
 }
 
 /// How much unreachable code a prune removed, for the report.
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Default, Clone)]
 pub(super) struct NoreturnPrune {
     pub(super) functions: usize,
     pub(super) blocks_cut: usize,
     pub(super) instructions_cut: usize,
+    /// Functions skipped because their graph failed the shared identity ruler.
+    /// Should stay zero: the builder is the only producer, so a nonzero count is a
+    /// builder regression and must be visible rather than silently leaving a
+    /// fabricated fall-through in place.
+    pub(super) skipped_invalid_ir: usize,
+    pub(super) pruned: Vec<flutterdec_decompiler::BlockIdentity>,
 }
 
 /// Removes the control flow that follows a call which never returns.
@@ -562,11 +568,19 @@ pub(super) fn prune_calls_that_never_return(
         return stats;
     }
     for f in ir {
+        // Before the reachability walk below, which indexes blocks by id: on a
+        // graph with a duplicate id or an edge to a block that does not exist the
+        // walk reads another block's successors, and the count it produces is what
+        // the report publishes as blocks removed.
+        if flutterdec_ir::validate_canonical_cfg(f).is_err() {
+            stats.skipped_invalid_ir += 1;
+            continue;
+        }
         // Measured as reachable-before minus reachable-after. The IR already
         // contains blocks no path reaches, so counting every unreachable block
         // after the cut would credit this pass with them: on one sample that
         // reads 162,081 instead of the 13,696 it actually removes.
-        let reachable_before = reachable_block_count(f);
+        let reachable_before = reachable_block_ids(f);
         let mut cut_any = false;
         // Which blocks terminate, and after which instruction.
         let terminators: Vec<(usize, usize)> = f
@@ -594,27 +608,43 @@ pub(super) fn prune_calls_that_never_return(
             if !dropped_succs.is_empty() || tail > 0 {
                 cut_any = true;
             }
-            // Keep `preds` consistent: `helper_flow/summary.rs` reads it directly
-            // to score a block, without cross-checking the successor side.
-            for succ in dropped_succs {
-                if let Some(sb) = f.blocks.iter_mut().find(|b| b.id == succ) {
-                    sb.preds.retain(|p| *p != id);
-                }
-            }
         }
         if !cut_any {
             continue;
         }
+        // Successors are the authority and predecessors are re-derived from them,
+        // through the one canonical path rather than through a second copy of the
+        // reciprocity rule here. `helper_flow/summary.rs` reads predecessors
+        // directly to score a block without cross-checking the successor side, so
+        // the predecessor side is exactly the one that used to go stale.
+        flutterdec_ir::rebuild_edges(&mut f.blocks);
+        debug_assert_eq!(
+            flutterdec_ir::validate_canonical_cfg(f),
+            Ok(()),
+            "the noreturn prune left a graph its consumers cannot index"
+        );
         stats.functions += 1;
-        stats.blocks_cut += reachable_before.saturating_sub(reachable_block_count(f));
+        let reachable_after = reachable_block_ids(f);
+        for id in reachable_before.difference(&reachable_after) {
+            if let Some(block) = f.blocks.iter().find(|block| block.id == *id) {
+                stats.pruned.push(flutterdec_decompiler::BlockIdentity {
+                    function_id: f.function_id,
+                    start_va: block.start_va,
+                });
+            }
+        }
+        stats.blocks_cut += reachable_before.len().saturating_sub(reachable_after.len());
     }
+    stats
+        .pruned
+        .sort_unstable_by_key(|identity| (identity.function_id, identity.start_va));
     stats
 }
 
 /// Blocks reachable from the entry along successor edges.
-fn reachable_block_count(f: &FunctionIr) -> usize {
+fn reachable_block_ids(f: &FunctionIr) -> HashSet<usize> {
     let Some(entry) = f.blocks.first().map(|b| b.id) else {
-        return 0;
+        return HashSet::new();
     };
     let mut seen = HashSet::new();
     let mut stack = vec![entry];
@@ -626,7 +656,7 @@ fn reachable_block_count(f: &FunctionIr) -> usize {
             stack.extend(b.succs.iter().copied());
         }
     }
-    seen.len()
+    seen
 }
 
 /// The VA a `Call` target names, e.g. `"#0x17368d0"`.
@@ -937,12 +967,21 @@ mod trampoline_tests {
     }
 }
 
+// The no-return prune identity boundary. A separate, digest-protected file rather than
+// part of `prune_tests` below, because this file is product source that later
+// work edits, so a digest over it would fire on legitimate change. This
+// declaration is the only thing that compiles that file and cannot be digested
+// either, so `scripts/check-oracle-inventory.py` proves it by compilation.
+#[cfg(test)]
+#[path = "stubs/identity_tests.rs"]
+mod stubs_identity_tests;
+
 #[cfg(test)]
 mod prune_tests {
     use super::*;
     use flutterdec_ir::{BasicBlock, LlirInstr};
 
-    fn call(va: u64, target: &str) -> LlirInstr {
+    pub(super) fn call(va: u64, target: &str) -> LlirInstr {
         LlirInstr {
             va,
             op: IROp::Call,
@@ -951,7 +990,7 @@ mod prune_tests {
         }
     }
 
-    fn other(va: u64, src: &str) -> LlirInstr {
+    pub(super) fn other(va: u64, src: &str) -> LlirInstr {
         LlirInstr {
             va,
             op: IROp::Other,
@@ -960,7 +999,12 @@ mod prune_tests {
         }
     }
 
-    fn blk(id: usize, start_va: u64, instrs: Vec<LlirInstr>, succs: Vec<usize>) -> BasicBlock {
+    pub(super) fn blk(
+        id: usize,
+        start_va: u64,
+        instrs: Vec<LlirInstr>,
+        succs: Vec<usize>,
+    ) -> BasicBlock {
         BasicBlock {
             id,
             start_va,
@@ -996,16 +1040,15 @@ mod prune_tests {
                 blk(2, 0x1010, vec![other(0x1010, "ret")], vec![]),
             ],
         }];
-        for b in 0..ir[0].blocks.len() {
-            let succs = ir[0].blocks[b].succs.clone();
-            let id = ir[0].blocks[b].id;
-            for s in succs {
-                ir[0].blocks[s].preds.push(id);
-            }
-        }
+        flutterdec_ir::rebuild_edges(&mut ir[0].blocks);
 
         let stats = prune_calls_that_never_return(&mut ir, &HashSet::from([0x9000]));
 
+        assert_eq!(
+            flutterdec_ir::validate_canonical_cfg(&ir[0]),
+            Ok(()),
+            "the prune must leave a canonical graph"
+        );
         assert_eq!(stats.functions, 1);
         assert_eq!(stats.blocks_cut, 1, "block 2 becomes unreachable");
         assert_eq!(stats.instructions_cut, 2, "the two bytes after the throw");
@@ -1025,6 +1068,36 @@ mod prune_tests {
         );
     }
 
+    #[test]
+    fn noreturn_pruned_identities_are_structurally_ordered() {
+        let mut blocks = vec![blk(0, 0x1000, vec![call(0x1000, "#0x9000")], vec![1])];
+        blocks.extend((1..=10).map(|id| {
+            blk(
+                id,
+                0x1000 + id as u64 * 4,
+                vec![other(0x1000 + id as u64 * 4, "mov x0, x1")],
+                (id < 10).then_some(id + 1).into_iter().collect(),
+            )
+        }));
+        let mut ir = vec![FunctionIr {
+            function_id: 7,
+            name: "sub_1000".to_string(),
+            entry_va: 0x1000,
+            blocks,
+        }];
+        flutterdec_ir::rebuild_edges(&mut ir[0].blocks);
+
+        let stats = prune_calls_that_never_return(&mut ir, &HashSet::from([0x9000]));
+        assert_eq!(
+            stats
+                .pruned
+                .iter()
+                .map(|identity| identity.start_va)
+                .collect::<Vec<_>>(),
+            (1..=10).map(|id| 0x1000 + id * 4).collect::<Vec<_>>()
+        );
+    }
+
     /// A stub that returns keeps its fall-through. `stackOverflow` does work and
     /// comes back, and `allocateMint` produces a value, so the flag is per slot
     /// rather than per family.
@@ -1039,8 +1112,13 @@ mod prune_tests {
                 blk(1, 0x1004, vec![other(0x1004, "ret")], vec![]),
             ],
         }];
+        // Through the canonical path, not by hand: a fixture whose predecessors
+        // are empty fails the ruler the prune applies, so it would be skipped and
+        // every assertion below would pass for the wrong reason.
+        flutterdec_ir::rebuild_edges(&mut ir[0].blocks);
         let stats = prune_calls_that_never_return(&mut ir, &HashSet::from([0x9000]));
         assert_eq!(stats.functions, 0);
+        assert_eq!(stats.skipped_invalid_ir, 0, "the fixture is well formed");
         assert_eq!(ir[0].blocks[0].succs, vec![1], "a returning call falls through");
     }
 
