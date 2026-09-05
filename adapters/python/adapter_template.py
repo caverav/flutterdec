@@ -55,10 +55,11 @@ EXACT = "exact"
 DERIVED = "derived"
 HEURISTIC = "heuristic"
 
-# Mirrors `validate::PLACEHOLDER_NAMES`. A carved string that is one of these is
-# an admission of ignorance wearing a value's clothes, and the host rejects the
-# whole model over one of them, so they are filtered at the source.
-PLACEHOLDER_NAMES = frozenset(
+# Mirrors `validate::CASE_INSENSITIVE_PLACEHOLDERS` and `EXACT_LOWERCASE_PLACEHOLDERS`.
+# A carved string that is one of these is an admission of ignorance wearing a
+# value's clothes, and the host rejects the whole model over one of them, so
+# they are filtered at the source.
+CASE_INSENSITIVE_PLACEHOLDERS = frozenset(
     [
         "",
         "-",
@@ -67,9 +68,6 @@ PLACEHOLDER_NAMES = frozenset(
         "???",
         "n/a",
         "na",
-        "none",
-        "null",
-        "nil",
         "todo",
         "tbd",
         "unknown",
@@ -81,6 +79,8 @@ PLACEHOLDER_NAMES = frozenset(
     ]
 )
 
+EXACT_LOWERCASE_PLACEHOLDERS = frozenset(["none", "null", "nil"])
+
 
 class BackendUnavailable(Exception):
     """The backend's tooling is not installed. Distinct from it failing."""
@@ -91,8 +91,8 @@ class BackendFailed(Exception):
 
 
 def _is_placeholder(text: str) -> bool:
-    return text.strip().lower() in PLACEHOLDER_NAMES
-
+    t = text.strip()
+    return t in EXACT_LOWERCASE_PLACEHOLDERS or t.lower() in CASE_INSENSITIVE_PLACEHOLDERS
 
 def _usable_value(text: str) -> bool:
     return bool(text) and not _is_placeholder(text)

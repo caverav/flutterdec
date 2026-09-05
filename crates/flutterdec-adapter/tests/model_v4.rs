@@ -671,15 +671,37 @@ fn placeholder_strings_cannot_stand_in_for_unrecovered_names() {
     );
 }
 
-/// `main` is a real Dart function name. The placeholder rule rejects admissions
-/// of ignorance, not ordinary identifiers that happen to look suspicious.
+/// `main` and `Null` are real Dart identifiers. The placeholder rule rejects
+/// admissions of ignorance, not ordinary identifiers that happen to look
+/// suspicious or share a root with sentinels. In particular `Null` (the Dart core
+/// class) and `None`/`Nil` (common in functional packages) are accepted, whereas
+/// lowercase `null`/`none`/`nil` emitted by naive adapter scripts are rejected.
 #[test]
 fn ordinary_names_that_resemble_defaults_are_still_accepted() {
-    for name in ["main", "Global", "build", "Object"] {
+    for name in ["main", "Global", "build", "Object", "Null", "None", "Nil"] {
         let bytes = mutated(model_json(&maximal_model()), |v| {
             v["functions"][0]["name"]["text"] = json!(name)
         });
-        parse_and_validate(&bytes).unwrap_or_else(|err| panic!("{name} rejected: {err}"));
+        parse_and_validate(&bytes).unwrap_or_else(|err| panic!("function {name} rejected: {err}"));
+
+        let bytes = mutated(model_json(&maximal_model()), |v| {
+            v["classes"][0]["name"] = json!(name)
+        });
+        parse_and_validate(&bytes).unwrap_or_else(|err| panic!("class {name} rejected: {err}"));
+    }
+
+    // Lowercase sentinels remain rejected.
+    for sentinel in ["null", "none", "nil"] {
+        let bytes = mutated(model_json(&maximal_model()), |v| {
+            v["classes"][0]["name"] = json!(sentinel)
+        });
+        assert_eq!(
+            expect_validation_error(&bytes),
+            ValidationError::PlaceholderName {
+                field: "class name",
+                value: sentinel.to_string(),
+            }
+        );
     }
 }
 

@@ -46,7 +46,13 @@ pub struct HostSelectedContext {
 /// A model must leave an unknown name absent. Writing one of these into a
 /// required field is how v3 turned "no name" into a name, and every consumer
 /// downstream then treated it as one.
-const PLACEHOLDER_NAMES: &[&str] = &[
+/// Strings like "unknown", "n/a", or "<unknown>" are matched case-insensitively
+/// because they are never valid Dart identifiers. Plain "none", "null", and
+/// "nil" are matched exact/lowercase-only: in Dart `Null` is a standard core
+/// class (`dart:core::Null`), and `None` or `Nil` are common class names in
+/// functional Dart packages, whereas lowercase "null" / "none" / "nil" are
+/// dummy sentinel values emitted by naive adapter scripts.
+const CASE_INSENSITIVE_PLACEHOLDERS: &[&str] = &[
     "",
     "-",
     "?",
@@ -54,9 +60,6 @@ const PLACEHOLDER_NAMES: &[&str] = &[
     "???",
     "n/a",
     "na",
-    "none",
-    "null",
-    "nil",
     "todo",
     "tbd",
     "unknown",
@@ -67,9 +70,15 @@ const PLACEHOLDER_NAMES: &[&str] = &[
     "undefined",
 ];
 
+const EXACT_LOWERCASE_PLACEHOLDERS: &[&str] = &["none", "null", "nil"];
+
 fn is_placeholder(text: &str) -> bool {
-    let normalized = text.trim().to_ascii_lowercase();
-    PLACEHOLDER_NAMES.contains(&normalized.as_str())
+    let trimmed = text.trim();
+    if EXACT_LOWERCASE_PLACEHOLDERS.contains(&trimmed) {
+        return true;
+    }
+    let normalized = trimmed.to_ascii_lowercase();
+    CASE_INSENSITIVE_PLACEHOLDERS.contains(&normalized.as_str())
 }
 
 /// The first invariant a model breaks.
