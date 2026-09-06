@@ -117,7 +117,7 @@ fn decode_utf16_len(bytes: &[u8], at: usize) -> Option<(usize, usize)> {
         Some((first as usize, 2))
     } else {
         let second = read_u16_le(bytes, at + 2)?;
-        let len = ((((first as usize) & 0x7fff) << 16) | (second as usize)) as usize;
+        let len = (((first as usize) & 0x7fff) << 16) | (second as usize);
         Some((len, 4))
     }
 }

@@ -117,6 +117,7 @@ fn is_frame_prologue(word: u32) -> bool {
 /// Returned records carry no name and no owner: there is no name evidence in a
 /// prologue, and `sub_1234` was never one. Each is `heuristic`, in ascending
 /// address order, with dense ids.
+#[allow(clippy::chunks_exact_to_as_chunks)]
 fn recover_code_candidates(instr: &[u8], base_va: u64) -> Vec<Function> {
     let Some(end_va) = base_va.checked_add(instr.len() as u64) else {
         return Vec::new();

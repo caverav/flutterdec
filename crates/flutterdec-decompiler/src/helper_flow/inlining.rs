@@ -180,7 +180,7 @@ impl<'a> FuncEmitter<'a> {
                 remove_ranges.push((h.start, h.end));
             }
         }
-        remove_ranges.sort_unstable_by(|a, b| b.0.cmp(&a.0));
+        remove_ranges.sort_unstable_by_key(|a| std::cmp::Reverse(a.0));
         for (start, end) in remove_ranges {
             self.lines.drain(start..=end);
         }
@@ -236,7 +236,7 @@ impl<'a> FuncEmitter<'a> {
 
         let mut remove_ranges: Vec<(usize, usize)> =
             helpers.into_iter().map(|h| (h.start, h.end)).collect();
-        remove_ranges.sort_unstable_by(|a, b| b.0.cmp(&a.0));
+        remove_ranges.sort_unstable_by_key(|a| std::cmp::Reverse(a.0));
         for (start, end) in remove_ranges {
             self.lines.drain(start..=end);
         }
