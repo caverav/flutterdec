@@ -4,6 +4,7 @@ members = [
   "crates/flutterdec-core",
   "crates/flutterdec-loader",
   "crates/flutterdec-adapter",
+  "crates/flutterdec-serwalker",
   "crates/flutterdec-disasm-arm64",
   "crates/flutterdec-ir",
   "crates/flutterdec-decompiler",
