@@ -117,7 +117,6 @@ fn is_frame_prologue(word: u32) -> bool {
 /// Returned records carry no name and no owner: there is no name evidence in a
 /// prologue, and `sub_1234` was never one. Each is `heuristic`, in ascending
 /// address order, with dense ids.
-#[allow(clippy::chunks_exact_to_as_chunks)]
 fn recover_code_candidates(instr: &[u8], base_va: u64) -> Vec<Function> {
     let Some(end_va) = base_va.checked_add(instr.len() as u64) else {
         return Vec::new();
@@ -126,8 +125,15 @@ fn recover_code_candidates(instr: &[u8], base_va: u64) -> Vec<Function> {
 
     let mut prologues: BTreeSet<u64> = BTreeSet::new();
     let mut call_targets: BTreeMap<u64, usize> = BTreeMap::new();
-    for (index, chunk) in instr.chunks_exact(4).enumerate() {
-        let word = u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+    let chunk_count = instr.len() / 4;
+    for index in 0..chunk_count {
+        let offset = index * 4;
+        let word = u32::from_le_bytes([
+            instr[offset],
+            instr[offset + 1],
+            instr[offset + 2],
+            instr[offset + 3],
+        ]);
         let pc = base_va + (index as u64 * 4);
         if let Some(target) = decode_bl_target(pc, word) {
             if in_region(target) {
