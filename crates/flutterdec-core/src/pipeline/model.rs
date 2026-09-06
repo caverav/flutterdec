@@ -328,6 +328,36 @@ fn adapter_limits(timeout_seconds: Option<u64>) -> Limits {
 
 /// Turn a registry refusal into core recovery, a pinned-backend refusal, or the
 /// original error, whichever the refusal actually means.
+/// Try in-process Serwalker snapshot deserialization when supported for this hash.
+fn serwalker_model(
+    bundle: &SnapshotBundle,
+    record: Option<CompatibilityRecord>,
+) -> Option<LoadedProgram> {
+    if bundle.snapshot_hash == flutterdec_serwalker::SUPPORTED_SNAPSHOT_HASH {
+        if let Ok(model) = flutterdec_serwalker::walk_snapshot_and_produce_model(
+            &bundle.isolate_data,
+            &bundle.isolate_instr,
+            bundle.isolate_instr_va,
+            &bundle.identity,
+        ) {
+            return Some(LoadedProgram {
+                producer: model.producer.clone(),
+                model,
+                resolved_backend: BackendId::Internal,
+                fallback_reason: None,
+                core_fallback: None,
+                core_fallback_detail: None,
+                containment: None,
+                adapter_exec: None,
+                compatibility: None,
+                compatibility_record: record,
+                profile: None,
+            });
+        }
+    }
+    None
+}
+
 fn recover_or_refuse(
     bundle: &SnapshotBundle,
     backend: AdapterBackend,
@@ -339,6 +369,9 @@ fn recover_or_refuse(
     };
     if pins_external_backend(backend) {
         return Err(pinned_backend_refused(backend, reason, &detail));
+    }
+    if let Some(loaded) = serwalker_model(bundle, record.clone()) {
+        return Ok(loaded);
     }
     load_core_fallback(bundle, reason, Some(detail), record)
 }
@@ -377,6 +410,9 @@ fn load_program(
     // the registry here would make "internal" mean "internal, once an adapter
     // has been authorized", which is not what the operator asked for.
     if backend == AdapterBackend::Internal {
+        if let Some(loaded) = serwalker_model(bundle, None) {
+            return Ok(loaded);
+        }
         return load_core_fallback(bundle, CoreFallbackReason::InternalRequested, None, None);
     }
 

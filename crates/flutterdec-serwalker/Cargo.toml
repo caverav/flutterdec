@@ -1,0 +1,11 @@
+[package]
+name = "flutterdec-serwalker"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+goblin.workspace = true
+flutterdec-adapter = { path = "../flutterdec-adapter" }
+flutterdec-loader = { path = "../flutterdec-loader" }

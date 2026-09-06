@@ -541,10 +541,9 @@ impl<'a> FuncEmitter<'a> {
         let t = line.trim();
         let rhs = if let Some((_, r)) = t.split_once('=') {
             r.trim()
-        } else if let Some(rest) = t.strip_prefix("return ") {
-            rest.trim()
         } else {
-            return None;
+            let rest = t.strip_prefix("return ")?;
+            rest.trim()
         };
 
         let open = rhs.find('(')?;
