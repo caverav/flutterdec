@@ -603,3 +603,11 @@ fn run_adapter_refuses_a_rejected_identity_before_spawn() {
         "run_adapter spawned an adapter for a rejected identity"
     );
 }
+
+#[test]
+fn serwalker_supported_snapshot_hash_is_known() {
+    assert_eq!(
+        flutterdec_serwalker::SUPPORTED_SNAPSHOT_HASH,
+        "78da37fed6bf1489361a312568249f3f"
+    );
+}
