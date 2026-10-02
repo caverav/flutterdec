@@ -109,9 +109,12 @@ Download the archive for your platform from the
 Silicon. The current prerelease is
 [`v0.1.0-alpha.4`](https://github.com/caverav/flutterdec/releases/tag/v0.1.0-alpha.4).
 
-A release archive is a **prefix, not a lone binary**. It contains `bin/flutterdec` plus the
-compatibility registry, the runtime profiles, and the packaged producer under `share/flutterdec`.
-The CLI resolves that data relative to its own executable, so keep `bin` and `share` together:
+> [!IMPORTANT]
+> The standalone `v0.1.0-alpha.4` binary can inspect a target (`flutterdec info`), but it cannot
+> install adapters or decompile without the packaged producer and registry from a source checkout.
+> For decompilation today, use Nix (Option 1) or a source checkout (Option 3).
+
+The archive contains a single `flutterdec` binary:
 
 ```bash
 # Linux x86_64
@@ -122,16 +125,16 @@ tar -xzf flutterdec-v0.1.0-alpha.4-Linux-X64.tar.gz
 curl -fLO https://github.com/caverav/flutterdec/releases/download/v0.1.0-alpha.4/flutterdec-v0.1.0-alpha.4-macOS-ARM64.tar.gz
 tar -xzf flutterdec-v0.1.0-alpha.4-macOS-ARM64.tar.gz
 
-# install the whole prefix, then verify
-sudo cp -R bin share /usr/local/
+# install the binary, then verify
+sudo mkdir -p /usr/local/bin
+sudo install -m 0755 flutterdec /usr/local/bin/flutterdec
 flutterdec --version
 ```
 
-> [!IMPORTANT]
-> The published `v0.1.0-alpha.4` archives predate the prefix layout and contain a single
-> `flutterdec` binary. That binary can inspect a target, but it cannot install adapters without a
-> source checkout. Use Nix or a source build today; the next tagged release ships the `bin/` +
-> `share/` prefix shown above.
+Releases built from current `main` will ship a different layout: a prefix with `bin/flutterdec` plus
+the compatibility registry, the runtime profiles, and the packaged producer under
+`share/flutterdec`. On those releases the CLI resolves its data relative to its own executable, so
+keep `bin` and `share` together and copy both (`sudo cp -R bin share /usr/local/`).
 
 ### Option 3: Build from a checkout
 
