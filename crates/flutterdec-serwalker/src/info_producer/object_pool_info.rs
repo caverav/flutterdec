@@ -43,7 +43,7 @@ pub fn produce_model_object_pool_info(
                 tagged_object_kind(snapshot, *reference_id)?
             }
             ObjectPoolEntryValue::Immediate(_imm) => String::from("Immediate"),
-            _ => String::from("Non-immediate, non-object entry")
+            _ => String::from("Non-immediate, non-object entry"),
         };
 
         let ref_id = if let ObjectPoolEntryValue::TaggedObjectRef(ref_id) = &entry.value {
@@ -51,19 +51,19 @@ pub fn produce_model_object_pool_info(
         } else {
             0
         };
-        
-        let value = if ref_id == 0 
-        {
+
+        let value = if ref_id == 0 {
             if let ObjectPoolEntryValue::Immediate(imm) = &entry.value {
-                imm.to_string() 
+                imm.to_string()
             } else {
                 String::from("Non-immediate or tagged object in this entry")
             }
-        } else { // the internal names for the One and Two Byte classes are prefixed with an "_"
+        } else {
+            // the internal names for the One and Two Byte classes are prefixed with an "_"
             if kind == "String" || kind == "_OneByteString" || kind == "_TwoByteString" {
                 string_or_placeholder(snapshot, ref_id)
             } else {
-                 kind.clone() + "_" + &(ref_id.to_string())
+                kind.clone() + "_" + &(ref_id.to_string())
             }
         };
 

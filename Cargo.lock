@@ -372,6 +372,8 @@ dependencies = [
  "anyhow",
  "flutterdec-adapter",
  "goblin",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

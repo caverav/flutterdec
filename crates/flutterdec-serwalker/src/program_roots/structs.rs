@@ -326,8 +326,7 @@ impl ProgramRoots {
         }
     }
 
-    pub(crate) fn object_store(&self) -> &ObjectStore
-    {
+    pub(crate) fn object_store(&self) -> &ObjectStore {
         &self.object_store
     }
 }

@@ -5,10 +5,10 @@ use crate::cluster::{
     Cluster,
 };
 use crate::constants::{
-    self, ClassId, DART_3_11_1_SNAPSHOT_HASH, MAGIC_BYTES, OBJECT_START_ALIGNMENT,
-    SNAPSHOT_MAGIC_NUMBER_SZ,
+    self, ClassId, MAGIC_BYTES, OBJECT_START_ALIGNMENT, SNAPSHOT_MAGIC_NUMBER_SZ,
 };
 use crate::instruction_table::{parse_instr_table_from_rodata, InstructionTable};
+use crate::profile_reader::select_data_profile;
 use crate::program_roots::structs::ProgramRoots;
 use crate::program_roots::{parse_dispatch_table, parse_field_table, parse_object_store};
 use crate::stream::Stream;
@@ -139,11 +139,19 @@ impl DataSnapshot {
             SnapshotKind::try_from(stream.read_raw_u64()?).map_err(|e| anyhow::anyhow!(e))?;
 
         if !matches!(&self.kind, SnapshotKind::FullAOT) {
-            anyhow::bail!("Serwalker currently supports FullAOT snapshots only");
+            anyhow::bail!("Serwalker currently supports FullAOT snapshots only.");
         }
 
         self.parse_version_and_features(stream)?;
 
+        let mut features = Vec::new();
+        for feature in self.features.split_ascii_whitespace() {
+            features.push(String::from(feature));
+        }
+
+        let data_profile = select_data_profile(&self.version_hash, &features)?;
+
+        /*
         if self.version_hash != DART_3_11_1_SNAPSHOT_HASH {
             anyhow::bail!(
                 "unsupported Dart snapshot hash {}; expected {} (Dart 3.11.1)",
@@ -159,6 +167,7 @@ impl DataSnapshot {
         {
             anyhow::bail!("Serwalker currently requires a compressed-pointers snapshot");
         }
+        */
 
         self.num_base_objects = stream.read_unsigned()?;
         self.num_objects = stream.read_unsigned()?;
@@ -333,7 +342,7 @@ pub fn parse_data_snapshot(stream: &mut Stream) -> anyhow::Result<DataSnapshot> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::constants::{SIGNED_M, UNSIGNED_M};
+    use crate::constants::{DART_3_11_1_SNAPSHOT_HASH, SIGNED_M, UNSIGNED_M};
 
     fn leb(mut value: u64, marker: u8) -> Vec<u8> {
         let mut out = Vec::new();

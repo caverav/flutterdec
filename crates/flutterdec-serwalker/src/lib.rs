@@ -11,6 +11,8 @@ mod snapshot;
 mod info_producer;
 mod stream;
 
+mod profile_reader;
+
 use flutterdec_adapter::{AdapterInput, PoolGeometry, ProgramModel};
 
 use crate::{

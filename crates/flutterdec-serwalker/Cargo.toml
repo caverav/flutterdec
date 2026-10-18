@@ -7,4 +7,6 @@ license.workspace = true
 [dependencies]
 anyhow.workspace = true
 goblin.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 flutterdec-adapter = { path = "../flutterdec-adapter" }
