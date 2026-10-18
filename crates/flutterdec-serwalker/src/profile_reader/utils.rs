@@ -1,7 +1,7 @@
 use crate::profile_reader::profile::{SnapshotArchitecture, SnapshotFeatures};
-use std::{collections::HashMap, env, fs, hash::Hash};
 use anyhow::Context;
 use serde_json;
+use std::{collections::HashMap, env, fs, hash::Hash};
 
 pub fn features_suffix(features: &Vec<SnapshotFeatures>) -> String {
     let mut feature_string = String::new();
@@ -51,18 +51,26 @@ pub(super) fn resolve_snapshot_architecture(
 
 const PROFILE_PATH_ENV_VAR_NAME: &str = "PROFILES_DIR";
 
-pub(super) fn read_profile_file(file_name: &String) -> anyhow::Result<HashMap<String, serde_json::Value>> {
+pub(super) fn read_profile_file(
+    file_name: &String,
+) -> anyhow::Result<HashMap<String, serde_json::Value>> {
     if let Ok(profiles_dirpath) = env::var(PROFILE_PATH_ENV_VAR_NAME) {
         let full_path = profiles_dirpath + "/" + file_name;
-        let profile_file = fs::read(&full_path).with_context(|| format!("read data profile: {}", full_path))?;
+        let profile_file =
+            fs::read(&full_path).with_context(|| format!("read data profile: {}", full_path))?;
 
         let profile = serde_json::from_slice::<HashMap<String, serde_json::Value>>(&profile_file)?;
 
-        return Ok(profile)
+        return Ok(profile);
     }
-    
+
     // fallback #1 try reading the working directory
-    let profile_file = fs::read(format!("./{}", file_name)).with_context(|| format!("read data profile from current working directory: {}", file_name))?;
+    let profile_file = fs::read(format!("./{}", file_name)).with_context(|| {
+        format!(
+            "read data profile from current working directory: {}",
+            file_name
+        )
+    })?;
     let profile = serde_json::from_slice::<HashMap<String, serde_json::Value>>(&profile_file)?;
 
     Ok(profile)
