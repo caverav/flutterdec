@@ -48,7 +48,8 @@ impl TryFrom<&String> for SnapshotArchitecture {
 pub struct DataProfile {
     pub(super) architecture: SnapshotArchitecture,
     pub(super) features: Vec<SnapshotFeatures>,
-    pub(super) parsing_operations: HashMap<String, serde_json::Value>,
+    pub cid_map: HashMap<String, u32>,
+    pub parsing_operations: HashMap<String, serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize)]

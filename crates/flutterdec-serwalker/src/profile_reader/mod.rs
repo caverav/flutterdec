@@ -5,7 +5,8 @@ use crate::profile_reader::{
     },
 };
 
-mod profile;
+pub mod profile;
+mod profile_json_dictionary;
 mod utils;
 
 const PROF_EXTENSION: &str = ".json";
@@ -29,11 +30,12 @@ pub fn select_data_profile(
         + "_"
         + &architecture_suffix(&arch)
         + PROF_EXTENSION;
-    let ops = read_profile_file(&file_name)?;
+    let (ops, class_id_map) = read_profile_file(&file_name)?;
 
     Ok(DataProfile {
         architecture: arch,
         features: snapshot_features,
+        cid_map: class_id_map,
         parsing_operations: ops,
     })
 }

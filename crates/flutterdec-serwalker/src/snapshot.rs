@@ -8,7 +8,7 @@ use crate::constants::{
     self, ClassId, MAGIC_BYTES, OBJECT_START_ALIGNMENT, SNAPSHOT_MAGIC_NUMBER_SZ,
 };
 use crate::instruction_table::{parse_instr_table_from_rodata, InstructionTable};
-use crate::profile_reader::select_data_profile;
+use crate::profile_reader::{profile::DataProfile, select_data_profile};
 use crate::program_roots::structs::ProgramRoots;
 use crate::program_roots::{parse_dispatch_table, parse_field_table, parse_object_store};
 use crate::stream::Stream;
@@ -61,6 +61,7 @@ pub struct DataSnapshot {
     clustered_size: u64,
     kind: SnapshotKind,
 
+    data_profile: DataProfile,
     version_hash: String,
     features: String,
 
@@ -150,16 +151,8 @@ impl DataSnapshot {
         }
 
         let data_profile = select_data_profile(&self.version_hash, &features)?;
-
+        self.data_profile = data_profile;
         /*
-        if self.version_hash != DART_3_11_1_SNAPSHOT_HASH {
-            anyhow::bail!(
-                "unsupported Dart snapshot hash {}; expected {} (Dart 3.11.1)",
-                self.version_hash,
-                DART_3_11_1_SNAPSHOT_HASH
-            );
-        }
-
         if !self
             .features
             .split_ascii_whitespace()
