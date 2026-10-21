@@ -4,8 +4,9 @@ use std::collections::HashMap;
 use std::sync::atomic::AtomicUsize;
 use std::{any, u64};
 
-use crate::constants::{Cid, ClassId, ClassId::*};
+use crate::constants::{Cid, ClassKind, ClassKind::*};
 use crate::instruction_table::{get_pc_offset_from_code_cluster_index, InstructionTable};
+use crate::profile_reader::profile::DataProfile;
 use crate::raw_object::*;
 use crate::stream::Stream;
 use crate::DECLARE_FIXED_LENGTH_CLUSTER;
@@ -19,8 +20,13 @@ pub trait Cluster {
     fn first_ref_id(&self) -> u32;
     fn set_metadata(&mut self, tags: u32, cid: Cid, is_immutable: bool, is_canonical: bool);
     fn is_fixed_len(&self) -> bool;
-    fn read_alloc(&mut self, last_ref_id: &mut u64, stream: &mut Stream) -> anyhow::Result<usize>;
-    fn read_fill(&mut self, stream: &mut Stream) -> anyhow::Result<usize>;
+    fn read_alloc(
+        &mut self,
+        last_ref_id: &mut u64,
+        stream: &mut Stream,
+        profile: &DataProfile,
+    ) -> anyhow::Result<usize>;
+    fn read_fill(&mut self, stream: &mut Stream, profile: &DataProfile) -> anyhow::Result<usize>;
 }
 
 pub fn read_smi(stream: &mut Stream) -> anyhow::Result<Smi> {
@@ -29,30 +35,31 @@ pub fn read_smi(stream: &mut Stream) -> anyhow::Result<Smi> {
     Ok(raw_smi as Smi)
 }
 
-fn is_typed_data_cid(cid: Cid, remainder: Cid) -> bool {
-    let first = TypedDataInt8ArrayCid as Cid;
-    let last = UnmodifiableTypedDataFloat64x2ArrayViewCid as Cid;
-    (first..=last).contains(&cid) && (cid - first) % 4 == remainder
+fn is_typed_data_kind(kind: ClassKind, remainder: u32) -> bool {
+    let first = TypedDataInt8ArrayCid as u32;
+    let last = UnmodifiableTypedDataFloat64x2ArrayViewCid as u32;
+    let kind_number = kind as u32;
+    (first..=last).contains(&kind_number) && (kind_number - first) % 4 == remainder
 }
 
-pub fn decide_cluster(cid: Cid) -> Result<Box<dyn Cluster>, &'static str> {
-    if cid == NativePointer as Cid {
+pub fn decide_cluster(kind: ClassKind) -> Result<Box<dyn Cluster>, &'static str> {
+    if kind == NativePointer {
         return Ok(Box::new(DeltaEncodedTypedDataCluster::default()));
     }
-    if cid >= NumPredefinedCids as Cid || cid == InstanceCid as Cid {
+    if kind == InstanceCid {
         return Ok(Box::new(InstanceCluster::default()));
     }
-    if is_typed_data_cid(cid, 1) || cid == ByteDataViewCid as Cid {
+    if is_typed_data_kind(kind, 1) || kind == ByteDataViewCid {
         return Ok(Box::new(TypedDataViewCluster::default()));
     }
-    if is_typed_data_cid(cid, 2) {
+    if is_typed_data_kind(kind, 2) {
         return Ok(Box::new(ExternalTypedDataCluster::default()));
     }
-    if is_typed_data_cid(cid, 0) {
+    if is_typed_data_kind(kind, 0) {
         return Ok(Box::new(TypedDataCluster::default()));
     }
 
-    match ClassId::try_from(cid).map_err(|_| "CID is neither predefined nor an application CID")? {
+    match kind {
         ClassCid => Ok(Box::new(ClassCluster::default())),
         TypeParametersCid => Ok(Box::new(TypeParametersCluster::default())),
         TypeArgumentsCid => Ok(Box::new(TypeArgumentsCluster::default())),
@@ -444,8 +451,8 @@ DECLARE_FIXED_LENGTH_CLUSTER!(TypedDataView, TypedDataViewCluster, |_self, strea
 DECLARE_FIXED_LENGTH_CLUSTER!(
     ExternalTypedData,
     ExternalTypedDataCluster,
-    |_self, stream| {
-        let element_size = typed_data_element_size(_self.cid)?;
+    |_self, stream, profile| {
+        let element_size = typed_data_element_size(_self.cid, profile)?;
         for obj in &mut _self.objs {
             let length = usize::try_from(stream.read_unsigned()?)
                 .map_err(|_| anyhow::anyhow!("ExternalTypedData length does not fit in usize"))?;
@@ -494,8 +501,8 @@ DECLARE_FIXED_LENGTH_CLUSTER!(WeakProperty, WeakPropertyCluster, |_self, stream|
 macro_rules! IMPLEMENT_VARIABLE_LENGTH_CLUSTER {
     (
         $cluster_name:ident,
-        |$alloc_self:ident, $alloc_stream:ident| $alloc_impl:block,
-        |$fill_self:ident, $fill_stream:ident| $fill_impl:block
+        |$alloc_self:ident, $alloc_stream:ident $(, $alloc_profile:ident)?| $alloc_impl:block,
+        |$fill_self:ident, $fill_stream:ident $(, $fill_profile:ident)?| $fill_impl:block
     ) => {
         impl Cluster for $cluster_name {
             fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
@@ -542,12 +549,14 @@ macro_rules! IMPLEMENT_VARIABLE_LENGTH_CLUSTER {
                 &mut self,
                 last_ref_id: &mut u64,
                 stream: &mut Stream,
+                _profile: &DataProfile,
             ) -> anyhow::Result<usize> {
                 self.start_of_alloc = stream.get_current_pos();
                 self.first_ref_id = *last_ref_id as u32;
 
                 let $alloc_self = &mut *self;
                 let $alloc_stream = &mut *stream;
+                $(let $alloc_profile = _profile;)?
                 $alloc_impl
 
                 *last_ref_id += $alloc_self.obj_count;
@@ -555,11 +564,12 @@ macro_rules! IMPLEMENT_VARIABLE_LENGTH_CLUSTER {
                 Ok($alloc_self.end_of_alloc - $alloc_self.start_of_alloc)
             }
 
-            fn read_fill(&mut self, stream: &mut Stream) -> anyhow::Result<usize> {
+            fn read_fill(&mut self, stream: &mut Stream, _profile: &DataProfile) -> anyhow::Result<usize> {
                 self.start_of_fill = stream.get_current_pos();
 
                 let $fill_self = &mut *self;
                 let $fill_stream = &mut *stream;
+                $(let $fill_profile = _profile;)?
                 $fill_impl
 
                 $fill_self.end_of_fill = $fill_stream.get_current_pos();
@@ -569,10 +579,13 @@ macro_rules! IMPLEMENT_VARIABLE_LENGTH_CLUSTER {
     };
 }
 
-fn typed_data_element_size(cid: Cid) -> anyhow::Result<usize> {
-    let class_id = ClassId::try_from(cid)
-        .map_err(|_| anyhow::anyhow!("application CID {cid} is not a TypedData class"))?;
-    let size = match class_id {
+fn typed_data_element_size(cid: Cid, profile: &DataProfile) -> anyhow::Result<usize> {
+    let class_kind = profile
+        .cid_map
+        .get(&cid)
+        .copied()
+        .ok_or_else(|| anyhow::anyhow!("profile has no class kind for TypedData CID {cid}"))?;
+    let size = match class_kind {
         TypedDataInt8ArrayCid
         | TypedDataUint8ArrayCid
         | TypedDataUint8ClampedArrayCid
@@ -601,7 +614,7 @@ fn typed_data_element_size(cid: Cid) -> anyhow::Result<usize> {
         | ExternalTypedDataFloat32x4ArrayCid
         | ExternalTypedDataInt32x4ArrayCid
         | ExternalTypedDataFloat64x2ArrayCid => 16,
-        _ => anyhow::bail!("class {:?} is not a supported TypedData class", class_id),
+        _ => anyhow::bail!("class {:?} is not a supported TypedData class", class_kind),
     };
     Ok(size)
 }
@@ -721,12 +734,13 @@ IMPLEMENT_VARIABLE_LENGTH_CLUSTER!(
 // this is the analogous function to the sdk's Deserializer::EndInstructions
 pub fn resolve_instructions_len_for_code_objects(
     clusters: &mut HashMap<u32, Box<dyn Cluster>>,
+    code_cid: Cid,
     instr_image_size: usize,
 ) -> anyhow::Result<()> {
     const POLYMORPHIC_ENTRY_OFFSET: u64 = 24;
 
     let code_cluster = clusters
-        .get_mut(&((ClassId::CodeCid as u32) << 2))
+        .get_mut(&(code_cid << 2))
         .ok_or_else(|| anyhow::anyhow!("Code cluster not found"))?
         .as_any_mut()
         .downcast_mut::<CodeCluster>()
@@ -1128,8 +1142,8 @@ IMPLEMENT_VARIABLE_LENGTH_CLUSTER!(
             }));
         }
     },
-    |cluster, stream| {
-        let element_size = typed_data_element_size(cluster.cid)?;
+    |cluster, stream, profile| {
+        let element_size = typed_data_element_size(cluster.cid, profile)?;
         for obj in &mut cluster.objs {
             let length = stream.read_unsigned()? as usize;
             let byte_length = length
@@ -1667,8 +1681,11 @@ mod tests {
         let mut cluster = _StringCluster::default();
         let mut stream = Stream::new(bytes);
         let mut next_ref = 1u64;
-        cluster.read_alloc(&mut next_ref, &mut stream).unwrap();
-        cluster.read_fill(&mut stream).unwrap();
+        let profile = DataProfile::default();
+        cluster
+            .read_alloc(&mut next_ref, &mut stream, &profile)
+            .unwrap();
+        cluster.read_fill(&mut stream, &profile).unwrap();
         assert_eq!(
             next_ref,
             1 + count as u64,
@@ -1679,6 +1696,54 @@ mod tests {
             .iter()
             .map(|o| o.internal_str.clone())
             .collect()
+    }
+
+    #[test]
+    fn typed_data_fill_uses_profile_cid_mapping() {
+        let raw_cid = TypedDataInt16ArrayCid as u32 + 1;
+        let mut profile = DataProfile::default();
+        profile.cid_map.insert(raw_cid, TypedDataInt16ArrayCid);
+
+        let mut bytes = leb_unsigned(1);
+        bytes.extend_from_slice(&leb_unsigned(2));
+        bytes.extend_from_slice(&leb_unsigned(2));
+        bytes.extend_from_slice(&[1, 2, 3, 4]);
+
+        let mut cluster = TypedDataCluster::default();
+        cluster.set_metadata(0, raw_cid, false, false);
+        let mut stream = Stream::new(&bytes);
+        let mut next_ref = 1;
+        cluster
+            .read_alloc(&mut next_ref, &mut stream, &profile)
+            .unwrap();
+        cluster.read_fill(&mut stream, &profile).unwrap();
+
+        assert_eq!(cluster.objs[0].data, [1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn external_typed_data_fill_uses_profile_cid_mapping() {
+        let raw_cid = ExternalTypedDataInt16ArrayCid as u32 + 1;
+        let mut profile = DataProfile::default();
+        profile
+            .cid_map
+            .insert(raw_cid, ExternalTypedDataInt16ArrayCid);
+
+        let mut bytes = leb_unsigned(1);
+        bytes.extend_from_slice(&leb_unsigned(2));
+        bytes.extend_from_slice(&[0; 6]);
+        bytes.extend_from_slice(&[1, 2, 3, 4]);
+
+        let mut cluster = ExternalTypedDataCluster::default();
+        cluster.set_metadata(0, raw_cid, false, false);
+        let mut stream = Stream::new(&bytes);
+        let mut next_ref = 1;
+        cluster
+            .read_alloc(&mut next_ref, &mut stream, &profile)
+            .unwrap();
+        cluster.read_fill(&mut stream, &profile).unwrap();
+
+        assert_eq!(cluster.objs[0].data, [1, 2, 3, 4]);
     }
 
     #[test]
@@ -1752,7 +1817,10 @@ mod tests {
         let mut cluster = _StringCluster::default();
         let mut stream = Stream::new(&bytes);
         let mut next_ref = 1u64;
-        cluster.read_alloc(&mut next_ref, &mut stream).unwrap();
-        assert!(cluster.read_fill(&mut stream).is_err());
+        let profile = DataProfile::default();
+        cluster
+            .read_alloc(&mut next_ref, &mut stream, &profile)
+            .unwrap();
+        assert!(cluster.read_fill(&mut stream, &profile).is_err());
     }
 }

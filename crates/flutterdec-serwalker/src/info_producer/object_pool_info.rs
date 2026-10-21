@@ -1,7 +1,7 @@
 use flutterdec_adapter::ObjectPoolEntry;
 
 use crate::cluster::ClassCluster;
-use crate::constants::ClassId;
+use crate::constants::ClassKind;
 use crate::info_producer::utils::string_or_placeholder;
 use crate::raw_object::{ObjectPool, ObjectPoolEntryValue};
 use crate::snapshot::DataSnapshot;
@@ -17,9 +17,10 @@ fn tagged_object_kind(snapshot: &DataSnapshot, reference_id: u32) -> anyhow::Res
         return Ok(format!("<unresolved Class CID {cid}>"));
     };
 
+    let class_cid = snapshot.cid_for_class_kind(ClassKind::ClassCid)?;
     let class_cluster = snapshot
         .clusters
-        .get(&((ClassId::ClassCid as u32) << 2))
+        .get(&(class_cid << 2))
         .ok_or_else(|| anyhow::anyhow!("Class cluster is missing"))?
         .as_any()
         .downcast_ref::<ClassCluster>()

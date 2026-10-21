@@ -1,7 +1,10 @@
-use crate::{constants::ClassId, profile_reader::{
-    profile::{SnapshotArchitecture, SnapshotFeatures},
-    profile_json_dictionary::*,
-}};
+use crate::{
+    constants::ClassKind,
+    profile_reader::{
+        profile::{SnapshotArchitecture, SnapshotFeatures},
+        profile_json_dictionary::*,
+    },
+};
 use anyhow::Context;
 use serde_json;
 use std::{collections::HashMap, env, fs};
@@ -54,10 +57,15 @@ pub(super) fn resolve_snapshot_architecture(
 
 const PROFILE_PATH_ENV_VAR_NAME: &str = "FLUTTERDEC_PROFILES_DIR";
 
-// read the data_profile file and return a (ops, cid map) tuple
+// read the data_profile file and return an (ops, cid map, num predefined cids, inverse cid map) tuple
 pub(super) fn read_profile_file(
     file_name: &String,
-) -> anyhow::Result<(HashMap<String, serde_json::Value>, HashMap<String, u32>)> {
+) -> anyhow::Result<(
+    HashMap<String, serde_json::Value>,
+    HashMap<u32, ClassKind>,
+    u32,
+    HashMap<ClassKind, u32>,
+)> {
     let profile_file: Vec<u8>;
 
     if let Ok(profiles_dirpath) = env::var(PROFILE_PATH_ENV_VAR_NAME) {
@@ -83,189 +91,234 @@ pub(super) fn read_profile_file(
     let class_map_value = profile
         .remove(CID_MAP)
         .ok_or_else(|| anyhow::anyhow!("Couldn't recover the CID map from the profile file."))?;
-    let class_map = serde_json::from_value::<HashMap<String, u32>>(class_map_value)?;
+    let class_names = serde_json::from_value::<HashMap<u32, String>>(class_map_value)?;
 
-    Ok((ops, class_map))
+    let num_predefined_cids_value = profile.remove(NUM_PREDEFINED_CIDS_KEY).ok_or_else(|| {
+        anyhow::anyhow!("Couldn't recover num_predefined_cids from the profile file.")
+    })?;
+    let num_predefined_cids = serde_json::from_value::<u32>(num_predefined_cids_value)?;
+
+    let mut cid_map = HashMap::with_capacity(class_names.len());
+    let mut class_kind_to_cid = HashMap::with_capacity(class_names.len());
+    for (raw_cid, class_name) in class_names {
+        let class_kind = class_name_txlate(&class_name);
+        anyhow::ensure!(
+            class_kind != ClassKind::IllegalCid || class_name == ILLEGAL,
+            "unknown class name {class_name:?} for CID {raw_cid} in profile"
+        );
+        if let Some(previous_cid) = class_kind_to_cid.insert(class_kind, raw_cid) {
+            anyhow::bail!(
+                "profile maps {class_name:?} to both CID {previous_cid} and CID {raw_cid}"
+            );
+        }
+        cid_map.insert(raw_cid, class_kind);
+    }
+
+    Ok((ops, cid_map, num_predefined_cids, class_kind_to_cid))
 }
 
-pub fn class_name_txlate(class_name: &str) -> ClassId {
+// Strictly speaking, this function is not required. We could change decide_cluster to use the &str constants
+// defined in profile_json_dictioanry.rs, but this seemingly pointless mapping exists to give the profile data
+// transparency from the other components viewpoints, this is, the info_producer or other operations that operate on
+// object data obtained during cluster deserialization do NOT need to know specifics or any detail whatsoever defined
+// in the data profile. Instead, those details are abstracted away via mapping them to stable constants or states. See the
+// comment for the DEFINE_CLASS_KIND! macro in src/constants.rs to know more.
+pub fn class_name_txlate(class_name: &str) -> ClassKind {
     match class_name {
-        ILLEGAL => ClassId::IllegalCid,
-        NATIVE_POINTER => ClassId::NativePointer,
-        FREE_LIST_ELEMENT => ClassId::FreeListElement,
-        FORWARDING_CORPSE => ClassId::ForwardingCorpse,
-        OBJECT => ClassId::ObjectCid,
-        CLASS => ClassId::ClassCid,
-        PATCH_CLASS => ClassId::PatchClassCid,
-        FUNCTION => ClassId::FunctionCid,
-        TYPE_PARAMETERS => ClassId::TypeParametersCid,
-        CLOSURE_DATA => ClassId::ClosureDataCid,
-        FFI_TRAMPOLINE_DATA => ClassId::FfiTrampolineDataCid,
-        FIELD => ClassId::FieldCid,
-        SCRIPT => ClassId::ScriptCid,
-        LIBRARY => ClassId::LibraryCid,
-        NAMESPACE => ClassId::NamespaceCid,
-        KERNEL_PROGRAM_INFO => ClassId::KernelProgramInfoCid,
-        WEAK_SERIALIZATION_REFERENCE => ClassId::WeakSerializationReferenceCid,
-        WEAK_ARRAY => ClassId::WeakArrayCid,
-        CODE => ClassId::CodeCid,
-        BYTECODE => ClassId::BytecodeCid,
-        INSTRUCTIONS => ClassId::InstructionsCid,
-        INSTRUCTIONS_SECTION => ClassId::InstructionsSectionCid,
-        INSTRUCTIONS_TABLE => ClassId::InstructionsTableCid,
-        OBJECT_POOL => ClassId::ObjectPoolCid,
-        PC_DESCRIPTORS => ClassId::PcDescriptorsCid,
-        CODE_SOURCE_MAP => ClassId::CodeSourceMapCid,
-        COMPRESSED_STACK_MAPS => ClassId::CompressedStackMapsCid,
-        LOCAL_VAR_DESCRIPTORS => ClassId::LocalVarDescriptorsCid,
-        EXCEPTION_HANDLERS => ClassId::ExceptionHandlersCid,
-        CONTEXT => ClassId::ContextCid,
-        CONTEXT_SCOPE => ClassId::ContextScopeCid,
-        SENTINEL => ClassId::SentinelCid,
-        SINGLE_TARGET_CACHE => ClassId::SingleTargetCacheCid,
-        MONOMORPHIC_SMIABLE_CALL => ClassId::MonomorphicSmiableCallCid,
-        CALL_SITE_DATA => ClassId::CallSiteDataCid,
-        UNLINKED_CALL => ClassId::UnlinkedCallCid,
-        IC_DATA => ClassId::ICDataCid,
-        MEGAMORPHIC_CACHE => ClassId::MegamorphicCacheCid,
-        SUBTYPE_TEST_CACHE => ClassId::SubtypeTestCacheCid,
-        LOADING_UNIT => ClassId::LoadingUnitCid,
-        ERROR => ClassId::ErrorCid,
-        API_ERROR => ClassId::ApiErrorCid,
-        LANGUAGE_ERROR => ClassId::LanguageErrorCid,
-        UNHANDLED_EXCEPTION => ClassId::UnhandledExceptionCid,
-        UNWIND_ERROR => ClassId::UnwindErrorCid,
-        INSTANCE => ClassId::InstanceCid,
-        LIBRARY_PREFIX => ClassId::LibraryPrefixCid,
-        TYPE_ARGUMENTS => ClassId::TypeArgumentsCid,
-        ABSTRACT_TYPE => ClassId::AbstractTypeCid,
-        TYPE => ClassId::TypeCid,
-        FUNCTION_TYPE => ClassId::FunctionTypeCid,
-        RECORD_TYPE => ClassId::RecordTypeCid,
-        TYPE_PARAMETER => ClassId::TypeParameterCid,
-        FINALIZER_BASE => ClassId::FinalizerBaseCid,
-        FINALIZER => ClassId::FinalizerCid,
-        NATIVE_FINALIZER => ClassId::NativeFinalizerCid,
-        FINALIZER_ENTRY => ClassId::FinalizerEntryCid,
-        CLOSURE => ClassId::ClosureCid,
-        NUMBER => ClassId::NumberCid,
-        INTEGER => ClassId::IntegerCid,
-        SMI => ClassId::SmiCid,
-        MINT => ClassId::MintCid,
-        DOUBLE => ClassId::DoubleCid,
-        BOOL => ClassId::BoolCid,
-        FLOAT32X4 => ClassId::Float32x4Cid,
-        INT32X4 => ClassId::Int32x4Cid,
-        FLOAT64X2 => ClassId::Float64x2Cid,
-        RECORD => ClassId::RecordCid,
-        TYPED_DATA_BASE => ClassId::TypedDataBaseCid,
-        TYPED_DATA => ClassId::TypedDataCid,
-        EXTERNAL_TYPED_DATA => ClassId::ExternalTypedDataCid,
-        TYPED_DATA_VIEW => ClassId::TypedDataViewCid,
-        POINTER => ClassId::PointerCid,
-        DYNAMIC_LIBRARY => ClassId::DynamicLibraryCid,
-        CAPABILITY => ClassId::CapabilityCid,
-        RECEIVE_PORT => ClassId::ReceivePortCid,
-        SEND_PORT => ClassId::SendPortCid,
-        STACK_TRACE => ClassId::StackTraceCid,
-        SUSPEND_STATE => ClassId::SuspendStateCid,
-        REG_EXP => ClassId::RegExpCid,
-        WEAK_PROPERTY => ClassId::WeakPropertyCid,
-        WEAK_REFERENCE => ClassId::WeakReferenceCid,
-        MIRROR_REFERENCE => ClassId::MirrorReferenceCid,
-        FUTURE_OR => ClassId::FutureOrCid,
-        USER_TAG => ClassId::UserTagCid,
-        TRANSFERABLE_TYPED_DATA => ClassId::TransferableTypedDataCid,
-        MAP => ClassId::MapCid,
-        CONST_MAP => ClassId::ConstMapCid,
-        SET => ClassId::SetCid,
-        CONST_SET => ClassId::ConstSetCid,
-        ARRAY => ClassId::ArrayCid,
-        IMMUTABLE_ARRAY => ClassId::ImmutableArrayCid,
-        GROWABLE_OBJECT_ARRAY => ClassId::GrowableObjectArrayCid,
-        STRING => ClassId::_StringCid,
-        ONE_BYTE_STRING => ClassId::OneByteStringCid,
-        TWO_BYTE_STRING => ClassId::TwoByteStringCid,
-        FFI_NATIVE_FUNCTION => ClassId::FfiNativeFunctionCid,
-        FFI_INT8 => ClassId::FfiInt8Cid,
-        FFI_INT16 => ClassId::FfiInt16Cid,
-        FFI_INT32 => ClassId::FfiInt32Cid,
-        FFI_INT64 => ClassId::FfiInt64Cid,
-        FFI_UINT8 => ClassId::FfiUint8Cid,
-        FFI_UINT16 => ClassId::FfiUint16Cid,
-        FFI_UINT32 => ClassId::FfiUint32Cid,
-        FFI_UINT64 => ClassId::FfiUint64Cid,
-        FFI_FLOAT => ClassId::FfiFloatCid,
-        FFI_DOUBLE => ClassId::FfiDoubleCid,
-        FFI_VOID => ClassId::FfiVoidCid,
-        FFI_HANDLE => ClassId::FfiHandleCid,
-        FFI_BOOL => ClassId::FfiBoolCid,
-        FFI_NATIVE_TYPE => ClassId::FfiNativeTypeCid,
-        FFI_STRUCT => ClassId::FfiStructCid,
-        TYPED_DATA_INT8_ARRAY => ClassId::TypedDataInt8ArrayCid,
-        TYPED_DATA_INT8_ARRAY_VIEW => ClassId::TypedDataInt8ArrayViewCid,
-        EXTERNAL_TYPED_DATA_INT8_ARRAY => ClassId::ExternalTypedDataInt8ArrayCid,
-        UNMODIFIABLE_TYPED_DATA_INT8_ARRAY_VIEW => ClassId::UnmodifiableTypedDataInt8ArrayViewCid,
-        TYPED_DATA_UINT8_ARRAY => ClassId::TypedDataUint8ArrayCid,
-        TYPED_DATA_UINT8_ARRAY_VIEW => ClassId::TypedDataUint8ArrayViewCid,
-        EXTERNAL_TYPED_DATA_UINT8_ARRAY => ClassId::ExternalTypedDataUint8ArrayCid,
-        UNMODIFIABLE_TYPED_DATA_UINT8_ARRAY_VIEW => ClassId::UnmodifiableTypedDataUint8ArrayViewCid,
-        TYPED_DATA_UINT8_CLAMPED_ARRAY => ClassId::TypedDataUint8ClampedArrayCid,
-        TYPED_DATA_UINT8_CLAMPED_ARRAY_VIEW => ClassId::TypedDataUint8ClampedArrayViewCid,
-        EXTERNAL_TYPED_DATA_UINT8_CLAMPED_ARRAY => ClassId::ExternalTypedDataUint8ClampedArrayCid,
-        UNMODIFIABLE_TYPED_DATA_UINT8_CLAMPED_ARRAY_VIEW => ClassId::UnmodifiableTypedDataUint8ClampedArrayViewCid,
-        TYPED_DATA_INT16_ARRAY => ClassId::TypedDataInt16ArrayCid,
-        TYPED_DATA_INT16_ARRAY_VIEW => ClassId::TypedDataInt16ArrayViewCid,
-        EXTERNAL_TYPED_DATA_INT16_ARRAY => ClassId::ExternalTypedDataInt16ArrayCid,
-        UNMODIFIABLE_TYPED_DATA_INT16_ARRAY_VIEW => ClassId::UnmodifiableTypedDataInt16ArrayViewCid,
-        TYPED_DATA_UINT16_ARRAY => ClassId::TypedDataUint16ArrayCid,
-        TYPED_DATA_UINT16_ARRAY_VIEW => ClassId::TypedDataUint16ArrayViewCid,
-        EXTERNAL_TYPED_DATA_UINT16_ARRAY => ClassId::ExternalTypedDataUint16ArrayCid,
-        UNMODIFIABLE_TYPED_DATA_UINT16_ARRAY_VIEW => ClassId::UnmodifiableTypedDataUint16ArrayViewCid,
-        TYPED_DATA_INT32_ARRAY => ClassId::TypedDataInt32ArrayCid,
-        TYPED_DATA_INT32_ARRAY_VIEW => ClassId::TypedDataInt32ArrayViewCid,
-        EXTERNAL_TYPED_DATA_INT32_ARRAY => ClassId::ExternalTypedDataInt32ArrayCid,
-        UNMODIFIABLE_TYPED_DATA_INT32_ARRAY_VIEW => ClassId::UnmodifiableTypedDataInt32ArrayViewCid,
-        TYPED_DATA_UINT32_ARRAY => ClassId::TypedDataUint32ArrayCid,
-        TYPED_DATA_UINT32_ARRAY_VIEW => ClassId::TypedDataUint32ArrayViewCid,
-        EXTERNAL_TYPED_DATA_UINT32_ARRAY => ClassId::ExternalTypedDataUint32ArrayCid,
-        UNMODIFIABLE_TYPED_DATA_UINT32_ARRAY_VIEW => ClassId::UnmodifiableTypedDataUint32ArrayViewCid,
-        TYPED_DATA_INT64_ARRAY => ClassId::TypedDataInt64ArrayCid,
-        TYPED_DATA_INT64_ARRAY_VIEW => ClassId::TypedDataInt64ArrayViewCid,
-        EXTERNAL_TYPED_DATA_INT64_ARRAY => ClassId::ExternalTypedDataInt64ArrayCid,
-        UNMODIFIABLE_TYPED_DATA_INT64_ARRAY_VIEW => ClassId::UnmodifiableTypedDataInt64ArrayViewCid,
-        TYPED_DATA_UINT64_ARRAY => ClassId::TypedDataUint64ArrayCid,
-        TYPED_DATA_UINT64_ARRAY_VIEW => ClassId::TypedDataUint64ArrayViewCid,
-        EXTERNAL_TYPED_DATA_UINT64_ARRAY => ClassId::ExternalTypedDataUint64ArrayCid,
-        UNMODIFIABLE_TYPED_DATA_UINT64_ARRAY_VIEW => ClassId::UnmodifiableTypedDataUint64ArrayViewCid,
-        TYPED_DATA_FLOAT32_ARRAY => ClassId::TypedDataFloat32ArrayCid,
-        TYPED_DATA_FLOAT32_ARRAY_VIEW => ClassId::TypedDataFloat32ArrayViewCid,
-        EXTERNAL_TYPED_DATA_FLOAT32_ARRAY => ClassId::ExternalTypedDataFloat32ArrayCid,
-        UNMODIFIABLE_TYPED_DATA_FLOAT32_ARRAY_VIEW => ClassId::UnmodifiableTypedDataFloat32ArrayViewCid,
-        TYPED_DATA_FLOAT64_ARRAY => ClassId::TypedDataFloat64ArrayCid,
-        TYPED_DATA_FLOAT64_ARRAY_VIEW => ClassId::TypedDataFloat64ArrayViewCid,
-        EXTERNAL_TYPED_DATA_FLOAT64_ARRAY => ClassId::ExternalTypedDataFloat64ArrayCid,
-        UNMODIFIABLE_TYPED_DATA_FLOAT64_ARRAY_VIEW => ClassId::UnmodifiableTypedDataFloat64ArrayViewCid,
-        TYPED_DATA_FLOAT32X4_ARRAY => ClassId::TypedDataFloat32x4ArrayCid,
-        TYPED_DATA_FLOAT32X4_ARRAY_VIEW => ClassId::TypedDataFloat32x4ArrayViewCid,
-        EXTERNAL_TYPED_DATA_FLOAT32X4_ARRAY => ClassId::ExternalTypedDataFloat32x4ArrayCid,
-        UNMODIFIABLE_TYPED_DATA_FLOAT32X4_ARRAY_VIEW => ClassId::UnmodifiableTypedDataFloat32x4ArrayViewCid,
-        TYPED_DATA_INT32X4_ARRAY => ClassId::TypedDataInt32x4ArrayCid,
-        TYPED_DATA_INT32X4_ARRAY_VIEW => ClassId::TypedDataInt32x4ArrayViewCid,
-        EXTERNAL_TYPED_DATA_INT32X4_ARRAY => ClassId::ExternalTypedDataInt32x4ArrayCid,
-        UNMODIFIABLE_TYPED_DATA_INT32X4_ARRAY_VIEW => ClassId::UnmodifiableTypedDataInt32x4ArrayViewCid,
-        TYPED_DATA_FLOAT64X2_ARRAY => ClassId::TypedDataFloat64x2ArrayCid,
-        TYPED_DATA_FLOAT64X2_ARRAY_VIEW => ClassId::TypedDataFloat64x2ArrayViewCid,
-        EXTERNAL_TYPED_DATA_FLOAT64X2_ARRAY => ClassId::ExternalTypedDataFloat64x2ArrayCid,
-        UNMODIFIABLE_TYPED_DATA_FLOAT64X2_ARRAY_VIEW => ClassId::UnmodifiableTypedDataFloat64x2ArrayViewCid,
-        BYTE_DATA_VIEW => ClassId::ByteDataViewCid,
-        UNMODIFIABLE_BYTE_DATA_VIEW => ClassId::UnmodifiableByteDataViewCid,
-        BYTE_BUFFER => ClassId::ByteBufferCid,
-        NULL => ClassId::NullCid,
-        DYNAMIC => ClassId::DynamicCid,
-        VOID => ClassId::VoidCid,
-        NEVER => ClassId::NeverCid,
-        NUM_PREDEFINED_CIDS => ClassId::NumPredefinedCids,
-        _ => ClassId::IllegalCid,
+        ILLEGAL => ClassKind::IllegalCid,
+        NATIVE_POINTER => ClassKind::NativePointer,
+        FREE_LIST_ELEMENT => ClassKind::FreeListElement,
+        FORWARDING_CORPSE => ClassKind::ForwardingCorpse,
+        OBJECT => ClassKind::ObjectCid,
+        CLASS => ClassKind::ClassCid,
+        PATCH_CLASS => ClassKind::PatchClassCid,
+        FUNCTION => ClassKind::FunctionCid,
+        TYPE_PARAMETERS => ClassKind::TypeParametersCid,
+        CLOSURE_DATA => ClassKind::ClosureDataCid,
+        FFI_TRAMPOLINE_DATA => ClassKind::FfiTrampolineDataCid,
+        FIELD => ClassKind::FieldCid,
+        SCRIPT => ClassKind::ScriptCid,
+        LIBRARY => ClassKind::LibraryCid,
+        NAMESPACE => ClassKind::NamespaceCid,
+        KERNEL_PROGRAM_INFO => ClassKind::KernelProgramInfoCid,
+        WEAK_SERIALIZATION_REFERENCE => ClassKind::WeakSerializationReferenceCid,
+        WEAK_ARRAY => ClassKind::WeakArrayCid,
+        CODE => ClassKind::CodeCid,
+        BYTECODE => ClassKind::BytecodeCid,
+        INSTRUCTIONS => ClassKind::InstructionsCid,
+        INSTRUCTIONS_SECTION => ClassKind::InstructionsSectionCid,
+        INSTRUCTIONS_TABLE => ClassKind::InstructionsTableCid,
+        OBJECT_POOL => ClassKind::ObjectPoolCid,
+        PC_DESCRIPTORS => ClassKind::PcDescriptorsCid,
+        CODE_SOURCE_MAP => ClassKind::CodeSourceMapCid,
+        COMPRESSED_STACK_MAPS => ClassKind::CompressedStackMapsCid,
+        LOCAL_VAR_DESCRIPTORS => ClassKind::LocalVarDescriptorsCid,
+        EXCEPTION_HANDLERS => ClassKind::ExceptionHandlersCid,
+        CONTEXT => ClassKind::ContextCid,
+        CONTEXT_SCOPE => ClassKind::ContextScopeCid,
+        SENTINEL => ClassKind::SentinelCid,
+        SINGLE_TARGET_CACHE => ClassKind::SingleTargetCacheCid,
+        MONOMORPHIC_SMIABLE_CALL => ClassKind::MonomorphicSmiableCallCid,
+        CALL_SITE_DATA => ClassKind::CallSiteDataCid,
+        UNLINKED_CALL => ClassKind::UnlinkedCallCid,
+        IC_DATA => ClassKind::ICDataCid,
+        MEGAMORPHIC_CACHE => ClassKind::MegamorphicCacheCid,
+        SUBTYPE_TEST_CACHE => ClassKind::SubtypeTestCacheCid,
+        LOADING_UNIT => ClassKind::LoadingUnitCid,
+        ERROR => ClassKind::ErrorCid,
+        API_ERROR => ClassKind::ApiErrorCid,
+        LANGUAGE_ERROR => ClassKind::LanguageErrorCid,
+        UNHANDLED_EXCEPTION => ClassKind::UnhandledExceptionCid,
+        UNWIND_ERROR => ClassKind::UnwindErrorCid,
+        INSTANCE => ClassKind::InstanceCid,
+        LIBRARY_PREFIX => ClassKind::LibraryPrefixCid,
+        TYPE_ARGUMENTS => ClassKind::TypeArgumentsCid,
+        ABSTRACT_TYPE => ClassKind::AbstractTypeCid,
+        TYPE => ClassKind::TypeCid,
+        FUNCTION_TYPE => ClassKind::FunctionTypeCid,
+        RECORD_TYPE => ClassKind::RecordTypeCid,
+        TYPE_PARAMETER => ClassKind::TypeParameterCid,
+        FINALIZER_BASE => ClassKind::FinalizerBaseCid,
+        FINALIZER => ClassKind::FinalizerCid,
+        NATIVE_FINALIZER => ClassKind::NativeFinalizerCid,
+        FINALIZER_ENTRY => ClassKind::FinalizerEntryCid,
+        CLOSURE => ClassKind::ClosureCid,
+        NUMBER => ClassKind::NumberCid,
+        INTEGER => ClassKind::IntegerCid,
+        SMI => ClassKind::SmiCid,
+        MINT => ClassKind::MintCid,
+        DOUBLE => ClassKind::DoubleCid,
+        BOOL => ClassKind::BoolCid,
+        FLOAT32X4 => ClassKind::Float32x4Cid,
+        INT32X4 => ClassKind::Int32x4Cid,
+        FLOAT64X2 => ClassKind::Float64x2Cid,
+        RECORD => ClassKind::RecordCid,
+        TYPED_DATA_BASE => ClassKind::TypedDataBaseCid,
+        TYPED_DATA => ClassKind::TypedDataCid,
+        EXTERNAL_TYPED_DATA => ClassKind::ExternalTypedDataCid,
+        TYPED_DATA_VIEW => ClassKind::TypedDataViewCid,
+        POINTER => ClassKind::PointerCid,
+        DYNAMIC_LIBRARY => ClassKind::DynamicLibraryCid,
+        CAPABILITY => ClassKind::CapabilityCid,
+        RECEIVE_PORT => ClassKind::ReceivePortCid,
+        SEND_PORT => ClassKind::SendPortCid,
+        STACK_TRACE => ClassKind::StackTraceCid,
+        SUSPEND_STATE => ClassKind::SuspendStateCid,
+        REG_EXP => ClassKind::RegExpCid,
+        WEAK_PROPERTY => ClassKind::WeakPropertyCid,
+        WEAK_REFERENCE => ClassKind::WeakReferenceCid,
+        MIRROR_REFERENCE => ClassKind::MirrorReferenceCid,
+        FUTURE_OR => ClassKind::FutureOrCid,
+        USER_TAG => ClassKind::UserTagCid,
+        TRANSFERABLE_TYPED_DATA => ClassKind::TransferableTypedDataCid,
+        MAP => ClassKind::MapCid,
+        CONST_MAP => ClassKind::ConstMapCid,
+        SET => ClassKind::SetCid,
+        CONST_SET => ClassKind::ConstSetCid,
+        ARRAY => ClassKind::ArrayCid,
+        IMMUTABLE_ARRAY => ClassKind::ImmutableArrayCid,
+        GROWABLE_OBJECT_ARRAY => ClassKind::GrowableObjectArrayCid,
+        STRING => ClassKind::_StringCid,
+        ONE_BYTE_STRING => ClassKind::OneByteStringCid,
+        TWO_BYTE_STRING => ClassKind::TwoByteStringCid,
+        FFI_NATIVE_FUNCTION => ClassKind::FfiNativeFunctionCid,
+        FFI_INT8 => ClassKind::FfiInt8Cid,
+        FFI_INT16 => ClassKind::FfiInt16Cid,
+        FFI_INT32 => ClassKind::FfiInt32Cid,
+        FFI_INT64 => ClassKind::FfiInt64Cid,
+        FFI_UINT8 => ClassKind::FfiUint8Cid,
+        FFI_UINT16 => ClassKind::FfiUint16Cid,
+        FFI_UINT32 => ClassKind::FfiUint32Cid,
+        FFI_UINT64 => ClassKind::FfiUint64Cid,
+        FFI_FLOAT => ClassKind::FfiFloatCid,
+        FFI_DOUBLE => ClassKind::FfiDoubleCid,
+        FFI_VOID => ClassKind::FfiVoidCid,
+        FFI_HANDLE => ClassKind::FfiHandleCid,
+        FFI_BOOL => ClassKind::FfiBoolCid,
+        FFI_NATIVE_TYPE => ClassKind::FfiNativeTypeCid,
+        FFI_STRUCT => ClassKind::FfiStructCid,
+        TYPED_DATA_INT8_ARRAY => ClassKind::TypedDataInt8ArrayCid,
+        TYPED_DATA_INT8_ARRAY_VIEW => ClassKind::TypedDataInt8ArrayViewCid,
+        EXTERNAL_TYPED_DATA_INT8_ARRAY => ClassKind::ExternalTypedDataInt8ArrayCid,
+        UNMODIFIABLE_TYPED_DATA_INT8_ARRAY_VIEW => ClassKind::UnmodifiableTypedDataInt8ArrayViewCid,
+        TYPED_DATA_UINT8_ARRAY => ClassKind::TypedDataUint8ArrayCid,
+        TYPED_DATA_UINT8_ARRAY_VIEW => ClassKind::TypedDataUint8ArrayViewCid,
+        EXTERNAL_TYPED_DATA_UINT8_ARRAY => ClassKind::ExternalTypedDataUint8ArrayCid,
+        UNMODIFIABLE_TYPED_DATA_UINT8_ARRAY_VIEW => ClassKind::UnmodifiableTypedDataUint8ArrayViewCid,
+        TYPED_DATA_UINT8_CLAMPED_ARRAY => ClassKind::TypedDataUint8ClampedArrayCid,
+        TYPED_DATA_UINT8_CLAMPED_ARRAY_VIEW => ClassKind::TypedDataUint8ClampedArrayViewCid,
+        EXTERNAL_TYPED_DATA_UINT8_CLAMPED_ARRAY => ClassKind::ExternalTypedDataUint8ClampedArrayCid,
+        UNMODIFIABLE_TYPED_DATA_UINT8_CLAMPED_ARRAY_VIEW => {
+            ClassKind::UnmodifiableTypedDataUint8ClampedArrayViewCid
+        }
+        TYPED_DATA_INT16_ARRAY => ClassKind::TypedDataInt16ArrayCid,
+        TYPED_DATA_INT16_ARRAY_VIEW => ClassKind::TypedDataInt16ArrayViewCid,
+        EXTERNAL_TYPED_DATA_INT16_ARRAY => ClassKind::ExternalTypedDataInt16ArrayCid,
+        UNMODIFIABLE_TYPED_DATA_INT16_ARRAY_VIEW => ClassKind::UnmodifiableTypedDataInt16ArrayViewCid,
+        TYPED_DATA_UINT16_ARRAY => ClassKind::TypedDataUint16ArrayCid,
+        TYPED_DATA_UINT16_ARRAY_VIEW => ClassKind::TypedDataUint16ArrayViewCid,
+        EXTERNAL_TYPED_DATA_UINT16_ARRAY => ClassKind::ExternalTypedDataUint16ArrayCid,
+        UNMODIFIABLE_TYPED_DATA_UINT16_ARRAY_VIEW => {
+            ClassKind::UnmodifiableTypedDataUint16ArrayViewCid
+        }
+        TYPED_DATA_INT32_ARRAY => ClassKind::TypedDataInt32ArrayCid,
+        TYPED_DATA_INT32_ARRAY_VIEW => ClassKind::TypedDataInt32ArrayViewCid,
+        EXTERNAL_TYPED_DATA_INT32_ARRAY => ClassKind::ExternalTypedDataInt32ArrayCid,
+        UNMODIFIABLE_TYPED_DATA_INT32_ARRAY_VIEW => ClassKind::UnmodifiableTypedDataInt32ArrayViewCid,
+        TYPED_DATA_UINT32_ARRAY => ClassKind::TypedDataUint32ArrayCid,
+        TYPED_DATA_UINT32_ARRAY_VIEW => ClassKind::TypedDataUint32ArrayViewCid,
+        EXTERNAL_TYPED_DATA_UINT32_ARRAY => ClassKind::ExternalTypedDataUint32ArrayCid,
+        UNMODIFIABLE_TYPED_DATA_UINT32_ARRAY_VIEW => {
+            ClassKind::UnmodifiableTypedDataUint32ArrayViewCid
+        }
+        TYPED_DATA_INT64_ARRAY => ClassKind::TypedDataInt64ArrayCid,
+        TYPED_DATA_INT64_ARRAY_VIEW => ClassKind::TypedDataInt64ArrayViewCid,
+        EXTERNAL_TYPED_DATA_INT64_ARRAY => ClassKind::ExternalTypedDataInt64ArrayCid,
+        UNMODIFIABLE_TYPED_DATA_INT64_ARRAY_VIEW => ClassKind::UnmodifiableTypedDataInt64ArrayViewCid,
+        TYPED_DATA_UINT64_ARRAY => ClassKind::TypedDataUint64ArrayCid,
+        TYPED_DATA_UINT64_ARRAY_VIEW => ClassKind::TypedDataUint64ArrayViewCid,
+        EXTERNAL_TYPED_DATA_UINT64_ARRAY => ClassKind::ExternalTypedDataUint64ArrayCid,
+        UNMODIFIABLE_TYPED_DATA_UINT64_ARRAY_VIEW => {
+            ClassKind::UnmodifiableTypedDataUint64ArrayViewCid
+        }
+        TYPED_DATA_FLOAT32_ARRAY => ClassKind::TypedDataFloat32ArrayCid,
+        TYPED_DATA_FLOAT32_ARRAY_VIEW => ClassKind::TypedDataFloat32ArrayViewCid,
+        EXTERNAL_TYPED_DATA_FLOAT32_ARRAY => ClassKind::ExternalTypedDataFloat32ArrayCid,
+        UNMODIFIABLE_TYPED_DATA_FLOAT32_ARRAY_VIEW => {
+            ClassKind::UnmodifiableTypedDataFloat32ArrayViewCid
+        }
+        TYPED_DATA_FLOAT64_ARRAY => ClassKind::TypedDataFloat64ArrayCid,
+        TYPED_DATA_FLOAT64_ARRAY_VIEW => ClassKind::TypedDataFloat64ArrayViewCid,
+        EXTERNAL_TYPED_DATA_FLOAT64_ARRAY => ClassKind::ExternalTypedDataFloat64ArrayCid,
+        UNMODIFIABLE_TYPED_DATA_FLOAT64_ARRAY_VIEW => {
+            ClassKind::UnmodifiableTypedDataFloat64ArrayViewCid
+        }
+        TYPED_DATA_FLOAT32X4_ARRAY => ClassKind::TypedDataFloat32x4ArrayCid,
+        TYPED_DATA_FLOAT32X4_ARRAY_VIEW => ClassKind::TypedDataFloat32x4ArrayViewCid,
+        EXTERNAL_TYPED_DATA_FLOAT32X4_ARRAY => ClassKind::ExternalTypedDataFloat32x4ArrayCid,
+        UNMODIFIABLE_TYPED_DATA_FLOAT32X4_ARRAY_VIEW => {
+            ClassKind::UnmodifiableTypedDataFloat32x4ArrayViewCid
+        }
+        TYPED_DATA_INT32X4_ARRAY => ClassKind::TypedDataInt32x4ArrayCid,
+        TYPED_DATA_INT32X4_ARRAY_VIEW => ClassKind::TypedDataInt32x4ArrayViewCid,
+        EXTERNAL_TYPED_DATA_INT32X4_ARRAY => ClassKind::ExternalTypedDataInt32x4ArrayCid,
+        UNMODIFIABLE_TYPED_DATA_INT32X4_ARRAY_VIEW => {
+            ClassKind::UnmodifiableTypedDataInt32x4ArrayViewCid
+        }
+        TYPED_DATA_FLOAT64X2_ARRAY => ClassKind::TypedDataFloat64x2ArrayCid,
+        TYPED_DATA_FLOAT64X2_ARRAY_VIEW => ClassKind::TypedDataFloat64x2ArrayViewCid,
+        EXTERNAL_TYPED_DATA_FLOAT64X2_ARRAY => ClassKind::ExternalTypedDataFloat64x2ArrayCid,
+        UNMODIFIABLE_TYPED_DATA_FLOAT64X2_ARRAY_VIEW => {
+            ClassKind::UnmodifiableTypedDataFloat64x2ArrayViewCid
+        }
+        BYTE_DATA_VIEW => ClassKind::ByteDataViewCid,
+        UNMODIFIABLE_BYTE_DATA_VIEW => ClassKind::UnmodifiableByteDataViewCid,
+        BYTE_BUFFER => ClassKind::ByteBufferCid,
+        NULL => ClassKind::NullCid,
+        DYNAMIC => ClassKind::DynamicCid,
+        VOID => ClassKind::VoidCid,
+        NEVER => ClassKind::NeverCid,
+        NUM_PREDEFINED_CIDS => ClassKind::NumPredefinedCids,
+        _ => ClassKind::IllegalCid,
     }
 }

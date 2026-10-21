@@ -35,30 +35,24 @@ pub const OBJECT_START_ALIGNMENT: usize = 64;
 
 pub type Cid = u32;
 
-macro_rules! DEFINE_CLASS_ID {
+macro_rules! DEFINE_CLASS_KIND {
     ( $( $name:ident = $val:expr ),* ) => {
         #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
         #[repr(u32)]
-        pub enum ClassId {
+        pub enum ClassKind {
             #[default]
             IllegalCid = 0,
             $( $name = $val, )*
         }
-
-        impl TryFrom<u32> for ClassId {
-            type Error = &'static str;
-            fn try_from(value: u32) -> Result<Self, Self::Error> {
-                match value {
-                    0 => Ok(ClassId::IllegalCid),
-                    $( $val => Ok(ClassId::$name), )*
-                    _ => Err("Invalid ClassId"),
-                }
-            }
-        }
     };
 }
 
-DEFINE_CLASS_ID! {
+// These class kinds do NO longer represent real Dart class IDs, like they do in the first branch.
+// The numbering and ordering is based on Dart 3.11.1, but this enum is now used as a stable discrete dictionary
+// for the rest of the application instead of being actual hardcoded Dart class IDs. This means that, for example, components such as the info_producer
+// do not need to be aware of the real class ID a certain snapshot hash defines for a certain class kind, it only has to make use of the
+// ClassKind it needs and the Snapshot translator (cid_for_class_kind) will do the translation. This is a golden rule from now on for anyone who wants to contribute.
+DEFINE_CLASS_KIND! {
     NativePointer = 1,
     FreeListElement = 2,
     ForwardingCorpse = 3,

@@ -1,6 +1,8 @@
 use serde::Deserialize;
 use std::collections::HashMap;
 
+use crate::constants::ClassKind;
+
 #[derive(Default)]
 pub enum SnapshotFeatures {
     #[default]
@@ -48,7 +50,9 @@ impl TryFrom<&String> for SnapshotArchitecture {
 pub struct DataProfile {
     pub(super) architecture: SnapshotArchitecture,
     pub(super) features: Vec<SnapshotFeatures>,
-    pub cid_map: HashMap<String, u32>,
+    pub cid_map: HashMap<u32, ClassKind>, // REAL cid to stable kind lookup
+    pub class_kind_to_cid: HashMap<ClassKind, u32>, // and the inverse to the map above
+    pub num_predefined_cids: u32,
     pub parsing_operations: HashMap<String, serde_json::Value>,
 }
 

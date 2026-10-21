@@ -1,5 +1,5 @@
 use crate::cluster::{CodeCluster, FunctionCluster};
-use crate::constants::ClassId;
+use crate::constants::ClassKind;
 use crate::info_producer::utils::{find_object_by_id, string_or_placeholder};
 use crate::raw_object::{Class, Code};
 use crate::snapshot::{DataSnapshot, InstructionsSnapshot};
@@ -11,17 +11,19 @@ pub fn produce_functions_info(
 ) -> anyhow::Result<Vec<FunctionInfo>> {
     let mut functions_info = Vec::new();
 
+    let function_cid = snapshot.cid_for_class_kind(ClassKind::FunctionCid)?;
     let function_cluster = snapshot
         .clusters
-        .get(&((ClassId::FunctionCid as u32) << 2))
+        .get(&(function_cid << 2))
         .ok_or_else(|| anyhow::anyhow!("Function cluster not found"))?
         .as_any()
         .downcast_ref::<FunctionCluster>()
         .ok_or_else(|| anyhow::anyhow!("Function cluster is not of type FunctionCluster"))?;
 
+    let code_cid = snapshot.cid_for_class_kind(ClassKind::CodeCid)?;
     let code_cluster = snapshot
         .clusters
-        .get(&((ClassId::CodeCid as u32) << 2))
+        .get(&(code_cid << 2))
         .ok_or_else(|| anyhow::anyhow!("Code cluster not found"))?
         .as_any()
         .downcast_ref::<CodeCluster>()

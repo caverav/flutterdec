@@ -11,7 +11,7 @@ pub(super) fn find_object_by_id<T: SnapshotObject>(
     snapshot: &DataSnapshot,
     id: u32,
 ) -> anyhow::Result<&T> {
-    let base_key = (T::CID as u32) << 2;
+    let base_key = snapshot.cid_for_class_kind(T::KIND)? << 2;
 
     for flags in 0..4u32 {
         // iterate through all cluster types for the same CID
@@ -24,7 +24,7 @@ pub(super) fn find_object_by_id<T: SnapshotObject>(
         };
 
         return object.downcast_ref::<T>().ok_or_else(|| {
-            anyhow::anyhow!("reference ID {id} has the wrong Rust type for {:?}", T::CID)
+            anyhow::anyhow!("reference ID {id} has the wrong Rust type for {:?}", T::KIND)
         });
     }
 

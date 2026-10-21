@@ -1,7 +1,7 @@
 use flutterdec_adapter::ClassInfo;
 
 use crate::cluster::ClassCluster;
-use crate::constants::ClassId;
+use crate::constants::ClassKind;
 use crate::info_producer::utils::find_object_by_id;
 use crate::info_producer::utils::string_or_placeholder;
 use crate::raw_object::{Library, Type};
@@ -10,9 +10,10 @@ use crate::snapshot::DataSnapshot;
 pub fn produce_classes_info(snapshot: &DataSnapshot) -> anyhow::Result<Vec<ClassInfo>> {
     let mut classes_info = Vec::new();
     // obtain all class clusters (there should only be one)
+    let class_cid = snapshot.cid_for_class_kind(ClassKind::ClassCid)?;
     let class_cluster = snapshot
         .clusters
-        .get(&((ClassId::ClassCid as u32) << 2))
+        .get(&(class_cid << 2))
         .ok_or_else(|| anyhow::anyhow!("Class cluster is missing"))?
         .as_any()
         .downcast_ref::<ClassCluster>()

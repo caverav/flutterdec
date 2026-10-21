@@ -2,6 +2,7 @@
 
 pub(super) const CID_MAP: &str = "class_map";
 pub(super) const PARSING_OPERATIONS: &str = "parsing_ops";
+pub(super) const NUM_PREDEFINED_CIDS_KEY: &str = "num_predefined_cids";
 
 pub(crate) const ILLEGAL: &str = "Illegal";
 pub(crate) const NATIVE_POINTER: &str = "NativePointer";
@@ -118,59 +119,74 @@ pub(crate) const FFI_STRUCT: &str = "FfiStruct";
 pub(crate) const TYPED_DATA_INT8_ARRAY: &str = "TypedDataInt8Array";
 pub(crate) const TYPED_DATA_INT8_ARRAY_VIEW: &str = "TypedDataInt8ArrayView";
 pub(crate) const EXTERNAL_TYPED_DATA_INT8_ARRAY: &str = "ExternalTypedDataInt8Array";
-pub(crate) const UNMODIFIABLE_TYPED_DATA_INT8_ARRAY_VIEW: &str = "UnmodifiableTypedDataInt8ArrayView";
+pub(crate) const UNMODIFIABLE_TYPED_DATA_INT8_ARRAY_VIEW: &str =
+    "UnmodifiableTypedDataInt8ArrayView";
 pub(crate) const TYPED_DATA_UINT8_ARRAY: &str = "TypedDataUint8Array";
 pub(crate) const TYPED_DATA_UINT8_ARRAY_VIEW: &str = "TypedDataUint8ArrayView";
 pub(crate) const EXTERNAL_TYPED_DATA_UINT8_ARRAY: &str = "ExternalTypedDataUint8Array";
-pub(crate) const UNMODIFIABLE_TYPED_DATA_UINT8_ARRAY_VIEW: &str = "UnmodifiableTypedDataUint8ArrayView";
+pub(crate) const UNMODIFIABLE_TYPED_DATA_UINT8_ARRAY_VIEW: &str =
+    "UnmodifiableTypedDataUint8ArrayView";
 pub(crate) const TYPED_DATA_UINT8_CLAMPED_ARRAY: &str = "TypedDataUint8ClampedArray";
 pub(crate) const TYPED_DATA_UINT8_CLAMPED_ARRAY_VIEW: &str = "TypedDataUint8ClampedArrayView";
-pub(crate) const EXTERNAL_TYPED_DATA_UINT8_CLAMPED_ARRAY: &str = "ExternalTypedDataUint8ClampedArray";
-pub(crate) const UNMODIFIABLE_TYPED_DATA_UINT8_CLAMPED_ARRAY_VIEW: &str = "UnmodifiableTypedDataUint8ClampedArrayView";
+pub(crate) const EXTERNAL_TYPED_DATA_UINT8_CLAMPED_ARRAY: &str =
+    "ExternalTypedDataUint8ClampedArray";
+pub(crate) const UNMODIFIABLE_TYPED_DATA_UINT8_CLAMPED_ARRAY_VIEW: &str =
+    "UnmodifiableTypedDataUint8ClampedArrayView";
 pub(crate) const TYPED_DATA_INT16_ARRAY: &str = "TypedDataInt16Array";
 pub(crate) const TYPED_DATA_INT16_ARRAY_VIEW: &str = "TypedDataInt16ArrayView";
 pub(crate) const EXTERNAL_TYPED_DATA_INT16_ARRAY: &str = "ExternalTypedDataInt16Array";
-pub(crate) const UNMODIFIABLE_TYPED_DATA_INT16_ARRAY_VIEW: &str = "UnmodifiableTypedDataInt16ArrayView";
+pub(crate) const UNMODIFIABLE_TYPED_DATA_INT16_ARRAY_VIEW: &str =
+    "UnmodifiableTypedDataInt16ArrayView";
 pub(crate) const TYPED_DATA_UINT16_ARRAY: &str = "TypedDataUint16Array";
 pub(crate) const TYPED_DATA_UINT16_ARRAY_VIEW: &str = "TypedDataUint16ArrayView";
 pub(crate) const EXTERNAL_TYPED_DATA_UINT16_ARRAY: &str = "ExternalTypedDataUint16Array";
-pub(crate) const UNMODIFIABLE_TYPED_DATA_UINT16_ARRAY_VIEW: &str = "UnmodifiableTypedDataUint16ArrayView";
+pub(crate) const UNMODIFIABLE_TYPED_DATA_UINT16_ARRAY_VIEW: &str =
+    "UnmodifiableTypedDataUint16ArrayView";
 pub(crate) const TYPED_DATA_INT32_ARRAY: &str = "TypedDataInt32Array";
 pub(crate) const TYPED_DATA_INT32_ARRAY_VIEW: &str = "TypedDataInt32ArrayView";
 pub(crate) const EXTERNAL_TYPED_DATA_INT32_ARRAY: &str = "ExternalTypedDataInt32Array";
-pub(crate) const UNMODIFIABLE_TYPED_DATA_INT32_ARRAY_VIEW: &str = "UnmodifiableTypedDataInt32ArrayView";
+pub(crate) const UNMODIFIABLE_TYPED_DATA_INT32_ARRAY_VIEW: &str =
+    "UnmodifiableTypedDataInt32ArrayView";
 pub(crate) const TYPED_DATA_UINT32_ARRAY: &str = "TypedDataUint32Array";
 pub(crate) const TYPED_DATA_UINT32_ARRAY_VIEW: &str = "TypedDataUint32ArrayView";
 pub(crate) const EXTERNAL_TYPED_DATA_UINT32_ARRAY: &str = "ExternalTypedDataUint32Array";
-pub(crate) const UNMODIFIABLE_TYPED_DATA_UINT32_ARRAY_VIEW: &str = "UnmodifiableTypedDataUint32ArrayView";
+pub(crate) const UNMODIFIABLE_TYPED_DATA_UINT32_ARRAY_VIEW: &str =
+    "UnmodifiableTypedDataUint32ArrayView";
 pub(crate) const TYPED_DATA_INT64_ARRAY: &str = "TypedDataInt64Array";
 pub(crate) const TYPED_DATA_INT64_ARRAY_VIEW: &str = "TypedDataInt64ArrayView";
 pub(crate) const EXTERNAL_TYPED_DATA_INT64_ARRAY: &str = "ExternalTypedDataInt64Array";
-pub(crate) const UNMODIFIABLE_TYPED_DATA_INT64_ARRAY_VIEW: &str = "UnmodifiableTypedDataInt64ArrayView";
+pub(crate) const UNMODIFIABLE_TYPED_DATA_INT64_ARRAY_VIEW: &str =
+    "UnmodifiableTypedDataInt64ArrayView";
 pub(crate) const TYPED_DATA_UINT64_ARRAY: &str = "TypedDataUint64Array";
 pub(crate) const TYPED_DATA_UINT64_ARRAY_VIEW: &str = "TypedDataUint64ArrayView";
 pub(crate) const EXTERNAL_TYPED_DATA_UINT64_ARRAY: &str = "ExternalTypedDataUint64Array";
-pub(crate) const UNMODIFIABLE_TYPED_DATA_UINT64_ARRAY_VIEW: &str = "UnmodifiableTypedDataUint64ArrayView";
+pub(crate) const UNMODIFIABLE_TYPED_DATA_UINT64_ARRAY_VIEW: &str =
+    "UnmodifiableTypedDataUint64ArrayView";
 pub(crate) const TYPED_DATA_FLOAT32_ARRAY: &str = "TypedDataFloat32Array";
 pub(crate) const TYPED_DATA_FLOAT32_ARRAY_VIEW: &str = "TypedDataFloat32ArrayView";
 pub(crate) const EXTERNAL_TYPED_DATA_FLOAT32_ARRAY: &str = "ExternalTypedDataFloat32Array";
-pub(crate) const UNMODIFIABLE_TYPED_DATA_FLOAT32_ARRAY_VIEW: &str = "UnmodifiableTypedDataFloat32ArrayView";
+pub(crate) const UNMODIFIABLE_TYPED_DATA_FLOAT32_ARRAY_VIEW: &str =
+    "UnmodifiableTypedDataFloat32ArrayView";
 pub(crate) const TYPED_DATA_FLOAT64_ARRAY: &str = "TypedDataFloat64Array";
 pub(crate) const TYPED_DATA_FLOAT64_ARRAY_VIEW: &str = "TypedDataFloat64ArrayView";
 pub(crate) const EXTERNAL_TYPED_DATA_FLOAT64_ARRAY: &str = "ExternalTypedDataFloat64Array";
-pub(crate) const UNMODIFIABLE_TYPED_DATA_FLOAT64_ARRAY_VIEW: &str = "UnmodifiableTypedDataFloat64ArrayView";
+pub(crate) const UNMODIFIABLE_TYPED_DATA_FLOAT64_ARRAY_VIEW: &str =
+    "UnmodifiableTypedDataFloat64ArrayView";
 pub(crate) const TYPED_DATA_FLOAT32X4_ARRAY: &str = "TypedDataFloat32x4Array";
 pub(crate) const TYPED_DATA_FLOAT32X4_ARRAY_VIEW: &str = "TypedDataFloat32x4ArrayView";
 pub(crate) const EXTERNAL_TYPED_DATA_FLOAT32X4_ARRAY: &str = "ExternalTypedDataFloat32x4Array";
-pub(crate) const UNMODIFIABLE_TYPED_DATA_FLOAT32X4_ARRAY_VIEW: &str = "UnmodifiableTypedDataFloat32x4ArrayView";
+pub(crate) const UNMODIFIABLE_TYPED_DATA_FLOAT32X4_ARRAY_VIEW: &str =
+    "UnmodifiableTypedDataFloat32x4ArrayView";
 pub(crate) const TYPED_DATA_INT32X4_ARRAY: &str = "TypedDataInt32x4Array";
 pub(crate) const TYPED_DATA_INT32X4_ARRAY_VIEW: &str = "TypedDataInt32x4ArrayView";
 pub(crate) const EXTERNAL_TYPED_DATA_INT32X4_ARRAY: &str = "ExternalTypedDataInt32x4Array";
-pub(crate) const UNMODIFIABLE_TYPED_DATA_INT32X4_ARRAY_VIEW: &str = "UnmodifiableTypedDataInt32x4ArrayView";
+pub(crate) const UNMODIFIABLE_TYPED_DATA_INT32X4_ARRAY_VIEW: &str =
+    "UnmodifiableTypedDataInt32x4ArrayView";
 pub(crate) const TYPED_DATA_FLOAT64X2_ARRAY: &str = "TypedDataFloat64x2Array";
 pub(crate) const TYPED_DATA_FLOAT64X2_ARRAY_VIEW: &str = "TypedDataFloat64x2ArrayView";
 pub(crate) const EXTERNAL_TYPED_DATA_FLOAT64X2_ARRAY: &str = "ExternalTypedDataFloat64x2Array";
-pub(crate) const UNMODIFIABLE_TYPED_DATA_FLOAT64X2_ARRAY_VIEW: &str = "UnmodifiableTypedDataFloat64x2ArrayView";
+pub(crate) const UNMODIFIABLE_TYPED_DATA_FLOAT64X2_ARRAY_VIEW: &str =
+    "UnmodifiableTypedDataFloat64x2ArrayView";
 pub(crate) const BYTE_DATA_VIEW: &str = "ByteDataView";
 pub(crate) const UNMODIFIABLE_BYTE_DATA_VIEW: &str = "UnmodifiableByteDataView";
 pub(crate) const BYTE_BUFFER: &str = "ByteBuffer";

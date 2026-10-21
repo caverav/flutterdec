@@ -5,7 +5,7 @@ use crate::cluster::{
     Cluster,
 };
 use crate::constants::{
-    self, ClassId, MAGIC_BYTES, OBJECT_START_ALIGNMENT, SNAPSHOT_MAGIC_NUMBER_SZ,
+    self, ClassKind, MAGIC_BYTES, OBJECT_START_ALIGNMENT, SNAPSHOT_MAGIC_NUMBER_SZ,
 };
 use crate::instruction_table::{parse_instr_table_from_rodata, InstructionTable};
 use crate::profile_reader::{profile::DataProfile, select_data_profile};
@@ -80,6 +80,14 @@ pub struct DataSnapshot {
 }
 
 impl DataSnapshot {
+    pub(crate) fn cid_for_class_kind(&self, class_kind: ClassKind) -> anyhow::Result<u32> {
+        self.data_profile
+            .class_kind_to_cid
+            .get(&class_kind)
+            .copied()
+            .ok_or_else(|| anyhow::anyhow!("profile has no CID for {class_kind:?}"))
+    }
+
     pub(crate) fn cluster_by_ref_id(
         &self,
         reference_id: u32,
@@ -87,6 +95,7 @@ impl DataSnapshot {
         let mut left = 0;
         let mut right = self.cluster_order.len();
 
+        // use the fact that ref ids are sequential identifiers to setup a fast binary search
         while left < right {
             let middle = left + (right - left) / 2;
             let key = self.cluster_order[middle];
@@ -178,22 +187,30 @@ impl DataSnapshot {
         for _cluster_idx in 0..self.num_clusters {
             let tags: u32 = stream.read()? as u32;
             let decoded_tags: DecodedTags = decode_tags(tags);
-            let cid = decoded_tags.get_cid();
+            let read_cid = decoded_tags.get_cid();
 
-            let mut cluster = decide_cluster(cid).map_err(|reason| {
-                anyhow::anyhow!("Couldn't find cluster implementation for CID {cid}: {reason}")
+            let class_kind = if read_cid < self.data_profile.num_predefined_cids {
+                *self.data_profile.cid_map.get(&read_cid).ok_or_else(|| {
+                    anyhow::anyhow!("A suitable mapping wasn't found for CID: {read_cid}")
+                })?
+            } else {
+                ClassKind::InstanceCid
+            };
+
+            let mut cluster = decide_cluster(class_kind).map_err(|reason| {
+                anyhow::anyhow!("Couldn't find cluster implementation for CID {read_cid}: {reason}")
             })?;
 
             cluster.set_metadata(
                 tags,
-                cid,
+                read_cid,
                 decoded_tags.is_immutable(),
                 decoded_tags.is_canonical(),
             );
-            cluster.read_alloc(&mut curr_ref_id, stream)?;
+            cluster.read_alloc(&mut curr_ref_id, stream, &self.data_profile)?;
 
             // Composite key exactly as suggested to PR reviewer
-            let key = cid << 2
+            let key = read_cid << 2
                 | ((decoded_tags.is_canonical() as u32) << 1)
                 | (decoded_tags.is_immutable() as u32);
             self.clusters.insert(key, cluster);
@@ -214,7 +231,7 @@ impl DataSnapshot {
         self.start_of_fill_area = stream.get_current_pos();
         for key in self.cluster_order.iter() {
             let cluster = self.clusters.get_mut(key).unwrap();
-            (*cluster).read_fill(stream)?;
+            (*cluster).read_fill(stream, &self.data_profile)?;
         }
         self.end_of_fill_area = stream.get_current_pos();
         self.build_class_table()?; // we need this to resolve class names associated with Type objects
@@ -222,10 +239,11 @@ impl DataSnapshot {
     }
 
     fn build_class_table(&mut self) -> anyhow::Result<()> {
+        let class_cid = self.cid_for_class_kind(ClassKind::ClassCid)?;
         let class_table = {
             let class_cluster = self
                 .clusters
-                .get(&((ClassId::ClassCid as u32) << 2))
+                .get(&(class_cid << 2))
                 .ok_or_else(|| anyhow::anyhow!("Class cluster is missing"))?
                 .as_any()
                 .downcast_ref::<ClassCluster>()
@@ -233,7 +251,7 @@ impl DataSnapshot {
 
             let mut class_table = HashMap::with_capacity(class_cluster.objs.len());
             for (index, class) in class_cluster.objs.iter().enumerate() {
-                if class.id == ClassId::IllegalCid as i32 {
+                if class.id == ClassKind::IllegalCid as i32 {
                     anyhow::bail!("class at cluster index {index} has an illegal CID");
                     // should never happen
                 }
@@ -284,12 +302,17 @@ impl DataSnapshot {
 
 pub fn parse_instr_snapshot(
     stream: &mut Stream,
-    clusters: &mut HashMap<u32, Box<dyn Cluster>>,
+    snapshot: &mut DataSnapshot,
 ) -> anyhow::Result<InstructionsSnapshot> {
     let mut instructions_snapshot = InstructionsSnapshot::default();
     instructions_snapshot.image_size = stream.read_raw_u64()?;
 
-    resolve_instructions_len_for_code_objects(clusters, instructions_snapshot.image_size as usize)?;
+    let code_cid = snapshot.cid_for_class_kind(ClassKind::CodeCid)?;
+    resolve_instructions_len_for_code_objects(
+        &mut snapshot.clusters,
+        code_cid,
+        instructions_snapshot.image_size as usize,
+    )?;
 
     Ok(instructions_snapshot)
 }

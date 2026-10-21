@@ -5,9 +5,9 @@ use crate::profile_reader::{
     },
 };
 
-pub mod profile;
+pub(crate) mod profile;
 pub(crate) mod profile_json_dictionary;
-mod utils;
+pub(crate) mod utils;
 
 const PROF_EXTENSION: &str = ".json";
 const SNAPSHOT_HASH_SUBSTR: usize = 8;
@@ -30,12 +30,14 @@ pub fn select_data_profile(
         + "_"
         + &architecture_suffix(&arch)
         + PROF_EXTENSION;
-    let (ops, class_id_map) = read_profile_file(&file_name)?;
+    let (ops, cid_map, num_predefined_cids, class_kind_to_cid) = read_profile_file(&file_name)?;
 
     Ok(DataProfile {
         architecture: arch,
         features: snapshot_features,
-        cid_map: class_id_map,
+        cid_map,
+        class_kind_to_cid,
+        num_predefined_cids,
         parsing_operations: ops,
     })
 }
