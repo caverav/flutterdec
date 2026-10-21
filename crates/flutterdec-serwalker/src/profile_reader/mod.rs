@@ -6,7 +6,7 @@ use crate::profile_reader::{
 };
 
 pub mod profile;
-mod profile_json_dictionary;
+pub(crate) mod profile_json_dictionary;
 mod utils;
 
 const PROF_EXTENSION: &str = ".json";

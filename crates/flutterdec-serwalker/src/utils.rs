@@ -1,14 +1,17 @@
 use crate::constants::{Cid, ClassId};
+use crate::profile_reader::profile_json_dictionary;
 
 pub(crate) trait SnapshotObject: std::any::Any {
     const CID: ClassId;
+    const CID_NAME: &'static str;
 }
 
 macro_rules! IMPLEMENT_SNAPSHOT_OBJECT {
-    ($( $name:ty = $cid:path ),* $(,)?) => {
+    ($( $name:ty = ($cid:path, $cid_name:path) ),* $(,)?) => {
         $(
             impl SnapshotObject for $name {
                 const CID: ClassId = $cid;
+                const CID_NAME: &'static str = $cid_name;
             }
         )*
     };
@@ -16,57 +19,57 @@ macro_rules! IMPLEMENT_SNAPSHOT_OBJECT {
 
 // all this mess so we can use the generic more easily, i ******* hate Rust
 IMPLEMENT_SNAPSHOT_OBJECT! {
-    crate::raw_object::TypeParameters = ClassId::TypeParametersCid,
-    crate::raw_object::PatchClass = ClassId::PatchClassCid,
-    crate::raw_object::Function = ClassId::FunctionCid,
-    crate::raw_object::ClosureData = ClassId::ClosureDataCid,
-    crate::raw_object::FfiTrampolineData = ClassId::FfiTrampolineDataCid,
-    crate::raw_object::Field = ClassId::FieldCid,
-    crate::raw_object::Script = ClassId::ScriptCid,
-    crate::raw_object::Library = ClassId::LibraryCid,
-    crate::raw_object::Namespace = ClassId::NamespaceCid,
-    crate::raw_object::KernelProgramInfo = ClassId::KernelProgramInfoCid,
-    crate::raw_object::UnlinkedCall = ClassId::UnlinkedCallCid,
-    crate::raw_object::ICData = ClassId::ICDataCid,
-    crate::raw_object::MegamorphicCache = ClassId::MegamorphicCacheCid,
-    crate::raw_object::SubtypeTestCache = ClassId::SubtypeTestCacheCid,
-    crate::raw_object::LoadingUnit = ClassId::LoadingUnitCid,
-    crate::raw_object::LanguageError = ClassId::LanguageErrorCid,
-    crate::raw_object::UnhandledException = ClassId::UnhandledExceptionCid,
-    crate::raw_object::LibraryPrefix = ClassId::LibraryPrefixCid,
-    crate::raw_object::Type = ClassId::TypeCid,
-    crate::raw_object::FunctionType = ClassId::FunctionTypeCid,
-    crate::raw_object::RecordType = ClassId::RecordTypeCid,
-    crate::raw_object::TypeParameter = ClassId::TypeParameterCid,
-    crate::raw_object::Closure = ClassId::ClosureCid,
-    crate::raw_object::Double = ClassId::DoubleCid,
-    crate::raw_object::Int32x4 = ClassId::Int32x4Cid,
-    crate::raw_object::GrowableObjectArray = ClassId::GrowableObjectArrayCid,
-    crate::raw_object::StackTrace = ClassId::StackTraceCid,
-    crate::raw_object::RegExp = ClassId::RegExpCid,
-    crate::raw_object::WeakProperty = ClassId::WeakPropertyCid,
-    crate::raw_object::Code = ClassId::CodeCid,
-    crate::raw_object::ObjectPool = ClassId::ObjectPoolCid,
-    crate::raw_object::Map = ClassId::MapCid,
-    crate::raw_object::Set = ClassId::SetCid,
-    crate::raw_object::Class = ClassId::ClassCid,
-    crate::raw_object::TypeArguments = ClassId::TypeArgumentsCid,
-    crate::raw_object::ExceptionHandlers = ClassId::ExceptionHandlersCid,
-    crate::raw_object::Context = ClassId::ContextCid,
-    crate::raw_object::ContextScope = ClassId::ContextScopeCid,
-    crate::raw_object::Mint = ClassId::MintCid,
-    crate::raw_object::Float32x4 = ClassId::Float32x4Cid,
-    crate::raw_object::Float64x2 = ClassId::Float64x2Cid,
-    crate::raw_object::Record = ClassId::RecordCid,
-    crate::raw_object::Array = ClassId::ArrayCid,
-    crate::raw_object::WeakArray = ClassId::WeakArrayCid,
-    crate::raw_object::ImmutableArray = ClassId::ImmutableArrayCid,
-    crate::raw_object::ConstMap = ClassId::ConstMapCid,
-    crate::raw_object::ConstSet = ClassId::ConstSetCid,
-    crate::raw_object::CodeSourceMap = ClassId::CodeSourceMapCid,
-    crate::raw_object::CompressedStackMaps = ClassId::CompressedStackMapsCid,
-    crate::raw_object::PcDescriptors = ClassId::PcDescriptorsCid,
-    crate::raw_object::_String = ClassId::_StringCid,
+    crate::raw_object::TypeParameters = (ClassId::TypeParametersCid, profile_json_dictionary::TYPE_PARAMETERS),
+    crate::raw_object::PatchClass = (ClassId::PatchClassCid, profile_json_dictionary::PATCH_CLASS),
+    crate::raw_object::Function = (ClassId::FunctionCid, profile_json_dictionary::FUNCTION),
+    crate::raw_object::ClosureData = (ClassId::ClosureDataCid, profile_json_dictionary::CLOSURE_DATA),
+    crate::raw_object::FfiTrampolineData = (ClassId::FfiTrampolineDataCid, profile_json_dictionary::FFI_TRAMPOLINE_DATA),
+    crate::raw_object::Field = (ClassId::FieldCid, profile_json_dictionary::FIELD),
+    crate::raw_object::Script = (ClassId::ScriptCid, profile_json_dictionary::SCRIPT),
+    crate::raw_object::Library = (ClassId::LibraryCid, profile_json_dictionary::LIBRARY),
+    crate::raw_object::Namespace = (ClassId::NamespaceCid, profile_json_dictionary::NAMESPACE),
+    crate::raw_object::KernelProgramInfo = (ClassId::KernelProgramInfoCid, profile_json_dictionary::KERNEL_PROGRAM_INFO),
+    crate::raw_object::UnlinkedCall = (ClassId::UnlinkedCallCid, profile_json_dictionary::UNLINKED_CALL),
+    crate::raw_object::ICData = (ClassId::ICDataCid, profile_json_dictionary::IC_DATA),
+    crate::raw_object::MegamorphicCache = (ClassId::MegamorphicCacheCid, profile_json_dictionary::MEGAMORPHIC_CACHE),
+    crate::raw_object::SubtypeTestCache = (ClassId::SubtypeTestCacheCid, profile_json_dictionary::SUBTYPE_TEST_CACHE),
+    crate::raw_object::LoadingUnit = (ClassId::LoadingUnitCid, profile_json_dictionary::LOADING_UNIT),
+    crate::raw_object::LanguageError = (ClassId::LanguageErrorCid, profile_json_dictionary::LANGUAGE_ERROR),
+    crate::raw_object::UnhandledException = (ClassId::UnhandledExceptionCid, profile_json_dictionary::UNHANDLED_EXCEPTION),
+    crate::raw_object::LibraryPrefix = (ClassId::LibraryPrefixCid, profile_json_dictionary::LIBRARY_PREFIX),
+    crate::raw_object::Type = (ClassId::TypeCid, profile_json_dictionary::TYPE),
+    crate::raw_object::FunctionType = (ClassId::FunctionTypeCid, profile_json_dictionary::FUNCTION_TYPE),
+    crate::raw_object::RecordType = (ClassId::RecordTypeCid, profile_json_dictionary::RECORD_TYPE),
+    crate::raw_object::TypeParameter = (ClassId::TypeParameterCid, profile_json_dictionary::TYPE_PARAMETER),
+    crate::raw_object::Closure = (ClassId::ClosureCid, profile_json_dictionary::CLOSURE),
+    crate::raw_object::Double = (ClassId::DoubleCid, profile_json_dictionary::DOUBLE),
+    crate::raw_object::Int32x4 = (ClassId::Int32x4Cid, profile_json_dictionary::INT32X4),
+    crate::raw_object::GrowableObjectArray = (ClassId::GrowableObjectArrayCid, profile_json_dictionary::GROWABLE_OBJECT_ARRAY),
+    crate::raw_object::StackTrace = (ClassId::StackTraceCid, profile_json_dictionary::STACK_TRACE),
+    crate::raw_object::RegExp = (ClassId::RegExpCid, profile_json_dictionary::REG_EXP),
+    crate::raw_object::WeakProperty = (ClassId::WeakPropertyCid, profile_json_dictionary::WEAK_PROPERTY),
+    crate::raw_object::Code = (ClassId::CodeCid, profile_json_dictionary::CODE),
+    crate::raw_object::ObjectPool = (ClassId::ObjectPoolCid, profile_json_dictionary::OBJECT_POOL),
+    crate::raw_object::Map = (ClassId::MapCid, profile_json_dictionary::MAP),
+    crate::raw_object::Set = (ClassId::SetCid, profile_json_dictionary::SET),
+    crate::raw_object::Class = (ClassId::ClassCid, profile_json_dictionary::CLASS),
+    crate::raw_object::TypeArguments = (ClassId::TypeArgumentsCid, profile_json_dictionary::TYPE_ARGUMENTS),
+    crate::raw_object::ExceptionHandlers = (ClassId::ExceptionHandlersCid, profile_json_dictionary::EXCEPTION_HANDLERS),
+    crate::raw_object::Context = (ClassId::ContextCid, profile_json_dictionary::CONTEXT),
+    crate::raw_object::ContextScope = (ClassId::ContextScopeCid, profile_json_dictionary::CONTEXT_SCOPE),
+    crate::raw_object::Mint = (ClassId::MintCid, profile_json_dictionary::MINT),
+    crate::raw_object::Float32x4 = (ClassId::Float32x4Cid, profile_json_dictionary::FLOAT32X4),
+    crate::raw_object::Float64x2 = (ClassId::Float64x2Cid, profile_json_dictionary::FLOAT64X2),
+    crate::raw_object::Record = (ClassId::RecordCid, profile_json_dictionary::RECORD),
+    crate::raw_object::Array = (ClassId::ArrayCid, profile_json_dictionary::ARRAY),
+    crate::raw_object::WeakArray = (ClassId::WeakArrayCid, profile_json_dictionary::WEAK_ARRAY),
+    crate::raw_object::ImmutableArray = (ClassId::ImmutableArrayCid, profile_json_dictionary::IMMUTABLE_ARRAY),
+    crate::raw_object::ConstMap = (ClassId::ConstMapCid, profile_json_dictionary::CONST_MAP),
+    crate::raw_object::ConstSet = (ClassId::ConstSetCid, profile_json_dictionary::CONST_SET),
+    crate::raw_object::CodeSourceMap = (ClassId::CodeSourceMapCid, profile_json_dictionary::CODE_SOURCE_MAP),
+    crate::raw_object::CompressedStackMaps = (ClassId::CompressedStackMapsCid, profile_json_dictionary::COMPRESSED_STACK_MAPS),
+    crate::raw_object::PcDescriptors = (ClassId::PcDescriptorsCid, profile_json_dictionary::PC_DESCRIPTORS),
+    crate::raw_object::_String = (ClassId::_StringCid, profile_json_dictionary::STRING),
 }
 
 #[macro_export]
