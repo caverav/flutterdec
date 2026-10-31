@@ -622,7 +622,7 @@ DECLARE_FIXED_LENGTH_CLUSTER!(RegExp, RegExpCluster);
 // obj.next_seen_by_gc = stream.read_ref_id()?; [[NOT PRESENT IN FullAOT]]
 DECLARE_FIXED_LENGTH_CLUSTER!(WeakProperty, WeakPropertyCluster);
 
-macro_rules! IMPLEMENT_VARIABLE_LENGTH_CLUSTER {
+macro_rules! IMPLEMENT_CUSTOM_PROFILED_CLUSTER {
     (
         $name:ident,
         $recipe_name:path,
@@ -817,7 +817,7 @@ pub struct CodeCluster {
     objs: Vec<Box<Code>>,
 }
 
-IMPLEMENT_VARIABLE_LENGTH_CLUSTER!(
+IMPLEMENT_CUSTOM_PROFILED_CLUSTER!(
     Code,
     CODE,
     CodeCluster,
@@ -1103,7 +1103,7 @@ pub fn resolve_entrypoints(
     Ok(())
 }
 DECLARE_VARIABLE_LENGTH_CLUSTER!(ObjectPool, ObjectPoolCluster);
-IMPLEMENT_VARIABLE_LENGTH_CLUSTER!(
+IMPLEMENT_CUSTOM_PROFILED_CLUSTER!(
     ObjectPool,
     OBJECT_POOL,
     ObjectPoolCluster,
@@ -1190,7 +1190,7 @@ DECLARE_VARIABLE_LENGTH_CLUSTER!(Set, SetCluster);
 IMPLEMENT_PROFILED_CLUSTER!(Set, SetCluster, false);
 
 DECLARE_VARIABLE_LENGTH_CLUSTER!(Instance, InstanceCluster);
-IMPLEMENT_VARIABLE_LENGTH_CLUSTER!(
+IMPLEMENT_CUSTOM_PROFILED_CLUSTER!(
     Instance,
     INSTANCE,
     InstanceCluster,
@@ -1237,7 +1237,7 @@ IMPLEMENT_VARIABLE_LENGTH_CLUSTER!(
 );
 
 DECLARE_VARIABLE_LENGTH_CLUSTER!(TypedData, DeltaEncodedTypedDataCluster);
-IMPLEMENT_VARIABLE_LENGTH_CLUSTER!(
+IMPLEMENT_CUSTOM_PROFILED_CLUSTER!(
     TypedData,
     DELTA_ENCODED_TYPED_DATA,
     DeltaEncodedTypedDataCluster,
@@ -1294,7 +1294,7 @@ DECLARE_VARIABLE_LENGTH_CLUSTER!(TypedData, TypedDataCluster);
 IMPLEMENT_PROFILED_CLUSTER!(TypedData, TypedDataCluster, false);
 
 DECLARE_VARIABLE_LENGTH_CLUSTER!(Class, ClassCluster);
-IMPLEMENT_VARIABLE_LENGTH_CLUSTER!(
+IMPLEMENT_CUSTOM_PROFILED_CLUSTER!(
     Class,
     CLASS,
     ClassCluster,
@@ -1387,7 +1387,7 @@ IMPLEMENT_PROFILED_CLUSTER!(PcDescriptors, PcDescriptorsCluster, false);
 //DECLARE_VARIABLE_LENGTH_CLUSTER!(OneByteString, OneByteStringCluster); These only exist when NO COMPRESSED_POINTERS
 //DECLARE_VARIABLE_LENGTH_CLUSTER!(TwoByteString, TwoByteStringCluster);
 DECLARE_VARIABLE_LENGTH_CLUSTER!(_String, _StringCluster);
-IMPLEMENT_VARIABLE_LENGTH_CLUSTER!(
+IMPLEMENT_CUSTOM_PROFILED_CLUSTER!(
     _String,
     STRING,
     _StringCluster,
