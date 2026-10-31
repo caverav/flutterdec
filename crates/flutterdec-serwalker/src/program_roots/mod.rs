@@ -1,10 +1,13 @@
 pub mod structs;
 use structs::{DispatchTable, DispatchTableEntry, FieldTable, ObjectStore};
 
-use crate::stream::Stream;
+use crate::{profile_reader::profile::DataProfile, stream::Stream};
 
-pub fn parse_object_store(stream: &mut Stream) -> anyhow::Result<ObjectStore> {
-    ObjectStore::read(stream)
+pub fn parse_object_store(
+    stream: &mut Stream,
+    profile: &DataProfile,
+) -> anyhow::Result<ObjectStore> {
+    ObjectStore::read(stream, profile)
 }
 
 pub fn parse_field_table(stream: &mut Stream) -> anyhow::Result<FieldTable> {

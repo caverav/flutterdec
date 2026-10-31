@@ -1,7 +1,7 @@
 use flutterdec_adapter::ObjectPoolEntry;
 
 use crate::cluster::ClassCluster;
-use crate::constants::ClassId;
+use crate::constants::ClassKind;
 use crate::info_producer::utils::string_or_placeholder;
 use crate::raw_object::{ObjectPool, ObjectPoolEntryValue};
 use crate::snapshot::DataSnapshot;
@@ -17,13 +17,7 @@ fn tagged_object_kind(snapshot: &DataSnapshot, reference_id: u32) -> anyhow::Res
         return Ok(format!("<unresolved Class CID {cid}>"));
     };
 
-    let class_cluster = snapshot
-        .clusters
-        .get(&((ClassId::ClassCid as u32) << 2))
-        .ok_or_else(|| anyhow::anyhow!("Class cluster is missing"))?
-        .as_any()
-        .downcast_ref::<ClassCluster>()
-        .ok_or_else(|| anyhow::anyhow!("Cluster is not a ClassCluster"))?;
+    let class_cluster = snapshot.get_cluster::<ClassCluster>(ClassKind::Class)?;
     let class = class_cluster.objs.get(*class_index).ok_or_else(|| {
         anyhow::anyhow!("class table index {class_index} for CID {cid} is out of bounds")
     })?;
@@ -43,7 +37,7 @@ pub fn produce_model_object_pool_info(
                 tagged_object_kind(snapshot, *reference_id)?
             }
             ObjectPoolEntryValue::Immediate(_imm) => String::from("Immediate"),
-            _ => String::from("Non-immediate, non-object entry")
+            _ => String::from("Non-immediate, non-object entry"),
         };
 
         let ref_id = if let ObjectPoolEntryValue::TaggedObjectRef(ref_id) = &entry.value {
@@ -51,19 +45,19 @@ pub fn produce_model_object_pool_info(
         } else {
             0
         };
-        
-        let value = if ref_id == 0 
-        {
+
+        let value = if ref_id == 0 {
             if let ObjectPoolEntryValue::Immediate(imm) = &entry.value {
-                imm.to_string() 
+                imm.to_string()
             } else {
                 String::from("Non-immediate or tagged object in this entry")
             }
-        } else { // the internal names for the One and Two Byte classes are prefixed with an "_"
+        } else {
+            // the internal names for the One and Two Byte classes are prefixed with an "_"
             if kind == "String" || kind == "_OneByteString" || kind == "_TwoByteString" {
                 string_or_placeholder(snapshot, ref_id)
             } else {
-                 kind.clone() + "_" + &(ref_id.to_string())
+                kind.clone() + "_" + &(ref_id.to_string())
             }
         };
 

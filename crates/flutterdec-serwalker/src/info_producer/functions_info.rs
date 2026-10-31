@@ -1,5 +1,5 @@
 use crate::cluster::{CodeCluster, FunctionCluster};
-use crate::constants::ClassId;
+use crate::constants::ClassKind;
 use crate::info_producer::utils::{find_object_by_id, string_or_placeholder};
 use crate::raw_object::{Class, Code};
 use crate::snapshot::{DataSnapshot, InstructionsSnapshot};
@@ -11,21 +11,8 @@ pub fn produce_functions_info(
 ) -> anyhow::Result<Vec<FunctionInfo>> {
     let mut functions_info = Vec::new();
 
-    let function_cluster = snapshot
-        .clusters
-        .get(&((ClassId::FunctionCid as u32) << 2))
-        .ok_or_else(|| anyhow::anyhow!("Function cluster not found"))?
-        .as_any()
-        .downcast_ref::<FunctionCluster>()
-        .ok_or_else(|| anyhow::anyhow!("Function cluster is not of type FunctionCluster"))?;
-
-    let code_cluster = snapshot
-        .clusters
-        .get(&((ClassId::CodeCid as u32) << 2))
-        .ok_or_else(|| anyhow::anyhow!("Code cluster not found"))?
-        .as_any()
-        .downcast_ref::<CodeCluster>()
-        .ok_or_else(|| anyhow::anyhow!("Code cluster is not of type CodeCluster"))?;
+    let function_cluster = snapshot.get_cluster::<FunctionCluster>(ClassKind::Function)?;
+    let code_cluster = snapshot.get_cluster::<CodeCluster>(ClassKind::Code)?;
 
     let first_entry_with_code = snapshot.instruction_table.first_entry_with_code();
     let instruction_table_len = snapshot.instruction_table.len();
