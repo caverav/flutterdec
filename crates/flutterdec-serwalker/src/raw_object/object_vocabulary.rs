@@ -136,12 +136,14 @@ impl FromPropType for Vec<u8> {
     }
 }
 
-impl FromPropType for Option<u64> {
+impl FromPropType for Option<u64> { // this is probably not needed
     fn from_prop_type(value: PropType) -> Result<Self> {
         Ok(Some(u64::from_prop_type(value)?))
     }
 }
 
+// This is a guard, we can never handle these with a JSON profile recipe
+// this is to prevent invoking set_core_field with certain types that require custom handling
 macro_rules! IMPLEMENT_COMPOSITE_PROPERTY {
     ($( $type:ty ),* $(,)?) => {
         $(

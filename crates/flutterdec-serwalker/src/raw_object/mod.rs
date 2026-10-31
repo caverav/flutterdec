@@ -55,7 +55,7 @@ pub struct Class {
     pub target_instance_size_in_words: i32,
     pub target_type_arguments_field_offset_in_words: i32,
     pub target_next_field_offset_in_words: i32,
-    pub unboxed_fields_bitmap: Option<u64>,
+    pub unboxed_fields_bitmap: Option<u64>, // TO-DO, remove this option, first check nothing breaks
     pub extra_properties: HashMap<String, PropType>,
 }
 
