@@ -17,14 +17,7 @@ fn tagged_object_kind(snapshot: &DataSnapshot, reference_id: u32) -> anyhow::Res
         return Ok(format!("<unresolved Class CID {cid}>"));
     };
 
-    let class_cid = snapshot.cid_for_class_kind(ClassKind::ClassCid)?;
-    let class_cluster = snapshot
-        .clusters
-        .get(&(class_cid << 2))
-        .ok_or_else(|| anyhow::anyhow!("Class cluster is missing"))?
-        .as_any()
-        .downcast_ref::<ClassCluster>()
-        .ok_or_else(|| anyhow::anyhow!("Cluster is not a ClassCluster"))?;
+    let class_cluster = snapshot.get_cluster::<ClassCluster>(ClassKind::Class)?;
     let class = class_cluster.objs.get(*class_index).ok_or_else(|| {
         anyhow::anyhow!("class table index {class_index} for CID {cid} is out of bounds")
     })?;

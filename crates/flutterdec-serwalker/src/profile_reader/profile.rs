@@ -53,7 +53,17 @@ pub struct DataProfile {
     pub cid_map: HashMap<u32, ClassKind>, // REAL cid to stable kind lookup
     pub class_kind_to_cid: HashMap<ClassKind, u32>, // and the inverse to the map above
     pub num_predefined_cids: u32,
+    pub class_tag_kind: ClassTagKind,
     pub parsing_operations: HashMap<String, serde_json::Value>,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ClassTagKind {
+    PackedCidAndCanonical,
+    #[default]
+    ObjectHeader,
+    ObjectHeaderDeeplyImmutable,
 }
 
 #[derive(Debug, Deserialize)]
@@ -90,4 +100,14 @@ pub enum TargetType {
     RawU32,
     RawU64,
     Bytes,
+    Array {
+        length_from: String,
+        #[serde(default = "default_array_multiplier")]
+        multiplier: usize,
+        for_each: Vec<serde_json::Value>,
+    },
+}
+
+fn default_array_multiplier() -> usize {
+    1
 }

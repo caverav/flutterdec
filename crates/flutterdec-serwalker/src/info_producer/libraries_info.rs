@@ -7,14 +7,7 @@ use flutterdec_adapter::LibraryInfo;
 pub fn produce_libraries_info(snapshot: &DataSnapshot) -> anyhow::Result<Vec<LibraryInfo>> {
     let mut libraries_info = Vec::new();
 
-    let library_cid = snapshot.cid_for_class_kind(ClassKind::LibraryCid)?;
-    let library_cluster = snapshot
-        .clusters
-        .get(&(library_cid << 2))
-        .ok_or_else(|| anyhow::anyhow!("Library cluster not found"))?
-        .as_any()
-        .downcast_ref::<LibraryCluster>()
-        .ok_or_else(|| anyhow::anyhow!("Library cluster is not of type LibraryCluster"))?;
+    let library_cluster = snapshot.get_cluster::<LibraryCluster>(ClassKind::Library)?;
 
     let mut id = 1;
     for library in &library_cluster.objs {

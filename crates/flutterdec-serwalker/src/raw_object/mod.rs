@@ -1,8 +1,25 @@
+pub(crate) mod object_vocabulary;
+
+use std::collections::HashMap;
+
 pub type Smi = i32;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PropType {
+    Byte(u8),
+    RefId(u32),
+    Signed(i64),
+    Unsigned(u64),
+    RawU32(u32),
+    RawU64(u64),
+    Bytes(Vec<u8>),
+    Array(Vec<PropType>),
+}
 
 #[derive(Default)]
 pub struct Object {
     pub tags: u64,
+    pub extra_properties: HashMap<String, PropType>,
 }
 
 #[derive(Default)]
@@ -39,12 +56,14 @@ pub struct Class {
     pub target_type_arguments_field_offset_in_words: i32,
     pub target_next_field_offset_in_words: i32,
     pub unboxed_fields_bitmap: Option<u64>,
+    pub extra_properties: HashMap<String, PropType>,
 }
 
 #[derive(Default)]
 pub struct PatchClass {
     pub wrapped_class: u32, // ClassPtr
     pub script: u32,        // ScriptPtr
+    pub extra_properties: HashMap<String, PropType>,
 }
 
 #[derive(Default)]
@@ -63,6 +82,7 @@ pub struct Function {
     pub token_pos: i32,
     // pub kernel_offset: u32,              [[NOT PRESENT IN FullAOT]]
     pub kind_tag: u32,
+    pub extra_properties: HashMap<String, PropType>,
 }
 
 #[derive(Default)]
@@ -71,6 +91,7 @@ pub struct ClosureData {
     pub parent_function: u32, // FunctionPtr
     pub closure: u32,         // ClosurePtr
     pub packed_fields: u32,
+    pub extra_properties: HashMap<String, PropType>,
 }
 
 #[derive(Default)]
@@ -81,6 +102,7 @@ pub struct FfiTrampolineData {
     pub callback_exceptional_return: u32, // InstancePtr
     pub callback_id: i32,
     pub ffi_function_kind: u8,
+    pub extra_properties: HashMap<String, PropType>,
 }
 
 #[derive(Default)]
@@ -102,12 +124,14 @@ pub struct Field {
     // pub static_type_exactness_state: i8, [[NOT PRESENT IN FullAOT]]
     // pub target_offset: i32,           [[NOT PRESENT IN FullAOT]]
     pub kind_bits: u32,
+    pub extra_properties: HashMap<String, PropType>,
 }
 
 #[derive(Default)]
 pub struct Script {
     pub url: u32, // StringPtr
     pub kernel_script_index: i32,
+    pub extra_properties: HashMap<String, PropType>,
 }
 
 #[derive(Default)]
@@ -130,6 +154,7 @@ pub struct Library {
     pub load_state: i8,
     pub flags: u8,
     // pub kernel_library_index: u32, [[NOT PRESENT IN FullAOT]]
+    pub extra_properties: HashMap<String, PropType>,
 }
 
 #[derive(Default)]
@@ -138,6 +163,7 @@ pub struct Namespace {
     pub show_names: u32, // ArrayPtr
     pub hide_names: u32, // ArrayPtr
     pub owner: u32,      // LibraryPtr
+    pub extra_properties: HashMap<String, PropType>,
 }
 
 #[derive(Default)]
@@ -153,12 +179,14 @@ pub struct KernelProgramInfo {
     pub constants_table: u32,   // TypedDataViewPtr
     pub libraries_cache: u32,   // ArrayPtr
     pub classes_cache: u32,     // ArrayPtr
+    pub extra_properties: HashMap<String, PropType>,
 }
 
 #[derive(Default)]
 pub struct CodeSourceMap {
     pub length: u32,
     pub data: Vec<u8>,
+    pub extra_properties: HashMap<String, PropType>,
 }
 
 #[derive(Default)]
@@ -166,6 +194,7 @@ pub struct CompressedStackMaps {
     pub length: u32,
     pub flags_and_size: u32,
     pub data: Vec<u8>,
+    pub extra_properties: HashMap<String, PropType>,
 }
 
 #[derive(Default)]
@@ -173,6 +202,7 @@ pub struct PcDescriptors {
     // not really
     pub length: u32,
     pub data: Vec<u8>,
+    pub extra_properties: HashMap<String, PropType>,
 }
 
 #[derive(Default)]
@@ -181,6 +211,7 @@ pub struct ExceptionHandlers {
     pub packed_fields: u32,
     pub num_entries: usize,
     pub entries: Vec<ExceptionHandlerInfo>,
+    pub extra_properties: HashMap<String, PropType>,
 }
 
 #[derive(Default)]
@@ -190,6 +221,7 @@ pub struct ExceptionHandlerInfo {
     pub needs_stacktrace: i8,
     pub has_catch_all: i8,
     pub is_generated: i8,
+    pub extra_properties: HashMap<String, PropType>,
 }
 
 #[derive(Default)]
@@ -197,6 +229,7 @@ pub struct Context {
     pub parent: u32, // ContextPtr
     pub num_variables: i32,
     pub variables: Vec<u32>,
+    pub extra_properties: HashMap<String, PropType>,
 }
 
 #[derive(Default)]
@@ -206,6 +239,7 @@ pub struct ContextScope {
     /// Flattened `VariableDesc` reference fields. There are ten per variable
     /// in this SDK revision.
     pub variables: Vec<u32>,
+    pub extra_properties: HashMap<String, PropType>,
 }
 
 #[derive(Default)]
@@ -213,12 +247,14 @@ pub struct UnlinkedCall {
     pub target_name: u32,     // StringPtr
     pub args_descriptor: u32, // ArrayPtr
     pub can_patch_to_monomorphic: bool,
+    pub extra_properties: HashMap<String, PropType>,
 }
 
 #[derive(Default)]
 pub struct ObjectPool {
     pub length: usize,
     pub entries: Vec<ObjectPoolEntry>,
+    pub extra_properties: HashMap<String, PropType>,
 }
 
 #[derive(Debug)]
@@ -227,6 +263,7 @@ pub struct ObjectPoolEntry {
     // Keep the serialized byte even when the runtime would rewrite the entry.
     pub entry_bits: u8,
     pub value: ObjectPoolEntryValue,
+    pub extra_properties: HashMap<String, PropType>,
 }
 
 #[derive(Debug)]
@@ -249,11 +286,13 @@ pub enum ObjectPoolEntryValue {
 #[derive(Default)]
 pub struct Mint {
     pub value: i64, // ALIGN8
+    pub extra_properties: HashMap<String, PropType>,
 }
 
 #[derive(Default)]
 pub struct Double {
     pub value: f64, // ALIGN8
+    pub extra_properties: HashMap<String, PropType>,
 }
 
 #[derive(Default)]
@@ -263,6 +302,7 @@ pub struct TypeArguments {
     pub hash: Smi,           // SmiPtr
     pub nullability: Smi,    // SmiPtr
     pub types: Vec<u32>,     // AbstractTypePtr elements
+    pub extra_properties: HashMap<String, PropType>,
 }
 
 #[derive(Default)]
@@ -273,6 +313,7 @@ pub struct TypeParameter {
     pub base: u16,
     pub index: u16,
     pub flags: u8,
+    pub extra_properties: HashMap<String, PropType>,
 }
 
 #[derive(Default)]
@@ -281,6 +322,7 @@ pub struct Type {
     pub hash: u32,           // SmiPtr
     pub arguments: u32,      // TypeArgumentsPtr
     pub flags: u32,
+    pub extra_properties: HashMap<String, PropType>,
 }
 
 impl Type {
@@ -298,6 +340,7 @@ pub struct TypeParameters {
     pub flags: u32,    // ArrayPtr
     pub bounds: u32,   // TypeArgumentsPtr
     pub defaults: u32, // TypeArgumentsPtr
+    pub extra_properties: HashMap<String, PropType>,
 }
 
 /*
@@ -329,6 +372,7 @@ pub struct _String {
     pub hash: Smi,   // SmiPtr
     pub length: Smi, // SmiPtr
     pub internal_str: String,
+    pub extra_properties: HashMap<String, PropType>,
 }
 
 #[derive(Default)]
@@ -336,6 +380,7 @@ pub struct Array {
     pub type_arguments: u32, // TypeArgumentsPtr
     pub length: Smi,         // SmiPtr
     pub elements: Vec<u32>,  // ObjectPtr elements
+    pub extra_properties: HashMap<String, PropType>,
 }
 
 #[derive(Default)]
@@ -344,6 +389,7 @@ pub struct AbstractType {
     pub hash: u32,           // SmiPtr
     pub padding: u32,
     pub flags: u32,
+    pub extra_properties: HashMap<String, PropType>,
 }
 
 #[derive(Default)]
@@ -357,6 +403,7 @@ pub struct FunctionType {
     pub flags: u8,
     pub packed_parameter_counts: u32,
     pub packed_type_parameter_counts: u16,
+    pub extra_properties: HashMap<String, PropType>,
 }
 
 #[derive(Default)]
@@ -367,6 +414,7 @@ pub struct Closure {
     pub function: u32,                    // FunctionPtr
     pub context: u32,                     // ObjectPtr
     pub hash: u32,                        // SmiPtr
+    pub extra_properties: HashMap<String, PropType>,
 }
 
 #[derive(Default)]
@@ -375,6 +423,7 @@ pub struct Instance {
     pub instance_size_in_words: i32,
     pub unboxed_fields_bitmap: u64,
     pub fields: Vec<InstanceField>,
+    pub extra_properties: HashMap<String, PropType>,
 }
 
 #[derive(Debug)]
@@ -388,18 +437,21 @@ pub struct WeakArray {
     pub next_seen_by_gc: u32, // WeakArrayPtr
     pub length: Smi,          // SmiPtr
     pub elements: Vec<u32>,   // ObjectPtr elements
+    pub extra_properties: HashMap<String, PropType>,
 }
 
 #[derive(Default)]
 pub struct TypedDataBase {
     pub length: Smi, // SmiPtr
     pub padding: u32,
+    pub extra_properties: HashMap<String, PropType>,
 }
 
 #[derive(Default)]
 pub struct TypedData {
     pub length: usize,
     pub data: Vec<u8>,
+    pub extra_properties: HashMap<String, PropType>,
 }
 
 #[derive(Default)]
@@ -407,6 +459,7 @@ pub struct TypedDataView {
     pub length: Smi,          // SmiPtr
     pub typed_data: u32,      // TypedDataBasePtr
     pub offset_in_bytes: Smi, // SmiPtr
+    pub extra_properties: HashMap<String, PropType>,
 }
 
 #[derive(Default)]
@@ -414,6 +467,7 @@ pub struct GrowableObjectArray {
     pub type_arguments: u32, // TypeArgumentsPtr
     pub length: Smi,         // SmiPtr
     pub data: u32,           // ArrayPtr
+    pub extra_properties: HashMap<String, PropType>,
 }
 
 #[derive(Default)]
@@ -443,6 +497,7 @@ pub struct Code {
     // pub static_calls_target_table: u32, // ArrayPtr [[NOT PRESENT IN FullAOT]]
     pub state_bits: i32,
     pub instructions_length_: u64, // u32 is probably enough but one never knows
+    pub extra_properties: HashMap<String, PropType>,
 }
 
 #[derive(Default)]
@@ -450,6 +505,7 @@ pub struct LoadingUnit {
     pub parent: u32,       // LoadingUnitPtr
     pub base_objects: u32, // ArrayPtr
     pub packed_fields: i64,
+    pub extra_properties: HashMap<String, PropType>,
 }
 
 #[derive(Default)]
@@ -458,6 +514,7 @@ pub struct ICData {
     pub args_descriptor: u32,
     pub entries: u32,
     pub state_bits: u32,
+    pub extra_properties: HashMap<String, PropType>,
 }
 
 #[derive(Default)]
@@ -467,6 +524,7 @@ pub struct MegamorphicCache {
     pub buckets: u32,
     pub mask: Smi,
     pub filled_entry_count: i32,
+    pub extra_properties: HashMap<String, PropType>,
 }
 
 #[derive(Default)]
@@ -474,6 +532,7 @@ pub struct SubtypeTestCache {
     pub cache: u32,
     pub num_inputs: u32,
     pub num_occupied: u32,
+    pub extra_properties: HashMap<String, PropType>,
 }
 
 #[derive(Default)]
@@ -485,12 +544,14 @@ pub struct LanguageError {
     pub token_pos: i32,
     pub report_after_token: bool,
     pub kind: i8,
+    pub extra_properties: HashMap<String, PropType>,
 }
 
 #[derive(Default)]
 pub struct UnhandledException {
     pub exception: u32,  // InstancePtr
     pub stacktrace: u32, // InstancePtr
+    pub extra_properties: HashMap<String, PropType>,
 }
 
 #[derive(Default)]
@@ -500,6 +561,7 @@ pub struct LibraryPrefix {
     pub importer: u32, // LibraryPtr
     pub num_imports: u16,
     pub is_deferred_load: bool,
+    pub extra_properties: HashMap<String, PropType>,
 }
 
 #[derive(Default)]
@@ -509,17 +571,20 @@ pub struct RecordType {
     pub shape: Smi,          // SmiPtr
     pub field_types: u32,    // ArrayPtr
     pub flags: u8,
+    pub extra_properties: HashMap<String, PropType>,
 }
 
 #[derive(Default)]
 pub struct Int32x4 {
     pub value: Vec<u8>,
+    pub extra_properties: HashMap<String, PropType>,
 }
 
 #[derive(Default)]
 pub struct ExternalTypedData {
     pub length: usize,
     pub data: Vec<u8>,
+    pub extra_properties: HashMap<String, PropType>,
 }
 
 #[derive(Default)]
@@ -528,6 +593,7 @@ pub struct StackTrace {
     pub code_array: u32, // ArrayPtr
     pub pc_offset_array: u32, // TypedDataPtr
                          // pub expand_inlined: bool, [[NOT PRESENT IN FullAOT]]
+    pub extra_properties: HashMap<String, PropType>,
 }
 
 #[derive(Default)]
@@ -541,6 +607,7 @@ pub struct RegExp {
     pub num_one_byte_registers: i32,
     pub num_two_byte_registers: i32,
     pub type_flags: i8,
+    pub extra_properties: HashMap<String, PropType>,
 }
 
 #[derive(Default)]
@@ -548,6 +615,7 @@ pub struct WeakProperty {
     pub key: u32, // ObjectPtr
     pub value: u32, // ObjectPtr
                   // pub next_seen_by_gc: u32, // WeakPropertyPtr [[NOT PRESENT IN FullAOT]]
+    pub extra_properties: HashMap<String, PropType>,
 }
 
 #[derive(Default)]
@@ -558,6 +626,7 @@ pub struct Map {
     pub used_data: u32,
     pub deleted_keys: u32,
     pub index: u32,
+    pub extra_properties: HashMap<String, PropType>,
 }
 
 #[derive(Default)]
@@ -568,16 +637,19 @@ pub struct Set {
     pub used_data: u32,
     pub deleted_keys: u32,
     pub index: u32,
+    pub extra_properties: HashMap<String, PropType>,
 }
 
 #[derive(Default)]
 pub struct Float32x4 {
     pub value: Vec<u8>,
+    pub extra_properties: HashMap<String, PropType>,
 }
 
 #[derive(Default)]
 pub struct Float64x2 {
     pub value: Vec<u8>,
+    pub extra_properties: HashMap<String, PropType>,
 }
 
 #[derive(Default)]
@@ -588,6 +660,7 @@ pub struct ConstMap {
     pub used_data: u32,
     pub deleted_keys: u32,
     pub index: u32,
+    pub extra_properties: HashMap<String, PropType>,
 }
 
 #[derive(Default)]
@@ -598,6 +671,7 @@ pub struct ConstSet {
     pub used_data: u32,
     pub deleted_keys: u32,
     pub index: u32,
+    pub extra_properties: HashMap<String, PropType>,
 }
 
 #[derive(Default)]
@@ -606,6 +680,7 @@ pub struct Record {
     pub padding: u32,
     pub num_fields: usize,
     pub fields: Vec<u32>,
+    pub extra_properties: HashMap<String, PropType>,
 }
 
 #[derive(Default)]
@@ -613,4 +688,5 @@ pub struct ImmutableArray {
     pub type_arguments: u32,
     pub length: Smi,
     pub elements: Vec<u32>,
+    pub extra_properties: HashMap<String, PropType>,
 }

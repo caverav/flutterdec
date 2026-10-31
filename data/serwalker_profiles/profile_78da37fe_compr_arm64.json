@@ -1,0 +1,1993 @@
+{
+  "parsing_operations": {
+    "array": {
+      "read_alloc": {
+        "for_each": [
+          {
+            "operation": "core",
+            "target": "length",
+            "codec": "unsigned"
+          }
+        ]
+      },
+      "read_fill": {
+        "for_each": [
+          {
+            "operation": "core",
+            "target": "length",
+            "codec": "unsigned"
+          },
+          {
+            "operation": "core",
+            "target": "type_arguments",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "elements",
+            "codec": {
+              "array": {
+                "length_from": "length",
+                "for_each": [
+                  {
+                    "operation": "core",
+                    "target": "value",
+                    "codec": "ref_id"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    "class": {
+      "read_alloc": {
+        "for_each": [],
+        "handler": "class"
+      },
+      "read_fill": {
+        "for_each": [
+          {
+            "operation": "core",
+            "target": "name",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "functions",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "functions_hash_table",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "fields",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "offset_in_words_to_field",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "interfaces",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "script",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "library",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "type_parameters",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "super_type",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "constants",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "declaration_type",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "invocation_dispatcher_cache",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "id",
+            "codec": "signed"
+          },
+          {
+            "operation": "core",
+            "target": "target_instance_size_in_words",
+            "codec": "signed"
+          },
+          {
+            "operation": "core",
+            "target": "target_next_field_offset_in_words",
+            "codec": "signed"
+          },
+          {
+            "operation": "core",
+            "target": "target_type_arguments_field_offset_in_words",
+            "codec": "signed"
+          },
+          {
+            "operation": "core",
+            "target": "num_type_arguments",
+            "codec": "signed"
+          },
+          {
+            "operation": "core",
+            "target": "num_native_fields",
+            "codec": "signed"
+          },
+          {
+            "operation": "core",
+            "target": "state_bits",
+            "codec": "signed"
+          }
+        ],
+        "handler": "class"
+      }
+    },
+    "closure": {
+      "read_alloc": {
+        "for_each": []
+      },
+      "read_fill": {
+        "for_each": [
+          {
+            "operation": "core",
+            "target": "instantiator_type_arguments",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "function_type_arguments",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "delayed_type_arguments",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "function",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "context",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "hash",
+            "codec": "ref_id"
+          }
+        ]
+      }
+    },
+    "closure_data": {
+      "read_alloc": {
+        "for_each": []
+      },
+      "read_fill": {
+        "for_each": [
+          {
+            "operation": "core",
+            "target": "parent_function",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "closure",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "packed_fields",
+            "codec": "unsigned"
+          }
+        ]
+      }
+    },
+    "code": {
+      "read_alloc": {
+        "for_each": [
+          {
+            "operation": "core",
+            "target": "state_bits",
+            "codec": "signed"
+          }
+        ],
+        "handler": "code"
+      },
+      "read_fill": {
+        "for_each": [
+          {
+            "operation": "core",
+            "target": "owner",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "exception_handlers",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "pc_descriptors",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "catch_entry",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "inlined_id_to_function",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "code_source_map",
+            "codec": "ref_id"
+          }
+        ],
+        "handler": "code"
+      }
+    },
+    "code_source_map": {
+      "read_alloc": {
+        "for_each": [
+          {
+            "operation": "core",
+            "target": "length",
+            "codec": "unsigned"
+          }
+        ]
+      },
+      "read_fill": {
+        "for_each": [
+          {
+            "operation": "core",
+            "target": "length",
+            "codec": "unsigned"
+          },
+          {
+            "operation": "core",
+            "target": "data",
+            "codec": "bytes"
+          }
+        ]
+      }
+    },
+    "compressed_stack_maps": {
+      "read_alloc": {
+        "for_each": [
+          {
+            "operation": "core",
+            "target": "length",
+            "codec": "unsigned"
+          }
+        ]
+      },
+      "read_fill": {
+        "for_each": [
+          {
+            "operation": "core",
+            "target": "flags_and_size",
+            "codec": "unsigned"
+          },
+          {
+            "operation": "core",
+            "target": "data",
+            "codec": "bytes"
+          }
+        ]
+      }
+    },
+    "const_map": {
+      "read_alloc": {
+        "for_each": []
+      },
+      "read_fill": {
+        "for_each": [
+          {
+            "operation": "core",
+            "target": "type_arguments",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "hash_mask",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "data",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "used_data",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "deleted_keys",
+            "codec": "ref_id"
+          }
+        ]
+      }
+    },
+    "const_set": {
+      "read_alloc": {
+        "for_each": []
+      },
+      "read_fill": {
+        "for_each": [
+          {
+            "operation": "core",
+            "target": "type_arguments",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "hash_mask",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "data",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "used_data",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "deleted_keys",
+            "codec": "ref_id"
+          }
+        ]
+      }
+    },
+    "context": {
+      "read_alloc": {
+        "for_each": [
+          {
+            "operation": "core",
+            "target": "num_variables",
+            "codec": "unsigned"
+          }
+        ]
+      },
+      "read_fill": {
+        "for_each": [
+          {
+            "operation": "core",
+            "target": "num_variables",
+            "codec": "unsigned"
+          },
+          {
+            "operation": "core",
+            "target": "parent",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "variables",
+            "codec": {
+              "array": {
+                "length_from": "num_variables",
+                "for_each": [
+                  {
+                    "operation": "core",
+                    "target": "value",
+                    "codec": "ref_id"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    "context_scope": {
+      "read_alloc": {
+        "for_each": [
+          {
+            "operation": "core",
+            "target": "num_variables",
+            "codec": "unsigned"
+          }
+        ]
+      },
+      "read_fill": {
+        "for_each": [
+          {
+            "operation": "core",
+            "target": "num_variables",
+            "codec": "unsigned"
+          },
+          {
+            "operation": "core",
+            "target": "is_implicit",
+            "codec": "byte"
+          },
+          {
+            "operation": "core",
+            "target": "variables",
+            "codec": {
+              "array": {
+                "length_from": "num_variables",
+                "multiplier": 10,
+                "for_each": [
+                  {
+                    "operation": "core",
+                    "target": "value",
+                    "codec": "ref_id"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    "delta_encoded_typed_data": {
+      "read_alloc": {
+        "for_each": [],
+        "handler": "delta_encoded_typed_data"
+      },
+      "read_fill": {
+        "for_each": [],
+        "handler": "delta_encoded_typed_data"
+      }
+    },
+    "double": {
+      "read_alloc": {
+        "for_each": []
+      },
+      "read_fill": {
+        "for_each": [
+          {
+            "operation": "core",
+            "target": "value",
+            "codec": "signed"
+          }
+        ]
+      }
+    },
+    "exception_handlers": {
+      "read_alloc": {
+        "for_each": [
+          {
+            "operation": "core",
+            "target": "num_entries",
+            "codec": "unsigned"
+          }
+        ]
+      },
+      "read_fill": {
+        "for_each": [
+          {
+            "operation": "core",
+            "target": "packed_fields",
+            "codec": "unsigned"
+          },
+          {
+            "operation": "core",
+            "target": "handled_types_data",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "entries",
+            "codec": {
+              "array": {
+                "length_from": "num_entries",
+                "for_each": [
+                  {
+                    "operation": "core",
+                    "target": "handler_pc_offset",
+                    "codec": "signed"
+                  },
+                  {
+                    "operation": "core",
+                    "target": "outer_try_index",
+                    "codec": "signed"
+                  },
+                  {
+                    "operation": "core",
+                    "target": "needs_stacktrace",
+                    "codec": "byte"
+                  },
+                  {
+                    "operation": "core",
+                    "target": "has_catch_all",
+                    "codec": "byte"
+                  },
+                  {
+                    "operation": "core",
+                    "target": "is_generated",
+                    "codec": "byte"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    "external_typed_data": {
+      "read_alloc": {
+        "for_each": []
+      },
+      "read_fill": {
+        "for_each": [
+          {
+            "operation": "core",
+            "target": "length",
+            "codec": "unsigned"
+          },
+          {
+            "operation": "core",
+            "target": "data",
+            "codec": "bytes"
+          }
+        ]
+      }
+    },
+    "ffi_trampoline_data": {
+      "read_alloc": {
+        "for_each": []
+      },
+      "read_fill": {
+        "for_each": [
+          {
+            "operation": "core",
+            "target": "signature_type",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "c_signature",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "callback_target",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "callback_exceptional_return",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "callback_id",
+            "codec": "signed"
+          },
+          {
+            "operation": "core",
+            "target": "ffi_function_kind",
+            "codec": "byte"
+          }
+        ]
+      }
+    },
+    "field": {
+      "read_alloc": {
+        "for_each": []
+      },
+      "read_fill": {
+        "for_each": [
+          {
+            "operation": "core",
+            "target": "name",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "owner",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "type_field",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "initializer_function",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "kind_bits",
+            "codec": "signed"
+          },
+          {
+            "operation": "core",
+            "target": "host_offset_or_field_id",
+            "codec": "ref_id"
+          }
+        ]
+      }
+    },
+    "float32x4": {
+      "read_alloc": {
+        "for_each": []
+      },
+      "read_fill": {
+        "for_each": [
+          {
+            "operation": "core",
+            "target": "value",
+            "codec": "bytes"
+          }
+        ]
+      }
+    },
+    "float64x2": {
+      "read_alloc": {
+        "for_each": []
+      },
+      "read_fill": {
+        "for_each": [
+          {
+            "operation": "core",
+            "target": "value",
+            "codec": "bytes"
+          }
+        ]
+      }
+    },
+    "function": {
+      "read_alloc": {
+        "for_each": []
+      },
+      "read_fill": {
+        "for_each": [
+          {
+            "operation": "core",
+            "target": "name",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "owner",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "signature",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "data",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "code_index",
+            "codec": "unsigned"
+          },
+          {
+            "operation": "core",
+            "target": "kind_tag",
+            "codec": "signed"
+          }
+        ]
+      }
+    },
+    "function_type": {
+      "read_alloc": {
+        "for_each": [],
+        "canonical_set_layout": true
+      },
+      "read_fill": {
+        "for_each": [
+          {
+            "operation": "core",
+            "target": "type_test_stub",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "hash",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "type_parameters",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "result_type",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "parameter_types",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "named_parameter_names",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "flags",
+            "codec": "byte"
+          },
+          {
+            "operation": "core",
+            "target": "packed_parameter_counts",
+            "codec": "signed"
+          },
+          {
+            "operation": "core",
+            "target": "packed_type_parameter_counts",
+            "codec": "signed"
+          }
+        ]
+      }
+    },
+    "growable_object_array": {
+      "read_alloc": {
+        "for_each": []
+      },
+      "read_fill": {
+        "for_each": [
+          {
+            "operation": "core",
+            "target": "type_arguments",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "length",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "data",
+            "codec": "ref_id"
+          }
+        ]
+      }
+    },
+    "ic_data": {
+      "read_alloc": {
+        "for_each": []
+      },
+      "read_fill": {
+        "for_each": [
+          {
+            "operation": "core",
+            "target": "target_name",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "args_descriptor",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "entries",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "state_bits",
+            "codec": "signed"
+          }
+        ]
+      }
+    },
+    "immutable_array": {
+      "read_alloc": {
+        "for_each": [
+          {
+            "operation": "core",
+            "target": "length",
+            "codec": "unsigned"
+          }
+        ]
+      },
+      "read_fill": {
+        "for_each": [
+          {
+            "operation": "core",
+            "target": "length",
+            "codec": "unsigned"
+          },
+          {
+            "operation": "core",
+            "target": "type_arguments",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "elements",
+            "codec": {
+              "array": {
+                "length_from": "length",
+                "for_each": [
+                  {
+                    "operation": "core",
+                    "target": "value",
+                    "codec": "ref_id"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    "instance": {
+      "read_alloc": {
+        "for_each": [],
+        "handler": "instance"
+      },
+      "read_fill": {
+        "for_each": [],
+        "handler": "instance"
+      }
+    },
+    "int32x4": {
+      "read_alloc": {
+        "for_each": []
+      },
+      "read_fill": {
+        "for_each": [
+          {
+            "operation": "core",
+            "target": "value",
+            "codec": "bytes"
+          }
+        ]
+      }
+    },
+    "kernel_program_info": {
+      "read_alloc": {
+        "for_each": []
+      },
+      "read_fill": {
+        "for_each": [
+          {
+            "operation": "core",
+            "target": "kernel_component",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "string_offsets",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "string_data",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "canonical_names",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "metadata_payloads",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "metadata_mappings",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "scripts",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "constants",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "constants_table",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "libraries_cache",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "classes_cache",
+            "codec": "ref_id"
+          }
+        ]
+      }
+    },
+    "language_error": {
+      "read_alloc": {
+        "for_each": []
+      },
+      "read_fill": {
+        "for_each": [
+          {
+            "operation": "core",
+            "target": "previous_error",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "script",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "message",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "formatted_message",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "token_pos",
+            "codec": "signed"
+          },
+          {
+            "operation": "core",
+            "target": "report_after_token",
+            "codec": "byte"
+          },
+          {
+            "operation": "core",
+            "target": "kind",
+            "codec": "byte"
+          }
+        ]
+      }
+    },
+    "library": {
+      "read_alloc": {
+        "for_each": []
+      },
+      "read_fill": {
+        "for_each": [
+          {
+            "operation": "core",
+            "target": "name",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "url",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "private_key",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "dictionary",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "metadata",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "toplevel_class",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "used_scripts",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "loading_unit",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "imports",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "exports",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "index",
+            "codec": "signed"
+          },
+          {
+            "operation": "core",
+            "target": "num_imports",
+            "codec": "signed"
+          },
+          {
+            "operation": "core",
+            "target": "load_state",
+            "codec": "byte"
+          },
+          {
+            "operation": "core",
+            "target": "flags",
+            "codec": "byte"
+          }
+        ]
+      }
+    },
+    "library_prefix": {
+      "read_alloc": {
+        "for_each": []
+      },
+      "read_fill": {
+        "for_each": [
+          {
+            "operation": "core",
+            "target": "name",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "imports",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "num_imports",
+            "codec": "signed"
+          },
+          {
+            "operation": "core",
+            "target": "is_deferred_load",
+            "codec": "byte"
+          }
+        ]
+      }
+    },
+    "loading_unit": {
+      "read_alloc": {
+        "for_each": []
+      },
+      "read_fill": {
+        "for_each": [
+          {
+            "operation": "core",
+            "target": "parent",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "packed_fields",
+            "codec": "signed"
+          }
+        ]
+      }
+    },
+    "map": {
+      "read_alloc": {
+        "for_each": []
+      },
+      "read_fill": {
+        "for_each": [
+          {
+            "operation": "core",
+            "target": "type_arguments",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "hash_mask",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "data",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "used_data",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "deleted_keys",
+            "codec": "ref_id"
+          }
+        ]
+      }
+    },
+    "megamorphic_cache": {
+      "read_alloc": {
+        "for_each": []
+      },
+      "read_fill": {
+        "for_each": [
+          {
+            "operation": "core",
+            "target": "target_name",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "args_descriptor",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "buckets",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "mask",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "filled_entry_count",
+            "codec": "signed"
+          }
+        ]
+      }
+    },
+    "mint": {
+      "read_alloc": {
+        "for_each": [
+          {
+            "operation": "core",
+            "target": "value",
+            "codec": "signed"
+          }
+        ]
+      },
+      "read_fill": {
+        "for_each": []
+      }
+    },
+    "namespace": {
+      "read_alloc": {
+        "for_each": []
+      },
+      "read_fill": {
+        "for_each": [
+          {
+            "operation": "core",
+            "target": "target",
+            "codec": "ref_id"
+          }
+        ]
+      }
+    },
+    "object_pool": {
+      "read_alloc": {
+        "for_each": [
+          {
+            "operation": "core",
+            "target": "length",
+            "codec": "unsigned"
+          }
+        ]
+      },
+      "read_fill": {
+        "for_each": [],
+        "handler": "object_pool"
+      }
+    },
+    "patch_class": {
+      "read_alloc": {
+        "for_each": []
+      },
+      "read_fill": {
+        "for_each": [
+          {
+            "operation": "core",
+            "target": "wrapped_class",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "script",
+            "codec": "ref_id"
+          }
+        ]
+      }
+    },
+    "pc_descriptors": {
+      "read_alloc": {
+        "for_each": [
+          {
+            "operation": "core",
+            "target": "length",
+            "codec": "unsigned"
+          }
+        ]
+      },
+      "read_fill": {
+        "for_each": [
+          {
+            "operation": "core",
+            "target": "length",
+            "codec": "unsigned"
+          },
+          {
+            "operation": "core",
+            "target": "data",
+            "codec": "bytes"
+          }
+        ]
+      }
+    },
+    "record": {
+      "read_alloc": {
+        "for_each": [
+          {
+            "operation": "core",
+            "target": "num_fields",
+            "codec": "unsigned"
+          }
+        ]
+      },
+      "read_fill": {
+        "for_each": [
+          {
+            "operation": "core",
+            "target": "shape",
+            "codec": "unsigned"
+          },
+          {
+            "operation": "core",
+            "target": "fields",
+            "codec": {
+              "array": {
+                "length_from": "num_fields",
+                "for_each": [
+                  {
+                    "operation": "core",
+                    "target": "value",
+                    "codec": "ref_id"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    "record_type": {
+      "read_alloc": {
+        "for_each": [],
+        "canonical_set_layout": true
+      },
+      "read_fill": {
+        "for_each": [
+          {
+            "operation": "core",
+            "target": "type_test_stub",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "hash",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "shape",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "field_types",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "flags",
+            "codec": "byte"
+          }
+        ]
+      }
+    },
+    "reg_exp": {
+      "read_alloc": {
+        "for_each": []
+      },
+      "read_fill": {
+        "for_each": [
+          {
+            "operation": "core",
+            "target": "capture_name_map",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "pattern",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "one_byte",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "two_byte",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "one_byte_sticky",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "two_byte_sticky",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "num_one_byte_registers",
+            "codec": "signed"
+          },
+          {
+            "operation": "core",
+            "target": "num_two_byte_registers",
+            "codec": "signed"
+          },
+          {
+            "operation": "core",
+            "target": "type_flags",
+            "codec": "byte"
+          }
+        ]
+      }
+    },
+    "script": {
+      "read_alloc": {
+        "for_each": []
+      },
+      "read_fill": {
+        "for_each": [
+          {
+            "operation": "core",
+            "target": "url",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "kernel_script_index",
+            "codec": "signed"
+          }
+        ]
+      }
+    },
+    "set": {
+      "read_alloc": {
+        "for_each": []
+      },
+      "read_fill": {
+        "for_each": [
+          {
+            "operation": "core",
+            "target": "type_arguments",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "hash_mask",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "data",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "used_data",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "deleted_keys",
+            "codec": "ref_id"
+          }
+        ]
+      }
+    },
+    "stack_trace": {
+      "read_alloc": {
+        "for_each": []
+      },
+      "read_fill": {
+        "for_each": [
+          {
+            "operation": "core",
+            "target": "async_link",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "code_array",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "pc_offset_array",
+            "codec": "ref_id"
+          }
+        ]
+      }
+    },
+    "string": {
+      "read_alloc": {
+        "for_each": [],
+        "handler": "string",
+        "canonical_set_layout": true
+      },
+      "read_fill": {
+        "for_each": [],
+        "handler": "string"
+      }
+    },
+    "subtype_test_cache": {
+      "read_alloc": {
+        "for_each": []
+      },
+      "read_fill": {
+        "for_each": [
+          {
+            "operation": "core",
+            "target": "cache",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "num_inputs",
+            "codec": "signed"
+          },
+          {
+            "operation": "core",
+            "target": "num_occupied",
+            "codec": "signed"
+          }
+        ]
+      }
+    },
+    "type": {
+      "read_alloc": {
+        "for_each": [],
+        "canonical_set_layout": true
+      },
+      "read_fill": {
+        "for_each": [
+          {
+            "operation": "core",
+            "target": "type_test_stub",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "hash",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "arguments",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "flags",
+            "codec": "unsigned"
+          }
+        ]
+      }
+    },
+    "type_arguments": {
+      "read_alloc": {
+        "for_each": [
+          {
+            "operation": "core",
+            "target": "length",
+            "codec": "unsigned"
+          }
+        ],
+        "canonical_set_layout": true
+      },
+      "read_fill": {
+        "for_each": [
+          {
+            "operation": "core",
+            "target": "length",
+            "codec": "unsigned"
+          },
+          {
+            "operation": "core",
+            "target": "hash",
+            "codec": "signed"
+          },
+          {
+            "operation": "core",
+            "target": "nullability",
+            "codec": "unsigned"
+          },
+          {
+            "operation": "core",
+            "target": "instantiations",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "types",
+            "codec": {
+              "array": {
+                "length_from": "length",
+                "for_each": [
+                  {
+                    "operation": "core",
+                    "target": "value",
+                    "codec": "ref_id"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    "type_parameter": {
+      "read_alloc": {
+        "for_each": [],
+        "canonical_set_layout": true
+      },
+      "read_fill": {
+        "for_each": [
+          {
+            "operation": "core",
+            "target": "type_test_stub",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "hash",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "owner",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "base",
+            "codec": "signed"
+          },
+          {
+            "operation": "core",
+            "target": "index",
+            "codec": "signed"
+          },
+          {
+            "operation": "core",
+            "target": "flags",
+            "codec": "byte"
+          }
+        ]
+      }
+    },
+    "type_parameters": {
+      "read_alloc": {
+        "for_each": []
+      },
+      "read_fill": {
+        "for_each": [
+          {
+            "operation": "core",
+            "target": "names",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "flags",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "bounds",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "defaults",
+            "codec": "ref_id"
+          }
+        ]
+      }
+    },
+    "typed_data": {
+      "read_alloc": {
+        "for_each": [
+          {
+            "operation": "core",
+            "target": "length",
+            "codec": "unsigned"
+          }
+        ]
+      },
+      "read_fill": {
+        "for_each": [
+          {
+            "operation": "core",
+            "target": "length",
+            "codec": "unsigned"
+          },
+          {
+            "operation": "core",
+            "target": "data",
+            "codec": "bytes"
+          }
+        ]
+      }
+    },
+    "typed_data_view": {
+      "read_alloc": {
+        "for_each": []
+      },
+      "read_fill": {
+        "for_each": [
+          {
+            "operation": "core",
+            "target": "length",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "typed_data",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "offset_in_bytes",
+            "codec": "ref_id"
+          }
+        ]
+      }
+    },
+    "unhandled_exception": {
+      "read_alloc": {
+        "for_each": []
+      },
+      "read_fill": {
+        "for_each": [
+          {
+            "operation": "core",
+            "target": "exception",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "stacktrace",
+            "codec": "ref_id"
+          }
+        ]
+      }
+    },
+    "unlinked_call": {
+      "read_alloc": {
+        "for_each": []
+      },
+      "read_fill": {
+        "for_each": [
+          {
+            "operation": "core",
+            "target": "target_name",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "args_descriptor",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "can_patch_to_monomorphic",
+            "codec": "byte"
+          }
+        ]
+      }
+    },
+    "weak_array": {
+      "read_alloc": {
+        "for_each": [
+          {
+            "operation": "core",
+            "target": "length",
+            "codec": "unsigned"
+          }
+        ]
+      },
+      "read_fill": {
+        "for_each": [
+          {
+            "operation": "core",
+            "target": "length",
+            "codec": "unsigned"
+          },
+          {
+            "operation": "core",
+            "target": "elements",
+            "codec": {
+              "array": {
+                "length_from": "length",
+                "for_each": [
+                  {
+                    "operation": "core",
+                    "target": "value",
+                    "codec": "ref_id"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    "weak_property": {
+      "read_alloc": {
+        "for_each": []
+      },
+      "read_fill": {
+        "for_each": [
+          {
+            "operation": "core",
+            "target": "key",
+            "codec": "ref_id"
+          },
+          {
+            "operation": "core",
+            "target": "value",
+            "codec": "ref_id"
+          }
+        ]
+      }
+    }
+  },
+  "num_predefined_cids": 175,
+  "cid_map": {
+    "0": "illegal",
+    "1": "native_pointer",
+    "2": "free_list_element",
+    "3": "forwarding_corpse",
+    "4": "object",
+    "5": "class",
+    "6": "patch_class",
+    "7": "function",
+    "8": "type_parameters",
+    "9": "closure_data",
+    "10": "ffi_trampoline_data",
+    "11": "field",
+    "12": "script",
+    "13": "library",
+    "14": "namespace",
+    "15": "kernel_program_info",
+    "16": "weak_serialization_reference",
+    "17": "weak_array",
+    "18": "code",
+    "19": "bytecode",
+    "20": "instructions",
+    "21": "instructions_section",
+    "22": "instructions_table",
+    "23": "object_pool",
+    "24": "pc_descriptors",
+    "25": "code_source_map",
+    "26": "compressed_stack_maps",
+    "27": "local_var_descriptors",
+    "28": "exception_handlers",
+    "29": "context",
+    "30": "context_scope",
+    "31": "sentinel",
+    "32": "single_target_cache",
+    "33": "monomorphic_smiable_call",
+    "34": "call_site_data",
+    "35": "unlinked_call",
+    "36": "ic_data",
+    "37": "megamorphic_cache",
+    "38": "subtype_test_cache",
+    "39": "loading_unit",
+    "40": "error",
+    "41": "api_error",
+    "42": "language_error",
+    "43": "unhandled_exception",
+    "44": "unwind_error",
+    "45": "instance",
+    "46": "library_prefix",
+    "47": "type_arguments",
+    "48": "abstract_type",
+    "49": "type",
+    "50": "function_type",
+    "51": "record_type",
+    "52": "type_parameter",
+    "53": "finalizer_base",
+    "54": "finalizer",
+    "55": "native_finalizer",
+    "56": "finalizer_entry",
+    "57": "closure",
+    "58": "number",
+    "59": "integer",
+    "60": "smi",
+    "61": "mint",
+    "62": "double",
+    "63": "bool",
+    "64": "float32x4",
+    "65": "int32x4",
+    "66": "float64x2",
+    "67": "record",
+    "68": "typed_data_base",
+    "69": "typed_data",
+    "70": "external_typed_data",
+    "71": "typed_data_view",
+    "72": "pointer",
+    "73": "dynamic_library",
+    "74": "capability",
+    "75": "receive_port",
+    "76": "send_port",
+    "77": "stack_trace",
+    "78": "suspend_state",
+    "79": "reg_exp",
+    "80": "weak_property",
+    "81": "weak_reference",
+    "82": "mirror_reference",
+    "83": "future_or",
+    "84": "user_tag",
+    "85": "transferable_typed_data",
+    "86": "map",
+    "87": "const_map",
+    "88": "set",
+    "89": "const_set",
+    "90": "array",
+    "91": "immutable_array",
+    "92": "growable_object_array",
+    "93": "string",
+    "94": "one_byte_string",
+    "95": "two_byte_string",
+    "96": "ffi_native_function",
+    "97": "ffi_int8",
+    "98": "ffi_int16",
+    "99": "ffi_int32",
+    "100": "ffi_int64",
+    "101": "ffi_uint8",
+    "102": "ffi_uint16",
+    "103": "ffi_uint32",
+    "104": "ffi_uint64",
+    "105": "ffi_float",
+    "106": "ffi_double",
+    "107": "ffi_void",
+    "108": "ffi_handle",
+    "109": "ffi_bool",
+    "110": "ffi_native_type",
+    "111": "ffi_struct",
+    "112": "typed_data_int8_array",
+    "113": "typed_data_int8_array_view",
+    "114": "external_typed_data_int8_array",
+    "115": "unmodifiable_typed_data_int8_array_view",
+    "116": "typed_data_uint8_array",
+    "117": "typed_data_uint8_array_view",
+    "118": "external_typed_data_uint8_array",
+    "119": "unmodifiable_typed_data_uint8_array_view",
+    "120": "typed_data_uint8_clamped_array",
+    "121": "typed_data_uint8_clamped_array_view",
+    "122": "external_typed_data_uint8_clamped_array",
+    "123": "unmodifiable_typed_data_uint8_clamped_array_view",
+    "124": "typed_data_int16_array",
+    "125": "typed_data_int16_array_view",
+    "126": "external_typed_data_int16_array",
+    "127": "unmodifiable_typed_data_int16_array_view",
+    "128": "typed_data_uint16_array",
+    "129": "typed_data_uint16_array_view",
+    "130": "external_typed_data_uint16_array",
+    "131": "unmodifiable_typed_data_uint16_array_view",
+    "132": "typed_data_int32_array",
+    "133": "typed_data_int32_array_view",
+    "134": "external_typed_data_int32_array",
+    "135": "unmodifiable_typed_data_int32_array_view",
+    "136": "typed_data_uint32_array",
+    "137": "typed_data_uint32_array_view",
+    "138": "external_typed_data_uint32_array",
+    "139": "unmodifiable_typed_data_uint32_array_view",
+    "140": "typed_data_int64_array",
+    "141": "typed_data_int64_array_view",
+    "142": "external_typed_data_int64_array",
+    "143": "unmodifiable_typed_data_int64_array_view",
+    "144": "typed_data_uint64_array",
+    "145": "typed_data_uint64_array_view",
+    "146": "external_typed_data_uint64_array",
+    "147": "unmodifiable_typed_data_uint64_array_view",
+    "148": "typed_data_float32_array",
+    "149": "typed_data_float32_array_view",
+    "150": "external_typed_data_float32_array",
+    "151": "unmodifiable_typed_data_float32_array_view",
+    "152": "typed_data_float64_array",
+    "153": "typed_data_float64_array_view",
+    "154": "external_typed_data_float64_array",
+    "155": "unmodifiable_typed_data_float64_array_view",
+    "156": "typed_data_float32x4_array",
+    "157": "typed_data_float32x4_array_view",
+    "158": "external_typed_data_float32x4_array",
+    "159": "unmodifiable_typed_data_float32x4_array_view",
+    "160": "typed_data_int32x4_array",
+    "161": "typed_data_int32x4_array_view",
+    "162": "external_typed_data_int32x4_array",
+    "163": "unmodifiable_typed_data_int32x4_array_view",
+    "164": "typed_data_float64x2_array",
+    "165": "typed_data_float64x2_array_view",
+    "166": "external_typed_data_float64x2_array",
+    "167": "unmodifiable_typed_data_float64x2_array_view",
+    "168": "byte_data_view",
+    "169": "unmodifiable_byte_data_view",
+    "170": "byte_buffer",
+    "171": "null",
+    "172": "dynamic",
+    "173": "void",
+    "174": "never"
+  },
+  "class_tag_kind": "object_header"
+}

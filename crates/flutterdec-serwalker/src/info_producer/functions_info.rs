@@ -11,23 +11,8 @@ pub fn produce_functions_info(
 ) -> anyhow::Result<Vec<FunctionInfo>> {
     let mut functions_info = Vec::new();
 
-    let function_cid = snapshot.cid_for_class_kind(ClassKind::FunctionCid)?;
-    let function_cluster = snapshot
-        .clusters
-        .get(&(function_cid << 2))
-        .ok_or_else(|| anyhow::anyhow!("Function cluster not found"))?
-        .as_any()
-        .downcast_ref::<FunctionCluster>()
-        .ok_or_else(|| anyhow::anyhow!("Function cluster is not of type FunctionCluster"))?;
-
-    let code_cid = snapshot.cid_for_class_kind(ClassKind::CodeCid)?;
-    let code_cluster = snapshot
-        .clusters
-        .get(&(code_cid << 2))
-        .ok_or_else(|| anyhow::anyhow!("Code cluster not found"))?
-        .as_any()
-        .downcast_ref::<CodeCluster>()
-        .ok_or_else(|| anyhow::anyhow!("Code cluster is not of type CodeCluster"))?;
+    let function_cluster = snapshot.get_cluster::<FunctionCluster>(ClassKind::Function)?;
+    let code_cluster = snapshot.get_cluster::<CodeCluster>(ClassKind::Code)?;
 
     let first_entry_with_code = snapshot.instruction_table.first_entry_with_code();
     let instruction_table_len = snapshot.instruction_table.len();

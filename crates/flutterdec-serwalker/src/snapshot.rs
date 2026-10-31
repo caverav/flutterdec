@@ -2,17 +2,20 @@ use std::collections::HashMap;
 
 use crate::cluster::{
     decide_cluster, resolve_entrypoints, resolve_instructions_len_for_code_objects, ClassCluster,
-    Cluster,
+    Cluster, CodeCluster,
 };
 use crate::constants::{
     self, ClassKind, MAGIC_BYTES, OBJECT_START_ALIGNMENT, SNAPSHOT_MAGIC_NUMBER_SZ,
 };
 use crate::instruction_table::{parse_instr_table_from_rodata, InstructionTable};
-use crate::profile_reader::{profile::DataProfile, select_data_profile};
+use crate::profile_reader::{
+    profile::{ClassTagKind, DataProfile},
+    select_data_profile,
+};
 use crate::program_roots::structs::ProgramRoots;
 use crate::program_roots::{parse_dispatch_table, parse_field_table, parse_object_store};
 use crate::stream::Stream;
-use crate::utils::{decode_tags, DecodedTags};
+use crate::utils::{decode_tags_for_kind, DecodedTags};
 
 #[derive(Default)]
 enum SnapshotKind
@@ -86,6 +89,39 @@ impl DataSnapshot {
             .get(&class_kind)
             .copied()
             .ok_or_else(|| anyhow::anyhow!("profile has no CID for {class_kind:?}"))
+    }
+
+    pub(crate) fn get_cluster<T: Cluster + 'static>(&self, kind: ClassKind) -> anyhow::Result<&T> {
+        let cid = self.cid_for_class_kind(kind)?;
+        let key = cid << 2;
+        let cluster = self.clusters.get(&key).ok_or_else(|| {
+            anyhow::anyhow!("flags-0 cluster for {kind:?} (CID {cid}) is missing")
+        })?;
+
+        cluster.as_any().downcast_ref::<T>().ok_or_else(|| {
+            anyhow::anyhow!(
+                "flags-0 cluster for {kind:?} (CID {cid}) is not {}",
+                std::any::type_name::<T>()
+            )
+        })
+    }
+
+    pub(crate) fn get_cluster_mut<T: Cluster + 'static>(
+        &mut self,
+        kind: ClassKind,
+    ) -> anyhow::Result<&mut T> {
+        let cid = self.cid_for_class_kind(kind)?;
+        let key = cid << 2;
+        let cluster = self.clusters.get_mut(&key).ok_or_else(|| {
+            anyhow::anyhow!("flags-0 cluster for {kind:?} (CID {cid}) is missing")
+        })?;
+
+        cluster.as_any_mut().downcast_mut::<T>().ok_or_else(|| {
+            anyhow::anyhow!(
+                "flags-0 cluster for {kind:?} (CID {cid}) is not {}",
+                std::any::type_name::<T>()
+            )
+        })
     }
 
     pub(crate) fn cluster_by_ref_id(
@@ -185,8 +221,17 @@ impl DataSnapshot {
 
         self.start_of_alloc_area = stream.get_current_pos();
         for _cluster_idx in 0..self.num_clusters {
-            let tags: u32 = stream.read()? as u32;
-            let decoded_tags: DecodedTags = decode_tags(tags);
+            let encoded_tags = stream.read()?;
+            let tags = match self.data_profile.class_tag_kind {
+                ClassTagKind::PackedCidAndCanonical => u32::try_from(encoded_tags),
+                ClassTagKind::ObjectHeader | ClassTagKind::ObjectHeaderDeeplyImmutable => {
+                    u32::try_from(encoded_tags)
+                        .or_else(|_| i32::try_from(encoded_tags as i64).map(|tags| tags as u32))
+                }
+            }
+            .map_err(|_| anyhow::anyhow!("Cluster tags {encoded_tags:#x} exceed 32 bits"))?;
+            let decoded_tags: DecodedTags =
+                decode_tags_for_kind(tags, self.data_profile.class_tag_kind);
             let read_cid = decoded_tags.get_cid();
 
             let class_kind = if read_cid < self.data_profile.num_predefined_cids {
@@ -194,7 +239,7 @@ impl DataSnapshot {
                     anyhow::anyhow!("A suitable mapping wasn't found for CID: {read_cid}")
                 })?
             } else {
-                ClassKind::InstanceCid
+                ClassKind::Instance
             };
 
             let mut cluster = decide_cluster(class_kind).map_err(|reason| {
@@ -239,19 +284,12 @@ impl DataSnapshot {
     }
 
     fn build_class_table(&mut self) -> anyhow::Result<()> {
-        let class_cid = self.cid_for_class_kind(ClassKind::ClassCid)?;
         let class_table = {
-            let class_cluster = self
-                .clusters
-                .get(&(class_cid << 2))
-                .ok_or_else(|| anyhow::anyhow!("Class cluster is missing"))?
-                .as_any()
-                .downcast_ref::<ClassCluster>()
-                .ok_or_else(|| anyhow::anyhow!("Cluster is not a ClassCluster"))?;
+            let class_cluster = self.get_cluster::<ClassCluster>(ClassKind::Class)?;
 
             let mut class_table = HashMap::with_capacity(class_cluster.objs.len());
             for (index, class) in class_cluster.objs.iter().enumerate() {
-                if class.id == ClassKind::IllegalCid as i32 {
+                if class.id == ClassKind::Illegal as i32 {
                     anyhow::bail!("class at cluster index {index} has an illegal CID");
                     // should never happen
                 }
@@ -307,10 +345,9 @@ pub fn parse_instr_snapshot(
     let mut instructions_snapshot = InstructionsSnapshot::default();
     instructions_snapshot.image_size = stream.read_raw_u64()?;
 
-    let code_cid = snapshot.cid_for_class_kind(ClassKind::CodeCid)?;
+    let code_cluster = snapshot.get_cluster_mut::<CodeCluster>(ClassKind::Code)?;
     resolve_instructions_len_for_code_objects(
-        &mut snapshot.clusters,
-        code_cid,
+        code_cluster,
         instructions_snapshot.image_size as usize,
     )?;
 
@@ -350,8 +387,8 @@ pub fn parse_data_snapshot(stream: &mut Stream) -> anyhow::Result<DataSnapshot> 
         snapshot.parse_instruction_table(stream)?;
     }
 
-    snapshot.resolve_entrypoints()?;
-
+    snapshot.resolve_entrypoints()?; // this is the equivalent of the CodeDeserializationCluster's PostLoad operation
+ 
     Ok(snapshot)
 }
 
@@ -426,6 +463,110 @@ mod tests {
         let mut stream = Stream::new(bytes);
         snap.parse_header(&mut stream)?;
         Ok(snap)
+    }
+
+    fn snapshot_with_class_cluster(cid: u32) -> DataSnapshot {
+        let mut snapshot = DataSnapshot::default();
+        snapshot
+            .data_profile
+            .class_kind_to_cid
+            .insert(ClassKind::Class, cid);
+        let mut cluster = ClassCluster::default();
+        cluster.set_metadata(0, cid, false, false);
+        cluster.obj_count = 3;
+        snapshot.clusters.insert(cid << 2, Box::new(cluster));
+        snapshot
+    }
+
+    #[test]
+    fn typed_cluster_lookup_uses_profile_cid_and_allows_mutation() {
+        let mut snapshot = snapshot_with_class_cluster(700);
+        let cluster = snapshot
+            .get_cluster::<ClassCluster>(ClassKind::Class)
+            .unwrap();
+        assert_eq!(cluster.cid(), 700);
+        assert_eq!(cluster.obj_count, 3);
+
+        snapshot
+            .get_cluster_mut::<ClassCluster>(ClassKind::Class)
+            .unwrap()
+            .obj_count = 7;
+
+        assert_eq!(
+            snapshot
+                .get_cluster::<ClassCluster>(ClassKind::Class)
+                .unwrap()
+                .obj_count,
+            7
+        );
+    }
+
+    #[test]
+    fn typed_cluster_lookup_reports_missing_profile_mapping_and_cluster() {
+        let mut snapshot = DataSnapshot::default();
+        let error = snapshot
+            .get_cluster::<ClassCluster>(ClassKind::Class)
+            .err()
+            .unwrap();
+        assert!(error.to_string().contains("profile has no CID"));
+        assert!(snapshot
+            .get_cluster_mut::<ClassCluster>(ClassKind::Class)
+            .is_err());
+
+        snapshot
+            .data_profile
+            .class_kind_to_cid
+            .insert(ClassKind::Class, 700);
+        let error = snapshot
+            .get_cluster::<ClassCluster>(ClassKind::Class)
+            .err()
+            .unwrap();
+        assert!(error.to_string().contains("CID 700"));
+        assert!(error.to_string().contains("is missing"));
+        assert!(snapshot
+            .get_cluster_mut::<ClassCluster>(ClassKind::Class)
+            .is_err());
+    }
+
+    #[test]
+    fn typed_cluster_lookup_rejects_wrong_rust_type() {
+        let mut snapshot = snapshot_with_class_cluster(700);
+        let error = snapshot
+            .get_cluster::<CodeCluster>(ClassKind::Class)
+            .err()
+            .unwrap();
+        assert!(error.to_string().contains("CID 700"));
+        assert!(error.to_string().contains("CodeCluster"));
+        assert!(snapshot
+            .get_cluster_mut::<CodeCluster>(ClassKind::Class)
+            .is_err());
+        assert_eq!(
+            snapshot
+                .get_cluster::<ClassCluster>(ClassKind::Class)
+                .unwrap()
+                .obj_count,
+            3
+        );
+    }
+
+    #[test]
+    fn typed_cluster_lookup_does_not_fall_back_to_flagged_clusters() {
+        let mut snapshot = snapshot_with_class_cluster(700);
+        snapshot.clusters.remove(&(700 << 2));
+        for flags in 1..4 {
+            let mut cluster = ClassCluster::default();
+            cluster.set_metadata(0, 700, flags & 1 != 0, flags & 2 != 0);
+            snapshot
+                .clusters
+                .insert((700 << 2) | flags, Box::new(cluster));
+        }
+
+        assert!(snapshot
+            .get_cluster::<ClassCluster>(ClassKind::Class)
+            .is_err());
+        assert!(snapshot
+            .get_cluster_mut::<ClassCluster>(ClassKind::Class)
+            .is_err());
     }
 
     #[test]
