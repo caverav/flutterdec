@@ -310,7 +310,7 @@ impl DataSnapshot {
     }
 
     fn parse_roots(&mut self, stream: &mut Stream) -> anyhow::Result<()> {
-        let object_store = parse_object_store(stream)?;
+        let object_store = parse_object_store(stream, &self.data_profile)?;
         let field_table = parse_field_table(stream)?;
         let shared_field_table = parse_field_table(stream)?;
         let dispatch_table = parse_dispatch_table(stream)?;

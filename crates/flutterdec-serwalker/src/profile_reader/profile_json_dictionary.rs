@@ -12,6 +12,8 @@ pub(crate) const CANONICAL_SET_LAYOUT: &str = "canonical_set_layout";
 pub(crate) const EXCEPTION_HANDLER_INFO: &str = "exception_handler_info";
 pub(crate) const OBJECT_POOL_ENTRY: &str = "object_pool_entry";
 pub(crate) const DELTA_ENCODED_TYPED_DATA: &str = "delta_encoded_typed_data";
+pub(crate) const OBJECT_STORE: &str = "object_store";
+pub(crate) const GLOBAL_OBJECT_POOL: &str = "global_object_pool";
 
 pub(crate) const ILLEGAL: &str = "illegal";
 pub(crate) const NATIVE_POINTER: &str = "native_pointer";
