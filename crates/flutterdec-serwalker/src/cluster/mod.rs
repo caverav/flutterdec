@@ -961,7 +961,7 @@ pub fn resolve_entrypoints(
         .checked_sub(first_entry_with_code)
         .ok_or_else(|| anyhow::anyhow!("instruction-table first Code entry exceeds its length"))?;
 
-    anyhow::ensure!( // idk if this should be assert
+    anyhow::ensure!(
         table_non_deferred_code_count == expected_non_deferred_code_count,
         "instruction table contains {table_non_deferred_code_count} non-deferred Code entries, but the snapshot header declares {expected_non_deferred_code_count}"
     );
