@@ -606,7 +606,7 @@ pub struct RegExp {
     pub two_byte_sticky: u32,  // TypedDataPtr
     pub num_one_byte_registers: i32,
     pub num_two_byte_registers: i32,
-    pub type_flags: i8,
+    pub type_flags: u32,
     pub extra_properties: HashMap<String, PropType>,
 }
 

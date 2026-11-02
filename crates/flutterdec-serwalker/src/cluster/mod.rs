@@ -294,7 +294,7 @@ fn read_primitive(codec: &TargetType, stream: &mut Stream) -> anyhow::Result<Pro
         TargetType::RawU32 => PropType::RawU32(stream.read_raw_u32()?),
         TargetType::RawU64 => PropType::RawU64(stream.read_raw_u64()?),
         TargetType::Bytes => anyhow::bail!("bytes require a Core byte-payload handler"), // Guards, so we know these cases have to be handled separately!
-        TargetType::Array { .. } => anyhow::bail!("nested array requires an array-length context"),
+        TargetType::Array { .. } => anyhow::bail!("nested array requires an array-length context"), // Same case as above. Arrays are handled in a special way.
     })
 }
 
@@ -703,7 +703,7 @@ macro_rules! IMPLEMENT_CUSTOM_PROFILED_CLUSTER {
                         "custom allocation recipe cannot ignore for_each operations"
                     );
                     $alloc_impl // run through custom logic instead of the simple recipe
-                } else {
+                } else { // run the standard recipe, though if the cluster was declared as custom, this should never be the case
                     $alloc_self.obj_count = execute_alloc_profile(
                         &mut $alloc_self.objs,
                         &recipe,
