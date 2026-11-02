@@ -96,6 +96,7 @@ pub enum TargetType {
     RefId,
     Unsigned,
     Signed,
+    Uint16,
     Byte,
     RawU32,
     RawU64,

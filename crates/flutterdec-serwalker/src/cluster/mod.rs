@@ -283,6 +283,13 @@ fn read_primitive(codec: &TargetType, stream: &mut Stream) -> anyhow::Result<Pro
         TargetType::RefId => PropType::RefId(stream.read_ref_id()?),
         TargetType::Unsigned => PropType::Unsigned(stream.read_unsigned()?),
         TargetType::Signed => PropType::Signed(stream.read()? as i64),
+        TargetType::Uint16 => {
+            let value = stream.read()? as i64;
+            let value = i16::try_from(value).map_err(|_| {
+                anyhow::anyhow!("value {value} is outside the signed encoding range of uint16")
+            })?;
+            PropType::Unsigned(u64::from(value as u16))
+        }
         TargetType::Byte => PropType::Byte(stream.read_byte()?),
         TargetType::RawU32 => PropType::RawU32(stream.read_raw_u32()?),
         TargetType::RawU64 => PropType::RawU64(stream.read_raw_u64()?),
@@ -695,7 +702,7 @@ macro_rules! IMPLEMENT_CUSTOM_PROFILED_CLUSTER {
                         recipe.operations.is_empty() || $recipe_name == CODE,
                         "custom allocation recipe cannot ignore for_each operations"
                     );
-                    $alloc_impl
+                    $alloc_impl // run through custom logic instead of the simple recipe
                 } else {
                     $alloc_self.obj_count = execute_alloc_profile(
                         &mut $alloc_self.objs,
@@ -1206,7 +1213,7 @@ IMPLEMENT_CUSTOM_PROFILED_CLUSTER!(
             }));
         }
     },
-    |cluster, stream, _profile, _recipe| {
+    |cluster, stream, _profile, _recipe| { // needs a special handler for pretty much the same reason as ObjectPool
         const FIRST_INSTANCE_FIELD_WORD: i32 = 2;
 
         let bitmap = stream.read_unsigned()?;
@@ -1498,6 +1505,125 @@ mod tests {
         bytes.reverse();
         *bytes.last_mut().unwrap() |= 0x80;
         bytes
+    }
+
+    fn dart_3_5_profile() -> DataProfile {
+        crate::profile_reader::select_data_profile(
+            &"80a49c7111088100a233b2ae788e1f48".to_owned(),
+            &vec![
+                "product".into(),
+                "arm64".into(),
+                "compressed-pointers".into(),
+            ],
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn dart_3_5_field_flags_preserve_uint16_patterns_and_following_references() {
+        let profile = dart_3_5_profile();
+        let cases: &[(u32, &[u8])] = &[
+            (0, &[0xc0]),
+            (0x7fff, &[0x7f, 0x7f, 0xc1]),
+            (0x8000, &[0, 0, 0xbe]),
+            (0x8002, &[2, 0, 0xbe]),
+            (0xffff, &[0xbf]),
+        ];
+        let mut bytes = leb_unsigned(cases.len() as u64);
+        for (index, (_, encoded_flags)) in cases.iter().enumerate() {
+            for id in 101..105 {
+                bytes.extend(encoded_ref_id(id));
+            }
+            bytes.extend_from_slice(encoded_flags);
+            bytes.extend(encoded_ref_id(8192 + index as u32));
+        }
+        let fill_end = bytes.len();
+        bytes.push(0x5a);
+
+        let mut stream = Stream::new(&bytes);
+        let mut cluster = FieldCluster::default();
+        let mut next_ref = 7;
+        cluster
+            .read_alloc(&mut next_ref, &mut stream, &profile)
+            .unwrap();
+        cluster.read_fill(&mut stream, &profile).unwrap();
+
+        for (index, (field, (expected, _))) in cluster.objs.iter().zip(cases).enumerate() {
+            assert_eq!(field.name, 101);
+            assert_eq!(field.owner, 102);
+            assert_eq!(field.type_field, 103);
+            assert_eq!(field.initializer_function, 104);
+            assert_eq!(field.kind_bits, *expected);
+            assert_eq!(field.host_offset_or_field_id, 8192 + index as u32);
+        }
+        assert_eq!(next_ref, 7 + cases.len() as u64);
+        assert_eq!(stream.get_current_pos(), fill_end);
+        assert_eq!(stream.read_byte().unwrap(), 0x5a);
+    }
+
+    #[test]
+    fn uint16_codec_rejects_values_outside_its_signed_encoding_width() {
+        for value in [-32769, 32768] {
+            let bytes = leb_signed(value);
+            let mut stream = Stream::new(&bytes);
+            let error = read_primitive(&TargetType::Uint16, &mut stream).unwrap_err();
+            assert!(error.to_string().contains("signed encoding range of uint16"));
+        }
+    }
+
+    #[test]
+    fn dart_3_5_profile_recipes_are_accepted_by_every_supported_cluster_kind() {
+        let profile = dart_3_5_profile();
+        assert_eq!(profile.num_predefined_cids, 174);
+        assert_eq!(profile.cid_map.len(), 174);
+        assert_eq!(profile.class_kind_to_cid[&ClassKind::Code], 18);
+        assert_eq!(profile.class_kind_to_cid[&ClassKind::ObjectPool], 22);
+        assert_eq!(profile.class_kind_to_cid[&ClassKind::_String], 92);
+        assert_eq!(
+            profile.parsing_operations[OBJECT_STORE][READ_FILL][FOR_EACH]
+                .as_array()
+                .unwrap()
+                .len(),
+            229
+        );
+
+        for (&cid, &kind) in &profile.cid_map {
+            let Ok(mut cluster) = decide_cluster(kind) else {
+                continue;
+            };
+            cluster.set_metadata(0, cid, false, false);
+            let mut bytes = match kind {
+                ClassKind::Class | ClassKind::Code => vec![0x80, 0x80],
+                ClassKind::Instance
+                | ClassKind::FfiInt8
+                | ClassKind::FfiInt16
+                | ClassKind::FfiInt32
+                | ClassKind::FfiInt64
+                | ClassKind::FfiUint8
+                | ClassKind::FfiUint16
+                | ClassKind::FfiUint32
+                | ClassKind::FfiUint64
+                | ClassKind::FfiFloat
+                | ClassKind::FfiDouble
+                | ClassKind::FfiVoid
+                | ClassKind::FfiHandle
+                | ClassKind::FfiBool => vec![0x80, 0xc0, 0xc0, 0x80],
+                _ => vec![0x80],
+            };
+            let expected_end = bytes.len();
+            bytes.push(0x5a);
+            let mut stream = Stream::new(&bytes);
+            let mut next_ref = 9;
+            cluster
+                .read_alloc(&mut next_ref, &mut stream, &profile)
+                .unwrap_or_else(|error| panic!("{kind:?} allocation failed: {error:#}"));
+            cluster
+                .read_fill(&mut stream, &profile)
+                .unwrap_or_else(|error| panic!("{kind:?} fill failed: {error:#}"));
+            assert_eq!(next_ref, 9, "{kind:?}");
+            assert_eq!(stream.get_current_pos(), expected_end, "{kind:?}");
+            assert_eq!(stream.read_byte().unwrap(), 0x5a, "{kind:?}");
+        }
     }
 
     #[test]
