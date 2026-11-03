@@ -427,6 +427,7 @@ pub struct Instance {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub enum InstanceField {
     Reference(u32), // maybe rename this in the future
     Unboxed(u64),

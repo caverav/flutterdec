@@ -13,8 +13,8 @@ const PROF_EXTENSION: &str = ".json";
 const SNAPSHOT_HASH_SUBSTR: usize = 8;
 
 pub fn select_data_profile(
-    snapshot_hash: &String,
-    features: &Vec<String>,
+    snapshot_hash: &str,
+    features: &[String],
 ) -> anyhow::Result<DataProfile> {
     let arch = resolve_snapshot_architecture(features)?;
     let snapshot_features = Vec::from_iter(
@@ -24,7 +24,7 @@ pub fn select_data_profile(
     );
 
     let file_name = "profile_".to_owned()
-        + &(snapshot_hash.as_str()[..SNAPSHOT_HASH_SUBSTR])
+        + &(snapshot_hash[..SNAPSHOT_HASH_SUBSTR])
         + "_"
         + &features_suffix(&snapshot_features)
         + "_"
@@ -60,8 +60,8 @@ mod tests {
     #[test]
     fn external_profile_exposes_cluster_first_recipes_and_tag_kind() {
         let profile = select_data_profile(
-            &DART_3_11_1_SNAPSHOT_HASH.to_owned(),
-            &vec![
+            DART_3_11_1_SNAPSHOT_HASH,
+            &[
                 "product".into(),
                 "arm64".into(),
                 "compressed-pointers".into(),
@@ -77,8 +77,8 @@ mod tests {
     #[test]
     fn product_profile_rejects_non_product_features() {
         let error = select_data_profile(
-            &DART_3_11_1_SNAPSHOT_HASH.to_owned(),
-            &vec![
+            DART_3_11_1_SNAPSHOT_HASH,
+            &[
                 "no-product".into(),
                 "arm64".into(),
                 "compressed-pointers".into(),

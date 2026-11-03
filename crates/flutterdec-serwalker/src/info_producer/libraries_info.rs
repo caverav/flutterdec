@@ -15,7 +15,7 @@ pub fn produce_libraries_info(snapshot: &DataSnapshot) -> anyhow::Result<Vec<Lib
         let library_name = string_or_placeholder(snapshot, library.name);
 
         libraries_info.push(LibraryInfo {
-            id: id,
+            id,
             uri: library_uri,
             name_display: library_name,
         });

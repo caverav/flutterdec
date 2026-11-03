@@ -1,8 +1,7 @@
 mod base_objects_pseudocluster;
 
+use std::any;
 use std::collections::HashMap;
-use std::sync::atomic::AtomicUsize;
-use std::{any, u64};
 
 use crate::constants::{Cid, ClassKind};
 use crate::instruction_table::{get_pc_offset_from_code_cluster_index, InstructionTable};
@@ -21,6 +20,7 @@ pub trait Cluster {
     fn cid(&self) -> Cid;
     fn first_ref_id(&self) -> u32;
     fn set_metadata(&mut self, tags: u32, cid: Cid, is_immutable: bool, is_canonical: bool);
+    #[allow(dead_code)]
     fn is_fixed_len(&self) -> bool;
     fn read_alloc(
         &mut self,
@@ -31,6 +31,7 @@ pub trait Cluster {
     fn read_fill(&mut self, stream: &mut Stream, profile: &DataProfile) -> anyhow::Result<usize>;
 }
 
+#[allow(dead_code)]
 pub fn read_smi(stream: &mut Stream) -> anyhow::Result<Smi> {
     let raw_smi = stream.read()?; // smis are always written as signed numbers
 
@@ -601,7 +602,11 @@ DECLARE_FIXED_LENGTH_CLUSTER!(Field, FieldCluster);
 DECLARE_FIXED_LENGTH_CLUSTER!(Script, ScriptCluster);
 DECLARE_FIXED_LENGTH_CLUSTER!(Library, LibraryCluster);
 DECLARE_FIXED_LENGTH_CLUSTER!(Namespace, NamespaceCluster);
-DECLARE_FIXED_LENGTH_CLUSTER!(KernelProgramInfo, KernelProgramInfoCluster);
+DECLARE_FIXED_LENGTH_CLUSTER!(
+    #[allow(dead_code)]
+    KernelProgramInfo,
+    KernelProgramInfoCluster
+);
 DECLARE_FIXED_LENGTH_CLUSTER!(UnlinkedCall, UnlinkedCallCluster);
 DECLARE_FIXED_LENGTH_CLUSTER!(ICData, ICDataCluster);
 DECLARE_FIXED_LENGTH_CLUSTER!(MegamorphicCache, MegamorphicCacheCluster);
@@ -821,6 +826,7 @@ pub struct CodeCluster {
 
     pub(crate) first_ref_id: u32,
 
+    #[allow(clippy::vec_box)]
     objs: Vec<Box<Code>>,
 }
 
@@ -1190,10 +1196,18 @@ IMPLEMENT_CUSTOM_PROFILED_CLUSTER!(
     }
 );
 
-DECLARE_VARIABLE_LENGTH_CLUSTER!(Map, MapCluster);
+DECLARE_VARIABLE_LENGTH_CLUSTER!(
+    #[allow(dead_code)]
+    Map,
+    MapCluster
+);
 IMPLEMENT_PROFILED_CLUSTER!(Map, MapCluster, false);
 
-DECLARE_VARIABLE_LENGTH_CLUSTER!(Set, SetCluster);
+DECLARE_VARIABLE_LENGTH_CLUSTER!(
+    #[allow(dead_code)]
+    Set,
+    SetCluster
+);
 IMPLEMENT_PROFILED_CLUSTER!(Set, SetCluster, false);
 
 DECLARE_VARIABLE_LENGTH_CLUSTER!(Instance, InstanceCluster);
@@ -1461,8 +1475,8 @@ mod tests {
 
     fn data_profile() -> DataProfile {
         crate::profile_reader::select_data_profile(
-            &crate::constants::DART_3_11_1_SNAPSHOT_HASH.to_owned(),
-            &vec![
+            crate::constants::DART_3_11_1_SNAPSHOT_HASH,
+            &[
                 "product".into(),
                 "arm64".into(),
                 "compressed-pointers".into(),
@@ -1511,8 +1525,8 @@ mod tests {
 
     fn dart_3_5_profile() -> DataProfile {
         crate::profile_reader::select_data_profile(
-            &"80a49c7111088100a233b2ae788e1f48".to_owned(),
-            &vec![
+            "80a49c7111088100a233b2ae788e1f48",
+            &[
                 "product".into(),
                 "arm64".into(),
                 "compressed-pointers".into(),

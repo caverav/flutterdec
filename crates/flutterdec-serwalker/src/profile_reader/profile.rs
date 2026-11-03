@@ -48,7 +48,9 @@ impl TryFrom<&String> for SnapshotArchitecture {
 
 #[derive(Default)]
 pub struct DataProfile {
+    #[allow(dead_code)]
     pub(super) architecture: SnapshotArchitecture,
+    #[allow(dead_code)]
     pub(super) features: Vec<SnapshotFeatures>,
     pub cid_map: HashMap<u32, ClassKind>, // REAL cid to stable kind lookup
     pub class_kind_to_cid: HashMap<ClassKind, u32>, // and the inverse to the map above

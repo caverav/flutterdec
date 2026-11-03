@@ -4,7 +4,6 @@ mod libraries_info;
 mod object_pool_info;
 mod utils;
 
-use anyhow::Error;
 use classes_info::produce_classes_info;
 use flutterdec_adapter::ProgramModel;
 use functions_info::produce_functions_info;
@@ -17,8 +16,8 @@ use crate::{
 };
 
 pub fn produce_model_headers(
-    model: &mut ProgramModel,
-    snapshot: &DataSnapshot,
+    _model: &mut ProgramModel,
+    _snapshot: &DataSnapshot,
 ) -> anyhow::Result<()> {
     Ok(())
 }

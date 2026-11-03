@@ -6,10 +6,9 @@ use crate::{
     },
 };
 use anyhow::Context;
-use serde_json;
 use std::{collections::HashMap, env, fs};
 
-pub fn features_suffix(features: &Vec<SnapshotFeatures>) -> String {
+pub fn features_suffix(features: &[SnapshotFeatures]) -> String {
     let mut feature_string = String::new();
 
     for (idx, feature) in features.iter().enumerate() {
@@ -29,20 +28,18 @@ pub fn features_suffix(features: &Vec<SnapshotFeatures>) -> String {
 }
 
 pub fn architecture_suffix(arch: &SnapshotArchitecture) -> String {
-    let arch_string = match arch {
+    match arch {
         SnapshotArchitecture::ArchARM => String::from("arm"),
         SnapshotArchitecture::ArchRISCV32 => String::from("riscv32"),
         SnapshotArchitecture::ArchRISCV64 => String::from("riscv64"),
         SnapshotArchitecture::ArchX64 => String::from("x64"),
         SnapshotArchitecture::ArchX86 => String::from("ia32"),
         SnapshotArchitecture::ArchArm64 => String::from("arm64"),
-    };
-
-    arch_string
+    }
 }
 
 pub(super) fn resolve_snapshot_architecture(
-    features_string: &Vec<String>,
+    features_string: &[String],
 ) -> anyhow::Result<SnapshotArchitecture> {
     for feature in features_string {
         if let Ok(arch) = SnapshotArchitecture::try_from(feature) {
@@ -57,16 +54,16 @@ pub(super) fn resolve_snapshot_architecture(
 
 const PROFILE_PATH_ENV_VAR_NAME: &str = "FLUTTERDEC_PROFILES_DIR";
 
-// read the data_profile file and return an (ops, cid map, num predefined cids, inverse cid map) tuple
-pub(super) fn read_profile_file(
-    file_name: &String,
-) -> anyhow::Result<(
+type ProfileFileData = (
     HashMap<String, serde_json::Value>,
     HashMap<u32, ClassKind>,
     u32,
     HashMap<ClassKind, u32>,
     ClassTagKind,
-)> {
+);
+
+// read the data_profile file and return an (ops, cid map, num predefined cids, inverse cid map) tuple
+pub(super) fn read_profile_file(file_name: &str) -> anyhow::Result<ProfileFileData> {
     let profile_file: Vec<u8>;
 
     if let Ok(profiles_dirpath) = env::var(PROFILE_PATH_ENV_VAR_NAME) {

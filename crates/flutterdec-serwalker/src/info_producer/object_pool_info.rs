@@ -64,8 +64,8 @@ pub fn produce_model_object_pool_info(
         object_pool_info.push(ObjectPoolEntry {
             index: u64::try_from(index)
                 .map_err(|_| anyhow::anyhow!("ObjectPool index does not fit in u64"))?,
-            kind: kind,
-            value: value,
+            kind,
+            value,
             decoded_kind: None,
             selector: None,
             target_va: None,

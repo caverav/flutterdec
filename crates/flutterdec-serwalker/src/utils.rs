@@ -4,6 +4,7 @@ use crate::profile_reader::profile_json_dictionary;
 
 pub(crate) trait SnapshotObject: std::any::Any {
     const KIND: ClassKind;
+    #[allow(dead_code)]
     const CID_NAME: &'static str;
 }
 
@@ -76,15 +77,16 @@ IMPLEMENT_SNAPSHOT_OBJECT! {
 #[macro_export]
 macro_rules! DECLARE_FIXED_LENGTH_CLUSTER {
     // macro overload for cases where there's a canonical set layout embedded in the cluster stream
-    ($name:ident, $cluster_name:ident) => {
-        $crate::DECLARE_VARIABLE_LENGTH_CLUSTER!($name, $cluster_name);
+    ($(#[$attribute:meta])* $name:ident, $cluster_name:ident) => {
+        $crate::DECLARE_VARIABLE_LENGTH_CLUSTER!($(#[$attribute])* $name, $cluster_name);
         $crate::IMPLEMENT_PROFILED_CLUSTER!($name, $cluster_name, true);
     };
 }
 
 #[macro_export]
 macro_rules! DECLARE_VARIABLE_LENGTH_CLUSTER {
-    ($name:ident, $cluster_name:ident) => {
+    ($(#[$attribute:meta])* $name:ident, $cluster_name:ident) => {
+        $(#[$attribute])*
         #[derive(Default)]
         pub struct $cluster_name {
             tags: u32,
@@ -152,6 +154,7 @@ macro_rules! DECODE_IS_CANONICAL {
     };
 }
 
+#[allow(dead_code)]
 pub fn decode_tags(tags: u32) -> DecodedTags {
     decode_tags_for_kind(tags, ClassTagKind::ObjectHeader)
 }

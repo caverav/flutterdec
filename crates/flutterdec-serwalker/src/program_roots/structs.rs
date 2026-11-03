@@ -51,6 +51,7 @@ impl ObjectStore {
     }
 }
 
+#[allow(dead_code)]
 pub(super) struct IsolateObjectStore
 // small one, not too important, skip for now
 {
@@ -74,6 +75,7 @@ pub(super) enum DispatchTableEntry {
 
 #[derive(Debug, Default)]
 pub(crate) struct DispatchTable {
+    #[allow(dead_code)]
     pub(super) first_code_ref: Option<u32>,
     pub(super) entries: Vec<DispatchTableEntry>,
 }
@@ -81,8 +83,11 @@ pub(crate) struct DispatchTable {
 #[derive(Default)]
 pub struct ProgramRoots {
     object_store: ObjectStore,
+    #[allow(dead_code)]
     field_table: FieldTable,
+    #[allow(dead_code)]
     shared_field_table: FieldTable,
+    #[allow(dead_code)]
     dispatch_table: DispatchTable,
 }
 

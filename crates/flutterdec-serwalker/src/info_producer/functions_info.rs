@@ -95,10 +95,10 @@ pub fn produce_functions_info(
             I return the first one, giving us the a view of the WHOLE function code.
         */
         let function_info = FunctionInfo {
-            id: id,
+            id,
             name: func_name,
             owner_class: func_owner_class,
-            entry_va: entry_va,
+            entry_va,
             size: instructions_length,
             code_section_va: instructions.image_va,
             name_kind: Some(String::from("exact")),

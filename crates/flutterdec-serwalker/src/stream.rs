@@ -10,7 +10,7 @@ pub struct Stream<'a> {
 impl<'a> Stream<'a> {
     pub fn new(byte_stream: &'a [u8]) -> Self {
         Self {
-            byte_stream: byte_stream,
+            byte_stream,
             curr_stream_offset: 0,
         }
     }
@@ -26,13 +26,14 @@ impl<'a> Stream<'a> {
         Ok(())
     }
 
+    #[allow(clippy::manual_is_multiple_of)]
     pub fn align_stream(&mut self, alignment: usize) -> anyhow::Result<()> {
         let mut next_pos = self.get_current_pos();
         if next_pos % alignment == 0 {
             return Ok(());
         }
 
-        next_pos = next_pos & !(alignment - 1);
+        next_pos &= !(alignment - 1);
         next_pos += alignment;
 
         self.seek(next_pos)
@@ -125,6 +126,7 @@ impl<'a> Stream<'a> {
     }
 
     /// Dart OneByteString payload is Latin-1, not UTF-8. See the string cluster comment.
+    #[allow(dead_code)]
     pub fn read_latin1(&mut self, len: usize) -> Result<String> {
         Ok(self.take(len)?.iter().map(|&b| b as char).collect())
     }
@@ -152,6 +154,7 @@ impl<'a> Stream<'a> {
     }
 
     /// Reads a block of bytes and returns a reference to the slice (Zero-copy, highly recommended for large payloads)
+    #[allow(dead_code)]
     pub fn read_bytes_zero_copy(&mut self, len: usize) -> Result<&[u8]> {
         self.take(len)
     }

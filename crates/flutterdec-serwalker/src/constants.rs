@@ -3,13 +3,17 @@ use std::mem::size_of;
 pub const MAGIC_BYTES: u32 = 0xdcdcf5f5;
 
 pub const SNAPSHOT_MAGIC_NUMBER_SZ: usize = size_of::<u32>();
+#[allow(dead_code)]
 pub const SNAPSHOT_LEN_SZ: usize = size_of::<u64>();
+#[allow(dead_code)]
 pub const SNAPSHOT_KIND_SZ: usize = size_of::<u64>();
 
+#[allow(dead_code)]
 pub const SNAPSHOT_HEADER_SZ: usize = SNAPSHOT_MAGIC_NUMBER_SZ // 20 bytes of header
                                     + SNAPSHOT_LEN_SZ
                                     + SNAPSHOT_KIND_SZ;
 
+#[allow(dead_code)]
 pub const MAX_CLUSTER_NUM: usize = 67usize;
 
 pub const UNSIGNED_END_OF_DATA_BYTE: u8 = 0x80u8; // last byte
@@ -22,6 +26,7 @@ pub const UNSIGNED_M: u8 = UNSIGNED_END_OF_DATA_BYTE;
 
 pub const DATA_BITS_PER_BYTE: usize = 7usize;
 
+#[allow(dead_code)]
 pub const SMI_SHIFT: usize = 1usize;
 
 pub const VERSION_HASH_LENGTH: usize = 32usize;
@@ -36,13 +41,13 @@ pub const OBJECT_START_ALIGNMENT: usize = 64;
 pub type Cid = u32;
 
 macro_rules! DEFINE_CLASS_KIND {
-    ( $( $name:ident = $val:expr ),* ) => {
+    ( $( $(#[$attribute:meta])* $name:ident = $val:expr ),* ) => {
         #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
         #[repr(u32)]
         pub enum ClassKind {
             #[default]
             Illegal = 0,
-            $( $name = $val, )*
+            $( $(#[$attribute])* $name = $val, )*
         }
     };
 }
@@ -227,6 +232,7 @@ DEFINE_CLASS_KIND! {
     Dynamic = 172,
     Void = 173,
     Never = 174,
+    #[allow(dead_code)]
     NumPredefinedKinds = 175
 }
 

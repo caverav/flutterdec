@@ -342,8 +342,10 @@ pub fn parse_instr_snapshot(
     stream: &mut Stream,
     snapshot: &mut DataSnapshot,
 ) -> anyhow::Result<InstructionsSnapshot> {
-    let mut instructions_snapshot = InstructionsSnapshot::default();
-    instructions_snapshot.image_size = stream.read_raw_u64()?;
+    let instructions_snapshot = InstructionsSnapshot {
+        image_size: stream.read_raw_u64()?,
+        ..Default::default()
+    };
 
     let code_cluster = snapshot.get_cluster_mut::<CodeCluster>(ClassKind::Code)?;
     resolve_instructions_len_for_code_objects(
