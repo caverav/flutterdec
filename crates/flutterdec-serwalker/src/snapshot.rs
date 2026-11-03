@@ -170,7 +170,11 @@ impl DataSnapshot {
         Ok(())
     }
 
-    fn parse_header(&mut self, stream: &mut Stream) -> anyhow::Result<()> {
+    fn parse_header(
+        &mut self,
+        stream: &mut Stream,
+        profile: Option<DataProfile>,
+    ) -> anyhow::Result<()> {
         self.magic_bytes = stream.read_raw_u32()?;
 
         if self.magic_bytes != MAGIC_BYTES {
@@ -195,7 +199,10 @@ impl DataSnapshot {
             features.push(String::from(feature));
         }
 
-        let data_profile = select_data_profile(&self.version_hash, &features)?;
+        let data_profile = match profile {
+            Some(profile) => profile,
+            None => select_data_profile(&self.version_hash, &features)?,
+        };
         self.data_profile = data_profile;
         /*
         if !self
@@ -356,11 +363,14 @@ pub fn parse_instr_snapshot(
     Ok(instructions_snapshot)
 }
 
-pub fn parse_data_snapshot(stream: &mut Stream) -> anyhow::Result<DataSnapshot> {
+pub fn parse_data_snapshot(
+    stream: &mut Stream,
+    profile: Option<DataProfile>,
+) -> anyhow::Result<DataSnapshot> {
     let mut snapshot = DataSnapshot::default();
 
     println!("Now parsing the snapshot...");
-    snapshot.parse_header(stream)?;
+    snapshot.parse_header(stream, profile)?;
     snapshot.parse_clusters(stream)?;
     snapshot.parse_roots(stream)?;
 
@@ -393,6 +403,10 @@ pub fn parse_data_snapshot(stream: &mut Stream) -> anyhow::Result<DataSnapshot> 
 
     Ok(snapshot)
 }
+
+#[cfg(test)]
+#[path = "info_producer/tests.rs"]
+mod v4_tests;
 
 #[cfg(test)]
 mod tests {
@@ -463,7 +477,7 @@ mod tests {
     fn parse(bytes: &[u8]) -> anyhow::Result<DataSnapshot> {
         let mut snap = DataSnapshot::default();
         let mut stream = Stream::new(bytes);
-        snap.parse_header(&mut stream)?;
+        snap.parse_header(&mut stream, None)?;
         Ok(snap)
     }
 

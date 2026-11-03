@@ -1,3 +1,6 @@
+use flutterdec_adapter::model::InputRegionName;
+use flutterdec_adapter::AdapterRegionInput;
+
 use crate::constants::{Cid, ClassKind};
 use crate::profile_reader::profile::ClassTagKind;
 use crate::profile_reader::profile_json_dictionary;
@@ -173,6 +176,16 @@ pub fn decode_tags_for_kind(tags: u32, kind: ClassTagKind) -> DecodedTags {
             DECODE_IS_CANONICAL!(tags),
         ),
     }
+}
+
+pub fn get_snapshot_region<'r, 'a>(
+    regions: &'r [AdapterRegionInput<'a>],
+    name: InputRegionName,
+) -> anyhow::Result<&'r AdapterRegionInput<'a>> {
+    regions
+        .iter()
+        .find(|region| region.region == name)
+        .ok_or_else(|| anyhow::anyhow!("The {} stream was not found!", name))
 }
 
 #[cfg(test)]

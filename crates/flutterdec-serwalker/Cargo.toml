@@ -10,3 +10,6 @@ goblin.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 flutterdec-adapter = { path = "../flutterdec-adapter" }
+
+[dev-dependencies]
+flutterdec-loader = { path = "../flutterdec-loader" }

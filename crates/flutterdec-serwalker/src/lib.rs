@@ -13,11 +13,17 @@ mod stream;
 
 mod profile_reader;
 
-use flutterdec_adapter::{AdapterInput, PoolGeometry, ProgramModel};
+use anyhow::Context;
+use flutterdec_adapter::model::{InputRegionName, ProgramModel};
+use flutterdec_adapter::primitives::Sha256Digest;
+use flutterdec_adapter::AdapterInput;
 
+use crate::utils::get_snapshot_region;
 use crate::{
     constants::DART_3_11_1_SNAPSHOT_HASH,
-    info_producer::{produce_model_headers, produce_model_object_info, produce_model_object_pool},
+    info_producer::{
+        finish_model, produce_model_headers, produce_model_object_info, produce_model_object_pool,
+    },
     snapshot::{parse_data_snapshot, parse_instr_snapshot},
     stream::Stream,
 };
@@ -27,29 +33,32 @@ pub const SUPPORTED_SNAPSHOT_HASH: &str = DART_3_11_1_SNAPSHOT_HASH;
 pub fn walk_snapshot_and_produce_model(
     adapter_input: &AdapterInput,
 ) -> anyhow::Result<ProgramModel> {
-    const ENTRIES_OFFSET: u64 = 16;
-    const WORD_SIZE: u64 = 8; // size in bytes of ObjectPoolEntry objects
+    adapter_input.identity.exact_selection_key()?;
+    anyhow::ensure!(
+        adapter_input.identity.features.has("compressed-pointers"),
+        "Serwalker currently requires a compressed-pointers snapshot"
+    );
+    let profile_bytes = std::fs::read(adapter_input.authorization.profile_path)
+        .context("read authorized Serwalker profile")?;
+    anyhow::ensure!(
+        Sha256Digest::of(&profile_bytes) == adapter_input.compatibility.profile_sha256,
+        "Serwalker profile does not match the authorized profile digest"
+    );
+    let profile = profile_reader::data_profile_from_bytes(
+        &profile_bytes,
+        &adapter_input.identity.features.normalized,
+    )?;
+    let mut program_model = produce_model_headers(adapter_input)?;
+    let input_regions = &adapter_input.regions;
 
-    let mut program_model = ProgramModel {
-        schema_version: 3,
-        adapter_kind: "serwalker".to_owned(),
-        dart_version: "3.11.1".to_owned(),
-        snapshot_hash: DART_3_11_1_SNAPSHOT_HASH.to_owned(),
-        arch: "ARM64".to_owned(),
-        libraries: Vec::new(),
-        classes: Vec::new(),
-        functions: Vec::new(),
-        object_pool: Vec::new(),
-        pool_geometry: Some(PoolGeometry {
-            entries_offset: ENTRIES_OFFSET,
-            word_size: WORD_SIZE,
-        }),
-    };
+    let isolate_data_region = get_snapshot_region(input_regions, InputRegionName::IsolateData)?;
+    let mut isolate_data_stream = Stream::new(isolate_data_region.bytes);
 
-    let mut isolate_data_stream = Stream::new(adapter_input.isolate_data);
-    let mut isolate_instr_stream = Stream::new(adapter_input.isolate_instr);
+    let isolate_instr_region =
+        get_snapshot_region(input_regions, InputRegionName::IsolateInstructions)?;
+    let mut isolate_instr_stream = Stream::new(isolate_instr_region.bytes);
 
-    let mut isolate_data_snapshot = parse_data_snapshot(&mut isolate_data_stream)?;
+    let mut isolate_data_snapshot = parse_data_snapshot(&mut isolate_data_stream, Some(profile))?;
     let mut isolate_instr_snapshot =
         parse_instr_snapshot(&mut isolate_instr_stream, &mut isolate_data_snapshot)?;
     // parse_instr_snapshot needs to run after parse_data_snapshot, given resolve_entrypoints must have been executed already
@@ -57,15 +66,31 @@ pub fn walk_snapshot_and_produce_model(
 
     // manually set it before passing the instructions produce_model_object_info
     // the core already determined it for us
-    isolate_instr_snapshot.image_va = adapter_input.isolate_instr_va;
+    isolate_instr_snapshot.image_va = isolate_instr_region.virtual_address.ok_or_else(|| {
+        anyhow::anyhow!("Core didn't provide a virtual address for the instruction image!")
+    })?;
 
-    produce_model_headers(&mut program_model, &isolate_data_snapshot)?;
     produce_model_object_info(
         &mut program_model,
         &isolate_data_snapshot,
         &isolate_instr_snapshot,
     )?;
-    produce_model_object_pool(&mut program_model, &isolate_data_snapshot)?;
+    produce_model_object_pool(
+        &mut program_model,
+        &isolate_data_snapshot,
+        &isolate_instr_snapshot,
+    )?;
+    finish_model(&mut program_model);
+
+    flutterdec_adapter::validate::validate(
+        &program_model,
+        &flutterdec_adapter::validate::HostSelectedContext {
+            identity: adapter_input.identity.clone(),
+            producer: adapter_input.producer.clone(),
+            compatibility: Some(adapter_input.compatibility.clone()),
+            regions: program_model.input.regions.clone(),
+        },
+    )?;
 
     Ok(program_model)
 }

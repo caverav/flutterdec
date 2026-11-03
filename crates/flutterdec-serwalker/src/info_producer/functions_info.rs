@@ -1,14 +1,18 @@
 use crate::cluster::{CodeCluster, FunctionCluster};
 use crate::constants::ClassKind;
-use crate::info_producer::utils::{find_object_by_id, string_or_placeholder};
+use crate::info_producer::utils::{find_object_by_id, find_string_by_id};
 use crate::raw_object::{Class, Code};
 use crate::snapshot::{DataSnapshot, InstructionsSnapshot};
-use flutterdec_adapter::FunctionInfo;
+use flutterdec_adapter::model::{
+    ClassId, CodeRange, Function, FunctionId, Name, ProgramModel, Provenance,
+};
+use serde_json::json;
 
 pub fn produce_functions_info(
     snapshot: &DataSnapshot,
     instructions: &InstructionsSnapshot,
-) -> anyhow::Result<Vec<FunctionInfo>> {
+    model: &mut ProgramModel,
+) -> anyhow::Result<()> {
     let mut functions_info = Vec::new();
 
     let function_cluster = snapshot.get_cluster::<FunctionCluster>(ClassKind::Function)?;
@@ -16,9 +20,7 @@ pub fn produce_functions_info(
 
     let first_entry_with_code = snapshot.instruction_table.first_entry_with_code();
     let instruction_table_len = snapshot.instruction_table.len();
-    let mut id: u64 = 1;
-
-    for function in &function_cluster.objs {
+    for (index, function) in function_cluster.objs.iter().enumerate() {
         if function.code_index == 0 {
             continue;
         }
@@ -71,14 +73,26 @@ pub fn produce_functions_info(
             (payload_start, code.instructions_length_)
         };
 
-        let func_name = string_or_placeholder(snapshot, function.name);
-        let func_owner_class = match find_object_by_id::<Class>(snapshot, function.owner) {
-            Ok(owning_class) => string_or_placeholder(snapshot, owning_class.name),
-            Err(_) => format!(
-                "<Unresolved Class reference ID {} or the Function is not owned by a class>",
-                function.owner
-            ),
-        };
+        let id = function_cluster
+            .first_ref_id
+            .checked_add(u32::try_from(index)?)
+            .ok_or_else(|| anyhow::anyhow!("Function reference ID overflow"))?;
+        let func_name = find_string_by_id(snapshot, function.name)
+            .ok()
+            .filter(|name| !name.trim().is_empty())
+            .map(Name::exact);
+        let func_owner_class = find_object_by_id::<Class>(snapshot, function.owner)
+            .ok()
+            .and_then(|class| u32::try_from(class.id).ok())
+            .map(ClassId)
+            .filter(|id| model.class(*id).is_some());
+        if func_name.is_none() || func_owner_class.is_none() {
+            model.extensions.insert(
+                format!("serwalker.function.{id}"),
+                json!({"name_ref_id": function.name, "owner_ref_id": function.owner,
+                       "code_index": function.code_index}),
+            );
+        }
 
         let entry_va = instructions
             .image_va
@@ -94,18 +108,20 @@ pub fn produce_functions_info(
 
             I return the first one, giving us the a view of the WHOLE function code.
         */
-        let function_info = FunctionInfo {
-            id,
+        let function_info = Function {
+            id: FunctionId(id),
             name: func_name,
-            owner_class: func_owner_class,
-            entry_va,
-            size: instructions_length,
+            owner: func_owner_class,
+            code: CodeRange {
+                start_va: entry_va,
+                size: instructions_length,
+            },
             code_section_va: instructions.image_va,
-            name_kind: Some(String::from("exact")),
+            provenance: Provenance::Derived,
         };
         functions_info.push(function_info);
-        id += 1;
     }
 
-    Ok(functions_info)
+    model.functions = functions_info;
+    Ok(())
 }

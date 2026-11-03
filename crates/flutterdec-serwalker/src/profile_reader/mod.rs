@@ -48,6 +48,30 @@ pub fn select_data_profile(
     })
 }
 
+pub(crate) fn data_profile_from_bytes(
+    bytes: &[u8],
+    features: &[String],
+) -> anyhow::Result<DataProfile> {
+    anyhow::ensure!(
+        features.iter().any(|feature| feature == "product"),
+        "Serwalker currently requires a product snapshot"
+    );
+    let (ops, cid_map, num_predefined_cids, class_kind_to_cid, class_tag_kind) =
+        utils::read_profile_bytes(bytes)?;
+    Ok(DataProfile {
+        architecture: resolve_snapshot_architecture(features)?,
+        features: features
+            .iter()
+            .filter_map(|feature| SnapshotFeatures::try_from(feature).ok())
+            .collect(),
+        cid_map,
+        class_kind_to_cid,
+        num_predefined_cids,
+        class_tag_kind,
+        parsing_operations: ops,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

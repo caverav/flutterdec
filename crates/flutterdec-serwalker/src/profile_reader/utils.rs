@@ -77,7 +77,11 @@ pub(super) fn read_profile_file(file_name: &str) -> anyhow::Result<ProfileFileDa
         })?;
     }
 
-    let mut profile = serde_json::from_slice::<HashMap<String, serde_json::Value>>(&profile_file)?;
+    read_profile_bytes(&profile_file)
+}
+
+pub(super) fn read_profile_bytes(profile_file: &[u8]) -> anyhow::Result<ProfileFileData> {
+    let mut profile = serde_json::from_slice::<HashMap<String, serde_json::Value>>(profile_file)?;
     let operations_value = profile.remove(PARSING_OPERATIONS).ok_or_else(|| {
         anyhow::anyhow!("Couldn't recover the parsing operations from the profile file.")
     })?;
