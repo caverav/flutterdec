@@ -5,8 +5,7 @@ use crate::{
         profile_json_dictionary::*,
     },
 };
-use anyhow::Context;
-use std::{collections::HashMap, env, fs};
+use std::{collections::HashMap, env, fs, path::PathBuf};
 
 pub fn features_suffix(features: &[SnapshotFeatures]) -> String {
     let mut feature_string = String::new();
@@ -64,18 +63,38 @@ type ProfileFileData = (
 
 // read the data_profile file and return an (ops, cid map, num predefined cids, inverse cid map) tuple
 pub(super) fn read_profile_file(file_name: &str) -> anyhow::Result<ProfileFileData> {
-    let profile_file: Vec<u8>;
-
+    let mut candidate_paths = Vec::new();
     if let Ok(profiles_dirpath) = env::var(PROFILE_PATH_ENV_VAR_NAME) {
-        let full_path = profiles_dirpath + "/" + file_name;
-        profile_file =
-            fs::read(&full_path).with_context(|| format!("read data profile: {}", full_path))?;
-    } else {
-        // fallback #1 try reading the working directory
-        profile_file = fs::read(file_name).with_context(|| {
-            format!("read data profile from current working directory: {file_name}")
-        })?;
+        candidate_paths.push(PathBuf::from(profiles_dirpath).join(file_name));
     }
+    // fallback #1 try reading the working directory
+    candidate_paths.push(PathBuf::from(file_name));
+    // fallback #2 try the repository profile directory from this crate location
+    candidate_paths.push(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../data/serwalker_profiles")
+            .join(file_name),
+    );
+
+    let mut profile_file = None;
+    let mut read_errors = Vec::new();
+    for candidate in candidate_paths {
+        match fs::read(&candidate) {
+            Ok(bytes) => {
+                profile_file = Some(bytes);
+                break;
+            }
+            Err(error) => {
+                read_errors.push(format!("{}: {}", candidate.display(), error));
+            }
+        }
+    }
+    let profile_file = profile_file.ok_or_else(|| {
+        anyhow::anyhow!(
+            "read data profile {file_name} failed from all known locations: {}",
+            read_errors.join("; ")
+        )
+    })?;
 
     let mut profile = serde_json::from_slice::<HashMap<String, serde_json::Value>>(&profile_file)?;
     let operations_value = profile.remove(PARSING_OPERATIONS).ok_or_else(|| {
