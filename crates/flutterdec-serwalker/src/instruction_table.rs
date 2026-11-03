@@ -4,9 +4,11 @@ use crate::stream::Stream;
 pub struct InstructionTable
 // in reality this is the representation of InstructionTable::Data of the C++ code
 {
+    #[allow(dead_code)]
     canonical_stack_map_entries_offset: usize,
     length: usize,
     first_entry_with_code: usize,
+    #[allow(dead_code)]
     padding: usize,
     data: Vec<DataEntry>,
 }
@@ -15,6 +17,7 @@ pub struct InstructionTable
 // for Function, Code, Closure, etc... Objects
 struct DataEntry {
     pc_offset: usize,
+    #[allow(dead_code)]
     stack_map_offset: usize,
 }
 
