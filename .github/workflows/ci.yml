@@ -20,6 +20,8 @@ jobs:
   rust:
     name: Rust Checks (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    env:
+      FLUTTERDEC_PROFILES_DIR: ${{ github.workspace }}/data/serwalker_profiles
     strategy:
       fail-fast: false
       matrix:
