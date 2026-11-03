@@ -218,7 +218,8 @@ fn array_count<T: CoreObject>(
 ) -> anyhow::Result<usize> {
     let count = if let Some(value) = context.get(length_from) {
         property_count(value)?
-    } else { // if there's no context available, fall back to the core property to retrieve the length, for the profile describing 3.11.X, this is always the branch taken (i.e, no context variable is set)
+    } else {
+        // if there's no context available, fall back to the core property to retrieve the length, for the profile describing 3.11.X, this is always the branch taken (i.e, no context variable is set)
         let field =
             serde_json::from_value::<T::Field>(serde_json::Value::String(length_from.into()))?; // convert into vocabulary enum tag
         let value = object.core_field(field); // get the field corresponding to the type, e.g ArrayField::Length -> obj.length
@@ -402,10 +403,8 @@ fn execute_object_recipe<T: CoreObject + 'static>(
                     }
                     TargetType::Bytes => {
                         let length = core_byte_length(object, cid, profile, stream)?;
-                        object.set_core_field(
-                            *target,
-                            PropType::Bytes(stream.read_bytes(length)?),
-                        )?;
+                        object
+                            .set_core_field(*target, PropType::Bytes(stream.read_bytes(length)?))?;
                     }
                     _ => object.set_core_field(*target, read_primitive(codec, stream)?)?,
                 },
@@ -703,7 +702,8 @@ macro_rules! IMPLEMENT_CUSTOM_PROFILED_CLUSTER {
                         "custom allocation recipe cannot ignore for_each operations"
                     );
                     $alloc_impl // run through custom logic instead of the simple recipe
-                } else { // run the standard recipe, though if the cluster was declared as custom, this should never be the case
+                } else {
+                    // run the standard recipe, though if the cluster was declared as custom, this should never be the case
                     $alloc_self.obj_count = execute_alloc_profile(
                         &mut $alloc_self.objs,
                         &recipe,
@@ -1213,7 +1213,8 @@ IMPLEMENT_CUSTOM_PROFILED_CLUSTER!(
             }));
         }
     },
-    |cluster, stream, _profile, _recipe| { // needs a special handler for pretty much the same reason as ObjectPool
+    |cluster, stream, _profile, _recipe| {
+        // needs a special handler for pretty much the same reason as ObjectPool
         const FIRST_INSTANCE_FIELD_WORD: i32 = 2;
 
         let bitmap = stream.read_unsigned()?;
@@ -1301,7 +1302,8 @@ DECLARE_VARIABLE_LENGTH_CLUSTER!(TypedData, TypedDataCluster);
 IMPLEMENT_PROFILED_CLUSTER!(TypedData, TypedDataCluster, false);
 
 DECLARE_VARIABLE_LENGTH_CLUSTER!(Class, ClassCluster);
-IMPLEMENT_CUSTOM_PROFILED_CLUSTER!( // no recipe for ClassCluster read_alloc, seemingly stable across snapshot versions
+IMPLEMENT_CUSTOM_PROFILED_CLUSTER!(
+    // no recipe for ClassCluster read_alloc, seemingly stable across snapshot versions
     Class,
     CLASS,
     ClassCluster,
@@ -1394,8 +1396,8 @@ IMPLEMENT_PROFILED_CLUSTER!(PcDescriptors, PcDescriptorsCluster, false);
 //DECLARE_VARIABLE_LENGTH_CLUSTER!(OneByteString, OneByteStringCluster); These only exist when NO COMPRESSED_POINTERS
 //DECLARE_VARIABLE_LENGTH_CLUSTER!(TwoByteString, TwoByteStringCluster);
 DECLARE_VARIABLE_LENGTH_CLUSTER!(_String, _StringCluster);
-IMPLEMENT_CUSTOM_PROFILED_CLUSTER!( // The String cluster does NOT use a recipe. I assume the String reading remains stable across snapshot versions.
-    
+IMPLEMENT_CUSTOM_PROFILED_CLUSTER!(
+    // The String cluster does NOT use a recipe. I assume the String reading remains stable across snapshot versions.
     _String,
     STRING,
     _StringCluster,
@@ -1567,7 +1569,9 @@ mod tests {
             let bytes = leb_signed(value);
             let mut stream = Stream::new(&bytes);
             let error = read_primitive(&TargetType::Uint16, &mut stream).unwrap_err();
-            assert!(error.to_string().contains("signed encoding range of uint16"));
+            assert!(error
+                .to_string()
+                .contains("signed encoding range of uint16"));
         }
     }
 

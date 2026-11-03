@@ -388,7 +388,7 @@ pub fn parse_data_snapshot(stream: &mut Stream) -> anyhow::Result<DataSnapshot> 
     }
 
     snapshot.resolve_entrypoints()?; // this is the equivalent of the CodeDeserializationCluster's PostLoad operation
- 
+
     Ok(snapshot)
 }
 

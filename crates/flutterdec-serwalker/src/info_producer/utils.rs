@@ -24,7 +24,10 @@ pub(super) fn find_object_by_id<T: SnapshotObject>(
         };
 
         return object.downcast_ref::<T>().ok_or_else(|| {
-            anyhow::anyhow!("reference ID {id} has the wrong Rust type for {:?}", T::KIND)
+            anyhow::anyhow!(
+                "reference ID {id} has the wrong Rust type for {:?}",
+                T::KIND
+            )
         });
     }
 

@@ -50,10 +50,8 @@ pub fn walk_snapshot_and_produce_model(
     let mut isolate_instr_stream = Stream::new(adapter_input.isolate_instr);
 
     let mut isolate_data_snapshot = parse_data_snapshot(&mut isolate_data_stream)?;
-    let mut isolate_instr_snapshot = parse_instr_snapshot(
-        &mut isolate_instr_stream,
-        &mut isolate_data_snapshot,
-    )?;
+    let mut isolate_instr_snapshot =
+        parse_instr_snapshot(&mut isolate_instr_stream, &mut isolate_data_snapshot)?;
     // parse_instr_snapshot needs to run after parse_data_snapshot, given resolve_entrypoints must have been executed already
     // in order to call resolve_instructions_len_for_code_objects
 

@@ -136,7 +136,8 @@ impl FromPropType for Vec<u8> {
     }
 }
 
-impl FromPropType for Option<u64> { // this is probably not needed
+impl FromPropType for Option<u64> {
+    // this is probably not needed
     fn from_prop_type(value: PropType) -> Result<Self> {
         Ok(Some(u64::from_prop_type(value)?))
     }
@@ -857,11 +858,8 @@ mod tests {
         assert_eq!(info.needs_stacktrace, -1);
 
         let mut call = crate::raw_object::UnlinkedCall::default();
-        call.set_core_field(
-            UnlinkedCallField::CanPatchToMonomorphic,
-            PropType::Byte(2),
-        )
-        .unwrap();
+        call.set_core_field(UnlinkedCallField::CanPatchToMonomorphic, PropType::Byte(2))
+            .unwrap();
         assert!(call.can_patch_to_monomorphic);
     }
 

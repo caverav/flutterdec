@@ -10,8 +10,7 @@ use crate::snapshot::DataSnapshot;
 pub fn produce_classes_info(snapshot: &DataSnapshot) -> anyhow::Result<Vec<ClassInfo>> {
     let mut classes_info = Vec::new();
     // obtain all class clusters (there should only be one)
-    let class_cluster =
-        snapshot.get_cluster::<ClassCluster>(ClassKind::Class)?; // should never happen.
+    let class_cluster = snapshot.get_cluster::<ClassCluster>(ClassKind::Class)?; // should never happen.
 
     for class in &class_cluster.objs {
         let cls_id = class.id;

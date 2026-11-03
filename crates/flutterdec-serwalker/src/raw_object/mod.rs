@@ -589,10 +589,10 @@ pub struct ExternalTypedData {
 
 #[derive(Default)]
 pub struct StackTrace {
-    pub async_link: u32, // StackTracePtr
-    pub code_array: u32, // ArrayPtr
+    pub async_link: u32,      // StackTracePtr
+    pub code_array: u32,      // ArrayPtr
     pub pc_offset_array: u32, // TypedDataPtr
-                         // pub expand_inlined: bool, [[NOT PRESENT IN FullAOT]]
+    // pub expand_inlined: bool, [[NOT PRESENT IN FullAOT]]
     pub extra_properties: HashMap<String, PropType>,
 }
 
@@ -612,9 +612,9 @@ pub struct RegExp {
 
 #[derive(Default)]
 pub struct WeakProperty {
-    pub key: u32, // ObjectPtr
+    pub key: u32,   // ObjectPtr
     pub value: u32, // ObjectPtr
-                  // pub next_seen_by_gc: u32, // WeakPropertyPtr [[NOT PRESENT IN FullAOT]]
+    // pub next_seen_by_gc: u32, // WeakPropertyPtr [[NOT PRESENT IN FullAOT]]
     pub extra_properties: HashMap<String, PropType>,
 }
 
