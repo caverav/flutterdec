@@ -5,7 +5,5 @@
 /out
 /.venv
 *.log
-/adapters/installed/*
-!/adapters/installed/.gitkeep
 __pycache__/
 *.pyc

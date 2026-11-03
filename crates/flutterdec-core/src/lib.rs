@@ -1,23 +1,39 @@
 #![recursion_limit = "512"]
 
 use anyhow::{bail, Context, Result};
+use flutterdec_adapter::model::{
+    Capabilities, CapabilityLevel, CodeRange, CompatibilityBinding, Diagnostic, DiagnosticCode,
+    DiagnosticSeverity, Domain, Function, FunctionId, InputRegion, InputRegionName, ObjectPool,
+    ObservedInput, Producer, ProducerTrust, ProgramModel, Provenance,
+};
+use flutterdec_adapter::primitives::Sha256Digest;
+use flutterdec_adapter::protocol::{BackendId, FallbackReason, RequestedBackend};
+use flutterdec_adapter::store::{self, EntryState, StoreEntry};
+use flutterdec_adapter::validate;
 use flutterdec_adapter::{
-    list_adapters, resolve_adapter_exec, run_adapter, AdapterInput, ProgramModel,
+    run_adapter, AdapterInput, AdapterRegionInput, ContainmentReport, HostAuthorization, HostError,
+    LibappSource, Limits,
 };
 use flutterdec_decompiler::{emit_program_with_runtime_stubs, PseudocodeArtifact};
 use flutterdec_disasm_arm64::{
     disassemble_program_with_priorities_and_package_hints, FunctionDisassembly,
-    FunctionPriorityBreakdown,
+    FunctionPriorityBreakdown, HintKind, HintOrigin, HintProvenance, ProgramHints,
 };
 use flutterdec_ir::{build_program_ir, FunctionIr};
+use flutterdec_loader::dart_profile::{ResolvedDartProfile, SdkAlias};
+use flutterdec_loader::identity::IdentityRejection;
+use flutterdec_loader::layout::{Layout, LayoutError};
+use flutterdec_loader::registry::RegistryError;
 use flutterdec_loader::{
     load_snapshot_bundle, load_snapshot_bundle_from_apk_session, ApkSession, SnapshotBundle,
 };
 use serde::Serialize;
 use serde_json::json;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 #[derive(Debug, Clone)]
 pub struct DecompileOptions {
@@ -45,6 +61,9 @@ pub struct DecompileOptions {
     pub function_scope: FunctionScope,
     pub app_packages: Vec<String>,
     pub adapter_backend: AdapterBackend,
+    /// Wall-clock deadline for one adapter invocation. `None` keeps the host
+    /// default.
+    pub adapter_timeout_seconds: Option<u64>,
     pub require_snapshot_hash_match: bool,
     pub analysis_profile: DecompileAnalysisProfile,
     pub engine_options: DecompileEngineOptions,
@@ -79,6 +98,8 @@ impl FunctionTarget {
 pub struct DiffOptions {
     pub out_dir: PathBuf,
     pub adapter_backend: AdapterBackend,
+    /// Wall-clock deadline for one adapter invocation, applied to each side.
+    pub adapter_timeout_seconds: Option<u64>,
     pub function_scope: FunctionScope,
     pub app_packages: Vec<String>,
     pub require_snapshot_hash_match: bool,
@@ -210,12 +231,12 @@ pub struct InfoOutput {
     pub libapp_path: String,
     pub arch: String,
     pub snapshot_hash: String,
-    /// Dart SDK version behind `snapshot_hash`, when the hash is tabulated.
+    /// Legacy display marker (`unverified` when an alias exists); SDK aliases
+    /// are provenance only and never compatibility selectors.
     pub dart_version: Option<String>,
-    /// Object-header tag encoding for that version (`CID_INT32`, `CID_SHIFT1`,
-    /// `OBJECT_HEADER`); the layout dimension most likely to break a parser.
+    pub dart_aliases: Option<Vec<SdkAlias>>,
+    /// Object-header tag encoding for the selected profile.
     pub dart_tag_style: Option<String>,
-    /// Whether the snapshot was built with compressed pointers, read from the
     /// features string in its header rather than inferred from the code. It
     /// decides the width of a reference field and the value of `kSmiBits`, so it
     /// selects which offset tables apply. `None` means the header did not parse
@@ -223,10 +244,42 @@ pub struct InfoOutput {
     pub compressed_pointers: Option<bool>,
     /// The snapshot's features string verbatim, when the header parsed.
     pub snapshot_features: Option<String>,
+    /// Whether a verified adapter artifact is installed for the selected record.
     pub adapter_installed: bool,
-    pub adapter_kind: Option<String>,
-    pub manifest_entry_present: Option<bool>,
-    pub adapter_snapshot_hash_match: Option<bool>,
+    /// Who produced the model and under what authorization. Always present:
+    /// core recovers the program itself when no adapter is authorized, so there
+    /// is always a provider to describe.
+    pub provider: Option<ProviderReport>,
+    /// What the operator asked for.
+    pub requested_backend: Option<String>,
+    /// What actually answered, as the protocol result reported it.
+    pub resolved_backend: Option<String>,
+    /// Why the two differ, when the request was `auto`.
+    pub backend_fallback_reason: Option<String>,
+    pub producer_id: Option<String>,
+    pub producer_trust: Option<String>,
+    pub compatibility_record_sha256: Option<String>,
+    pub registry_record_present: Option<bool>,
+    /// Which containment controls were established for the adapter child, as
+    /// the child itself reported them. Absent when no adapter ran.
+    pub adapter_containment: Option<ContainmentReport>,
+    /// Whether the snapshot identity came out of a real header. Replaces the v3
+    /// "does the adapter agree about the hash" check, which compared a host fact
+    /// against a string the adapter chose.
+    pub snapshot_identity_is_exact: Option<bool>,
+    /// Why no adapter was selected, when the identity gate refused the snapshot.
+    ///
+    /// `Some` means no registry record was selected, no executable was
+    /// resolved, and no adapter ran.
+    pub identity_rejection: Option<String>,
+    /// An adapter that was authorized, ran, and failed. Reported rather than
+    /// swallowed: `info` used to drop this on the floor and print a report that
+    /// looked like a snapshot with nothing in it.
+    pub adapter_error: Option<String>,
+    /// The stable category of `adapter_error`.
+    pub adapter_error_category: Option<String>,
+    /// Per-domain capability levels the model reported.
+    pub model_capabilities: Option<BTreeMap<String, String>>,
     pub compatibility_warnings: Option<Vec<String>>,
     pub function_count: Option<usize>,
     pub class_count: Option<usize>,
@@ -243,6 +296,172 @@ pub struct InfoOutput {
 pub struct PackageCount {
     pub package: String,
     pub functions: usize,
+}
+
+/// Everything an operator needs to know about who produced a model.
+///
+/// One struct rather than one set of fields per command, because `info`,
+/// `decompile` and each side of a `diff` all have to answer the same questions
+/// and used to answer them in three different shapes. Every field here is a
+/// host fact or a protocol fact; none of it is read out of a filename or a
+/// substring of adapter output.
+#[derive(Debug, Clone, Serialize)]
+pub struct ProviderReport {
+    /// What the operator asked for.
+    pub requested_backend: String,
+    /// What produced the model, as the protocol result named it, or `internal`
+    /// when core recovered the program itself.
+    pub resolved_backend: String,
+    /// Set when a pinned request was answered by something else. Always `false`
+    /// for `auto`, which pins nothing.
+    pub backend_mismatch: bool,
+    /// Why a producer used a backend other than the one it prefers.
+    pub backend_fallback_reason: Option<String>,
+    /// Why no adapter was executed at all. `Some` means zero adapter processes
+    /// existed for this input.
+    pub core_fallback_reason: Option<String>,
+    /// The condition behind `core_fallback_reason`, verbatim.
+    pub core_fallback_detail: Option<String>,
+    /// The stable sentence explaining what that fallback costs.
+    pub core_fallback_effect: Option<String>,
+    pub adapter_executed: bool,
+    pub adapter_exec_path: Option<String>,
+    pub producer_id: String,
+    pub producer_version: String,
+    pub producer_artifact_sha256: String,
+    pub producer_trust: String,
+    pub registry_record_present: bool,
+    pub compatibility_record_sha256: Option<String>,
+    pub parser_family_id: Option<String>,
+    pub profile_id: Option<String>,
+    pub profile_sha256: Option<String>,
+    pub artifact_id: Option<String>,
+    pub artifact_sha256: Option<String>,
+    /// The machine this ran on, which is not the machine the snapshot targets.
+    pub host_os: String,
+    pub host_arch: String,
+    /// The architecture the snapshot's code was generated for, from the ELF
+    /// container rather than from adapter output.
+    pub target_arch: String,
+    pub snapshot_identity_is_exact: bool,
+    /// Why the identity may not authorize an adapter, when it may not.
+    pub identity_rejection: Option<String>,
+    /// Per-domain capability levels the model reported.
+    pub capabilities: BTreeMap<String, String>,
+    /// Which containment controls were established for the adapter child, as
+    /// the child itself reported them. Absent when no adapter ran.
+    pub containment: Option<ContainmentReport>,
+    pub warnings: Vec<String>,
+}
+
+/// A stable token for what went wrong, for operators matching on outcomes.
+///
+/// The message is for humans and may change. This may not: it is the difference
+/// between a script retrying a timeout and a script reporting a corrupt store.
+pub fn error_category(error: &anyhow::Error) -> &'static str {
+    for cause in error.chain() {
+        if let Some(host) = cause.downcast_ref::<HostError>() {
+            return host_error_category(host);
+        }
+        if let Some(registry) = cause.downcast_ref::<RegistryError>() {
+            return registry_error_category(registry);
+        }
+        if let Some(store) = cause.downcast_ref::<store::StoreError>() {
+            return store_error_category(store);
+        }
+        if let Some(layout) = cause.downcast_ref::<LayoutError>() {
+            return layout_error_category(layout);
+        }
+        if cause.downcast_ref::<IdentityRejection>().is_some() {
+            return "identity_rejected";
+        }
+    }
+    "unclassified"
+}
+
+fn host_error_category(error: &HostError) -> &'static str {
+    match error {
+        HostError::IdentityRejected(_) => "identity_rejected",
+        HostError::RecordInvalid(_) => "record_invalid",
+        HostError::RecordDigestMismatch { .. } => "record_digest_mismatch",
+        HostError::UnsupportedMajors { .. } => "unsupported_majors",
+        HostError::IdentityRecordMismatch { .. } => "identity_record_mismatch",
+        HostError::TargetMismatch { .. } => "target_mismatch",
+        HostError::FeatureMismatch { .. } => "feature_mismatch",
+        HostError::HostVariantMismatch { .. } => "host_variant_mismatch",
+        HostError::VariantNotInRecord { .. } => "variant_not_in_record",
+        HostError::ArtifactPathRejected(_) => "artifact_path_rejected",
+        HostError::ArtifactNotExecutable(_) => "artifact_not_executable",
+        HostError::ArtifactDigestMismatch { .. } => "artifact_digest_mismatch",
+        HostError::NotInstalled { .. } => "adapter_not_installed",
+        HostError::ProfileRejected(_) => "profile_rejected",
+        HostError::ProducerMismatch(_) => "producer_mismatch",
+        HostError::BindingMismatch(_) => "binding_mismatch",
+        HostError::InputRejected(_) => "input_rejected",
+        HostError::RequestRejected(_) => "request_rejected",
+        HostError::OutputHandleRejected(_) => "output_handle_rejected",
+        HostError::ImageNotSealed(_) => "image_not_sealed",
+        HostError::Workspace(_) => "workspace_failed",
+        HostError::Spawn(_) => "spawn_failed",
+        HostError::Timeout { .. } => "adapter_timeout",
+        HostError::OutputLimitExceeded { .. } => "adapter_output_limit_exceeded",
+        HostError::Crashed { .. } => "adapter_crashed",
+        HostError::NoResult { .. } => "adapter_no_result",
+        HostError::DocumentTooLarge { .. } => "adapter_document_too_large",
+        HostError::MalformedDocument { .. } => "adapter_malformed_document",
+        HostError::ResultMismatch(_) => "adapter_result_mismatch",
+        HostError::ModelPathMismatch { .. } => "adapter_model_path_mismatch",
+        HostError::AdapterFailed { .. } => "adapter_reported_failure",
+        HostError::ModelRejected(_) => "adapter_model_rejected",
+        HostError::ContainmentUnreported => "containment_unreported",
+        HostError::Io(_) => "adapter_io",
+    }
+}
+
+/// Installing and inspecting the store, which fails for its own reasons: the
+/// registry authorizes nothing for the hash, the operator's bytes are not the
+/// authorized bytes, or a publish step was cut short and left nothing behind.
+fn store_error_category(error: &store::StoreError) -> &'static str {
+    match error {
+        store::StoreError::InvalidInput(_) => "store_invalid_input",
+        store::StoreError::NoRecord(_) => "store_no_record",
+        store::StoreError::Ambiguous(_) => "store_ambiguous",
+        store::StoreError::Incompatible(_) => "store_incompatible",
+        store::StoreError::Source(_) => "store_artifact_source_rejected",
+        store::StoreError::DigestMismatch { .. } => "store_artifact_digest_mismatch",
+        store::StoreError::Containment(_) => "store_path_rejected",
+        store::StoreError::Profile(_) => "store_profile_rejected",
+        store::StoreError::Malformed(_) => "store_state_malformed",
+        store::StoreError::Io(_) => "store_io",
+        store::StoreError::Injected(_) => "store_install_interrupted",
+    }
+}
+
+/// Deciding where the packaged data and the writable store are, which fails
+/// before any command runs when the binary was moved out of its prefix.
+fn layout_error_category(error: &LayoutError) -> &'static str {
+    match error {
+        LayoutError::Executable(_) => "layout_executable_unknown",
+        LayoutError::Override { .. } => "layout_data_dir_override_invalid",
+        LayoutError::NoDataDirectory { .. } => "layout_no_data_directory",
+        LayoutError::NoDataHome { .. } => "layout_no_data_home",
+    }
+}
+
+fn registry_error_category(error: &RegistryError) -> &'static str {
+    match error {
+        RegistryError::Malformed(_) => "registry_malformed",
+        RegistryError::UnsupportedVersion(_) => "registry_unsupported_version",
+        RegistryError::Identity(_) => "identity_rejected",
+        RegistryError::NoRecord(_) => "registry_no_record",
+        RegistryError::TargetMismatch { .. } => "registry_target_mismatch",
+        RegistryError::FeatureMismatch { .. } => "registry_feature_mismatch",
+        RegistryError::Ambiguous(_) => "registry_ambiguous",
+        RegistryError::InvalidRecord(_) => "registry_invalid_record",
+        RegistryError::Profile(_) => "registry_profile_rejected",
+        RegistryError::ArtifactAbsent(_) => "registry_artifact_absent",
+        RegistryError::Artifact(_) => "registry_artifact_rejected",
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -283,8 +502,22 @@ pub struct DiffReport {
     pub old_snapshot_hash_match: bool,
     pub new_snapshot_hash_match: bool,
     pub require_snapshot_hash_match: bool,
-    pub old_dart_version: String,
-    pub new_dart_version: String,
+    pub old_dart_aliases: Vec<SdkAlias>,
+    pub new_dart_aliases: Vec<SdkAlias>,
+    /// Who produced each side. Reported per side rather than once, because the
+    /// two sides are selected independently and a diff between an adapter model
+    /// and a core-recovered one compares unlike things.
+    pub old_provider: ProviderReport,
+    pub new_provider: ProviderReport,
+    /// Set when the two sides were not produced the same way, which is the one
+    /// condition that makes the counts below misleading rather than merely
+    /// incomplete.
+    pub provider_mismatch: bool,
+    /// Functions with no name, owner or library on each side. An address alone
+    /// is not stable across builds, so these are counted and excluded rather
+    /// than collapsed into one descriptor that reads as "unchanged".
+    pub old_uncomparable_function_count: usize,
+    pub new_uncomparable_function_count: usize,
     pub function_scope: String,
     pub app_packages: Vec<String>,
     pub old_function_count: usize,
@@ -300,6 +533,7 @@ pub struct DiffReport {
 }
 
 include!("pipeline/helpers.rs");
+include!("pipeline/fallback.rs");
 include!("pipeline/model.rs");
 include!("pipeline/quality.rs");
 include!("pipeline/bootflow_hints.rs");

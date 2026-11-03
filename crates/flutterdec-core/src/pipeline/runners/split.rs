@@ -243,8 +243,10 @@ fn pieces(
         let va = first.va;
         out.push(FunctionDisassembly {
             function_id: *next_id,
-            function_name: format!("sub_{va:x}"),
-            owner_class: String::new(),
+            // A split tail is a code range nobody named. It stays unnamed;
+            // `sub_<va>` here was the only reason the artifact looked named.
+            function_name: None,
+            owner_class: None,
             entry_va: va,
             size: byte_size(&tail),
             instructions: tail,
@@ -282,8 +284,8 @@ mod tests {
     fn two_functions() -> FunctionDisassembly {
         FunctionDisassembly {
             function_id: 7,
-            function_name: "declaredName".to_string(),
-            owner_class: "SomeClass".to_string(),
+            function_name: Some("declaredName".to_string()),
+            owner_class: Some("SomeClass".to_string()),
             entry_va: 0x1000,
             size: 24,
             instructions: vec![
@@ -306,17 +308,21 @@ mod tests {
 
         assert_eq!(out[0].entry_va, 0x1000);
         assert_eq!(out[0].instructions.len(), 3);
-        assert_eq!(out[0].function_name, "declaredName", "the first piece keeps it");
+        assert_eq!(
+            out[0].function_name.as_deref(),
+            Some("declaredName"),
+            "the first piece keeps it"
+        );
         assert_eq!(out[0].size, 12, "size comes from the piece, not the record");
 
         assert_eq!(out[1].entry_va, 0x100c);
         assert_eq!(out[1].instructions.len(), 3);
         assert_eq!(
-            out[1].function_name, "sub_100c",
+            out[1].function_name, None,
             "a piece the model never declared must not take the declared name"
         );
         assert!(
-            out[1].owner_class.is_empty(),
+            out[1].owner_class.is_none(),
             "nor the declared owner class, which would be a wrong class for it"
         );
         assert_ne!(out[0].function_id, out[1].function_id, "ids must stay unique");
@@ -341,8 +347,8 @@ mod tests {
     fn a_candidate_the_preceding_piece_reaches_is_refused() {
         let record = FunctionDisassembly {
             function_id: 7,
-            function_name: "declaredName".to_string(),
-            owner_class: String::new(),
+            function_name: Some("declaredName".to_string()),
+            owner_class: None,
             entry_va: 0x1000,
             size: 28,
             instructions: vec![

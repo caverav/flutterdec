@@ -2308,7 +2308,8 @@ carried. Here the schema is the tighter constraint:
 | pool entries | base required, semantic optional | 19,872 carved strings, `source=internal`, confidence 0.4; target VA **0**, owner class **0** | 19,156; target VA **0**, owner **0** |
 | pool geometry | optional; required to claim hardware indices | **absent** | **absent** |
 
-`ClassInfo` in `schemas/adapter.schema.json:36-48` defines exactly `id`, `name`, `super`,
+`ClassInfo` in the then-current `schemas/adapter.schema.json` (removed with the v4
+cutover) defined exactly `id`, `name`, `super`,
 `lib`, and the Rust deserializer mirrors that surface with no class-field, field-offset or
 method-table member. An exhaustive recursive raw-JSON audit of both captured models found
 only `classes[].{id,lib,name,super}`: no differently-spelled or nested field list, so this
@@ -2384,7 +2385,8 @@ not hardware-space.
 PR #85, "resolve object pool references in the real index space, add r2flutter backend",
 is **already in the evaluated baseline**: its commit `36b4bc5` passes
 `git merge-base --is-ancestor 36b4bc5 2619ec7`. The named branch is an 11-commit
-continuation beyond it. The implementation emits `pool_geometry` only when r2flutter
+continuation beyond it. The implementation emits pool geometry (`object_pool.geometry` in
+ProgramModel v4, `pool_geometry` at the time of this measurement) only when r2flutter
 reconstructs it and otherwise empties the semantic hints rather than guessing, which is why
 geometry is null here: **the mechanism is landed but unfed.** With radare2 and r2flutter
 absent from this host, the addressable prize is 0 of 70,635 and 0 of 84,205 `poolOff`

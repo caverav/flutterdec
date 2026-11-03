@@ -9,3 +9,6 @@ flutterdec-adapter = { path = "../flutterdec-adapter" }
 serde.workspace = true
 capstone.workspace = true
 regex.workspace = true
+
+[dev-dependencies]
+flutterdec-loader = { path = "../flutterdec-loader" }

@@ -1,13 +1,12 @@
-struct SyntheticHintInput<'a> {
-    decoded_kind: &'a str,
-    selector: &'a str,
-    target_va: Option<u64>,
-    owner_class: &'a str,
-    library_uri: &'a str,
-    value: &'a str,
-    confidence: Option<f64>,
-    source: Option<&'a str>,
-}
+// Selector classification shared by every enrichment pass.
+//
+// These predicates say what a selector *looks* like. They do not say what it
+// is, and nothing here writes into the adapter's model: the callers turn a
+// match into a [`Hint`], which lives in its own record space with its own
+// provenance. The previous version of this file appended synthetic
+// `ObjectPoolEntry` records at `index = object_pool.len()`, which is how
+// derived guesses ended up sharing an index space with hardware pool slots.
+use flutterdec_disasm_arm64::Hint;
 
 fn normalize_method_selector(name: &str) -> String {
     let tail = name
@@ -71,8 +70,7 @@ fn is_bootstrap_selector(selector: &str) -> bool {
 }
 
 fn owner_is_bootstrap_context(owner_lower: &str) -> bool {
-    owner_lower == "global"
-        || owner_lower.contains("binding")
+    owner_lower.contains("binding")
         || owner_lower.contains("bootstrap")
         || owner_lower.contains("engine")
         || owner_lower.contains("jni")
@@ -85,75 +83,115 @@ fn library_is_bootstrap_context(library_lower: &str) -> bool {
         || library_lower.contains("/engine")
 }
 
-fn synthetic_hint_key(
-    decoded_kind: &str,
-    selector: &str,
-    target_va: Option<u64>,
-    owner_class: &str,
-    library_uri: &str,
-    value: &str,
-) -> String {
-    let target = target_va
-        .map(|va| format!("0x{va:x}"))
-        .unwrap_or_else(|| "none".to_string());
-    format!(
-        "{}|{}|{}|{}|{}|{}",
-        decoded_kind.to_ascii_lowercase(),
-        selector.to_ascii_lowercase(),
-        target,
-        owner_class.to_ascii_lowercase(),
-        library_uri.to_ascii_lowercase(),
-        value.to_ascii_lowercase()
-    )
+/// Everything one enrichment pass knows about a candidate before deciding
+/// whether it is worth a hint.
+pub(crate) struct HintCandidate<'a> {
+    pub(crate) origin: HintOrigin,
+    pub(crate) provenance: HintProvenance,
+    pub(crate) selector: &'a str,
+    pub(crate) target_va: Option<u64>,
+    pub(crate) owner_class: Option<&'a str>,
+    pub(crate) library_uri: Option<&'a str>,
+    pub(crate) detail: &'a str,
 }
 
-fn collect_existing_bootflow_hint_keys(
-    model: &flutterdec_adapter::ProgramModel,
-) -> std::collections::HashSet<String> {
-    model.object_pool
-        .iter()
-        .filter_map(|entry| {
-            Some(synthetic_hint_key(
-                entry.decoded_kind.as_deref()?,
-                entry.selector.as_deref()?,
-                entry.target_va,
-                entry.owner_class.as_deref().unwrap_or(""),
-                entry.library_uri.as_deref().unwrap_or(""),
-                &entry.value,
-            ))
-        })
-        .collect()
+pub(crate) fn push_hint(hints: &mut ProgramHints, kind: HintKind, c: &HintCandidate<'_>) -> bool {
+    hints.push(Hint {
+        kind,
+        origin: c.origin,
+        provenance: c.provenance,
+        selector: c.selector.to_string(),
+        target_va: c.target_va,
+        owner_class: c.owner_class.map(str::to_string),
+        library_uri: c.library_uri.map(str::to_string),
+        detail: c.detail.to_string(),
+    })
 }
 
-fn push_synthetic_hint(
-    model: &mut flutterdec_adapter::ProgramModel,
-    seen: &mut std::collections::HashSet<String>,
-    hint: &SyntheticHintInput<'_>,
-) -> bool {
-    let key = synthetic_hint_key(
-        hint.decoded_kind,
-        hint.selector,
-        hint.target_va,
-        hint.owner_class,
-        hint.library_uri,
-        hint.value,
-    );
-    if seen.contains(&key) {
-        return false;
+/// The hint kinds a selector's shape supports, in the context it was found in.
+///
+/// Returns every kind that applies rather than the first: `onNewIntent` on an
+/// activity is both a deep-link handler and an activity callback, and collapsing
+/// that to one loses a seed category.
+pub(crate) fn hint_kinds_for_selector(
+    raw_selector: &str,
+    owner_class: Option<&str>,
+    library_uri: Option<&str>,
+) -> Vec<HintKind> {
+    let selector = normalize_method_selector(raw_selector);
+    if selector.is_empty() {
+        return Vec::new();
     }
-    seen.insert(key);
-    let next_index = model.object_pool.len() as u64;
-    model.object_pool.push(flutterdec_adapter::ObjectPoolEntry {
-        index: next_index,
-        kind: "String".to_string(),
-        value: hint.value.to_string(),
-        decoded_kind: Some(hint.decoded_kind.to_string()),
-        selector: Some(hint.selector.to_string()),
-        target_va: hint.target_va,
-        owner_class: Some(hint.owner_class.to_string()),
-        library_uri: Some(hint.library_uri.to_string()),
-        confidence: hint.confidence,
-        source: hint.source.map(str::to_string),
-    });
-    true
+    let owner_lower = owner_class.unwrap_or("").to_ascii_lowercase();
+    let library_lower = library_uri.unwrap_or("").to_ascii_lowercase();
+
+    let mut out = Vec::new();
+    if is_main_like_selector(&selector) {
+        out.push(HintKind::EntryPoint);
+        out.push(HintKind::BootMain);
+    }
+    if is_runapp_selector(&selector) {
+        out.push(HintKind::EntryPoint);
+        out.push(HintKind::BootRunApp);
+    }
+    if is_deeplink_selector(&selector) {
+        out.push(HintKind::DeepLinkHandler);
+    }
+    if is_activity_handler_selector(&selector) {
+        // A lifecycle name only means an activity callback in an activity-shaped
+        // context. `onResume` on a plain Dart object is not one.
+        let activity_context = matches!(selector.as_str(), "onnewintent" | "handleintent")
+            || owner_lower.contains("activity")
+            || owner_lower.contains("flutterjni")
+            || library_lower.contains("activity")
+            || library_lower.contains("android")
+            || library_lower.starts_with("package:flutter/src/embedding");
+        if activity_context {
+            out.push(HintKind::ActivityHandler);
+        }
+    }
+    if is_bootstrap_selector(&selector) {
+        let bootstrap_context = selector != "ensureinitialized"
+            || owner_is_bootstrap_context(&owner_lower)
+            || library_is_bootstrap_context(&library_lower);
+        if bootstrap_context {
+            out.push(HintKind::BootstrapInit);
+        }
+    }
+    out.dedup();
+    out
+}
+
+/// Hints derived from the names the adapter already recovered.
+///
+/// This is the replacement for the producer-side "bootflow candidate" pool
+/// entries: the same pattern matching, run by the host, over model records, into
+/// records that are explicitly heuristic and explicitly not pool entries.
+pub(crate) fn collect_model_name_hints(
+    model: &flutterdec_adapter::model::ProgramModel,
+    hints: &mut ProgramHints,
+) -> usize {
+    let mut added = 0;
+    for function in &model.functions {
+        let Some(name) = function.name_text() else {
+            continue;
+        };
+        let owner = model.owner_name(function);
+        let library = model.owner_library_uri(function);
+        for kind in hint_kinds_for_selector(name, owner, library) {
+            let candidate = HintCandidate {
+                origin: HintOrigin::ModelNamePattern,
+                provenance: HintProvenance::Heuristic,
+                selector: name,
+                target_va: Some(function.code.start_va),
+                owner_class: owner,
+                library_uri: library,
+                detail: "selector shape of a recovered function name",
+            };
+            if push_hint(hints, kind, &candidate) {
+                added += 1;
+            }
+        }
+    }
+    added
 }

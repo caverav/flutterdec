@@ -76,7 +76,9 @@ sequenceDiagram
 1. `info`
 - fast metadata path
 - loader always runs
-- adapter runs only if installed for the detected hash
+- the snapshot identity is gated first: a non-FullAOT, scanned-hash, or unsupported-target
+  snapshot reports why it was refused and no manifest, path, or adapter is touched
+- adapter runs only if the identity cleared that gate and one is installed for the hash
 - APK inputs also run Android startup evidence extraction from `classes*.dex` and surface summary counts in JSON output
 - no disassembly, no IR, no pseudocode writing
 
@@ -118,9 +120,9 @@ sequenceDiagram
 - VM-internal constructor selectors such as `_Closure` and `_TypeParameter` are rewritten to runtime constructor paths (`dart_vm.*.new`)
 - if selector evidence exists but no known standard mapping applies, indirect callsites use readable selector fallback forms: `dispatch.<selector>(...)` for general selectors and `<Selector>.new(...)` for constructor-like selectors (annotated with `heuristic: constructor-like selector`)
 - selector evidence for indirect calls is inferred from both call arguments and indirect target expressions
-- selector resolution also uses adapter pool metadata (`selector`, `owner_class`, `library_uri`) to build deterministic owner-qualified semantic paths
-- owner-only metadata (`selector` + `owner_class` without `library_uri`) can still deterministically rewrite to owner-qualified call paths (`owner:Class.method`)
-- missing selector/owner/library pool metadata can be backfilled from function ownership metadata (`target_va` -> function/class/library) before semantic resolution
+- selector resolution also uses pool metadata to build deterministic owner-qualified semantic paths; in ProgramModel v4 a pool entry carries only `kind`, `value`, and `target_va`, so owner and library come from the function that `target_va` points at, resolved through typed `ClassId`/`LibraryId` edges
+- owner-only metadata (a selector plus a resolved owning class whose library is unknown) can still deterministically rewrite to owner-qualified call paths (`owner:Class.method`)
+- where the model resolves no owner at all, host-side `ProgramHints` can supply a selector or owner; a hint never overrides a model fact
 - if pool metadata carries `target_va` and symbol resolution for that VA is non-generic, indirect callsites can rewrite through that symbol path with `target_va` traceability comments
 - selector extraction ignores file/URI/path-like strings to reduce false-positive standard-call rewrites
 - unresolved `dispatchTarget` callsites prefer semantic library invoke names when URI evidence exists (for example `flutter.widgets.invoke(...)` or `spotube.models.connect.load.invoke(...)`), otherwise use callable target form `<resolvedTarget>(...)` when the target expression is known, and only then use `dispatch.invoke(...)` fallback to reduce raw `dynamicCall(...)` noise
@@ -134,6 +136,8 @@ sequenceDiagram
 
 3. `adapter`
 - management path for adapter installation and listing
+- installs into the writable adapter store, verified against the compatibility registry
+- reports a verified state per record rather than whether a file exists
 - does not inspect binaries directly
 
 4. `map-symbols`
@@ -164,9 +168,12 @@ This table shows what each stage consumes and produces.
 
 This is the effective high-level control flow in `run_decompile`:
 
-```text
 bundle = load_snapshot_bundle(input)
-model = run_adapter(resolve_adapter_exec(bundle.hash), bundle)
+key = bundle.identity.exact_selection_key()   // FullAOT/header gate
+record = load_registry("adapters/registry.json").select(key)
+profile = verify_profile(record.profile, record.profile.sha256)
+artifact = verify_host_variant(record.artifact, host_os, host_arch)
+model = run_adapter(artifact, bundle, record, profile)
 scoped_model = apply_scope_filter(model, function_scope, app_package_filters)
 selected_model = apply_target_filter(scoped_model, model, target?)  // optional --target id/va
 
@@ -215,7 +222,7 @@ Important detail:
 - `crates/flutterdec-ir`: LLIR construction and CFG recovery
 - `crates/flutterdec-decompiler`: structured pseudo Dart emission and readability passes
 - `adapters/python/adapter_template.py`: default adapter implementation
-- `schemas/adapter.schema.json`: adapter JSON contract schema
+- `schemas/program-model-v4.schema.json`: generated JSON Schema for ProgramModel v4
 
 ## Data models
 
@@ -246,47 +253,265 @@ SnapshotBundle {
 }
 ```
 
-### ProgramModel
+### ProgramModel v4
 
-Produced by adapter. Main fields:
+Produced by the adapter. v4 is the only accepted contract: `ProgramModel::from_json`
+rejects a document carrying `schema_version` as a legacy v2/v3 model, and there is no
+migration path. Fields:
 
-- `schema_version`
-- `adapter_kind`
-- `dart_version`
-- `snapshot_hash`
-- `arch`
-- `libraries[]`
-- `classes[]`
-- `functions[]`
-- `object_pool[]`
-- `pool_geometry` (optional; see "Pool index space" below)
+- `model_version` (always 4)
+- `producer` (id, version, artifact SHA-256, host-assigned trust)
+- `input` (the host's snapshot identity plus the region table with digests)
+- `compatibility` (record digest, parser family, profile id and digest)
+- `capabilities` (per-domain `complete` / `partial` / `unavailable`)
+- `libraries[]`, `classes[]`, `functions[]`
+- `object_pool` (index space, optional geometry, entries)
+- `diagnostics[]`
+- `extensions` (the only object that accepts undeclared keys)
 
-Schema compatibility:
+Four properties are what separate it from v3:
 
-- v2 and v3 are accepted by core
-- v3 adds richer semantic metadata while preserving v2 compatibility defaults
+- **Unknown is representable.** A function name is `Option`, a class's library is
+  `Option`, a superclass edge is `Option`. A function whose name was not recovered has
+  no name, rather than being called `sub_1234`.
+- **Every fact carries provenance.** `exact`, `derived`, or `heuristic`, and only a
+  heuristic fact may carry a `confidence`. Per-domain capabilities say how much of a
+  domain was recovered, and validation rejects a model whose capability claims
+  contradict its contents.
+- **The host decides, the adapter reports.** Identity, producer, and compatibility are
+  compared against what the host selected. An adapter cannot promote its own trust,
+  change which snapshot it was given, or claim a different compatibility record.
+- **Identity is a gate, not a label.** A snapshot that cannot produce an exact selection
+  key never reaches manifest loading, executable resolution, or a process spawn; it is
+  refused with the typed rejection rather than run under a lower trust level. Every
+  producer record that exists therefore says `local`.
 
-Minimal example:
+Minimal example, from a producer that recovered code ranges and nothing else:
 
 ```json
 {
-  "schema_version": 3,
-  "adapter_kind": "dynamic_snapshot_string_model_v1",
-  "dart_version": "unknown",
-  "snapshot_hash": "63f9...abcd",
-  "arch": "arm64",
-  "libraries": [{"id": 0, "uri": "package:app/main.dart", "name_display": "package:app/main.dart"}],
-  "classes": [{"id": 0, "name": "Global", "super": "Object", "lib": "package:app/main.dart"}],
-  "functions": [{"id": 0, "name": "sub_656c1c", "owner_class": "Global", "entry_va": 6640668, "size": 320, "code_section_va": 6635520, "name_kind": "placeholder"}],
-  "object_pool": [{"index": 0, "kind": "String", "value": "package:app/main.dart", "decoded_kind": "LibraryUri", "library_uri": "package:app/main.dart", "confidence": 0.4, "source": "internal"}]
+  "model_version": 4,
+  "producer": {"id": "flutterdec-local-python", "version": "unknown", "artifact_sha256": "9f2c...", "trust": "local"},
+  "input": {
+    "identity": {"hash": "63f9...", "hash_source": "header", "kind": "full_aot", "target_arch": "arm64",
+                 "features": {"raw": "product arm64 compressed-pointers", "normalized": ["arm64", "compressed-pointers", "product"]},
+                 "pointer_compression": "compressed"},
+    "regions": [{"region": "isolate_instructions", "size": 8192, "sha256": "1a2b...", "virtual_address": 6635520, "executable": true}]
+  },
+  "compatibility": {"record_sha256": "44de...", "parser_family_id": "flutterdec-local-python", "profile_id": "3.9.0", "profile_sha256": "7b10..."},
+  "capabilities": {"libraries": "partial", "classes": "unavailable", "class_relationships": "unavailable",
+                   "functions": "partial", "function_names": "unavailable", "object_pool": "partial", "pool_index_space": "unavailable"},
+  "libraries": [{"id": 0, "uri": "package:app/main.dart", "display_name": null, "provenance": "heuristic"}],
+  "classes": [],
+  "functions": [{"id": 0, "name": null, "owner": null, "code": {"start_va": 6640668, "size": 320},
+                 "code_section_va": 6635520, "provenance": "heuristic"}],
+  "object_pool": {"index_space": "ordinal", "geometry": null,
+                  "entries": [{"index": 0, "kind": "string", "value": "package:app/main.dart",
+                               "target_va": null, "provenance": "heuristic", "confidence": null}]},
+  "diagnostics": [{"code": "domain_not_recovered", "severity": "warning", "subject": "function_names",
+                   "message": "no function names are recoverable from instruction bytes alone"}],
+  "extensions": {}
 }
 ```
+
+### Adapter protocol v1
+
+One adapter run is one process invocation. The host writes the four snapshot regions
+into a scratch directory along with a request document, runs the adapter there, and
+reads back a result document plus the model.
+
+The request carries the protocol and model majors, the host's identity, the producer
+and compatibility records to echo, the requested backend, one relative
+`InputHandle` per region (path, size, SHA-256, load address), and the output path.
+Snapshot bytes are never embedded: a request for a half-gigabyte snapshot is a few
+hundred bytes. There is no session, no JSON-RPC lifecycle, and no persistent worker.
+
+The result carries the same two majors, a structured status (`ok` / `unsupported` /
+`failed`), the model path on success, a stable error code on failure, the backend that
+actually ran, an optional fallback reason, and diagnostics.
+
+Backends are a closed vocabulary of three tokens - `internal`, `blutter`, `r2flutter` -
+and the request's `requested_backend` and the result's `resolved_backend` spell them the
+same way, so a producer can answer with the token it was handed. `requested_backend` is
+additionally allowed to be `auto`, which is the only case in which a producer may pick a
+backend and the only case in which `fallback_reason` may be set: a pinned backend fails
+rather than substituting.
+
+### When no adapter is authorized
+
+Selection can end without an adapter to run, and there are five ways it does:
+the operator pinned `internal`, the identity gate refused the snapshot, no
+compatibility record covers it, a record exists but not for this target or
+feature tuple (or two records claim it), or a record authorizes an artifact the
+store ledger does not record as installed for it. None of those is a fact about a broken installation, and none
+of them is a reason to stop.
+
+Core recovers what instruction bytes can support: code ranges from AArch64 frame
+prologues (`stp x29, x30, [sp, ...]`) and from targets reached by two or more
+`bl` sites, each range bounded by the next start and capped at 32 KiB. Every one
+is `heuristic` and carries no name and no owner, because a prologue is evidence
+of a boundary and of nothing else. `libraries`, `classes`,
+`class_relationships`, `function_names`, `object_pool` and `pool_index_space`
+stay `unavailable`, each with a diagnostic naming why, so nothing downstream can
+mistake a scan for a parse. The model has no compatibility binding at all
+(`compatibility: null`): writing one would mean inventing a record digest, a
+parser family and a profile that no registry ever selected. It goes through the
+same `validate` an adapter model does.
+
+The conditions that stay loud are the ones about the installation rather than
+about the snapshot: a malformed registry, two records claiming one snapshot, a
+record that fails its own invariants, a profile that does not verify, an
+artifact whose bytes are not the authorized bytes, and any adapter that was
+authorized, spawned, and then failed. Ambiguity belongs on that list rather than
+with the unsupported-snapshot reasons: it says the registry cannot name a parser
+for a snapshot the host may well have one for, so recovering heuristically would
+answer a broken install with a plausible-looking result.
+A pinned external backend is also refused rather than answered, for the same
+reason the protocol refuses substitution inside a run.
+
+### Adapter execution containment
+
+An adapter is a third-party executable, so the host treats one run as a bounded,
+one-shot job.
+
+Everything is decided before a process exists. Before `run_adapter` spawns anything it
+re-derives, from the compatibility record rather than from the caller: the record's own
+SHA-256, the protocol and model majors, the snapshot hash, the target architecture, the
+canonical feature tuple, the host artifact variant, the profile digest, and the artifact
+digest and size. It also requires the executable to be a regular file with an execute
+bit, to live inside the adapter store, and to be exactly the path the record names; the
+producer record and compatibility binding to follow from the record; and every snapshot
+region and the output handle to be usable. Each refusal is a distinct `HostError`
+variant, and the ones that mean "no process was created" answer `true` to
+`HostError::is_pre_spawn`.
+
+It also requires the store ledger to hold an installation for *this* record on this
+host. A file that satisfies every check above is still only a file: two records can name
+one artifact path with one digest — the shipped registry has exactly that pair — so
+installing for one of them leaves bytes on disk that the other's checks all pass.
+`<store>/store.json` is what records which record an install was authorized under, and it
+is the same ledger `adapter list` reports from, so a record the listing calls
+`unavailable` cannot execute and a record it calls `verified` is not refused for want of
+an install. The refusal is `HostError::NotInstalled`, carrying the `EntryState` the
+listing would print. Digest verification is unchanged and still runs: the ledger says an
+install happened, the digest says the bytes are the authorized ones, and both are
+required.
+
+The bytes that run are the bytes that were checked, and a mode bit is not what makes
+that true: the owner of a `0500` file can `chmod` it back, rename it, unlink it, or drop
+a different file at the same name. So the store artifact is read once, digested from that
+buffer, and turned into an executable inode the host holds open for the rest of the run.
+
+On Linux that inode is an anonymous, write-sealed `memfd` that never had a name, and the
+child is created from the descriptor with `execveat(AT_EMPTY_PATH)`, which resolves the
+inode and never a path. The seals (`F_SEAL_WRITE`, `F_SEAL_GROW`, `F_SEAL_SHRINK`,
+`F_SEAL_SEAL`) are added and then read back with `F_GET_SEALS` before anything is
+executed, and a host that cannot create the anonymous file, write all of it, or prove the
+whole seal set refuses the run with `HostError::ImageNotSealed` before a process exists.
+It does not quietly execute a named file instead: that would withdraw the guarantee
+exactly on the kernels — old, or seccomp-restricted — where it is worth the most. There
+is no invocation copy for a same-user process to find, `chmod`, rename, or overwrite, and
+scripts still work because the kernel hands a `#!` interpreter `/dev/fd/N`, which is the
+held descriptor and not a name on any filesystem, so the descriptor is deliberately left
+open across the `exec`.
+
+Darwin cannot execute a descriptor at all. `/dev/fd/N` there is not a second name for the
+file behind it: it is a node whose reported mode is the *descriptor's* access mode, so it
+never carries an execute bit, and `execve` on it is refused with `EACCES` whether the file
+is still linked or not. There is no `fexecve` and no `execveat`. So there the image is a
+file created `O_EXCL` at mode `0500` inside the private invocation directory, written,
+reopened read-only, and then made immutable through that descriptor rather than through
+its name. While the flag is set the kernel refuses a write, a truncation, a rename and an
+unlink through the name, so the name and the bytes stay welded together for the whole run;
+the freeze is lifted through the same descriptor when the workspace is removed. Failing to
+establish it is the same typed pre-spawn refusal, with the name taken back out.
+
+That is less than Linux gets, because the flag is a user flag and its owner may clear it —
+and a same-user attacker is the owner. Two things follow. The child re-checks, immediately
+before `execve` and after every containment control is in place, that the pathname it is
+about to execute still resolves to the descriptor the host has held since it verified the
+bytes (same device, same inode) and that the freeze is still on it. A name that has been
+re-pointed or thawed is not executed: the run ends as `HostError::ImageNotSealed` with no
+process created and the workspace removed as usual. The check allocates nothing, takes no
+locks, and is two `stat` calls.
+
+What that reaches is narrower than it looks, and the exact edge matters. Comparing device
+and inode against the held descriptor catches every attack that puts a different object at
+the name: unlink-and-replace, rename, a swap of one file for another, anything at all that
+moves the inode. Re-reading the flag catches a name left thawed. What neither half catches
+is an owner who clears the flag, rewrites the bytes through the same inode, and sets the
+flag again: afterwards the device matches, the inode matches and the flag is present, so
+the check passes and the rewritten bytes are what executes. Only re-reading the whole image
+between the check and the `execve` would see that, and the platform cannot make those two
+atomic, so it is not attempted.
+
+So the state is reported rather than claimed. The containment report carries
+`image_integrity` alongside the other controls: `applied` only for the sealed anonymous
+inode whose whole seal set the host read back off the descriptor it executed, and
+`unavailable` on Darwin with a reason naming the frozen pathname the image rests on,
+`UF_IMMUTABLE`, the fact that its owner can clear it, and that image integrity is
+therefore best effort. That residue is exactly what "best effort" is there to admit: the
+Darwin image is narrowed as far as the platform allows and is never described as sealed.
+
+Either way an adapter is exactly one file: nothing else in the store is beside the running
+script, because nothing else in the store was authorized by the record.
+
+One containment control has to give way to this. Asking for an empty route table without
+privileges means asking for a user namespace, and some kernels answer that by placing the
+caller under a mandatory access control profile instead of by refusing it. Such a profile
+decides what may be executed by pathname, which the Linux image does not have, so a child
+that took the namespace could no longer start the adapter. The host reads that switch
+before it forks and skips the user-namespace route where it is set, reporting network
+isolation unavailable rather than claiming it at the price of the run.
+
+The child that does run gets a private invocation directory (mode `0700`) holding
+read-only input handles under `in/`, its output under `out/`, and its own `HOME` and
+`TMPDIR`; a cleared environment plus a small allowlist (`PATH`, locale, `XDG_CACHE_HOME`,
+and the variables the checked-in producer reads to find an external backend);
+`/dev/null` on stdin; its own session and process group; and close-on-exec on every
+inherited descriptor above the standard three. The directory is removed on every path,
+including timeout and including one an adapter deliberately made unwritable.
+
+`XDG_CACHE_HOME` is the one variable that lets a backend keep something across runs, and
+it is passed through rather than set because the choice is the operator's. With it
+unset, an external backend that builds itself on first use caches inside the private
+workspace and rebuilds on every invocation; with it set, it caches where the operator
+already keeps caches. The Blutter bridge is the backend this matters to: its wrapper
+keys its source cache on `XDG_CACHE_HOME`, falling back to `$HOME/.cache`.
+
+The host holds an overall wall-clock deadline and caps stdout, stderr, the result
+document and the model. On a timeout or a cap breach it signals the whole process group,
+waits, and reaps. It signals the group after a clean exit too: a backend that shelled
+out and abandoned a grandchild leaves one behind on the clean path as well, and that
+grandchild would otherwise hold the host's pipes open. Diagnostics quote a bounded,
+escaped tail of child output, never the whole stream.
+
+The child also applies `RLIMIT_CPU`, `RLIMIT_FSIZE`, `RLIMIT_AS`, `RLIMIT_NPROC` and
+`RLIMIT_NOFILE`, and on Linux drops into an empty network namespace where the host
+permits one.
+
+None of that is claimed unless it was established. The child applies each control
+between `fork` and `exec` and writes one fixed-size record of per-control outcomes back
+through a close-on-exec pipe; the host turns that record into a containment report where
+each control is either `applied` with its bound or `unavailable` with the reason. The
+report appears in `flutterdec info --json` as `adapter_containment` and in
+`report.json` under `adapter_selection.containment`.
+
+Platform differences are stated rather than smoothed over. Darwin does not enforce
+`RLIMIT_AS`, offers no network namespace, and gives no cheap way to observe the per-user
+task count, so all three are reported `unavailable` there instead of being set and
+assumed. `RLIMIT_NPROC` counts every task of the real user id, so the budget on Linux is
+the host's current task count plus an allowance; when the child gets its own user
+namespace the count restarts there, and the budget becomes the allowance alone.
 
 ### FunctionDisassembly
 
 Produced by disassembler. Per function:
 
-- function metadata (`id`, `name`, `entry_va`, `size`)
+- function metadata (`id`, `entry_va`, `size`, and optional `name`/`owner_class`).
+  `name` is `None` when the model recovered none; the printed label is then derived from
+  the entry address (`fn_0x<va>`), so an address-derived string can never be read back as
+  a recovered name
 - decoded instruction list (`AsmInstruction[]`)
 - per instruction annotation (`call`, `branch`, `return`, `pool[<index>]`, `poolOff[<displacement>]`, empty)
 
@@ -376,36 +601,51 @@ The current Python template adapter:
 - recovers function starts with simple ARM64 heuristics
 - builds object pool from extracted strings
 - can run in `auto|internal|blutter|r2flutter` backend mode (`auto` tries r2flutter, then Blutter, then internal)
-- in Blutter mode, parses `asm/*.dart` and `pp.txt` and synthesizes `EntryPointCandidate` pool metadata for `main`/`runApp`-like functions
+- in Blutter mode, parses `asm/*.dart` and `pp.txt`; a declaration it cannot parse yields a function with no name, not a synthesized one
 - in r2flutter mode, shells out to `r2flutter -jH/-ji/-jc/-jxz/-jzz/-jp` and maps the AOT instruction table, class table, and ObjectPool-referenced strings onto the model
-- emits schema version 3 JSON
+- emits ProgramModel v4 and an adapter protocol v1 result
+
+No backend invents a library, class, function name, or pool index it did not recover.
+When a domain comes back empty it is reported `unavailable` with a diagnostic saying
+why, which is what lets a reader tell "this snapshot has no such thing" apart from
+"this backend cannot see it".
 
 ### Pool index space
 
-`ObjectPoolEntry.index` must be a real `ObjectPool` entry index, i.e. the value a
-`ldr xN, [x27, #disp]` resolves to. An adapter asserts this by emitting
-`pool_geometry` (`entries_offset`, `word_size`); core then converts displacements with
-`index = (disp - entries_offset) / word_size`.
+`object_pool.index_space` says what an entry's `index` counts. `hardware` means a real
+`ObjectPool` entry index, the value a `ldr xN, [x27, #disp]` resolves to; it requires
+`geometry` (`entries_offset`, `word_size`), and core converts displacements with
+`index = (disp - entries_offset) / word_size`. `ordinal` means a position in the
+producer's own list, which carries no address meaning at all.
 
-Adapters that cannot recover the pool layout must omit `pool_geometry`. The internal
-adapter is one: its `object_pool` is carved strings numbered by carve order, which has
-nothing to do with the hardware index space. Core detects the absence and skips pool
-value/semantic hints entirely rather than joining two unrelated index spaces, which
-would attach real-looking strings to the wrong slots. `report.json.pool_metadata`
-records `index_space_authoritative`, the geometry, and `hints_suppressed_reason`.
+The internal backend is ordinal: its entries are carved strings numbered by carve
+order, which has nothing to do with the hardware index space. Core reads the declared
+index space and skips pool value and semantic hints entirely rather than joining two
+unrelated index spaces, which would attach real-looking strings to the wrong slots.
+Validation makes the two consistent by construction: `hardware` without geometry is
+rejected, and `ordinal` with geometry is rejected. `report.json.pool_metadata` records
+`index_space_authoritative`, the geometry, and `hints_suppressed_reason`.
 
-Validation in Rust enforces:
+Validation in Rust enforces, before any model reaches core analysis:
 
-- schema version is 2 or 3
-- arch equals `arm64`
-- non-empty function list
+- `model_version` is 4; a `schema_version` field is a legacy model and is rejected
+- identity, producer, compatibility, and the region table match what the host selected
+- no duplicate ids or pool indexes, no dangling references, no superclass cycles
+- canonical ascending order for every collection, so equal models serialize equal
+- no placeholder strings standing in for unrecovered names
+- confidence only on heuristic facts, and only within `[0, 1]`
+- capability claims that match the model's contents, and a diagnostic for every
+  unavailable domain
+- checked arithmetic on every address: no overflowing or empty code range, every range
+  inside a declared executable region, every pool target inside one too
 
 Execution model:
 
-- core creates temporary files for snapshot blobs
-- adapter is invoked as a child process with explicit file paths
-- adapter writes JSON to output path
-- Rust side parses and validates that JSON
+- core writes the four snapshot regions and a protocol v1 request into a scratch dir
+- the adapter runs there as a child process, given only relative paths
+- the adapter writes the model to the requested output path and a result document
+- Rust parses the result, checks it answers the request, then parses and validates
+  the model against the host's own view before returning it
 
 Why process-based adapters:
 
@@ -415,10 +655,11 @@ Why process-based adapters:
 
 Key functions:
 
+- `CompatibilityRegistry::select`
+- `RegistrySelection::load_profile`
+- `RegistrySelection::resolve_current_artifact`
 - `run_adapter`
-- `resolve_adapter_exec`
-- `install_adapter`
-- `validate_model`
+- `validate::validate`
 
 ## 3) Disassembler
 
@@ -439,8 +680,8 @@ Important behavior:
     majority of pool traffic in real binaries
   - page bases are tracked per function and dropped on any write to the register or on
     control flow, so a stale base can never invent a slot
-  - without `pool_geometry` the annotation is `poolOff[<byte displacement>]` instead,
-    which is honest about what is known and never matches a value hint
+  - with an ordinal index space the annotation is `poolOff[<byte displacement>]`
+    instead, which is honest about what is known and never matches a value hint
 
 Filtering behavior:
 
@@ -671,8 +912,8 @@ File naming convention:
 
 - input metadata
 - counts for libraries, classes, functions, pool entries
-- `adapter_schema.function_name_kind_breakdown` (exact/external/heuristic/placeholder/unknown/unspecified)
-- `adapter_selection` trace (requested backend, resolved backend, adapter exec, manifest mapping, snapshot hash match, and strict hash-match enforcement flag)
+- `model.function_name_provenance` (exact/derived/heuristic/unnamed)
+- `adapter_selection` trace (requested backend, resolved backend, adapter exec, manifest mapping, snapshot hash match, strict hash-match enforcement flag, and the `containment` report naming every execution control as applied or unavailable)
 - `compatibility` summary (adapter schema support, manifest-entry presence, snapshot hash alignment, and warning list)
 - embedded `quality` object
 - `name_resolution` aggregate (final name-quality mix and merge replacement diagnostics)
@@ -728,12 +969,15 @@ This split is intentional. It lets you improve one stage without destabilizing t
 
 ## Adding support for a new snapshot hash
 
-1. create or install adapter entry for hash
-2. ensure adapter emits schema version 2
+1. add a compatibility record for the hash in `adapters/registry.json`: header identity, target,
+   canonical feature tuple and fingerprint, profile path and digest, and one artifact variant per
+   supported host with the artifact's size and SHA-256
+2. ensure the producer speaks protocol major 1 and emits ProgramModel v4
 3. run:
 
 ```bash
 flutterdec adapter install --dart-hash <hash>
+flutterdec adapter list
 flutterdec decompile app.apk -o out
 ```
 
@@ -757,10 +1001,17 @@ If output quality is poor:
 
 ## Debugging by symptom
 
-Symptom: `adapter not installed for hash ...`
+Symptom: `info` reports `adapter installed: false`
 
 - run `flutterdec adapter install --dart-hash <hash>`
-- verify with `flutterdec adapter list`
+- verify with `flutterdec adapter list`; the row must read `state=verified`
+- `state=missing` or `state=corrupt` means the store holds an install it cannot back, and
+  `adapter list` exits 2; reinstall
+- `state=incompatible` means no artifact variant in the record serves this host
+
+Symptom: `no packaged data directory holds adapters/registry.json`
+
+- the binary is not in a prefix that carries `share/flutterdec`; set `FLUTTERDEC_DATA_DIR`
 
 Symptom: quality gate fails with low disassembly ratio
 

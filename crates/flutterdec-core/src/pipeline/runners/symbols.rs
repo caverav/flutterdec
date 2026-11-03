@@ -1,14 +1,20 @@
-use flutterdec_adapter::{FunctionInfo, ProgramModel};
+use flutterdec_adapter::model::{
+    Function, PoolEntryKind, PoolIndexSpace, ProgramModel, Provenance,
+};
 use flutterdec_decompiler::PoolSemanticHint;
+use flutterdec_disasm_arm64::ProgramHints;
 use std::collections::HashMap;
 
 #[derive(Debug, Default, Clone, Copy)]
 pub(super) struct PoolMetadataStats {
     pub(super) total_entries: usize,
+    /// Whether the indexes mean hardware slots. `false` makes every count below
+    /// a description of the producer's list, not of the snapshot's pool.
+    pub(super) addressable: bool,
     pub(super) with_target_va: usize,
     pub(super) with_selector: usize,
-    pub(super) with_owner_class: usize,
-    pub(super) with_library_uri: usize,
+    pub(super) with_value: usize,
+    pub(super) heuristic: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -61,14 +67,16 @@ impl SymbolQualityCounts {
     }
 }
 
-pub(super) fn symbol_name_quality_from_name_kind(raw: Option<&str>) -> Option<SymbolNameQuality> {
-    let token = raw?.trim().to_ascii_lowercase();
-    match token.as_str() {
-        "placeholder" => Some(SymbolNameQuality::Placeholder),
-        "heuristic" => Some(SymbolNameQuality::Heuristic),
-        "external" => Some(SymbolNameQuality::External),
-        "exact" => Some(SymbolNameQuality::Exact),
-        _ => None,
+/// Map a v4 name's provenance onto the symbol-quality lattice.
+///
+/// v3 carried a free-text `name_kind` that a producer could set to `"exact"`
+/// for a guess. Provenance is a closed enum the model's own validation checks,
+/// so the quality a name gets is now a consequence of how it was recovered.
+pub(super) fn symbol_name_quality_from_provenance(provenance: Provenance) -> SymbolNameQuality {
+    match provenance {
+        Provenance::Exact => SymbolNameQuality::Exact,
+        Provenance::Derived => SymbolNameQuality::External,
+        Provenance::Heuristic => SymbolNameQuality::Heuristic,
     }
 }
 
@@ -158,135 +166,116 @@ fn is_heuristic_canonical_symbol_name(name: &str) -> bool {
     name.starts_with("dart_") || name.starts_with("flutter_") || name.starts_with("package_")
 }
 
-pub(super) fn build_class_library_lookup(model: &ProgramModel) -> HashMap<String, String> {
-    let mut out = HashMap::new();
-    for c in &model.classes {
-        out.entry(c.name.clone()).or_insert_with(|| c.library_uri.clone());
-    }
-    out
+/// Whether pool indexes can be joined against disassembly at all.
+///
+/// An ordinal pool's index is a position in the producer's own list, so joining
+/// `pool[N]` from a `ldr` against it attaches an unrelated string. The whole
+/// hint map is skipped rather than filtered, because the join key itself is the
+/// thing that is meaningless.
+fn pool_is_addressable(model: &ProgramModel) -> bool {
+    model.object_pool.index_space == PoolIndexSpace::Hardware
 }
 
 pub(super) fn build_pool_value_hints(model: &ProgramModel) -> HashMap<u64, String> {
     let mut out = HashMap::new();
-    for e in &model.object_pool {
-        let kind = e.kind.to_ascii_lowercase();
-        let decoded_kind = e
-            .decoded_kind
-            .as_deref()
-            .unwrap_or("")
-            .to_ascii_lowercase();
-        let string_like = kind.contains("string")
-            || kind.contains("onebyte")
-            || kind.contains("twobyte")
-            || decoded_kind.contains("string")
-            || decoded_kind.contains("selector");
-        if !string_like {
+    if !pool_is_addressable(model) {
+        return out;
+    }
+    for e in &model.object_pool.entries {
+        if !matches!(
+            e.kind,
+            PoolEntryKind::String | PoolEntryKind::Selector | PoolEntryKind::Field
+        ) {
             continue;
         }
-
-        let selector = e.selector.as_deref().unwrap_or("").trim();
-        if !selector.is_empty() && selector.len() <= 128 {
-            out.insert(e.index, selector.to_string());
+        let Some(value) = e.value.as_deref().map(str::trim) else {
+            continue;
+        };
+        if value.is_empty() || value.len() > 256 {
             continue;
         }
-
-        let trimmed = e.value.trim();
-        if trimmed.is_empty() || trimmed.len() > 256 {
-            continue;
-        }
-        out.insert(e.index, trimmed.to_string());
+        out.insert(e.index, value.to_string());
     }
     out
 }
 
 pub(super) fn collect_pool_metadata_stats(model: &ProgramModel) -> PoolMetadataStats {
     let mut out = PoolMetadataStats {
-        total_entries: model.object_pool.len(),
+        total_entries: model.object_pool.entries.len(),
+        addressable: pool_is_addressable(model),
         ..PoolMetadataStats::default()
     };
-    for e in &model.object_pool {
+    for e in &model.object_pool.entries {
         if e.target_va.is_some() {
             out.with_target_va += 1;
         }
-        if e
-            .selector
-            .as_deref()
-            .map(str::trim)
-            .is_some_and(|v| !v.is_empty())
-        {
+        if e.kind == PoolEntryKind::Selector {
             out.with_selector += 1;
         }
-        if e
-            .owner_class
-            .as_deref()
-            .map(str::trim)
-            .is_some_and(|v| !v.is_empty())
-        {
-            out.with_owner_class += 1;
+        if e.value.is_some() {
+            out.with_value += 1;
         }
-        if e
-            .library_uri
-            .as_deref()
-            .map(str::trim)
-            .is_some_and(|v| !v.is_empty())
-        {
-            out.with_library_uri += 1;
+        if e.provenance == Provenance::Heuristic {
+            out.heuristic += 1;
         }
     }
     out
 }
 
+/// Semantic metadata per pool index, for the decompiler's call-intent pass.
+///
+/// Two sources feed it, in priority order, and neither can write into the
+/// other: the function the entry points at, which is adapter-authored and
+/// therefore authoritative, and the host's own hints, which fill in a selector
+/// or owner the model never had. A hint never overrides a model fact.
 pub(super) fn build_pool_semantic_hints(
     model: &ProgramModel,
-    class_to_library: &HashMap<String, String>,
+    hints: &ProgramHints,
 ) -> HashMap<u64, PoolSemanticHint> {
     let mut out = HashMap::new();
-    let function_meta = build_function_metadata_lookup(model, class_to_library);
-    for e in &model.object_pool {
+    if !pool_is_addressable(model) {
+        return out;
+    }
+    let function_meta = build_function_metadata_lookup(model);
+    for e in &model.object_pool.entries {
         let fallback = e.target_va.and_then(|va| function_meta.get(&va)).cloned();
+        let hint = e
+            .target_va
+            .and_then(|va| hints.iter().find(|h| h.target_va == Some(va)));
 
         let selector = e
-            .selector
+            .value
             .as_deref()
             .map(str::trim)
+            .filter(|_| e.kind == PoolEntryKind::Selector)
             .filter(|v| !v.is_empty() && v.len() <= 128)
             .map(str::to_string)
             .or_else(|| {
                 fallback
                     .as_ref()
-                    .map(|(name, _, _)| name.as_str())
+                    .and_then(|(name, _, _)| name.clone())
                     .filter(|name| !is_generic_symbol_name(name))
-                    .map(str::to_string)
-            });
-        let owner_class = e
-            .owner_class
-            .as_deref()
-            .map(str::trim)
-            .filter(|v| !v.is_empty() && v.len() <= 128)
-            .map(str::to_string)
+            })
             .or_else(|| {
-                fallback
-                    .as_ref()
-                    .map(|(_, owner, _)| owner.as_str())
-                    .filter(|v| !v.is_empty())
-                    .map(str::to_string)
+                hint.map(|h| h.selector.clone())
+                    .filter(|v| !v.is_empty() && v.len() <= 128)
             });
-        let library_uri = e
-            .library_uri
-            .as_deref()
-            .map(str::trim)
-            .filter(|v| !v.is_empty() && v.len() <= 256)
-            .map(str::to_string)
-            .or_else(|| {
-                fallback
-                    .as_ref()
-                    .map(|(_, _, lib)| lib.as_str())
-                    .filter(|v| !v.is_empty())
-                    .map(str::to_string)
-            });
+        let owner_class = fallback
+            .as_ref()
+            .and_then(|(_, owner, _)| owner.clone())
+            .or_else(|| hint.and_then(|h| h.owner_class.clone()))
+            .filter(|v| !v.is_empty() && v.len() <= 128);
+        let library_uri = fallback
+            .as_ref()
+            .and_then(|(_, _, lib)| lib.clone())
+            .or_else(|| hint.and_then(|h| h.library_uri.clone()))
+            .filter(|v| !v.is_empty() && v.len() <= 256);
         let target_va = e.target_va;
 
-        if selector.is_none() && owner_class.is_none() && library_uri.is_none() && target_va.is_none()
+        if selector.is_none()
+            && owner_class.is_none()
+            && library_uri.is_none()
+            && target_va.is_none()
         {
             continue;
         }
@@ -368,22 +357,25 @@ pub(super) fn build_pool_target_symbols(
     out
 }
 
-fn build_function_metadata_lookup(
-    model: &ProgramModel,
-    class_to_library: &HashMap<String, String>,
-) -> HashMap<u64, (String, String, String)> {
+/// Per-entry-address `(name, owner, library)`, each independently optional.
+///
+/// v3 required all three and skipped a function whose owner was empty, which
+/// dropped every top-level function. Here a function with a name and no owner
+/// still contributes its name.
+type FunctionMetadata = (Option<String>, Option<String>, Option<String>);
+
+fn build_function_metadata_lookup(model: &ProgramModel) -> HashMap<u64, FunctionMetadata> {
     let mut out = HashMap::new();
     for f in &model.functions {
-        let owner = f.owner_class.trim();
-        if owner.is_empty() {
+        let meta = (
+            f.name_text().map(str::to_string),
+            model.owner_name(f).map(str::to_string),
+            model.owner_library_uri(f).map(str::to_string),
+        );
+        if meta.0.is_none() && meta.1.is_none() && meta.2.is_none() {
             continue;
         }
-        let lib = class_to_library
-            .get(&f.owner_class)
-            .cloned()
-            .unwrap_or_default();
-        out.entry(f.entry_va)
-            .or_insert_with(|| (f.name.clone(), f.owner_class.clone(), lib));
+        out.entry(f.code.start_va).or_insert(meta);
     }
     out
 }
@@ -398,24 +390,22 @@ fn semantic_token_eq(lhs: &str, rhs: &str) -> bool {
     normalize(lhs) == normalize(rhs)
 }
 
-pub(super) fn canonical_standard_model_name(
-    f: &FunctionInfo,
-    class_to_library: &HashMap<String, String>,
-) -> Option<String> {
-    if is_generic_symbol_name(&f.name) {
+pub(super) fn canonical_standard_model_name(model: &ProgramModel, f: &Function) -> Option<String> {
+    let name = f.name_text()?;
+    if is_generic_symbol_name(name) {
         return None;
     }
-    let method = sanitize_symbol_token_stream(&f.name);
+    let method = sanitize_symbol_token_stream(name);
     if method.is_empty() || is_generic_symbol_name(&method) {
         return None;
     }
 
-    let lib_uri = class_to_library.get(&f.owner_class)?;
+    let lib_uri = model.owner_library_uri(f)?;
     if let Some(dart_lib) = dart_library_segment(lib_uri) {
         return Some(format!("dart_{}_{}", dart_lib, method));
     }
     if let Some(flutter_seg) = flutter_library_segment(lib_uri) {
-        let class_name = sanitize_symbol_token_stream(&f.owner_class);
+        let class_name = sanitize_symbol_token_stream(model.owner_name(f)?);
         if class_name.is_empty() {
             return None;
         }

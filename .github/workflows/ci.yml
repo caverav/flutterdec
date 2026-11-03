@@ -37,7 +37,7 @@ jobs:
         uses: cachix/install-nix-action@v31
 
       - name: Enable Nix cache
-        uses: DeterminateSystems/magic-nix-cache-action@v14
+        uses: DeterminateSystems/magic-nix-cache-action@v15
 
       - name: Validate flake
         run: nix flake check
@@ -56,3 +56,6 @@ jobs:
 
       - name: Build release CLI
         run: nix develop -c cargo build -p flutterdec-cli --release
+
+      - name: Release layout smoke
+        run: nix develop -c ./scripts/release-layout-smoke.sh target/release/flutterdec
