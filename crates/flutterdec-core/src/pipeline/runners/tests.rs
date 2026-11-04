@@ -612,7 +612,7 @@
 
     #[test]
     fn collects_compatibility_warnings_from_flags() {
-        let warnings = collect_compatibility_warnings(false, false, true, None);
+        let warnings = collect_compatibility_warnings(false, false, true, None, false);
         assert_eq!(warnings.len(), 3);
         assert!(warnings
             .iter()
@@ -624,7 +624,7 @@
             .iter()
             .any(|w| w.contains("backend differs")));
 
-        let warnings = collect_compatibility_warnings(true, true, false, None);
+        let warnings = collect_compatibility_warnings(true, true, false, None, false);
         assert!(warnings.is_empty());
 
         // A core fallback is the loudest of the four: it says nothing parsed
@@ -634,6 +634,7 @@
             true,
             false,
             Some(CoreFallbackReason::NoCompatibilityRecord),
+            false,
         );
         assert_eq!(warnings.len(), 1);
         assert!(warnings[0].contains("no compatibility record matches"));

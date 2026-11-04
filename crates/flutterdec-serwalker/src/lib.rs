@@ -14,9 +14,11 @@ mod stream;
 mod profile_reader;
 
 use anyhow::Context;
-use flutterdec_adapter::model::{InputRegionName, ProgramModel};
+use flutterdec_adapter::model::{CompatibilityBinding, InputRegionName, Producer, ProgramModel};
 use flutterdec_adapter::primitives::Sha256Digest;
-use flutterdec_adapter::AdapterInput;
+use flutterdec_adapter::{AdapterInput, AdapterRegionInput};
+use flutterdec_loader::identity::SnapshotIdentity;
+use std::path::Path;
 
 use crate::utils::get_snapshot_region;
 use crate::{
@@ -30,18 +32,42 @@ use crate::{
 
 pub const SUPPORTED_SNAPSHOT_HASH: &str = DART_3_11_1_SNAPSHOT_HASH;
 
+pub struct SnapshotInput<'a> {
+    pub identity: &'a SnapshotIdentity,
+    pub regions: &'a [AdapterRegionInput<'a>],
+    pub producer: &'a Producer,
+    pub compatibility: Option<&'a CompatibilityBinding>,
+    pub profile_path: &'a Path,
+    pub profile_sha256: &'a Sha256Digest,
+}
+
+pub fn profile_file_name(snapshot_hash: &str, features: &[String]) -> anyhow::Result<String> {
+    profile_reader::profile_file_name(snapshot_hash, features)
+}
+
 pub fn walk_snapshot_and_produce_model(
     adapter_input: &AdapterInput,
 ) -> anyhow::Result<ProgramModel> {
+    walk_snapshot(&SnapshotInput {
+        identity: adapter_input.identity,
+        regions: &adapter_input.regions,
+        producer: &adapter_input.producer,
+        compatibility: Some(&adapter_input.compatibility),
+        profile_path: adapter_input.authorization.profile_path,
+        profile_sha256: &adapter_input.compatibility.profile_sha256,
+    })
+}
+
+pub fn walk_snapshot(adapter_input: &SnapshotInput<'_>) -> anyhow::Result<ProgramModel> {
     adapter_input.identity.exact_selection_key()?;
     anyhow::ensure!(
         adapter_input.identity.features.has("compressed-pointers"),
         "Serwalker currently requires a compressed-pointers snapshot"
     );
-    let profile_bytes = std::fs::read(adapter_input.authorization.profile_path)
-        .context("read authorized Serwalker profile")?;
+    let profile_bytes =
+        std::fs::read(adapter_input.profile_path).context("read authorized Serwalker profile")?;
     anyhow::ensure!(
-        Sha256Digest::of(&profile_bytes) == adapter_input.compatibility.profile_sha256,
+        Sha256Digest::of(&profile_bytes) == *adapter_input.profile_sha256,
         "Serwalker profile does not match the authorized profile digest"
     );
     let profile = profile_reader::data_profile_from_bytes(
@@ -49,7 +75,7 @@ pub fn walk_snapshot_and_produce_model(
         &adapter_input.identity.features.normalized,
     )?;
     let mut program_model = produce_model_headers(adapter_input)?;
-    let input_regions = &adapter_input.regions;
+    let input_regions = adapter_input.regions;
 
     let isolate_data_region = get_snapshot_region(input_regions, InputRegionName::IsolateData)?;
     let mut isolate_data_stream = Stream::new(isolate_data_region.bytes);
@@ -87,7 +113,7 @@ pub fn walk_snapshot_and_produce_model(
         &flutterdec_adapter::validate::HostSelectedContext {
             identity: adapter_input.identity.clone(),
             producer: adapter_input.producer.clone(),
-            compatibility: Some(adapter_input.compatibility.clone()),
+            compatibility: adapter_input.compatibility.cloned(),
             regions: program_model.input.regions.clone(),
         },
     )?;

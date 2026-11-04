@@ -59,10 +59,7 @@ impl SpyRepo {
         let exec = root.join("artifacts/flutterdec-spy");
         fs::write(
             &exec,
-            format!(
-                "#!/bin/sh\ntouch '{}'\nexit 1\n",
-                marker.display()
-            ),
+            format!("#!/bin/sh\ntouch '{}'\nexit 1\n", marker.display()),
         )
         .expect("write spy adapter");
         let mut perms = fs::metadata(&exec).expect("metadata").permissions();
@@ -101,9 +98,7 @@ impl SpyRepo {
         fs::write(self.root.join("data/test-profile.json"), &profile_bytes)
             .expect("write test profile");
 
-        let exec_path = self
-            .root
-            .join("artifacts/flutterdec-spy");
+        let exec_path = self.root.join("artifacts/flutterdec-spy");
         let exec_bytes = fs::read(&exec_path).expect("read spy adapter");
         let features = vec![
             "android".to_string(),
@@ -168,14 +163,8 @@ impl SpyRepo {
         // A spy adapter sitting in the store is not an installed one. The host
         // authorizes against the store ledger, so the rig installs through the
         // real installer rather than leaving a file the product would refuse.
-        store::install(
-            &self.layout,
-            &registry,
-            HASH,
-            None,
-            Some(&exec_path),
-        )
-        .expect("install the spy adapter");
+        store::install(&self.layout, &registry, HASH, None, Some(&exec_path))
+            .expect("install the spy adapter");
     }
 }
 
@@ -193,7 +182,10 @@ fn valid_registry_repo() -> SpyRepo {
 fn ambiguous_registry_repo() -> SpyRepo {
     let mut repo = SpyRepo::new("{}");
     repo.write_valid_registry();
-    let record = repo.record.clone().expect("the valid registry has a record");
+    let record = repo
+        .record
+        .clone()
+        .expect("the valid registry has a record");
     let registry = CompatibilityRegistry {
         version: 1,
         records: vec![record.clone(), record],
@@ -438,25 +430,52 @@ fn a_registry_that_is_not_json_reports_its_own_category() {
     assert!(!repo.spawned(), "a malformed registry executed an adapter");
 }
 
-/// An explicitly internal run reads nothing and executes nothing, even where a
-/// perfectly good record and a working artifact are installed.
+/// An explicitly internal run uses Serwalker without an external registry or
+/// adapter process. Invalid snapshot data must not silently become heuristics.
 #[test]
-fn an_explicitly_internal_run_selects_nothing_and_executes_nothing() {
-    let repo = valid_registry_repo();
+fn an_explicitly_internal_run_uses_serwalker_without_an_external_adapter() {
+    let repo = poisoned_registry_repo();
     let mut bundle = bundle(full_aot());
 
-    let loaded = load_program(&repo.layout, &mut bundle, AdapterBackend::Internal, None)
-        .expect("internal recovery does not depend on a registry");
-
-    assert_eq!(
-        loaded.core_fallback,
-        Some(CoreFallbackReason::InternalRequested)
-    );
+    let error = load_program(&repo.layout, &mut bundle, AdapterBackend::Internal, None)
+        .expect_err("invalid snapshot data cannot be parsed by Serwalker");
+    assert!(format!("{error:#}").contains("Serwalker"));
+    assert_ne!(error_category(&error), "registry_malformed");
     assert!(!repo.spawned(), "an internal run executed an adapter");
-    assert!(loaded.compatibility_record.is_none());
     assert!(
         bundle.dart_profile.is_none(),
         "an internal run loaded a compatibility profile it never used"
+    );
+}
+
+#[test]
+#[ignore = "requires SERWALKER_TEST_LIBAPP and FLUTTERDEC_PROFILES_DIR"]
+fn built_in_serwalker_loads_a_real_snapshot_and_reports_local_provenance() {
+    let repo = poisoned_registry_repo();
+    let path = PathBuf::from(std::env::var_os("SERWALKER_TEST_LIBAPP").unwrap());
+    let mut bundle = flutterdec_loader::load_snapshot_bundle(&path).unwrap();
+    let loaded = load_program(&repo.layout, &mut bundle, AdapterBackend::Internal, None).unwrap();
+    assert!(!repo.spawned());
+    assert!(loaded.core_fallback.is_none());
+    assert!(loaded.adapter_exec.is_none());
+    assert!(loaded.compatibility.is_none());
+    assert!(loaded.containment.is_none());
+    assert_eq!(loaded.producer.id, "flutterdec-serwalker");
+    assert_eq!(loaded.producer.trust, ProducerTrust::Local);
+    assert!(!loaded.model.functions.is_empty());
+    assert!(!loaded.model.classes.is_empty());
+    let provider = provider_report(&loaded, &bundle, AdapterBackend::Internal);
+    assert_eq!(provider.builtin_parser.as_deref(), Some("serwalker"));
+    assert!(!provider.adapter_executed);
+    assert!(!provider.registry_record_present);
+    assert!(provider.core_fallback_effect.is_none());
+    assert!(provider.warnings.is_empty());
+    assert!(provider.profile_path.is_some());
+    assert!(provider.profile_sha256.is_some());
+    eprintln!(
+        "built-in Serwalker: {} functions, {} classes",
+        loaded.model.functions.len(),
+        loaded.model.classes.len()
     );
 }
 
@@ -506,9 +525,11 @@ fn a_rejected_identity_is_not_downgraded_to_an_untrusted_run() {
 
     assert_eq!(
         loaded.core_fallback_detail.as_deref(),
-        Some(IdentityRejection::NotFullAot(Some(SnapshotKind::FullJit))
-            .to_string()
-            .as_str())
+        Some(
+            IdentityRejection::NotFullAot(Some(SnapshotKind::FullJit))
+                .to_string()
+                .as_str()
+        )
     );
     assert_ne!(
         loaded.producer.trust,
@@ -531,10 +552,11 @@ fn a_rejected_identity_is_not_downgraded_to_an_untrusted_run() {
 fn run_adapter_refuses_a_rejected_identity_before_spawn() {
     let repo = valid_registry_repo();
     let bundle = bundle(full_jit());
-    let record = repo.record.clone().expect("the valid registry has a record");
-    let exec = repo
-        .root
-        .join("artifacts/flutterdec-spy");
+    let record = repo
+        .record
+        .clone()
+        .expect("the valid registry has a record");
+    let exec = repo.root.join("artifacts/flutterdec-spy");
     let profile_path = repo.root.join("data/test-profile.json");
 
     let err = run_adapter(

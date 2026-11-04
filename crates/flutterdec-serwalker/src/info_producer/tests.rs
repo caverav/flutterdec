@@ -351,6 +351,37 @@ fn v4_empty_domains_have_diagnostics_and_validate() {
 }
 
 #[test]
+fn built_in_input_needs_no_external_authorization_and_records_its_profile() {
+    let seed = empty_model();
+    let regions = [AdapterRegionInput {
+        region: InputRegionName::IsolateInstructions,
+        bytes: &[0; 32],
+        virtual_address: Some(0x1000),
+    }];
+    let digest = Sha256Digest::of(b"profile");
+    let input = crate::SnapshotInput {
+        identity: &seed.input.identity,
+        regions: &regions,
+        producer: &seed.producer,
+        compatibility: None,
+        profile_path: std::path::Path::new("profile.json"),
+        profile_sha256: &digest,
+    };
+    let mut model = crate::info_producer::produce_model_headers(&input).unwrap();
+    assert!(model.compatibility.is_none());
+    assert_eq!(
+        model.extensions["serwalker.profile"]["file_name"],
+        "profile.json"
+    );
+    assert_eq!(
+        model.extensions["serwalker.profile"]["sha256"],
+        digest.as_str()
+    );
+    finish_model(&mut model);
+    validate_model(&model);
+}
+
+#[test]
 fn v4_region_lookup_hashing_and_address_checks() {
     let mut regions = vec![
         AdapterRegionInput {

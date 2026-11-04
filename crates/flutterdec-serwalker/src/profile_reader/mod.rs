@@ -16,20 +16,12 @@ pub fn select_data_profile(
     snapshot_hash: &str,
     features: &[String],
 ) -> anyhow::Result<DataProfile> {
+    let file_name = profile_file_name(snapshot_hash, features)?;
     let arch = resolve_snapshot_architecture(features)?;
-    let snapshot_features = Vec::from_iter(
-        features
-            .iter()
-            .filter_map(|feature_str| SnapshotFeatures::try_from(feature_str).ok()),
-    );
-
-    let file_name = "profile_".to_owned()
-        + &(snapshot_hash[..SNAPSHOT_HASH_SUBSTR])
-        + "_"
-        + &features_suffix(&snapshot_features)
-        + "_"
-        + &architecture_suffix(&arch)
-        + PROF_EXTENSION;
+    let snapshot_features = features
+        .iter()
+        .filter_map(|feature| SnapshotFeatures::try_from(feature).ok())
+        .collect();
     anyhow::ensure!(
         features.iter().any(|feature| feature == "product"),
         "Serwalker currently requires a product snapshot"
@@ -46,6 +38,28 @@ pub fn select_data_profile(
         class_tag_kind,
         parsing_operations: ops,
     })
+}
+
+pub(crate) fn profile_file_name(
+    snapshot_hash: &str,
+    features: &[String],
+) -> anyhow::Result<String> {
+    anyhow::ensure!(
+        snapshot_hash.len() == 32 && snapshot_hash.bytes().all(|byte| byte.is_ascii_hexdigit()),
+        "snapshot hash must contain 32 hexadecimal characters"
+    );
+    let arch = resolve_snapshot_architecture(features)?;
+    let snapshot_features = features
+        .iter()
+        .filter_map(|feature| SnapshotFeatures::try_from(feature).ok())
+        .collect::<Vec<_>>();
+    Ok(format!(
+        "profile_{}_{}_{}{}",
+        &snapshot_hash[..SNAPSHOT_HASH_SUBSTR],
+        features_suffix(&snapshot_features),
+        architecture_suffix(&arch),
+        PROF_EXTENSION
+    ))
 }
 
 pub(crate) fn data_profile_from_bytes(
@@ -80,6 +94,26 @@ mod tests {
     use crate::profile_reader::profile_json_dictionary::{
         FOR_EACH, FUNCTION, READ_ALLOC, READ_FILL,
     };
+
+    #[test]
+    fn profile_file_names_use_snapshot_hash_and_features() {
+        let features = vec![
+            "product".into(),
+            "arm64".into(),
+            "compressed-pointers".into(),
+        ];
+        assert_eq!(
+            profile_file_name("80a49c7111088100a233b2ae788e1f48", &features).unwrap(),
+            "profile_80a49c71_compr_arm64.json"
+        );
+        assert_eq!(
+            profile_file_name(DART_3_11_1_SNAPSHOT_HASH, &features).unwrap(),
+            "profile_78da37fe_compr_arm64.json"
+        );
+        for hash in ["", "1234567", "not-a-hash-but-exactly-32-letters!"] {
+            assert!(profile_file_name(hash, &features).is_err());
+        }
+    }
 
     #[test]
     fn external_profile_exposes_cluster_first_recipes_and_tag_kind() {

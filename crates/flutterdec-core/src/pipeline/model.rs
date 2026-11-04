@@ -5,11 +5,10 @@ use flutterdec_loader::registry::{
 /// One program model plus everything the operator needs to know about where it
 /// came from.
 ///
-/// `compatibility`, `compatibility_record`, `profile`, `adapter_exec` and
-/// `containment` are all `Option` together with `core_fallback`: either a
-/// registry record authorized an adapter and all five describe that run, or
-/// core recovered the program itself and `core_fallback` says why. Nothing here
-/// is inferred from a filename or from a substring of adapter output.
+/// Registry-authorized processes carry compatibility and containment facts;
+/// built-in Serwalker carries its local profile; heuristic recovery carries a
+/// `core_fallback` reason. These are distinct provider paths, not labels inferred
+/// from adapter output.
 #[derive(Debug, Clone)]
 struct LoadedProgram {
     model: ProgramModel,
@@ -31,6 +30,7 @@ struct LoadedProgram {
     compatibility: Option<CompatibilityBinding>,
     compatibility_record: Option<CompatibilityRecord>,
     profile: Option<ResolvedDartProfile>,
+    builtin_profile: Option<(PathBuf, Sha256Digest)>,
 }
 
 impl LoadedProgram {
@@ -67,8 +67,15 @@ fn provider_report(
             .core_fallback
             .map(|reason| reason.as_str().to_string()),
         core_fallback_detail: loaded.core_fallback_detail.clone(),
-        core_fallback_effect: loaded.core_fallback.map(|_| CORE_FALLBACK_EFFECT.to_string()),
-        adapter_executed: loaded.core_fallback.is_none(),
+        core_fallback_effect: loaded
+            .core_fallback
+            .map(|_| CORE_FALLBACK_EFFECT.to_string()),
+        adapter_executed: loaded.adapter_exec.is_some(),
+        builtin_parser: loaded.builtin_profile.as_ref().map(|_| "serwalker".into()),
+        profile_path: loaded
+            .builtin_profile
+            .as_ref()
+            .map(|(path, _)| path.display().to_string()),
         adapter_exec_path: loaded
             .adapter_exec
             .as_ref()
@@ -85,15 +92,29 @@ fn provider_report(
         parser_family_id: loaded
             .compatibility
             .as_ref()
-            .map(|binding| binding.parser_family_id.clone()),
+            .map(|binding| binding.parser_family_id.clone())
+            .or_else(|| loaded.builtin_profile.as_ref().map(|_| "serwalker".into())),
         profile_id: loaded
             .compatibility
             .as_ref()
-            .map(|binding| binding.profile_id.clone()),
+            .map(|binding| binding.profile_id.clone())
+            .or_else(|| {
+                loaded
+                    .builtin_profile
+                    .as_ref()
+                    .and_then(|(path, _)| path.file_stem())
+                    .map(|name| name.to_string_lossy().into_owned())
+            }),
         profile_sha256: loaded
             .compatibility
             .as_ref()
-            .map(|binding| binding.profile_sha256.to_string()),
+            .map(|binding| binding.profile_sha256.to_string())
+            .or_else(|| {
+                loaded
+                    .builtin_profile
+                    .as_ref()
+                    .map(|(_, digest)| digest.to_string())
+            }),
         artifact_id: record.map(|record| record.artifact.id.clone()),
         // The digest of the bytes that ran, re-read and compared against the
         // record immediately before the spawn.
@@ -113,6 +134,7 @@ fn provider_report(
             bundle.identity.is_exact(),
             backend_mismatch,
             loaded.core_fallback,
+            loaded.builtin_profile.is_some(),
         ),
     }
 }
@@ -225,10 +247,7 @@ fn backend_from_id(id: BackendId) -> AdapterBackend {
 /// back heuristic prologue scanning under that flag is the substitution the
 /// protocol refuses inside an adapter run, done one layer up.
 fn pins_external_backend(backend: AdapterBackend) -> bool {
-    matches!(
-        backend,
-        AdapterBackend::Blutter | AdapterBackend::R2Flutter
-    )
+    matches!(backend, AdapterBackend::Blutter | AdapterBackend::R2Flutter)
 }
 
 /// Whether a registry refusal is a fact about *this snapshot* rather than about
@@ -293,6 +312,7 @@ fn load_core_fallback(
         compatibility: None,
         compatibility_record: record,
         profile: None,
+        builtin_profile: None,
     })
 }
 
@@ -305,8 +325,8 @@ fn pinned_backend_refused(
 ) -> anyhow::Error {
     anyhow!(
         "--adapter-backend {} cannot be served for this snapshot ({}): {}. \
-         core recovery is available with --adapter-backend internal, and reports \
-         heuristic code candidates with no names, libraries, classes or ObjectPool",
+         built-in Serwalker is available with --adapter-backend internal when \
+         a matching Serwalker data profile is present",
         backend.as_str(),
         reason.as_str(),
         detail
@@ -373,11 +393,10 @@ fn load_program(
             None,
         );
     }
-    // An explicitly internal run selects nothing and executes nothing. Reading
-    // the registry here would make "internal" mean "internal, once an adapter
-    // has been authorized", which is not what the operator asked for.
+    // The built-in parser uses local profiles, not an external registry or
+    // executable. Its parse failures must not silently become heuristic output.
     if backend == AdapterBackend::Internal {
-        return load_core_fallback(bundle, CoreFallbackReason::InternalRequested, None, None);
+        return load_serwalker(layout, bundle);
     }
 
     // All three of these can refuse for a reason that is about the snapshot
@@ -507,6 +526,82 @@ fn load_program(
         compatibility: Some(compatibility),
         compatibility_record: Some(selection.record().clone()),
         profile: Some(profile),
+        builtin_profile: None,
+    })
+}
+
+fn load_serwalker(layout: &Layout, bundle: &SnapshotBundle) -> Result<LoadedProgram> {
+    let file_name = flutterdec_serwalker::profile_file_name(
+        &bundle.snapshot_hash,
+        &bundle.identity.features.normalized,
+    )?;
+    let directory = std::env::var_os("FLUTTERDEC_PROFILES_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| layout.data_dir().join("data/serwalker_profiles"));
+    let profile_path = directory.join(file_name);
+    let profile_bytes = fs::read(&profile_path)
+        .with_context(|| format!("read Serwalker profile: {}", profile_path.display()))?;
+    let profile_digest = Sha256Digest::of(&profile_bytes);
+    let producer = Producer {
+        id: "flutterdec-serwalker".into(),
+        version: env!("CARGO_PKG_VERSION").into(),
+        artifact_sha256: core_artifact_digest()?,
+        trust: ProducerTrust::Local,
+    };
+    let regions = [
+        AdapterRegionInput {
+            region: InputRegionName::VmData,
+            bytes: &bundle.vm_data,
+            virtual_address: None,
+        },
+        AdapterRegionInput {
+            region: InputRegionName::IsolateData,
+            bytes: &bundle.isolate_data,
+            virtual_address: None,
+        },
+        AdapterRegionInput {
+            region: InputRegionName::VmInstructions,
+            bytes: &bundle.vm_instr,
+            virtual_address: Some(bundle.vm_instr_va),
+        },
+        AdapterRegionInput {
+            region: InputRegionName::IsolateInstructions,
+            bytes: &bundle.isolate_instr,
+            virtual_address: Some(bundle.isolate_instr_va),
+        },
+    ];
+    let model = flutterdec_serwalker::walk_snapshot(&flutterdec_serwalker::SnapshotInput {
+        identity: &bundle.identity,
+        regions: &regions,
+        producer: &producer,
+        compatibility: None,
+        profile_path: &profile_path,
+        profile_sha256: &profile_digest,
+    })
+    .context("deserialize snapshot with built-in Serwalker")?;
+    validate::validate(
+        &model,
+        &validate::HostSelectedContext {
+            identity: bundle.identity.clone(),
+            producer: producer.clone(),
+            compatibility: None,
+            regions: observed_regions(bundle),
+        },
+    )
+    .context("validate built-in Serwalker model")?;
+    Ok(LoadedProgram {
+        model,
+        resolved_backend: BackendId::Internal,
+        fallback_reason: None,
+        core_fallback: None,
+        core_fallback_detail: None,
+        containment: None,
+        adapter_exec: None,
+        producer,
+        compatibility: None,
+        compatibility_record: None,
+        profile: None,
+        builtin_profile: Some((profile_path, profile_digest)),
     })
 }
 

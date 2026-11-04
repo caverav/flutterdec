@@ -313,8 +313,8 @@ fn a_pinned_external_backend_is_refused_instead_of_substituted() {
     assert_eq!(prefix.spawns(), 0);
 }
 
-/// The explicit-internal case reads no registry and executes nothing, on a
-/// snapshot that an installed adapter would otherwise have handled.
+/// The explicit-internal case uses Serwalker and does not substitute a producer
+/// or heuristic recovery when its data profile is absent.
 #[test]
 fn explicit_internal_mode_bypasses_an_adapter_that_would_have_run() {
     let prefix = Prefix::answering();
@@ -326,15 +326,13 @@ fn explicit_internal_mode_bypasses_an_adapter_that_would_have_run() {
     let mut args = decompile_args(&input, &out_arg);
     args.extend(["--adapter-backend", "internal"]);
     let decompile = prefix.run(&args);
-    assert_eq!(code(&decompile), 0, "{}", stderr(&decompile));
-
-    let summary = read_json(&out.join("report.json"));
-    let provider = &summary["adapter_selection"]["provider"];
-    assert_eq!(provider["core_fallback_reason"], text("internal_requested"));
-    assert_eq!(provider["requested_backend"], text("internal"));
-    assert_core_recovery_is_honest(provider, &summary["model"]["capabilities"], "report.json");
-    // A record exists for this snapshot; internal mode never looked for it.
-    assert_eq!(provider["registry_record_present"], Value::Bool(false));
+    assert_ne!(code(&decompile), 0);
+    assert!(
+        stderr(&decompile).contains("Serwalker"),
+        "{}",
+        stderr(&decompile)
+    );
+    assert!(!out.join("report.json").exists());
     assert_eq!(
         prefix.spawns(),
         0,

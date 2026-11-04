@@ -4,6 +4,7 @@ mod libraries_info;
 mod object_pool_info;
 mod utils;
 
+use crate::SnapshotInput;
 use classes_info::produce_classes_info;
 use flutterdec_adapter::model::{
     Capabilities, CapabilityLevel, Diagnostic, DiagnosticCode, DiagnosticSeverity, Domain,
@@ -11,7 +12,7 @@ use flutterdec_adapter::model::{
     MODEL_VERSION,
 };
 use flutterdec_adapter::primitives::Sha256Digest;
-use flutterdec_adapter::{AdapterInput, AdapterRegionInput};
+use flutterdec_adapter::AdapterRegionInput;
 use functions_info::produce_functions_info;
 use libraries_info::produce_libraries_info;
 
@@ -49,22 +50,26 @@ pub(super) fn observed_regions(
     Ok(observed)
 }
 
-pub fn produce_model_headers(input: &AdapterInput<'_>) -> anyhow::Result<ProgramModel> {
+pub fn produce_model_headers(input: &SnapshotInput<'_>) -> anyhow::Result<ProgramModel> {
     Ok(ProgramModel {
         model_version: MODEL_VERSION,
         producer: input.producer.clone(),
         input: ObservedInput {
             identity: input.identity.clone(),
-            regions: observed_regions(&input.regions)?,
+            regions: observed_regions(input.regions)?,
         },
-        compatibility: Some(input.compatibility.clone()),
+        compatibility: input.compatibility.cloned(),
         capabilities: Capabilities::all_unavailable(),
         libraries: Vec::new(),
         classes: Vec::new(),
         functions: Vec::new(),
         object_pool: ModelObjectPool::unavailable(),
         diagnostics: Vec::new(),
-        extensions: Default::default(),
+        extensions: std::collections::BTreeMap::from([(
+            "serwalker.profile".into(),
+            serde_json::json!({"file_name": input.profile_path.file_name().map(|name| name.to_string_lossy()),
+                               "sha256": input.profile_sha256}),
+        )]),
     })
 }
 

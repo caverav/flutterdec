@@ -369,7 +369,7 @@ pub fn parse_data_snapshot(
 ) -> anyhow::Result<DataSnapshot> {
     let mut snapshot = DataSnapshot::default();
 
-    println!("Now parsing the snapshot...");
+    eprintln!("Now parsing the snapshot...");
     snapshot.parse_header(stream, profile)?;
     snapshot.parse_clusters(stream)?;
     snapshot.parse_roots(stream)?;
