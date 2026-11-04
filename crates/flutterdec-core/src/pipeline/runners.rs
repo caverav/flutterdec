@@ -177,10 +177,7 @@ fn format_quality_gate_failure_message(
         // parsed your snapshot".
         notes.push(format!("no adapter ran ({}): {}", reason, reason.detail()));
     } else if resolved_backend == Some(AdapterBackend::Internal) {
-        notes.push(
-            "resolved backend is internal: no exact names and no ObjectPool index space"
-                .to_string(),
-        );
+        notes.push("resolved backend is internal; see model capabilities for recovered metadata".to_string());
     }
     if symbol_quality_counts.placeholder > 0
         && symbol_quality_counts.exact == 0
@@ -971,7 +968,7 @@ pub fn run_info(
     // are both pre-spawn facts. `info` establishes them without executing
     // anything so that they are still reportable when the run that follows
     // fails, and skips the probe entirely for an identity that may not select.
-    let selection = if identity_rejection.is_none() {
+    let selection = if identity_rejection.is_none() && adapter_backend != AdapterBackend::Internal {
         select_registry(layout, &bundle).ok()
     } else {
         None
@@ -1067,6 +1064,7 @@ pub fn run_info(
 
     let provider = provider_report(&loaded, &bundle, adapter_backend);
     let model = &loaded.model;
+    out.adapter_installed = adapter_installed || provider.builtin_parser.is_some();
     out.resolved_backend = Some(provider.resolved_backend.clone());
     out.backend_fallback_reason = provider.backend_fallback_reason.clone();
     out.producer_id = Some(provider.producer_id.clone());
@@ -1099,9 +1097,10 @@ fn collect_compatibility_warnings(
     identity_is_exact: bool,
     backend_mismatch: bool,
     core_fallback: Option<CoreFallbackReason>,
+    builtin_parser: bool,
 ) -> Vec<String> {
     let mut warnings = Vec::new();
-    if !registry_record_present {
+    if !registry_record_present && !builtin_parser {
         warnings.push("compatibility registry record missing for this snapshot identity".to_string());
     }
     if !identity_is_exact {

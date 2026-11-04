@@ -183,6 +183,9 @@ EOF
               for profile in data/*.json; do
                 install -Dm444 "$profile" "$share/data/$(basename "$profile")"
               done
+              for profile in data/serwalker_profiles/*.json; do
+                install -Dm444 "$profile" "$share/data/serwalker_profiles/$(basename "$profile")"
+              done
               test -f "$share/adapters/registry.json"
               test -f "$share/data/dart-profiles.json"
             '';

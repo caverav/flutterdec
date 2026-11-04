@@ -29,7 +29,7 @@ if [[ ! -f "$binary" ]]; then
   exit 1
 fi
 
-mkdir -p "$prefix/bin" "$share/adapters/python" "$share/data"
+mkdir -p "$prefix/bin" "$share/adapters/python" "$share/data/serwalker_profiles"
 cp "$binary" "$prefix/bin/flutterdec"
 chmod 0755 "$prefix/bin/flutterdec"
 cp "$repo_root/adapters/registry.json" "$share/adapters/registry.json"
@@ -38,9 +38,13 @@ cp "$repo_root/adapters/python/adapter_template.py" \
 for profile in "$repo_root"/data/*.json; do
   cp "$profile" "$share/data/$(basename "$profile")"
 done
+for profile in "$repo_root"/data/serwalker_profiles/*.json; do
+  cp "$profile" "$share/data/serwalker_profiles/$(basename "$profile")"
+done
 chmod 0644 "$share/adapters/registry.json" \
   "$share/adapters/python/adapter_template.py" \
   "$share"/data/*.json
+chmod 0644 "$share"/data/serwalker_profiles/*.json
 
 missing=0
 for required in \

@@ -246,7 +246,7 @@ describe one run differently.
 
 - `requested_backend`, `resolved_backend`, `backend_mismatch`,
   `backend_fallback_reason`
-- `adapter_executed`, `adapter_exec_path`, `containment`
+- `adapter_executed`, `adapter_exec_path`, `containment`, `builtin_parser`, `profile_path`
 - `core_fallback_reason`, `core_fallback_detail`, `core_fallback_effect`
 - `producer_id`, `producer_version`, `producer_artifact_sha256`, `producer_trust`
 - `registry_record_present`, `compatibility_record_sha256`, `parser_family_id`,
@@ -257,13 +257,19 @@ describe one run differently.
 
 ## Core recovery
 
+Explicit `--adapter-backend internal` uses built-in Serwalker with a matching JSON recipe
+under the package's `data/serwalker_profiles` directory, or `FLUTTERDEC_PROFILES_DIR`.
+No external adapter install or registry authorization is needed. The provider reports
+`builtin_parser: "serwalker"`, local producer provenance, and the profile digest;
+`adapter_executed` remains false because no child process ran. Missing profiles or
+deserialization errors fail instead of silently returning heuristic candidates.
+
 When nothing is authorized to parse a snapshot, no adapter is executed and core
 recovers what it can from the instruction bytes. `core_fallback_reason` says
 which of these it was:
 
 | reason | meaning |
 | --- | --- |
-| `internal_requested` | `--adapter-backend internal`; no registry read, no execution |
 | `identity_rejected` | not a FullAOT snapshot, or the hash did not come from a header |
 | `no_compatibility_record` | the identity is exact and no record covers it |
 | `compatibility_unsupported` | a record exists for the hash but not for this target or feature tuple |

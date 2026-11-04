@@ -293,11 +293,14 @@ The backend that parses the snapshot decides how much is actually recovered:
 | Backend | Function names | Classes | ObjectPool |
 | --- | --- | --- | --- |
 | core recovery | none at all; code ranges are unnamed | none | unavailable |
-| `internal` | none at all; code ranges are unnamed | none | carved strings, ordinal index space |
+| explicit `internal` (Serwalker) | recovered snapshot names; unknowns remain absent | snapshot classes and ID-based relationships | real slots and hardware index space |
 | `blutter` | scraped from Blutter's rendered source, heuristic | yes | Blutter `pp.txt` entries, ordinal index space |
 | `r2flutter` | exact, from the AOT instruction table | yes, library attribution unavailable | real slots, resolvable from `x27` displacements |
 
-`--adapter-backend auto` (the default) tries r2flutter, then Blutter, then the internal path.
+`--adapter-backend auto` (the default) retains the external adapter selection and recovery paths.
+`--adapter-backend internal` runs built-in Serwalker directly, without an external adapter install.
+It loads a matching recipe from `data/serwalker_profiles` under the package data directory,
+or from `FLUTTERDEC_PROFILES_DIR` when set. A missing profile or parse error fails explicitly.
 `--adapter-backend internal`, `blutter`, and `r2-flutter` pin the choice; a named backend either
 runs or fails, and is never silently substituted.
 
@@ -340,7 +343,7 @@ When nothing is authorized to parse a snapshot, the run does not end. Core recov
 candidates from the instruction bytes, marks every one of them `heuristic` and unnamed, and leaves
 libraries, classes, function names, the original entry function, and the `ObjectPool` unavailable
 with a diagnostic for each. `core_fallback_reason` says which condition caused it
-(`internal_requested`, `identity_rejected`, `no_compatibility_record`,
+(`identity_rejected`, `no_compatibility_record`,
 `compatibility_unsupported`, or `adapter_not_installed`). See
 [Core recovery](docs/cli-reference.md#core-recovery) for the full table.
 
@@ -522,10 +525,11 @@ Names come from the adapter. Check `report.json.adapter_selection.resolved_backe
 
 - `r2flutter`: exact names from the AOT instruction table
 - `blutter`: heuristic names scraped from Blutter's rendered source
-- `internal` or core recovery: names are unavailable
+- built-in `internal` (Serwalker): snapshot names where resolved; base-object names can remain unavailable
+- core recovery or the external producer's instruction-scanning backend: names are unavailable
 
-If the backend was `internal`, install the adapter for your `snapshot_hash`, or provide an external
-backend. See [Adapters and backends](#adapters-and-backends).
+Check `provider.builtin_parser`, `producer_id`, and the model capabilities to distinguish built-in
+Serwalker from heuristic recovery. See [Adapters and backends](#adapters-and-backends).
 
 </details>
 

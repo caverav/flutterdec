@@ -362,6 +362,7 @@ dependencies = [
  "flutterdec-disasm-arm64",
  "flutterdec-ir",
  "flutterdec-loader",
+ "flutterdec-serwalker",
  "goblin",
  "serde",
  "serde_json",
@@ -409,6 +410,18 @@ dependencies = [
  "sha2",
  "tempfile",
  "zip",
+]
+
+[[package]]
+name = "flutterdec-serwalker"
+version = "0.1.0-alpha.4"
+dependencies = [
+ "anyhow",
+ "flutterdec-adapter",
+ "flutterdec-loader",
+ "goblin",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

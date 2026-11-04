@@ -339,8 +339,11 @@ rather than substituting.
 
 ### When no adapter is authorized
 
-Selection can end without an adapter to run, and there are five ways it does:
-the operator pinned `internal`, the identity gate refused the snapshot, no
+An explicit `internal` request uses built-in Serwalker and its local data profile;
+it does not consult the external registry or spawn an adapter process. Missing
+profiles and parse errors are failures, not heuristic fallbacks.
+
+External selection can end without an adapter to run: the identity gate refused the snapshot, no
 compatibility record covers it, a record exists but not for this target or
 feature tuple (or two records claim it), or a record authorizes an artifact the
 store ledger does not record as installed for it. None of those is a fact about a broken installation, and none
@@ -618,8 +621,9 @@ why, which is what lets a reader tell "this snapshot has no such thing" apart fr
 `index = (disp - entries_offset) / word_size`. `ordinal` means a position in the
 producer's own list, which carries no address meaning at all.
 
-The internal backend is ordinal: its entries are carved strings numbered by carve
-order, which has nothing to do with the hardware index space. Core reads the declared
+The external producer's instruction-scanning backend is ordinal: its entries are carved
+strings numbered by carve order. Built-in Serwalker reports hardware indexes from the
+deserialized ObjectPool instead. Core reads the declared
 index space and skips pool value and semantic hints entirely rather than joining two
 unrelated index spaces, which would attach real-looking strings to the wrong slots.
 Validation makes the two consistent by construction: `hardware` without geometry is

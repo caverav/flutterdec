@@ -17,6 +17,7 @@ dex.workspace = true
 dalvik.workspace = true
 flutterdec-loader = { path = "../flutterdec-loader" }
 flutterdec-adapter = { path = "../flutterdec-adapter" }
+flutterdec-serwalker = { path = "../flutterdec-serwalker" }
 flutterdec-disasm-arm64 = { path = "../flutterdec-disasm-arm64" }
 flutterdec-ir = { path = "../flutterdec-ir" }
 flutterdec-decompiler = { path = "../flutterdec-decompiler" }

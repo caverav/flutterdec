@@ -325,6 +325,8 @@ pub struct ProviderReport {
     /// The stable sentence explaining what that fallback costs.
     pub core_fallback_effect: Option<String>,
     pub adapter_executed: bool,
+    pub builtin_parser: Option<String>,
+    pub profile_path: Option<String>,
     pub adapter_exec_path: Option<String>,
     pub producer_id: String,
     pub producer_version: String,

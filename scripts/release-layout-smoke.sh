@@ -58,6 +58,8 @@ for required in \
   grep -qx "$required" <<<"$members" || fail "archive has no $required"
 done
 echo "[release-layout-smoke] archive members ok"
+grep -Eq '^share/flutterdec/data/serwalker_profiles/profile_[[:alnum:]_-]+\.json$' <<<"$members" ||
+  fail "archive has no Serwalker data profiles"
 
 extracted="$work/extracted"
 mkdir -p "$extracted"
