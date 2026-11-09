@@ -4,10 +4,18 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[[bin]]
+name = "flutterdec-serwalker"
+path = "src/bin/flutterdec-serwalker.rs"
+
 [dependencies]
 anyhow.workspace = true
+clap.workspace = true
 goblin.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 flutterdec-adapter = { path = "../flutterdec-adapter" }
 flutterdec-loader = { path = "../flutterdec-loader" }
+
+[dev-dependencies]
+tempfile.workspace = true

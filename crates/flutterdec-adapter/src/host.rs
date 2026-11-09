@@ -638,6 +638,7 @@ struct Authorized {
     request: AdapterRequest,
     /// The digest-verified artifact, read exactly once.
     artifact: Vec<u8>,
+    profile: Vec<u8>,
 }
 
 /// Every integrity and compatibility check, in the order they can be decided.
@@ -805,6 +806,7 @@ fn authorize(input: &AdapterInput<'_>, exec_path: &Path) -> Result<Authorized, H
     Ok(Authorized {
         request: build_request(input)?,
         artifact: artifact_bytes,
+        profile: profile_bytes,
     })
 }
 
@@ -1093,7 +1095,11 @@ impl Drop for Workspace {
 /// onto those bytes with no pathname of its own, so neither the store path nor
 /// anything inside the workspace can change what executes after verification.
 pub fn run_adapter(exec_path: &Path, input: &AdapterInput<'_>) -> Result<AdapterRun, HostError> {
-    let Authorized { request, artifact } = authorize(input, exec_path)?;
+    let Authorized {
+        request,
+        artifact,
+        profile,
+    } = authorize(input, exec_path)?;
 
     let workspace = Workspace::create()?;
     let work = workspace.path().to_path_buf();
@@ -1122,6 +1128,7 @@ pub fn run_adapter(exec_path: &Path, input: &AdapterInput<'_>) -> Result<Adapter
     }
     host_regions.sort_by_key(|region| region.region);
     workspace.write_readonly(REQUEST_PATH, &request.to_json())?;
+    workspace.write_readonly(protocol::PROFILE_PATH, &profile)?;
 
     // `argv` and the environment are assembled here rather than on `Command`,
     // because the hook that finally execs runs between `fork` and `exec` and can

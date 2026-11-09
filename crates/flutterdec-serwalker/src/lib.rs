@@ -66,10 +66,17 @@ pub fn walk_snapshot(adapter_input: &SnapshotInput<'_>) -> anyhow::Result<Progra
     );
     let profile_bytes =
         std::fs::read(adapter_input.profile_path).context("read authorized Serwalker profile")?;
+    let profile_digest = Sha256Digest::of(&profile_bytes);
     anyhow::ensure!(
-        Sha256Digest::of(&profile_bytes) == *adapter_input.profile_sha256,
+        profile_digest == *adapter_input.profile_sha256,
         "Serwalker profile does not match the authorized profile digest"
     );
+    if let Some(binding) = adapter_input.compatibility {
+        anyhow::ensure!(
+            profile_digest == binding.profile_sha256,
+            "Serwalker profile digest does not match the compatibility binding"
+        );
+    }
     let profile = profile_reader::data_profile_from_bytes(
         &profile_bytes,
         &adapter_input.identity.features.normalized,

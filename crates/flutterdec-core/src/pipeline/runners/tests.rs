@@ -612,7 +612,7 @@
 
     #[test]
     fn collects_compatibility_warnings_from_flags() {
-        let warnings = collect_compatibility_warnings(false, false, true, None, false);
+        let warnings = collect_compatibility_warnings(false, false, true, None);
         assert_eq!(warnings.len(), 3);
         assert!(warnings
             .iter()
@@ -624,7 +624,7 @@
             .iter()
             .any(|w| w.contains("backend differs")));
 
-        let warnings = collect_compatibility_warnings(true, true, false, None, false);
+        let warnings = collect_compatibility_warnings(true, true, false, None);
         assert!(warnings.is_empty());
 
         // A core fallback is the loudest of the four: it says nothing parsed
@@ -634,7 +634,6 @@
             true,
             false,
             Some(CoreFallbackReason::NoCompatibilityRecord),
-            false,
         );
         assert_eq!(warnings.len(), 1);
         assert!(warnings[0].contains("no compatibility record matches"));
@@ -646,6 +645,7 @@
     /// producer calling itself `serwalker` or `r2flutter_snapshot_v1` inert.
     #[test]
     fn resolved_backend_comes_from_the_typed_protocol_result() {
+        assert_eq!(backend_from_id(BackendId::Serwalker), AdapterBackend::Serwalker);
         assert_eq!(
             backend_from_id(BackendId::Blutter),
             AdapterBackend::Blutter
@@ -664,6 +664,10 @@
     /// let a producer substitute. `auto` is the only request that may fall back.
     #[test]
     fn requested_backend_pins_everything_except_auto() {
+        assert_eq!(
+            requested_backend(AdapterBackend::Serwalker),
+            RequestedBackend::Fixed(BackendId::Serwalker)
+        );
         assert_eq!(
             requested_backend(AdapterBackend::Auto),
             RequestedBackend::Auto

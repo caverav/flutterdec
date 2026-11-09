@@ -139,13 +139,15 @@ impl DecompileAnalysisProfile {
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 pub enum AdapterBackend {
-    /// Try each snapshot-aware backend in turn, then fall back to the internal one.
+    /// Use an exact registry-selected adapter, or machine-code-only recovery.
     Auto,
-    /// String carving plus prologue scanning. No real names, no real ObjectPool.
+    /// Machine-code-only recovery. No semantic names or real ObjectPool.
     Internal,
+    /// Require the registry-authorized Serwalker executable, with no fallback.
+    Serwalker,
     Blutter,
-    /// `r2flutter` (MIT, radareorg): deserializes the AOT snapshot, so it is the only
-    /// backend that supplies exact names and an authoritative ObjectPool index space.
+    /// `r2flutter` (MIT, radareorg): deserializes the AOT snapshot for exact
+    /// names and an authoritative ObjectPool index space.
     R2Flutter,
 }
 
@@ -154,6 +156,7 @@ impl AdapterBackend {
         match self {
             Self::Auto => "auto",
             Self::Internal => "internal",
+            Self::Serwalker => "serwalker",
             Self::Blutter => "blutter",
             Self::R2Flutter => "r2flutter",
         }

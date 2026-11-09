@@ -38,7 +38,7 @@ pub(super) fn find_object_by_id<T: SnapshotObject>(
 }
 
 pub(super) fn find_string_by_id(snapshot: &DataSnapshot, id: u32) -> anyhow::Result<String> {
-    Ok(find_object_by_id::<_String>(snapshot, id)?
-        .internal_str
-        .clone())
+    let string = find_object_by_id::<_String>(snapshot, id)?;
+    String::from_utf16(&string.code_units)
+        .map_err(|error| anyhow::anyhow!("String reference ID {id} contains {error}"))
 }

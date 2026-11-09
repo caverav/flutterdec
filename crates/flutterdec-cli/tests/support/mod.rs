@@ -183,11 +183,19 @@ impl Prefix {
 
         // Only release-distributed files are copied in: the binary and the
         // package data. Nothing from the checkout is linked or referenced.
-        fs::copy(
-            env!("CARGO_BIN_EXE_flutterdec"),
-            root.join("bin/flutterdec"),
-        )
-        .expect("copy release binary");
+        let declared = PathBuf::from(env!("CARGO_BIN_EXE_flutterdec"));
+        let binary = if declared.is_file() {
+            declared
+        } else {
+            std::env::current_exe()
+                .expect("test executable")
+                .parent()
+                .expect("deps directory")
+                .parent()
+                .expect("target directory")
+                .join("flutterdec")
+        };
+        fs::copy(binary, root.join("bin/flutterdec")).expect("copy release binary");
 
         let producer = match producer_source {
             Some(source) => source.replace(

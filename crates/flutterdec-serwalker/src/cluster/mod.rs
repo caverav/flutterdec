@@ -1437,20 +1437,17 @@ IMPLEMENT_CUSTOM_PROFILED_CLUSTER!(
     |cluster, stream, _profile, _recipe| {
         for obj in &mut cluster.objs {
             let _encoded = stream.read_unsigned()?; // why is this here twice? Huh?
+            let mut code_units = Vec::with_capacity(obj.length as usize);
             match obj.string_type {
                 StrType::OneByte => {
                     // OneByteString payload is Latin-1, not UTF-8. Bytes 0x80..=0xFF
                     // are valid and map to U+0080..U+00FF; from_utf8 rejects them.
-                    let mut decoded = String::with_capacity(obj.length as usize);
                     for _ in 0..obj.length {
-                        decoded.push(stream.read_byte()? as char);
+                        code_units.push(u16::from(stream.read_byte()?));
                     }
-                    obj.internal_str = decoded;
                 }
                 StrType::TwoByte => {
                     // a TwoByteString has exactly `length` 16-bit code units
-                    let mut code_units = Vec::with_capacity(obj.length as usize);
-
                     for _ in 0..obj.length {
                         // read 2 bytes (little-endian)
                         let b1 = stream.read_byte()? as u16;
@@ -1459,11 +1456,11 @@ IMPLEMENT_CUSTOM_PROFILED_CLUSTER!(
 
                         code_units.push(code_unit);
                     }
-
-                    // Dart strings may hold unpaired surrogates; never panic on them.
-                    obj.internal_str = String::from_utf16_lossy(&code_units);
                 }
             }
+            // Preserve the original code units; internal_str is only a display rendering.
+            obj.internal_str = String::from_utf16_lossy(&code_units);
+            obj.code_units = code_units;
         }
     }
 );
@@ -2150,14 +2147,20 @@ mod tests {
     }
 
     /// Dart strings may hold unpaired surrogates, which are not valid UTF-16.
-    /// Those must decode lossily rather than panic.
+    /// Their original code units must survive the display conversion.
     #[test]
     fn unpaired_surrogates_do_not_panic() {
         let mut bytes = leb_unsigned(1);
         bytes.extend_from_slice(&leb_unsigned((1 << 1) | 1)); // one two-byte unit
         bytes.extend_from_slice(&leb_unsigned((1 << 1) | 1)); // repeated in the fill section
         bytes.extend_from_slice(&0xd800u16.to_le_bytes()); // lone high surrogate
-        assert_eq!(read_strings(&bytes, 1), vec!["\u{fffd}"]);
+        let mut cluster = _StringCluster::default();
+        let mut stream = Stream::new(&bytes);
+        let profile = data_profile();
+        cluster.read_alloc(&mut 1, &mut stream, &profile).unwrap();
+        cluster.read_fill(&mut stream, &profile).unwrap();
+        assert_eq!(cluster.objs[0].code_units, [0xd800]);
+        assert_eq!(cluster.objs[0].internal_str, "\u{fffd}");
     }
 
     #[test]

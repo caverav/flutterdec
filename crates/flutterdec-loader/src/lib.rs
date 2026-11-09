@@ -232,7 +232,7 @@ fn read_symbol_span(
 /// `WriteVersionAndFeatures` (`runtime/vm/app_snapshot.cc`) then writes
 /// `Version::SnapshotString()`, which is the 32-character snapshot hash and
 /// carries no separator, followed by the NUL-terminated features string.
-fn parse_snapshot_header(bytes: &[u8]) -> Option<(String, SnapshotKind, String)> {
+pub fn parse_snapshot_header(bytes: &[u8]) -> Option<(String, SnapshotKind, String)> {
     const MAGIC: [u8; 4] = [0xf5, 0xf5, 0xdc, 0xdc];
     const HEADER_SIZE: usize = 20;
     const HASH_LEN: usize = 32;

@@ -1021,7 +1021,8 @@ pub fn run_info(
         dart_tag_style: bundle
             .dart_profile
             .as_ref()
-            .map(|p| p.profile.tag_style.as_str().to_string()),
+            .and_then(|p| p.profile.as_ref())
+            .map(|p| p.tag_style.as_str().to_string()),
         compressed_pointers: bundle.compressed_pointers,
         snapshot_features: bundle.snapshot_features.clone(),
         adapter_installed,
@@ -1064,7 +1065,7 @@ pub fn run_info(
 
     let provider = provider_report(&loaded, &bundle, adapter_backend);
     let model = &loaded.model;
-    out.adapter_installed = adapter_installed || provider.builtin_parser.is_some();
+    out.adapter_installed = adapter_installed;
     out.resolved_backend = Some(provider.resolved_backend.clone());
     out.backend_fallback_reason = provider.backend_fallback_reason.clone();
     out.producer_id = Some(provider.producer_id.clone());
@@ -1097,10 +1098,9 @@ fn collect_compatibility_warnings(
     identity_is_exact: bool,
     backend_mismatch: bool,
     core_fallback: Option<CoreFallbackReason>,
-    builtin_parser: bool,
 ) -> Vec<String> {
     let mut warnings = Vec::new();
-    if !registry_record_present && !builtin_parser {
+    if !registry_record_present {
         warnings.push("compatibility registry record missing for this snapshot identity".to_string());
     }
     if !identity_is_exact {
@@ -1905,10 +1905,10 @@ pub fn run_decompile(
             "profile_id": p.profile_version,
             "profile_sha256": p.profile_sha256,
             "aliases": p.aliases,
-            "tag_style": p.profile.tag_style.as_str(),
-            "compressed_word_size": p.profile.compressed_word_size,
-            "header_fields": p.profile.header_fields,
-            "max_alignment": p.profile.max_alignment
+            "tag_style": p.profile.as_ref().map(|layout| layout.tag_style.as_str()),
+            "compressed_word_size": p.profile.as_ref().map(|layout| layout.compressed_word_size),
+            "header_fields": p.profile.as_ref().map(|layout| layout.header_fields),
+            "max_alignment": p.profile.as_ref().map(|layout| layout.max_alignment)
         })),
         "analysis": {
             "profile": opt.analysis_profile.as_str(),

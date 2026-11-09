@@ -7,10 +7,36 @@ use serde_json::json;
 use crate::raw_object::{Class, Code, Field, Mint, ObjectPool, ObjectPoolEntryValue, _String};
 use crate::snapshot::{DataSnapshot, InstructionsSnapshot};
 
+fn append_escaped_text(output: &mut String, text: &str) -> serde_json::Result<()> {
+    let quoted = serde_json::to_string(text)?;
+    output.push_str(&quoted[1..quoted.len() - 1]);
+    Ok(())
+}
+
+fn string_literal(code_units: &[u16]) -> serde_json::Result<String> {
+    let mut output = String::from("\"");
+    let mut text = String::new();
+    for decoded in char::decode_utf16(code_units.iter().copied()) {
+        match decoded {
+            Ok(character) => text.push(character),
+            Err(error) => {
+                append_escaped_text(&mut output, &text)?;
+                text.clear();
+                output.push_str(&format!("\\u{:04X}", error.unpaired_surrogate()));
+            }
+        }
+    }
+    append_escaped_text(&mut output, &text)?;
+    output.push('"');
+    Ok(output)
+}
+
 fn tagged_object_value(
     snapshot: &DataSnapshot,
     instructions: &InstructionsSnapshot,
     reference_id: u32,
+    pool_index: usize,
+    model: &mut ProgramModel,
 ) -> anyhow::Result<(PoolEntryKind, Option<String>, Option<u64>)> {
     let undecoded = (PoolEntryKind::Undecoded, None, None);
     let Some(cluster) = snapshot.cluster_by_ref_id(reference_id)? else {
@@ -20,9 +46,16 @@ fn tagged_object_value(
         .object_by_ref_id(reference_id)
         .ok_or_else(|| anyhow::anyhow!("cluster no longer contains reference ID {reference_id}"))?;
     if let Some(string) = object.downcast_ref::<_String>() {
+        if char::decode_utf16(string.code_units.iter().copied()).any(|decoded| decoded.is_err()) {
+            model.extensions.insert(
+                format!("serwalker.pool.{pool_index}"),
+                json!({"reference_id": reference_id, "string_value_encoding": "utf16_escaped_literal",
+                       "string_code_units": string.code_units}),
+            );
+        }
         return Ok((
             PoolEntryKind::String,
-            Some(serde_json::to_string(&string.internal_str)?),
+            Some(string_literal(&string.code_units)?),
             None,
         ));
     }
@@ -72,7 +105,7 @@ pub fn produce_model_object_pool_info(
     for (index, entry) in global_object_pool.entries.iter().enumerate() {
         let (kind, value, target_va) = match &entry.value {
             ObjectPoolEntryValue::TaggedObjectRef(reference_id) => {
-                tagged_object_value(snapshot, instructions, *reference_id)?
+                tagged_object_value(snapshot, instructions, *reference_id, index, model)?
             }
             ObjectPoolEntryValue::Immediate(value) => {
                 (PoolEntryKind::Immediate, Some(value.to_string()), None)

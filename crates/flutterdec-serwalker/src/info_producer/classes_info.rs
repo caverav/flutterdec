@@ -14,8 +14,8 @@ pub fn produce_classes_info(
     model: &mut ProgramModel,
 ) -> anyhow::Result<()> {
     let mut classes_info = Vec::new();
-    // obtain all class clusters (there should only be one)
-    let class_cluster = snapshot.get_cluster::<ClassCluster>(ClassKind::Class)?; // should never happen.
+    // obtain the class cluster (there should only be one, the non-canonical, non-immutable one)
+    let class_cluster = snapshot.get_cluster::<ClassCluster>(ClassKind::Class)?;
 
     for class in &class_cluster.objs {
         let cls_id = ClassId(u32::try_from(class.id)?);

@@ -371,6 +371,7 @@ pub struct _String {
     pub string_type: StrType,
     pub hash: Smi,   // SmiPtr
     pub length: Smi, // SmiPtr
+    pub code_units: Vec<u16>,
     pub internal_str: String,
     pub extra_properties: HashMap<String, PropType>,
 }

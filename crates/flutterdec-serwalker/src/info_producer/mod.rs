@@ -80,7 +80,7 @@ pub fn produce_model_object_info(
 ) -> anyhow::Result<()> {
     produce_libraries_info(snapshot, model)?;
     produce_classes_info(snapshot, model)?;
-    produce_functions_info(snapshot, instructions, model)?;
+    produce_functions_info(snapshot, instructions, model)?; // has to go AFTER produce_classes_info, given it depends on model.classes to find the ClassId for Function owners
 
     Ok(())
 }

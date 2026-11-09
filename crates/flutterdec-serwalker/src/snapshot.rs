@@ -395,8 +395,8 @@ pub fn parse_data_snapshot(
             .get_current_pos()
             .checked_add(snapshot.instr_table_offset)
             .ok_or_else(|| anyhow::anyhow!("instruction-table offset overflow"))?;
-        stream.seek(instruction_table_start)?;
-        snapshot.parse_instruction_table(stream)?;
+        stream.seek(instruction_table_start)?; // during Dart deserialization, this occurs BEFORE the deserialization of the clustered stream, but that order doesn't matter as long
+        snapshot.parse_instruction_table(stream)?; // as we make up for it by implementing the post-load operation for the clusters that depend on the table, and invoke them after this line here
     }
 
     snapshot.resolve_entrypoints()?; // this is the equivalent of the CodeDeserializationCluster's PostLoad operation

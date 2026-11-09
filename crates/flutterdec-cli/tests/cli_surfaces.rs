@@ -313,11 +313,10 @@ fn a_pinned_external_backend_is_refused_instead_of_substituted() {
     assert_eq!(prefix.spawns(), 0);
 }
 
-/// The explicit-internal case uses Serwalker and does not substitute a producer
-/// or heuristic recovery when its data profile is absent.
+/// Explicit internal mode only recovers machine code, even if a parser is installed.
 #[test]
 fn explicit_internal_mode_bypasses_an_adapter_that_would_have_run() {
-    let prefix = Prefix::answering();
+    let prefix = Prefix::new();
     assert_eq!(code(&prefix.install()), 0);
     let input = write_libapp(&prefix, "exact.so", HASH);
     let out = out_dir(&prefix, "out");
@@ -326,19 +325,77 @@ fn explicit_internal_mode_bypasses_an_adapter_that_would_have_run() {
     let mut args = decompile_args(&input, &out_arg);
     args.extend(["--adapter-backend", "internal"]);
     let decompile = prefix.run(&args);
-    assert_ne!(code(&decompile), 0);
-    assert!(
-        stderr(&decompile).contains("Serwalker"),
-        "{}",
-        stderr(&decompile)
+    assert_eq!(code(&decompile), 0, "{}", stderr(&decompile));
+    let summary = read_json(&out.join("report.json"));
+    let provider = &summary["adapter_selection"]["provider"];
+    assert_eq!(provider["core_fallback_reason"], text("internal_requested"));
+    assert_eq!(provider["builtin_parser"], Value::Null);
+    assert_core_recovery_is_honest(provider, &provider["capabilities"], "internal decompile");
+
+    let info = prefix.run(&["info", &input, "--json", "--adapter-backend", "internal"]);
+    assert_eq!(code(&info), 0, "{}", stderr(&info));
+    assert_eq!(
+        json(&info)["provider"]["core_fallback_reason"],
+        text("internal_requested")
     );
-    assert!(!out.join("report.json").exists());
     assert_eq!(
         prefix.spawns(),
         0,
         "an explicitly internal run executed an adapter"
     );
     assert!(!prefix.marker.exists());
+}
+
+#[test]
+fn full_jit_identity_rejects_serwalker_before_lookup_but_allows_machine_code_recovery() {
+    let prefix = Prefix::new();
+    let mut bytes = synthetic_libapp(HASH, FEATURES);
+    let header = bytes
+        .windows(4)
+        .position(|word| word == [0xf5, 0xf5, 0xdc, 0xdc])
+        .unwrap();
+    bytes[header + 12..header + 20].copy_from_slice(&2i64.to_le_bytes());
+    let path = prefix.root().join("full-jit.so");
+    fs::write(&path, bytes).unwrap();
+    let input = path.to_str().unwrap();
+    fs::write(prefix.share().join("adapters/registry.json"), b"not JSON").unwrap();
+
+    for backend in ["internal", "auto", "serwalker"] {
+        let info = prefix.run(&["info", input, "--json", "--adapter-backend", backend]);
+        let out = out_dir(&prefix, backend);
+        let mut args = decompile_args(input, out.to_str().unwrap());
+        args.extend(["--adapter-backend", backend, "--max-functions", "1"]);
+        let decompile = prefix.run(&args);
+        if backend == "serwalker" {
+            assert_ne!(code(&info), 0);
+            assert_ne!(code(&decompile), 0);
+            assert!(
+                stderr(&decompile).contains("identity_rejected"),
+                "{}",
+                stderr(&decompile)
+            );
+            assert!(!stderr(&decompile).contains("registry_malformed"));
+            assert!(!out.join("report.json").exists());
+        } else {
+            assert_eq!(code(&info), 0, "{}", stderr(&info));
+            assert_eq!(code(&decompile), 0, "{}", stderr(&decompile));
+            let expected = if backend == "internal" {
+                "internal_requested"
+            } else {
+                "identity_rejected"
+            };
+            let provider = &json(&info)["provider"];
+            assert_eq!(provider["core_fallback_reason"], text(expected));
+            assert_eq!(provider["builtin_parser"], Value::Null);
+            assert_core_recovery_is_honest(provider, &provider["capabilities"], backend);
+            let report = read_json(&out.join("report.json"));
+            assert_eq!(
+                report["adapter_selection"]["provider"]["core_fallback_reason"],
+                text(expected)
+            );
+        }
+    }
+    assert_eq!(prefix.spawns(), 0);
 }
 
 /// An adapter that answers about a snapshot it was not given is rejected, and

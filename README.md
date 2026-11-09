@@ -292,17 +292,19 @@ The backend that parses the snapshot decides how much is actually recovered:
 
 | Backend | Function names | Classes | ObjectPool |
 | --- | --- | --- | --- |
-| core recovery | none at all; code ranges are unnamed | none | unavailable |
-| explicit `internal` (Serwalker) | recovered snapshot names; unknowns remain absent | snapshot classes and ID-based relationships | real slots and hardware index space |
+| `internal` / core recovery | none at all; code ranges are unnamed | none | unavailable |
+| `serwalker` | recovered snapshot names; unknowns remain absent | snapshot classes and ID-based relationships | real slots and hardware index space |
 | `blutter` | scraped from Blutter's rendered source, heuristic | yes | Blutter `pp.txt` entries, ordinal index space |
 | `r2flutter` | exact, from the AOT instruction table | yes, library attribution unavailable | real slots, resolvable from `x27` displacements |
 
-`--adapter-backend auto` (the default) retains the external adapter selection and recovery paths.
-`--adapter-backend internal` runs built-in Serwalker directly, without an external adapter install.
-It loads a matching recipe from `data/serwalker_profiles` under the package data directory,
-or from `FLUTTERDEC_PROFILES_DIR` when set. A missing profile or parse error fails explicitly.
-`--adapter-backend internal`, `blutter`, and `r2-flutter` pin the choice; a named backend either
-runs or fails, and is never silently substituted.
+`--adapter-backend auto` (the default) selects an external adapter through an exact compatibility
+record, or permits machine-code-only recovery when no parser can be authorized.
+`--adapter-backend internal` always requests that recovery directly: it never runs Serwalker,
+loads a parsing profile, or requires an adapter installation.
+`--adapter-backend serwalker`, `blutter`, and `r2-flutter` pin a parser choice; the authorized
+adapter must serve it or fail without heuristic substitution. Serwalker runs as a separate
+protocol-v1 executable with a registry-pinned recipe, not as a core dependency. See
+[Serwalker adapter setup](docs/serwalker-adapter.md) for local builds and experimental registration.
 
 Every recovered domain carries a capability level (`complete` / `partial` / `unavailable`) and
 every fact a provenance (`exact` / `derived` / `heuristic`), so `report.json` distinguishes "not
@@ -343,15 +345,15 @@ When nothing is authorized to parse a snapshot, the run does not end. Core recov
 candidates from the instruction bytes, marks every one of them `heuristic` and unnamed, and leaves
 libraries, classes, function names, the original entry function, and the `ObjectPool` unavailable
 with a diagnostic for each. `core_fallback_reason` says which condition caused it
-(`identity_rejected`, `no_compatibility_record`,
+(`internal_requested`, `identity_rejected`, `no_compatibility_record`,
 `compatibility_unsupported`, or `adapter_not_installed`). See
 [Core recovery](docs/cli-reference.md#core-recovery) for the full table.
 
 Two things are *not* fallback conditions and stop the command instead: integrity failures of the
 installation (a malformed registry, an ambiguous record, an artifact that fails its digest or
 profile check), and an adapter that was authorized, ran, and then failed. A pinned external
-backend is refused by name rather than answered by core recovery, because `--adapter-backend
-blutter` and `--adapter-backend r2-flutter` mean "exact names or nothing".
+backend is refused by name rather than answered by core recovery: requesting `serwalker`,
+`blutter`, or `r2-flutter` does not authorize substitution with instruction scanning.
 
 ## Common tasks
 
@@ -525,11 +527,12 @@ Names come from the adapter. Check `report.json.adapter_selection.resolved_backe
 
 - `r2flutter`: exact names from the AOT instruction table
 - `blutter`: heuristic names scraped from Blutter's rendered source
-- built-in `internal` (Serwalker): snapshot names where resolved; base-object names can remain unavailable
+- `serwalker`: snapshot names where resolved; base-object names can remain unavailable
 - core recovery or the external producer's instruction-scanning backend: names are unavailable
 
-Check `provider.builtin_parser`, `producer_id`, and the model capabilities to distinguish built-in
-Serwalker from heuristic recovery. See [Adapters and backends](#adapters-and-backends).
+Check `provider.adapter_executed`, `core_fallback_reason`, `producer_id`, and the model capabilities
+to distinguish an authorized parser from heuristic recovery. `builtin_parser` remains null.
+See [Adapters and backends](#adapters-and-backends).
 
 </details>
 

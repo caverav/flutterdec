@@ -1,7 +1,7 @@
 use crate::cluster::{CodeCluster, FunctionCluster};
 use crate::constants::ClassKind;
 use crate::info_producer::utils::{find_object_by_id, find_string_by_id};
-use crate::raw_object::{Class, Code};
+use crate::raw_object::{Class, Code, PatchClass};
 use crate::snapshot::{DataSnapshot, InstructionsSnapshot};
 use flutterdec_adapter::model::{
     ClassId, CodeRange, Function, FunctionId, Name, ProgramModel, Provenance,
@@ -81,11 +81,23 @@ pub fn produce_functions_info(
             .ok()
             .filter(|name| !name.trim().is_empty())
             .map(Name::exact);
-        let func_owner_class = find_object_by_id::<Class>(snapshot, function.owner)
+        let mut func_owner_class = find_object_by_id::<Class>(snapshot, function.owner)
             .ok()
             .and_then(|class| u32::try_from(class.id).ok())
             .map(ClassId)
             .filter(|id| model.class(*id).is_some());
+        // account for functions having PatchClass owners
+        if func_owner_class.is_none() {
+            func_owner_class = find_object_by_id::<PatchClass>(snapshot, function.owner)
+                .ok()
+                .and_then(|patch_class| {
+                    find_object_by_id::<Class>(snapshot, patch_class.wrapped_class).ok()
+                })
+                .and_then(|class| u32::try_from(class.id).ok())
+                .map(ClassId)
+                .filter(|id| model.class(*id).is_some());
+        }
+
         if func_name.is_none() || func_owner_class.is_none() {
             model.extensions.insert(
                 format!("serwalker.function.{id}"),

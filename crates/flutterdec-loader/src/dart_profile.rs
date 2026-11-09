@@ -55,7 +55,7 @@ pub struct SdkAlias {
     pub provenance: String,
 }
 
-/// A profile plus its content digest and zero-or-more provenance aliases.
+/// A verified profile plus optional legacy layout data and provenance aliases.
 #[derive(Debug, Clone)]
 pub struct ResolvedDartProfile {
     /// Legacy display value. It is `unverified` when aliases are ambiguous and
@@ -65,7 +65,7 @@ pub struct ResolvedDartProfile {
     pub profile_version: String,
     pub profile_sha256: String,
     pub aliases: Vec<SdkAlias>,
-    pub profile: DartProfile,
+    pub profile: Option<DartProfile>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -90,18 +90,39 @@ fn valid_digest(text: &str) -> bool {
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
-fn parse_profile(bytes: &[u8], profile_id: &str) -> Result<DartProfile, String> {
-    let table = serde_json::from_slice::<ProfileTable>(bytes)
-        .map_err(|err| format!("parse profile JSON: {err}"))?;
-    if !table.profiles.is_empty() {
+fn parse_profile(bytes: &[u8], profile_id: &str) -> Result<Option<DartProfile>, String> {
+    let value: serde_json::Value =
+        serde_json::from_slice(bytes).map_err(|err| format!("parse profile JSON: {err}"))?;
+    let object = value
+        .as_object()
+        .filter(|object| !object.is_empty())
+        .ok_or_else(|| "profile must be a nonempty JSON object".to_string())?;
+    if object.contains_key("profiles") {
+        let table: ProfileTable =
+            serde_json::from_value(value).map_err(|err| format!("parse layout profiles: {err}"))?;
         return table
             .profiles
             .get(profile_id)
             .cloned()
+            .map(Some)
             .ok_or_else(|| format!("profile id {:?} is absent", profile_id));
     }
-    serde_json::from_slice::<DartProfile>(bytes)
-        .map_err(|err| format!("profile id {:?} is absent or malformed: {err}", profile_id))
+    if [
+        "tag_style",
+        "compressed_word_size",
+        "header_fields",
+        "max_alignment",
+        "heap_object_tag",
+        "cids",
+    ]
+    .iter()
+    .any(|key| object.contains_key(*key))
+    {
+        return serde_json::from_value::<DartProfile>(value)
+            .map(Some)
+            .map_err(|err| format!("profile id {:?} is absent or malformed: {err}", profile_id));
+    }
+    Ok(None)
 }
 
 /// Load one bounded profile artifact and verify its content address.
@@ -217,7 +238,7 @@ mod tests {
         assert_eq!(profile.profile_sha256, digest);
         assert_eq!(profile.aliases, aliases);
         assert_eq!(profile.dart_version, "unverified");
-        assert_eq!(profile.profile.cids["class"], 42);
+        assert_eq!(profile.profile.unwrap().cids["class"], 42);
     }
 
     #[test]
@@ -226,7 +247,7 @@ mod tests {
         let (_dir, path, first_digest) = write_profile(&first);
         let first_profile =
             load_profile_artifact(&path, "profile-a", &first_digest, Vec::new()).expect("first");
-        assert_eq!(first_profile.profile.cids["class"], 42);
+        assert_eq!(first_profile.profile.unwrap().cids["class"], 42);
 
         let second = profile_json("CID_SHIFT1", 99);
         std::fs::write(&path, &second).expect("replace profile");
@@ -235,8 +256,9 @@ mod tests {
         let second_digest = format!("{:x}", second_hasher.finalize());
         let second_profile =
             load_profile_artifact(&path, "profile-a", &second_digest, Vec::new()).expect("second");
-        assert_eq!(second_profile.profile.tag_style, TagStyle::CidShift1);
-        assert_eq!(second_profile.profile.cids["class"], 99);
+        let layout = second_profile.profile.unwrap();
+        assert_eq!(layout.tag_style, TagStyle::CidShift1);
+        assert_eq!(layout.cids["class"], 99);
         assert!(load_profile_artifact(&path, "profile-a", &first_digest, Vec::new()).is_err());
     }
 
@@ -250,5 +272,20 @@ mod tests {
         let contents = vec![b'x'; (MAX_PROFILE_BYTES + 1) as usize];
         std::fs::write(&oversized, &contents).expect("write oversized profile");
         assert!(load_profile_artifact(&oversized, "profile-a", &digest, Vec::new()).is_err());
+    }
+
+    #[test]
+    fn parser_profiles_are_verified_without_requiring_legacy_layout_fields() {
+        let (_dir, path, digest) = write_profile(r#"{"parser_specific_data": {"version": 1}}"#);
+        let profile = load_profile_artifact(&path, "parser-profile", &digest, Vec::new()).unwrap();
+        assert_eq!(profile.profile_version, "parser-profile");
+        assert_eq!(profile.profile_sha256, digest);
+        assert!(profile.profile.is_none());
+        assert!(
+            load_profile_artifact(&path, "parser-profile", &"0".repeat(64), Vec::new()).is_err()
+        );
+
+        let (_dir, path, digest) = write_profile(r#"{"tag_style": "OBJECT_HEADER"}"#);
+        assert!(load_profile_artifact(&path, "broken-layout", &digest, Vec::new()).is_err());
     }
 }

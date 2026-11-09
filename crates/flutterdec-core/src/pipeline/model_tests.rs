@@ -297,24 +297,33 @@ fn assert_stops_before_lookup(identity: SnapshotIdentity, expected: IdentityReje
 /// is the substitution the protocol refuses inside a run, done one layer up.
 fn assert_pinned_external_is_refused(identity: SnapshotIdentity, expected: IdentityRejection) {
     let repo = poisoned_registry_repo();
-    let mut bundle = bundle(identity);
+    for backend in [
+        AdapterBackend::Serwalker,
+        AdapterBackend::R2Flutter,
+        AdapterBackend::Blutter,
+    ] {
+        let mut bundle = bundle(identity.clone());
+        let err = load_program(&repo.layout, &mut bundle, backend, None)
+            .expect_err("a pinned external backend cannot be served by core recovery");
 
-    let err = load_program(&repo.layout, &mut bundle, AdapterBackend::R2Flutter, None)
-        .expect_err("a pinned external backend cannot be served by core recovery");
-
-    let rendered = format!("{err:#}");
-    assert!(
-        rendered.contains("identity_rejected") && rendered.contains(&expected.to_string()),
-        "the refusal does not name the deterministic reason: {rendered}"
-    );
-    assert!(
-        !rendered.contains("compatibility registry"),
-        "the registry was read before the gate: {rendered}"
-    );
-    assert!(
-        !repo.spawned(),
-        "the adapter was executed for a rejected identity"
-    );
+        let rendered = format!("{err:#}");
+        assert!(
+            rendered.contains("identity_rejected") && rendered.contains(&expected.to_string()),
+            "the refusal does not name the deterministic reason: {rendered}"
+        );
+        assert!(
+            !rendered.contains("compatibility registry"),
+            "the registry was read before the gate: {rendered}"
+        );
+        assert!(
+            bundle.dart_profile.is_none(),
+            "a rejected identity loaded a profile"
+        );
+        assert!(
+            !repo.spawned(),
+            "the adapter was executed for a rejected identity"
+        );
+    }
 }
 
 #[test]
@@ -430,53 +439,35 @@ fn a_registry_that_is_not_json_reports_its_own_category() {
     assert!(!repo.spawned(), "a malformed registry executed an adapter");
 }
 
-/// An explicitly internal run uses Serwalker without an external registry or
-/// adapter process. Invalid snapshot data must not silently become heuristics.
 #[test]
-fn an_explicitly_internal_run_uses_serwalker_without_an_external_adapter() {
+fn an_explicitly_internal_run_only_recovers_machine_code_before_any_profile_lookup() {
     let repo = poisoned_registry_repo();
-    let mut bundle = bundle(full_aot());
-
-    let error = load_program(&repo.layout, &mut bundle, AdapterBackend::Internal, None)
-        .expect_err("invalid snapshot data cannot be parsed by Serwalker");
-    assert!(format!("{error:#}").contains("Serwalker"));
-    assert_ne!(error_category(&error), "registry_malformed");
-    assert!(!repo.spawned(), "an internal run executed an adapter");
-    assert!(
-        bundle.dart_profile.is_none(),
-        "an internal run loaded a compatibility profile it never used"
-    );
-}
-
-#[test]
-#[ignore = "requires SERWALKER_TEST_LIBAPP and FLUTTERDEC_PROFILES_DIR"]
-fn built_in_serwalker_loads_a_real_snapshot_and_reports_local_provenance() {
-    let repo = poisoned_registry_repo();
-    let path = PathBuf::from(std::env::var_os("SERWALKER_TEST_LIBAPP").unwrap());
-    let mut bundle = flutterdec_loader::load_snapshot_bundle(&path).unwrap();
-    let loaded = load_program(&repo.layout, &mut bundle, AdapterBackend::Internal, None).unwrap();
-    assert!(!repo.spawned());
-    assert!(loaded.core_fallback.is_none());
-    assert!(loaded.adapter_exec.is_none());
-    assert!(loaded.compatibility.is_none());
-    assert!(loaded.containment.is_none());
-    assert_eq!(loaded.producer.id, "flutterdec-serwalker");
-    assert_eq!(loaded.producer.trust, ProducerTrust::Local);
-    assert!(!loaded.model.functions.is_empty());
-    assert!(!loaded.model.classes.is_empty());
-    let provider = provider_report(&loaded, &bundle, AdapterBackend::Internal);
-    assert_eq!(provider.builtin_parser.as_deref(), Some("serwalker"));
-    assert!(!provider.adapter_executed);
-    assert!(!provider.registry_record_present);
-    assert!(provider.core_fallback_effect.is_none());
-    assert!(provider.warnings.is_empty());
-    assert!(provider.profile_path.is_some());
-    assert!(provider.profile_sha256.is_some());
-    eprintln!(
-        "built-in Serwalker: {} functions, {} classes",
-        loaded.model.functions.len(),
-        loaded.model.classes.len()
-    );
+    for identity in [full_aot(), full_jit(), scanned()] {
+        let mut bundle = bundle(identity);
+        let loaded = load_program(&repo.layout, &mut bundle, AdapterBackend::Internal, None)
+            .expect("internal does not deserialize snapshot data");
+        assert_eq!(
+            loaded.core_fallback,
+            Some(CoreFallbackReason::InternalRequested)
+        );
+        assert_eq!(loaded.resolved_backend, BackendId::Internal);
+        assert!(loaded.adapter_exec.is_none() && loaded.containment.is_none());
+        assert!(loaded.compatibility.is_none() && loaded.compatibility_record.is_none());
+        assert!(loaded.model.classes.is_empty() && loaded.model.libraries.is_empty());
+        assert!(loaded
+            .model
+            .functions
+            .iter()
+            .all(|function| function.name.is_none()));
+        let provider = provider_report(&loaded, &bundle, AdapterBackend::Internal);
+        assert!(provider.builtin_parser.is_none() && provider.profile_path.is_none());
+        assert!(!provider.adapter_executed && !provider.registry_record_present);
+        assert!(!repo.spawned(), "an internal run executed an adapter");
+        assert!(
+            bundle.dart_profile.is_none(),
+            "an internal run loaded a profile"
+        );
+    }
 }
 
 /// An exact identity with no record for it is the unknown-snapshot case: core
