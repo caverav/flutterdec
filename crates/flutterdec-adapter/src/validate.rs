@@ -41,17 +41,21 @@ pub struct HostSelectedContext {
     pub regions: Vec<InputRegion>,
 }
 
-/// Strings that are an admission that nothing was recovered.
+/// Strings that parsers commonly emit when nothing was recovered.
 ///
 /// A model must leave an unknown name absent. Writing one of these into a
 /// required field is how v3 turned "no name" into a name, and every consumer
 /// downstream then treated it as one.
-/// Strings like "unknown", "n/a", or "<unknown>" are matched case-insensitively
-/// because they are never valid Dart identifiers. Plain "none", "null", and
-/// "nil" are matched exact/lowercase-only: in Dart `Null` is a standard core
-/// class (`dart:core::Null`), and `None` or `Nil` are common class names in
-/// functional Dart packages, whereas lowercase "null" / "none" / "nil" are
-/// dummy sentinel values emitted by naive adapter scripts.
+///
+/// Most entries are punctuation or prose, but several are valid Dart
+/// identifiers. `not_placeholder_name` allows the word "unknown" for class and
+/// function names because a real declaration can carry it; the sentinel form is
+/// "<unknown>". The rest remain rejected for names as common sentinel
+/// spellings. Plain "none", "null", and "nil" are matched exact/lowercase-only:
+/// in Dart `Null` is a standard core class (`dart:core::Null`), and `None` or
+/// `Nil` are common class names in functional Dart packages, whereas lowercase
+/// "null" / "none" / "nil" are dummy sentinel values emitted by naive adapter
+/// scripts.
 const CASE_INSENSITIVE_PLACEHOLDERS: &[&str] = &[
     "",
     "-",
@@ -535,6 +539,19 @@ fn not_placeholder(value: &str, field: &'static str) -> Check {
     Ok(())
 }
 
+/// Names are identifiers, and `unknown` is a valid Dart identifier. Treat it as
+/// a real name here, not as an admission that the parser failed; the sentinel
+/// form for that is `<unknown>`. The broader placeholder list still applies to
+/// fields whose values are not identifiers, such as library URIs and pool
+/// values.
+fn not_placeholder_name(value: &str, field: &'static str) -> Check {
+    non_empty(value, field)?;
+    if value.trim().eq_ignore_ascii_case("unknown") {
+        return Ok(());
+    }
+    not_placeholder(value, field)
+}
+
 fn check_strings(model: &ProgramModel) -> Check {
     non_empty(&model.producer.id, "producer id")?;
     non_empty(&model.producer.version, "producer version")?;
@@ -549,11 +566,11 @@ fn check_strings(model: &ProgramModel) -> Check {
         }
     }
     for class in &model.classes {
-        not_placeholder(&class.name, "class name")?;
+        not_placeholder_name(&class.name, "class name")?;
     }
     for function in &model.functions {
         if let Some(name) = &function.name {
-            not_placeholder(&name.text, "function name")?;
+            not_placeholder_name(&name.text, "function name")?;
         }
     }
     for entry in &model.object_pool.entries {
