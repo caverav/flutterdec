@@ -1,4 +1,8 @@
 pub mod structs;
+
+#[cfg(test)]
+mod tests;
+
 use structs::{DispatchTable, DispatchTableEntry, FieldTable, ObjectStore};
 
 use crate::{profile_reader::profile::DataProfile, stream::Stream};
@@ -36,7 +40,7 @@ pub fn parse_dispatch_table(stream: &mut Stream) -> anyhow::Result<DispatchTable
     const RECENT_COUNT: usize = 1 << 6;
     const RECENT_MASK: usize = RECENT_COUNT - 1;
     const MAX_REPEAT: i64 = RECENT_COUNT as i64 - 1;
-    const RECENT_MIN: i64 = -MAX_REPEAT;
+    const RECENT_MIN: i64 = -(RECENT_COUNT as i64);
     const INDEX_BASE: i64 = MAX_REPEAT + 1;
 
     let encoded_length = stream.read_unsigned()?;
