@@ -617,7 +617,7 @@ fn confidence_requires_heuristic_provenance_and_a_real_range() {
     );
 }
 
-/// A placeholder is not a name. Accepting one puts `unknown` into report output
+/// A placeholder is not a name. Accepting one puts a sentinel into report output
 /// as though a parser had recovered it.
 #[test]
 fn placeholder_strings_cannot_stand_in_for_unrecovered_names() {
@@ -669,6 +669,24 @@ fn placeholder_strings_cannot_stand_in_for_unrecovered_names() {
             field: "class name"
         }
     );
+}
+
+/// `unknown` is a valid Dart identifier, so a function or class can carry it
+/// without the parser claiming to have recovered something it did not. The
+/// library URI field still rejects it because that value is not an identifier.
+#[test]
+fn genuine_unknown_names_are_accepted() {
+    for name in ["unknown", "Unknown", "UNKNOWN"] {
+        let bytes = mutated(model_json(&maximal_model()), |v| {
+            v["functions"][0]["name"]["text"] = json!(name)
+        });
+        parse_and_validate(&bytes).unwrap_or_else(|err| panic!("function {name} rejected: {err}"));
+
+        let bytes = mutated(model_json(&maximal_model()), |v| {
+            v["classes"][0]["name"] = json!(name)
+        });
+        parse_and_validate(&bytes).unwrap_or_else(|err| panic!("class {name} rejected: {err}"));
+    }
 }
 
 /// `main` and `Null` are real Dart identifiers. The placeholder rule rejects
