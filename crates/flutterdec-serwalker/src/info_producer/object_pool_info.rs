@@ -60,6 +60,8 @@ fn tagged_object_value(
         ));
     }
     if let Some(integer) = object.downcast_ref::<Mint>() {
+        // A Mint is a heap object, but the entry holds an integer value. The
+        // model's Immediate kind describes that value, not the heap shape.
         return Ok((
             PoolEntryKind::Immediate,
             Some(integer.value.to_string()),

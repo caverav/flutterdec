@@ -535,7 +535,8 @@ impl PoolGeometry {
 pub enum PoolEntryKind {
     /// A Dart `String` object.
     String,
-    /// A tagged Smi or other immediate.
+    /// An integer-valued entry: a tagged Smi or the integer payload of a
+    /// heap `Mint`. It is never an address.
     Immediate,
     /// A reference to code, with `target_va` set.
     Code,
