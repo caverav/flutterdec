@@ -17,6 +17,10 @@ On a supported Linux or macOS host, build both executables:
 cargo build -p flutterdec-cli -p flutterdec-serwalker --release
 ```
 
+The Nix package installs the same preparation program as
+`flutterdec-prepare-adapter`; its arguments are unchanged from the example
+command below.
+
 For an explicitly chosen real snapshot, profile and local adapter build, prepare a
 new isolated data directory. This does not overwrite the production registry or
 claim SDK-reference validation; the generated record is experimental.
@@ -39,6 +43,26 @@ target/release/flutterdec info /path/to/libapp.so --adapter-backend serwalker --
 Rebuilding the adapter changes its digest: prepare a new record and reinstall.
 Do not promote an experimental record without real-fixture and SDK-matched
 reference comparisons. Multiple exact records can share an executable and profile.
+
+## Real snapshot regression tests
+
+Two tests parse a real FullAOT snapshot and stay `#[ignore]` in a normal
+`cargo test` run because the fixture is an external app binary. Fetch the pinned
+LocalSend 1.17.0 arm64 fixture and run both tests with:
+
+```sh
+libapp="$(./scripts/fetch-real-snapshot.sh)"
+export SERWALKER_TEST_LIBAPP="$libapp"
+export SERWALKER_TEST_PROFILE="$PWD/data/serwalker_profiles/profile_80a49c71_compr_arm64.json"
+
+cargo test -p flutterdec-serwalker --test protocol_adapter -- --ignored
+cargo test -p flutterdec-serwalker --lib \
+  v4_real_snapshot_round_trips_and_passes_host_validation -- --ignored
+```
+
+The `Real Snapshot` CI job runs the same fixture on Linux. The download script
+verifies both the APK and the extracted `libapp.so` digest, so a changed release
+cannot silently stand in for the profile's snapshot.
 
 ## Invocation
 
