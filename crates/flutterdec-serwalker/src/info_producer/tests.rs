@@ -1,6 +1,7 @@
 use super::*;
 use crate::cluster::{
-    FunctionCluster, LibraryCluster, ObjectPoolCluster, TypeCluster, _StringCluster,
+    FunctionCluster, LibraryCluster, ObjectPoolCluster, PatchClassCluster, TypeCluster,
+    _StringCluster,
 };
 use crate::info_producer::{
     finish_model, observed_regions, produce_model_object_info, produce_model_object_pool,
@@ -10,7 +11,8 @@ use crate::profile_reader::profile_json_dictionary::{
 };
 use crate::program_roots::structs::{DispatchTable, FieldTable, ObjectStore};
 use crate::raw_object::{
-    Class, Function, Library, ObjectPool, ObjectPoolEntry, ObjectPoolEntryValue, Type, _String,
+    Class, Function, Library, ObjectPool, ObjectPoolEntry, ObjectPoolEntryValue, PatchClass, Type,
+    _String,
 };
 use flutterdec_adapter::model::{
     Capabilities, CapabilityLevel, ClassId, FunctionId, InputRegionName, LibraryId,
@@ -294,6 +296,54 @@ fn v4_relationships_use_object_ids_instead_of_display_name_matches() {
     assert_eq!(model.functions[0].code.start_va, 0x1010);
     assert_eq!(model.functions[0].code.size, 16);
     assert_eq!(model.functions[0].name_text(), Some("run"));
+    validate_model(&model);
+}
+
+#[test]
+fn v4_patch_class_owner_resolves_to_the_wrapped_class() {
+    let (mut snapshot, instructions) = fixture();
+    let patch_cid: u32 = 600;
+    snapshot
+        .data_profile
+        .class_kind_to_cid
+        .insert(ClassKind::PatchClass, patch_cid);
+    snapshot
+        .data_profile
+        .cid_map
+        .insert(patch_cid, ClassKind::PatchClass);
+
+    let mut patch_classes = PatchClassCluster::default();
+    patch_classes.first_ref_id = 100;
+    patch_classes.objs = vec![Box::new(PatchClass {
+        wrapped_class: 40,
+        ..Default::default()
+    })];
+    patch_classes.set_metadata(0, patch_cid, false, false);
+    snapshot
+        .clusters
+        .insert(patch_cid << 2, Box::new(patch_classes));
+
+    let functions = snapshot
+        .get_cluster_mut::<FunctionCluster>(ClassKind::Function)
+        .unwrap();
+    functions.objs.push(Box::new(Function {
+        name: 14,
+        owner: 100,
+        code_index: 1,
+        entry_point: u64::MAX,
+        unchecked_entry_point: u64::MAX,
+        ..Default::default()
+    }));
+
+    let mut model = empty_model();
+    produce_model_object_info(&mut model, &snapshot, &instructions).unwrap();
+    finish_model(&mut model);
+
+    let function = model
+        .function(FunctionId(83))
+        .expect("the function with a PatchClass owner was dropped");
+    assert_eq!(function.owner, Some(ClassId(301)));
+    assert_eq!(function.name_text(), Some("run"));
     validate_model(&model);
 }
 
