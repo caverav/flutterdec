@@ -165,7 +165,12 @@ EOF
             version = "0.1.0";
             src = self;
             cargoLock.lockFile = ./Cargo.lock;
-            cargoBuildFlags = [ "-p" "flutterdec-cli" ];
+            cargoBuildFlags = [
+              "-p" "flutterdec-cli"
+              "-p" "flutterdec-serwalker"
+              "--bins"
+              "--example" "prepare_adapter"
+            ];
             doCheck = false;
             nativeBuildInputs = with pkgs; [ pkg-config ];
             buildInputs = with pkgs; [ capstone ];
@@ -173,8 +178,10 @@ EOF
             # so the compatibility registry, the runtime profiles and the
             # checked-in producer have to be part of the package. Without them a
             # release binary has no registry to select from and nothing to
-            # install. Adapters themselves are never installed here: they go into
-            # the user's writable store at runtime.
+            # install. The adapter executable and the experimental registry
+            # preparation tool ship in bin/ as well. Installing the adapter into
+            # the user's writable store is still a runtime action performed by
+            # `flutterdec adapter install`, not something this package does.
             postInstall = ''
               share="$out/share/flutterdec"
               install -Dm444 adapters/registry.json "$share/adapters/registry.json"
@@ -183,6 +190,15 @@ EOF
               for profile in data/*.json; do
                 install -Dm444 "$profile" "$share/data/$(basename "$profile")"
               done
+              for profile in data/serwalker_profiles/*.json; do
+                install -Dm444 "$profile" "$share/data/serwalker_profiles/$(basename "$profile")"
+              done
+              adapter_bin="$(find target -type f -path '*/release/flutterdec-serwalker' -perm -u+x -print -quit)"
+              test -n "$adapter_bin"
+              install -Dm755 "$adapter_bin" "$out/bin/flutterdec-serwalker"
+              prepare_bin="$(find target -type f -path '*/release/examples/prepare_adapter' -perm -u+x -print -quit)"
+              test -n "$prepare_bin"
+              install -Dm755 "$prepare_bin" "$out/bin/flutterdec-prepare-adapter"
               test -f "$share/adapters/registry.json"
               test -f "$share/data/dart-profiles.json"
             '';

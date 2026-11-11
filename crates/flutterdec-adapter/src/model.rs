@@ -535,7 +535,8 @@ impl PoolGeometry {
 pub enum PoolEntryKind {
     /// A Dart `String` object.
     String,
-    /// A tagged Smi or other immediate.
+    /// An integer-valued entry: a tagged Smi or the integer payload of a
+    /// heap `Mint`. It is never an address.
     Immediate,
     /// A reference to code, with `target_va` set.
     Code,
@@ -603,8 +604,8 @@ pub struct ProgramModel {
     /// The registry decision that authorized this run, or `None` when there was
     /// no decision to record.
     ///
-    /// `None` is reachable exactly one way: the host recovered the program
-    /// itself because no compatibility record authorized an adapter. Writing a
+    /// `None` is used for in-process host recovery or built-in parsing that
+    /// did not use a registry-authorized adapter executable. Writing a
     /// binding there would mean inventing a record digest, a parser family and a
     /// profile that no registry ever selected, which is the same class of lie as
     /// inventing a name. An adapter-produced model is always checked against the

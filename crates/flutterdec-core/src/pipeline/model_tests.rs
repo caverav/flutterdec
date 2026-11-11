@@ -59,10 +59,7 @@ impl SpyRepo {
         let exec = root.join("artifacts/flutterdec-spy");
         fs::write(
             &exec,
-            format!(
-                "#!/bin/sh\ntouch '{}'\nexit 1\n",
-                marker.display()
-            ),
+            format!("#!/bin/sh\ntouch '{}'\nexit 1\n", marker.display()),
         )
         .expect("write spy adapter");
         let mut perms = fs::metadata(&exec).expect("metadata").permissions();
@@ -101,9 +98,7 @@ impl SpyRepo {
         fs::write(self.root.join("data/test-profile.json"), &profile_bytes)
             .expect("write test profile");
 
-        let exec_path = self
-            .root
-            .join("artifacts/flutterdec-spy");
+        let exec_path = self.root.join("artifacts/flutterdec-spy");
         let exec_bytes = fs::read(&exec_path).expect("read spy adapter");
         let features = vec![
             "android".to_string(),
@@ -168,14 +163,8 @@ impl SpyRepo {
         // A spy adapter sitting in the store is not an installed one. The host
         // authorizes against the store ledger, so the rig installs through the
         // real installer rather than leaving a file the product would refuse.
-        store::install(
-            &self.layout,
-            &registry,
-            HASH,
-            None,
-            Some(&exec_path),
-        )
-        .expect("install the spy adapter");
+        store::install(&self.layout, &registry, HASH, None, Some(&exec_path))
+            .expect("install the spy adapter");
     }
 }
 
@@ -193,7 +182,10 @@ fn valid_registry_repo() -> SpyRepo {
 fn ambiguous_registry_repo() -> SpyRepo {
     let mut repo = SpyRepo::new("{}");
     repo.write_valid_registry();
-    let record = repo.record.clone().expect("the valid registry has a record");
+    let record = repo
+        .record
+        .clone()
+        .expect("the valid registry has a record");
     let registry = CompatibilityRegistry {
         version: 1,
         records: vec![record.clone(), record],
@@ -305,24 +297,38 @@ fn assert_stops_before_lookup(identity: SnapshotIdentity, expected: IdentityReje
 /// is the substitution the protocol refuses inside a run, done one layer up.
 fn assert_pinned_external_is_refused(identity: SnapshotIdentity, expected: IdentityRejection) {
     let repo = poisoned_registry_repo();
-    let mut bundle = bundle(identity);
+    for backend in [
+        AdapterBackend::Serwalker,
+        AdapterBackend::R2Flutter,
+        AdapterBackend::Blutter,
+    ] {
+        let mut bundle = bundle(identity.clone());
+        let err = load_program(&repo.layout, &mut bundle, backend, None)
+            .expect_err("a pinned external backend cannot be served by core recovery");
 
-    let err = load_program(&repo.layout, &mut bundle, AdapterBackend::R2Flutter, None)
-        .expect_err("a pinned external backend cannot be served by core recovery");
-
-    let rendered = format!("{err:#}");
-    assert!(
-        rendered.contains("identity_rejected") && rendered.contains(&expected.to_string()),
-        "the refusal does not name the deterministic reason: {rendered}"
-    );
-    assert!(
-        !rendered.contains("compatibility registry"),
-        "the registry was read before the gate: {rendered}"
-    );
-    assert!(
-        !repo.spawned(),
-        "the adapter was executed for a rejected identity"
-    );
+        let rendered = format!("{err:#}");
+        assert!(
+            rendered.contains("identity_rejected") && rendered.contains(&expected.to_string()),
+            "the refusal does not name the deterministic reason: {rendered}"
+        );
+        assert_eq!(
+            error_category(&err),
+            "identity_rejected",
+            "the refusal lost its stable category: {rendered}"
+        );
+        assert!(
+            !rendered.contains("compatibility registry"),
+            "the registry was read before the gate: {rendered}"
+        );
+        assert!(
+            bundle.dart_profile.is_none(),
+            "a rejected identity loaded a profile"
+        );
+        assert!(
+            !repo.spawned(),
+            "the adapter was executed for a rejected identity"
+        );
+    }
 }
 
 #[test]
@@ -438,26 +444,35 @@ fn a_registry_that_is_not_json_reports_its_own_category() {
     assert!(!repo.spawned(), "a malformed registry executed an adapter");
 }
 
-/// An explicitly internal run reads nothing and executes nothing, even where a
-/// perfectly good record and a working artifact are installed.
 #[test]
-fn an_explicitly_internal_run_selects_nothing_and_executes_nothing() {
-    let repo = valid_registry_repo();
-    let mut bundle = bundle(full_aot());
-
-    let loaded = load_program(&repo.layout, &mut bundle, AdapterBackend::Internal, None)
-        .expect("internal recovery does not depend on a registry");
-
-    assert_eq!(
-        loaded.core_fallback,
-        Some(CoreFallbackReason::InternalRequested)
-    );
-    assert!(!repo.spawned(), "an internal run executed an adapter");
-    assert!(loaded.compatibility_record.is_none());
-    assert!(
-        bundle.dart_profile.is_none(),
-        "an internal run loaded a compatibility profile it never used"
-    );
+fn an_explicitly_internal_run_only_recovers_machine_code_before_any_profile_lookup() {
+    let repo = poisoned_registry_repo();
+    for identity in [full_aot(), full_jit(), scanned()] {
+        let mut bundle = bundle(identity);
+        let loaded = load_program(&repo.layout, &mut bundle, AdapterBackend::Internal, None)
+            .expect("internal does not deserialize snapshot data");
+        assert_eq!(
+            loaded.core_fallback,
+            Some(CoreFallbackReason::InternalRequested)
+        );
+        assert_eq!(loaded.resolved_backend, BackendId::Internal);
+        assert!(loaded.adapter_exec.is_none() && loaded.containment.is_none());
+        assert!(loaded.compatibility.is_none() && loaded.compatibility_record.is_none());
+        assert!(loaded.model.classes.is_empty() && loaded.model.libraries.is_empty());
+        assert!(loaded
+            .model
+            .functions
+            .iter()
+            .all(|function| function.name.is_none()));
+        let provider = provider_report(&loaded, &bundle, AdapterBackend::Internal);
+        assert!(provider.builtin_parser.is_none() && provider.profile_path.is_none());
+        assert!(!provider.adapter_executed && !provider.registry_record_present);
+        assert!(!repo.spawned(), "an internal run executed an adapter");
+        assert!(
+            bundle.dart_profile.is_none(),
+            "an internal run loaded a profile"
+        );
+    }
 }
 
 /// An exact identity with no record for it is the unknown-snapshot case: core
@@ -494,6 +509,25 @@ fn an_unknown_hash_is_recovered_by_core_rather_than_refused() {
     );
 }
 
+/// The same unknown hash, with an external backend pinned: there is nothing to
+/// run, and the error has to name that reason instead of `unclassified`.
+#[test]
+fn a_pinned_external_backend_reports_no_compatibility_record() {
+    let repo = valid_registry_repo();
+    let mut bundle = bundle(SnapshotIdentity::from_header(
+        TargetArch::Arm64,
+        "0123456789abcdef0123456789abcdef",
+        SnapshotKind::FullAot,
+        FEATURES,
+    ));
+
+    let err = load_program(&repo.layout, &mut bundle, AdapterBackend::Serwalker, None)
+        .expect_err("a pinned external backend cannot be served without a record");
+
+    assert_eq!(error_category(&err), "no_compatibility_record", "{err:#}");
+    assert!(!repo.spawned(), "a pinned refusal executed an adapter");
+}
+
 /// A rejected identity has no way to become a run with a lesser trust label.
 /// The gate is the only exit, so `Untrusted` never reaches a producer record.
 #[test]
@@ -506,9 +540,11 @@ fn a_rejected_identity_is_not_downgraded_to_an_untrusted_run() {
 
     assert_eq!(
         loaded.core_fallback_detail.as_deref(),
-        Some(IdentityRejection::NotFullAot(Some(SnapshotKind::FullJit))
-            .to_string()
-            .as_str())
+        Some(
+            IdentityRejection::NotFullAot(Some(SnapshotKind::FullJit))
+                .to_string()
+                .as_str()
+        )
     );
     assert_ne!(
         loaded.producer.trust,
@@ -531,10 +567,11 @@ fn a_rejected_identity_is_not_downgraded_to_an_untrusted_run() {
 fn run_adapter_refuses_a_rejected_identity_before_spawn() {
     let repo = valid_registry_repo();
     let bundle = bundle(full_jit());
-    let record = repo.record.clone().expect("the valid registry has a record");
-    let exec = repo
-        .root
-        .join("artifacts/flutterdec-spy");
+    let record = repo
+        .record
+        .clone()
+        .expect("the valid registry has a record");
+    let exec = repo.root.join("artifacts/flutterdec-spy");
     let profile_path = repo.root.join("data/test-profile.json");
 
     let err = run_adapter(

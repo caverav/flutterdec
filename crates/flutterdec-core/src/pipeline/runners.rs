@@ -177,10 +177,7 @@ fn format_quality_gate_failure_message(
         // parsed your snapshot".
         notes.push(format!("no adapter ran ({}): {}", reason, reason.detail()));
     } else if resolved_backend == Some(AdapterBackend::Internal) {
-        notes.push(
-            "resolved backend is internal: no exact names and no ObjectPool index space"
-                .to_string(),
-        );
+        notes.push("resolved backend is internal; see model capabilities for recovered metadata".to_string());
     }
     if symbol_quality_counts.placeholder > 0
         && symbol_quality_counts.exact == 0
@@ -971,7 +968,7 @@ pub fn run_info(
     // are both pre-spawn facts. `info` establishes them without executing
     // anything so that they are still reportable when the run that follows
     // fails, and skips the probe entirely for an identity that may not select.
-    let selection = if identity_rejection.is_none() {
+    let selection = if identity_rejection.is_none() && adapter_backend != AdapterBackend::Internal {
         select_registry(layout, &bundle).ok()
     } else {
         None
@@ -1024,7 +1021,8 @@ pub fn run_info(
         dart_tag_style: bundle
             .dart_profile
             .as_ref()
-            .map(|p| p.profile.tag_style.as_str().to_string()),
+            .and_then(|p| p.profile.as_ref())
+            .map(|p| p.tag_style.as_str().to_string()),
         compressed_pointers: bundle.compressed_pointers,
         snapshot_features: bundle.snapshot_features.clone(),
         adapter_installed,
@@ -1067,6 +1065,7 @@ pub fn run_info(
 
     let provider = provider_report(&loaded, &bundle, adapter_backend);
     let model = &loaded.model;
+    out.adapter_installed = adapter_installed;
     out.resolved_backend = Some(provider.resolved_backend.clone());
     out.backend_fallback_reason = provider.backend_fallback_reason.clone();
     out.producer_id = Some(provider.producer_id.clone());
@@ -1906,10 +1905,10 @@ pub fn run_decompile(
             "profile_id": p.profile_version,
             "profile_sha256": p.profile_sha256,
             "aliases": p.aliases,
-            "tag_style": p.profile.tag_style.as_str(),
-            "compressed_word_size": p.profile.compressed_word_size,
-            "header_fields": p.profile.header_fields,
-            "max_alignment": p.profile.max_alignment
+            "tag_style": p.profile.as_ref().map(|layout| layout.tag_style.as_str()),
+            "compressed_word_size": p.profile.as_ref().map(|layout| layout.compressed_word_size),
+            "header_fields": p.profile.as_ref().map(|layout| layout.header_fields),
+            "max_alignment": p.profile.as_ref().map(|layout| layout.max_alignment)
         })),
         "analysis": {
             "profile": opt.analysis_profile.as_str(),

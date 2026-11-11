@@ -24,6 +24,9 @@ use std::fmt;
 /// The only accepted protocol major.
 pub const PROTOCOL_MAJOR: u32 = 1;
 
+/// Read-only profile bytes staged by the host; the request pins their digest.
+pub const PROFILE_PATH: &str = "in/profile.json";
+
 /// A checked-in producer backend.
 ///
 /// A closed enum rather than a string, because the previous design read the
@@ -33,11 +36,12 @@ pub const PROTOCOL_MAJOR: u32 = 1;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BackendId {
-    /// String carving plus prologue scanning. No exact names, no real pool.
+    /// Heuristic recovery. No exact names or real pool.
     Internal,
+    Serwalker,
     Blutter,
-    /// `r2flutter`: deserializes the snapshot, so it is the only backend that
-    /// can supply exact names and a hardware pool index space.
+    /// `r2flutter`: deserializes the snapshot for exact names and a hardware
+    /// pool index space.
     ///
     /// Spelled out rather than left to `rename_all`, which would derive
     /// `r2_flutter` and put a second spelling of one backend on the wire: the
@@ -52,6 +56,7 @@ impl BackendId {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Internal => "internal",
+            Self::Serwalker => "serwalker",
             Self::Blutter => "blutter",
             Self::R2Flutter => "r2flutter",
         }
@@ -89,6 +94,7 @@ impl RequestedBackend {
         match text {
             "auto" => Some(Self::Auto),
             "internal" => Some(Self::Fixed(BackendId::Internal)),
+            "serwalker" => Some(Self::Fixed(BackendId::Serwalker)),
             "blutter" => Some(Self::Fixed(BackendId::Blutter)),
             "r2flutter" => Some(Self::Fixed(BackendId::R2Flutter)),
             _ => None,
@@ -421,7 +427,7 @@ impl AdapterRequest {
         }
 
         // Distinct paths, and an output that cannot overwrite an input.
-        let mut paths = BTreeSet::new();
+        let mut paths = BTreeSet::from([PROFILE_PATH]);
         for input in &self.inputs {
             if !paths.insert(input.path.as_str()) {
                 return Err(ProtocolError::AliasedPath(input.path.to_string()));

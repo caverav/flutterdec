@@ -378,10 +378,12 @@ impl FunctionScopeArg {
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
 enum AdapterBackendArg {
-    /// Try r2flutter, then the Blutter bridge, then the internal adapter
+    /// Use an exact registry-selected adapter, or machine-code-only recovery
     Auto,
-    /// Force the internal adapter
+    /// Force machine-code-only recovery without a snapshot parser
     Internal,
+    /// Require the registry-authorized Serwalker executable, with no fallback
+    Serwalker,
     /// Require the Blutter bridge, with no fallback
     Blutter,
     // Clap's derive spells this value `r2-flutter`; the alias accepts the tool's own
@@ -396,6 +398,7 @@ impl AdapterBackendArg {
         match self {
             Self::Auto => AdapterBackend::Auto,
             Self::Internal => AdapterBackend::Internal,
+            Self::Serwalker => AdapterBackend::Serwalker,
             Self::Blutter => AdapterBackend::Blutter,
             Self::R2Flutter => AdapterBackend::R2Flutter,
         }

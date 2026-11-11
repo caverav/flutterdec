@@ -16,7 +16,7 @@ Arguments:
 
 - `<INPUT>`: APK or `libapp.so`
 - `--json`: print JSON output
-- `--adapter-backend <auto|internal|blutter|r2-flutter>` (default `auto`; `auto` tries r2flutter, then blutter, then internal)
+- `--adapter-backend <auto|internal|serwalker|blutter|r2-flutter>` (default `auto`; exact registry selection or machine-code-only recovery)
 - `--adapter-timeout <SECONDS>`: wall-clock deadline for one adapter invocation
 
 Exit status is nonzero when an adapter was authorized, ran, and failed. The
@@ -79,7 +79,7 @@ General options:
   `disassembly_ratio` deliberately keeps the model's pre-split function list as its denominator, so the
   ratio is not inflated by split pieces. Comparing a split run against an unsplit one compares unlike
   populations.
-- `--adapter-backend <auto|internal|blutter|r2-flutter>` (default `auto`; `auto` tries r2flutter, then blutter, then internal)
+- `--adapter-backend <auto|internal|serwalker|blutter|r2-flutter>` (default `auto`; exact registry selection or machine-code-only recovery)
 - `--adapter-timeout <SECONDS>`: wall-clock deadline for one adapter invocation
 - `--require-snapshot-hash-match` (fail if adapter-reported snapshot hash differs from loader hash)
 
@@ -150,7 +150,7 @@ Options:
 
 - `--function-scope <app-unknown|app|all>` (default `app-unknown`)
 - `--app-package <NAME>` (repeatable; limit compare set to selected app packages)
-- `--adapter-backend <auto|internal|blutter|r2-flutter>` (default `auto`)
+- `--adapter-backend <auto|internal|serwalker|blutter|r2-flutter>` (default `auto`)
 - `--adapter-timeout <SECONDS>`: wall-clock deadline for one adapter invocation, applied to each side
 - `--require-snapshot-hash-match` (fail if either side has adapter/loader snapshot hash mismatch)
 - `--json`
@@ -246,7 +246,7 @@ describe one run differently.
 
 - `requested_backend`, `resolved_backend`, `backend_mismatch`,
   `backend_fallback_reason`
-- `adapter_executed`, `adapter_exec_path`, `containment`
+- `adapter_executed`, `adapter_exec_path`, `containment`, `builtin_parser`, `profile_path`
 - `core_fallback_reason`, `core_fallback_detail`, `core_fallback_effect`
 - `producer_id`, `producer_version`, `producer_artifact_sha256`, `producer_trust`
 - `registry_record_present`, `compatibility_record_sha256`, `parser_family_id`,
@@ -257,13 +257,20 @@ describe one run differently.
 
 ## Core recovery
 
+Explicit `--adapter-backend internal` requests machine-code-only recovery. It never loads
+a profile or registry, deserializes snapshot objects, or executes Serwalker. It reports
+`internal_requested`, local producer provenance, and `adapter_executed: false`.
+`builtin_parser` remains null on every path. Use `--adapter-backend serwalker` for the
+separate, installed Serwalker executable; its exact registry record pins the artifact,
+profile and input identity. See [Serwalker adapter setup](serwalker-adapter.md).
+
 When nothing is authorized to parse a snapshot, no adapter is executed and core
 recovers what it can from the instruction bytes. `core_fallback_reason` says
 which of these it was:
 
 | reason | meaning |
 | --- | --- |
-| `internal_requested` | `--adapter-backend internal`; no registry read, no execution |
+| `internal_requested` | the operator explicitly requested machine-code-only recovery |
 | `identity_rejected` | not a FullAOT snapshot, or the hash did not come from a header |
 | `no_compatibility_record` | the identity is exact and no record covers it |
 | `compatibility_unsupported` | a record exists for the hash but not for this target or feature tuple |
@@ -282,10 +289,10 @@ conditions. They are integrity failures of the
 installation and they stop the command. So does an adapter that was authorized,
 spawned, and then failed.
 
-`--adapter-backend blutter` and `--adapter-backend r2-flutter` are refused
-rather than answered by core recovery: those flags mean "exact names or
-nothing", and substituting prologue scanning is what the protocol already
-forbids inside a run.
+`--adapter-backend serwalker`, `--adapter-backend blutter`, and
+`--adapter-backend r2-flutter` are refused rather than answered by core recovery when
+the requested parser cannot be authorized. A started parser that fails is also an error,
+including under `auto`; a parsing failure is not an unsupported-identity fallback.
 
 ## Error categories
 

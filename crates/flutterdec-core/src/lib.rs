@@ -139,13 +139,15 @@ impl DecompileAnalysisProfile {
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 pub enum AdapterBackend {
-    /// Try each snapshot-aware backend in turn, then fall back to the internal one.
+    /// Use an exact registry-selected adapter, or machine-code-only recovery.
     Auto,
-    /// String carving plus prologue scanning. No real names, no real ObjectPool.
+    /// Machine-code-only recovery. No semantic names or real ObjectPool.
     Internal,
+    /// Require the registry-authorized Serwalker executable, with no fallback.
+    Serwalker,
     Blutter,
-    /// `r2flutter` (MIT, radareorg): deserializes the AOT snapshot, so it is the only
-    /// backend that supplies exact names and an authoritative ObjectPool index space.
+    /// `r2flutter` (MIT, radareorg): deserializes the AOT snapshot for exact
+    /// names and an authoritative ObjectPool index space.
     R2Flutter,
 }
 
@@ -154,6 +156,7 @@ impl AdapterBackend {
         match self {
             Self::Auto => "auto",
             Self::Internal => "internal",
+            Self::Serwalker => "serwalker",
             Self::Blutter => "blutter",
             Self::R2Flutter => "r2flutter",
         }
@@ -325,6 +328,8 @@ pub struct ProviderReport {
     /// The stable sentence explaining what that fallback costs.
     pub core_fallback_effect: Option<String>,
     pub adapter_executed: bool,
+    pub builtin_parser: Option<String>,
+    pub profile_path: Option<String>,
     pub adapter_exec_path: Option<String>,
     pub producer_id: String,
     pub producer_version: String,
@@ -374,6 +379,9 @@ pub fn error_category(error: &anyhow::Error) -> &'static str {
         }
         if cause.downcast_ref::<IdentityRejection>().is_some() {
             return "identity_rejected";
+        }
+        if let Some(refused) = cause.downcast_ref::<PinnedBackendRefused>() {
+            return refused.reason.as_str();
         }
     }
     "unclassified"

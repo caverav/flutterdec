@@ -121,6 +121,7 @@ fn a_result_round_trips_in_both_its_shapes() {
 fn a_backend_has_the_same_wire_token_on_both_documents() {
     for (backend, token) in [
         (BackendId::Internal, "internal"),
+        (BackendId::Serwalker, "serwalker"),
         (BackendId::Blutter, "blutter"),
         (BackendId::R2Flutter, "r2flutter"),
     ] {
@@ -358,6 +359,22 @@ fn region_geometry_must_be_self_consistent() {
 /// was asked to read.
 #[test]
 fn handles_must_be_distinct() {
+    for field in ["input", "output"] {
+        let bytes = mutated(request_json(), |v| {
+            if field == "input" {
+                v["inputs"][0]["path"] = json!(flutterdec_adapter::protocol::PROFILE_PATH);
+            } else {
+                v["output"] = json!(flutterdec_adapter::protocol::PROFILE_PATH);
+            }
+        });
+        assert_eq!(
+            AdapterRequest::from_json(&bytes),
+            Err(ProtocolError::AliasedPath(
+                flutterdec_adapter::protocol::PROFILE_PATH.to_string()
+            ))
+        );
+    }
+
     let bytes = mutated(request_json(), |v| v["output"] = json!("in/vm_data.bin"));
     assert_eq!(
         AdapterRequest::from_json(&bytes),
@@ -538,7 +555,7 @@ fn backend_names_outside_the_closed_set_are_rejected() {
     assert_eq!(raw["resolved_backend"], json!("internal"));
 
     for imposter in [
-        "serwalker",
+        "serwalker_unregistered_name",
         "r2flutter_snapshot_v1",
         "blutter_bridge_model_v1",
         "dynamic_snapshot_string_model_v1",

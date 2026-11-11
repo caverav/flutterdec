@@ -317,7 +317,7 @@ Minimal example, from a producer that recovered code ranges and nothing else:
 ### Adapter protocol v1
 
 One adapter run is one process invocation. The host writes the four snapshot regions
-into a scratch directory along with a request document, runs the adapter there, and
+and the verified profile into a scratch directory along with a request document, runs the adapter there, and
 reads back a result document plus the model.
 
 The request carries the protocol and model majors, the host's identity, the producer
@@ -330,7 +330,7 @@ The result carries the same two majors, a structured status (`ok` / `unsupported
 `failed`), the model path on success, a stable error code on failure, the backend that
 actually ran, an optional fallback reason, and diagnostics.
 
-Backends are a closed vocabulary of three tokens - `internal`, `blutter`, `r2flutter` -
+Backends are a closed vocabulary of four tokens - `internal`, `serwalker`, `blutter`, `r2flutter` -
 and the request's `requested_backend` and the result's `resolved_backend` spell them the
 same way, so a producer can answer with the token it was handed. `requested_backend` is
 additionally allowed to be `auto`, which is the only case in which a producer may pick a
@@ -339,10 +339,16 @@ rather than substituting.
 
 ### When no adapter is authorized
 
-Selection can end without an adapter to run, and there are five ways it does:
-the operator pinned `internal`, the identity gate refused the snapshot, no
+An explicit `internal` request uses machine-code-only recovery. It does not read a
+profile, consult the registry, deserialize snapshot objects, or spawn an adapter.
+Serwalker is a separate protocol-v1 executable selected by an exact registry record.
+The host stages the verified profile bytes at `in/profile.json`; the adapter checks
+them against the compatibility binding before decoding. No filename-based recipe
+discovery is used for an authorized adapter invocation.
+
+External selection can end without an adapter to run: the identity gate refused the snapshot, no
 compatibility record covers it, a record exists but not for this target or
-feature tuple (or two records claim it), or a record authorizes an artifact the
+feature tuple, or a record authorizes an artifact the
 store ledger does not record as installed for it. None of those is a fact about a broken installation, and none
 of them is a reason to stop.
 
@@ -600,7 +606,7 @@ The current Python template adapter:
 - guesses libraries from `package:...dart` strings
 - recovers function starts with simple ARM64 heuristics
 - builds object pool from extracted strings
-- can run in `auto|internal|blutter|r2flutter` backend mode (`auto` tries r2flutter, then Blutter, then internal)
+- core supports `auto|internal|serwalker|blutter|r2flutter`; the reference Python producer supports `internal|blutter|r2flutter`, while Serwalker is a separate executable
 - in Blutter mode, parses `asm/*.dart` and `pp.txt`; a declaration it cannot parse yields a function with no name, not a synthesized one
 - in r2flutter mode, shells out to `r2flutter -jH/-ji/-jc/-jxz/-jzz/-jp` and maps the AOT instruction table, class table, and ObjectPool-referenced strings onto the model
 - emits ProgramModel v4 and an adapter protocol v1 result
@@ -618,8 +624,9 @@ why, which is what lets a reader tell "this snapshot has no such thing" apart fr
 `index = (disp - entries_offset) / word_size`. `ordinal` means a position in the
 producer's own list, which carries no address meaning at all.
 
-The internal backend is ordinal: its entries are carved strings numbered by carve
-order, which has nothing to do with the hardware index space. Core reads the declared
+The external producer's instruction-scanning backend is ordinal: its entries are carved
+strings numbered by carve order. Built-in Serwalker reports hardware indexes from the
+deserialized ObjectPool instead. Core reads the declared
 index space and skips pool value and semantic hints entirely rather than joining two
 unrelated index spaces, which would attach real-looking strings to the wrong slots.
 Validation makes the two consistent by construction: `hardware` without geometry is

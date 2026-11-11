@@ -412,6 +412,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "flutterdec-serwalker"
+version = "0.1.0-alpha.4"
+dependencies = [
+ "anyhow",
+ "clap",
+ "flutterdec-adapter",
+ "flutterdec-loader",
+ "goblin",
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "foldhash"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"

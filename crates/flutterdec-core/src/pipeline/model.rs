@@ -5,11 +5,9 @@ use flutterdec_loader::registry::{
 /// One program model plus everything the operator needs to know about where it
 /// came from.
 ///
-/// `compatibility`, `compatibility_record`, `profile`, `adapter_exec` and
-/// `containment` are all `Option` together with `core_fallback`: either a
-/// registry record authorized an adapter and all five describe that run, or
-/// core recovered the program itself and `core_fallback` says why. Nothing here
-/// is inferred from a filename or from a substring of adapter output.
+/// Registry-authorized processes carry compatibility and containment facts;
+/// heuristic recovery carries a `core_fallback` reason. These are distinct
+/// provider paths, not labels inferred from adapter output.
 #[derive(Debug, Clone)]
 struct LoadedProgram {
     model: ProgramModel,
@@ -67,8 +65,12 @@ fn provider_report(
             .core_fallback
             .map(|reason| reason.as_str().to_string()),
         core_fallback_detail: loaded.core_fallback_detail.clone(),
-        core_fallback_effect: loaded.core_fallback.map(|_| CORE_FALLBACK_EFFECT.to_string()),
-        adapter_executed: loaded.core_fallback.is_none(),
+        core_fallback_effect: loaded
+            .core_fallback
+            .map(|_| CORE_FALLBACK_EFFECT.to_string()),
+        adapter_executed: loaded.adapter_exec.is_some(),
+        builtin_parser: None,
+        profile_path: record.map(|record| record.profile.path.clone()),
         adapter_exec_path: loaded
             .adapter_exec
             .as_ref()
@@ -204,6 +206,7 @@ fn requested_backend(backend: AdapterBackend) -> RequestedBackend {
     match backend {
         AdapterBackend::Auto => RequestedBackend::Auto,
         AdapterBackend::Internal => RequestedBackend::Fixed(BackendId::Internal),
+        AdapterBackend::Serwalker => RequestedBackend::Fixed(BackendId::Serwalker),
         AdapterBackend::Blutter => RequestedBackend::Fixed(BackendId::Blutter),
         AdapterBackend::R2Flutter => RequestedBackend::Fixed(BackendId::R2Flutter),
     }
@@ -213,6 +216,7 @@ fn requested_backend(backend: AdapterBackend) -> RequestedBackend {
 fn backend_from_id(id: BackendId) -> AdapterBackend {
     match id {
         BackendId::Internal => AdapterBackend::Internal,
+        BackendId::Serwalker => AdapterBackend::Serwalker,
         BackendId::Blutter => AdapterBackend::Blutter,
         BackendId::R2Flutter => AdapterBackend::R2Flutter,
     }
@@ -227,7 +231,7 @@ fn backend_from_id(id: BackendId) -> AdapterBackend {
 fn pins_external_backend(backend: AdapterBackend) -> bool {
     matches!(
         backend,
-        AdapterBackend::Blutter | AdapterBackend::R2Flutter
+        AdapterBackend::Serwalker | AdapterBackend::Blutter | AdapterBackend::R2Flutter
     )
 }
 
@@ -296,6 +300,25 @@ fn load_core_fallback(
     })
 }
 
+/// A pinned external backend that cannot be served for this snapshot.
+///
+/// The reason is kept typed so `error_category` can report the same token core
+/// recovery would have used, instead of `unclassified` from a stringified
+/// message.
+#[derive(Debug)]
+struct PinnedBackendRefused {
+    reason: CoreFallbackReason,
+    message: String,
+}
+
+impl std::fmt::Display for PinnedBackendRefused {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for PinnedBackendRefused {}
+
 /// A refusal that names the deterministic reason a pinned external backend
 /// could not be honored.
 fn pinned_backend_refused(
@@ -303,14 +326,15 @@ fn pinned_backend_refused(
     reason: CoreFallbackReason,
     detail: &str,
 ) -> anyhow::Error {
-    anyhow!(
+    let message = format!(
         "--adapter-backend {} cannot be served for this snapshot ({}): {}. \
-         core recovery is available with --adapter-backend internal, and reports \
-         heuristic code candidates with no names, libraries, classes or ObjectPool",
+         use --adapter-backend internal for machine-code-only recovery, or auto \
+         to allow recovery when no parser can be authorized",
         backend.as_str(),
         reason.as_str(),
         detail
-    )
+    );
+    anyhow::Error::new(PinnedBackendRefused { reason, message })
 }
 
 /// The host's containment budget for one invocation.
@@ -355,6 +379,10 @@ fn load_program(
     backend: AdapterBackend,
     adapter_timeout_seconds: Option<u64>,
 ) -> Result<LoadedProgram> {
+    if backend == AdapterBackend::Internal {
+        return load_core_fallback(bundle, CoreFallbackReason::InternalRequested, None, None);
+    }
+
     // Before the registry is read, before a path is resolved, before anything
     // is spawned.
     if let Err(rejection) = bundle.identity.exact_selection_key() {
@@ -373,13 +401,6 @@ fn load_program(
             None,
         );
     }
-    // An explicitly internal run selects nothing and executes nothing. Reading
-    // the registry here would make "internal" mean "internal, once an adapter
-    // has been authorized", which is not what the operator asked for.
-    if backend == AdapterBackend::Internal {
-        return load_core_fallback(bundle, CoreFallbackReason::InternalRequested, None, None);
-    }
-
     // All three of these can refuse for a reason that is about the snapshot
     // rather than about the installation, and only those reasons reach core
     // recovery. Reading the registry goes through the same classifier as

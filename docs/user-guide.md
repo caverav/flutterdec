@@ -322,8 +322,9 @@ flutterdec decompile ./sample.apk -o ./out --analysis-profile light
 
 Adapter backend options:
 
-- `--adapter-backend auto` (default): try r2flutter, then the Blutter bridge, then the internal adapter
-- `--adapter-backend internal`: force internal adapter only
+- `--adapter-backend auto` (default): use an exact registry-selected adapter, or machine-code-only recovery
+- `--adapter-backend internal`: force machine-code-only recovery without profile lookup or snapshot deserialization
+- `--adapter-backend serwalker`: require the registry-authorized Serwalker executable with no fallback
 - `--adapter-backend blutter`: require Blutter bridge backend with no fallback
 - `--adapter-backend r2-flutter`: require the r2flutter backend with no fallback
 - `--require-snapshot-hash-match`: fail unless the snapshot identity came from a real header
@@ -341,12 +342,12 @@ network isolation where the host permits it. `adapter_containment` in `info --js
 established; a control the host could not establish is reported `unavailable` with a
 reason rather than claimed.
 
-Backend choice decides how much is actually recovered. The internal adapter carves
-strings and scans prologues: it recovers code ranges with no names at all, and its
-`object_pool` is a list of carved strings in an ordinal index space, not real pool
-slots. Its `model_capabilities` say so: `function_names: unavailable`,
-`pool_index_space: unavailable`. `r2flutter` and `blutter` parse the snapshot, so they
-return real Dart names, and `r2flutter` can return a hardware `ObjectPool`.
+Backend choice decides how much is actually recovered. Internal recovery scans
+instruction bytes for code candidates with no names, classes or object pool. Its
+`model_capabilities` report `function_names: unavailable` and
+`pool_index_space: unavailable`. Serwalker and r2flutter deserialize the snapshot
+and can recover names and a hardware `ObjectPool`; unresolved metadata stays absent.
+See [Serwalker adapter setup](serwalker-adapter.md) for building and registering it.
 
 Only a hardware pool index space lets `flutterdec` turn a `pool[N]` reference in the
 disassembly into a value. With an ordinal pool, references are left unresolved on
