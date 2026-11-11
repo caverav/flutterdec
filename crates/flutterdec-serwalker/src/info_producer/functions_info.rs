@@ -7,6 +7,7 @@ use flutterdec_adapter::model::{
     ClassId, CodeRange, Function, FunctionId, Name, ProgramModel, Provenance,
 };
 use serde_json::json;
+use std::collections::HashSet;
 
 pub fn produce_functions_info(
     snapshot: &DataSnapshot,
@@ -14,6 +15,7 @@ pub fn produce_functions_info(
     model: &mut ProgramModel,
 ) -> anyhow::Result<()> {
     let mut functions_info = Vec::new();
+    let known_classes: HashSet<ClassId> = model.classes.iter().map(|class| class.id).collect();
 
     let function_cluster = snapshot.get_cluster::<FunctionCluster>(ClassKind::Function)?;
     let code_cluster = snapshot.get_cluster::<CodeCluster>(ClassKind::Code)?;
@@ -85,7 +87,7 @@ pub fn produce_functions_info(
             .ok()
             .and_then(|class| u32::try_from(class.id).ok())
             .map(ClassId)
-            .filter(|id| model.class(*id).is_some());
+            .filter(|id| known_classes.contains(id));
         // account for functions having PatchClass owners
         if func_owner_class.is_none() {
             func_owner_class = find_object_by_id::<PatchClass>(snapshot, function.owner)
@@ -95,7 +97,7 @@ pub fn produce_functions_info(
                 })
                 .and_then(|class| u32::try_from(class.id).ok())
                 .map(ClassId)
-                .filter(|id| model.class(*id).is_some());
+                .filter(|id| known_classes.contains(id));
         }
 
         if func_name.is_none() || func_owner_class.is_none() {

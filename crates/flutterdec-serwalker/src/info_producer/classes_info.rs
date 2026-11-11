@@ -1,6 +1,6 @@
 use flutterdec_adapter::model::{Class, ClassId, LibraryId, ProgramModel, Provenance};
 use serde_json::json;
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashSet};
 
 use crate::cluster::ClassCluster;
 use crate::constants::ClassKind;
@@ -16,6 +16,8 @@ pub fn produce_classes_info(
     let mut classes_info = Vec::new();
     // obtain the class cluster (there should only be one, the non-canonical, non-immutable one)
     let class_cluster = snapshot.get_cluster::<ClassCluster>(ClassKind::Class)?;
+    let known_libraries: HashSet<LibraryId> =
+        model.libraries.iter().map(|library| library.id).collect();
 
     for class in &class_cluster.objs {
         let cls_id = ClassId(u32::try_from(class.id)?);
@@ -34,9 +36,10 @@ pub fn produce_classes_info(
             id: cls_id,
             name: cls_name,
             super_class: None,
-            library: model
-                .library(LibraryId(class.library))
-                .map(|library| library.id),
+            library: {
+                let library_id = LibraryId(class.library);
+                known_libraries.contains(&library_id).then_some(library_id)
+            },
             provenance: Provenance::Exact,
         };
 
