@@ -380,6 +380,9 @@ pub fn error_category(error: &anyhow::Error) -> &'static str {
         if cause.downcast_ref::<IdentityRejection>().is_some() {
             return "identity_rejected";
         }
+        if let Some(refused) = cause.downcast_ref::<PinnedBackendRefused>() {
+            return refused.reason.as_str();
+        }
     }
     "unclassified"
 }

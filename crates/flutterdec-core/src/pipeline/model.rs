@@ -300,6 +300,25 @@ fn load_core_fallback(
     })
 }
 
+/// A pinned external backend that cannot be served for this snapshot.
+///
+/// The reason is kept typed so `error_category` can report the same token core
+/// recovery would have used, instead of `unclassified` from a stringified
+/// message.
+#[derive(Debug)]
+struct PinnedBackendRefused {
+    reason: CoreFallbackReason,
+    message: String,
+}
+
+impl std::fmt::Display for PinnedBackendRefused {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for PinnedBackendRefused {}
+
 /// A refusal that names the deterministic reason a pinned external backend
 /// could not be honored.
 fn pinned_backend_refused(
@@ -307,14 +326,15 @@ fn pinned_backend_refused(
     reason: CoreFallbackReason,
     detail: &str,
 ) -> anyhow::Error {
-    anyhow!(
+    let message = format!(
         "--adapter-backend {} cannot be served for this snapshot ({}): {}. \
          use --adapter-backend internal for machine-code-only recovery, or auto \
          to allow recovery when no parser can be authorized",
         backend.as_str(),
         reason.as_str(),
         detail
-    )
+    );
+    anyhow::Error::new(PinnedBackendRefused { reason, message })
 }
 
 /// The host's containment budget for one invocation.

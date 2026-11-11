@@ -311,6 +311,11 @@ fn assert_pinned_external_is_refused(identity: SnapshotIdentity, expected: Ident
             rendered.contains("identity_rejected") && rendered.contains(&expected.to_string()),
             "the refusal does not name the deterministic reason: {rendered}"
         );
+        assert_eq!(
+            error_category(&err),
+            "identity_rejected",
+            "the refusal lost its stable category: {rendered}"
+        );
         assert!(
             !rendered.contains("compatibility registry"),
             "the registry was read before the gate: {rendered}"
@@ -502,6 +507,25 @@ fn an_unknown_hash_is_recovered_by_core_rather_than_refused() {
             .all(|f| f.provenance == Provenance::Heuristic),
         "core recovery claimed a non-heuristic function"
     );
+}
+
+/// The same unknown hash, with an external backend pinned: there is nothing to
+/// run, and the error has to name that reason instead of `unclassified`.
+#[test]
+fn a_pinned_external_backend_reports_no_compatibility_record() {
+    let repo = valid_registry_repo();
+    let mut bundle = bundle(SnapshotIdentity::from_header(
+        TargetArch::Arm64,
+        "0123456789abcdef0123456789abcdef",
+        SnapshotKind::FullAot,
+        FEATURES,
+    ));
+
+    let err = load_program(&repo.layout, &mut bundle, AdapterBackend::Serwalker, None)
+        .expect_err("a pinned external backend cannot be served without a record");
+
+    assert_eq!(error_category(&err), "no_compatibility_record", "{err:#}");
+    assert!(!repo.spawned(), "a pinned refusal executed an adapter");
 }
 
 /// A rejected identity has no way to become a run with a lesser trust label.
