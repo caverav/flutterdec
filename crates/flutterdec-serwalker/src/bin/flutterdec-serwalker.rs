@@ -104,7 +104,7 @@ fn produce(request: &AdapterRequest) -> Result<ProgramModel, AdapterError> {
     let data = regions
         .iter()
         .find(|region| region.region == InputRegionName::IsolateData)
-        .expect("validated request has isolate data");
+        .ok_or_else(|| error(AdapterErrorCode::InputMissing, "request omits isolate data"))?;
     let (hash, kind, features) =
         flutterdec_loader::parse_snapshot_header(data.bytes).ok_or_else(|| {
             error(

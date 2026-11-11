@@ -163,10 +163,28 @@ impl DataSnapshot {
     }
 
     fn parse_version_and_features(&mut self, stream: &mut Stream) -> anyhow::Result<()> {
-        let mut version_and_features = stream.read_c_string()?;
+        let version_and_features = stream.read_c_string()?;
 
-        self.features = version_and_features.split_off(constants::VERSION_HASH_LENGTH); // returns (str[hash_len..])
-        self.version_hash = version_and_features;
+        // The version hash is 32 raw bytes with no terminator. `get` keeps a
+        // short or non-UTF-8-boundary string an error instead of panicking in
+        // `split_off`.
+        let (version_hash, features) = version_and_features
+            .get(..constants::VERSION_HASH_LENGTH)
+            .zip(version_and_features.get(constants::VERSION_HASH_LENGTH..))
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "snapshot version string is shorter than {} bytes",
+                    constants::VERSION_HASH_LENGTH
+                )
+            })?;
+        anyhow::ensure!(
+            version_hash.bytes().all(|byte| byte.is_ascii_hexdigit()),
+            "snapshot version hash is not {} hexadecimal characters",
+            constants::VERSION_HASH_LENGTH
+        );
+
+        self.version_hash = version_hash.to_owned();
+        self.features = features.to_owned();
         Ok(())
     }
 
@@ -282,7 +300,9 @@ impl DataSnapshot {
 
         self.start_of_fill_area = stream.get_current_pos();
         for key in self.cluster_order.iter() {
-            let cluster = self.clusters.get_mut(key).unwrap();
+            let cluster = self.clusters.get_mut(key).ok_or_else(|| {
+                anyhow::anyhow!("cluster_order contains missing cluster key {key}")
+            })?;
             (*cluster).read_fill(stream, &self.data_profile)?;
         }
         self.end_of_fill_area = stream.get_current_pos();
@@ -369,7 +389,6 @@ pub fn parse_data_snapshot(
 ) -> anyhow::Result<DataSnapshot> {
     let mut snapshot = DataSnapshot::default();
 
-    eprintln!("Now parsing the snapshot...");
     snapshot.parse_header(stream, profile)?;
     snapshot.parse_clusters(stream)?;
     snapshot.parse_roots(stream)?;
@@ -608,6 +627,37 @@ mod tests {
             crate::constants::VERSION_HASH_LENGTH
         );
         assert_eq!(snap.features, h.features);
+    }
+
+    #[test]
+    fn rejects_a_version_string_shorter_than_the_hash() {
+        let h = Header {
+            version: "short".into(),
+            features: String::new(),
+            ..Default::default()
+        };
+        let Err(error) = parse(&h.encode(MAGIC_BYTES)) else {
+            panic!("short version string should be rejected");
+        };
+        assert!(
+            error.to_string().contains("shorter than"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn rejects_a_non_hex_version_hash() {
+        let h = Header {
+            version: "z".repeat(crate::constants::VERSION_HASH_LENGTH),
+            ..Default::default()
+        };
+        let Err(error) = parse(&h.encode(MAGIC_BYTES)) else {
+            panic!("non-hex version hash should be rejected");
+        };
+        assert!(
+            error.to_string().contains("hexadecimal"),
+            "unexpected error: {error}"
+        );
     }
 
     #[test]

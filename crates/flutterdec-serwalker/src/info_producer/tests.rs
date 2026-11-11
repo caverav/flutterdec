@@ -250,7 +250,9 @@ fn fixture() -> (DataSnapshot, InstructionsSnapshot) {
         FieldTable::default(),
         DispatchTable::default(),
     );
-    let mut table = vec![0; 16];
+    let mut table = Vec::new();
+    table.extend_from_slice(&0u64.to_le_bytes()); // OneByteString tags
+    table.extend_from_slice(&24u64.to_le_bytes()); // header + one entry
     for word in [0u32, 1, 0, 0, 16, 0] {
         table.extend_from_slice(&word.to_le_bytes());
     }

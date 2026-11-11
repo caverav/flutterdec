@@ -878,7 +878,12 @@ IMPLEMENT_CUSTOM_PROFILED_CLUSTER!(
             let has_monomorphic_entrypoint = (payload_info & 1) == 1;
             let unchecked_offset = payload_info >> 1;
 
-            let obj = cluster.objs.get_mut(idx as usize).unwrap(); // this can never panic
+            let obj = cluster
+                .objs
+                .get_mut(usize::try_from(idx).map_err(|_| {
+                    anyhow::anyhow!("Code cluster object index {idx} does not fit in usize")
+                })?)
+                .ok_or_else(|| anyhow::anyhow!("Code cluster is missing object {idx}"))?;
 
             // unresolved before resolve_entrypoints
             obj.entry_point = u64::MAX; // [[IMPORTANT]] WE USE u64::MAX to indicate an unresolved entry
@@ -913,7 +918,12 @@ IMPLEMENT_CUSTOM_PROFILED_CLUSTER!(
         // deferred code objects
         {
             // No read instructions equivalent
-            let obj = cluster.objs.get_mut(idx as usize).unwrap();
+            let obj = cluster
+                .objs
+                .get_mut(usize::try_from(idx).map_err(|_| {
+                    anyhow::anyhow!("Code cluster object index {idx} does not fit in usize")
+                })?)
+                .ok_or_else(|| anyhow::anyhow!("Code cluster is missing object {idx}"))?;
 
             // always unresolved inside the current snapshot, these
             // are resolved during runtime, at some point we would have to emulate the behavior of
@@ -944,16 +954,41 @@ pub fn resolve_instructions_len_for_code_objects(
 ) -> anyhow::Result<()> {
     const POLYMORPHIC_ENTRY_OFFSET: u64 = 24;
 
+    let object_count = usize::try_from(code_cluster.non_deferred_obj_count)
+        .map_err(|_| anyhow::anyhow!("Code cluster object count does not fit in usize"))?;
+    anyhow::ensure!(
+        object_count <= code_cluster.objs.len(),
+        "Code cluster declares {object_count} non-deferred objects but holds {}",
+        code_cluster.objs.len()
+    );
+
     let mut curr_end = instr_image_size as u64;
-    for idx in (0..code_cluster.non_deferred_obj_count).rev() {
-        let code_obj = code_cluster.objs.get_mut(idx as usize).unwrap();
+    for idx in (0..object_count).rev() {
+        let code_obj = code_cluster
+            .objs
+            .get_mut(idx)
+            .ok_or_else(|| anyhow::anyhow!("Code cluster is missing object {idx}"))?;
         let entry_offset = if code_obj.has_monomorphic_entrypoint {
             POLYMORPHIC_ENTRY_OFFSET
         } else {
             0
         };
-        code_obj.instructions_length_ = curr_end - (code_obj.entry_point - entry_offset);
-        curr_end = code_obj.entry_point - entry_offset;
+        let payload_start = code_obj
+            .entry_point
+            .checked_sub(entry_offset)
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Code object {idx} entry {:#x} is below its {entry_offset}-byte offset",
+                    code_obj.entry_point
+                )
+            })?;
+        let instructions_length = curr_end.checked_sub(payload_start).ok_or_else(|| {
+            anyhow::anyhow!(
+                "Code object {idx} payload starts at {payload_start:#x}, past the instruction image end {curr_end:#x}"
+            )
+        })?;
+        code_obj.instructions_length_ = instructions_length;
+        curr_end = payload_start;
     }
 
     Ok(())
@@ -2175,5 +2210,62 @@ mod tests {
             .read_alloc(&mut next_ref, &mut stream, &profile)
             .unwrap();
         assert!(cluster.read_fill(&mut stream, &profile).is_err());
+    }
+
+    #[test]
+    fn instruction_lengths_reject_entry_points_past_the_image() {
+        let mut first = Box::<Code>::default();
+        first.entry_point = 0x80;
+        let mut second = Box::<Code>::default();
+        second.entry_point = 0x40;
+        let mut cluster = CodeCluster {
+            non_deferred_obj_count: 2,
+            obj_count: 2,
+            objs: vec![first, second],
+            ..Default::default()
+        };
+
+        let error = resolve_instructions_len_for_code_objects(&mut cluster, 0x100).unwrap_err();
+        assert!(
+            error.to_string().contains("past the instruction image end"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn instruction_lengths_reject_entry_points_below_their_offset() {
+        let mut code = Box::<Code>::default();
+        code.entry_point = 0x10;
+        code.has_monomorphic_entrypoint = true;
+        let mut cluster = CodeCluster {
+            non_deferred_obj_count: 1,
+            obj_count: 1,
+            objs: vec![code],
+            ..Default::default()
+        };
+
+        let error = resolve_instructions_len_for_code_objects(&mut cluster, 0x100).unwrap_err();
+        assert!(
+            error.to_string().contains("below its 24-byte offset"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn instruction_lengths_reject_a_cluster_with_fewer_objects_than_declared() {
+        let mut cluster = CodeCluster {
+            non_deferred_obj_count: 2,
+            obj_count: 2,
+            objs: vec![Box::<Code>::default()],
+            ..Default::default()
+        };
+
+        let error = resolve_instructions_len_for_code_objects(&mut cluster, 0x100).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("declares 2 non-deferred objects"),
+            "unexpected error: {error}"
+        );
     }
 }

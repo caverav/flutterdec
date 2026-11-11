@@ -96,15 +96,19 @@ impl<'a> Stream<'a> {
     /// Raw fixed width little endian, header fields only. Mostly everything else inside the
     /// clustered body is LEB128. Renamed so the two can't get mixed up.
     pub fn read_raw_u64(&mut self) -> Result<u64> {
-        Ok(u64::from_le_bytes(
-            self.take(8)?.try_into().expect("take(8) is 8 bytes"),
-        ))
+        let bytes: [u8; 8] = self
+            .take(8)?
+            .try_into()
+            .map_err(|_| anyhow!("read_raw_u64 did not receive eight bytes"))?;
+        Ok(u64::from_le_bytes(bytes))
     }
 
     pub fn read_raw_u32(&mut self) -> Result<u32> {
-        Ok(u32::from_le_bytes(
-            self.take(4)?.try_into().expect("take(4) is 4 bytes"),
-        ))
+        let bytes: [u8; 4] = self
+            .take(4)?
+            .try_into()
+            .map_err(|_| anyhow!("read_raw_u32 did not receive four bytes"))?;
+        Ok(u32::from_le_bytes(bytes))
     }
 
     pub fn read_byte(&mut self) -> Result<u8> {
