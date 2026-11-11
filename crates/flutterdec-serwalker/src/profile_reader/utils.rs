@@ -6,6 +6,8 @@ use crate::{
     },
 };
 use anyhow::Context;
+#[cfg(test)]
+use std::path::PathBuf;
 use std::{collections::HashMap, env, fs};
 
 pub fn features_suffix(features: &[SnapshotFeatures]) -> String {
@@ -71,10 +73,30 @@ pub(super) fn read_profile_file(file_name: &str) -> anyhow::Result<ProfileFileDa
         profile_file =
             fs::read(&full_path).with_context(|| format!("read data profile: {}", full_path))?;
     } else {
-        // fallback #1 try reading the working directory
-        profile_file = fs::read(file_name).with_context(|| {
-            format!("read data profile from current working directory: {file_name}")
-        })?;
+        #[cfg(test)]
+        {
+            // Unit tests run from the crate directory. Resolve the checked-in
+            // profiles without requiring FLUTTERDEC_PROFILES_DIR, then keep the
+            // working-directory fallback for every other caller.
+            let manifest_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../../data/serwalker_profiles")
+                .join(file_name);
+            profile_file = if manifest_path.is_file() {
+                fs::read(&manifest_path)
+                    .with_context(|| format!("read data profile: {}", manifest_path.display()))?
+            } else {
+                fs::read(file_name).with_context(|| {
+                    format!("read data profile from current working directory: {file_name}")
+                })?
+            };
+        }
+        #[cfg(not(test))]
+        {
+            // fallback #1 try reading the working directory
+            profile_file = fs::read(file_name).with_context(|| {
+                format!("read data profile from current working directory: {file_name}")
+            })?;
+        }
     }
 
     read_profile_bytes(&profile_file)

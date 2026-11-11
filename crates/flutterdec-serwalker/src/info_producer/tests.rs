@@ -567,16 +567,19 @@ fn public_input_checks_matching_conflicting_and_absent_profile_bindings() {
     use flutterdec_adapter::model::CompatibilityBinding;
 
     let seed = empty_model();
-    let profile_path = std::env::var_os("FLUTTERDEC_PROFILES_DIR")
+    let profile_dir = std::env::var_os("FLUTTERDEC_PROFILES_DIR")
         .map(std::path::PathBuf::from)
-        .unwrap_or_default()
-        .join(
-            crate::profile_file_name(
-                constants::DART_3_11_1_SNAPSHOT_HASH,
-                &seed.input.identity.features.normalized,
-            )
-            .unwrap(),
-        );
+        .unwrap_or_else(|| {
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../../data/serwalker_profiles")
+        });
+    let profile_path = profile_dir.join(
+        crate::profile_file_name(
+            constants::DART_3_11_1_SNAPSHOT_HASH,
+            &seed.input.identity.features.normalized,
+        )
+        .unwrap(),
+    );
     let digest = Sha256Digest::of(&std::fs::read(&profile_path).unwrap());
     let matching = CompatibilityBinding {
         record_sha256: Sha256Digest::of(b"record"),
