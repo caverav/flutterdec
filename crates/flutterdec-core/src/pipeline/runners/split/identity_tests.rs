@@ -89,8 +89,8 @@ fn every_piece_of_every_split_shape_is_canonical() {
     for (label, instructions) in records {
         let record = FunctionDisassembly {
             function_id: 7,
-            function_name: "declaredName".to_string(),
-            owner_class: "SomeClass".to_string(),
+            function_name: Some("declaredName".to_string()),
+            owner_class: Some("SomeClass".to_string()),
             entry_va: 0x1000,
             size: 4 * instructions.len() as u64,
             instructions,

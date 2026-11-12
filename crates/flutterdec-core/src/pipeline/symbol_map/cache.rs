@@ -204,12 +204,12 @@ fn register_local_symbol_cache(
 }
 
 fn resolve_local_symbol_cache_paths(
-    repo_root: &Path,
+    local_cache_root: &Path,
     arch: &str,
     build_id: Option<&str>,
     flutter_version: Option<&str>,
 ) -> Result<LocalSymbolCacheResolution> {
-    let local_cache_root = repo_root.join("symbols");
+    let repo_root = local_cache_root.parent().unwrap_or(local_cache_root);
     let manifest_path = local_cache_root.join("manifest.json");
     if !manifest_path.exists() {
         return Ok(LocalSymbolCacheResolution {
@@ -218,7 +218,7 @@ fn resolve_local_symbol_cache_paths(
         });
     }
 
-    let manifest = load_local_symbol_cache_manifest(&local_cache_root)?;
+    let manifest = load_local_symbol_cache_manifest(local_cache_root)?;
     let mut resolution = LocalSymbolCacheResolution {
         manifest_path: Some(manifest_path),
         ..LocalSymbolCacheResolution::default()

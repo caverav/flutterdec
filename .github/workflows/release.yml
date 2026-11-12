@@ -69,6 +69,11 @@ jobs:
           fi
           "$bin" --version
 
+      # The archive carries a prefix, not a lone binary. Runtime discovery is
+      # executable-relative: the CLI reads its compatibility registry, runtime
+      # profiles and packaged producer from `<exe dir>/../share/flutterdec`, so
+      # an archive holding only `flutterdec` extracts into a CLI that cannot
+      # resolve any of them without a source checkout.
       - name: Package artifact
         shell: bash
         run: |
@@ -78,8 +83,14 @@ jobs:
           out_dir="dist"
           mkdir -p "$out_dir"
           archive="$out_dir/flutterdec-${{ github.ref_name }}-${os}-${arch}.tar.gz"
-          tar -C "target/${{ matrix.target }}/release" -czf "$archive" flutterdec
+          ./scripts/stage-release-prefix.sh \
+            "target/${{ matrix.target }}/release/flutterdec" stage
+          tar -C stage -czf "$archive" bin share
           echo "archive=$archive" >> "$GITHUB_ENV"
+
+      - name: Verify archive runs off a checkout
+        shell: bash
+        run: ./scripts/release-layout-smoke.sh "${{ env.archive }}"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7

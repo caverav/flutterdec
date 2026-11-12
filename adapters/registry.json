@@ -1,0 +1,182 @@
+{
+  "version": 1,
+  "records": [
+    {
+      "snapshot_hash": "80a49c7111088100a233b2ae788e1f48",
+      "snapshot_kind": "full_aot",
+      "target_arch": "arm64",
+      "features": [
+        "android",
+        "arm64",
+        "compressed-pointers",
+        "no-code_comments",
+        "product"
+      ],
+      "feature_fingerprint": "cd3b1581739bbd05f45b1be681daa14bd4b9ad241f750325347095b98b6b7709",
+      "known_features": [
+        "android",
+        "arm64",
+        "compressed-pointers",
+        "no-code_comments",
+        "product",
+        "no-compressed-pointers",
+        "x64",
+        "arm",
+        "ia32",
+        "riscv32",
+        "riscv64"
+      ],
+      "forbidden_features": [
+        "no-compressed-pointers"
+      ],
+      "sdk_aliases": [
+        {
+          "ecosystem": "dart",
+          "version": "3.5.0",
+          "provenance": "r2flutter-offsets"
+        },
+        {
+          "ecosystem": "flutter",
+          "version": "3.24.0",
+          "provenance": "sample-build-metadata"
+        }
+      ],
+      "parser_family": {
+        "id": "flutterdec-local-python",
+        "version": "1",
+        "sha256": null
+      },
+      "profile": {
+        "id": "3.5.0",
+        "path": "data/dart-profiles.json",
+        "sha256": "a1ce86ebf936c3e780413090974b753520c1c8a9f1854d3a0367158d48f77e0f"
+      },
+      "artifact": {
+        "id": "flutterdec-local-python",
+        "variants": [
+          {
+            "host_os": "linux",
+            "host_arch": "x86_64",
+            "path": "artifacts/flutterdec-local-python",
+            "size": 44979,
+            "sha256": "efb78b09100ca1f378436168e32373e22102c389f62f219a3079a1a845350bd3",
+            "provenance": "checked-in reference producer, published by adapter install"
+          },
+          {
+            "host_os": "macos",
+            "host_arch": "x86_64",
+            "path": "artifacts/flutterdec-local-python",
+            "size": 44979,
+            "sha256": "efb78b09100ca1f378436168e32373e22102c389f62f219a3079a1a845350bd3",
+            "provenance": "checked-in reference producer, published by adapter install"
+          },
+          {
+            "host_os": "macos",
+            "host_arch": "aarch64",
+            "path": "artifacts/flutterdec-local-python",
+            "size": 44979,
+            "sha256": "efb78b09100ca1f378436168e32373e22102c389f62f219a3079a1a845350bd3",
+            "provenance": "checked-in reference producer, published by adapter install"
+          }
+        ]
+      },
+      "evidence": {
+        "source": "data/dart-profiles.json",
+        "provenance": "checked-in-profile-and-fixture",
+        "references": [
+          "LocalSend 1.17.0 sample",
+          "r2flutter offsets.json"
+        ]
+      },
+      "trust_tier": "verified",
+      "protocol_major": 1,
+      "model_major": 4
+    },
+    {
+      "snapshot_hash": "ace654289f5abc240509fc941453ebc5",
+      "snapshot_kind": "full_aot",
+      "target_arch": "arm64",
+      "features": [
+        "android",
+        "arm64",
+        "compressed-pointers",
+        "no-code_comments",
+        "product"
+      ],
+      "feature_fingerprint": "cd3b1581739bbd05f45b1be681daa14bd4b9ad241f750325347095b98b6b7709",
+      "known_features": [
+        "android",
+        "arm64",
+        "compressed-pointers",
+        "no-code_comments",
+        "product",
+        "no-compressed-pointers",
+        "x64",
+        "arm",
+        "ia32",
+        "riscv32",
+        "riscv64"
+      ],
+      "forbidden_features": [
+        "no-compressed-pointers"
+      ],
+      "sdk_aliases": [
+        {
+          "ecosystem": "dart",
+          "version": "3.12.1",
+          "provenance": "r2flutter-offsets"
+        }
+      ],
+      "parser_family": {
+        "id": "flutterdec-local-python",
+        "version": "1",
+        "sha256": null
+      },
+      "profile": {
+        "id": "3.9.0",
+        "path": "data/dart-profiles.json",
+        "sha256": "a1ce86ebf936c3e780413090974b753520c1c8a9f1854d3a0367158d48f77e0f"
+      },
+      "artifact": {
+        "id": "flutterdec-local-python",
+        "variants": [
+          {
+            "host_os": "linux",
+            "host_arch": "x86_64",
+            "path": "artifacts/flutterdec-local-python",
+            "size": 44979,
+            "sha256": "efb78b09100ca1f378436168e32373e22102c389f62f219a3079a1a845350bd3",
+            "provenance": "checked-in reference producer, published by adapter install"
+          },
+          {
+            "host_os": "macos",
+            "host_arch": "x86_64",
+            "path": "artifacts/flutterdec-local-python",
+            "size": 44979,
+            "sha256": "efb78b09100ca1f378436168e32373e22102c389f62f219a3079a1a845350bd3",
+            "provenance": "checked-in reference producer, published by adapter install"
+          },
+          {
+            "host_os": "macos",
+            "host_arch": "aarch64",
+            "path": "artifacts/flutterdec-local-python",
+            "size": 44979,
+            "sha256": "efb78b09100ca1f378436168e32373e22102c389f62f219a3079a1a845350bd3",
+            "provenance": "checked-in reference producer, published by adapter install"
+          }
+        ]
+      },
+      "evidence": {
+        "source": "data/dart-profiles.json",
+        "provenance": "checked-in-profile-and-fixture",
+        "references": [
+          "Immich 3.1.0 sample",
+          "r2flutter offsets.json"
+        ]
+      },
+      "trust_tier": "verified",
+      "protocol_major": 1,
+      "model_major": 4
+    }
+  ]
+}

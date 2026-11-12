@@ -1,13 +1,16 @@
 use anyhow::{bail, Context, Result};
 use clap::{Args, Parser, Subcommand, ValueEnum};
-use flutterdec_adapter::install_adapter;
+use flutterdec_adapter::store::{self, EntryState};
 use flutterdec_core::{
-    available_adapters, run_decompile, run_diff, run_engine_fingerprint, run_info, run_symbol_map,
-    AdapterBackend, DecompileAnalysisProfile, DecompileEngineOptionOverrides,
+    available_adapters, error_category, run_decompile, run_diff, run_engine_fingerprint, run_info,
+    run_symbol_map, AdapterBackend, DecompileAnalysisProfile, DecompileEngineOptionOverrides,
     DecompileEngineOptions, DecompileOptions, DiffOptions, EngineFingerprintOptions, FunctionScope,
-    FunctionTarget, SymbolMapOptions,
+    FunctionTarget, OutputLayout, ProviderReport, SymbolMapOptions,
 };
-use std::path::{Path, PathBuf};
+use flutterdec_loader::layout::Layout;
+use flutterdec_loader::registry::CompatibilityRegistry;
+use std::path::PathBuf;
+use std::process::ExitCode;
 
 #[derive(Parser, Debug)]
 #[command(name = "flutterdec")]
@@ -65,6 +68,9 @@ struct InfoCmd {
     /// Which snapshot adapter backend to use
     #[arg(long, value_enum, default_value_t = AdapterBackendArg::Auto, value_name = "BACKEND")]
     adapter_backend: AdapterBackendArg,
+    /// Wall-clock deadline for one adapter invocation, in seconds
+    #[arg(long, value_name = "SECONDS")]
+    adapter_timeout: Option<u64>,
 }
 
 #[derive(Args, Debug)]
@@ -76,7 +82,17 @@ struct DecompileCmd {
     #[arg(short = 'o', long = "out", value_name = "DIR")]
     out_dir: PathBuf,
 
-    /// Write per-function ARM64 disassembly to asm/*.s
+    /// Source tree shape: one file per library, or one file per function
+    #[arg(
+        long,
+        value_enum,
+        default_value_t = OutputLayoutArg::Library,
+        value_name = "LAYOUT",
+        help_heading = "Emitted artifacts"
+    )]
+    layout: OutputLayoutArg,
+
+    /// Write per-function ARM64 disassembly under artifacts/asm/
     #[arg(long, help_heading = "Emitted artifacts")]
     emit_asm: bool,
     /// Prefix asm lines with raw 32-bit opcode words (requires --emit-asm)
@@ -88,7 +104,7 @@ struct DecompileCmd {
     /// Write ida_apply_symbols.py to apply recovered symbols in IDA
     #[arg(long, help_heading = "Emitted artifacts")]
     emit_ida_script: bool,
-    /// Write the intermediate representation to ir/*.json
+    /// Write the intermediate representation under artifacts/ir/
     #[arg(long, help_heading = "Emitted artifacts")]
     emit_ir: bool,
     /// Split a function record that spans more than one real function.
@@ -183,6 +199,9 @@ FLUTTERDEC_R2FLUTTER_CMD for r2flutter, and FLUTTERDEC_BLUTTER_CMD or
 FLUTTERDEC_BLUTTER_PY for the Blutter bridge."
     )]
     adapter_backend: AdapterBackendArg,
+    /// Wall-clock deadline for one adapter invocation, in seconds
+    #[arg(long, value_name = "SECONDS")]
+    adapter_timeout: Option<u64>,
     /// Fail if the adapter and loader disagree on the snapshot hash
     #[arg(long, help_heading = "Analysis engine")]
     require_snapshot_hash_match: bool,
@@ -316,6 +335,9 @@ struct DiffCmd {
     /// Which snapshot adapter backend to use
     #[arg(long, value_enum, default_value_t = AdapterBackendArg::Auto, value_name = "BACKEND")]
     adapter_backend: AdapterBackendArg,
+    /// Wall-clock deadline for one adapter invocation, in seconds
+    #[arg(long, value_name = "SECONDS")]
+    adapter_timeout: Option<u64>,
     /// Fail if either side has an adapter/loader snapshot hash mismatch
     #[arg(long)]
     require_snapshot_hash_match: bool,
@@ -337,6 +359,23 @@ impl AnalysisProfileArg {
         match self {
             Self::Light => DecompileAnalysisProfile::Light,
             Self::Balanced => DecompileAnalysisProfile::Balanced,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum OutputLayoutArg {
+    /// One file per library, with owner-qualified top-level functions
+    Library,
+    /// One file per recovered function
+    Project,
+}
+
+impl OutputLayoutArg {
+    fn to_core(self) -> OutputLayout {
+        match self {
+            Self::Library => OutputLayout::Library,
+            Self::Project => OutputLayout::Project,
         }
     }
 }
@@ -366,10 +405,12 @@ impl FunctionScopeArg {
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
 enum AdapterBackendArg {
-    /// Try r2flutter, then the Blutter bridge, then the internal adapter
+    /// Use an exact registry-selected adapter, or machine-code-only recovery
     Auto,
-    /// Force the internal adapter
+    /// Force machine-code-only recovery without a snapshot parser
     Internal,
+    /// Require the registry-authorized Serwalker executable, with no fallback
+    Serwalker,
     /// Require the Blutter bridge, with no fallback
     Blutter,
     // Clap's derive spells this value `r2-flutter`; the alias accepts the tool's own
@@ -384,6 +425,7 @@ impl AdapterBackendArg {
         match self {
             Self::Auto => AdapterBackend::Auto,
             Self::Internal => AdapterBackend::Internal,
+            Self::Serwalker => AdapterBackend::Serwalker,
             Self::Blutter => AdapterBackend::Blutter,
             Self::R2Flutter => AdapterBackend::R2Flutter,
         }
@@ -436,10 +478,10 @@ struct MapSymbolsCmd {
 
 #[derive(Subcommand, Debug)]
 enum AdapterSubcommand {
-    /// Build and install the adapter for a given Dart snapshot hash
+    /// Install the adapter a compatibility record authorizes for a snapshot hash
     Install(AdapterInstallCmd),
-    /// List known adapters and whether each is installed
-    List,
+    /// Report the verified state of every authorized adapter
+    List(AdapterListCmd),
 }
 
 #[derive(Args, Debug)]
@@ -447,6 +489,23 @@ struct AdapterInstallCmd {
     /// Dart snapshot hash, as reported by `flutterdec info`
     #[arg(long = "dart-hash", value_name = "HASH")]
     dart_hash: String,
+    /// Target architecture, when one hash has records for more than one
+    #[arg(long = "target-arch", value_name = "ARCH")]
+    target_arch: Option<String>,
+    /// Artifact to publish instead of the packaged producer. Must match the
+    /// digest and size the compatibility record declares.
+    #[arg(long = "from", value_name = "PATH")]
+    from: Option<PathBuf>,
+    /// Print the installation record as JSON on stdout
+    #[arg(long)]
+    json: bool,
+}
+
+#[derive(Args, Debug)]
+struct AdapterListCmd {
+    /// Print the store report as JSON on stdout
+    #[arg(long)]
+    json: bool,
 }
 
 #[derive(Args, Debug)]
@@ -455,39 +514,50 @@ struct AdapterCmd {
     subcommand: AdapterSubcommand,
 }
 
-fn find_repo_root(start: &Path) -> PathBuf {
-    let mut p = start.to_path_buf();
-    loop {
-        let marker1 = p.join("Cargo.toml");
-        let marker2 = p.join("adapters/manifest.json");
-        if marker1.exists() && marker2.exists() {
-            return p;
-        }
-        if !p.pop() {
-            return start.to_path_buf();
+/// Exit status for a store whose content is broken rather than merely absent.
+const STORE_STATE_FAILURE: u8 = 2;
+
+fn main() -> ExitCode {
+    match run() {
+        Ok(code) => code,
+        // Every failure carries a stable category alongside the message. The
+        // message is for a human and may be reworded; the category is what a
+        // script matches on to tell a timeout from a corrupt store.
+        Err(err) if err.downcast_ref::<AlreadyReported>().is_some() => ExitCode::FAILURE,
+        Err(err) => {
+            eprintln!("error: {err:#}");
+            eprintln!("error category: {}", error_category(&err));
+            ExitCode::FAILURE
         }
     }
 }
 
-fn main() -> Result<()> {
+fn run() -> Result<ExitCode> {
     let cli = Cli::parse();
-    let cwd = std::env::current_dir().context("resolve current dir")?;
-    let repo_root = find_repo_root(&cwd);
+    // Resolved once, from the executable and the environment. Nothing below
+    // this line may consult the current directory for a repository root: that
+    // is what made a packaged binary behave differently per working directory.
+    let layout = Layout::resolve().context("resolve flutterdec data and store locations")?;
 
     match cli.command {
-        Command::Info(cmd) => handle_info(&repo_root, cmd)?,
-        Command::Decompile(cmd) => handle_decompile(&repo_root, cmd)?,
-        Command::Diff(cmd) => handle_diff(&repo_root, cmd)?,
+        Command::Info(cmd) => handle_info(&layout, cmd)?,
+        Command::Decompile(cmd) => handle_decompile(&layout, cmd)?,
+        Command::Diff(cmd) => handle_diff(&layout, cmd)?,
         Command::EngineFingerprint(cmd) => handle_engine_fingerprint(cmd)?,
-        Command::MapSymbols(cmd) => handle_map_symbols(&repo_root, cmd)?,
-        Command::Adapter(cmd) => handle_adapter(&repo_root, cmd)?,
+        Command::MapSymbols(cmd) => handle_map_symbols(&layout, cmd)?,
+        Command::Adapter(cmd) => return handle_adapter(&layout, cmd),
     }
 
-    Ok(())
+    Ok(ExitCode::SUCCESS)
 }
 
-fn handle_info(repo_root: &Path, cmd: InfoCmd) -> Result<()> {
-    let out = run_info(repo_root, &cmd.input, cmd.adapter_backend.to_core())?;
+fn handle_info(layout: &Layout, cmd: InfoCmd) -> Result<()> {
+    let out = run_info(
+        layout,
+        &cmd.input,
+        cmd.adapter_backend.to_core(),
+        cmd.adapter_timeout,
+    )?;
     if cmd.json {
         println!("{}", serde_json::to_string_pretty(&out)?);
     } else {
@@ -495,8 +565,12 @@ fn handle_info(repo_root: &Path, cmd: InfoCmd) -> Result<()> {
         println!("libapp: {}", out.libapp_path);
         println!("arch: {}", out.arch);
         println!("snapshot hash: {}", out.snapshot_hash);
-        if let Some(version) = out.dart_version.as_deref() {
-            println!("dart version: {}", version);
+        if let Some(aliases) = out
+            .dart_aliases
+            .as_ref()
+            .filter(|aliases| !aliases.is_empty())
+        {
+            println!("dart aliases: {}", serde_json::to_string(aliases)?);
         }
         if let Some(tag_style) = out.dart_tag_style.as_deref() {
             println!("dart tag style: {}", tag_style);
@@ -505,14 +579,41 @@ fn handle_info(repo_root: &Path, cmd: InfoCmd) -> Result<()> {
             println!("compressed pointers: {}", compressed);
         }
         println!("adapter installed: {}", out.adapter_installed);
-        if let Some(kind) = out.adapter_kind.as_deref() {
-            println!("adapter kind: {}", kind);
+        // Requested, resolved, and fallback are printed separately because they
+        // are separate facts. Collapsing them into one "adapter kind" line is
+        // what made a filename look like a decision.
+        if let Some(requested) = out.requested_backend.as_deref() {
+            println!("requested backend: {}", requested);
         }
-        if let Some(present) = out.manifest_entry_present {
-            println!("manifest entry present: {}", present);
+        if let Some(resolved) = out.resolved_backend.as_deref() {
+            println!("resolved backend: {}", resolved);
         }
-        if let Some(hash_match) = out.adapter_snapshot_hash_match {
-            println!("adapter snapshot hash match: {}", hash_match);
+        if let Some(reason) = out.backend_fallback_reason.as_deref() {
+            println!("backend fallback reason: {}", reason);
+        }
+        if let Some(id) = out.producer_id.as_deref() {
+            println!("producer: {}", id);
+        }
+        if let Some(trust) = out.producer_trust.as_deref() {
+            println!("producer trust: {}", trust);
+        }
+        if let Some(digest) = out.compatibility_record_sha256.as_deref() {
+            println!("compatibility record: {}", digest);
+        }
+        if let Some(present) = out.registry_record_present {
+            println!("registry record present: {}", present);
+        }
+        if let Some(exact) = out.snapshot_identity_is_exact {
+            println!("snapshot identity header-derived: {}", exact);
+        }
+        if let Some(rejection) = out.identity_rejection.as_deref() {
+            println!("adapter selection refused: {}", rejection);
+        }
+        if let Some(capabilities) = out.model_capabilities.as_ref() {
+            println!("model capabilities:");
+            for (domain, level) in capabilities {
+                println!("  {}: {}", domain, level);
+            }
         }
         if let Some(warnings) = out.compatibility_warnings.as_ref() {
             if !warnings.is_empty() {
@@ -545,30 +646,107 @@ fn handle_info(repo_root: &Path, cmd: InfoCmd) -> Result<()> {
                 }
             }
         }
+        if let Some(provider) = out.provider.as_ref() {
+            print_provider(provider);
+        }
+        if let Some(error) = out.adapter_error.as_deref() {
+            eprintln!("error: {}", error);
+        }
+    }
+    // An `info` whose adapter ran and failed reports the failure and exits
+    // nonzero. Printing the surrounding facts and exiting 0 would make a broken
+    // adapter look like an empty snapshot.
+    if let Some(category) = out.adapter_error_category.as_deref() {
+        eprintln!("error category: {}", category);
+        return Err(AlreadyReported.into());
     }
     Ok(())
 }
 
-fn handle_decompile(repo_root: &Path, cmd: DecompileCmd) -> Result<()> {
+/// The provider block, in the same order every surface reports it.
+fn print_provider(provider: &ProviderReport) {
+    println!("provider:");
+    println!("  adapter executed: {}", provider.adapter_executed);
+    println!(
+        "  host: {}/{}  target: {}",
+        provider.host_os, provider.host_arch, provider.target_arch
+    );
+    if let Some(reason) = provider.core_fallback_reason.as_deref() {
+        println!("  core fallback reason: {}", reason);
+        if let Some(detail) = provider.core_fallback_detail.as_deref() {
+            println!("  core fallback detail: {}", detail);
+        }
+        if let Some(effect) = provider.core_fallback_effect.as_deref() {
+            println!("  core fallback effect: {}", effect);
+        }
+    }
+    if let Some(path) = provider.adapter_exec_path.as_deref() {
+        println!("  adapter executable: {}", path);
+    }
+    println!(
+        "  producer: {} {} ({})",
+        provider.producer_id, provider.producer_version, provider.producer_trust
+    );
+    println!("  producer artifact: {}", provider.producer_artifact_sha256);
+    if let Some(id) = provider.parser_family_id.as_deref() {
+        println!("  parser family: {}", id);
+    }
+    if let Some(id) = provider.profile_id.as_deref() {
+        println!("  profile: {}", id);
+    }
+    if let Some(digest) = provider.profile_sha256.as_deref() {
+        println!("  profile digest: {}", digest);
+    }
+    if let Some(id) = provider.artifact_id.as_deref() {
+        println!("  artifact: {}", id);
+    }
+    if let Some(digest) = provider.artifact_sha256.as_deref() {
+        println!("  artifact digest: {}", digest);
+    }
+    if let Some(containment) = provider.containment.as_ref() {
+        if let Ok(rendered) = serde_json::to_string(containment) {
+            println!("  containment: {}", rendered);
+        }
+    }
+}
+
+/// A failure whose message the caller already printed.
+///
+/// `main` prints `error: {err:#}` for anything it gets back, and `info` has to
+/// print its report before it can report the failure inside it. Without this the
+/// same sentence appears twice.
+#[derive(Debug)]
+struct AlreadyReported;
+
+impl std::fmt::Display for AlreadyReported {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("reported above")
+    }
+}
+
+impl std::error::Error for AlreadyReported {}
+
+fn handle_decompile(layout: &Layout, cmd: DecompileCmd) -> Result<()> {
     let input = cmd.input.clone();
     let opt = build_decompile_options(cmd)?;
-    let quality = run_decompile(repo_root, &input, &opt)?;
+    let quality = run_decompile(layout, &input, &opt)?;
     println!("{}", serde_json::to_string_pretty(&quality)?);
     Ok(())
 }
 
-fn handle_diff(repo_root: &Path, cmd: DiffCmd) -> Result<()> {
+fn handle_diff(layout: &Layout, cmd: DiffCmd) -> Result<()> {
     let old_input = cmd.old_input.clone();
     let new_input = cmd.new_input.clone();
     let json = cmd.json;
     let opt = DiffOptions {
         out_dir: cmd.out_dir,
         adapter_backend: cmd.adapter_backend.to_core(),
+        adapter_timeout_seconds: cmd.adapter_timeout,
         function_scope: cmd.function_scope.to_core(),
         app_packages: cmd.app_packages,
         require_snapshot_hash_match: cmd.require_snapshot_hash_match,
     };
-    let report = run_diff(repo_root, &old_input, &new_input, &opt)?;
+    let report = run_diff(layout, &old_input, &new_input, &opt)?;
     if json {
         println!("{}", serde_json::to_string_pretty(&report)?);
     } else {
@@ -585,8 +763,9 @@ fn handle_diff(repo_root: &Path, cmd: DiffCmd) -> Result<()> {
             report.require_snapshot_hash_match
         );
         println!(
-            "dart version: old={} new={}",
-            report.old_dart_version, report.new_dart_version
+            "dart aliases: old={} new={}",
+            serde_json::to_string(&report.old_dart_aliases)?,
+            serde_json::to_string(&report.new_dart_aliases)?
         );
         println!(
             "functions: old={} new={} common={} added={} removed={}",
@@ -596,6 +775,18 @@ fn handle_diff(repo_root: &Path, cmd: DiffCmd) -> Result<()> {
             report.added_function_count,
             report.removed_function_count
         );
+        // Counted separately because they are not in the sets above: a
+        // heuristic candidate with no name, owner or library has no identity
+        // that survives a rebuild.
+        println!(
+            "uncomparable functions: old={} new={}",
+            report.old_uncomparable_function_count, report.new_uncomparable_function_count
+        );
+        println!("provider mismatch: {}", report.provider_mismatch);
+        println!("old side:");
+        print_provider(&report.old_provider);
+        println!("new side:");
+        print_provider(&report.new_provider);
         if !report.added_packages_top.is_empty() {
             println!("top added packages:");
             for item in report.added_packages_top.iter().take(5) {
@@ -627,6 +818,7 @@ fn build_decompile_options(cmd: DecompileCmd) -> Result<DecompileOptions> {
     let engine_options = DecompileEngineOptions::for_profile(profile).with_overrides(&overrides);
     Ok(DecompileOptions {
         out_dir: cmd.out_dir,
+        output_layout: cmd.layout.to_core(),
         emit_asm: cmd.emit_asm,
         emit_asm_opcodes: cmd.emit_asm_opcodes,
         emit_ghidra_script: cmd.emit_ghidra_script,
@@ -646,6 +838,7 @@ fn build_decompile_options(cmd: DecompileCmd) -> Result<DecompileOptions> {
         function_scope: cmd.function_scope.to_core(),
         app_packages: cmd.app_packages,
         adapter_backend: cmd.adapter_backend.to_core(),
+        adapter_timeout_seconds: cmd.adapter_timeout,
         require_snapshot_hash_match: cmd.require_snapshot_hash_match,
         analysis_profile: profile,
         engine_options,
@@ -759,13 +952,15 @@ fn handle_engine_fingerprint(cmd: EngineFingerprintCmd) -> Result<()> {
     Ok(())
 }
 
-fn handle_map_symbols(repo_root: &Path, cmd: MapSymbolsCmd) -> Result<()> {
+fn handle_map_symbols(layout: &Layout, cmd: MapSymbolsCmd) -> Result<()> {
     let opt = SymbolMapOptions {
         out_dir: cmd.out_dir,
         include_branches: cmd.include_branches,
         nearest_max_distance: cmd.nearest_max_distance,
         require_exec_match: cmd.require_exec_match,
-        local_cache_root: cmd.register_local_cache.then(|| repo_root.join("symbols")),
+        local_cache_root: cmd
+            .register_local_cache
+            .then(|| layout.symbols_dir().to_path_buf()),
     };
     let report = run_symbol_map(&cmd.stripped_path, &cmd.unstripped_path, &opt)?;
     if cmd.json {
@@ -814,27 +1009,99 @@ fn handle_map_symbols(repo_root: &Path, cmd: MapSymbolsCmd) -> Result<()> {
     Ok(())
 }
 
-fn handle_adapter(repo_root: &Path, cmd: AdapterCmd) -> Result<()> {
+fn handle_adapter(layout: &Layout, cmd: AdapterCmd) -> Result<ExitCode> {
     match cmd.subcommand {
         AdapterSubcommand::Install(cmd) => {
-            let path = install_adapter(repo_root, &cmd.dart_hash)?;
-            println!("installed adapter: {}", path.display());
-        }
-        AdapterSubcommand::List => {
-            let rows = available_adapters(repo_root)?;
-            if rows.is_empty() {
-                println!("no manifest entries");
+            // `anyhow::Error::new(..).context(..)` rather than a formatted
+            // message: the rendering is the same and the `RegistryError` stays
+            // downcastable, so the failure still reports its own category.
+            let registry = CompatibilityRegistry::load(&layout.registry_path())
+                .map_err(|err| anyhow::Error::new(err).context("read compatibility registry"))?;
+            let installation = store::install(
+                layout,
+                &registry,
+                &cmd.dart_hash,
+                cmd.target_arch.as_deref(),
+                cmd.from.as_deref(),
+            )
+            .map_err(anyhow::Error::new)?;
+            if cmd.json {
+                println!("{}", serde_json::to_string_pretty(&installation)?);
             } else {
-                for (hash, version, adapter, installed) in rows {
-                    println!(
-                        "hash={} version={} adapter={} installed={}",
-                        hash, version, adapter, installed
+                let record = &installation.record;
+                println!(
+                    "result: {}",
+                    if installation.idempotent {
+                        "already-installed"
+                    } else {
+                        "installed"
+                    }
+                );
+                println!("store: {}", installation.store_dir.display());
+                println!("artifact: {}", installation.artifact_path.display());
+                println!("snapshot hash: {}", record.snapshot_hash);
+                println!("target: {}", record.target_arch);
+                println!("host: {}/{}", record.host_os, record.host_arch);
+                println!("artifact digest: {} ({} bytes)", record.sha256, record.size);
+                println!("artifact id: {}", record.artifact_id);
+                println!("artifact source: {}", record.source);
+                println!("profile: {} {}", record.profile_id, record.profile_sha256);
+                println!("profile path: {}", installation.profile_path.display());
+                println!(
+                    "compatibility record: {}",
+                    record.compatibility_record_sha256
+                );
+                println!(
+                    "protocol/model majors: {}/{}",
+                    record.protocol_major, record.model_major
+                );
+            }
+            Ok(ExitCode::SUCCESS)
+        }
+        AdapterSubcommand::List(cmd) => {
+            let rows = available_adapters(layout)?;
+            if cmd.json {
+                println!("{}", serde_json::to_string_pretty(&rows)?);
+            } else if rows.is_empty() {
+                println!("no compatibility records");
+            } else {
+                for row in &rows {
+                    print!(
+                        "hash={} state={} adapter={} target={} host={}/{}",
+                        row.snapshot_hash,
+                        row.state,
+                        row.artifact_id,
+                        row.target_arch,
+                        row.host_os,
+                        row.host_arch
                     );
+                    if let Some(path) = row.artifact_path.as_deref() {
+                        print!(" artifact={}", path);
+                    }
+                    if let Some(digest) = row.expected_sha256.as_deref() {
+                        print!(" sha256={}", digest);
+                    }
+                    if let Some(detail) = row.detail.as_deref() {
+                        print!(" detail={:?}", detail);
+                    }
+                    println!();
                 }
             }
+            // A store that claims installs it cannot back is a failure, not a
+            // report: exiting 0 here is how "installed" came to mean "a file
+            // with the right name exists".
+            let broken = rows.iter().filter(|row| row.state.is_failure()).count();
+            if broken > 0 {
+                eprintln!(
+                    "error: {broken} adapter store entries are {} or {}",
+                    EntryState::Missing,
+                    EntryState::Corrupt
+                );
+                return Ok(ExitCode::from(STORE_STATE_FAILURE));
+            }
+            Ok(ExitCode::SUCCESS)
         }
     }
-    Ok(())
 }
 
 fn resolve_toggle(with: bool, without: bool, name: &str) -> Result<Option<bool>> {
@@ -853,6 +1120,34 @@ fn resolve_toggle(with: bool, without: bool, name: &str) -> Result<Option<bool>>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn decompile_layout_defaults_to_library() {
+        let cli = Cli::try_parse_from(["flutterdec", "decompile", "sample.apk", "-o", "out"])
+            .expect("parse");
+        let Command::Decompile(cmd) = cli.command else {
+            panic!("expected decompile command");
+        };
+        assert!(matches!(cmd.layout, OutputLayoutArg::Library));
+    }
+
+    #[test]
+    fn decompile_layout_accepts_project() {
+        let cli = Cli::try_parse_from([
+            "flutterdec",
+            "decompile",
+            "sample.apk",
+            "-o",
+            "out",
+            "--layout",
+            "project",
+        ])
+        .expect("parse");
+        let Command::Decompile(cmd) = cli.command else {
+            panic!("expected decompile command");
+        };
+        assert!(matches!(cmd.layout, OutputLayoutArg::Project));
+    }
 
     #[test]
     fn decompile_scope_defaults_to_app_unknown() {

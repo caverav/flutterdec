@@ -102,8 +102,9 @@ fn resolves_local_symbol_cache_by_build_id_before_version() {
     };
     write_local_symbol_cache_manifest(&repo_root.join("symbols"), &manifest).expect("manifest");
 
+    let cache_root = repo_root.join("symbols");
     let build_id_resolution = resolve_local_symbol_cache_paths(
-        repo_root,
+        &cache_root,
         "arm64",
         Some("ABC123"),
         Some("3.24.0"),
@@ -113,7 +114,7 @@ fn resolves_local_symbol_cache_by_build_id_before_version() {
     assert_eq!(build_id_resolution.paths, vec![build_id_path.clone()]);
 
     let no_fallback_resolution = resolve_local_symbol_cache_paths(
-        repo_root,
+        &cache_root,
         "arm64",
         Some("missing-build-id"),
         Some("3.24.0"),
@@ -123,7 +124,7 @@ fn resolves_local_symbol_cache_by_build_id_before_version() {
     assert!(no_fallback_resolution.match_kind.is_none());
 
     let version_resolution =
-        resolve_local_symbol_cache_paths(repo_root, "arm64", None, Some("3.24.0"))
+        resolve_local_symbol_cache_paths(&cache_root, "arm64", None, Some("3.24.0"))
             .expect("resolve version");
     assert_eq!(version_resolution.match_kind.as_deref(), Some("flutter_version"));
     assert_eq!(version_resolution.paths, vec![version_path]);

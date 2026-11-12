@@ -16,8 +16,8 @@ fn ins(va: u64, mnemonic: &str, operands: &str) -> AsmInstruction {
 fn branch_fixture(mnemonic: &str, operands: &str, target: u64) -> FunctionDisassembly {
     FunctionDisassembly {
         function_id: 1,
-        function_name: "targetRadix".to_string(),
-        owner_class: "Global".to_string(),
+        function_name: Some("targetRadix".to_string()),
+        owner_class: Some("Global".to_string()),
         entry_va: 0x1000,
         size: target.saturating_sub(0x1000).saturating_add(4),
         instructions: vec![
@@ -80,8 +80,8 @@ fn public_cfg_accepts_target_boundaries_without_radix_guessing() {
 
     let zero = FunctionDisassembly {
         function_id: 2,
-        function_name: "zeroTarget".to_string(),
-        owner_class: "Global".to_string(),
+        function_name: Some("zeroTarget".to_string()),
+        owner_class: Some("Global".to_string()),
         entry_va: 0,
         size: 8,
         instructions: vec![ins(0, "b", "0"), ins(4, "ret", "")],

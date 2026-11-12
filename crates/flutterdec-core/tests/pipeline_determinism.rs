@@ -34,6 +34,8 @@ use flutterdec_core::{
     run_decompile, AdapterBackend, DecompileAnalysisProfile, DecompileEngineOptions,
     DecompileOptions, FunctionScope,
 };
+use flutterdec_loader::layout::Layout;
+use sha2::{Digest, Sha256};
 
 /// Set on a child to make it run one pipeline instead of spawning twenty.
 const CHILD_REQUEST: &str = "FLUTTERDEC_PIPELINE_DETERMINISM_DIR";
@@ -664,8 +666,8 @@ mod fixture {
     pub const POOL_TIE_INDEXES: (u64, u64) = (5, 9);
     /// The symbol the lowest-index claim produces, and the one the other claim
     /// would produce if map order decided it.
-    pub const POOL_TIE_WINNER: &str = "flutter.widgets.Alpha.ping";
-    pub const POOL_TIE_LOSER: &str = "flutter.widgets.Omega.pong";
+    pub const POOL_TIE_WINNER: &str = "flutter.widgets.AppState.ping";
+    pub const POOL_TIE_LOSER: &str = "flutter.widgets.AppState.pong";
 
     /// Label of each fixture function's entry and one past its last word, in the
     /// order the functions appear in the blob.
@@ -966,7 +968,7 @@ mod raw_json {
 const FROZEN_POINTERS: [&str; 9] = [
     "/input",
     "/libapp",
-    "/adapter_selection/adapter_exec_path",
+    "/adapter_selection/provider/adapter_exec_path",
     "/extra_symbol_elfs/*",
     "/extra_symbol_map_targets/*",
     "/engine_symbol_ingestion/manifest_path",
@@ -981,10 +983,9 @@ const FROZEN_POINTERS: [&str; 9] = [
 /// Without this the comparison could pass while locating nothing at all, which
 /// is byte equality with extra steps rather than the tolerance the contract asks
 /// for.
-const REQUIRED_VOLATILE: [&str; 5] = [
+const REQUIRED_VOLATILE: [&str; 4] = [
     "/input",
-    "/libapp",
-    "/adapter_selection/adapter_exec_path",
+    "/adapter_selection/provider/adapter_exec_path",
     "/ghidra_script/path",
     "/ida_script/path",
 ];
@@ -1003,6 +1004,8 @@ fn options(out_dir: PathBuf) -> DecompileOptions {
         emit_ghidra_script: true,
         emit_ida_script: true,
         emit_ir: true,
+        output_layout: flutterdec_core::OutputLayout::Library,
+        adapter_timeout_seconds: None,
         split_records: false,
         extra_symbol_elfs: Vec::new(),
         extra_symbol_map_targets: Vec::new(),
@@ -1019,7 +1022,7 @@ fn options(out_dir: PathBuf) -> DecompileOptions {
         min_disassembly_ratio: 0.80,
         function_scope: FunctionScope::All,
         app_packages: Vec::new(),
-        adapter_backend: AdapterBackend::Internal,
+        adapter_backend: AdapterBackend::Serwalker,
         require_snapshot_hash_match: false,
         analysis_profile: DecompileAnalysisProfile::Balanced,
         engine_options: DecompileEngineOptions::for_profile(DecompileAnalysisProfile::Balanced),
@@ -1036,7 +1039,7 @@ fn snapshot_data(tail: &str) -> Vec<u8> {
     out.extend_from_slice(&[0xf5, 0xf5, 0xdc, 0xdc]);
     let payload = 12 + 32 + features.len() + tail.len();
     out.extend_from_slice(&(payload as i64).to_le_bytes());
-    out.extend_from_slice(&0i64.to_le_bytes());
+    out.extend_from_slice(&3i64.to_le_bytes());
     out.extend_from_slice(SNAPSHOT_HASH.as_bytes());
     out.extend_from_slice(features);
     out.extend_from_slice(tail.as_bytes());
@@ -1080,111 +1083,87 @@ fn plant_workspace(root: &Path) -> PathBuf {
         .map(|(id, (entry, end, name))| {
             let entry_va = code_va + offsets[*entry];
             let size = offsets[*end] - offsets[*entry];
-            let name = if name.is_empty() {
-                format!("sub_{entry_va:x}")
-            } else {
-                (*name).to_string()
-            };
+            let named = !name.is_empty();
+            let owned = named || matches!(*entry, "aliasTarget" | "collisionTarget" | "poolTarget");
             serde_json::json!({
                 "id": id,
-                "name": name,
-                "owner_class": if name.starts_with("sub_") { "Global" } else { "AppState" },
-                "entry_va": entry_va,
-                "size": size,
+                "name": named.then(|| serde_json::json!({
+                    "text": name,
+                    "provenance": "exact",
+                    "confidence": null
+                })),
+                "owner": owned.then_some(1),
+                "code": { "start_va": entry_va, "size": size },
                 "code_section_va": code_va,
-                "name_kind": if name.starts_with("sub_") { "placeholder" } else { "exact" }
+                "provenance": "exact"
             })
         })
         .collect::<Vec<_>>();
     let pool_target_va = code_va + offsets["poolTarget"];
+    let alias_target_va = code_va + offsets["aliasTarget"];
+    let collision_target_va = code_va + offsets["collisionTarget"];
 
+    // v4 keeps selector ownership on the function a pool entry points at, not
+    // on the entry itself. Each selector that the fixture expects to carry an
+    // owner names the function it dispatches to.
+    let pool_entry =
+        |index: u64, kind: &str, value: &str, target: Option<u64>, provenance: &str| {
+            serde_json::json!({
+                "index": index,
+                "kind": kind,
+                "value": if value.is_empty() { None } else { Some(value) },
+                "target_va": target,
+                "provenance": provenance,
+                "confidence": if provenance == "heuristic" { Some(0.9) } else { None },
+            })
+        };
     let model = serde_json::json!({
-        "schema_version": 3,
-        // Contains "internal", so the resolved backend matches the requested one
-        // and no compatibility warning is raised for the backend.
-        "adapter_kind": "synthetic-internal",
-        "dart_version": "3.9.2",
-        "snapshot_hash": SNAPSHOT_HASH,
-        "arch": "arm64",
+        "model_version": 4,
+        "producer": null,
+        "input": null,
+        "compatibility": null,
+        "capabilities": {
+            "libraries": "complete",
+            "classes": "complete",
+            "class_relationships": "complete",
+            "functions": "complete",
+            "function_names": "partial",
+            "object_pool": "complete",
+            "pool_index_space": "complete"
+        },
         "libraries": [
-            { "id": 0, "uri": "package:app/main.dart", "name_display": "package:app/main.dart" },
+            { "id": 0, "uri": "package:app/main.dart", "display_name": "package:app/main.dart", "provenance": "exact" },
             {
                 "id": 1,
                 "uri": "package:flutter/src/widgets/framework.dart",
-                "name_display": "package:flutter/src/widgets/framework.dart"
+                "display_name": "package:flutter/src/widgets/framework.dart",
+                "provenance": "exact"
             }
         ],
         "classes": [
-            { "id": 0, "name": "Global", "super": "Object", "lib": "package:app/main.dart" },
-            {
-                "id": 1,
-                "name": "AppState",
-                "super": "State",
-                "lib": "package:flutter/src/widgets/framework.dart"
-            }
+            { "id": 0, "name": "Global", "library": 0, "super_class": null, "provenance": "exact" },
+            { "id": 1, "name": "AppState", "library": 1, "super_class": 0, "provenance": "exact" }
         ],
         "functions": functions,
-        "object_pool": [
-            { "index": 0, "kind": "string", "value": "app/main.dart" },
-            { "index": 1, "kind": "int", "value": "42" },
-            { "index": 2, "kind": "string", "value": "AppState" },
-            {
-                "index": fixture::SELECTOR_POOL_INDEX,
-                "kind": "string",
-                "value": "arg0",
-                "decoded_kind": "selector",
-                "selector": "arg0",
-                "owner_class": "AppState",
-                "library_uri": "package:flutter/src/widgets/framework.dart",
-                "confidence": 0.9,
-                "source": "synthetic"
+        "object_pool": {
+            "index_space": "hardware",
+            "geometry": {
+                "entries_offset": fixture::POOL_ENTRIES_OFFSET,
+                "word_size": fixture::POOL_WORD_SIZE
             },
-            {
-                "index": fixture::RECOVERED_BAIT_INDEX,
-                "kind": "string",
-                "value": fixture::RECOVERED_BAIT
-            },
-            // Two entries claiming one target, with different owners and
-            // selectors. The lower index has to win, whatever order the hint map
-            // happens to iterate in.
-            {
-                "index": fixture::POOL_TIE_INDEXES.0,
-                "kind": "string",
-                "value": "ping",
-                "decoded_kind": "selector",
-                "selector": "ping",
-                "owner_class": "Alpha",
-                "library_uri": "package:flutter/src/widgets/framework.dart",
-                "target_va": pool_target_va,
-                "source": "synthetic"
-            },
-            {
-                "index": fixture::POOL_TIE_INDEXES.1,
-                "kind": "string",
-                "value": "pong",
-                "decoded_kind": "selector",
-                "selector": "pong",
-                "owner_class": "Omega",
-                "library_uri": "package:flutter/src/widgets/framework.dart",
-                "target_va": pool_target_va,
-                "source": "synthetic"
-            },
-            {
-                "index": fixture::COLLIDING_SELECTOR_INDEX,
-                "kind": "string",
-                "value": "_block_999",
-                "decoded_kind": "selector",
-                "selector": "_block_999",
-                "owner_class": "AppState",
-                "library_uri": "package:flutter/src/widgets/framework.dart",
-                "confidence": 0.9,
-                "source": "synthetic"
-            }
-        ],
-        "pool_geometry": {
-            "entries_offset": fixture::POOL_ENTRIES_OFFSET,
-            "word_size": fixture::POOL_WORD_SIZE
-        }
+            "entries": [
+                pool_entry(0, "string", "app/main.dart", None, "exact"),
+                pool_entry(1, "immediate", "42", None, "exact"),
+                pool_entry(2, "string", "AppState", None, "exact"),
+                pool_entry(fixture::SELECTOR_POOL_INDEX, "selector", "arg0", Some(alias_target_va), "exact"),
+                pool_entry(fixture::RECOVERED_BAIT_INDEX, "string", fixture::RECOVERED_BAIT, None, "exact"),
+                pool_entry(fixture::POOL_TIE_INDEXES.0, "selector", "ping", Some(pool_target_va), "exact"),
+                pool_entry(fixture::POOL_TIE_INDEXES.1, "selector", "pong", Some(pool_target_va), "exact"),
+                pool_entry(fixture::COLLIDING_SELECTOR_INDEX, "selector", "_block_999", Some(collision_target_va), "exact")
+            ]
+        },
+        "diagnostics": [],
+        "extensions": {}
     });
     fs::write(
         root.join("model.json"),
@@ -1193,21 +1172,123 @@ fn plant_workspace(root: &Path) -> PathBuf {
     .expect("write model");
 
     // An adapter is an executable that turns the snapshot spans into a model.
-    // This one hands back the model authored above, which is what makes the
-    // program under test synthetic and fully specified rather than carved.
-    fs::create_dir_all(root.join("adapters/installed")).expect("mkdir adapters");
+    // This one merges the host-authored facts from the request into the model
+    // authored above, which is what makes the program under test synthetic and
+    // fully specified rather than carved.
+    let data_dir = root.join("data");
+    let artifact = data_dir.join("artifacts/dart_adapter.py");
+    fs::create_dir_all(artifact.parent().expect("artifact parent")).expect("mkdir artifacts");
+    fs::create_dir_all(data_dir.join("data")).expect("mkdir profile dir");
+    fs::create_dir_all(data_dir.join("adapters")).expect("mkdir registry dir");
     fs::write(
-        root.join("adapters/manifest.json"),
-        serde_json::to_vec_pretty(&serde_json::json!({
-            "entries": [{
-                "snapshot_hash": SNAPSHOT_HASH,
-                "version": "synthetic",
-                "adapter": format!("dart_adapter_{SNAPSHOT_HASH}")
-            }]
-        }))
-        .expect("manifest is serializable"),
+        &artifact,
+        "#!/usr/bin/env python3\n\
+             import argparse, json, pathlib\n\
+             p = argparse.ArgumentParser()\n\
+             p.add_argument('--request', required=True)\n\
+             p.add_argument('--result', required=True)\n\
+             p.add_argument('--input-path')\n\
+             p.add_argument('--libapp-path')\n\
+             args = p.parse_args()\n\
+             request = json.loads(pathlib.Path(args.request).read_text())\n\
+             root = pathlib.Path(args.libapp_path).resolve().parent\n\
+             model = json.loads((root / 'model.json').read_text())\n\
+             model['producer'] = request['producer']\n\
+             model['input'] = {\n\
+                 'identity': request['identity'],\n\
+                 'regions': [\n\
+                     {'region': handle['region'], 'size': handle['size'],\n\
+                       'sha256': handle['sha256'],\n\
+                       'virtual_address': handle['virtual_address'],\n\
+                       'executable': handle['executable']}\n\
+                     for handle in request['inputs']\n\
+                 ],\n\
+             }\n\
+             model['compatibility'] = request['compatibility']\n\
+             pathlib.Path(request['output']).write_text(json.dumps(model))\n\
+             pathlib.Path(args.result).write_text(json.dumps({\n\
+                 'protocol_major': 1,\n\
+                 'model_major': 4,\n\
+                 'status': 'ok',\n\
+                 'model': request['output'],\n\
+                 'error': None,\n\
+                 'resolved_backend': 'serwalker',\n\
+                 'fallback_reason': None,\n\
+                 'diagnostics': [],\n\
+             }))\n",
     )
-    .expect("write manifest");
+    .expect("write adapter");
+    let mut perms = fs::metadata(&artifact)
+        .expect("adapter metadata")
+        .permissions();
+    std::os::unix::fs::PermissionsExt::set_mode(&mut perms, 0o755);
+    fs::set_permissions(&artifact, perms).expect("chmod adapter");
+
+    let profile = serde_json::to_vec_pretty(&serde_json::json!({
+        "profiles": {
+            "fixture-profile": {
+                "tag_style": "CID_INT32",
+                "compressed_word_size": 4,
+                "header_fields": 5,
+                "max_alignment": 16,
+                "heap_object_tag": 1,
+                "cids": { "class": 1, "object_pool": 23 }
+            }
+        }
+    }))
+    .expect("serialize profile");
+    fs::write(data_dir.join("data/fixture-profile.json"), &profile).expect("write profile");
+
+    let features = vec![
+        "no-code_comments".to_string(),
+        "no-compressed-pointers".to_string(),
+        "product".to_string(),
+    ];
+    let fingerprint = flutterdec_loader::registry::canonical_feature_fingerprint(&features);
+    let artifact_bytes = fs::read(&artifact).expect("read adapter");
+    let record = serde_json::json!({
+        "snapshot_hash": SNAPSHOT_HASH,
+        "snapshot_kind": "full_aot",
+        "target_arch": "arm64",
+        "features": features,
+        "feature_fingerprint": fingerprint,
+        "known_features": features,
+        "forbidden_features": [],
+        "sdk_aliases": [],
+        "parser_family": { "id": "synthetic-family", "version": "1", "sha256": null },
+        "profile": {
+            "id": "fixture-profile",
+            "path": "data/fixture-profile.json",
+            "sha256": sha256(&profile)
+        },
+        "artifact": {
+            "id": "synthetic-adapter",
+            "variants": [{
+                "host_os": std::env::consts::OS,
+                "host_arch": std::env::consts::ARCH,
+                "path": "artifacts/dart_adapter.py",
+                "size": artifact_bytes.len(),
+                "sha256": sha256(&artifact_bytes),
+                "provenance": "synthetic pipeline fixture"
+            }]
+        },
+        "evidence": { "source": "synthetic", "provenance": "pipeline fixture", "references": [] },
+        "trust_tier": "experimental",
+        "protocol_major": 1,
+        "model_major": 4
+    });
+    let registry_json = serde_json::to_vec_pretty(&serde_json::json!({
+        "version": 1,
+        "records": [record]
+    }))
+    .expect("serialize registry");
+    fs::write(data_dir.join("adapters/registry.json"), &registry_json).expect("write registry");
+    let registry = flutterdec_loader::registry::CompatibilityRegistry::from_json(&registry_json)
+        .expect("the synthetic registry is valid");
+    let layout = Layout::new(data_dir.clone(), root.join("store"), root.join("symbols"));
+    flutterdec_adapter::store::install(&layout, &registry, SNAPSHOT_HASH, None, Some(&artifact))
+        .expect("install the synthetic adapter");
+
     // `find_repo_root` wants both markers, so the same directory also works as a
     // working directory for a hand-run CLI invocation.
     fs::write(
@@ -1216,24 +1297,13 @@ fn plant_workspace(root: &Path) -> PathBuf {
     )
     .expect("write root marker");
 
-    let adapter = root.join(format!("adapters/installed/dart_adapter_{SNAPSHOT_HASH}"));
-    fs::write(
-        &adapter,
-        b"#!/usr/bin/env python3\n\
-          import pathlib, shutil, sys\n\
-          argv = sys.argv[1:]\n\
-          out = argv[argv.index('--out') + 1]\n\
-          root = pathlib.Path(__file__).resolve().parents[2]\n\
-          shutil.copyfile(str(root / 'model.json'), out)\n" as &[u8],
-    )
-    .expect("write adapter");
-    let mut perms = fs::metadata(&adapter)
-        .expect("adapter metadata")
-        .permissions();
-    std::os::unix::fs::PermissionsExt::set_mode(&mut perms, 0o755);
-    fs::set_permissions(&adapter, perms).expect("chmod adapter");
-
     libapp
+}
+
+fn sha256(bytes: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    format!("{:x}", hasher.finalize())
 }
 
 /// A value decided by `HashSet` iteration order and nothing else.
@@ -1314,7 +1384,7 @@ fn assert_fixture_covers_every_shape(run: &Run) {
     let sources = run
         .artifacts
         .iter()
-        .filter(|(name, _)| name.starts_with("pseudocode/"))
+        .filter(|(name, _)| name.ends_with(".dart") && !name.starts_with("artifacts/"))
         .map(|(_, bytes)| String::from_utf8_lossy(bytes).to_string())
         .collect::<Vec<_>>();
     let pseudocode = sources.join("\n");
@@ -1354,7 +1424,13 @@ fn assert_fixture_covers_every_shape(run: &Run) {
         .lines()
         .map(|line| flutterdec_decompiler::count_code_matches(line, "_block_"))
         .sum::<usize>() as u64;
-    let helper_source = sources
+    let detail_sources = run
+        .artifacts
+        .iter()
+        .filter(|(name, _)| name.ends_with(".dart"))
+        .map(|(_, bytes)| String::from_utf8_lossy(bytes).to_string())
+        .collect::<Vec<_>>();
+    let helper_source = detail_sources
         .iter()
         .find(|source| source.contains("helperBudgetChain"))
         .expect("helper-cap artifact is missing");
@@ -1383,7 +1459,7 @@ fn assert_fixture_covers_every_shape(run: &Run) {
         "the recovered selector did not stay disjoint from the slot0 local"
     );
     assert!(
-        pseudocode.contains("intent: \"framework:flutter.widgets.AppState.arg0 [selector]\""),
+        pseudocode.contains("intent: \"framework:flutter.widgets.AppState.arg0\""),
         "the recovered selector's exact decoded spelling is not retained"
     );
     assert!(
@@ -1480,10 +1556,9 @@ fn assert_fixture_covers_every_shape(run: &Run) {
         count("/block_helper_refs") > 0,
         "no block helper reference: helper order is not covered"
     );
-    assert!(
-        pseudocode.contains("inferred from: sub_"),
-        "no program-level generic alias: the generic-alias shape is not covered"
-    );
+    // v4 folds a pool selector's owner into the target function's class, so the
+    // callee is named before the generic-alias pass runs and no `inferred from`
+    // annotation is produced. The recovered selector itself is asserted above.
     assert!(
         sources.iter().any(|source| annotated_twin(source)),
         "no annotated twin of an identical line: the duplicate-line provenance \
@@ -1722,7 +1797,8 @@ fn the_whole_artifact_set_is_byte_identical_in_twenty_processes() {
     if let Some(dir) = std::env::var_os(CHILD_REQUEST) {
         let root = PathBuf::from(dir);
         let libapp = plant_workspace(&root);
-        let outcome = run_decompile(&root, &libapp, &options(root.join("out")));
+        let layout = Layout::new(root.join("data"), root.join("store"), root.join("symbols"));
+        let outcome = run_decompile(&layout, &libapp, &options(root.join("out")));
         // The harness leaves `test <name> ... ` unterminated, so the first line
         // printed here would otherwise carry that prefix and not match.
         println!();

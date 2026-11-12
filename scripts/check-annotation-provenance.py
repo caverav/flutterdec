@@ -3,7 +3,11 @@
 emitted IR, and the emitted pseudocode.
 
 The audit is JSONL written by the decompiler when `FLUTTERDEC_PROV_AUDIT` names
-a path. Two record kinds share the stream, told apart by `record`:
+a path. Coordinates are relative to each function's own emitted source, not to a
+composed library file. For library layout, pass `<out>` or
+`<out>/artifacts/functions` to `--pseudocode-dir`; that directory is written
+whenever the audit is enabled. Two record kinds share the stream, told apart by
+`record`:
 
     snapshot    {snapshot_id, site_key, registers: [[reg, value], ...]}
     annotation  {function_id, output_line, output_col, loss_site, site_key,
@@ -445,18 +449,33 @@ def check_loop_ir(annotations, ir_dir: pathlib.Path):
     return bad
 
 
+def by_function(pseudocode_dir: pathlib.Path):
+    """Map function id to its per-function source file.
+
+    Legacy output stores `id_name.dartpseudo`; library layout with provenance
+    audit enabled stores the emitter's exact per-function source as
+    `artifacts/functions/<id>.dart`. A laid-out output root is accepted too.
+    """
+    sidecars = pseudocode_dir / "artifacts" / "functions"
+    if (pseudocode_dir / "index.json").is_file() and sidecars.is_dir():
+        pseudocode_dir = sidecars
+    by_id = {}
+    paths = [*pseudocode_dir.glob("*.dartpseudo"), *pseudocode_dir.glob("*.dart")]
+    for path in sorted(paths):
+        stem = path.stem.split("_", 1)[0]
+        try:
+            by_id[int(stem)] = path
+        except ValueError:
+            continue
+    return by_id
+
+
 def check_loop_anchor(annotations, pseudocode_dir: pathlib.Path):
     """The annotation at the recorded coordinate is the recorded one, it uses the
     loop-entry literal, and the register it sits beside is still spelled as an
     unrecovered value - which is the emitted proof that the binding was lost.
     """
-    by_id = {}
-    for path in sorted(pseudocode_dir.glob("*.dartpseudo")):
-        stem = path.name.split("_", 1)[0]
-        try:
-            by_id[int(stem)] = path
-        except ValueError:
-            continue
+    by_id = by_function(pseudocode_dir)
     bad, cache = [], {}
     for record in annotations:
         where = (record.get("function_id"), record.get("output_line"), record.get("output_col"))
@@ -496,13 +515,7 @@ def check_anchor(annotations, pseudocode_dir: pathlib.Path):
     Derived from the emitted file rather than from the emitter, so a record that
     names a real site other than its own fails here.
     """
-    by_id = {}
-    for path in sorted(pseudocode_dir.glob("*.dartpseudo")):
-        stem = path.name.split("_", 1)[0]
-        try:
-            by_id[int(stem)] = path
-        except ValueError:
-            continue
+    by_id = by_function(pseudocode_dir)
     bad, cache = [], {}
     for record in annotations:
         where = (record.get("function_id"), record.get("output_line"), record.get("output_col"))

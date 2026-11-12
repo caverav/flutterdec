@@ -125,8 +125,8 @@ const CONTROL_EFFECTS: &[ControlEffect] = &[
 fn control_effect_fixture(row: &ControlEffect) -> FunctionDisassembly {
     FunctionDisassembly {
         function_id: 42,
-        function_name: "effect".to_string(),
-        owner_class: "Global".to_string(),
+        function_name: Some("effect".to_string()),
+        owner_class: Some("Global".to_string()),
         entry_va: 0x1000,
         size: 0x1010,
         instructions: vec![
@@ -217,8 +217,8 @@ fn only_a_control_effect_that_ends_a_block_makes_the_next_instruction_a_leader()
     for row in CONTROL_EFFECTS {
         let d = FunctionDisassembly {
             function_id: 43,
-            function_name: "ender".to_string(),
-            owner_class: "Global".to_string(),
+            function_name: Some("ender".to_string()),
+            owner_class: Some("Global".to_string()),
             entry_va: 0x1000,
             size: 12,
             instructions: vec![
@@ -258,8 +258,8 @@ fn only_a_control_effect_that_ends_a_block_makes_the_next_instruction_a_leader()
 fn an_indirect_branch_keeps_its_register_and_takes_no_edge() {
     let d = FunctionDisassembly {
         function_id: 44,
-        function_name: "dispatch".to_string(),
-        owner_class: "Global".to_string(),
+        function_name: Some("dispatch".to_string()),
+        owner_class: Some("Global".to_string()),
         entry_va: 0x1000,
         size: 12,
         instructions: vec![
@@ -293,8 +293,8 @@ fn an_indirect_branch_keeps_its_register_and_takes_no_edge() {
 fn a_trap_ends_the_block_with_no_successors() {
     let d = FunctionDisassembly {
         function_id: 45,
-        function_name: "raise".to_string(),
-        owner_class: "Global".to_string(),
+        function_name: Some("raise".to_string()),
+        owner_class: Some("Global".to_string()),
         entry_va: 0x1000,
         size: 12,
         instructions: vec![

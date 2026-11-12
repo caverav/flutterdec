@@ -25,8 +25,8 @@ fn ins(va: u64, mnemonic: &str, op_str: &str) -> flutterdec_disasm_arm64::AsmIns
 fn control_effect_record() -> flutterdec_disasm_arm64::FunctionDisassembly {
     flutterdec_disasm_arm64::FunctionDisassembly {
         function_id: 0,
-        function_name: "effects".to_string(),
-        owner_class: "Global".to_string(),
+        function_name: Some("effects".to_string()),
+        owner_class: Some("Global".to_string()),
         entry_va: 0x1000,
         size: 0x20,
         instructions: vec![
@@ -41,29 +41,6 @@ fn control_effect_record() -> flutterdec_disasm_arm64::FunctionDisassembly {
     }
 }
 
-fn one_function_model() -> ProgramModel {
-    ProgramModel {
-        schema_version: 3,
-        adapter_kind: "test".to_string(),
-        dart_version: "unknown".to_string(),
-        snapshot_hash: String::new(),
-        arch: "arm64".to_string(),
-        libraries: Vec::new(),
-        classes: Vec::new(),
-        functions: vec![flutterdec_adapter::FunctionInfo {
-            id: 0,
-            name: "effects".to_string(),
-            owner_class: "Global".to_string(),
-            entry_va: 0x1000,
-            size: 0x20,
-            code_section_va: 0x1000,
-            name_kind: None,
-        }],
-        object_pool: Vec::new(),
-        pool_geometry: None,
-    }
-}
-
 fn options(max_unresolved_cf: usize) -> DecompileOptions {
     DecompileOptions {
         out_dir: std::path::PathBuf::new(),
@@ -72,6 +49,8 @@ fn options(max_unresolved_cf: usize) -> DecompileOptions {
         emit_ghidra_script: false,
         emit_ida_script: false,
         emit_ir: true,
+        output_layout: crate::OutputLayout::Library,
+        adapter_timeout_seconds: None,
         split_records: false,
         extra_symbol_elfs: Vec::new(),
         extra_symbol_map_targets: Vec::new(),
@@ -185,8 +164,7 @@ fn the_pipeline_reports_an_indirect_branch_as_unresolved_control_flow() {
         "the one `ret` is the only return in the artifact:\n{source}"
     );
 
-    let model = one_function_model();
-    let strict = quality_from_artifacts(&model, &pseudo, &options(0), 1);
+    let strict = quality_from_artifacts(1, &pseudo, &options(0), 1);
     assert_eq!(
         strict.unresolved_cf, 1,
         "the indirect branch is counted once: {strict:?}"
@@ -201,7 +179,7 @@ fn the_pipeline_reports_an_indirect_branch_as_unresolved_control_flow() {
     );
     assert!(!strict.passed);
 
-    let tolerant = quality_from_artifacts(&model, &pseudo, &options(1), 1);
+    let tolerant = quality_from_artifacts(1, &pseudo, &options(1), 1);
     assert!(
         tolerant.passed,
         "nothing else in this record fails a gate: {tolerant:?}"

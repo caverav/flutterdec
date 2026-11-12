@@ -20,6 +20,8 @@ jobs:
   rust:
     name: Rust Checks (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    env:
+      FLUTTERDEC_PROFILES_DIR: ${{ github.workspace }}/data/serwalker_profiles
     strategy:
       fail-fast: false
       matrix:
@@ -35,7 +37,7 @@ jobs:
         uses: cachix/install-nix-action@v31
 
       - name: Enable Nix cache
-        uses: DeterminateSystems/magic-nix-cache-action@v14
+        uses: DeterminateSystems/magic-nix-cache-action@v15
 
       - name: Validate flake
         run: nix flake check
@@ -110,3 +112,6 @@ jobs:
       - name: Benchmark harness tests
         if: runner.os == 'Linux'
         run: nix develop -c cargo test --manifest-path crates/flutterdec-bench/Cargo.toml
+
+      - name: Release layout smoke
+        run: nix develop -c ./scripts/release-layout-smoke.sh target/release/flutterdec

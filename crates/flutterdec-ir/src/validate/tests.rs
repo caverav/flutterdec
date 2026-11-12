@@ -323,8 +323,8 @@ fn only_the_guard_stranded_blocks_are_pruned() {
     // nothing in the record reaches and that the guard never reached either.
     let d = FunctionDisassembly {
         function_id: 11,
-        function_name: "guardedWithIsland".to_string(),
-        owner_class: "Global".to_string(),
+        function_name: Some("guardedWithIsland".to_string()),
+        owner_class: Some("Global".to_string()),
         entry_va: 0x1000,
         size: 0x2c,
         instructions: vec![
@@ -382,8 +382,8 @@ fn the_builder_is_canonical_on_every_path_it_takes() {
     };
     let record = |instructions: Vec<AsmInstruction>| FunctionDisassembly {
         function_id: 3,
-        function_name: "built".to_string(),
-        owner_class: "Global".to_string(),
+        function_name: Some("built".to_string()),
+        owner_class: Some("Global".to_string()),
         entry_va: 0x1000,
         size: 64,
         instructions,

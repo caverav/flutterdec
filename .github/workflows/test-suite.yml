@@ -20,6 +20,8 @@ jobs:
   tests:
     name: Full Test Suite (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    env:
+      FLUTTERDEC_PROFILES_DIR: ${{ github.workspace }}/data/serwalker_profiles
     strategy:
       fail-fast: false
       matrix:
@@ -35,7 +37,36 @@ jobs:
         uses: cachix/install-nix-action@v31
 
       - name: Enable Nix cache
-        uses: DeterminateSystems/magic-nix-cache-action@v14
+        uses: DeterminateSystems/magic-nix-cache-action@v15
 
       - name: Run full test suite
         run: ./scripts/test-suite.sh
+
+  real-snapshot:
+    name: Real Snapshot (ubuntu-latest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+
+      - name: Enable Nix cache
+        uses: DeterminateSystems/magic-nix-cache-action@v15
+
+      - name: Fetch pinned LocalSend fixture
+        id: fixture
+        run: |
+          libapp="$(./scripts/fetch-real-snapshot.sh "$RUNNER_TEMP/serwalker-real-snapshot")"
+          printf 'libapp=%s\n' "$libapp" >> "$GITHUB_OUTPUT"
+
+      - name: Run real snapshot tests
+        env:
+          SERWALKER_TEST_LIBAPP: ${{ steps.fixture.outputs.libapp }}
+          SERWALKER_TEST_PROFILE: ${{ github.workspace }}/data/serwalker_profiles/profile_80a49c71_compr_arm64.json
+        run: |
+          nix develop -c cargo test -p flutterdec-serwalker --test protocol_adapter -- --ignored
+          nix develop -c cargo test -p flutterdec-serwalker --lib v4_real_snapshot_round_trips_and_passes_host_validation -- --ignored

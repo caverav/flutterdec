@@ -31,5 +31,6 @@ flutterdec-decompiler = { path = "../flutterdec-decompiler" }
 # Both are already regular dependencies of this crate; an integration test can
 # only reach dev-dependencies, so they are named again rather than added.
 serde_json.workspace = true
+sha2.workspace = true
 tempfile.workspace = true
 flutterdec-decompiler = { path = "../flutterdec-decompiler" }

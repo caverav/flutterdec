@@ -387,12 +387,12 @@ impl Measurement {
 }
 
 /// The combined in-memory invocation. Everything outside it - case generation,
-/// the symbol map, the model and the option set - is built once by the caller,
+/// the symbol map, the function count and the option set - is built once by the caller,
 /// because the contract excludes fixture generation and startup from the spans.
 fn run_case(
     case: &Case,
     symbols: &HashMap<u64, String>,
-    model: &flutterdec_adapter::ProgramModel,
+    function_count: usize,
     options: &flutterdec_core::DecompileOptions,
 ) -> Measurement {
     let allocations_0 = Allocations::now();
@@ -416,7 +416,7 @@ fn run_case(
     let serialized_bytes = flutterdec_core::bench_spans::serialize_artifacts(
         std::slice::from_ref(&ir),
         std::slice::from_ref(&artifact),
-        model,
+        function_count,
         options,
         1,
     );
@@ -441,7 +441,7 @@ fn run_case(
 fn resource_case(
     case: &Case,
     symbols: &HashMap<u64, String>,
-    model: &flutterdec_adapter::ProgramModel,
+    function_count: usize,
     options: &flutterdec_core::DecompileOptions,
 ) -> ResourceSnapshot {
     use flutterdec_decompiler::bench_spans::{enter_resource_phase, ResourcePhase};
@@ -460,7 +460,7 @@ fn resource_case(
         flutterdec_core::bench_spans::serialize_artifacts(
             std::slice::from_ref(&ir),
             std::slice::from_ref(&artifact),
-            model,
+            function_count,
             options,
             1,
         )
@@ -497,11 +497,10 @@ fn resource(argv: &[String]) -> Result<(), String> {
     set_resource_plant(ResourcePlant::None);
 
     let symbols: HashMap<u64, String> = HashMap::new();
-    let model = flutterdec_core::bench_spans::synthetic_model(1);
     let options = flutterdec_core::bench_spans::balanced_options();
     for _ in 0..warmups {
         for case in &cases {
-            std::hint::black_box(run_case(case, &symbols, &model, &options).serialized_bytes);
+            std::hint::black_box(run_case(case, &symbols, 1, &options).serialized_bytes);
         }
     }
 
@@ -513,7 +512,7 @@ fn resource(argv: &[String]) -> Result<(), String> {
     let phase_names = ["ir", "cfg", "emission_exclusive", "serialization"];
     let mut failures = Vec::new();
     for case in &cases {
-        let snapshot = resource_case(case, &symbols, &model, &options);
+        let snapshot = resource_case(case, &symbols, 1, &options);
         let rss = measure::peak_rss_bytes();
         if snapshot.instrumentation_recursions != 0 {
             failures.push(format!(
@@ -633,7 +632,6 @@ fn run(argv: &[String]) -> Result<(), String> {
 
     // Fixture state, all built before any span opens.
     let symbols: HashMap<u64, String> = HashMap::new();
-    let model = flutterdec_core::bench_spans::synthetic_model(1);
     let options = flutterdec_core::bench_spans::balanced_options();
 
     let correctness: Vec<Correctness> = if correctness_enabled {
@@ -655,7 +653,7 @@ fn run(argv: &[String]) -> Result<(), String> {
 
     for _ in 0..warmups {
         for case in &cases {
-            let measurement = run_case(case, &symbols, &model, &options);
+            let measurement = run_case(case, &symbols, 1, &options);
             std::hint::black_box(measurement.serialized_bytes);
         }
     }
@@ -670,7 +668,7 @@ fn run(argv: &[String]) -> Result<(), String> {
         let run_started = Instant::now();
         let mut case_rows = Vec::with_capacity(cases.len());
         for case in &cases {
-            let measurement = run_case(case, &symbols, &model, &options);
+            let measurement = run_case(case, &symbols, 1, &options);
             std::hint::black_box(measurement.serialized_bytes);
 
             let values = [
@@ -967,16 +965,15 @@ mod tests {
     #[test]
     fn spans_are_disjoint_and_reconcile_with_the_combined_time() {
         let symbols = HashMap::new();
-        let model = flutterdec_core::bench_spans::synthetic_model(1);
-        let options = flutterdec_core::bench_spans::balanced_options();
+            let options = flutterdec_core::bench_spans::balanced_options();
         for case in workload::disclosed_cases()
             .into_iter()
             .filter(|c| c.blocks == 64)
         {
             // One warm pass first: the first touch of a case pays for lazily
             // initialised state that belongs to no phase.
-            run_case(&case, &symbols, &model, &options);
-            let measurement = run_case(&case, &symbols, &model, &options);
+            run_case(&case, &symbols, 1, &options);
+            let measurement = run_case(&case, &symbols, 1, &options);
             assert!(
                 measurement.span_sum() <= measurement.combined,
                 "{}: parts {} exceed the whole {}",
@@ -1000,14 +997,13 @@ mod tests {
     #[test]
     fn the_cfg_span_is_charged_from_inside_emission() {
         let symbols = HashMap::new();
-        let model = flutterdec_core::bench_spans::synthetic_model(1);
-        let options = flutterdec_core::bench_spans::balanced_options();
+            let options = flutterdec_core::bench_spans::balanced_options();
         let case = workload::disclosed_cases()
             .into_iter()
             .find(|c| c.name == "nested-loop/1024/base")
             .expect("nested-loop case");
-        run_case(&case, &symbols, &model, &options);
-        let measurement = run_case(&case, &symbols, &model, &options);
+        run_case(&case, &symbols, 1, &options);
+        let measurement = run_case(&case, &symbols, 1, &options);
         assert!(measurement.cfg > 0, "region analysis was charged");
         assert!(
             measurement.cfg <= measurement.cfg + measurement.emission_exclusive,

@@ -36,7 +36,7 @@ fn source_text_counters(line: &str) -> [usize; 6] {
 }
 
 fn quality_from_artifacts(
-    model: &ProgramModel,
+    function_count: usize,
     pseudo: &[PseudocodeArtifact],
     opt: &DecompileOptions,
     // Records decoded, before any record split. The ratio's denominator is the
@@ -44,7 +44,6 @@ fn quality_from_artifacts(
     // compare unlike things and report a fraction above one.
     decoded_records: usize,
 ) -> QualityReport {
-    let function_count = model.functions.len();
     let disassembled_function_count = decoded_records;
 
     let mut total_calls = 0usize;
@@ -451,21 +450,6 @@ mod quality_tests {
         .collect()
     }
 
-    fn empty_model() -> ProgramModel {
-        ProgramModel {
-            schema_version: 3,
-            adapter_kind: "test".to_string(),
-            dart_version: "unknown".to_string(),
-            snapshot_hash: String::new(),
-            arch: "arm64".to_string(),
-            libraries: Vec::new(),
-            classes: Vec::new(),
-            functions: Vec::new(),
-            object_pool: Vec::new(),
-            pool_geometry: None,
-        }
-    }
-
     fn default_options() -> DecompileOptions {
         DecompileOptions {
             out_dir: std::path::PathBuf::new(),
@@ -474,6 +458,8 @@ mod quality_tests {
             emit_ghidra_script: false,
             emit_ida_script: false,
             emit_ir: false,
+            output_layout: crate::OutputLayout::Library,
+            adapter_timeout_seconds: None,
             split_records: false,
             extra_symbol_elfs: Vec::new(),
             extra_symbol_map_targets: Vec::new(),
@@ -520,7 +506,7 @@ mod quality_tests {
         );
 
         let quality = quality_from_artifacts(
-            &empty_model(),
+            0,
             std::slice::from_ref(&artifact),
             &default_options(),
             0,
@@ -552,7 +538,7 @@ mod quality_tests {
     #[test]
     fn the_report_counts_every_primary_cause_and_every_traversal_event() {
         let pseudo = taxonomy_artifacts();
-        let report = quality_from_artifacts(&empty_model(), &pseudo, &default_options(), 0);
+        let report = quality_from_artifacts(0, &pseudo, &default_options(), 0);
         let emission = &report.emission;
 
         // Stated per cause, not derived: a fixture that stopped reaching its
@@ -651,7 +637,7 @@ mod quality_tests {
     #[test]
     fn the_report_derives_its_decline_counts_from_the_primary_causes() {
         let pseudo = taxonomy_artifacts();
-        let report = quality_from_artifacts(&empty_model(), &pseudo, &default_options(), 0);
+        let report = quality_from_artifacts(0, &pseudo, &default_options(), 0);
         let emission = &report.emission;
 
         let per_cause = emission.irreducible
@@ -692,7 +678,7 @@ mod quality_tests {
         ir.blocks[1].id = 0;
         let artifact = flutterdec_decompiler::emit_pseudocode(&ir, &HashMap::new());
         let report = quality_from_artifacts(
-            &empty_model(),
+            0,
             std::slice::from_ref(&artifact),
             &default_options(),
             0,
@@ -730,8 +716,8 @@ mod quality_tests {
         };
         let guard_disassembly = FunctionDisassembly {
             function_id: 100,
-            function_name: "guardFixture".to_string(),
-            owner_class: "Global".to_string(),
+            function_name: Some("guardFixture".to_string()),
+            owner_class: Some("Global".to_string()),
             entry_va: 0x8000,
             size: 0x1010,
             instructions: vec![
@@ -853,7 +839,7 @@ mod quality_tests {
         );
         assert!(pseudo.iter().all(|artifact| artifact.emission.validate().is_ok()));
 
-        let report = quality_from_artifacts(&empty_model(), &pseudo, &default_options(), 0);
+        let report = quality_from_artifacts(0, &pseudo, &default_options(), 0);
         let scratch = tempfile::tempdir().expect("artifact directory");
         let ir_dir = scratch.path().join("ir");
         let pseudo_dir = scratch.path().join("pseudocode");

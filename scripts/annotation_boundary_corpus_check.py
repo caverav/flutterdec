@@ -24,7 +24,11 @@ tail.
 
 Usage:
     annotation_boundary_corpus_check.py CANDIDATE_OUT REFERENCE_OUT
-where each argument is a decompile output directory containing `pseudocode/`.
+where each argument is a decompile output directory containing either a
+`pseudocode/` directory or the project-shaped `.dart` tree. Both arguments must
+use the same layout. A `pseudocode/` directory is used only when the same root
+has no `index.json`, so a reused output directory cannot hide a laid-out tree
+behind a stale legacy directory. Dart files under `artifacts/` are ignored.
 """
 
 import json
@@ -103,14 +107,37 @@ def strip_annotations(line: bytes, counts=None) -> bytes:
     return bytes(out)
 
 
+def source_files(root):
+    """Return the source root and its relative files, legacy or project layout.
+
+    `index.json` is the marker the writer uses for a laid-out tree. A reused
+    output directory may still contain a pre-layout `pseudocode/`, so that
+    directory is only authoritative when no index exists.
+    """
+    legacy = root / "pseudocode"
+    if legacy.is_dir() and not (root / "index.json").is_file():
+        return legacy, {p.relative_to(legacy) for p in legacy.rglob("*") if p.is_file()}
+    return root, {
+        p.relative_to(root)
+        for p in root.rglob("*.dart")
+        if p.is_file() and p.relative_to(root).parts[0] != "artifacts"
+    }
+
+
 def main():
     if len(sys.argv) != 3:
         raise SystemExit(__doc__)
-    candidate = pathlib.Path(sys.argv[1]) / "pseudocode"
-    reference = pathlib.Path(sys.argv[2]) / "pseudocode"
-
-    cand_files = {p.relative_to(candidate) for p in candidate.rglob("*") if p.is_file()}
-    ref_files = {p.relative_to(reference) for p in reference.rglob("*") if p.is_file()}
+    candidate_root = pathlib.Path(sys.argv[1])
+    reference_root = pathlib.Path(sys.argv[2])
+    candidate, cand_files = source_files(candidate_root)
+    reference, ref_files = source_files(reference_root)
+    candidate_is_legacy = candidate != candidate_root
+    reference_is_legacy = reference != reference_root
+    if candidate_is_legacy != reference_is_legacy:
+        raise SystemExit(
+            "candidate and reference must use the same layout "
+            "(legacy pseudocode/ or project .dart tree)"
+        )
     result = {
         "candidate_files": len(cand_files),
         "reference_files": len(ref_files),

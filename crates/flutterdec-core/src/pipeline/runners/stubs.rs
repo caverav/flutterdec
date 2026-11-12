@@ -688,8 +688,8 @@ mod tests {
         instructions.push(ins(entry_va + 44, "ldr", &format!("x16, [x26, #{slot:#x}]")));
         FunctionDisassembly {
             function_id: entry_va,
-            function_name: format!("sub_{entry_va:x}"),
-            owner_class: String::new(),
+            function_name: None,
+            owner_class: None,
             entry_va,
             size: 48,
             instructions,
@@ -700,8 +700,8 @@ mod tests {
     fn ordinary(entry_va: u64) -> FunctionDisassembly {
         FunctionDisassembly {
             function_id: entry_va,
-            function_name: format!("sub_{entry_va:x}"),
-            owner_class: String::new(),
+            function_name: None,
+            owner_class: None,
             entry_va,
             size: 8,
             instructions: vec![
@@ -836,8 +836,8 @@ mod window_tests {
         ));
         FunctionDisassembly {
             function_id: entry_va,
-            function_name: format!("sub_{entry_va:x}"),
-            owner_class: String::new(),
+            function_name: None,
+            owner_class: None,
             entry_va,
             size: (depth as u64 + 1) * 4,
             instructions,
@@ -878,8 +878,8 @@ mod trampoline_tests {
     fn body(entry_va: u64, instrs: Vec<flutterdec_disasm_arm64::AsmInstruction>) -> FunctionDisassembly {
         FunctionDisassembly {
             function_id: entry_va,
-            function_name: format!("sub_{entry_va:x}"),
-            owner_class: String::new(),
+            function_name: None,
+            owner_class: None,
             entry_va,
             size: (instrs.len() as u64) * 4,
             instructions: instrs,
@@ -1196,8 +1196,8 @@ mod allocation_tests {
         let hi = (tag >> 16) & 0xffff;
         FunctionDisassembly {
             function_id: entry_va,
-            function_name: format!("sub_{entry_va:x}"),
-            owner_class: String::new(),
+            function_name: None,
+            owner_class: None,
             entry_va,
             size: 12,
             instructions: vec![

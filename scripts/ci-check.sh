@@ -18,7 +18,8 @@ Runs the same checks as CI from the local workspace:
   9) scripts/check-resource-ruler.py
  10) cargo test --workspace            (unless --skip-tests)
  11) cargo build -p flutterdec-cli --release
- 12) fmt, clippy and tests for the excluded benchmark harness
+ 12) scripts/release-layout-smoke.sh
+ 13) fmt, clippy and tests for the excluded benchmark harness
 
 The benchmark harness is not a workspace member, so --workspace does not reach
 it and it is linted and tested through its own manifest. That exclusion is what
@@ -105,6 +106,9 @@ fi
 
 echo "[ci-check] cargo build -p flutterdec-cli --release"
 nix develop -c cargo build -p flutterdec-cli --release
+
+echo "[ci-check] scripts/release-layout-smoke.sh"
+nix develop -c ./scripts/release-layout-smoke.sh target/release/flutterdec
 
 bench_manifest="crates/flutterdec-bench/Cargo.toml"
 # `--all` means every member of the manifest's own workspace, and the harness is
