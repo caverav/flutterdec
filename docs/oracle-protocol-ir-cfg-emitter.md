@@ -544,7 +544,7 @@ false` would switch any crate's targets off wholesale.
 | `crates/flutterdec-core/src/pipeline/runners/stubs/identity_tests.rs` | `a13fd1a26bafc8224edfbc9d1e8e1aa6441e935e50a5a4021315c119973e120d` |
 | `crates/flutterdec-decompiler/src/control_flow/regions/identity_boundary_tests.rs` | `84b619616bab352c6e49fab1190d80a1df4606b691811c72835266003dfcf42d` |
 | `crates/flutterdec-decompiler/src/control_flow/relation_oracle.rs` | `e53dd455ddbbdf2c0b00d184f1f2d788833cbfd6a0db070ad69b9372297da849` |
-| `crates/flutterdec-decompiler/src/control_flow/emission_taxonomy_tests.rs` | `9138a9da21ee873bf19341683da87a5f7b2985c6bfa86a8c9ecc2fa7a3adcea2` |
+| `crates/flutterdec-decompiler/src/control_flow/emission_taxonomy_tests.rs` | `75bfc73f0fa218b5ba74732a2c615db5885771ebca706f0abf6e999417decbbc` |
 | `crates/flutterdec-decompiler/src/control_flow/annotation_anchor_tests.rs` | `b7b4e4553fa93614ed7277c76a79a77c19884be64448a0c0192bcbc589252b7e` |
 | `crates/flutterdec-decompiler/src/line_identity_tests.rs` | `7585d2d129887c92fbc98b09062db1d8fabf23ae2c06496018402f05d03ec6e0` |
 | `crates/flutterdec-decompiler/tests/helper_syntax_boundaries.rs` | `9a2832926b7871c2fd066277dd0ec6275e3ac9378c2fde519c7905b021ee7719` |
@@ -559,7 +559,7 @@ false` would switch any crate's targets off wholesale.
 | `crates/flutterdec-decompiler/tests/cfg_identity.rs` | `a5e0177808c50050bfd3517a7f89a234f650ae9ec01cc75b413ba8e2b4014ac8` |
 | `crates/flutterdec-decompiler/tests/dfs_loop_address_invariance.rs` | `1c2c0403303e619de9fe840f62f61c1af92dbec77fe554fd66d3505755b37db3` |
 | `crates/flutterdec-decompiler/tests/entry_loop_state_merge.rs` | `d562cc31ddd244e11d83a0a1bb6e3e4b3d76bf6a052417170496da4198d80dd9` |
-| `crates/flutterdec-decompiler/tests/block_ledger_contract.rs` | `6dba60e7d22f129d5178f430174508d404dca297f7296984b69b3fe9ed248b21` |
+| `crates/flutterdec-decompiler/tests/block_ledger_contract.rs` | `6ba3d33e3e0486b793f303315906bdb444b4bd71b0812311bacfdba94df4085f` |
 
 Threshold rulers, protected by value rather than by digest because they live in
 files this mission may legitimately touch:
@@ -3531,3 +3531,59 @@ files and 1,223 libraries. All 40,813 attributed entries carry a line span that
 contains their declaration, with zero missing files, zero non-`.dart` paths, and
 zero duplicate declarations inside a file. The oracle inventory, the resource
 ruler, and `scripts/ci-check.sh` are rerun after this record and are clean.
+
+## 27. Adjudication record: omitted-edge and failed-ledger review fixes
+
+This is the section 9 record for the protected files changed while closing the
+two review findings. No test assertion was deleted, relaxed, or made
+conditional. The runtime ledger assertion was replaced by a diagnostic path on
+purpose, and the new test asserts that path.
+
+### 27.1 Invariant and test delta
+
+The invariant is that a recorded traversal event and the emitted body describe
+the same edges, and that one malformed function cannot abort the rest of a
+release run.
+
+- `crates/flutterdec-decompiler/src/lib.rs` records a branch successor the
+  terminator cannot render as an `UnrenderableEdgeOmission` at the branch site.
+  The source carries `// extended branch paths omitted: block N` before the
+  `if`; the old helper call after a terminal arm is gone because dead-code
+  compaction removed it. A block ledger that fails reconciliation now returns
+  `emission_failure_artifact` instead of hitting `assert_eq!`. The
+  candidate-accounting assertion takes the same path. `invalid_cfg_artifact`
+  keeps its constructed-ledger assertion because that ledger is built, not
+  observed.
+- `crates/flutterdec-decompiler/src/control_flow/emission_taxonomy_tests.rs`
+  grows `unsupported_region_fixture` a third successor and adds
+  `an_extended_branch_records_its_extra_edge_instead_of_a_dead_helper_call` and
+  `a_failed_ledger_becomes_a_diagnostic_artifact_instead_of_a_panic`. Existing
+  fixtures and assertions are unchanged.
+- `crates/flutterdec-decompiler/tests/block_ledger_contract.rs` changes only
+  `TraversalEventKind::ALL.len()` from 3 to 4, matching the closed vocabulary.
+
+### 27.2 Digest chain
+
+| Protected path | Prior sha256 | Current sha256 in section 7 |
+| --- | --- | --- |
+| `crates/flutterdec-decompiler/src/control_flow/emission_taxonomy_tests.rs` | `9138a9da21ee873bf19341683da87a5f7b2985c6bfa86a8c9ecc2fa7a3adcea2` | `75bfc73f0fa218b5ba74732a2c615db5885771ebca706f0abf6e999417decbbc` |
+| `crates/flutterdec-decompiler/tests/block_ledger_contract.rs` | `6dba60e7d22f129d5178f430174508d404dca297f7296984b69b3fe9ed248b21` | `6ba3d33e3e0486b793f303315906bdb444b4bd71b0812311bacfdba94df4085f` |
+
+`crates/flutterdec-decompiler/src/lib.rs` is protected by the resource ruler,
+not by this inventory. Its digest chain is recorded in
+`docs/resource-ruler-protocol.md`.
+
+### 27.3 Section 9 steps
+
+1. Invariant: section 27.1, stated at the traversal event and at the artifact.
+2. Tests: the two protected test files run in `cargo test --workspace`; the new
+   tests fail if the branch site loses its omission event or if a failed ledger
+   panics instead of returning a diagnostic artifact.
+3. Diff and digests: 27.1 names the edits and 27.2 gives both old and new
+   digests.
+4. Reference preserved: the old bytes are at `8a8aed4^`, and `1371e42` remains
+   untouched.
+5. Atomicity: the product fix and its tests are one commit; this digest refresh
+   and record are a separate documentation commit.
+6. L5: `scripts/check-oracle-inventory.py`, `scripts/check-resource-ruler.py`,
+   and `scripts/ci-check.sh` are rerun on the final tree after the refresh.
