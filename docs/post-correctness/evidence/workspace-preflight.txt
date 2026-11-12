@@ -1,0 +1,7 @@
+schema                    flutterdec-bench/workspace-preflight/1
+head                      d5d1140bf68dc26f75f1f482469808b23d6143fb
+porcelain_status          empty
+porcelain_status_bytes    0
+porcelain_status_sha256   e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+command                   docs/post-correctness/run-refresh.sh /home/camilo/flutterdec/.worker-tmp/valmetric5-rerun/run-output
+timestamp                 2026-08-22T10:47:52-04:00

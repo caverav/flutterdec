@@ -1,3 +1,193 @@
+/// Length of the string literal or comment starting at `i`, if one starts there.
+///
+/// A recovered pool string is program data: it routinely contains the same
+/// punctuation, identifiers and operators the rewrites look for, and editing it
+/// silently changes what the binary said. A comment is the emitter's own
+/// statement about a line, and rewriting inside one edits a claim rather than
+/// code. An unterminated span runs to the end of the text, so a stray quote or
+/// `/*` protects the rest of the line instead of exposing it.
+fn non_code_span_len(bytes: &[u8], i: usize, comments_too: bool) -> Option<usize> {
+    match bytes.get(i)? {
+        b'"' => Some(string_literal_len(bytes, i)),
+        b'/' if comments_too && bytes.get(i + 1) == Some(&b'*') => {
+            let mut j = i + 2;
+            while j + 1 < bytes.len() {
+                // A recovered value is rendered inside a comment as a quoted
+                // literal (`pool[7 /* "..." */]`), so its bytes are the one
+                // place a `*/` can appear that the emitter did not write.
+                // Skipping the literal keeps the comment ending where the
+                // emitter ended it, instead of letting recovered data spill the
+                // rest of the annotation onto the line as code.
+                if bytes[j] == b'"' {
+                    j += string_literal_len(bytes, j);
+                    continue;
+                }
+                if bytes[j] == b'*' && bytes[j + 1] == b'/' {
+                    return Some(j + 2 - i);
+                }
+                j += 1;
+            }
+            Some(bytes.len() - i)
+        }
+        // Lines are rewritten one at a time, so a line comment runs to the end.
+        b'/' if comments_too && bytes.get(i + 1) == Some(&b'/') => Some(bytes.len() - i),
+        _ => None,
+    }
+}
+
+/// Length of the string literal starting at `i`, escapes honoured. An
+/// unterminated one runs to the end of the text.
+fn string_literal_len(bytes: &[u8], i: usize) -> usize {
+    let mut j = i + 1;
+    while j < bytes.len() {
+        match bytes[j] {
+            b'\\' => j += 2,
+            b'"' => return (j + 1).min(bytes.len()) - i,
+            _ => j += 1,
+        }
+    }
+    bytes.len() - i
+}
+
+fn rewrite_spans(text: &str, comments_too: bool, rewrite: impl Fn(&str) -> String) -> String {
+    let bytes = text.as_bytes();
+    let mut out = String::with_capacity(text.len());
+    let mut code_start = 0usize;
+    let mut i = 0usize;
+    while i < bytes.len() {
+        let Some(span) = non_code_span_len(bytes, i, comments_too) else {
+            i += 1;
+            continue;
+        };
+        out.push_str(&rewrite(&text[code_start..i]));
+        let end = (i + span).min(bytes.len());
+        out.push_str(&text[i..end]);
+        code_start = end;
+        i = end;
+    }
+    out.push_str(&rewrite(&text[code_start..]));
+    out
+}
+
+/// Apply `rewrite` to the code of `text`, copying every string literal and every
+/// comment byte for byte.
+///
+/// A rewrite runs per code span rather than once over the whole text, so a
+/// pattern that straddles a literal or a comment simply does not match. That is
+/// the conservative direction: the text is left as the emitter wrote it.
+pub(super) fn rewrite_code_spans(text: &str, rewrite: impl Fn(&str) -> String) -> String {
+    rewrite_spans(text, true, rewrite)
+}
+
+/// As `rewrite_code_spans`, but comments are ordinary text.
+///
+/// For the rewrites whose pattern deliberately includes a comment the emitter
+/// itself rendered, where splitting at the comment would stop them matching at
+/// all.
+pub(super) fn rewrite_outside_string_literals(
+    text: &str,
+    rewrite: impl Fn(&str) -> String,
+) -> String {
+    rewrite_spans(text, false, rewrite)
+}
+
+/// Pass each run of code in `text` to `f`, skipping every string literal and
+/// every comment.
+///
+/// The read-only half of `rewrite_code_spans`, for the analyses that read
+/// structure instead of editing it. A recovered pool string is program data and
+/// a comment is the emitter's own prose, so a brace in either closes no block
+/// and an identifier in either names no helper. Runs per code span rather than
+/// once over the whole text, so a token straddling a literal does not match.
+fn for_each_code_span_at(text: &str, mut f: impl FnMut(usize, &str)) {
+    let bytes = text.as_bytes();
+    let mut code_start = 0usize;
+    let mut i = 0usize;
+    while i < bytes.len() {
+        let Some(span) = non_code_span_len(bytes, i, true) else {
+            i += 1;
+            continue;
+        };
+        f(code_start, &text[code_start..i]);
+        let end = (i + span).min(bytes.len());
+        code_start = end;
+        i = end;
+    }
+    f(code_start, &text[code_start..]);
+}
+
+pub(super) fn for_each_code_span(text: &str, mut f: impl FnMut(&str)) {
+    for_each_code_span_at(text, |_, code| f(code));
+}
+
+/// Find `needle` only where it is wholly contained in emitter-owned code.
+pub(super) fn find_in_code(text: &str, needle: &str) -> Option<usize> {
+    let mut found = None;
+    for_each_code_span_at(text, |offset, code| {
+        if found.is_none() {
+            found = code.find(needle).map(|index| offset + index);
+        }
+    });
+    found
+}
+
+/// The rest of the code span containing `start`, or `None` for recovered data.
+pub(super) fn code_span_from(text: &str, start: usize) -> Option<&str> {
+    let mut span = None;
+    for_each_code_span_at(text, |offset, code| {
+        let end = offset + code.len();
+        if span.is_none() && start >= offset && start <= end {
+            span = text.get(start..end);
+        }
+    });
+    span
+}
+
+/// Start of the first line comment outside literals and block comments.
+pub(super) fn line_comment_start(text: &str) -> Option<usize> {
+    let bytes = text.as_bytes();
+    let mut i = 0usize;
+    while i < bytes.len() {
+        if bytes.get(i) == Some(&b'/') && bytes.get(i + 1) == Some(&b'/') {
+            return Some(i);
+        }
+        if let Some(span) = non_code_span_len(bytes, i, true) {
+            i += span;
+        } else {
+            i += 1;
+        }
+    }
+    None
+}
+
+/// How many `{` and how many `}` the code of `text` carries.
+pub(super) fn code_brace_counts(text: &str) -> (i32, i32) {
+    let (mut opens, mut closes) = (0i32, 0i32);
+    for_each_code_span(text, |code| {
+        for byte in code.bytes() {
+            match byte {
+                b'{' => opens += 1,
+                b'}' => closes += 1,
+                _ => {}
+            }
+        }
+    });
+    (opens, closes)
+}
+
+/// How much the code of `text` opens minus how much it closes.
+pub(super) fn code_brace_delta(text: &str) -> i32 {
+    let (opens, closes) = code_brace_counts(text);
+    opens - closes
+}
+
+/// Whether `needle` occurs in the code of `text`.
+pub(super) fn code_contains(text: &str, needle: &str) -> bool {
+    let mut found = false;
+    for_each_code_span(text, |code| found |= code.contains(needle));
+    found
+}
+
 pub(super) fn parse_int(token: &str) -> Option<i64> {
     let t = token.trim().trim_start_matches('#');
     if let Some(hex) = t.strip_prefix("-0x") {
@@ -294,18 +484,21 @@ fn try_parse_pool_page_field(bytes: &[u8], start: usize) -> Option<(usize, u64)>
 
 pub(super) fn normalize_pool_page_field_exprs(input: &str) -> String {
     let bytes = input.as_bytes();
-    let mut out = String::with_capacity(input.len());
+    // Bytes, not chars: `bytes[i] as char` reinterprets each byte of a multi-byte
+    // character as its own code point, so a recovered string carrying one came out
+    // mojibake.
+    let mut out: Vec<u8> = Vec::with_capacity(input.len());
     let mut i = 0usize;
     while i < bytes.len() {
         if let Some((end, displacement)) = try_parse_pool_page_field(bytes, i) {
-            out.push_str(&format!("poolOff[{displacement}]"));
+            out.extend_from_slice(format!("poolOff[{displacement}]").as_bytes());
             i = end;
             continue;
         }
-        out.push(bytes[i] as char);
+        out.push(bytes[i]);
         i += 1;
     }
-    out
+    String::from_utf8(out).unwrap_or_else(|_| input.to_string())
 }
 
 pub(super) fn collect_pool_indices(expr: &str) -> Vec<u64> {

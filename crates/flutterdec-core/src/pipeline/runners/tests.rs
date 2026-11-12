@@ -232,6 +232,7 @@
             repeated_blocks: 0,
             unlifted_instructions: 0,
             target_va_symbol_calls: 0,
+            emission: Default::default(),
             block_helper_refs: 0,
             raw_arg_name_refs: 0,
             raw_register_name_refs: 0,
@@ -1347,6 +1348,7 @@
                 repeated_blocks: 0,
                 unlifted_instructions: 0,
                 target_va_symbol_calls: 0,
+                emission: Default::default(),
             },
             PseudocodeArtifact {
                 function_id: 2,
@@ -1368,6 +1370,7 @@
                 repeated_blocks: 0,
                 unlifted_instructions: 0,
                 target_va_symbol_calls: 0,
+                emission: Default::default(),
             },
         ];
 
@@ -1404,6 +1407,7 @@
                 repeated_blocks: 0,
                 unlifted_instructions: 0,
                 target_va_symbol_calls: 0,
+                emission: Default::default(),
             },
             PseudocodeArtifact {
                 function_id: 2,
@@ -1425,6 +1429,7 @@
                 repeated_blocks: 0,
                 unlifted_instructions: 0,
                 target_va_symbol_calls: 0,
+                emission: Default::default(),
             },
         ];
 
@@ -1473,6 +1478,7 @@
             repeated_blocks: 0,
             unlifted_instructions: 0,
             target_va_symbol_calls: 0,
+            emission: Default::default(),
         }];
 
         let summary = collect_call_fallback_summary(&pseudo);

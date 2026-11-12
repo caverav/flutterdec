@@ -7,7 +7,7 @@
 // assertion proves nothing about the measured output. Everything here runs in
 // release and is gated only on the environment.
 //
-// Four records live in the stream, told apart by `record`:
+// Five records live in the stream, told apart by `record`:
 //
 //   snapshot      - the register state a loss site dropped, keyed by `snapshot_id`
 //   annotation    - one emitted annotation, with `candidates[]` attributing each
@@ -16,13 +16,21 @@
 //   cap_omission  - one annotation dropped whole at insertion, with the reason
 //                   and the arithmetic that decided it. It has no coordinate,
 //                   because it is not in the artifact
-//   cap_summary   - that site's running total for the function, counted at the
-//                   drop rather than derived from the rows above
+//   filter_rejection - one candidate rejected before insertion, with its exact
+//                   reason and rendered value
+//   cap_summary   - that site's complete accounting for the function, with
+//                   accepted and rejected derived from the rows above
 //
 // The nesting is load-bearing. Completeness matches records to annotations 1:1
 // by `(function_id, output_line, output_col)`, so a three-predecessor join must
 // be one record with three attributions rather than three records at one
 // coordinate.
+//
+// The line in that coordinate is the emitter's own, carried on the record from
+// the insertion that wrote it, and only the column is located in the finished
+// text. A function can hold any number of byte-identical lines, so a coordinate
+// searched for across the whole source is a coordinate that can belong to
+// another line entirely - with every other field in the record still true.
 
 use std::fs::{File, OpenOptions};
 use std::io::Write;
@@ -30,7 +38,7 @@ use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 
 /// Bumped whenever a field is added, removed, or re-interpreted.
-pub(super) const PROVENANCE_SCHEMA_VERSION: u32 = 1;
+pub(super) const PROVENANCE_SCHEMA_VERSION: u32 = 2;
 
 /// The tag of the ordinary-call loss site, in both `loss_site` and the key
 /// spaces. One definition, so the emitter and the audit cannot spell it apart.
@@ -92,14 +100,19 @@ pub(super) struct CapOmission {
     pub(super) rendered: String,
 }
 
-/// One emitted annotation, before its output coordinate is known.
+/// One emitted annotation and the line it was inserted into.
 ///
-/// The coordinate is deliberately not filled in by the emitter: a later
-/// program-level rewrite can still move text on the line, so it is derived from
-/// the finished artifact by locating the annotation span itself.
+/// The line is the emitter's own, not a search result: the insertion knows which
+/// line it wrote to, and nothing after the annotation passes adds, removes or
+/// reorders a line. Only the column is derived from the finished text, because
+/// the two annotation passes insert into one line in turn and each insertion
+/// moves whatever sits to its right.
 #[derive(Debug, Clone)]
 pub(super) struct PendingAnnotationRecord {
     pub(super) loss_site: &'static str,
+    /// Index of the finished line this annotation was inserted into, counted
+    /// from zero as the body holds it.
+    pub(super) output_line: usize,
     pub(super) site_key: SiteKey,
     /// The rendering anchor this annotation was inserted from, named in terms
     /// the emitted IR can resolve on its own: `["block", id]` for a merge,
@@ -149,6 +162,39 @@ pub(super) struct FunctionProvenance {
     /// The same rejections as a running total, for the reason given above the
     /// cap counter.
     pub(super) rejected_at_filter: usize,
+    /// Every candidate this site offered to its gates, counted the moment the
+    /// candidate exists and before any gate can decline it.
+    ///
+    /// Counted early on purpose. Counted at the outcome instead, the figure
+    /// would agree with the outcomes by construction and a `continue` that
+    /// skipped a candidate entirely would still read as a perfect ledger. From
+    /// here, that same `continue` leaves a candidate with no outcome and
+    /// `unaccounted_candidates` is what says so.
+    pub(super) candidates_considered: usize,
+    /// Candidates that became an annotation in the artifact.
+    ///
+    /// Ungated like the drop counters, and for the same reason: a figure that
+    /// only exists under an environment variable is one no fixture can assert
+    /// on.
+    pub(super) annotations_emitted: usize,
+}
+
+impl FunctionProvenance {
+    /// Candidates this site can account for: emitted, filtered, or dropped by a
+    /// budget.
+    pub(super) fn accounted_candidates(&self) -> usize {
+        self.annotations_emitted + self.rejected_at_filter + self.omitted_at_insertion
+    }
+
+    /// Candidates with no outcome at all, as a signed difference.
+    ///
+    /// Signed because both directions are faults. A positive value is a
+    /// candidate that vanished between the capture and the gates; a negative one
+    /// is an outcome recorded for a candidate that was never counted, which
+    /// means the two sides are not describing the same population.
+    pub(super) fn unaccounted_candidates(&self) -> i64 {
+        self.candidates_considered as i64 - self.accounted_candidates() as i64
+    }
 }
 
 /// One annotation dropped by the liveness filter rather than by a budget.
@@ -192,6 +238,10 @@ struct AnnotationLine<'a> {
     anchor: &'a SiteKey,
     register: &'a str,
     candidates: &'a [CandidateAttribution],
+    candidates_considered: usize,
+    accepted: usize,
+    rejected: usize,
+    unaccounted_candidates: i64,
 }
 
 #[derive(serde::Serialize)]
@@ -234,7 +284,12 @@ struct CapSummaryLine<'a> {
     candidate_sha256: &'a str,
     function_id: u64,
     loss_site: &'a str,
+    candidates_considered: usize,
+    accepted: usize,
+    rejected: usize,
+    rejected_at_filter: usize,
     omitted_at_insertion: usize,
+    unaccounted_candidates: i64,
 }
 
 /// The facts of one dropped annotation, bundled so the recorder stays a single
@@ -354,51 +409,59 @@ fn audit_file() -> Option<&'static Mutex<File>> {
     .as_ref()
 }
 
-/// Locate each record's annotation in the finished source and append the audit
-/// lines for one function.
+/// Append the audit lines for one function, giving each record the coordinate
+/// its annotation occupies.
 ///
-/// The coordinate comes from the output itself: the span is searched for in
-/// render order and must match the record's own rendered text, so a record whose
-/// annotation did not survive to the artifact is dropped rather than given a
-/// coordinate it does not occupy.
+/// The line is the emitter's, carried on the record from the insertion that
+/// wrote it. Only the column is searched for, and only inside that one line: the
+/// two annotation passes insert into a line in turn, so a span can be pushed
+/// right by another insertion, but it cannot move to a different line. Confining
+/// the search is what stops a line that reads the same somewhere else in the
+/// function from taking a record's coordinate.
 pub(super) fn write_function_provenance(source: &str, provenance: &FunctionProvenance) {
-    if provenance.records.is_empty() && provenance.cap_omissions.is_empty() {
+    if provenance.records.is_empty()
+        && provenance.cap_omissions.is_empty()
+        && provenance.filter_rejections.is_empty()
+    {
         return;
     }
     let Some(file) = audit_file() else {
         return;
     };
 
+    let lines: Vec<&str> = source.lines().collect();
     let mut placed: Vec<(usize, usize, &PendingAnnotationRecord)> = Vec::new();
-    let mut cursor = (0usize, 0usize);
+    // One cursor per line, so two annotations on one line are told apart by the
+    // order they were inserted in rather than by their text.
+    let mut cursors: Vec<usize> = vec![0; lines.len()];
     for record in &provenance.records {
-        let Some(position) = find_span(source, &record.rendered, cursor) else {
+        let Some(line) = lines.get(record.output_line) else {
             continue;
         };
-        cursor = (position.0, position.1 + 1);
-        placed.push((position.0, position.1, record));
+        let cursor = cursors[record.output_line];
+        if cursor > line.len() {
+            continue;
+        }
+        let Some(offset) = line[cursor..].find(&record.rendered) else {
+            continue;
+        };
+        cursors[record.output_line] = cursor + offset + 1;
+        placed.push((record.output_line + 1, cursor + offset + 1, record));
     }
-    if placed.is_empty() && provenance.cap_omissions.is_empty() {
-        return;
-    }
-
-    let mut referenced: Vec<&str> = placed
-        .iter()
-        .flat_map(|(_, _, record)| {
-            record
-                .candidates
-                .iter()
-                .map(|candidate| candidate.snapshot_id.as_str())
-        })
-        .collect();
-    referenced.sort_unstable();
-    referenced.dedup();
+    let accepted = placed.len();
+    let rejected = provenance.cap_omissions.len() + provenance.filter_rejections.len();
+    assert_eq!(
+        accepted + rejected,
+        provenance.candidates_considered,
+        "{} artifact accounts for {} of {} candidates in function {}",
+        provenance.loss_site,
+        accepted + rejected,
+        provenance.candidates_considered,
+        provenance.function_id
+    );
 
     let mut out = String::new();
     for snapshot in &provenance.snapshots {
-        if !referenced.contains(&snapshot.snapshot_id.as_str()) {
-            continue;
-        }
         let line = SnapshotLine {
             schema_version: PROVENANCE_SCHEMA_VERSION,
             record: "snapshot",
@@ -428,6 +491,12 @@ pub(super) fn write_function_provenance(source: &str, provenance: &FunctionProve
             anchor: &record.anchor,
             register: &record.register,
             candidates: &record.candidates,
+            candidates_considered: provenance.candidates_considered,
+            accepted,
+            rejected,
+            unaccounted_candidates: provenance.candidates_considered as i64
+                - accepted as i64
+                - rejected as i64,
         };
         if let Ok(text) = serde_json::to_string(&line) {
             out.push_str(&text);
@@ -479,7 +548,7 @@ pub(super) fn write_function_provenance(source: &str, provenance: &FunctionProve
         }
     }
 
-    if provenance.omitted_at_insertion > 0 {
+    if rejected > 0 {
         let line = CapSummaryLine {
             schema_version: PROVENANCE_SCHEMA_VERSION,
             record: "cap_summary",
@@ -487,7 +556,14 @@ pub(super) fn write_function_provenance(source: &str, provenance: &FunctionProve
             candidate_sha256: candidate_sha256(),
             function_id: provenance.function_id,
             loss_site: provenance.loss_site,
-            omitted_at_insertion: provenance.omitted_at_insertion,
+            candidates_considered: provenance.candidates_considered,
+            accepted,
+            rejected,
+            rejected_at_filter: provenance.filter_rejections.len(),
+            omitted_at_insertion: provenance.cap_omissions.len(),
+            unaccounted_candidates: provenance.candidates_considered as i64
+                - accepted as i64
+                - rejected as i64,
         };
         if let Ok(text) = serde_json::to_string(&line) {
             out.push_str(&text);
@@ -498,27 +574,4 @@ pub(super) fn write_function_provenance(source: &str, provenance: &FunctionProve
     if let Ok(mut handle) = file.lock() {
         let _ = handle.write_all(out.as_bytes());
     }
-}
-
-/// The first `(line, column)` of `needle` at or after `from`, both 1-based and
-/// counted in bytes, as the emitted file is read.
-fn find_span(source: &str, needle: &str, from: (usize, usize)) -> Option<(usize, usize)> {
-    for (index, line) in source.lines().enumerate() {
-        let number = index + 1;
-        if number < from.0 {
-            continue;
-        }
-        let start = if number == from.0 {
-            from.1.saturating_sub(1)
-        } else {
-            0
-        };
-        if start > line.len() {
-            continue;
-        }
-        if let Some(offset) = line[start..].find(needle) {
-            return Some((number, start + offset + 1));
-        }
-    }
-    None
 }

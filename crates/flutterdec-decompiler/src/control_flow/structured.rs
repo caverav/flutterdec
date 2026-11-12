@@ -6,6 +6,9 @@
 // its exit, is a structural failure. The whole function then falls back to the
 // DFS emitter, so this pass can only improve output, never truncate it.
 
+/// How deep the structured walk nests regions before it declines.
+pub(super) const STRUCTURED_MAX_DEPTH: usize = 64;
+
 /// Quality counters, saved and restored around a structuring attempt.
 pub(super) struct Counters {
     placeholder_ifs: usize,
@@ -20,6 +23,58 @@ pub(super) struct Counters {
     repeated_blocks: usize,
     unlifted_instructions: usize,
     target_va_symbol_calls: usize,
+}
+
+/// Everything a structuring attempt can write, saved before it starts.
+///
+#[cfg(test)]
+#[path = "annotation_anchor_tests.rs"]
+mod annotation_anchor_tests;
+
+/// One value per mutable family rather than a list of the fields the walk was
+/// believed to touch: a family left out of that list is invisible until an
+/// artifact carries a name, an anchor or an audit row from a body that was never
+/// emitted. The snapshot is taken before any block is rendered, where every
+/// collection is still at its initial size, so cloning it costs nothing worth
+/// measuring.
+pub(super) struct EmitterSnapshot {
+    lines: Vec<String>,
+    line_ids: Vec<LineId>,
+    rendered_call_kinds: HashMap<LineId, RenderedCallKind>,
+    render_lines: Vec<String>,
+    render_line_ids: Vec<LineId>,
+    state: LiftState,
+    counters: Counters,
+    locals: BTreeMap<i64, String>,
+    identifier_renames: Vec<(String, String)>,
+    call_index: usize,
+    snapshot_index: usize,
+    rendering_call: bool,
+    structured_emitted: HashSet<usize>,
+    loop_stack: Vec<(usize, Option<usize>)>,
+    join_candidates: HashMap<(usize, String), JoinCandidates>,
+    join_candidate_regs: HashMap<usize, Vec<String>>,
+    join_annotation_anchors: Vec<JoinAnnotationAnchor>,
+    join_anchor_line_ids: Vec<Vec<LineId>>,
+    call_annotation_anchors: Vec<CallAnnotationAnchor>,
+    loop_annotation_sites: HashSet<usize>,
+    block_snapshots: Vec<BlockSnapshot>,
+    call_provenance: FunctionProvenance,
+    join_provenance: FunctionProvenance,
+    loop_provenance: FunctionProvenance,
+    emitted: HashSet<usize>,
+    active_stack: Vec<usize>,
+    inline_visits: HashMap<usize, usize>,
+    omitted_blocks: BTreeSet<usize>,
+    omission_sources: BTreeMap<usize, usize>,
+    helper_cap_omitted: BTreeSet<usize>,
+    loop_back_edges: BTreeSet<usize>,
+    loop_context: Vec<usize>,
+    dfs_preds: Option<HashMap<usize, Vec<usize>>>,
+    dfs_block_writes: HashMap<usize, HashSet<String>>,
+    /// Traversal events recorded before the attempt. The attempt's own events
+    /// describe edges in a body that no longer exists, so they go with it.
+    events: usize,
 }
 
 /// What a block's terminator does, once its body has been emitted.
@@ -511,55 +566,280 @@ impl<'a> FuncEmitter<'a> {
     /// which case nothing has been appended and the caller should use the DFS
     /// emitter instead.
     pub(super) fn try_emit_structured(&mut self) -> bool {
-        let Some(regions) = Regions::build(self.ir) else {
+        #[cfg(feature = "bench-spans")]
+        if crate::bench_spans::resource_plant()
+            == crate::bench_spans::ResourcePlant::EmitterBlockClone
+        {
+            std::hint::black_box(self.ir.blocks.clone());
+        }
+
+        // The CFG span is region analysis alone: entry through reachability,
+        // dominators, post-dominators, loops and regions. It is nested inside
+        // emission, so the harness subtracts what is charged here to get the
+        // emission-exclusive span.
+        #[cfg(feature = "bench-spans")]
+        let built = {
+            let _resource_phase = crate::bench_spans::enter_resource_phase(
+                crate::bench_spans::ResourcePhase::Cfg,
+            );
+            if crate::bench_spans::resource_plant()
+                == crate::bench_spans::ResourcePlant::CfgGraphClone
+            {
+                std::hint::black_box(self.ir.blocks.clone());
+            }
+            let started = std::time::Instant::now();
+            let built = Regions::build(self.ir);
+            crate::bench_spans::add_cfg_nanos(started.elapsed().as_nanos() as u64);
+            built
+        };
+        #[cfg(not(feature = "bench-spans"))]
+        let built = Regions::build(self.ir);
+
+        let Some(regions) = built else {
+            // Preflight: the region analysis refused the graph, so nothing has
+            // been touched and there is nothing to undo.
+            self.accounting.record_decline(StructuredDecline {
+                cause: StructuredDeclineCause::Irreducible,
+                block_start_va: None,
+            });
             return false;
         };
 
-        let saved_lines = self.lines.len();
-        let saved_state = self.state.clone();
-        let saved_counters = self.counter_snapshot();
-        // A call anchor holds the index of the line it was rendered on, so an
-        // abandoned attempt leaves indices pointing into a body that no longer
-        // exists. Left in place they resolve against the DFS emitter's lines and
-        // annotate whatever happens to be there.
-        let saved_call_anchors = self.call_annotation_anchors.len();
-        let saved_call_snapshots = self.call_provenance.snapshots.len();
+        if let Some(block) = self.unsupported_region(&regions) {
+            // Preflight as well: decided from the graph and the region tree
+            // alone, before `self.regions` is set or a line is rendered.
+            self.accounting.record_decline(StructuredDecline {
+                cause: StructuredDeclineCause::UnsupportedRegion,
+                block_start_va: Some(self.block_start_va(block)),
+            });
+            return false;
+        }
+
+        // Past here the attempt writes to emitter state, so everything it can
+        // write is saved first and restored as one unit if it declines. The
+        // snapshot is whole rather than a list of the fields the walk was known
+        // to touch: that list was already wrong once, and a field left behind is
+        // invisible until an artifact carries a name or a row from a body that
+        // was never emitted.
+        let snapshot = self.emitter_snapshot();
 
         self.regions = Some(regions);
+        self.decline_site = None;
         let ok = self.render_sequence(0, None, 1, 0);
-        let covered = self.structured_emitted.len()
-            == self
-                .regions
-                .as_ref()
-                .map(Regions::reachable_count)
-                .unwrap_or(0);
+        // Membership, not a count: a count matches whenever the set happens to
+        // be the right size, so anything already in it hides a block the walk
+        // never emitted.
+        let covered = self.first_uncovered_block().is_none();
 
         if ok && covered {
+            self.decline_site = None;
             return true;
         }
 
-        self.lines.truncate(saved_lines);
-        self.state = saved_state;
-        self.restore_counters(saved_counters);
-        self.structured_emitted.clear();
-        self.loop_stack.clear();
-        self.join_candidates.clear();
-        self.join_candidate_regs.clear();
-        self.join_annotation_anchors.clear();
-        self.loop_annotation_sites.clear();
-        // The DFS emitter annotates nothing, so a rollback must also drop the
-        // snapshots and the audit rows the abandoned structuring captured: a
-        // snapshot no surviving annotation cites is a record of a site that is
-        // not in the output.
-        self.block_snapshots.clear();
-        self.join_provenance.snapshots.clear();
-        self.call_annotation_anchors.truncate(saved_call_anchors);
-        self.call_provenance.snapshots.truncate(saved_call_snapshots);
-        self.join_provenance.records.clear();
-        self.loop_provenance.snapshots.clear();
-        self.loop_provenance.records.clear();
-        self.regions = None;
+        let decline = self.decline_site.take().unwrap_or_else(|| {
+            // The walk finished but did not cover every reachable block, which
+            // is the one decline no single site reports.
+            StructuredDecline {
+                cause: StructuredDeclineCause::CoverageMismatch,
+                block_start_va: self.first_uncovered_block().map(|id| self.block_start_va(id)),
+            }
+        });
+        debug_assert!(
+            decline.cause.is_post_mutation(),
+            "a preflight cause was decided during the walk: {:?}",
+            decline.cause
+        );
+        self.accounting.record_decline(decline);
+        self.restore_emitter(snapshot);
         false
+    }
+
+    /// The lowest-id reachable block the walk did not emit, which is the block a
+    /// coverage mismatch is attributed to.
+    fn first_uncovered_block(&self) -> Option<usize> {
+        let regions = self.regions.as_ref()?;
+        self.ir
+            .blocks
+            .iter()
+            .map(|b| b.id)
+            .find(|id| regions.is_reachable(*id) && !self.structured_emitted.contains(id))
+    }
+
+    /// The first reachable block whose successor set the structured walk has no
+    /// rendering rule for, if there is one.
+    ///
+    /// Three shapes have none, and all three are decided from the graph and the
+    /// region tree without emitting anything:
+    ///
+    /// - more than two successors: the walk renders a taken arm and one
+    ///   not-taken arm, so a third edge could only be dropped;
+    /// - two successors without a conditional terminator: there is no condition
+    ///   to render them under, so both edges would collapse into one;
+    /// - a terminator whose recovered target is not a successor: rendering it
+    ///   would state an edge the graph does not have.
+    ///
+    /// Reporting them here rather than mid-walk is what makes this a preflight
+    /// cause: no state has been written when the answer is known.
+    fn unsupported_region(&self, regions: &Regions) -> Option<usize> {
+        for block in &self.ir.blocks {
+            if !regions.is_reachable(block.id) {
+                continue;
+            }
+            let succs = regions.successors(block.id);
+            if succs.len() > 2 {
+                return Some(block.id);
+            }
+            let terminator = block.instrs.last().map(|i| &i.op);
+            if succs.len() == 2 && !matches!(terminator, Some(IROp::Branch)) {
+                return Some(block.id);
+            }
+            if matches!(terminator, Some(IROp::Branch) | Some(IROp::Jump)) {
+                let target = block
+                    .instrs
+                    .last()
+                    .and_then(|i| self.branch_target_block(&i.target));
+                if target.is_some_and(|t| !succs.contains(&t)) {
+                    return Some(block.id);
+                }
+            }
+        }
+        None
+    }
+
+    /// Record the primary cause of a decline at the site that decided it. The
+    /// first site wins: later refusals are consequences of this one.
+    fn decline_with(&mut self, cause: StructuredDeclineCause, block: usize) {
+        if self.decline_site.is_none() {
+            self.decline_site = Some(StructuredDecline {
+                cause,
+                block_start_va: Some(self.block_start_va(block)),
+            });
+        }
+    }
+
+    pub(super) fn emitter_snapshot(&self) -> EmitterSnapshot {
+        EmitterSnapshot {
+            lines: self.lines.clone(),
+            line_ids: self.line_ids.clone(),
+            rendered_call_kinds: self.rendered_call_kinds.clone(),
+            render_lines: self.render_lines.clone(),
+            render_line_ids: self.render_line_ids.clone(),
+            state: self.state.clone(),
+            counters: self.counter_snapshot(),
+            locals: self.locals.clone(),
+            identifier_renames: self.identifier_renames.clone(),
+            call_index: self.call_index,
+            snapshot_index: self.snapshot_index,
+            rendering_call: self.rendering_call,
+            structured_emitted: self.structured_emitted.clone(),
+            loop_stack: self.loop_stack.clone(),
+            join_candidates: self.join_candidates.clone(),
+            join_candidate_regs: self.join_candidate_regs.clone(),
+            join_annotation_anchors: self.join_annotation_anchors.clone(),
+            join_anchor_line_ids: self.join_anchor_line_ids.clone(),
+            call_annotation_anchors: self.call_annotation_anchors.clone(),
+            loop_annotation_sites: self.loop_annotation_sites.clone(),
+            block_snapshots: self.block_snapshots.clone(),
+            call_provenance: self.call_provenance.clone(),
+            join_provenance: self.join_provenance.clone(),
+            loop_provenance: self.loop_provenance.clone(),
+            emitted: self.emitted.clone(),
+            active_stack: self.active_stack.clone(),
+            inline_visits: self.inline_visits.clone(),
+            omitted_blocks: self.omitted_blocks.clone(),
+            omission_sources: self.omission_sources.clone(),
+            helper_cap_omitted: self.helper_cap_omitted.clone(),
+            loop_back_edges: self.loop_back_edges.clone(),
+            loop_context: self.loop_context.clone(),
+            dfs_preds: self.dfs_preds.clone(),
+            dfs_block_writes: self.dfs_block_writes.clone(),
+            events: self.accounting.event_len(),
+        }
+    }
+
+    /// Put back exactly what the attempt started from.
+    ///
+    /// Everything except the accounting: the primary cause and the derived
+    /// counts are what the attempt is allowed to leave behind, and they are the
+    /// only difference between a declined function and the same function emitted
+    /// by the DFS walk directly.
+    pub(super) fn restore_emitter(&mut self, snapshot: EmitterSnapshot) {
+        let EmitterSnapshot {
+            lines,
+            line_ids,
+            rendered_call_kinds,
+            render_lines,
+            render_line_ids,
+            state,
+            counters,
+            locals,
+            identifier_renames,
+            call_index,
+            snapshot_index,
+            rendering_call,
+            structured_emitted,
+            loop_stack,
+            join_candidates,
+            join_candidate_regs,
+            join_annotation_anchors,
+            join_anchor_line_ids,
+            call_annotation_anchors,
+            loop_annotation_sites,
+            block_snapshots,
+            call_provenance,
+            join_provenance,
+            loop_provenance,
+            emitted,
+            active_stack,
+            inline_visits,
+            omitted_blocks,
+            omission_sources,
+            helper_cap_omitted,
+            loop_back_edges,
+            loop_context,
+            dfs_preds,
+            dfs_block_writes,
+            events,
+        } = snapshot;
+        self.lines = lines;
+        self.line_ids = line_ids;
+        self.rendered_call_kinds = rendered_call_kinds;
+        self.render_lines = render_lines;
+        self.render_line_ids = render_line_ids;
+        self.state = state;
+        self.restore_counters(counters);
+        self.locals = locals;
+        self.identifier_renames = identifier_renames;
+        self.call_index = call_index;
+        self.snapshot_index = snapshot_index;
+        self.rendering_call = rendering_call;
+        self.structured_emitted = structured_emitted;
+        self.loop_stack = loop_stack;
+        self.join_candidates = join_candidates;
+        self.join_candidate_regs = join_candidate_regs;
+        self.join_annotation_anchors = join_annotation_anchors;
+        self.join_anchor_line_ids = join_anchor_line_ids;
+        self.call_annotation_anchors = call_annotation_anchors;
+        self.loop_annotation_sites = loop_annotation_sites;
+        self.block_snapshots = block_snapshots;
+        self.call_provenance = call_provenance;
+        self.join_provenance = join_provenance;
+        self.loop_provenance = loop_provenance;
+        self.emitted = emitted;
+        self.active_stack = active_stack;
+        self.inline_visits = inline_visits;
+        self.omitted_blocks = omitted_blocks;
+        self.omission_sources = omission_sources;
+        self.helper_cap_omitted = helper_cap_omitted;
+        self.loop_back_edges = loop_back_edges;
+        self.loop_context = loop_context;
+        self.dfs_preds = dfs_preds;
+        self.dfs_block_writes = dfs_block_writes;
+        self.accounting.truncate_events(events);
+        // Built by the attempt and owned by it: the DFS walk asks the graph
+        // directly and never reads this.
+        self.regions = None;
+        self.decline_site = None;
     }
 
     /// Counters saved before a structuring attempt, so a rollback to the DFS
@@ -621,7 +901,8 @@ impl<'a> FuncEmitter<'a> {
         indent: usize,
         depth: usize,
     ) -> bool {
-        if depth > 64 {
+        if depth > STRUCTURED_MAX_DEPTH {
+            self.decline_with(StructuredDeclineCause::StructuredDepthBudget, start);
             return false;
         }
         let mut cursor = Some(start);
@@ -646,13 +927,19 @@ impl<'a> FuncEmitter<'a> {
                 if !self.is_repeatable_region(id, follow) {
                     // Neither a back edge nor a small shared region, so the
                     // region tree does not describe this edge.
+                    self.decline_with(StructuredDeclineCause::RepeatBudget, id);
                     return false;
                 }
-                self.repeated_blocks += 1;
             }
 
             let regions = self.regions.as_ref().expect("regions");
             if !regions.is_reachable(id) {
+                // The walk and the region analysis disagree about what this
+                // function contains, which is a coverage failure rather than a
+                // property of the region shape: the preflight above proves every
+                // rendered target is a successor of a reachable block, so this
+                // is unreachable in practice and defensive here.
+                self.decline_with(StructuredDeclineCause::CoverageMismatch, id);
                 return false;
             }
             if regions.is_loop_header(id) && !self.loop_stack.iter().any(|(h, _)| *h == id) {
@@ -674,7 +961,13 @@ impl<'a> FuncEmitter<'a> {
             // output coordinate. The merge below is unchanged for it; only capture
             // and annotation decline.
             let annotatable_join = is_join && !regions.is_loop_header(id);
-            self.structured_emitted.insert(id);
+            // Count at the operation that records this emitted copy. The earlier
+            // membership check only decides whether repetition is allowed; tying
+            // accounting to `insert` makes it impossible for an allowed copy to
+            // reach the body without incrementing exactly once.
+            if !self.structured_emitted.insert(id) {
+                self.repeated_blocks += 1;
+            }
             if is_join {
                 // Emitted once, so no single incoming path describes this
                 // block's register state. Anything a predecessor could have
@@ -698,6 +991,13 @@ impl<'a> FuncEmitter<'a> {
             // anchor too would leave the candidates with nothing to attach to.
             if annotatable_join || self.loop_annotation_sites.contains(&id) {
                 let candidate_regs = self.join_candidate_regs.remove(&id).unwrap_or_default();
+                // Identities beside the text, captured from the same slice.
+                // The lines of a block that renders twice are byte-identical
+                // and their ids are not, which is what keeps the second copy's
+                // annotation off the first copy's lines.
+                self.sync_line_ids();
+                self.join_anchor_line_ids
+                    .push(self.line_ids[annotation_start..].to_vec());
                 self.join_annotation_anchors.push(JoinAnnotationAnchor {
                     join: id,
                     candidate_regs,
@@ -752,12 +1052,15 @@ impl<'a> FuncEmitter<'a> {
                                 self.push_line(indent + 1, "/* external branch */");
                             } else {
                                 self.unresolved_cf += 1;
-                                self.push_line(indent + 1, "// unresolved branch target");
+                                self.push_line(
+                                    indent + 1,
+                                    &format!("// {UNRESOLVED_BRANCH_TARGET_NOTE}"),
+                                );
                             }
                         }
                     }
                     let taken_state = self.state.clone();
-                    let taken_lines: Vec<String> = self.lines.split_off(buffer_start);
+                    let mut taken_lines = self.split_off_body(buffer_start);
                     if let Some(arm) = taken {
                         arm_ends.push((arm, taken_state));
                     }
@@ -771,7 +1074,7 @@ impl<'a> FuncEmitter<'a> {
                         }
                     }
                     let else_state = self.state.clone();
-                    let else_lines: Vec<String> = self.lines.split_off(buffer_start);
+                    let mut else_lines = self.split_off_body(buffer_start);
                     if let Some(arm) = not_taken {
                         arm_ends.push((arm, else_state));
                     }
@@ -779,20 +1082,32 @@ impl<'a> FuncEmitter<'a> {
                     // An arm can also be empty because the lifter does not model
                     // its instructions. Eliding then deletes real computation, so
                     // an empty arm carrying unmodelled work says so instead.
-                    let mut taken_lines = taken_lines;
-                    let mut else_lines = else_lines;
-                    for (lines, arm) in [(&mut taken_lines, taken), (&mut else_lines, not_taken)] {
-                        if !lines.is_empty() {
+                    for slot in 0..2 {
+                        let taken_slot = slot == 0;
+                        let empty = if taken_slot {
+                            taken_lines.is_empty()
+                        } else {
+                            else_lines.is_empty()
+                        };
+                        if !empty {
                             continue;
                         }
+                        let arm = if taken_slot { taken } else { not_taken };
                         let unlifted = self.unlifted_on_arm(arm, region_follow);
-                        if unlifted > 0 {
-                            self.unlifted_instructions += unlifted;
-                            lines.push(format!(
-                                "{}// {} instructions not lifted",
-                                "  ".repeat(indent + 1),
-                                unlifted
-                            ));
+                        if unlifted == 0 {
+                            continue;
+                        }
+                        self.unlifted_instructions += unlifted;
+                        let id = self.fresh_line_id();
+                        let line = format!(
+                            "{}// {} instructions not lifted",
+                            "  ".repeat(indent + 1),
+                            unlifted
+                        );
+                        if taken_slot {
+                            taken_lines.push(id, line);
+                        } else {
+                            else_lines.push(id, line);
                         }
                     }
 
@@ -804,25 +1119,25 @@ impl<'a> FuncEmitter<'a> {
                         // rather than as an empty `if` with an `else`.
                         (true, false) => {
                             self.push_line(indent, &format!("if (!({})) {{", condition));
-                            self.lines.extend(else_lines);
+                            self.extend_body(else_lines);
                             self.push_line(indent, "}");
                         }
                         (false, true) => {
                             self.push_line(indent, &format!("if ({}) {{", condition));
-                            self.lines.extend(taken_lines);
+                            self.extend_body(taken_lines);
                             self.push_line(indent, "}");
                         }
                         (false, false) if else_lines.is_empty() => {
                             self.push_line(indent, &format!("if ({}) {{", condition));
-                            self.lines.extend(taken_lines);
+                            self.extend_body(taken_lines);
                             self.push_line(indent, "}");
                         }
                         (false, false) => {
                             self.push_line(indent, &format!("if ({}) {{", condition));
-                            self.lines.extend(taken_lines);
+                            self.extend_body(taken_lines);
                             self.push_line(indent, "}");
                             self.push_line(indent, "else {");
-                            self.lines.extend(else_lines);
+                            self.extend_body(else_lines);
                             self.push_line(indent, "}");
                         }
                     }
@@ -889,7 +1204,7 @@ impl<'a> FuncEmitter<'a> {
                         // A pool load rebinds the register, so whatever a call
                         // took from it earlier no longer describes it.
                         self.state.call_clobbers.remove(&dst);
-                        self.state.reg_values.insert(dst, Self::clean_expr(rhs));
+                        self.state.bind(dst, Self::clean_expr(rhs), false);
                     }
                 }
                 IROp::RuntimeCheck => {}
@@ -899,6 +1214,21 @@ impl<'a> FuncEmitter<'a> {
                         .capped_reg_value("x0")
                         .unwrap_or_else(|| "null".to_string());
                     self.push_line(indent, &format!("return {};", ret));
+                    return Flow::Ends;
+                }
+                // `br Xn` ends the block with no recovered destination. It is
+                // not a return, not a jump to a known block and not a tail call
+                // to a known address, so the only honest rendering is the
+                // unknown effect itself, counted as unresolved control flow.
+                IROp::IndirectBranch => {
+                    self.unresolved_cf += 1;
+                    self.push_line(indent, &format!("// {}", indirect_branch_note(&ins.target)));
+                    return Flow::Ends;
+                }
+                // A trap raises; control does not continue past it and there is
+                // nothing after it to emit.
+                IROp::Trap => {
+                    self.push_line(indent, &format!("// {}", TRAP_NOTE));
                     return Flow::Ends;
                 }
                 IROp::Jump => {
@@ -911,7 +1241,7 @@ impl<'a> FuncEmitter<'a> {
                                 self.push_line(indent, &format!("return tailCall_{}();", normalized));
                             } else {
                                 self.unresolved_cf += 1;
-                                self.push_line(indent, "// unresolved jump");
+                                self.push_line(indent, &format!("// {UNRESOLVED_JUMP_NOTE}"));
                             }
                             Flow::Ends
                         }
@@ -1421,31 +1751,80 @@ impl<'a> FuncEmitter<'a> {
         }
     }
 
+    /// The finished line one anchor line became, or `None` when no pass left it
+    /// intact.
+    ///
+    /// The anchor's own line identities decide it. A block rendered twice
+    /// produces two anchors whose lines are byte-identical and whose identities
+    /// are not, which is what keeps the second copy's annotation off the first
+    /// copy's lines. An anchor assembled by hand carries no identities - only
+    /// this crate's fixtures build one - and its lines are then taken at their
+    /// position, which is what a hand-assembled body means.
+    fn finished_line_of_anchor(
+        &self,
+        anchor_index: usize,
+        offset: usize,
+        placed: &HashMap<LineId, usize>,
+    ) -> Option<usize> {
+        match self.join_anchor_line_ids.get(anchor_index) {
+            Some(ids) => {
+                assert_eq!(
+                    ids.len(),
+                    self.join_annotation_anchors[anchor_index].lines.len(),
+                    "anchor line identities and lines must stay in step"
+                );
+                placed.get(ids.get(offset)?).copied()
+            }
+            None => (offset < self.lines.len()).then_some(offset),
+        }
+    }
+
     pub(crate) fn append_join_annotations(&mut self) {
         // Before the loop, so a later annotation cannot make an identifier look live.
         let live = live_identifier_tokens(&self.lines);
         let mut inserts: Vec<PlannedJoinAnnotation> = Vec::new();
         let mut omissions: Vec<PlannedCapOmission> = Vec::new();
-        for anchor in &self.join_annotation_anchors {
-            let mut next_line = 0usize;
-            for original in &anchor.lines {
+        self.assert_line_identity();
+        if !self.join_anchor_line_ids.is_empty() {
+            assert_eq!(
+                self.join_anchor_line_ids.len(),
+                self.join_annotation_anchors.len(),
+                "anchor identity sets and anchors must stay in step"
+            );
+        }
+        let placed = self.finished_line_positions();
+        for (anchor_index, anchor) in self.join_annotation_anchors.iter().enumerate() {
+            for (offset, original) in anchor.lines.iter().enumerate() {
                 let original_tokens = register_tokens(original);
                 if original_tokens.is_empty() {
                     continue;
                 }
-                let Some(relative) = self.lines[next_line..].iter().position(|line| {
+                // This anchor line, resolved by identity. Never a search for a
+                // line that carries the same registers: one `if (reg2 <= 0) {`
+                // reads like every other, and a search found the first of them
+                // and annotated a read whose register was dropped somewhere
+                // else entirely.
+                let resolved = self.finished_line_of_anchor(anchor_index, offset, &placed);
+                let carries_registers = resolved.is_some_and(|line_index| {
                     original_tokens.iter().all(|reg| {
                         unrecovered_value_spellings(reg).iter().any(|spelling| {
-                            contains_identifier_token(line, spelling)
+                            contains_identifier_token(&self.lines[line_index], spelling)
                         })
                     })
-                }) else {
-                    // No emitted line carries this anchor's registers, so a candidate
-                    // set that exists is never offered to any gate. This is the only
-                    // loss on this path that happens before the gates, and it was the
-                    // last silent one: the gates below record every drop they take, so
-                    // without this row "every drop is accounted" was a claim about one
-                    // branch rather than about the function.
+                });
+                if !carries_registers {
+                    // Either no pass left this line intact, or it survived
+                    // without the unresolved read the candidate describes. A
+                    // candidate set that exists is then never offered to any
+                    // gate, so it is counted and rejected here rather than
+                    // dropped: the gates below record every drop they take, and
+                    // without this row "every drop is accounted" would be a
+                    // claim about one branch rather than about the function.
+                    let reason = if resolved.is_some() {
+                        "no_line_carries_register"
+                    } else {
+                        "anchor_line_dropped"
+                    };
                     let lost: Vec<(String, String)> = original_tokens
                         .iter()
                         .filter_map(|reg| {
@@ -1466,21 +1845,21 @@ impl<'a> FuncEmitter<'a> {
                         } else {
                             &mut self.join_provenance
                         };
+                        provenance.candidates_considered += 1;
                         record_filter_rejection(
                             provenance,
                             FilterRejection {
                                 loss_site,
                                 site_key: SiteKey(site_tag, anchor.join as u64),
                                 register: reg,
-                                reason: "no_line_carries_register",
+                                reason,
                                 rendered,
                             },
                         );
                     }
                     continue;
-                };
-                let line_index = next_line + relative;
-                next_line = line_index + 1;
+                }
+                let line_index = resolved.expect("a line that carries registers is a line");
                 let line = &self.lines[line_index];
                 let bytes = line.as_bytes();
                 let mut index = 0usize;
@@ -1502,10 +1881,20 @@ impl<'a> FuncEmitter<'a> {
                     if !anchor.candidate_regs.iter().any(|candidate| candidate == &reg) {
                         continue;
                     }
-                    let Some(candidates) = self.join_candidates.get(&(anchor.join, reg.clone()))
-                    else {
+                    if !self.join_candidates.contains_key(&(anchor.join, reg.clone())) {
                         continue;
-                    };
+                    }
+                    // A candidate exists for this register on this line, so
+                    // every path below owes it an outcome.
+                    if self.loop_annotation_sites.contains(&anchor.join) {
+                        self.loop_provenance.candidates_considered += 1;
+                    } else {
+                        self.join_provenance.candidates_considered += 1;
+                    }
+                    let candidates = self
+                        .join_candidates
+                        .get(&(anchor.join, reg.clone()))
+                        .expect("the candidate set just checked for");
                     if let Some(raw) = candidates
                         .values
                         .iter()
@@ -1691,6 +2080,11 @@ impl<'a> FuncEmitter<'a> {
         });
         for planned in &inserts {
             self.lines[planned.line].insert_str(planned.at, &planned.text);
+            if self.loop_annotation_sites.contains(&planned.join) {
+                self.loop_provenance.annotations_emitted += 1;
+            } else {
+                self.join_provenance.annotations_emitted += 1;
+            }
         }
         self.record_join_annotation_provenance(&inserts);
         self.record_loop_entry_annotation_provenance(&inserts);
@@ -1744,10 +2138,10 @@ impl<'a> FuncEmitter<'a> {
     /// real drop of the same register while the annotation it labels was emitted at
     /// another block entirely, and every check that reads only the audit passes.
     ///
-    /// The coordinate is deliberately not recorded here, for the same reason the
-    /// join rows do not carry one: a program-level rewrite still runs over the
-    /// finished source and can move text on an annotated line. Rows go out in
-    /// ascending output order, which is what lets that search stay monotonic.
+    /// The line comes off the planned insertion, so the row names the line the
+    /// annotation is on rather than a line that reads like it. Rows go out in
+    /// ascending output order, which is what lets the column search inside that
+    /// one line stay monotonic when two annotations share it.
     fn record_loop_entry_annotation_provenance(&mut self, inserts: &[PlannedJoinAnnotation]) {
         if !annotation_provenance_wanted() {
             return;
@@ -1776,6 +2170,9 @@ impl<'a> FuncEmitter<'a> {
                     .get(&(planned.join, planned.register.clone()))?;
                 Some(PendingAnnotationRecord {
                     loss_site: LOOP_LOSS_SITE,
+                    // The line this insertion wrote to, carried from the
+                    // insertion rather than searched for afterwards.
+                    output_line: planned.line,
                     site_key: SiteKey(LOOP_SITE_TAG, planned.join as u64),
                     // The block whose rendered body this annotation was placed
                     // in, from the same planned insertion the key above comes
@@ -1815,11 +2212,9 @@ impl<'a> FuncEmitter<'a> {
     /// that reads only the audit passes. Taken off the anchor, that mismatch
     /// cannot be expressed.
     ///
-    /// The coordinate is deliberately not recorded here. A program-level rewrite
-    /// still runs over the finished source and can move text on an annotated
-    /// line, so it is derived from the artifact afterwards by locating the
-    /// rendered span. Records go out in ascending output order, which is what lets
-    /// that search stay monotonic.
+    /// The line comes off the planned insertion, as at the loop site. Records go
+    /// out in ascending output order, which is what lets the column search inside
+    /// that one line stay monotonic when two annotations share it.
     fn record_join_annotation_provenance(&mut self, inserts: &[PlannedJoinAnnotation]) {
         if !annotation_provenance_wanted() {
             return;
@@ -1854,6 +2249,8 @@ impl<'a> FuncEmitter<'a> {
                     .get(&(planned.join, planned.register.clone()))?;
                 Some(PendingAnnotationRecord {
                     loss_site: JOIN_LOSS_SITE,
+                    // Same as the loop site: the line comes off the insertion.
+                    output_line: planned.line,
                     site_key: SiteKey(JOIN_LOSS_SITE, planned.join as u64),
                     // Same anchor the key above is read off, recorded so the
                     // derivation is inspectable: the IR says whether that block

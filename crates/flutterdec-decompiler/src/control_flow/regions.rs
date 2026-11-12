@@ -21,52 +21,69 @@ pub(super) struct Regions {
     reachable: Vec<bool>,
     /// Immediate post-dominator, the follow node of a conditional.
     ipdom: Vec<Option<usize>>,
-    /// Blocks the innermost loop of a header contains.
-    loop_body: HashMap<usize, HashSet<usize>>,
-    /// Where a `break` out of a header's loop lands.
-    loop_follow: HashMap<usize, Option<usize>>,
+    /// One entry per natural-loop header, in header order.
+    loops: BTreeMap<usize, NaturalLoop>,
+}
+
+/// The relations one natural loop carries, all of them block ids in its own
+/// body's terms.
+///
+/// Ordered sets and an ordered map rather than the hashed ones this started as:
+/// `follow` is chosen by walking the body's leaving edges, and `structured.rs`
+/// asks `in_loop` and `loop_follow_of` for decisions that reach the artifact, so
+/// the traversal order is part of the result and not an implementation detail.
+/// Ordering the containers is how that order stops being the hash seed's choice.
+struct NaturalLoop {
+    /// Blocks the loop contains, its header included.
+    body: BTreeSet<usize>,
+    /// Back-edge sources: the blocks whose edge re-enters the header.
+    latches: BTreeSet<usize>,
+    /// Body blocks with an edge that leaves the body.
+    exits: BTreeSet<usize>,
+    /// Where a `break` out of this loop lands.
+    follow: Option<usize>,
+}
+
+impl NaturalLoop {
+    fn new(header: usize) -> Self {
+        Self {
+            body: BTreeSet::from([header]),
+            latches: BTreeSet::new(),
+            exits: BTreeSet::new(),
+            follow: None,
+        }
+    }
+
+    /// Every block this loop names is inside its own body, and its follow node is
+    /// outside it. Checked rather than assumed because the four relations are
+    /// derived in two passes over different edge sets: the body from a backwards
+    /// walk over predecessors, the latches from the back edges themselves, and
+    /// the exits and the follow from a forwards walk over successors. A body that
+    /// disagreed with any of them would send `structured.rs` looking for a
+    /// `break` target it can reach by falling through instead.
+    fn is_self_consistent(&self, header: usize) -> bool {
+        self.body.contains(&header)
+            && self.latches.iter().all(|latch| self.body.contains(latch))
+            && self.exits.iter().all(|exit| self.body.contains(exit))
+            && self.follow.is_none_or(|follow| !self.body.contains(&follow))
+    }
 }
 
 impl Regions {
     pub(super) fn build(ir: &FunctionIr) -> Option<Self> {
+        // The same ruler the public emission entry points apply, not a local copy
+        // of part of it: everything below is an id-indexed vector that
+        // `structured.rs` reads back by block id, so a graph whose ids are not
+        // dense or whose edges name absent blocks would have its relations read
+        // off the wrong rows. Declining is the right answer here rather than a
+        // diagnostic, because a decline is already how this pass reports a graph
+        // it cannot structure.
+        validate_block_identity(ir).ok()?;
         let n = ir.blocks.len();
         if n == 0 {
             return None;
         }
-        let mut succs = vec![Vec::new(); n];
-        for b in &ir.blocks {
-            if b.id >= n {
-                return None;
-            }
-            succs[b.id] = b.succs.iter().copied().filter(|s| *s < n).collect();
-        }
-
-        let mut reachable = vec![false; n];
-        reachable[0] = true;
-        let mut stack = vec![0usize];
-        while let Some(u) = stack.pop() {
-            for &v in &succs[u] {
-                if !reachable[v] {
-                    reachable[v] = true;
-                    stack.push(v);
-                }
-            }
-        }
-        for (u, keep) in reachable.iter().enumerate() {
-            if !keep {
-                succs[u].clear();
-            }
-        }
-
-        let mut preds = vec![Vec::new(); n];
-        for u in 0..n {
-            if !reachable[u] {
-                continue;
-            }
-            for &v in &succs[u] {
-                preds[v].push(u);
-            }
-        }
+        let (succs, preds, reachable) = reachable_edges(ir);
 
         let dom = dominators(&succs, &preds, &reachable);
         // Irreducible control flow has a retreating edge whose target does not
@@ -76,16 +93,22 @@ impl Regions {
             return None;
         }
 
-        let ipdom = immediate_post_dominators(&succs, &reachable);
-        let (loop_body, loop_follow) = natural_loops(&succs, &preds, &dom, &ipdom, &reachable);
+        let pdom = post_dominators(&succs, &preds, &reachable);
+        let ipdom = immediate_post_dominators(&pdom);
+        let loops = natural_loops(&succs, &preds, &dom, &ipdom, &reachable);
+        debug_assert!(
+            loops
+                .iter()
+                .all(|(header, region)| region.is_self_consistent(*header)),
+            "a loop relation named a block outside its own body"
+        );
 
         Some(Self {
             succs,
             preds,
             reachable,
             ipdom,
-            loop_body,
-            loop_follow,
+            loops,
         })
     }
 
@@ -114,26 +137,82 @@ impl Regions {
     }
 
     pub(super) fn is_loop_header(&self, id: usize) -> bool {
-        self.loop_body.contains_key(&id)
+        self.loops.contains_key(&id)
     }
 
     pub(super) fn in_loop(&self, header: usize, id: usize) -> bool {
-        self.loop_body
+        self.loops
             .get(&header)
-            .map(|body| body.contains(&id))
+            .map(|region| region.body.contains(&id))
             .unwrap_or(false)
     }
 
     pub(super) fn loop_follow_of(&self, header: usize) -> Option<usize> {
-        self.loop_follow.get(&header).copied().flatten()
+        self.loops.get(&header).and_then(|region| region.follow)
     }
 
+    /// How many blocks the entry reaches. Read by the relation oracle, which
+    /// asserts the reachable set itself; emission asks about membership rather
+    /// than about a size, because a size matches whenever a set happens to be
+    /// big enough.
+    #[cfg(test)]
     pub(super) fn reachable_count(&self) -> usize {
         self.reachable.iter().filter(|r| **r).count()
     }
+
 }
 
-fn dominators(succs: &[Vec<usize>], preds: &[Vec<usize>], reachable: &[bool]) -> Vec<HashSet<usize>> {
+/// The edge lists every relation below is derived from: successors by block id,
+/// predecessors re-derived from them, and reachability from the entry.
+///
+/// Split out of `Regions::build` so the relation functions can be driven from one
+/// place with exactly the inputs the emitter's own run gives them. A graph the
+/// analysis declines still has these three, which is the only way to say anything
+/// about an irreducible graph's relations at all.
+pub(super) fn reachable_edges(
+    ir: &FunctionIr,
+) -> (Vec<Vec<usize>>, Vec<Vec<usize>>, Vec<bool>) {
+    let n = ir.blocks.len();
+    let mut succs = vec![Vec::new(); n];
+    for b in &ir.blocks {
+        succs[b.id] = b.succs.clone();
+    }
+
+    let mut reachable = vec![false; n];
+    reachable[0] = true;
+    let mut stack = vec![0usize];
+    while let Some(u) = stack.pop() {
+        for &v in &succs[u] {
+            if !reachable[v] {
+                reachable[v] = true;
+                stack.push(v);
+            }
+        }
+    }
+    for (u, keep) in reachable.iter().enumerate() {
+        if !keep {
+            succs[u].clear();
+        }
+    }
+
+    let mut preds = vec![Vec::new(); n];
+    for u in 0..n {
+        if !reachable[u] {
+            continue;
+        }
+        for &v in &succs[u] {
+            preds[v].push(u);
+        }
+    }
+
+    (succs, preds, reachable)
+}
+
+pub(super) fn dominators(
+    succs: &[Vec<usize>],
+    preds: &[Vec<usize>],
+    reachable: &[bool],
+) -> Vec<HashSet<usize>> {
     let n = succs.len();
     let all: HashSet<usize> = (0..n).filter(|i| reachable[*i]).collect();
     let mut dom: Vec<HashSet<usize>> = (0..n)
@@ -203,15 +282,46 @@ fn is_irreducible(succs: &[Vec<usize>], dom: &[HashSet<usize>], reachable: &[boo
     false
 }
 
-fn immediate_post_dominators(succs: &[Vec<usize>], reachable: &[bool]) -> Vec<Option<usize>> {
+/// Full post-dominator sets: `pdom[u]` holds every block on every path from `u`
+/// to an exit, `u` itself included.
+///
+/// A block with no path to any exit gets the empty set. "Every path to an exit
+/// passes through" is not a statement about such a block: it has no such path, so
+/// the intersection below has nothing to shrink the universe with and every block
+/// of an endless cycle comes out post-dominating every other one, its own
+/// dominators included. The relation `immediate_post_dominators` reads off that is
+/// not a tree either - two blocks of the cycle each come out as the other's
+/// nearest post-dominator - and it reaches `structured.rs` as the follow node of a
+/// conditional, which is where a branch's arms are told to converge. The empty set
+/// is reported as no follow node instead, and the loop's own exit relation, which
+/// is derived from the leaving edges rather than from post-dominance, is what
+/// still answers where such a loop can be left.
+fn post_dominators(succs: &[Vec<usize>], preds: &[Vec<usize>], reachable: &[bool]) -> Vec<HashSet<usize>> {
     let n = succs.len();
-    let all: HashSet<usize> = (0..n).filter(|i| reachable[*i]).collect();
     let exits: Vec<usize> = (0..n)
         .filter(|i| reachable[*i] && succs[*i].is_empty())
         .collect();
+
+    // Backwards from the exits: `preds` is already restricted to reachable
+    // blocks, so this cannot pick up a block the entry never reaches.
+    let mut reaches_exit = vec![false; n];
+    let mut stack = exits.clone();
+    for &e in &exits {
+        reaches_exit[e] = true;
+    }
+    while let Some(u) = stack.pop() {
+        for &p in &preds[u] {
+            if !reaches_exit[p] {
+                reaches_exit[p] = true;
+                stack.push(p);
+            }
+        }
+    }
+
+    let all: HashSet<usize> = (0..n).filter(|i| reaches_exit[*i]).collect();
     let mut pdom: Vec<HashSet<usize>> = (0..n)
         .map(|i| {
-            if reachable[i] {
+            if reaches_exit[i] {
                 all.clone()
             } else {
                 HashSet::new()
@@ -225,12 +335,14 @@ fn immediate_post_dominators(succs: &[Vec<usize>], reachable: &[bool]) -> Vec<Op
     while changed {
         changed = false;
         for u in (0..n).rev() {
-            if !reachable[u] || succs[u].is_empty() {
+            if !reaches_exit[u] || succs[u].is_empty() {
                 continue;
             }
             let mut new: Option<HashSet<usize>> = None;
             for &s in &succs[u] {
-                if !reachable[s] {
+                // A successor with no path to an exit contributes no path to an
+                // exit, so it constrains nothing here.
+                if !reaches_exit[s] {
                     continue;
                 }
                 new = Some(match new {
@@ -247,24 +359,27 @@ fn immediate_post_dominators(succs: &[Vec<usize>], reachable: &[bool]) -> Vec<Op
         }
     }
 
+    pdom
+}
 
-    // The immediate post-dominator is the nearest strict post-dominator. Nearer
-    // nodes are post-dominated by more blocks, so the largest post-dominator set
-    // wins: for A -> {B, C} -> D -> exit, both D and exit strictly post-dominate
-    // A, and D is the follow node.
-    (0..n)
+/// The nearest strict post-dominator of each block, which is the follow node of a
+/// conditional there.
+///
+/// Nearer nodes are post-dominated by more blocks, so the largest post-dominator
+/// set wins: for A -> {B, C} -> D -> exit, both D and exit strictly post-dominate
+/// A, and D is the follow node.
+fn immediate_post_dominators(pdom: &[HashSet<usize>]) -> Vec<Option<usize>> {
+    (0..pdom.len())
         .map(|u| {
-            if !reachable[u] {
-                return None;
-            }
-            // Largest post-dominator set is the nearest, and the block index
-            // breaks ties. `pdom[u]` is a `HashSet`, whose iteration order is
-            // seeded per process, and `max_by_key` returns the last maximum, so
-            // without the tie-break an equal-sized pair would pick a different
-            // follow node between runs and the emitted structure would not be
-            // reproducible. Ties are reachable because every block without a
-            // successor is treated as an exit, so post-dominance is a forest
-            // rather than a chain.
+            // Empty for a block with no path to an exit, which yields no follow
+            // node at all.
+            //
+            // The strict post-dominators of one block form a chain, so their set
+            // sizes are distinct and the block index never decides. It is in the
+            // key regardless: `pdom[u]` is a `HashSet` whose iteration order is
+            // seeded per process and `max_by_key` keeps the last maximum, so a
+            // comparator that could tie would hand the follow node to that seed
+            // and the emitted structure would not be reproducible.
             pdom[u]
                 .iter()
                 .copied()
@@ -274,17 +389,17 @@ fn immediate_post_dominators(succs: &[Vec<usize>], reachable: &[bool]) -> Vec<Op
         .collect()
 }
 
-type LoopInfo = (HashMap<usize, HashSet<usize>>, HashMap<usize, Option<usize>>);
-
+/// Every natural loop, keyed by header: the blocks it holds, the back edges that
+/// close it, the blocks control can leave it from, and where a `break` lands.
 fn natural_loops(
     succs: &[Vec<usize>],
     preds: &[Vec<usize>],
     dom: &[HashSet<usize>],
     ipdom: &[Option<usize>],
     reachable: &[bool],
-) -> LoopInfo {
+) -> BTreeMap<usize, NaturalLoop> {
     let n = succs.len();
-    let mut bodies: HashMap<usize, HashSet<usize>> = HashMap::new();
+    let mut loops: BTreeMap<usize, NaturalLoop> = BTreeMap::new();
     for u in 0..n {
         if !reachable[u] {
             continue;
@@ -294,10 +409,11 @@ fn natural_loops(
             if !dom[u].contains(&v) {
                 continue;
             }
-            let body = bodies.entry(v).or_insert_with(|| HashSet::from([v]));
+            let region = loops.entry(v).or_insert_with(|| NaturalLoop::new(v));
+            region.latches.insert(u);
             let mut stack = vec![u];
             while let Some(x) = stack.pop() {
-                if !body.insert(x) {
+                if !region.body.insert(x) {
                     continue;
                 }
                 for &p in &preds[x] {
@@ -309,27 +425,38 @@ fn natural_loops(
         }
     }
 
-    let mut follow = HashMap::new();
-    for (h, body) in &bodies {
-        // Where control lands on leaving the loop.
-        let mut targets: Vec<usize> = body
-            .iter()
-            .flat_map(|&b| succs[b].iter().copied())
-            .filter(|t| !body.contains(t))
-            .collect();
-        targets.sort_unstable();
-        targets.dedup();
-        let chosen = match targets.as_slice() {
-            [only] => Some(*only),
+    for (header, region) in loops.iter_mut() {
+        // Where control lands on leaving the loop, and which body blocks it can
+        // leave from.
+        let mut targets: BTreeSet<usize> = BTreeSet::new();
+        for &b in &region.body {
+            for &t in &succs[b] {
+                if !region.body.contains(&t) {
+                    region.exits.insert(b);
+                    targets.insert(t);
+                }
+            }
+        }
+        region.follow = match targets.len() {
+            0 => None,
+            1 => targets.first().copied(),
             // 805 of the loop nests in the sampled binary have more than one
             // exit block. The header's post-dominator is the one target every
             // exit eventually reaches, so it is the `break` destination; the
             // others are rendered in place inside the loop.
-            [] => None,
-            _ => ipdom[*h].filter(|f| !body.contains(f)),
+            _ => ipdom[*header].filter(|f| !region.body.contains(f)),
         };
-        follow.insert(*h, chosen);
     }
 
-    (bodies, follow)
+    loops
 }
+
+
+// The region analysis identity boundary. A separate, digest-protected file rather than
+// an inline module here, because this file is product source that later
+// work edits, so a digest over it would fire on legitimate change. This
+// declaration is the only thing that compiles that file and cannot be digested
+// either, so `scripts/check-oracle-inventory.py` proves it by compilation.
+#[cfg(test)]
+#[path = "regions/identity_boundary_tests.rs"]
+mod identity_boundary_tests;

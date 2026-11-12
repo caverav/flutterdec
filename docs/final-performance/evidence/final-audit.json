@@ -1,0 +1,2067 @@
+{
+  "accepted_timing_harness_ref": "4c127aba4e74fb6f8d486c4cb066586bb0d74846",
+  "candidate_product_ref": "9b82e07fa62f97654aea5153d9fb6a2ef57a377a",
+  "decision": "honest-no-win",
+  "matrices": {
+    "disclosed": {
+      "candidate_emission_ceiling": 4.868822484349225,
+      "candidate_emission_share": 0.7946115301565237,
+      "case_count": 33,
+      "correctness": "33/33 both, artifacts byte-identical",
+      "manifest_sha256": "bfb167600ee186d4e360958348cc8892e3dee2620f9dcdeaf9fcd60c20fd3bc7",
+      "matrix": "disclosed",
+      "matrix_sha256": "76b617c62858e698710f0ab068c1a8b6d8458feedc83f3738a5f5664cfacbc43",
+      "max_process_rss_bytes": 85962752,
+      "pairs": 15,
+      "pass": false,
+      "per_case_phase": [
+        {
+          "case": "linear/64/base",
+          "estimate": -0.004395678595543552,
+          "mde": 0.05,
+          "noise_mad": 0.01623316039174113,
+          "pass": true,
+          "phase": "ir",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "linear/64/base",
+          "estimate": -0.00042096219931271476,
+          "mde": 0.05,
+          "noise_mad": 0.01421868706443172,
+          "pass": true,
+          "phase": "cfg",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "linear/64/base",
+          "estimate": -0.00589503678391622,
+          "mde": 0.05,
+          "noise_mad": 0.006686692357244007,
+          "pass": true,
+          "phase": "emission_exclusive",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "linear/64/base",
+          "estimate": 0.10032558802841583,
+          "mde": 0.05,
+          "noise_mad": 0.010760033592062998,
+          "pass": false,
+          "phase": "serialization",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "linear/64/base",
+          "estimate": 0.025661286704085674,
+          "mde": 0.05,
+          "noise_mad": 0.004985562061393507,
+          "pass": true,
+          "phase": "combined",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "linear/64/light",
+          "estimate": -0.006004516343982527,
+          "mde": 0.05,
+          "noise_mad": 0.015850448518117444,
+          "pass": true,
+          "phase": "ir",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "linear/64/light",
+          "estimate": -0.009509417669599007,
+          "mde": 0.16002124814239255,
+          "noise_mad": 0.05334041604746419,
+          "pass": true,
+          "phase": "cfg",
+          "regression_bound": 0.16002124814239255
+        },
+        {
+          "case": "linear/64/light",
+          "estimate": -0.0010142338413937663,
+          "mde": 0.05,
+          "noise_mad": 0.011102355941421659,
+          "pass": true,
+          "phase": "emission_exclusive",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "linear/64/light",
+          "estimate": 0.09365442427017105,
+          "mde": 0.05,
+          "noise_mad": 0.011097964100682534,
+          "pass": true,
+          "phase": "serialization",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "linear/64/light",
+          "estimate": 0.013707026922126357,
+          "mde": 0.05,
+          "noise_mad": 0.010274369011935834,
+          "pass": true,
+          "phase": "combined",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "linear/64/heavy",
+          "estimate": 0.0012930078277679769,
+          "mde": 0.05,
+          "noise_mad": 0.007979769166993998,
+          "pass": true,
+          "phase": "ir",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "linear/64/heavy",
+          "estimate": -0.00908343740326833,
+          "mde": 0.05,
+          "noise_mad": 0.008828305209328079,
+          "pass": true,
+          "phase": "cfg",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "linear/64/heavy",
+          "estimate": -0.01853582234938779,
+          "mde": 0.05,
+          "noise_mad": 0.008975788360409707,
+          "pass": true,
+          "phase": "emission_exclusive",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "linear/64/heavy",
+          "estimate": 0.053003803994505785,
+          "mde": 0.05,
+          "noise_mad": 0.006740541540240105,
+          "pass": true,
+          "phase": "serialization",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "linear/64/heavy",
+          "estimate": 0.00831469355503549,
+          "mde": 0.05,
+          "noise_mad": 0.015373694148615254,
+          "pass": true,
+          "phase": "combined",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "linear/256/base",
+          "estimate": -0.003004149639470487,
+          "mde": 0.05,
+          "noise_mad": 0.011327645634381444,
+          "pass": true,
+          "phase": "ir",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "linear/256/base",
+          "estimate": -0.004275411513809681,
+          "mde": 0.05,
+          "noise_mad": 0.016409925186818226,
+          "pass": true,
+          "phase": "cfg",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "linear/256/base",
+          "estimate": -0.01664227525832117,
+          "mde": 0.05,
+          "noise_mad": 0.011473467572123183,
+          "pass": true,
+          "phase": "emission_exclusive",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "linear/256/base",
+          "estimate": 0.05902818235666122,
+          "mde": 0.06177920602327615,
+          "noise_mad": 0.020593068674425383,
+          "pass": true,
+          "phase": "serialization",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "linear/256/base",
+          "estimate": 0.0026381533131593702,
+          "mde": 0.05,
+          "noise_mad": 0.01347543491968084,
+          "pass": true,
+          "phase": "combined",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "linear/256/light",
+          "estimate": -0.00261239059821348,
+          "mde": 0.05,
+          "noise_mad": 0.00732179113372018,
+          "pass": true,
+          "phase": "ir",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "linear/256/light",
+          "estimate": -0.009847600296099575,
+          "mde": 0.05,
+          "noise_mad": 0.016379698269889782,
+          "pass": true,
+          "phase": "cfg",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "linear/256/light",
+          "estimate": -0.01617271894790251,
+          "mde": 0.05,
+          "noise_mad": 0.010370892428084148,
+          "pass": true,
+          "phase": "emission_exclusive",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "linear/256/light",
+          "estimate": 0.09440619687456443,
+          "mde": 0.15331640668249863,
+          "noise_mad": 0.051105468894166214,
+          "pass": true,
+          "phase": "serialization",
+          "regression_bound": 0.15331640668249863
+        },
+        {
+          "case": "linear/256/light",
+          "estimate": 0.003852450129189849,
+          "mde": 0.05,
+          "noise_mad": 0.012318089761827975,
+          "pass": true,
+          "phase": "combined",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "linear/256/heavy",
+          "estimate": 0.009086806710234575,
+          "mde": 0.05,
+          "noise_mad": 0.014458369469013386,
+          "pass": true,
+          "phase": "ir",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "linear/256/heavy",
+          "estimate": -0.005463076135785744,
+          "mde": 0.05,
+          "noise_mad": 0.005203403080968487,
+          "pass": true,
+          "phase": "cfg",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "linear/256/heavy",
+          "estimate": -0.018859217229316882,
+          "mde": 0.05,
+          "noise_mad": 0.008794181093526919,
+          "pass": true,
+          "phase": "emission_exclusive",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "linear/256/heavy",
+          "estimate": 0.1047375370066686,
+          "mde": 0.05,
+          "noise_mad": 0.004533040523224424,
+          "pass": false,
+          "phase": "serialization",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "linear/256/heavy",
+          "estimate": 0.02107807242018509,
+          "mde": 0.05,
+          "noise_mad": 0.008910077223821034,
+          "pass": true,
+          "phase": "combined",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "linear/1024/base",
+          "estimate": 0.021063805154067715,
+          "mde": 0.05,
+          "noise_mad": 0.013295902787139352,
+          "pass": true,
+          "phase": "ir",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "linear/1024/base",
+          "estimate": -0.005973035123348925,
+          "mde": 0.05,
+          "noise_mad": 0.007014578426629317,
+          "pass": true,
+          "phase": "cfg",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "linear/1024/base",
+          "estimate": -0.01635895100599028,
+          "mde": 0.05,
+          "noise_mad": 0.008635060361621462,
+          "pass": true,
+          "phase": "emission_exclusive",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "linear/1024/base",
+          "estimate": 0.10327027739548518,
+          "mde": 0.1271673810232016,
+          "noise_mad": 0.04238912700773387,
+          "pass": true,
+          "phase": "serialization",
+          "regression_bound": 0.1271673810232016
+        },
+        {
+          "case": "linear/1024/base",
+          "estimate": 0.015211261226068652,
+          "mde": 0.05,
+          "noise_mad": 0.013908249213668593,
+          "pass": true,
+          "phase": "combined",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "linear/1024/light",
+          "estimate": 0.00737720277741959,
+          "mde": 0.07881536192570696,
+          "noise_mad": 0.026271787308568984,
+          "pass": true,
+          "phase": "ir",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "linear/1024/light",
+          "estimate": -0.015740755341935416,
+          "mde": 0.05,
+          "noise_mad": 0.009739821877440945,
+          "pass": true,
+          "phase": "cfg",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "linear/1024/light",
+          "estimate": -0.015563815095000242,
+          "mde": 0.05,
+          "noise_mad": 0.01085939178121182,
+          "pass": true,
+          "phase": "emission_exclusive",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "linear/1024/light",
+          "estimate": 0.09061336184633786,
+          "mde": 0.06618445312932965,
+          "noise_mad": 0.022061484376443216,
+          "pass": true,
+          "phase": "serialization",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "linear/1024/light",
+          "estimate": 0.005306750365595852,
+          "mde": 0.05,
+          "noise_mad": 0.012176338805259524,
+          "pass": true,
+          "phase": "combined",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "linear/1024/heavy",
+          "estimate": 0.0008614623047013877,
+          "mde": 0.05,
+          "noise_mad": 0.004834092001191078,
+          "pass": true,
+          "phase": "ir",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "linear/1024/heavy",
+          "estimate": 0.005267532157211022,
+          "mde": 0.05,
+          "noise_mad": 0.012122438330418192,
+          "pass": true,
+          "phase": "cfg",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "linear/1024/heavy",
+          "estimate": -0.013582804708755331,
+          "mde": 0.05,
+          "noise_mad": 0.005540918033292515,
+          "pass": true,
+          "phase": "emission_exclusive",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "linear/1024/heavy",
+          "estimate": 0.10500321887749667,
+          "mde": 0.13361259850501261,
+          "noise_mad": 0.0445375328350042,
+          "pass": true,
+          "phase": "serialization",
+          "regression_bound": 0.13361259850501261
+        },
+        {
+          "case": "linear/1024/heavy",
+          "estimate": 0.02605064218316454,
+          "mde": 0.05,
+          "noise_mad": 0.01047184516879316,
+          "pass": true,
+          "phase": "combined",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "diamond-chain/64/base",
+          "estimate": 0.00984678341072756,
+          "mde": 0.3310145708185573,
+          "noise_mad": 0.11033819027285242,
+          "pass": true,
+          "phase": "ir",
+          "regression_bound": 0.3310145708185573
+        },
+        {
+          "case": "diamond-chain/64/base",
+          "estimate": -0.01984536317744895,
+          "mde": 0.0776170559876701,
+          "noise_mad": 0.025872351995890032,
+          "pass": true,
+          "phase": "cfg",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "diamond-chain/64/base",
+          "estimate": 0.0037713616880293947,
+          "mde": 0.05155203825798199,
+          "noise_mad": 0.017184012752660665,
+          "pass": true,
+          "phase": "emission_exclusive",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "diamond-chain/64/base",
+          "estimate": 0.08662173025912047,
+          "mde": 0.09915718116850421,
+          "noise_mad": 0.033052393722834736,
+          "pass": true,
+          "phase": "serialization",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "diamond-chain/64/base",
+          "estimate": 0.029653580100030438,
+          "mde": 0.05,
+          "noise_mad": 0.010441025958230033,
+          "pass": true,
+          "phase": "combined",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "diamond-chain/64/light",
+          "estimate": 0.014984116688900845,
+          "mde": 0.05958171053181881,
+          "noise_mad": 0.019860570177272937,
+          "pass": true,
+          "phase": "ir",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "diamond-chain/64/light",
+          "estimate": -0.0069820990863849065,
+          "mde": 0.05,
+          "noise_mad": 0.013811130410245412,
+          "pass": true,
+          "phase": "cfg",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "diamond-chain/64/light",
+          "estimate": 0.005834712286485288,
+          "mde": 0.05,
+          "noise_mad": 0.00841936426815472,
+          "pass": true,
+          "phase": "emission_exclusive",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "diamond-chain/64/light",
+          "estimate": 0.08144817461418523,
+          "mde": 0.05542536689520111,
+          "noise_mad": 0.01847512229840037,
+          "pass": true,
+          "phase": "serialization",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "diamond-chain/64/light",
+          "estimate": 0.022756894558779817,
+          "mde": 0.05,
+          "noise_mad": 0.01194962155254942,
+          "pass": true,
+          "phase": "combined",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "diamond-chain/64/heavy",
+          "estimate": 0.0039091298322595685,
+          "mde": 0.05,
+          "noise_mad": 0.009738425884957411,
+          "pass": true,
+          "phase": "ir",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "diamond-chain/64/heavy",
+          "estimate": -0.00029389457717102766,
+          "mde": 0.05,
+          "noise_mad": 0.015715561687604386,
+          "pass": true,
+          "phase": "cfg",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "diamond-chain/64/heavy",
+          "estimate": -0.0047200435787186825,
+          "mde": 0.05,
+          "noise_mad": 0.016156968030365447,
+          "pass": true,
+          "phase": "emission_exclusive",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "diamond-chain/64/heavy",
+          "estimate": 0.10510613629668113,
+          "mde": 0.05,
+          "noise_mad": 0.013612077403857448,
+          "pass": false,
+          "phase": "serialization",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "diamond-chain/64/heavy",
+          "estimate": 0.019957743284662068,
+          "mde": 0.05446541497629599,
+          "noise_mad": 0.018155138325432,
+          "pass": true,
+          "phase": "combined",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "diamond-chain/256/base",
+          "estimate": 0.0051985726588839164,
+          "mde": 0.05,
+          "noise_mad": 0.013544576363695318,
+          "pass": true,
+          "phase": "ir",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "diamond-chain/256/base",
+          "estimate": -0.017057197836570823,
+          "mde": 0.05,
+          "noise_mad": 0.011058974911353273,
+          "pass": true,
+          "phase": "cfg",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "diamond-chain/256/base",
+          "estimate": -0.006453234256056896,
+          "mde": 0.05,
+          "noise_mad": 0.014885375596960179,
+          "pass": true,
+          "phase": "emission_exclusive",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "diamond-chain/256/base",
+          "estimate": 0.08296662256095819,
+          "mde": 0.08007337533530315,
+          "noise_mad": 0.026691125111767716,
+          "pass": true,
+          "phase": "serialization",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "diamond-chain/256/base",
+          "estimate": 0.007930764280958305,
+          "mde": 0.05,
+          "noise_mad": 0.006594531315808354,
+          "pass": true,
+          "phase": "combined",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "diamond-chain/256/light",
+          "estimate": 0.0047617332321043615,
+          "mde": 0.05,
+          "noise_mad": 0.012454376604921415,
+          "pass": true,
+          "phase": "ir",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "diamond-chain/256/light",
+          "estimate": -0.013826313430247586,
+          "mde": 0.05,
+          "noise_mad": 0.012059823194922352,
+          "pass": true,
+          "phase": "cfg",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "diamond-chain/256/light",
+          "estimate": 0.002728707875652907,
+          "mde": 0.05918214397341692,
+          "noise_mad": 0.01972738132447231,
+          "pass": true,
+          "phase": "emission_exclusive",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "diamond-chain/256/light",
+          "estimate": 0.08346628713177627,
+          "mde": 0.06348478258800366,
+          "noise_mad": 0.02116159419600122,
+          "pass": true,
+          "phase": "serialization",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "diamond-chain/256/light",
+          "estimate": 0.017783972485567894,
+          "mde": 0.051988894775945906,
+          "noise_mad": 0.01732963159198197,
+          "pass": true,
+          "phase": "combined",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "diamond-chain/256/heavy",
+          "estimate": 0.009803528373221486,
+          "mde": 0.05,
+          "noise_mad": 0.013944408916973296,
+          "pass": true,
+          "phase": "ir",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "diamond-chain/256/heavy",
+          "estimate": -0.01820337849701862,
+          "mde": 0.05,
+          "noise_mad": 0.01333779417734949,
+          "pass": true,
+          "phase": "cfg",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "diamond-chain/256/heavy",
+          "estimate": 0.0009532451786655554,
+          "mde": 0.05,
+          "noise_mad": 0.015197900612061799,
+          "pass": true,
+          "phase": "emission_exclusive",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "diamond-chain/256/heavy",
+          "estimate": 0.10719992753139058,
+          "mde": 0.05,
+          "noise_mad": 0.006071756189946195,
+          "pass": false,
+          "phase": "serialization",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "diamond-chain/256/heavy",
+          "estimate": 0.029516693675645217,
+          "mde": 0.05,
+          "noise_mad": 0.010524567379691388,
+          "pass": true,
+          "phase": "combined",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "diamond-chain/1024/base",
+          "estimate": 0.005253602261966665,
+          "mde": 0.08423887112282578,
+          "noise_mad": 0.028079623707608595,
+          "pass": true,
+          "phase": "ir",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "diamond-chain/1024/base",
+          "estimate": -0.015296875183202845,
+          "mde": 0.05,
+          "noise_mad": 0.00473687391407502,
+          "pass": true,
+          "phase": "cfg",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "diamond-chain/1024/base",
+          "estimate": -0.0018151536491190627,
+          "mde": 0.05,
+          "noise_mad": 0.013389485516171763,
+          "pass": true,
+          "phase": "emission_exclusive",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "diamond-chain/1024/base",
+          "estimate": 0.09843670804998987,
+          "mde": 0.05,
+          "noise_mad": 0.009884484277019642,
+          "pass": true,
+          "phase": "serialization",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "diamond-chain/1024/base",
+          "estimate": 0.020097811085233255,
+          "mde": 0.05,
+          "noise_mad": 0.010247614389531676,
+          "pass": true,
+          "phase": "combined",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "diamond-chain/1024/light",
+          "estimate": -0.017175399548667824,
+          "mde": 0.05045552344815256,
+          "noise_mad": 0.016818507816050852,
+          "pass": true,
+          "phase": "ir",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "diamond-chain/1024/light",
+          "estimate": -0.022382855600016054,
+          "mde": 0.05,
+          "noise_mad": 0.005815008357916977,
+          "pass": true,
+          "phase": "cfg",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "diamond-chain/1024/light",
+          "estimate": -0.0005720140914713313,
+          "mde": 0.05,
+          "noise_mad": 0.009799140111471365,
+          "pass": true,
+          "phase": "emission_exclusive",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "diamond-chain/1024/light",
+          "estimate": 0.10251752233728881,
+          "mde": 0.05707601162827794,
+          "noise_mad": 0.01902533720942598,
+          "pass": false,
+          "phase": "serialization",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "diamond-chain/1024/light",
+          "estimate": 0.016048360010706284,
+          "mde": 0.05,
+          "noise_mad": 0.008507380306160599,
+          "pass": true,
+          "phase": "combined",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "diamond-chain/1024/heavy",
+          "estimate": -0.0019281006149454646,
+          "mde": 0.05,
+          "noise_mad": 0.0063550913509769075,
+          "pass": true,
+          "phase": "ir",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "diamond-chain/1024/heavy",
+          "estimate": -0.024338705190912052,
+          "mde": 0.05,
+          "noise_mad": 0.00937982228448873,
+          "pass": true,
+          "phase": "cfg",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "diamond-chain/1024/heavy",
+          "estimate": -0.009438600054094274,
+          "mde": 0.05,
+          "noise_mad": 0.010901961459549988,
+          "pass": true,
+          "phase": "emission_exclusive",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "diamond-chain/1024/heavy",
+          "estimate": 0.051617836578539154,
+          "mde": 0.07855702035095985,
+          "noise_mad": 0.026185673450319948,
+          "pass": true,
+          "phase": "serialization",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "diamond-chain/1024/heavy",
+          "estimate": 0.012471934810631288,
+          "mde": 0.05,
+          "noise_mad": 0.008796914539384833,
+          "pass": true,
+          "phase": "combined",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "fan-in/64/base",
+          "estimate": -0.03480772558467662,
+          "mde": 0.1720245134867638,
+          "noise_mad": 0.05734150449558794,
+          "pass": true,
+          "phase": "ir",
+          "regression_bound": 0.1720245134867638
+        },
+        {
+          "case": "fan-in/64/base",
+          "estimate": -0.03379608280950416,
+          "mde": 0.1901542510415689,
+          "noise_mad": 0.06338475034718964,
+          "pass": true,
+          "phase": "cfg",
+          "regression_bound": 0.1901542510415689
+        },
+        {
+          "case": "fan-in/64/base",
+          "estimate": -0.1261863013964282,
+          "mde": 0.10831076737936418,
+          "noise_mad": 0.03610358912645473,
+          "pass": true,
+          "phase": "emission_exclusive",
+          "regression_bound": 0.10831076737936418
+        },
+        {
+          "case": "fan-in/64/base",
+          "estimate": 0.0985118236669695,
+          "mde": 0.10683927936452965,
+          "noise_mad": 0.035613093121509884,
+          "pass": true,
+          "phase": "serialization",
+          "regression_bound": 0.10683927936452965
+        },
+        {
+          "case": "fan-in/64/base",
+          "estimate": -0.09288447899969994,
+          "mde": 0.11354262645043652,
+          "noise_mad": 0.037847542150145505,
+          "pass": true,
+          "phase": "combined",
+          "regression_bound": 0.11354262645043652
+        },
+        {
+          "case": "fan-in/256/base",
+          "estimate": 0.003537960662724762,
+          "mde": 0.05,
+          "noise_mad": 0.014809657761749742,
+          "pass": true,
+          "phase": "ir",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "fan-in/256/base",
+          "estimate": -0.018495970001293046,
+          "mde": 0.16335108342225133,
+          "noise_mad": 0.05445036114075044,
+          "pass": true,
+          "phase": "cfg",
+          "regression_bound": 0.16335108342225133
+        },
+        {
+          "case": "fan-in/256/base",
+          "estimate": -0.11562848966438642,
+          "mde": 0.05,
+          "noise_mad": 0.004498062244088857,
+          "pass": true,
+          "phase": "emission_exclusive",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "fan-in/256/base",
+          "estimate": 0.08666607700431371,
+          "mde": 0.05408960252413304,
+          "noise_mad": 0.018029867508044348,
+          "pass": true,
+          "phase": "serialization",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "fan-in/256/base",
+          "estimate": -0.08626689353788711,
+          "mde": 0.05,
+          "noise_mad": 0.009567830944473901,
+          "pass": true,
+          "phase": "combined",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "fan-in/1024/base",
+          "estimate": -0.00470282933929271,
+          "mde": 0.05276626099702829,
+          "noise_mad": 0.017588753665676096,
+          "pass": true,
+          "phase": "ir",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "fan-in/1024/base",
+          "estimate": 0.007392354453018433,
+          "mde": 0.07351440982769122,
+          "noise_mad": 0.024504803275897075,
+          "pass": true,
+          "phase": "cfg",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "fan-in/1024/base",
+          "estimate": -0.15788763724369173,
+          "mde": 0.05,
+          "noise_mad": 0.004235473444879789,
+          "pass": true,
+          "phase": "emission_exclusive",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "fan-in/1024/base",
+          "estimate": 0.09020398160532576,
+          "mde": 0.05,
+          "noise_mad": 0.0054082508776191335,
+          "pass": true,
+          "phase": "serialization",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "fan-in/1024/base",
+          "estimate": -0.1412382206664367,
+          "mde": 0.05,
+          "noise_mad": 0.004208568853741601,
+          "pass": true,
+          "phase": "combined",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "nested-loop/64/base",
+          "estimate": 0.014299457044561478,
+          "mde": 0.05,
+          "noise_mad": 0.015717347730312487,
+          "pass": true,
+          "phase": "ir",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "nested-loop/64/base",
+          "estimate": 0.005757775951617495,
+          "mde": 0.05,
+          "noise_mad": 0.008328173970683462,
+          "pass": true,
+          "phase": "cfg",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "nested-loop/64/base",
+          "estimate": -0.00885806656511562,
+          "mde": 0.05,
+          "noise_mad": 0.008382402685390882,
+          "pass": true,
+          "phase": "emission_exclusive",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "nested-loop/64/base",
+          "estimate": 0.09988443627805843,
+          "mde": 0.05,
+          "noise_mad": 0.0056389717323451355,
+          "pass": true,
+          "phase": "serialization",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "nested-loop/64/base",
+          "estimate": 0.02196908007884647,
+          "mde": 0.05,
+          "noise_mad": 0.008971502065329429,
+          "pass": true,
+          "phase": "combined",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "nested-loop/256/base",
+          "estimate": 0.011952114678810938,
+          "mde": 0.05,
+          "noise_mad": 0.007402880689534133,
+          "pass": true,
+          "phase": "ir",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "nested-loop/256/base",
+          "estimate": -0.006282708425825026,
+          "mde": 0.05,
+          "noise_mad": 0.011348784849582443,
+          "pass": true,
+          "phase": "cfg",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "nested-loop/256/base",
+          "estimate": -0.009690160389925432,
+          "mde": 0.05,
+          "noise_mad": 0.0044591155643260785,
+          "pass": true,
+          "phase": "emission_exclusive",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "nested-loop/256/base",
+          "estimate": 0.09506757161958135,
+          "mde": 0.05,
+          "noise_mad": 0.008047399275983469,
+          "pass": true,
+          "phase": "serialization",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "nested-loop/256/base",
+          "estimate": 0.019834076914140075,
+          "mde": 0.05,
+          "noise_mad": 0.008724020954316122,
+          "pass": true,
+          "phase": "combined",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "nested-loop/1024/base",
+          "estimate": -0.025759706807588004,
+          "mde": 0.05211077224156847,
+          "noise_mad": 0.017370257413856158,
+          "pass": true,
+          "phase": "ir",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "nested-loop/1024/base",
+          "estimate": -0.0017107542971469612,
+          "mde": 0.05,
+          "noise_mad": 0.013753690626785076,
+          "pass": true,
+          "phase": "cfg",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "nested-loop/1024/base",
+          "estimate": -0.011213578555649958,
+          "mde": 0.05,
+          "noise_mad": 0.008593546676672514,
+          "pass": true,
+          "phase": "emission_exclusive",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "nested-loop/1024/base",
+          "estimate": 0.09310539743722054,
+          "mde": 0.05,
+          "noise_mad": 0.005694134869225209,
+          "pass": true,
+          "phase": "serialization",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "nested-loop/1024/base",
+          "estimate": 0.013258545513578595,
+          "mde": 0.05,
+          "noise_mad": 0.006180922399193564,
+          "pass": true,
+          "phase": "combined",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "multi-exit/64/base",
+          "estimate": -0.0016278730744934155,
+          "mde": 0.05,
+          "noise_mad": 0.014834945321543965,
+          "pass": true,
+          "phase": "ir",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "multi-exit/64/base",
+          "estimate": -0.02032728965492546,
+          "mde": 0.05,
+          "noise_mad": 0.016091294254676695,
+          "pass": true,
+          "phase": "cfg",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "multi-exit/64/base",
+          "estimate": -0.020002344294504346,
+          "mde": 0.05,
+          "noise_mad": 0.009150842736250627,
+          "pass": true,
+          "phase": "emission_exclusive",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "multi-exit/64/base",
+          "estimate": 0.10086267036713112,
+          "mde": 0.05,
+          "noise_mad": 0.0077109665388988,
+          "pass": false,
+          "phase": "serialization",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "multi-exit/64/base",
+          "estimate": 0.005655610066876781,
+          "mde": 0.05,
+          "noise_mad": 0.011075699318128695,
+          "pass": true,
+          "phase": "combined",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "multi-exit/256/base",
+          "estimate": -0.001551909280328135,
+          "mde": 0.05,
+          "noise_mad": 0.010981433046940646,
+          "pass": true,
+          "phase": "ir",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "multi-exit/256/base",
+          "estimate": -0.008807085505484468,
+          "mde": 0.08322475236692575,
+          "noise_mad": 0.027741584122308587,
+          "pass": true,
+          "phase": "cfg",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "multi-exit/256/base",
+          "estimate": -0.08906081756514869,
+          "mde": 0.05,
+          "noise_mad": 0.0013627371896941243,
+          "pass": true,
+          "phase": "emission_exclusive",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "multi-exit/256/base",
+          "estimate": 0.08678899004901862,
+          "mde": 0.05,
+          "noise_mad": 0.004239654060243694,
+          "pass": true,
+          "phase": "serialization",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "multi-exit/256/base",
+          "estimate": -0.06834831067036458,
+          "mde": 0.05,
+          "noise_mad": 0.00462242187148508,
+          "pass": true,
+          "phase": "combined",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "multi-exit/1024/base",
+          "estimate": -0.016441638610662262,
+          "mde": 0.05,
+          "noise_mad": 0.014200678475182717,
+          "pass": true,
+          "phase": "ir",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "multi-exit/1024/base",
+          "estimate": 0.005831623130716271,
+          "mde": 0.05,
+          "noise_mad": 0.012555958702890009,
+          "pass": true,
+          "phase": "cfg",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "multi-exit/1024/base",
+          "estimate": -0.14041666315863152,
+          "mde": 0.05,
+          "noise_mad": 0.003993893631797474,
+          "pass": true,
+          "phase": "emission_exclusive",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "multi-exit/1024/base",
+          "estimate": 0.08605699215142443,
+          "mde": 0.05,
+          "noise_mad": 0.011587317937248778,
+          "pass": true,
+          "phase": "serialization",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "multi-exit/1024/base",
+          "estimate": -0.1260951684268968,
+          "mde": 0.05,
+          "noise_mad": 0.004018550178081476,
+          "pass": true,
+          "phase": "combined",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "no-exit/64/base",
+          "estimate": -0.01967862322973876,
+          "mde": 0.18472374479935944,
+          "noise_mad": 0.061574581599786474,
+          "pass": true,
+          "phase": "ir",
+          "regression_bound": 0.18472374479935944
+        },
+        {
+          "case": "no-exit/64/base",
+          "estimate": -0.014648493819565928,
+          "mde": 0.24539546416515898,
+          "noise_mad": 0.08179848805505299,
+          "pass": true,
+          "phase": "cfg",
+          "regression_bound": 0.24539546416515898
+        },
+        {
+          "case": "no-exit/64/base",
+          "estimate": -0.003414460248954726,
+          "mde": 0.05,
+          "noise_mad": 0.010051932989868095,
+          "pass": true,
+          "phase": "emission_exclusive",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "no-exit/64/base",
+          "estimate": 0.09188150560613122,
+          "mde": 0.05472216468227137,
+          "noise_mad": 0.018240721560757123,
+          "pass": true,
+          "phase": "serialization",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "no-exit/64/base",
+          "estimate": 0.025275616628824334,
+          "mde": 0.05,
+          "noise_mad": 0.012910138514576475,
+          "pass": true,
+          "phase": "combined",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "no-exit/256/base",
+          "estimate": -0.005177157070266128,
+          "mde": 0.05,
+          "noise_mad": 0.003917041717174033,
+          "pass": true,
+          "phase": "ir",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "no-exit/256/base",
+          "estimate": -0.008874966194897683,
+          "mde": 0.08412817171218771,
+          "noise_mad": 0.02804272390406257,
+          "pass": true,
+          "phase": "cfg",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "no-exit/256/base",
+          "estimate": -0.003290089623052866,
+          "mde": 0.05,
+          "noise_mad": 0.014914459770209014,
+          "pass": true,
+          "phase": "emission_exclusive",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "no-exit/256/base",
+          "estimate": 0.08978464799390981,
+          "mde": 0.061636709540212706,
+          "noise_mad": 0.02054556984673757,
+          "pass": true,
+          "phase": "serialization",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "no-exit/256/base",
+          "estimate": 0.023043294265706442,
+          "mde": 0.05,
+          "noise_mad": 0.014037164589084956,
+          "pass": true,
+          "phase": "combined",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "no-exit/1024/base",
+          "estimate": 0.010076079590476354,
+          "mde": 0.07526560543392091,
+          "noise_mad": 0.025088535144640305,
+          "pass": true,
+          "phase": "ir",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "no-exit/1024/base",
+          "estimate": 0.006109848884633652,
+          "mde": 0.05751594295402943,
+          "noise_mad": 0.019171980984676477,
+          "pass": true,
+          "phase": "cfg",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "no-exit/1024/base",
+          "estimate": -0.0020863403823083403,
+          "mde": 0.05,
+          "noise_mad": 0.014878630702426666,
+          "pass": true,
+          "phase": "emission_exclusive",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "no-exit/1024/base",
+          "estimate": 0.0913216396968221,
+          "mde": 0.051856440510357024,
+          "noise_mad": 0.017285480170119008,
+          "pass": true,
+          "phase": "serialization",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "no-exit/1024/base",
+          "estimate": 0.023139291673165873,
+          "mde": 0.05,
+          "noise_mad": 0.014045439317605499,
+          "pass": true,
+          "phase": "combined",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "irreducible/64/base",
+          "estimate": -0.023325571617994242,
+          "mde": 0.11411188005165232,
+          "noise_mad": 0.038037293350550776,
+          "pass": true,
+          "phase": "ir",
+          "regression_bound": 0.11411188005165232
+        },
+        {
+          "case": "irreducible/64/base",
+          "estimate": -0.0290589999118088,
+          "mde": 0.08686137637929806,
+          "noise_mad": 0.028953792126432683,
+          "pass": true,
+          "phase": "cfg",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "irreducible/64/base",
+          "estimate": -0.07531994350993036,
+          "mde": 0.05118372539541147,
+          "noise_mad": 0.01706124179847049,
+          "pass": true,
+          "phase": "emission_exclusive",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "irreducible/64/base",
+          "estimate": 0.08261006448167424,
+          "mde": 0.05,
+          "noise_mad": 0.008651819137307809,
+          "pass": true,
+          "phase": "serialization",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "irreducible/64/base",
+          "estimate": -0.038835395505490804,
+          "mde": 0.05,
+          "noise_mad": 0.014519296033506233,
+          "pass": true,
+          "phase": "combined",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "irreducible/256/base",
+          "estimate": 0.004716626107027271,
+          "mde": 0.05,
+          "noise_mad": 0.013712047234044504,
+          "pass": true,
+          "phase": "ir",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "irreducible/256/base",
+          "estimate": -0.0207188258179069,
+          "mde": 0.05,
+          "noise_mad": 0.009862074190830778,
+          "pass": true,
+          "phase": "cfg",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "irreducible/256/base",
+          "estimate": -0.13210390514425904,
+          "mde": 0.05,
+          "noise_mad": 0.008364540013127086,
+          "pass": true,
+          "phase": "emission_exclusive",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "irreducible/256/base",
+          "estimate": 0.08469872338036033,
+          "mde": 0.057807266822906,
+          "noise_mad": 0.019269088940968668,
+          "pass": true,
+          "phase": "serialization",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "irreducible/256/base",
+          "estimate": -0.09908438553644972,
+          "mde": 0.05,
+          "noise_mad": 0.007012483325936375,
+          "pass": true,
+          "phase": "combined",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "irreducible/1024/base",
+          "estimate": 0.005003324947732084,
+          "mde": 0.10178476743148686,
+          "noise_mad": 0.03392825581049562,
+          "pass": true,
+          "phase": "ir",
+          "regression_bound": 0.10178476743148686
+        },
+        {
+          "case": "irreducible/1024/base",
+          "estimate": -0.024121353309457454,
+          "mde": 0.05,
+          "noise_mad": 0.011050163755433797,
+          "pass": true,
+          "phase": "cfg",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "irreducible/1024/base",
+          "estimate": -0.1862651854057195,
+          "mde": 0.05,
+          "noise_mad": 0.004041353917971752,
+          "pass": true,
+          "phase": "emission_exclusive",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "irreducible/1024/base",
+          "estimate": 0.0819984206089084,
+          "mde": 0.05,
+          "noise_mad": 0.010265962906129383,
+          "pass": true,
+          "phase": "serialization",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "irreducible/1024/base",
+          "estimate": -0.1540691231587821,
+          "mde": 0.05,
+          "noise_mad": 0.0035631198131540753,
+          "pass": true,
+          "phase": "combined",
+          "regression_bound": 0.1
+        }
+      ],
+      "per_case_phase_failures": [
+        {
+          "case": "linear/64/base",
+          "estimate": 0.10032558802841583,
+          "mde": 0.05,
+          "noise_mad": 0.010760033592062998,
+          "phase": "serialization",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "linear/256/heavy",
+          "estimate": 0.1047375370066686,
+          "mde": 0.05,
+          "noise_mad": 0.004533040523224424,
+          "phase": "serialization",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "diamond-chain/64/heavy",
+          "estimate": 0.10510613629668113,
+          "mde": 0.05,
+          "noise_mad": 0.013612077403857448,
+          "phase": "serialization",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "diamond-chain/256/heavy",
+          "estimate": 0.10719992753139058,
+          "mde": 0.05,
+          "noise_mad": 0.006071756189946195,
+          "phase": "serialization",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "diamond-chain/1024/light",
+          "estimate": 0.10251752233728881,
+          "mde": 0.05707601162827794,
+          "noise_mad": 0.01902533720942598,
+          "phase": "serialization",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "multi-exit/64/base",
+          "estimate": 0.10086267036713112,
+          "mde": 0.05,
+          "noise_mad": 0.0077109665388988,
+          "phase": "serialization",
+          "regression_bound": 0.1
+        }
+      ],
+      "resource_max_delta": {
+        "allocation_count": 0.0,
+        "peak_live_bytes": 0.0,
+        "total_allocated_bytes": 0.0
+      },
+      "resource_regressions": [],
+      "scores": {
+        "combined": {
+          "candidate_scores": [
+            8545686380,
+            8575208739,
+            8588837691,
+            8502470234,
+            8463154947,
+            8574051035,
+            8566396817,
+            8584230564,
+            8510472994,
+            8378412048,
+            8447220859,
+            8561956540,
+            8535155054,
+            8488802535,
+            8583781490
+          ],
+          "estimate": -0.11794302247498839,
+          "mde": 0.05,
+          "noise_mad": 0.00441202725233697,
+          "pass": true,
+          "reference_scores": [
+            9680203640,
+            9778936076,
+            9573547171,
+            9687824480,
+            9647462380,
+            9741188776,
+            9711840658,
+            9665834368,
+            9672452519,
+            9868042932,
+            9573035730,
+            9679087744,
+            9671940069,
+            9750692848,
+            9663021861
+          ]
+        },
+        "emission_exclusive": {
+          "candidate_scores": [
+            7101307139,
+            7120139181,
+            7133108475,
+            7061264913,
+            7025162232,
+            7133881187,
+            7122071711,
+            7136791178,
+            7067754732,
+            6961065376,
+            7018178457,
+            7123398185,
+            7094460169,
+            7063827779,
+            7138862221
+          ],
+          "estimate": -0.15058869056802782,
+          "mde": 0.05,
+          "noise_mad": 0.004012368365592628,
+          "pass": true,
+          "reference_scores": [
+            8337682396,
+            8427251645,
+            8252168503,
+            8343233624,
+            8340253675,
+            8404327245,
+            8373347137,
+            8343409713,
+            8341286579,
+            8497237040,
+            8262402889,
+            8346848547,
+            8336928122,
+            8414873325,
+            8337457716
+          ]
+        }
+      },
+      "warmups": 3,
+      "workload_sha256": {
+        "diamond-chain/1024/base": "2b6876794819495120a9e2e386d153e11cc2c18d815b3e99b8b73a9626ed89c3",
+        "diamond-chain/1024/heavy": "82069b3c0043a5af35702dbe537eb6b0b4419c7c353d4cd30b7c1f3a5088c42b",
+        "diamond-chain/1024/light": "306e9b1577b1b5becbf31149f1279caf1f92bd553342bd61b6517a61f3c7b08d",
+        "diamond-chain/256/base": "8a76bf3fdef4c2d632f7b6b90cb7d110e5b7968511b0d6ce0de7e86909c2571b",
+        "diamond-chain/256/heavy": "77f3e70108e747dac10105d9e924aff7e7cc73136e69707ce1200e4b113ee89e",
+        "diamond-chain/256/light": "9c83f3176a04a8296b2256ad5b4c1c3f6fe22f5be250abc99a00f57ea0ad1a21",
+        "diamond-chain/64/base": "e45fea2bd00692f9699a23b3374a6b39188ac9cb17fe1cdbb3479bb560edf7d6",
+        "diamond-chain/64/heavy": "2ee51a63499bd1b61cf26eb43dcc004d7aa73c3c0891dd3f83cf2f23e54cf31e",
+        "diamond-chain/64/light": "edf27ef35adf8d7f907924c9eaa8630989026c3d634afb7c5b4fa76fc53fcc2b",
+        "fan-in/1024/base": "14cca0265737d553d97200a3e2de7fcfcc610e207ea160a9eec5911ab9370929",
+        "fan-in/256/base": "becf74f81436ed83159c312acbebd96d72aba8584e563674e57b441330ff6d6f",
+        "fan-in/64/base": "9defc74fed4b40bcd0224b020aa0622026cb165ad3d387e594168ad06a314ce8",
+        "irreducible/1024/base": "6546530ed16df2006ca4df518d2a0d32d9b2e0a4809b5a9a1ddba70875299ad3",
+        "irreducible/256/base": "2301f2abc57be4b378c7274e475071dbd02cc5de723b073c9799c08772a6bc1c",
+        "irreducible/64/base": "f06e6d92f2e01ca9ec5aed2ba93f8466bf52552d60313925bc50eae3d32cb5ff",
+        "linear/1024/base": "1e88addefd24c70ac55147a28ef17404117021d7fecc01cd837f2fdeea06c1b1",
+        "linear/1024/heavy": "a9ef6205bd795e720fb57997880acee18657bbf72522860330c56156af917f50",
+        "linear/1024/light": "807efbcacc2d5d57b2c9ef4ea59b0dfe2ec405be3771b35d1118e0766ed10292",
+        "linear/256/base": "6088e44f7ef52338dbda6b1cca8b0c0e2aaecdaad6c0f789c3472beb9a69ac28",
+        "linear/256/heavy": "e51be18977a9887b75b071ef09ee74fe742d8f215deda6d62040bbc6fe028e8e",
+        "linear/256/light": "771124e17acf203a71d1a8b92592fb5fc59e94e8a764b022b113430258e8bfc8",
+        "linear/64/base": "b47fff93c1ea80ff9f51ac2c447d6b8fe2afa6c69e2a84f1913f3a0942ae6625",
+        "linear/64/heavy": "bd3a7d5df8e16f7f6c3ccce2e69db1f2b59910cc9df3d97969bf67c4ceb58fe2",
+        "linear/64/light": "6ef713c4acb4436fd107e71e24af093567dcad35301e56bcd2164f6bea4c72c8",
+        "multi-exit/1024/base": "d717bcdd20717fdf323f28a9c083acb4987fac9dad9366de4b2ea90a594997e7",
+        "multi-exit/256/base": "cac2d774c31f5156026b4399af3817cb3e71a4029c341ab6def957609edfba2e",
+        "multi-exit/64/base": "d10062004863198fc68a22f81178fedbf88e68ad1a21edcefaa2460e9d37d17a",
+        "nested-loop/1024/base": "f9c24121e8b6f596ada53ab2fdcd4451464a404039cc5d95979fc68d6f678dad",
+        "nested-loop/256/base": "38c0ac0d6df803b776cb1aff52c571c8670b5e9691bc5833e362593f870c0d55",
+        "nested-loop/64/base": "7856b0911867a8adcde838b4690289db6a85472d2c0cc8b4742eb469bf1cb708",
+        "no-exit/1024/base": "0b8aa448c5c3eb673a75c05226526313b421697b248fdd803fb51dd72be19f5b",
+        "no-exit/256/base": "3a36cde2da02681a1c27635cbcca15cd7acb8fec14c8008915814a6796bc4e1c",
+        "no-exit/64/base": "362ba6690af1a9a2fd774c3d049a55aeb1d75f01c0fa21f1e378e73211806a97"
+      },
+      "worst_span_residue": 0.0005937896466379651
+    },
+    "held-out": {
+      "candidate_emission_ceiling": 8.358405849645036,
+      "candidate_emission_share": 0.8803599612188647,
+      "case_count": 6,
+      "correctness": "6/6 both, artifacts byte-identical",
+      "manifest_sha256": "490e84dafdc8e9a4fe80fe8ddab4bfbe115e141924ab9dfd8fc05f5cfc822830",
+      "matrix": "held-out",
+      "matrix_sha256": "797fa5817a5cdb025b2ab869b1ad32215c648c6ec3144d6ca94a7668891f1af3",
+      "max_process_rss_bytes": 96722944,
+      "pairs": 15,
+      "pass": false,
+      "per_case_phase": [
+        {
+          "case": "held-out/0/1579",
+          "estimate": 0.012352338625157389,
+          "mde": 0.05,
+          "noise_mad": 0.016351952055353513,
+          "pass": true,
+          "phase": "ir",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "held-out/0/1579",
+          "estimate": -0.0045158386745258175,
+          "mde": 0.05,
+          "noise_mad": 0.015726268032053996,
+          "pass": true,
+          "phase": "cfg",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "held-out/0/1579",
+          "estimate": -0.005197454176438525,
+          "mde": 0.05,
+          "noise_mad": 0.0030912992908803194,
+          "pass": true,
+          "phase": "emission_exclusive",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "held-out/0/1579",
+          "estimate": 0.0861366866384265,
+          "mde": 0.05,
+          "noise_mad": 0.009893009483959783,
+          "pass": true,
+          "phase": "serialization",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "held-out/0/1579",
+          "estimate": -5.781263768949378e-05,
+          "mde": 0.05,
+          "noise_mad": 0.0019144151134689853,
+          "pass": true,
+          "phase": "combined",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "held-out/1/1206",
+          "estimate": 0.014388418400845922,
+          "mde": 0.05324944168661547,
+          "noise_mad": 0.01774981389553849,
+          "pass": true,
+          "phase": "ir",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "held-out/1/1206",
+          "estimate": -0.0033298451585475884,
+          "mde": 0.05,
+          "noise_mad": 0.012525672861545196,
+          "pass": true,
+          "phase": "cfg",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "held-out/1/1206",
+          "estimate": -0.01386324815247161,
+          "mde": 0.05,
+          "noise_mad": 0.00834455438180787,
+          "pass": true,
+          "phase": "emission_exclusive",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "held-out/1/1206",
+          "estimate": 0.07988490361240633,
+          "mde": 0.05,
+          "noise_mad": 0.01174351922683066,
+          "pass": true,
+          "phase": "serialization",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "held-out/1/1206",
+          "estimate": -0.008866095671245923,
+          "mde": 0.05,
+          "noise_mad": 0.0073728186311054125,
+          "pass": true,
+          "phase": "combined",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "held-out/2/1926",
+          "estimate": -0.0018144439004100896,
+          "mde": 0.05,
+          "noise_mad": 0.007463964784716531,
+          "pass": true,
+          "phase": "ir",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "held-out/2/1926",
+          "estimate": -0.003803810399373647,
+          "mde": 0.05,
+          "noise_mad": 0.006936450918461486,
+          "pass": true,
+          "phase": "cfg",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "held-out/2/1926",
+          "estimate": -0.010991227611168308,
+          "mde": 0.05,
+          "noise_mad": 0.006381985035035679,
+          "pass": true,
+          "phase": "emission_exclusive",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "held-out/2/1926",
+          "estimate": 0.07833805822484824,
+          "mde": 0.05,
+          "noise_mad": 0.005674438491846151,
+          "pass": true,
+          "phase": "serialization",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "held-out/2/1926",
+          "estimate": -0.006826604114530221,
+          "mde": 0.05,
+          "noise_mad": 0.00453410208296822,
+          "pass": true,
+          "phase": "combined",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "held-out/3/1522",
+          "estimate": -0.014652156942399477,
+          "mde": 0.06385363480035729,
+          "noise_mad": 0.02128454493345243,
+          "pass": true,
+          "phase": "ir",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "held-out/3/1522",
+          "estimate": -0.011043499090842637,
+          "mde": 0.05,
+          "noise_mad": 0.013918246533661686,
+          "pass": true,
+          "phase": "cfg",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "held-out/3/1522",
+          "estimate": -0.013362641277672081,
+          "mde": 0.05,
+          "noise_mad": 0.004377822586715645,
+          "pass": true,
+          "phase": "emission_exclusive",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "held-out/3/1522",
+          "estimate": 0.08630447713971671,
+          "mde": 0.05,
+          "noise_mad": 0.005863804401513378,
+          "pass": true,
+          "phase": "serialization",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "held-out/3/1522",
+          "estimate": -0.009477576945246327,
+          "mde": 0.05,
+          "noise_mad": 0.003437081461415005,
+          "pass": true,
+          "phase": "combined",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "held-out/4/1795",
+          "estimate": -0.0033142124593921757,
+          "mde": 0.06071461125141119,
+          "noise_mad": 0.020238203750470397,
+          "pass": true,
+          "phase": "ir",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "held-out/4/1795",
+          "estimate": 0.00023257457227551142,
+          "mde": 0.05,
+          "noise_mad": 0.006995682176227423,
+          "pass": true,
+          "phase": "cfg",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "held-out/4/1795",
+          "estimate": -0.012458191028242879,
+          "mde": 0.05,
+          "noise_mad": 0.00779187763918922,
+          "pass": true,
+          "phase": "emission_exclusive",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "held-out/4/1795",
+          "estimate": 0.07823446158267716,
+          "mde": 0.05,
+          "noise_mad": 0.007605983108683725,
+          "pass": true,
+          "phase": "serialization",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "held-out/4/1795",
+          "estimate": -0.00796194563026741,
+          "mde": 0.05,
+          "noise_mad": 0.007963756787063526,
+          "pass": true,
+          "phase": "combined",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "held-out/5/1361",
+          "estimate": 0.002371722885946808,
+          "mde": 0.05,
+          "noise_mad": 0.015198610136038022,
+          "pass": true,
+          "phase": "ir",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "held-out/5/1361",
+          "estimate": -0.03147277692585567,
+          "mde": 0.05485339914129204,
+          "noise_mad": 0.01828446638043068,
+          "pass": true,
+          "phase": "cfg",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "held-out/5/1361",
+          "estimate": -0.008244659493338871,
+          "mde": 0.05,
+          "noise_mad": 0.010180301570372913,
+          "pass": true,
+          "phase": "emission_exclusive",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "held-out/5/1361",
+          "estimate": 0.08909669307937973,
+          "mde": 0.05,
+          "noise_mad": 0.007899475190141947,
+          "pass": true,
+          "phase": "serialization",
+          "regression_bound": 0.1
+        },
+        {
+          "case": "held-out/5/1361",
+          "estimate": -0.0027374983381470847,
+          "mde": 0.05,
+          "noise_mad": 0.0077990728518996435,
+          "pass": true,
+          "phase": "combined",
+          "regression_bound": 0.1
+        }
+      ],
+      "per_case_phase_failures": [],
+      "resource_max_delta": {
+        "allocation_count": 0.0,
+        "peak_live_bytes": 0.0,
+        "total_allocated_bytes": 0.0
+      },
+      "resource_regressions": [],
+      "scores": {
+        "combined": {
+          "candidate_scores": [
+            3551482081,
+            3572486791,
+            3564960832,
+            3535780142,
+            3555237254,
+            3564669628,
+            3575128898,
+            3582874831,
+            3542133531,
+            3580814264,
+            3540416228,
+            3546783582,
+            3547466130,
+            3539229092,
+            3566491139
+          ],
+          "estimate": -0.00632902260671975,
+          "mde": 0.05,
+          "noise_mad": 0.003696986362914648,
+          "pass": false,
+          "reference_scores": [
+            3590882077,
+            3585209223,
+            3562886844,
+            3586406487,
+            3582368668,
+            3599943837,
+            3597900089,
+            3565300218,
+            3550153731,
+            3557868821,
+            3599895134,
+            3570921994,
+            3561032714,
+            3575072804,
+            3588674408
+          ]
+        },
+        "emission_exclusive": {
+          "candidate_scores": [
+            3125751092,
+            3145799623,
+            3136674702,
+            3113900230,
+            3129015343,
+            3138747986,
+            3149297036,
+            3156557070,
+            3115718394,
+            3156223659,
+            3116376190,
+            3117926866,
+            3123741552,
+            3114553896,
+            3140893225
+          ],
+          "estimate": -0.011320987429380229,
+          "mde": 0.05,
+          "noise_mad": 0.004521427728467476,
+          "pass": false,
+          "reference_scores": [
+            3176484589,
+            3167336114,
+            3151782438,
+            3171599815,
+            3169745905,
+            3187942350,
+            3185557673,
+            3150810415,
+            3136336747,
+            3147471505,
+            3185736132,
+            3151584806,
+            3147041875,
+            3161529003,
+            3176858399
+          ]
+        }
+      },
+      "warmups": 3,
+      "workload_sha256": {
+        "held-out/0/1579": "ddebdcae360879168b55bdecc877e9d8b37590c3f22a9923e9afff99c2c3d228",
+        "held-out/1/1206": "26dd33ef26b8d91e3d23ba8db9cdfce74c3376e8b75341076afbac526b3fac20",
+        "held-out/2/1926": "a8113a6e9406b6828beb58047b178332bbe48ee4d4693d3b56482f0fe0ed128c",
+        "held-out/3/1522": "fe8c6df727289a5888023c9427f626ecd2f14562cffeda38cfb7dc35180964a9",
+        "held-out/4/1795": "8afd5edba27f4f70bc542c0c1f5f112bafa2d26f61b096bd50aae4d92989b189",
+        "held-out/5/1361": "eb0f7a39a8f66ea247d703466bc22a937eb26e4bf522a46bb45bc4d167ec182e"
+      },
+      "worst_span_residue": 7.083687303145325e-06
+    }
+  },
+  "reference_product_ref": "630ec442d951aac5704ae80287367912bfbfc388",
+  "resource_harness_ref": "b0e615785b28e7e58aa06dd1b929dd58acf06e53",
+  "schema": "flutterdec-final-performance/1"
+}

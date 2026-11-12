@@ -466,7 +466,10 @@ command.
 
 ## Output files
 
-Everything is written under the `-o <DIR>` you pass:
+Everything is written under the `-o <DIR>` you pass. For the complete public
+emission-counter schema, units, block-ledger semantics, and record-split
+rejection diagnostics, see
+[`docs/cli-reference.md`](docs/cli-reference.md#emission-diagnostics-in-qualityjson).
 
 | File | Written by | Purpose |
 | --- | --- | --- |

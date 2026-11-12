@@ -1,0 +1,63 @@
+{
+  "schema": "flutterdec-bench/manifest/1",
+  "matrix": "held-out",
+  "held_out_seed_hex": "522fd89869ed6662b16def9f47e45194",
+  "case_count": 6,
+  "matrix_sha256": "797fa5817a5cdb025b2ab869b1ad32215c648c6ec3144d6ca94a7668891f1af3",
+  "cases": [
+    {
+      "case": "held-out/0/1579",
+      "topology": "mixed",
+      "blocks": 1579,
+      "load": "held-out",
+      "instructions_per_block": 8,
+      "instructions": 12632,
+      "workload_sha256": "ddebdcae360879168b55bdecc877e9d8b37590c3f22a9923e9afff99c2c3d228"
+    },
+    {
+      "case": "held-out/1/1206",
+      "topology": "mixed",
+      "blocks": 1206,
+      "load": "held-out",
+      "instructions_per_block": 8,
+      "instructions": 9648,
+      "workload_sha256": "26dd33ef26b8d91e3d23ba8db9cdfce74c3376e8b75341076afbac526b3fac20"
+    },
+    {
+      "case": "held-out/2/1926",
+      "topology": "mixed",
+      "blocks": 1926,
+      "load": "held-out",
+      "instructions_per_block": 8,
+      "instructions": 15408,
+      "workload_sha256": "a8113a6e9406b6828beb58047b178332bbe48ee4d4693d3b56482f0fe0ed128c"
+    },
+    {
+      "case": "held-out/3/1522",
+      "topology": "mixed",
+      "blocks": 1522,
+      "load": "held-out",
+      "instructions_per_block": 8,
+      "instructions": 12176,
+      "workload_sha256": "fe8c6df727289a5888023c9427f626ecd2f14562cffeda38cfb7dc35180964a9"
+    },
+    {
+      "case": "held-out/4/1795",
+      "topology": "mixed",
+      "blocks": 1795,
+      "load": "held-out",
+      "instructions_per_block": 8,
+      "instructions": 14360,
+      "workload_sha256": "8afd5edba27f4f70bc542c0c1f5f112bafa2d26f61b096bd50aae4d92989b189"
+    },
+    {
+      "case": "held-out/5/1361",
+      "topology": "mixed",
+      "blocks": 1361,
+      "load": "held-out",
+      "instructions_per_block": 8,
+      "instructions": 10888,
+      "workload_sha256": "eb0f7a39a8f66ea247d703466bc22a937eb26e4bf522a46bb45bc4d167ec182e"
+    }
+  ]
+}

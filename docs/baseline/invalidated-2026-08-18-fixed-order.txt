@@ -1,0 +1,37 @@
+invalidated run /tmp/bench-A, harness 1b11f7e, patch e9faab161fe53a67b8375df493d08d42b5912f2f374d3ce41f6b0e53b1b1403d
+A/A both sides 1371e42, 15 pairs, reference always first, candidate always second
+cells=165  |delta|>=2%: 24  of those candidate-faster: 20
+all cells with negative delta: 67/165
+
+case	phase	median_paired_delta
+fan-in/64/base	ir	-0.07936
+nested-loop/1024/base	serialization	-0.05092
+multi-exit/64/base	serialization	-0.05026
+fan-in/64/base	cfg	-0.04414
+no-exit/1024/base	serialization	-0.03998
+fan-in/1024/base	cfg	-0.03828
+diamond-chain/64/heavy	serialization	-0.03715
+fan-in/256/base	cfg	-0.03237
+linear/64/heavy	serialization	-0.03224
+irreducible/64/base	serialization	-0.03108
+fan-in/64/base	serialization	-0.02883
+linear/256/heavy	serialization	-0.02764
+irreducible/256/base	serialization	-0.02717
+no-exit/256/base	serialization	-0.02680
+nested-loop/256/base	serialization	-0.02548
+linear/256/base	serialization	-0.02403
+linear/256/light	serialization	-0.02357
+linear/64/light	serialization	-0.02204
+nested-loop/64/base	serialization	-0.02153
+no-exit/64/base	serialization	-0.02124
+nested-loop/64/base	ir	+0.02025
+linear/256/light	cfg	+0.02055
+fan-in/64/base	combined	+0.02609
+fan-in/64/base	emission_exclusive	+0.03663
+
+by_phase pooled:
+cfg	d=-0.00216	noise=0.01763	mde=0.0529
+combined	d=+0.00403	noise=0.01023	mde=0.0500
+emission_exclusive	d=+0.00889	noise=0.00996	mde=0.0500
+ir	d=+0.00433	noise=0.01717	mde=0.0515
+serialization	d=-0.01893	noise=0.02446	mde=0.0734

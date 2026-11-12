@@ -1,0 +1,28 @@
+{
+  "counts": {
+    "branch_target_comment": 1593,
+    "break_statement": 593,
+    "classid_helper": 2935,
+    "continue_statement": 1273,
+    "dispatch_table_comment": 4696,
+    "helper_call_fn_va": 2317,
+    "helper_call_sub": 31389,
+    "if_statement": 35197,
+    "indirect_via_comment": 1280,
+    "loop_backedge_comment": 130,
+    "omitted_path_comment": 355,
+    "pool_offset_ref": 13180,
+    "pseudocode_files": 5800,
+    "pseudocode_lines": 273486,
+    "register_operand": 54062,
+    "return_statement": 19288,
+    "selector_call": 4696,
+    "smitag_helper": 1998,
+    "thread_field_ref": 7146,
+    "unrecovered_receiver": 1689,
+    "value_hint_comment": 99,
+    "while_statement": 773,
+    "write_barrier_helper": 3431
+  },
+  "label": "reference"
+}

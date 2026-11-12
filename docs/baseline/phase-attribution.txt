@@ -1,0 +1,164 @@
+== 1. phase share of total workload time, per binary ==
+binary	total_ms	ir	cfg	emission_exclusive	serialization	accounted
+aa-1/candidate	8099.8	0.01495	0.03114	0.90869	0.04520	0.99998
+aa-1/reference	8106.3	0.01499	0.03126	0.90847	0.04513	0.99985
+aa-2/candidate	8093.7	0.01499	0.03124	0.90809	0.04582	1.00015
+aa-2/reference	8116.8	0.01485	0.03103	0.90899	0.04509	0.99995
+mean		0.01494	0.03117	0.90856	0.04531
+
+== 2. per case share of total workload time, descending ==
+case	blocks	instr	combined_ms	share	cumulative	emission_share
+irreducible/1024/base	1024	9216	3018.256	0.37233	0.37233	0.98934
+irreducible/256/base	256	2304	1085.015	0.13385	0.50618	0.99368
+multi-exit/1024/base	1024	9216	905.478	0.11170	0.61788	0.97612
+fan-in/1024/base	1024	9216	798.566	0.09851	0.71640	0.97599
+irreducible/64/base	64	576	376.026	0.04639	0.76278	0.98718
+diamond-chain/1024/heavy	1024	41984	339.098	0.04183	0.80461	0.66587
+linear/1024/heavy	1024	41984	277.335	0.03421	0.83883	0.57969
+diamond-chain/1024/light	1024	11264	135.273	0.01669	0.85551	0.64927
+diamond-chain/1024/base	1024	9216	131.665	0.01624	0.87176	0.62955
+nested-loop/1024/base	1024	9216	125.359	0.01546	0.88722	0.47205
+multi-exit/256/base	256	2304	113.107	0.01395	0.90117	0.98078
+no-exit/1024/base	1024	9216	109.499	0.01351	0.91468	0.51727
+linear/1024/light	1024	11264	105.012	0.01295	0.92764	0.54719
+linear/1024/base	1024	9216	101.051	0.01247	0.94010	0.52460
+fan-in/256/base	256	2304	81.147	0.01001	0.95011	0.97281
+diamond-chain/256/heavy	256	10496	76.950	0.00949	0.95960	0.73038
+linear/256/heavy	256	10496	60.811	0.00750	0.96711	0.66291
+multi-exit/64/base	64	576	31.339	0.00387	0.97097	0.81876
+diamond-chain/256/light	256	2816	29.490	0.00364	0.97461	0.74470
+diamond-chain/256/base	256	2304	27.879	0.00344	0.97805	0.73791
+fan-in/64/base	64	576	24.669	0.00304	0.98109	0.84170
+nested-loop/256/base	256	2304	23.014	0.00284	0.98393	0.65541
+no-exit/256/base	256	2304	21.036	0.00259	0.98653	0.67091
+linear/256/light	256	2816	20.682	0.00255	0.98908	0.68727
+linear/256/base	256	2304	19.746	0.00244	0.99151	0.66448
+diamond-chain/64/heavy	64	2624	18.971	0.00234	0.99385	0.75177
+linear/64/heavy	64	2624	15.055	0.00186	0.99571	0.68748
+diamond-chain/64/light	64	704	7.180	0.00089	0.99660	0.77352
+diamond-chain/64/base	64	576	6.908	0.00085	0.99745	0.76128
+nested-loop/64/base	64	576	5.585	0.00069	0.99814	0.71821
+no-exit/64/base	64	576	5.102	0.00063	0.99877	0.71266
+linear/64/light	64	704	5.067	0.00063	0.99939	0.72398
+linear/64/base	64	576	4.921	0.00061	1.00000	0.70815
+
+== 2b. topology rollup (reference, aa-1) ==
+topology	combined_ms	share_of_total	share_of_emission	share_of_allocs
+irreducible	4479.3	0.55257	0.60228	0.57729
+multi-exit	1049.9	0.12952	0.13857	0.15691
+fan-in	904.4	0.11157	0.11937	0.12782
+diamond-chain	773.4	0.09541	0.07065	0.07240
+linear	609.7	0.07521	0.04839	0.04424
+nested-loop	154.0	0.01899	0.01063	0.01093
+no-exit	135.6	0.01673	0.01010	0.01042
+declined-structuring group (irreducible, multi-exit, fan-in)	6433.6	0.79366	0.86022	0.86202
+
+== 3. per case phase share spread (reference, aa-1) ==
+phase	min_case	min	max_case	max
+ir	irreducible/64/base	0.00031	linear/1024/heavy	0.09587
+cfg	irreducible/64/base	0.00024	nested-loop/1024/base	0.32240
+emission_exclusive	nested-loop/1024/base	0.47205	irreducible/256/base	0.99368
+serialization	multi-exit/1024/base	0.00204	linear/64/heavy	0.27401
+
+== 4. size scaling, log ratio 1024/64 base 16 (1.0 is linear) ==
+topology	load	ir	cfg	emission_exclusive	serialization	combined
+diamond-chain	base	1.404	1.902	0.995	0.992	1.063
+diamond-chain	heavy	1.493	1.917	0.996	1.005	1.040
+diamond-chain	light	1.440	1.873	0.996	0.995	1.059
+fan-in	base	1.446	1.794	1.308	-0.254	1.254
+irreducible	base	1.434	1.948	0.752	0.118	0.751
+linear	base	1.342	1.920	0.982	1.004	1.090
+linear	heavy	1.453	1.978	0.989	1.007	1.051
+linear	light	1.435	1.986	0.992	0.993	1.093
+multi-exit	base	1.471	1.814	1.277	-0.394	1.213
+nested-loop	base	1.409	1.947	0.971	0.992	1.122
+no-exit	base	1.406	1.963	0.990	0.995	1.106
+
+== 5. emission cost normalised by shape (reference, aa-1) ==
+case	blocks	instr	ns_per_block	ns_per_instr	helper_refs	lines
+diamond-chain/64/base	64	576	82175.5	9130.6	0	195
+diamond-chain/64/heavy	64	2624	222843.6	5435.2	0	195
+diamond-chain/64/light	64	704	86777.6	7888.9	0	195
+fan-in/64/base	64	576	324439.8	36048.9	0	255
+irreducible/64/base	64	576	5800073.6	644452.6	0	663
+linear/64/base	64	576	54450.4	6050.0	0	131
+linear/64/heavy	64	2624	161715.1	3944.3	0	131
+linear/64/light	64	704	57317.8	5210.7	0	131
+multi-exit/64/base	64	576	400925.1	44547.2	0	506
+nested-loop/64/base	64	576	62678.1	6964.2	0	143
+no-exit/64/base	64	576	56809.1	6312.1	0	133
+diamond-chain/256/base	256	2304	80360.6	8929.0	0	771
+diamond-chain/256/heavy	256	10496	219541.7	5354.7	0	771
+diamond-chain/256/light	256	2816	85786.7	7798.8	0	771
+fan-in/256/base	256	2304	308362.1	34262.5	0	88
+irreducible/256/base	256	2304	4211547.1	467949.7	0	663
+linear/256/base	256	2304	51252.9	5694.8	0	515
+linear/256/heavy	256	10496	157471.4	3840.8	0	515
+linear/256/light	256	2816	55525.1	5047.7	0	515
+multi-exit/256/base	256	2304	433332.3	48148.0	0	88
+nested-loop/256/base	256	2304	58918.6	6546.5	0	527
+no-exit/256/base	256	2304	55129.1	6125.5	0	517
+diamond-chain/1024/base	1024	9216	80946.6	8994.1	0	3075
+diamond-chain/1024/heavy	1024	41984	220502.1	5378.1	0	3075
+diamond-chain/1024/light	1024	11264	85770.1	7797.3	0	3075
+fan-in/1024/base	1024	9216	761124.2	84569.4	0	88
+irreducible/1024/base	1024	9216	2916088.3	324009.8	0	663
+linear/1024/base	1024	9216	51769.5	5752.2	0	2051
+linear/1024/heavy	1024	41984	157000.2	3829.3	0	2051
+linear/1024/light	1024	11264	56114.9	5101.4	0	2051
+multi-exit/1024/base	1024	9216	863135.7	95904.0	0	88
+nested-loop/1024/base	1024	9216	57788.2	6420.9	0	2063
+no-exit/1024/base	1024	9216	55313.1	6145.9	0	2053
+
+== 6. allocation attribution, summed over 33 cases (reference, aa-1) ==
+phase	alloc_count	alloc_bytes	count_share	bytes_share
+ir	989907	82613383	0.00355	0.01745
+cfg	0	0	0.00000	0.00000
+emission_exclusive	275498776	4539361232	0.98697	0.95900
+serialization	2646648	111449076	0.00948	0.02355
+combined	279135331	4733423691	1.00000	1.00000
+
+== 7. emission cost per allocation (reference, aa-1) ==
+case	emit_ms	alloc_count	ns_per_alloc	bytes_per_alloc
+multi-exit/256/base	110.933	4980175	22.3	18.8
+diamond-chain/256/light	21.961	965199	22.8	19.3
+diamond-chain/1024/light	87.829	3857263	22.8	31.2
+diamond-chain/64/light	5.554	242545	22.9	16.3
+diamond-chain/256/base	20.572	897470	22.9	19.6
+diamond-chain/1024/base	82.889	3585414	23.1	32.4
+diamond-chain/64/base	5.259	225845	23.3	16.4
+fan-in/256/base	78.941	3324668	23.7	19.0
+multi-exit/1024/base	883.851	37208916	23.8	19.5
+linear/256/light	14.214	587752	24.2	22.6
+linear/1024/light	57.462	2346883	24.5	44.7
+multi-exit/64/base	25.659	1038325	24.7	18.7
+fan-in/1024/base	779.391	31527604	24.7	19.6
+linear/64/light	3.668	147950	24.8	17.1
+linear/256/base	13.121	526712	24.9	23.5
+linear/1024/base	53.012	2101884	25.2	48.3
+no-exit/256/base	14.113	547235	25.8	23.9
+nested-loop/1024/base	59.175	2283847	25.9	62.9
+no-exit/1024/base	56.641	2185382	25.9	48.7
+nested-loop/256/base	15.083	576567	26.2	27.7
+linear/64/base	3.485	132901	26.2	17.4
+no-exit/64/base	3.636	137678	26.4	17.7
+nested-loop/64/base	4.011	149718	26.8	19.0
+irreducible/64/base	371.205	13761714	27.0	14.9
+irreducible/256/base	1078.156	38938265	27.7	10.9
+irreducible/1024/base	2986.074	106343842	28.1	10.3
+diamond-chain/256/heavy	56.203	1938175	29.0	22.0
+diamond-chain/1024/heavy	225.794	7747807	29.1	28.0
+diamond-chain/64/heavy	14.262	486163	29.3	20.5
+linear/1024/heavy	160.768	4830132	33.3	36.5
+linear/256/heavy	40.313	1209433	33.3	25.8
+linear/64/heavy	10.350	304273	34.0	23.1
+fan-in/64/base	20.764	361039	57.5	21.4
+ns_per_alloc min 22.3 max 57.5 median 25.8; pearson_r 0.998397; fit_through_origin 27.42 ns
+
+== 8. Amdahl round ceiling, whole workload ==
+target	share	-10pct	-25pct	-50pct	removed
+ir	0.01499	0.00150	0.00375	0.00750	0.01499
+cfg	0.03126	0.00313	0.00781	0.01563	0.03126
+emission_exclusive	0.90847	0.09085	0.22712	0.45424	0.90847
+serialization	0.04513	0.00451	0.01128	0.02256	0.04513
+ir+cfg	0.04625	0.00462	0.01156	0.02312	0.04625

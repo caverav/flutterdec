@@ -1,0 +1,159 @@
+{
+  "candidate_block_ledger_disposition_totals": {
+    "DfsEmitted": 22277,
+    "GuardPruned": 5302,
+    "NoreturnPruned": 13016,
+    "ReachableUnemitted": 1499,
+    "RetainedUnreachable": 201006,
+    "StructuredEmitted": 55019
+  },
+  "candidate_quality_emission": {
+    "coverage_mismatch": 0,
+    "dfs_depth_omissions": 199441,
+    "dfs_emitted_blocks": 22277,
+    "dfs_visit_omissions": 25252,
+    "guard_pruned_blocks": 5302,
+    "helper_cap_omissions": 3847,
+    "invalid_cfg_rejected_functions": 0,
+    "irreducible": 0,
+    "noreturn_pruned_blocks": 13016,
+    "reachable_unemitted_blocks": 1499,
+    "repeat_budget": 301,
+    "retained_unreachable_blocks": 201006,
+    "structured_declines": 303,
+    "structured_depth_budget": 2,
+    "structured_emitted_blocks": 55019,
+    "structured_rollbacks": 303,
+    "unsupported_region": 0
+  },
+  "candidate_traversal_event_totals": {
+    "DfsDepthOmission": 199441,
+    "DfsVisitOmission": 25252,
+    "HelperCapOmission": 3847
+  },
+  "text_counter_reconciliation": {
+    "candidate": {
+      "block_helper_refs": {
+        "match": true,
+        "quality_json": 27097,
+        "scanned_text": 27097
+      },
+      "loop_backedge_markers": {
+        "match": true,
+        "quality_json": 77,
+        "scanned_text": 77
+      },
+      "omitted_path_markers": {
+        "match": true,
+        "quality_json": 50,
+        "scanned_text": 50
+      },
+      "placeholder_cond_markers": {
+        "match": true,
+        "quality_json": 2617,
+        "scanned_text": 2617
+      },
+      "raw_register_name_refs": {
+        "census_over_whole_text": 692215,
+        "counter_scope": "code_span",
+        "evidence": "register-counter-scopes.json",
+        "excluded_by_code_span_filter": 1252,
+        "match": true,
+        "quality_json": 690963,
+        "scanned_text": 690963
+      },
+      "unresolved_cf": {
+        "evidence": "semantic-adjudication.json, scripts/check-compat-semantics.py check",
+        "match": true,
+        "quality_json": 521,
+        "scanned_text": 521,
+        "statement_bearing_functions": 138,
+        "statement_prefixes": [
+          "// indirect branch",
+          "// unresolved branch target",
+          "// unresolved jump",
+          "// invalid CFG"
+        ]
+      }
+    },
+    "reference": {
+      "block_helper_refs": {
+        "match": true,
+        "quality_json": 0,
+        "scanned_text": 0
+      },
+      "loop_backedge_markers": {
+        "match": true,
+        "quality_json": 130,
+        "scanned_text": 130
+      },
+      "omitted_path_markers": {
+        "match": true,
+        "quality_json": 355,
+        "scanned_text": 355
+      },
+      "placeholder_cond_markers": {
+        "match": true,
+        "quality_json": 215,
+        "scanned_text": 215
+      },
+      "raw_register_name_refs": {
+        "census_over_whole_text": 54062,
+        "counter_scope": "whole_line",
+        "evidence": "register-counter-scopes.json",
+        "excluded_by_code_span_filter": 278,
+        "match": true,
+        "quality_json": 54062,
+        "scanned_text": 54062
+      },
+      "unresolved_cf": {
+        "evidence": "semantic-adjudication.json, scripts/check-compat-semantics.py check",
+        "match": true,
+        "quality_json": 0,
+        "scanned_text": 0,
+        "statement_bearing_functions": 0,
+        "statement_prefixes": [
+          "// indirect branch",
+          "// unresolved branch target",
+          "// unresolved jump",
+          "// invalid CFG"
+        ]
+      }
+    }
+  },
+  "unresolved_control_flow": {
+    "candidate_quality_unresolved_cf": 521,
+    "candidate_unresolved_cf_statements": 521,
+    "evidence": "semantic-adjudication.json",
+    "note": "see docs/compat-baseline-real-binary.md section 7",
+    "reference_quality_unresolved_cf": 0,
+    "reference_unresolved_cf_statements": 0,
+    "residue_function": "00860_sub_696734",
+    "residue_function_statements": 4,
+    "resolution": "the artifact recounts the statements from the finished body, so the counter is the number the artifact carries on both sides. Oracle: scripts/check-compat-semantics.py check; regression test: crates/flutterdec-decompiler/tests/unresolved_cf_accounting.rs.",
+    "root_cause": "before 2214697 the counter was the walk's own total, and a block rendered into a helper body by the nested emitter in append_helper_functions was counted nowhere, while inline_helper_calls copied that body to every call site. The candidate reported 517 against 521 emitted statements, and the whole residue was 00860_sub_696734, whose four statements over one reachable br x2 were counted 0 times.",
+    "statement_bearing_functions": 138
+  },
+  "call_counter_reconciliation": {
+    "unit": "rendered IROp::Call statements retained in completed emitted artifacts, classified as direct or indirect by line-identity provenance that survives helper copying and removal",
+    "reference": {
+      "total_calls": 45955,
+      "indirect_calls": 7149
+    },
+    "candidate": {
+      "total_calls": 243760,
+      "indirect_calls": 39500
+    },
+    "regression": {
+      "test": "quality_tests::a_helper_rendered_call_reaches_quality_and_report_in_the_artifact_unit",
+      "rendered_calls": 1,
+      "artifact_total_calls": 1,
+      "artifact_indirect_calls": 1,
+      "quality_total_calls": 1,
+      "quality_indirect_calls": 1,
+      "report_total_calls": 1,
+      "report_indirect_calls": 1,
+      "provenance": "DfsDepthOmission"
+    }
+  }
+}

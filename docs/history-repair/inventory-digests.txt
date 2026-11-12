@@ -1,0 +1,6 @@
+68bf9efa90d1af775fc25f0b5393868878ef7d1a6b810de8e184b24513288bd6  pre-repair-all-docs.tsv
+68bf9efa90d1af775fc25f0b5393868878ef7d1a6b810de8e184b24513288bd6  post-repair-all-docs.tsv
+a62dca86d16b29848bdbfaf252bef633917a555f535096f01799e1b2831f4ca6  pre-repair-artifacts.tsv
+a62dca86d16b29848bdbfaf252bef633917a555f535096f01799e1b2831f4ca6  post-repair-artifacts.tsv
+25a944e6f9c6d239ce627c9ebb9150d75a9c35290d0e640210e03335edea31ef  docs/history-repair/pre-repair-bindings.tsv
+25a944e6f9c6d239ce627c9ebb9150d75a9c35290d0e640210e03335edea31ef  docs/history-repair/post-repair-bindings.tsv

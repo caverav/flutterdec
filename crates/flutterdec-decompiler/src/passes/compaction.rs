@@ -2,9 +2,22 @@ use super::*;
 
 impl<'a> FuncEmitter<'a> {
     pub(super) fn compact_lines(&mut self) {
+        // One rule for the whole pass: every line has an identity, and a
+        // rewrite either carries the source line's identity forward or retires
+        // it. A line this pass synthesises is not the line an anchor was
+        // rendered on, so it gets a new one and the anchor resolves to nothing
+        // rather than to whatever text took its place.
+        self.sync_line_ids();
         for _pass in 0..16 {
             let mut changed = false;
-            let mut out = Vec::new();
+            let ids = std::mem::take(&mut self.line_ids);
+            let mut next_id = self.next_line_id;
+            let mut fresh_id = || {
+                let id = next_id;
+                next_id += 1;
+                id
+            };
+            let mut out: Vec<(LineId, String)> = Vec::new();
             let mut i = 0usize;
             let mut retry_loop_id = 1usize;
 
@@ -19,15 +32,26 @@ impl<'a> FuncEmitter<'a> {
                             if let Some(loop_end) = Self::find_block_end(&self.lines, i + 1) {
                                 let has_continue = (i + 2..loop_end)
                                     .any(|idx| self.lines[idx].trim() == "continue;");
-                                if !has_continue {
-                                    for idx in i + 2..loop_end {
-                                        let t = self.lines[idx].trim();
+                                // Unwrapping dedents the body, so a `break;` that
+                                // binds to this loop would end up outside every
+                                // loop and stop naming the edge it stands for.
+                                let bound_control = Self::loop_bound_control_lines(
+                                    &self.lines,
+                                    i + 2,
+                                    loop_end,
+                                );
+                                if !has_continue && bound_control.is_empty() {
+                                    for (line, id) in self.lines[i + 2..loop_end]
+                                        .iter()
+                                        .zip(&ids[i + 2..loop_end])
+                                    {
+                                        let t = line.trim();
                                         if t == format!("{var} = false;")
                                             || t == format!("{var} = true;")
                                         {
                                             continue;
                                         }
-                                        out.push(Self::dedent_once(&self.lines[idx]));
+                                        out.push((*id, Self::dedent_once(line)));
                                     }
                                     i = loop_end + 1;
                                     changed = true;
@@ -55,10 +79,7 @@ impl<'a> FuncEmitter<'a> {
                                     continue_count += 1;
                                 }
                             }
-                            rel_depth +=
-                                self.lines[idx].chars().filter(|&c| c == '{').count() as i32;
-                            rel_depth -=
-                                self.lines[idx].chars().filter(|&c| c == '}').count() as i32;
+                            rel_depth += code_brace_delta(&self.lines[idx]);
                         }
 
                         if let Some(last_idx) = last_non_empty {
@@ -67,35 +88,48 @@ impl<'a> FuncEmitter<'a> {
                             if self.lines[last_idx].trim() == "break;" {
                                 let mut depth_at_break = 1i32;
                                 for idx in i + 1..last_idx {
-                                    depth_at_break +=
-                                        self.lines[idx].chars().filter(|&c| c == '{').count()
-                                            as i32;
-                                    depth_at_break -=
-                                        self.lines[idx].chars().filter(|&c| c == '}').count()
-                                            as i32;
+                                    depth_at_break += code_brace_delta(&self.lines[idx]);
                                 }
                                 break_at_top_level = depth_at_break == 1;
                             }
                         }
 
-                        if !has_continue
+                        // Every `break;` and `continue;` in the body that binds to
+                        // this loop. Dedenting the body leaves each of them
+                        // outside every loop, where the statement is not Dart and
+                        // the edge it was emitted for is gone from the artifact,
+                        // so the wrapper stays unless the body owns none of them -
+                        // or, below, unless the only one is the wrapper's own
+                        // trailing `break;`, which is removed with it.
+                        let bound_control = Self::loop_bound_control_lines(&self.lines, i + 1, j);
+
+                        if bound_control.is_empty()
+                            && !has_continue
                             && Self::block_terminates_at_top_level(&self.lines, i + 1, j)
                         {
-                            for idx in i + 1..j {
-                                out.push(Self::dedent_once(&self.lines[idx]));
+                            for (line, id) in
+                                self.lines[i + 1..j].iter().zip(&ids[i + 1..j])
+                            {
+                                out.push((*id, Self::dedent_once(line)));
                             }
                             i = j + 1;
                             changed = true;
                             continue;
                         }
 
-                        if break_at_top_level && !has_continue {
-                            for idx in i + 1..j {
-                                if Some(idx) == last_non_empty && self.lines[idx].trim() == "break;"
+                        if break_at_top_level
+                            && !has_continue
+                            && bound_control.len() == 1
+                            && Some(bound_control[0]) == last_non_empty
+                        {
+                            for (offset, (line, id)) in
+                                self.lines[i + 1..j].iter().zip(&ids[i + 1..j]).enumerate()
+                            {
+                                if Some(i + 1 + offset) == last_non_empty && line.trim() == "break;"
                                 {
                                     continue;
                                 }
-                                out.push(Self::dedent_once(&self.lines[idx]));
+                                out.push((*id, Self::dedent_once(line)));
                             }
                             i = j + 1;
                             changed = true;
@@ -107,19 +141,30 @@ impl<'a> FuncEmitter<'a> {
                             let retry_var = format!("retryLoop{retry_loop_id}");
                             retry_loop_id += 1;
 
-                            out.push(format!("{}bool {} = true;", " ".repeat(indent), retry_var));
-                            out.push(format!("{}while ({}) {{", " ".repeat(indent), retry_var));
+                            out.push((
+                                fresh_id(),
+                                format!("{}bool {} = true;", " ".repeat(indent), retry_var),
+                            ));
+                            out.push((
+                                fresh_id(),
+                                format!("{}while ({}) {{", " ".repeat(indent), retry_var),
+                            ));
 
-                            for idx in i + 1..j {
-                                if Some(idx) == last_non_empty && self.lines[idx].trim() == "break;"
+                            for (offset, (line, id)) in
+                                self.lines[i + 1..j].iter().zip(&ids[i + 1..j]).enumerate()
+                            {
+                                if Some(i + 1 + offset) == last_non_empty && line.trim() == "break;"
                                 {
                                     continue;
                                 }
-                                out.push(self.lines[idx].clone());
+                                out.push((*id, line.clone()));
                             }
-                            out.push(format!("{}{} = false;", " ".repeat(indent + 2), retry_var));
+                            out.push((
+                                fresh_id(),
+                                format!("{}{} = false;", " ".repeat(indent + 2), retry_var),
+                            ));
 
-                            out.push(self.lines[j].clone());
+                            out.push((ids[j], self.lines[j].clone()));
                             i = j + 1;
                             changed = true;
                             continue;
@@ -132,7 +177,7 @@ impl<'a> FuncEmitter<'a> {
                     if let Some((ret_stmt, final_ret_idx)) =
                         Self::redundant_guarded_return_chain(&self.lines, i, indent)
                     {
-                        out.push(format!("{}{}", " ".repeat(indent), ret_stmt));
+                        out.push((fresh_id(), format!("{}{}", " ".repeat(indent), ret_stmt)));
                         i = final_ret_idx + 1;
                         changed = true;
                         continue;
@@ -140,9 +185,9 @@ impl<'a> FuncEmitter<'a> {
                     if let Some((ret_stmt, then_end)) =
                         Self::collapse_guarded_returns_inside_if(&self.lines, i)
                     {
-                        out.push(cur.clone());
-                        out.push(format!("{}{}", " ".repeat(indent + 2), ret_stmt));
-                        out.push(self.lines[then_end].clone());
+                        out.push((ids[i], cur.clone()));
+                        out.push((fresh_id(), format!("{}{}", " ".repeat(indent + 2), ret_stmt)));
+                        out.push((ids[then_end], self.lines[then_end].clone()));
                         i = then_end + 1;
                         changed = true;
                         continue;
@@ -218,32 +263,23 @@ impl<'a> FuncEmitter<'a> {
                                                                     Self::parse_int_literal(&rhs2),
                                                                 ) {
                                                                     if l <= k {
-                                                                        out.push(format!(
-                                                                            "{}if (({} >= {}) && ({} <= {})) {{",
-                                                                            " ".repeat(indent),
-                                                                            lhs2,
-                                                                            rhs2,
-                                                                            lhs2,
-                                                                            rhs1
+                                                                        let pad = " ".repeat(indent);
+                                                                        let inner = " ".repeat(indent + 2);
+                                                                        out.push((
+                                                                            fresh_id(),
+                                                                            format!(
+                                                                                "{pad}if (({lhs2} >= {rhs2}) \
+                                                                                 && ({lhs2} <= {rhs1})) {{"
+                                                                            ),
                                                                         ));
-                                                                        out.push(format!(
-                                                                            "{}continue;",
-                                                                            " ".repeat(indent + 2)
+                                                                        out.push((fresh_id(), format!("{inner}continue;")));
+                                                                        out.push((fresh_id(), format!("{pad}}}")));
+                                                                        out.push((ids[i], cur.clone()));
+                                                                        out.push((fresh_id(), format!("{inner}{then_ret}")));
+                                                                        out.push((
+                                                                            ids[first_end],
+                                                                            self.lines[first_end].clone(),
                                                                         ));
-                                                                        out.push(format!(
-                                                                            "{}}}",
-                                                                            " ".repeat(indent)
-                                                                        ));
-                                                                        out.push(cur.clone());
-                                                                        out.push(format!(
-                                                                            "{}{}",
-                                                                            " ".repeat(indent + 2),
-                                                                            then_ret
-                                                                        ));
-                                                                        out.push(
-                                                                            self.lines[first_end]
-                                                                                .clone(),
-                                                                        );
                                                                         i = next_end + 1;
                                                                         changed = true;
                                                                         continue;
@@ -284,7 +320,10 @@ impl<'a> FuncEmitter<'a> {
                                     {
                                         let indent =
                                             cur.chars().take_while(|c| c.is_whitespace()).count();
-                                        out.push(format!("{}{}", " ".repeat(indent), then_ret));
+                                        out.push((
+                                            fresh_id(),
+                                            format!("{}{}", " ".repeat(indent), then_ret),
+                                        ));
                                         i = next + 1;
                                         changed = true;
                                         continue;
@@ -356,7 +395,9 @@ impl<'a> FuncEmitter<'a> {
                                 }
 
                                 if conds.len() >= 2 {
-                                    out.push(format!(
+                                    out.push((
+                                        fresh_id(),
+                                        format!(
                                         "{}if ({}) {{",
                                         " ".repeat(indent),
                                         conds
@@ -364,9 +405,12 @@ impl<'a> FuncEmitter<'a> {
                                             .map(|c| format!("({})", c))
                                             .collect::<Vec<_>>()
                                             .join(" || ")
+                                    )));
+                                    out.push((
+                                        fresh_id(),
+                                        format!("{}continue;", " ".repeat(indent + 2)),
                                     ));
-                                    out.push(format!("{}continue;", " ".repeat(indent + 2)));
-                                    out.push(format!("{}}}", " ".repeat(indent)));
+                                    out.push((fresh_id(), format!("{}}}", " ".repeat(indent))));
                                     i = end + 1;
                                     changed = true;
                                     continue;
@@ -411,18 +455,28 @@ impl<'a> FuncEmitter<'a> {
                                                     Self::if_condition(inner_trim)
                                                 {
                                                     let indent = Self::leading_indent(cur);
-                                                    out.push(format!(
+                                                    out.push((
+                                                        fresh_id(),
+                                                        format!(
                                                         "{}if (({}) && ({})) {{",
                                                         " ".repeat(indent),
                                                         outer_cond,
                                                         inner_cond
-                                                    ));
-                                                    for idx in inner_start + 1..inner_end {
-                                                        out.push(Self::dedent_once(
-                                                            &self.lines[idx],
+                                                    )));
+                                                    for (line, id) in self.lines
+                                                        [inner_start + 1..inner_end]
+                                                        .iter()
+                                                        .zip(&ids[inner_start + 1..inner_end])
+                                                    {
+                                                        out.push((
+                                                            *id,
+                                                            Self::dedent_once(line),
                                                         ));
                                                     }
-                                                    out.push(self.lines[outer_end].clone());
+                                                    out.push((
+                                                        ids[outer_end],
+                                                        self.lines[outer_end].clone(),
+                                                    ));
                                                     i = outer_end + 1;
                                                     changed = true;
                                                     continue;
@@ -480,8 +534,10 @@ impl<'a> FuncEmitter<'a> {
                                         if let Some(second_end) =
                                             Self::find_block_end(&self.lines, scan)
                                         {
-                                            for idx in i..scan {
-                                                out.push(self.lines[idx].clone());
+                                            for (line, id) in
+                                                self.lines[i..scan].iter().zip(&ids[i..scan])
+                                            {
+                                                out.push((*id, line.clone()));
                                             }
 
                                             let mut second_else = second_end + 1;
@@ -496,9 +552,17 @@ impl<'a> FuncEmitter<'a> {
                                                 if let Some(second_else_end) =
                                                     Self::find_block_end(&self.lines, second_else)
                                                 {
-                                                    for idx in second_else + 1..second_else_end {
-                                                        out.push(Self::dedent_once(
-                                                            &self.lines[idx],
+                                                    for (line, id) in self.lines
+                                                        [second_else + 1..second_else_end]
+                                                        .iter()
+                                                        .zip(
+                                                            &ids[second_else + 1
+                                                                ..second_else_end],
+                                                        )
+                                                    {
+                                                        out.push((
+                                                            *id,
+                                                            Self::dedent_once(line),
                                                         ));
                                                     }
                                                     i = second_else_end + 1;
@@ -541,7 +605,10 @@ impl<'a> FuncEmitter<'a> {
                                 if next < self.lines.len() && self.lines[next].trim() == then_ret {
                                     let indent =
                                         cur.chars().take_while(|c| c.is_whitespace()).count();
-                                    out.push(format!("{}{}", " ".repeat(indent), then_ret));
+                                    out.push((
+                                        fresh_id(),
+                                        format!("{}{}", " ".repeat(indent), then_ret),
+                                    ));
                                     i = next + 1;
                                     changed = true;
                                     continue;
@@ -563,11 +630,16 @@ impl<'a> FuncEmitter<'a> {
                             if let Some(else_end) = Self::find_block_end(&self.lines, else_start) {
                                 if Self::block_terminates_at_top_level(&self.lines, i + 1, then_end)
                                 {
-                                    for idx in i..=then_end {
-                                        out.push(self.lines[idx].clone());
+                                    for (line, id) in
+                                        self.lines[i..=then_end].iter().zip(&ids[i..=then_end])
+                                    {
+                                        out.push((*id, line.clone()));
                                     }
-                                    for idx in else_start + 1..else_end {
-                                        out.push(Self::dedent_once(&self.lines[idx]));
+                                    for (line, id) in self.lines[else_start + 1..else_end]
+                                        .iter()
+                                        .zip(&ids[else_start + 1..else_end])
+                                    {
+                                        out.push((*id, Self::dedent_once(line)));
                                     }
                                     i = else_end + 1;
                                     changed = true;
@@ -610,7 +682,10 @@ impl<'a> FuncEmitter<'a> {
                                                 .chars()
                                                 .take_while(|c| c.is_whitespace())
                                                 .count();
-                                            out.push(format!("{}{}", " ".repeat(indent), then_ret));
+                                            out.push((
+                                                fresh_id(),
+                                                format!("{}{}", " ".repeat(indent), then_ret),
+                                            ));
                                             i = n + 1;
                                             changed = true;
                                             continue;
@@ -634,9 +709,7 @@ impl<'a> FuncEmitter<'a> {
                             let mut depth = 0i32;
                             let mut m = None;
                             for idx in k..self.lines.len() {
-                                let line = &self.lines[idx];
-                                depth += line.chars().filter(|&c| c == '{').count() as i32;
-                                depth -= line.chars().filter(|&c| c == '}').count() as i32;
+                                depth += code_brace_delta(&self.lines[idx]);
                                 if depth == 0 {
                                     m = Some(idx);
                                     break;
@@ -649,11 +722,16 @@ impl<'a> FuncEmitter<'a> {
                                 {
                                     let indent =
                                         cur.chars().take_while(|c| c.is_whitespace()).count();
-                                    out.push(format!("{}if (!({})) {{", " ".repeat(indent), cond));
-                                    for line in &self.lines[k + 1..m] {
-                                        out.push(line.clone());
+                                    out.push((
+                                        fresh_id(),
+                                        format!("{}if (!({})) {{", " ".repeat(indent), cond),
+                                    ));
+                                    for (line, id) in
+                                        self.lines[k + 1..m].iter().zip(&ids[k + 1..m])
+                                    {
+                                        out.push((*id, line.clone()));
                                     }
-                                    out.push(self.lines[m].clone());
+                                    out.push((ids[m], self.lines[m].clone()));
                                     i = m + 1;
                                     changed = true;
                                     continue;
@@ -678,7 +756,7 @@ impl<'a> FuncEmitter<'a> {
                 if cur_trim == "return null;"
                     && out
                         .last()
-                        .is_some_and(|p: &String| p.trim() == "return null;")
+                        .is_some_and(|(_, p): &(LineId, String)| p.trim() == "return null;")
                 {
                     i += 1;
                     changed = true;
@@ -705,18 +783,21 @@ impl<'a> FuncEmitter<'a> {
                         skipped_any = true;
                     }
                     if skipped_any {
-                        out.push(cur.clone());
+                        out.push((ids[i], cur.clone()));
                         i = j;
                         changed = true;
                         continue;
                     }
                 }
 
-                out.push(cur.clone());
+                out.push((ids[i], cur.clone()));
                 i += 1;
             }
 
-            self.lines = out;
+            self.next_line_id = next_id;
+            let (out_ids, out_lines): (Vec<LineId>, Vec<String>) = out.into_iter().unzip();
+            self.lines = out_lines;
+            self.line_ids = out_ids;
             if !changed {
                 break;
             }

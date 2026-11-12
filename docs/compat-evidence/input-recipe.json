@@ -1,0 +1,120 @@
+{
+  "adapter": {
+    "backend": "internal",
+    "install_command": "target/release/flutterdec adapter install --dart-hash 80a49c7111088100a233b2ae788e1f48",
+    "installed_bytes": 329,
+    "installed_path": "adapters/installed/dart_adapter_80a49c7111088100a233b2ae788e1f48",
+    "installed_sha256": "a9cd861143bf91c46f484e79dd5cd3180fd329883d3dd3b02cf8dda16af45f95",
+    "kind": "dynamic_snapshot_string_model_v1",
+    "network": "none; the step generates a shim from the tracked template",
+    "note": "adapters/installed/* is gitignored (.gitignore:11), so a cold checkout has no adapter and the decompile aborts with 'adapter not installed for hash ...' before writing any artifact. The install step is offline and leaves adapters/manifest.json untouched, because the pinned snapshot hash is already an entry there.",
+    "snapshot_hash": "80a49c7111088100a233b2ae788e1f48",
+    "template": "adapters/python/adapter_template.py"
+  },
+  "artifacts": {
+    "asm": 5800,
+    "candidate_manifest_sha256": "5a094778d395440ec8dc256257d392065f3dff9c258a09b02bed445faf1c7a3e",
+    "candidate_processes_compared": 3,
+    "files_per_run": 17402,
+    "identical_between_reference_and_candidate": 7928,
+    "ir": 5800,
+    "manifest_digest_derivation": "sha256 over one line per emitted artifact, '<path>\\t<bytes>\\t<sha256>\\n', paths in ascending byte order, no header; see check-compat-baseline.py side_manifest_text and tree_manifest_digest",
+    "pseudocode": 5800,
+    "reference_manifest_sha256": "3f76bb96ab38cc860c7c060898b818e5d9e2f9c06cea4c7b7ffad7146363cd8e",
+    "reports": [
+      "quality.json",
+      "report.json"
+    ],
+    "second_candidate_process_manifest_sha256": "5a094778d395440ec8dc256257d392065f3dff9c258a09b02bed445faf1c7a3e",
+    "third_candidate_process_manifest_sha256": "5a094778d395440ec8dc256257d392065f3dff9c258a09b02bed445faf1c7a3e"
+  },
+  "binaries": {
+    "candidate_sha256": "dc00cab3119be42fc21432f17bf8a7cfb94e01afd10e716fb39bb70036825ff0",
+    "reference_sha256": "c3301f031f14d1807dd6217f181e390c15ef866f8469a8217a9ea2ac88776df3"
+  },
+  "command": {
+    "args": [
+      "decompile",
+      "<input>",
+      "--out",
+      "<out>",
+      "--adapter-backend",
+      "internal",
+      "--function-scope",
+      "all",
+      "--emit-ir",
+      "--emit-asm"
+    ],
+    "environment": {
+      "LC_ALL": "C",
+      "TZ": "UTC"
+    },
+    "expected_exit_code": 1,
+    "expected_exit_reason": "quality gate failed after artifact generation; artifacts complete",
+    "program": "target/release/flutterdec",
+    "quality_gate_flags": "defaults (--max-placeholder-ifs 0, --max-unresolved-cf 0, --max-indirect-call-ratio 0.30, --min-disassembly-ratio 0.80)"
+  },
+  "input": {
+    "asset": "LocalSend-1.17.0-android-arm64v8.apk",
+    "bytes": 17491108,
+    "license": "Apache-2.0",
+    "license_url": "https://github.com/localsend/localsend/blob/main/LICENSE",
+    "project": "LocalSend",
+    "redistribution": "not vendored; fetch-and-verify only",
+    "release_page": "https://github.com/localsend/localsend/releases/tag/v1.17.0",
+    "release_tag": "v1.17.0",
+    "sha256": "2c7f5fd4872da25115bb8e5e62f92de94dda47b0f249ff387ac667b13871dc3e",
+    "snapshot_hash": "80a49c7111088100a233b2ae788e1f48",
+    "url": "https://github.com/localsend/localsend/releases/download/v1.17.0/LocalSend-1.17.0-android-arm64v8.apk"
+  },
+  "revisions": {
+    "candidate": "eabbe7e96bd9cb9afd9f3dc2cc3d40718b06c924",
+    "candidate_product_tree_files": 142,
+    "candidate_product_tree_sha256": "1b49ad07ca604dee352f9166601d29bb7b14ae01ece20d0acb122c4e91e07061",
+    "candidate_role": "the product-state revision whose product tree the candidate evidence is bound to. The emitted bytes come from the clean release build of d3c5367, which changed final-artifact call accounting; the only later product-path delta is the cfg(test)-only aggregation regression in crates/flutterdec-core/src/pipeline/quality.rs, which the release binary does not compile. The candidate_product_tree_sha256 pins that exact relationship and check-compat-baseline.py verify enforces it against the current HEAD.",
+    "evidence_provenance": "the prose document and every file in docs/compat-evidence/ are committed by docs-only commits that come after the candidate revision, so the revision that delivers this evidence cannot be recorded here: a commit cannot contain its own hash. Read it from the repository instead - 'git log --oneline -- docs/compat-baseline-real-binary.md docs/compat-evidence/' - and note that those commits touch no product_tree_paths, which is the property verify checks.",
+    "product_tree_derivation": "sha256 over one '<path>\\t<git blob object id>\\n' line per tracked file under product_tree_paths, paths in ascending byte order, no header; see check-compat-baseline.py product_tree_digest",
+    "product_tree_paths": [
+      "Cargo.lock",
+      "Cargo.toml",
+      "adapters",
+      "crates",
+      "flake.lock",
+      "flake.nix",
+      "rust-toolchain.toml",
+      "symbols"
+    ],
+    "reference": "1371e42549472ec388f58bc1fd5dbdf96e8dcdd1",
+    "reference_product_tree_files": 106,
+    "reference_product_tree_sha256": "23165413ab8e29b08ac71bd712aaf607154aea090ae1680170472f05d3a8e6f3"
+  },
+  "semantic_adjudication": {
+    "checker": "scripts/check-compat-semantics.py",
+    "items": [
+      "guard_polarity",
+      "selector_losses",
+      "dropped_call_argument",
+      "control_flow_accounting"
+    ],
+    "modes": "derive and check need both output trees; verify and --self-test are offline",
+    "record": "semantic-adjudication.json"
+  },
+  "toolchain": {
+    "cargo": "cargo 1.92.0 (344c4567c 2025-10-21)",
+    "cli_version": "flutterdec 0.1.0-alpha.4",
+    "nix_config_export": "export NIX_CONFIG='extra-experimental-features = nix-command flakes'",
+    "nix_config_note": "needed on a host whose nix.conf does not already enable the two experimental features; without it the `nix develop` build line and scripts/ci-check.sh both fail with \"experimental Nix feature 'nix-command' is disabled\" before anything is built",
+    "profile": "release",
+    "rust_toolchain_file": "rust-toolchain.toml (channel = stable)",
+    "rustc": "rustc 1.92.0 (ded5c06cf 2025-12-08) (built from a source tarball)",
+    "shell": "nix develop --extra-experimental-features 'nix-command flakes'"
+  },
+  "volatile_fields": {
+    "note": "the three workspace-dependent strings in report.json: the input path and two absolute paths under the repository root. report-*.json in this directory store them as \"<input>\" and \"<repo>/...\", and `check-compat-baseline.py replay` normalizes them before comparing report.json. Every other emitted byte is stable: a second and a third candidate process reproduced all 17402 artifacts exactly, and a fourth run from a different input path reproduced 17401 of them and differed only in report.json.input.",
+    "report.json": [
+      "input",
+      "adapter_selection.adapter_exec_path",
+      "engine_symbol_ingestion.manifest_path"
+    ]
+  }
+}

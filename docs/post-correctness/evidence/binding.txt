@@ -1,0 +1,38 @@
+started_at                2026-08-22T10:47:52-04:00
+ended_at                  2026-08-22T10:59:43-04:00
+reference_product_ref      1371e42549472ec388f58bc1fd5dbdf96e8dcdd1
+candidate_product_ref      5ba4b6d30604606c04b5b742eaf9469adc1c729d
+harness_ref                4c127aba4e74fb6f8d486c4cb066586bb0d74846
+patch_sha256               14413796ca8a89cc1328497b5c87629b1c55f945ec58e73eebb3838df0700460
+reference_binary_sha256    0676036bfcf58abb4f71c2e04111ef63c6506e5016e365b228886eee590d25cf
+candidate_binary_sha256    ff696e5ed2857b17f30f7524aa57c246d959aa76eb9019d799820666f59532db
+resource_reference_binary_sha256 f868a2e3b7f542f78b581a84b0405db81d4439d9873022afe182cf0b0eb23a86
+resource_candidate_binary_sha256 557c3b19b8618df341093af965d321d11b3e78a0601d075d3deb6cd83f4963e7
+harness_tree_oid            83e06014b368736c1921a0da7949c7b6a0b76e97
+resource_harness_ref        b0e615785b28e7e58aa06dd1b929dd58acf06e53
+resource_guard_ref          f4eb2d87d0bc8649addce2a2522ee8a56e856ca1
+resource_parent_ref         9b82e07fa62f97654aea5153d9fb6a2ef57a377a
+resource_overlay_sha256     7f1ef7a3cf0d43e839b6356bfa78cfb08502573d24677bc2e3c67cb5c469aa9e
+resource_overlay_file       resource-overlay.patch
+reference_resource_harness_mode accepted timing patch plus accepted resource patch
+candidate_resource_harness_mode materialized product hooks plus accepted bench resource patch
+reference_harness_mode      accepted patch plus materialized accepted bench tree
+candidate_harness_mode      product instrumentation plus materialized accepted bench tree
+canonical_build_path       /home/camilo/flutterdec/.worker-tmp/valmetric5-rerun/tmp/flutterdec-post-correctness-build/tree
+rustc_vv                   rustc 1.92.0 (ded5c06cf 2025-12-08) (built from a source tarball);binary: rustc;commit-hash: ded5c06cf21d2b93bffd5d884aa6e96934ee4234;commit-date: 2025-12-08;host: x86_64-unknown-linux-gnu;release: 1.92.0;LLVM version: 21.1.8;
+cargo_vv                   cargo 1.92.0 (344c4567c 2025-10-21);release: 1.92.0;commit-hash: 344c4567c634a25837e3c3476aac08af84cf9203;commit-date: 2025-10-21;host: x86_64-unknown-linux-gnu;libgit2: 1.9.1 (sys:0.20.2 vendored);libcurl: 8.17.0 (sys:0.4.83+curl-8.15.0 system ssl:OpenSSL/3.6.0);os: Gentoo Linux 2.15.0 [64-bit];
+nix_version                nix (Nix) 2.34.3
+flake_lock_sha256          bfab35a904129b6cdc0240225bc0d524818a49ca3d1a4c89c99c096d7f726c3a
+manifest_sha256            bfb167600ee186d4e360958348cc8892e3dee2620f9dcdeaf9fcd60c20fd3bc7
+CARGO_INCREMENTAL          0
+RUSTFLAGS                  unset
+CARGO_ENCODED_RUSTFLAGS    unset
+matrix                     disclosed
+pairs                      15
+preliminary_warmups        3
+pair_order                 alternating
+correctness                once per binary before measurement
+timeout_seconds            120
+memory_limit_bytes         2147483648
+chronology_rows            34
+controlling_repository_head d5d1140bf68dc26f75f1f482469808b23d6143fb

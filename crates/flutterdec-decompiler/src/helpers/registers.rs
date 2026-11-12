@@ -37,3 +37,17 @@ pub(super) fn is_w_register(token: &str) -> bool {
     };
     !rest.is_empty() && rest.chars().all(|c| c.is_ascii_digit())
 }
+
+/// Whether an operand modifier is an extend rather than a shift.
+///
+/// An extend names the width it reads - `sxtw` sign-extends 32 bits, `uxtb`
+/// takes 8 - and the renderer states that width in the expression it builds, so
+/// the operand behind it is read whole. A kind missing here is read at the
+/// width it is spelled at, which is the conservative direction: an unresolved
+/// read rather than a value the access does not produce.
+pub(super) fn is_extend_modifier(kind: &str) -> bool {
+    matches!(
+        kind,
+        "sxtb" | "sxth" | "sxtw" | "sxtx" | "uxtb" | "uxth" | "uxtw" | "uxtx"
+    )
+}

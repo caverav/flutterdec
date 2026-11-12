@@ -1,0 +1,498 @@
+{
+  "control_flow_accounting": {
+    "candidate": {
+      "functions_with_statements": 138,
+      "quality_unresolved_cf": 521,
+      "report_unresolved_cf": 521,
+      "unresolved_cf_statements": 521,
+      "quality_total_calls": 243760,
+      "report_total_calls": 243760,
+      "quality_indirect_calls": 39500,
+      "report_indirect_calls": 39500
+    },
+    "conclusion": "candidate_corrected_after_this_slice",
+    "derivation": "statements are counted from the emitted pseudocode by the prefix each one starts with - `// indirect branch`, `// unresolved branch target`, `// unresolved jump`, and `// invalid CFG`, the whole body of a function whose CFG did not validate - so an annotation spliced into a marker keeps it counted, and the total is compared with quality.json.unresolved_cf and report.json.quality.unresolved_cf on each side.",
+    "evidence": "the real candidate has 521 unresolved statements against 521 in both reports, 243760 total calls and 39500 indirect calls in both reports; the focused helper-tail regression renders one indirect call through a DfsDepthOmission and obtains 1 from the artifact, quality aggregate, and report aggregate",
+    "fix": "unresolved_cf is recounted from the finished body; total_calls and indirect_calls are derived from the line-identity call provenance remaining in that same finished body, including every nested-helper line and inlined copy and excluding removed helper definitions",
+    "question": "the candidate emitted more unresolved-control-flow statements than quality.json.unresolved_cf counted: 521 statements against 517",
+    "reference": {
+      "functions_with_statements": 0,
+      "quality_unresolved_cf": 0,
+      "report_unresolved_cf": 0,
+      "unresolved_cf_statements": 0,
+      "quality_total_calls": 45955,
+      "report_total_calls": 45955,
+      "quality_indirect_calls": 7149,
+      "report_indirect_calls": 7149
+    },
+    "residue_function": "00860_sub_696734.dartpseudo",
+    "residue_function_indirect_branch_sites": [
+      {
+        "src": "br x2",
+        "start_va": "0x6968e4",
+        "va": "0x6968fc"
+      },
+      {
+        "src": "br x16",
+        "start_va": "0x6974d4",
+        "va": "0x6974d8"
+      },
+      {
+        "src": "br x16",
+        "start_va": "0x697598",
+        "va": "0x69759c"
+      }
+    ],
+    "residue_function_indirect_branches": 3,
+    "residue_function_statements": 4,
+    "root_cause": "a block the DFS walk refuses to inline is rendered into a helper body by a nested emitter in append_helper_functions, whose counters are discarded when its lines are copied into the artifact, and inline_helper_calls then copies that body to every call site. Both paths put statements into the artifact that the walk never counted."
+  },
+  "dropped_call_argument": {
+    "argument_register_order": [
+      "x1",
+      "x2",
+      "x3",
+      "x5",
+      "x6",
+      "x7"
+    ],
+    "argument_register_values_at_call": {
+      "x1": "entry:x1",
+      "x2": "entry:x2",
+      "x3": "entry:x3",
+      "x5": "entry:x5",
+      "x6": "entry:x6",
+      "x7": "entry:x7"
+    },
+    "argument_register_writes": [
+      {
+        "text": "mov x0, x1",
+        "va": "0xbdd0a4",
+        "value": "entry:x1"
+      },
+      {
+        "text": "mov x1, x0",
+        "va": "0xbdd0bc",
+        "value": "entry:x1"
+      }
+    ],
+    "candidate_renderings": [
+      "final t1 = sub_90b144();"
+    ],
+    "conclusion": "candidate_correct_no_recovered_value_lost",
+    "derivation": "the emitter claims an argument position only when the register holds a value the call site defined, in `DartCallingConvention` order, which is x1, x2, x3, x5, x6, x7. Every write to one of those registers, and to x0, between the function entry and the `bl` is followed back through `mov` chains to decide whether the value at the call is the register's own entry value.",
+    "dropped_token": "reg0",
+    "dropped_token_register": "x0",
+    "evidence": "the only writes to an argument register before the call are `mov x0, x1` at 0xbdd0a4 and `mov x1, x0` at 0xbdd0bc, so the value in x1 at the call is the function's own incoming x1: a pass-through, which the emitter's stated lower bound does not claim as an argument. No argument position carries a defined value, and the token the reference printed, `reg0`, is the unrecovered-value spelling of x0, which is not an argument position at all. Nothing recovered was dropped.",
+    "informative_positions": [],
+    "pass_through_positions": [
+      "x1",
+      "x2",
+      "x3",
+      "x5",
+      "x6",
+      "x7"
+    ],
+    "question": "the reference renders `sub_90b144(reg0)` and the candidate renders `sub_90b144()`, the only replacement in the run where the candidate prints fewer call arguments",
+    "reference_renderings": [
+      "final t6 = sub_90b144(reg0);"
+    ],
+    "site": {
+      "call": "bl #0x90b144",
+      "call_va": "0xbdd0c0",
+      "callee": "sub_90b144",
+      "callee_va": "0x90b144",
+      "function": "05149_sub_bdd098.dartpseudo"
+    }
+  },
+  "guard_polarity": {
+    "asm_files": [
+      "03097_sub_9264c4",
+      "03119_sub_936128",
+      "03124_sub_936bd0",
+      "04626_sub_b14cf4",
+      "05530_sub_c8b9b8",
+      "05548_sub_c93e0c",
+      "05557_sub_cf0300"
+    ],
+    "conclusion": "candidate_correct_reference_wrong",
+    "derivation": "`tst Xn, #imm` is `ANDS xzr, Xn, #imm` (Arm ARM DDI 0487, C6.2), so it sets Z exactly when `(Xn & imm) == 0`. The conditional branch that follows it skips the guarded body, which is the fall-through span up to the branch destination, and that span is identified by the Dart stack-limit check it contains: the `ldp` of the Thread limit pair at [x26, #0x50], the `+ 0x10`, the `cmp`, and a `b.ls` whose destination calls the shared stack-overflow stub at 0xd51af0. A body on the fall-through of `b.eq` therefore runs when the masked bits are not zero, which is `!= 0`; on the fall-through of `b.ne` it would be `== 0`.",
+    "derived_guard": "!= 0",
+    "emitted_guards": 14,
+    "evidence": "every one of the 15 mask-test sites in the seven files is `tst Xn, #0xc0000000` followed immediately by `b.eq`, so all 15 derive `!= 0`. The candidate renders `!= 0` at all 14 emitted guards; the reference renders 3 of them `== 0`, which is the inverted polarity, and the candidate corrected it.",
+    "files": [
+      {
+        "candidate_guards": [
+          "!= 0"
+        ],
+        "function": "03097_sub_9264c4.dartpseudo",
+        "reference_guards": [
+          "!= 0"
+        ],
+        "sites": [
+          {
+            "branch": "b.eq #0x92657c",
+            "branch_destination": "0x92657c",
+            "branch_va": "0x92654c",
+            "derived_guard": "!= 0",
+            "guarded_body_first_va": "0x926550",
+            "mask_test": "tst x1, #0xc0000000",
+            "mask_test_va": "0x926548",
+            "slow_path_branch_va": "0x92655c",
+            "stack_limit_load_va": "0x926550",
+            "stack_overflow_call": "bl #0xd51af0",
+            "stack_overflow_call_va": "0x926674",
+            "tested_register": "x1"
+          }
+        ]
+      },
+      {
+        "candidate_guards": [
+          "!= 0",
+          "!= 0",
+          "!= 0",
+          "!= 0"
+        ],
+        "function": "03119_sub_936128.dartpseudo",
+        "reference_guards": [
+          "!= 0",
+          "== 0",
+          "!= 0",
+          "!= 0"
+        ],
+        "sites": [
+          {
+            "branch": "b.eq #0x9361d8",
+            "branch_destination": "0x9361d8",
+            "branch_va": "0x9361a8",
+            "derived_guard": "!= 0",
+            "guarded_body_first_va": "0x9361ac",
+            "mask_test": "tst x3, #0xc0000000",
+            "mask_test_va": "0x9361a4",
+            "slow_path_branch_va": "0x9361b8",
+            "stack_limit_load_va": "0x9361ac",
+            "stack_overflow_call": "bl #0xd51af0",
+            "stack_overflow_call_va": "0x936438",
+            "tested_register": "x3"
+          },
+          {
+            "branch": "b.eq #0x936264",
+            "branch_destination": "0x936264",
+            "branch_va": "0x936234",
+            "derived_guard": "!= 0",
+            "guarded_body_first_va": "0x936238",
+            "mask_test": "tst x0, #0xc0000000",
+            "mask_test_va": "0x936230",
+            "slow_path_branch_va": "0x936244",
+            "stack_limit_load_va": "0x936238",
+            "stack_overflow_call": "bl #0xd51af0",
+            "stack_overflow_call_va": "0x936458",
+            "tested_register": "x0"
+          },
+          {
+            "branch": "b.eq #0x936320",
+            "branch_destination": "0x936320",
+            "branch_va": "0x9362f0",
+            "derived_guard": "!= 0",
+            "guarded_body_first_va": "0x9362f4",
+            "mask_test": "tst x1, #0xc0000000",
+            "mask_test_va": "0x9362ec",
+            "slow_path_branch_va": "0x936300",
+            "stack_limit_load_va": "0x9362f4",
+            "stack_overflow_call": "bl #0xd51af0",
+            "stack_overflow_call_va": "0x936478",
+            "tested_register": "x1"
+          },
+          {
+            "branch": "b.eq #0x9363ec",
+            "branch_destination": "0x9363ec",
+            "branch_va": "0x9363bc",
+            "derived_guard": "!= 0",
+            "guarded_body_first_va": "0x9363c0",
+            "mask_test": "tst x1, #0xc0000000",
+            "mask_test_va": "0x9363b8",
+            "slow_path_branch_va": "0x9363cc",
+            "stack_limit_load_va": "0x9363c0",
+            "stack_overflow_call": "bl #0xd51af0",
+            "stack_overflow_call_va": "0x9364a0",
+            "tested_register": "x1"
+          }
+        ]
+      },
+      {
+        "candidate_guards": [
+          "!= 0",
+          "!= 0"
+        ],
+        "function": "03124_sub_936bd0.dartpseudo",
+        "reference_guards": [
+          "!= 0",
+          "!= 0"
+        ],
+        "sites": [
+          {
+            "branch": "b.eq #0x936c34",
+            "branch_destination": "0x936c34",
+            "branch_va": "0x936c04",
+            "derived_guard": "!= 0",
+            "guarded_body_first_va": "0x936c08",
+            "mask_test": "tst x2, #0xc0000000",
+            "mask_test_va": "0x936c00",
+            "slow_path_branch_va": "0x936c14",
+            "stack_limit_load_va": "0x936c08",
+            "stack_overflow_call": "bl #0xd51af0",
+            "stack_overflow_call_va": "0x936cf0",
+            "tested_register": "x2"
+          },
+          {
+            "branch": "b.eq #0x936cb0",
+            "branch_destination": "0x936cb0",
+            "branch_va": "0x936c80",
+            "derived_guard": "!= 0",
+            "guarded_body_first_va": "0x936c84",
+            "mask_test": "tst x2, #0xc0000000",
+            "mask_test_va": "0x936c7c",
+            "slow_path_branch_va": "0x936c90",
+            "stack_limit_load_va": "0x936c84",
+            "stack_overflow_call": "bl #0xd51af0",
+            "stack_overflow_call_va": "0x936d0c",
+            "tested_register": "x2"
+          }
+        ]
+      },
+      {
+        "candidate_guards": [
+          "!= 0"
+        ],
+        "function": "04626_sub_b14cf4.dartpseudo",
+        "reference_guards": [
+          "!= 0"
+        ],
+        "sites": [
+          {
+            "branch": "b.eq #0xb14d5c",
+            "branch_destination": "0xb14d5c",
+            "branch_va": "0xb14d2c",
+            "derived_guard": "!= 0",
+            "guarded_body_first_va": "0xb14d30",
+            "mask_test": "tst x2, #0xc0000000",
+            "mask_test_va": "0xb14d28",
+            "slow_path_branch_va": "0xb14d3c",
+            "stack_limit_load_va": "0xb14d30",
+            "stack_overflow_call": "bl #0xd51af0",
+            "stack_overflow_call_va": "0xb14d80",
+            "tested_register": "x2"
+          },
+          {
+            "branch": "b.eq #0xb14dec",
+            "branch_destination": "0xb14dec",
+            "branch_va": "0xb14dbc",
+            "derived_guard": "!= 0",
+            "guarded_body_first_va": "0xb14dc0",
+            "mask_test": "tst x0, #0xc0000000",
+            "mask_test_va": "0xb14db8",
+            "slow_path_branch_va": "0xb14dcc",
+            "stack_limit_load_va": "0xb14dc0",
+            "stack_overflow_call": "bl #0xd51af0",
+            "stack_overflow_call_va": "0xb14e90",
+            "tested_register": "x0"
+          }
+        ]
+      },
+      {
+        "candidate_guards": [
+          "!= 0",
+          "!= 0"
+        ],
+        "function": "05530_sub_c8b9b8.dartpseudo",
+        "reference_guards": [
+          "!= 0",
+          "== 0"
+        ],
+        "sites": [
+          {
+            "branch": "b.eq #0xc8ba44",
+            "branch_destination": "0xc8ba44",
+            "branch_va": "0xc8ba14",
+            "derived_guard": "!= 0",
+            "guarded_body_first_va": "0xc8ba18",
+            "mask_test": "tst x3, #0xc0000000",
+            "mask_test_va": "0xc8ba10",
+            "slow_path_branch_va": "0xc8ba24",
+            "stack_limit_load_va": "0xc8ba18",
+            "stack_overflow_call": "bl #0xd51af0",
+            "stack_overflow_call_va": "0xc8bb58",
+            "tested_register": "x3"
+          },
+          {
+            "branch": "b.eq #0xc8bb08",
+            "branch_destination": "0xc8bb08",
+            "branch_va": "0xc8bad8",
+            "derived_guard": "!= 0",
+            "guarded_body_first_va": "0xc8badc",
+            "mask_test": "tst x3, #0xc0000000",
+            "mask_test_va": "0xc8bad4",
+            "slow_path_branch_va": "0xc8bae8",
+            "stack_limit_load_va": "0xc8badc",
+            "stack_overflow_call": "bl #0xd51af0",
+            "stack_overflow_call_va": "0xc8bb84",
+            "tested_register": "x3"
+          }
+        ]
+      },
+      {
+        "candidate_guards": [
+          "!= 0",
+          "!= 0"
+        ],
+        "function": "05548_sub_c93e0c.dartpseudo",
+        "reference_guards": [
+          "!= 0",
+          "== 0"
+        ],
+        "sites": [
+          {
+            "branch": "b.eq #0xc93f98",
+            "branch_destination": "0xc93f98",
+            "branch_va": "0xc93f68",
+            "derived_guard": "!= 0",
+            "guarded_body_first_va": "0xc93f6c",
+            "mask_test": "tst x6, #0xc0000000",
+            "mask_test_va": "0xc93f64",
+            "slow_path_branch_va": "0xc93f78",
+            "stack_limit_load_va": "0xc93f6c",
+            "stack_overflow_call": "bl #0xd51af0",
+            "stack_overflow_call_va": "0xc940c0",
+            "tested_register": "x6"
+          },
+          {
+            "branch": "b.eq #0xc94068",
+            "branch_destination": "0xc94068",
+            "branch_va": "0xc94038",
+            "derived_guard": "!= 0",
+            "guarded_body_first_va": "0xc9403c",
+            "mask_test": "tst x3, #0xc0000000",
+            "mask_test_va": "0xc94034",
+            "slow_path_branch_va": "0xc94048",
+            "stack_limit_load_va": "0xc9403c",
+            "stack_overflow_call": "bl #0xd51af0",
+            "stack_overflow_call_va": "0xc940dc",
+            "tested_register": "x3"
+          }
+        ]
+      },
+      {
+        "candidate_guards": [
+          "!= 0",
+          "!= 0"
+        ],
+        "function": "05557_sub_cf0300.dartpseudo",
+        "reference_guards": [
+          "!= 0",
+          "!= 0"
+        ],
+        "sites": [
+          {
+            "branch": "b.eq #0xcf04f4",
+            "branch_destination": "0xcf04f4",
+            "branch_va": "0xcf04c4",
+            "derived_guard": "!= 0",
+            "guarded_body_first_va": "0xcf04c8",
+            "mask_test": "tst x4, #0xc0000000",
+            "mask_test_va": "0xcf04c0",
+            "slow_path_branch_va": "0xcf04d4",
+            "stack_limit_load_va": "0xcf04c8",
+            "stack_overflow_call": "bl #0xd51af0",
+            "stack_overflow_call_va": "0xcf0610",
+            "tested_register": "x4"
+          },
+          {
+            "branch": "b.eq #0xcf0580",
+            "branch_destination": "0xcf0580",
+            "branch_va": "0xcf0550",
+            "derived_guard": "!= 0",
+            "guarded_body_first_va": "0xcf0554",
+            "mask_test": "tst x3, #0xc0000000",
+            "mask_test_va": "0xcf054c",
+            "slow_path_branch_va": "0xcf0560",
+            "stack_limit_load_va": "0xcf0554",
+            "stack_overflow_call": "bl #0xd51af0",
+            "stack_overflow_call_va": "0xcf063c",
+            "tested_register": "x3"
+          }
+        ]
+      }
+    ],
+    "question": "three emitted guards over the Dart stack-limit check test `& 0xc0000000) == 0` on the reference and `!= 0` on the candidate, over a structurally identical body, so the two renderings enter that body under complementary conditions",
+    "reference_inverted_guards": 3,
+    "sites": 15
+  },
+  "selector_losses": {
+    "conclusion": "candidate_correct_reference_unreachable_code",
+    "derivation": "the address-level control-flow graph is rebuilt from the emitted asm alone, giving each instruction the ARM64 control effect its text has: `br Xn`, `ret`, `brk`/`hlt`/`udf` and an unconditional `b` have no fall-through, a conditional branch has both edges, and a `bl`/`blr` falls through to its return address while its destination leaves the function. Reachability is then computed from the function entry address, once with those effects and once with a fall-through invented after every `br Xn`, which is the reference's classification of `br` expressed as an edge.",
+    "evidence": "in both files every dispatch call site is unreachable from the entry address under the ARM64 control effects, and exactly the sites the reference rendered become reachable once a fall-through is invented after `br Xn`. The renderings the candidate no longer emits are therefore code the program cannot reach, not recovered code lost.",
+    "files": [
+      {
+        "candidate_renderings": 0,
+        "dispatch_call_vas": [
+          "0x772cf8",
+          "0x772d28",
+          "0x773008",
+          "0x773338",
+          "0x7734fc",
+          "0x7736c4",
+          "0x773898",
+          "0x7738c8",
+          "0x773b9c"
+        ],
+        "entry_va": "0x772c00",
+        "function": "01540_sub_772c00.dartpseudo",
+        "reachable_only_with_invented_fallthrough": [
+          "0x772cf8",
+          "0x772d28"
+        ],
+        "reachable_without_invented_fallthrough": [],
+        "reference_renderings": 18,
+        "register_branch_vas": [
+          "0x772ca8",
+          "0x772ee8",
+          "0x773a6c"
+        ],
+        "selector": "sel4096"
+      },
+      {
+        "candidate_renderings": 0,
+        "dispatch_call_vas": [
+          "0x7cf32c",
+          "0x7cf350",
+          "0x7cf3bc",
+          "0x7cf410",
+          "0x7cf428",
+          "0x7cf464",
+          "0x7cf510",
+          "0x7cf544",
+          "0x7cf56c",
+          "0x7cf584",
+          "0x7cf660",
+          "0x7cf6cc",
+          "0x7cf964",
+          "0x7cf9f4",
+          "0x7cfac4"
+        ],
+        "entry_va": "0x7cf2b0",
+        "function": "01723_sub_7cf2b0.dartpseudo",
+        "reachable_only_with_invented_fallthrough": [
+          "0x7cf32c",
+          "0x7cf350"
+        ],
+        "reachable_without_invented_fallthrough": [],
+        "reference_renderings": 2,
+        "register_branch_vas": [
+          "0x7cf2d0"
+        ],
+        "selector": "sel70954"
+      }
+    ],
+    "question": "two files lose every `sel<N>(` rendering the reference emitted, and a recovered selector is not a call target, so the lost-edge attribution over IR call instructions does not reach them"
+  }
+}

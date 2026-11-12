@@ -4,6 +4,11 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[features]
+# Nested-span visibility for the benchmark harness. Off in every product build:
+# without it the counter and its two clock reads are not compiled at all.
+bench-spans = []
+
 [dependencies]
 flutterdec-ir = { path = "../flutterdec-ir" }
 serde.workspace = true

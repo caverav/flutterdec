@@ -10,7 +10,10 @@ fn collapses_helper_calls_into_omitted_path_comments() {
     let mut emitter = FuncEmitter::new(&ir, &symbols);
     emitter.lines = vec![
             "dynamic helperCollapse(dynamic arg0, dynamic arg1, dynamic arg2, dynamic arg3, dynamic arg4, dynamic arg5, dynamic arg6, dynamic arg7) {".to_string(),
-            "  return _block_3();".to_string(),
+            "  if (arg0 == null) {".to_string(),
+            "    return _block_3();".to_string(),
+            "  }".to_string(),
+            "  return _block_8();".to_string(),
             "}".to_string(),
             String::new(),
             "dynamic _block_3() {".to_string(),
@@ -18,20 +21,36 @@ fn collapses_helper_calls_into_omitted_path_comments() {
             "  return t1;".to_string(),
             "}".to_string(),
         ];
+    // Block 8's definition is the one the helper budget refused, which is the
+    // only reason a call can be left without one.
+    emitter.helper_cap_omitted.insert(8);
 
-    emitter.collapse_remaining_helpers();
+    emitter.resolve_remaining_helpers();
     let out = emitter.lines.join("\n");
     assert!(
-        !out.contains("_block_"),
-        "helper scaffolding should be removed:\n{out}"
+        out.contains("return _block_3();") && out.contains("dynamic _block_3() {"),
+        "a helper that was defined keeps both its call and its body:\n{out}"
     );
     assert!(
-        out.contains("omitted complex paths: block 3"),
+        !out.contains("_block_8"),
+        "a call with no definition must not survive as a call:\n{out}"
+    );
+    assert!(
+        out.contains("// omitted path to block 8: helper budget exhausted"),
+        "the omitted call site should name the block it omits:\n{out}"
+    );
+    assert!(
+        out.contains("omitted complex paths: block 8"),
         "function should include omitted-path summary:\n{out}"
     );
     assert!(
-        out.contains("return null;"),
-        "call should get a safe fallback return:\n{out}"
+        !out.contains("return null;"),
+        "an omitted path must not be rewritten into an exit the graph lacks:\n{out}"
+    );
+    assert_eq!(
+        FuncEmitter::helper_call_ids(&emitter.lines),
+        FuncEmitter::helper_definition_ids(&emitter.lines),
+        "every surviving helper call must resolve to exactly one definition:\n{out}"
     );
 }
 
@@ -52,13 +71,10 @@ fn summarizes_duplicate_omitted_blocks_once() {
             "  }".to_string(),
             "  return _block_9();".to_string(),
             "}".to_string(),
-            String::new(),
-            "dynamic _block_9() {".to_string(),
-            "  return arg0;".to_string(),
-            "}".to_string(),
         ];
+    emitter.helper_cap_omitted.insert(9);
 
-    emitter.collapse_remaining_helpers();
+    emitter.resolve_remaining_helpers();
     let out = emitter.lines.join("\n");
     assert_eq!(
         out.matches("omitted complex paths: block 9").count(),
@@ -66,9 +82,14 @@ fn summarizes_duplicate_omitted_blocks_once() {
         "duplicate omitted blocks should be summarized once:\n{out}"
     );
     assert_eq!(
-        out.matches("return null;").count(),
+        out.matches("// omitted path to block 9").count(),
         2,
-        "each omitted callsite should become return null:\n{out}"
+        "each omitted callsite should state its own omission:\n{out}"
+    );
+    assert_eq!(
+        out.matches("return null;").count(),
+        0,
+        "no omitted callsite may be rewritten into a fabricated return:\n{out}"
     );
 }
 

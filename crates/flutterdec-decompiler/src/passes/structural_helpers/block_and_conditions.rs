@@ -20,8 +20,10 @@ impl<'a> FuncEmitter<'a> {
     pub(super) fn find_block_end(lines: &[String], start: usize) -> Option<usize> {
         let mut depth = 0i32;
         for (idx, line) in lines.iter().enumerate().skip(start) {
-            depth += line.chars().filter(|&c| c == '{').count() as i32;
-            depth -= line.chars().filter(|&c| c == '}').count() as i32;
+            // Only braces the emitter wrote. A brace inside a recovered pool
+            // string or inside a comment is quoted data, and reading one as
+            // structure ends the block somewhere the emitter never closed it.
+            depth += code_brace_delta(line);
             if depth == 0 {
                 return Some(idx);
             }

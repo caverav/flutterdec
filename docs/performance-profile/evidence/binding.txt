@@ -1,0 +1,30 @@
+profile_date                 2026-08-22
+host                         Linux gentoo 6.9.3-gentoo-dist x86_64
+cpu                          AMD Ryzen 7 7700X 8-Core Processor; 8 cores; 16 threads
+perf_version                 7.2.0
+event                        cpu/cycles/Pu at 999 Hz
+call_graph                   dwarf
+matrix                       disclosed; 33 cases; seed 1592614637
+reference_product_ref        1371e42549472ec388f58bc1fd5dbdf96e8dcdd1
+historical_product_ref       630ec442d951aac5704ae80287367912bfbfc388
+current_product_ref          5ba4b6d30604606c04b5b742eaf9469adc1c729d
+harness_ref                  4c127aba4e74fb6f8d486c4cb066586bb0d74846
+current_timing_reference     0676036bfcf58abb4f71c2e04111ef63c6506e5016e365b228886eee590d25cf
+current_timing_candidate     ff696e5ed2857b17f30f7524aa57c246d959aa76eb9019d799820666f59532db
+current_resource_reference   f868a2e3b7f542f78b581a84b0405db81d4439d9873022afe182cf0b0eb23a86
+current_resource_candidate   557c3b19b8618df341093af965d321d11b3e78a0601d075d3deb6cd83f4963e7
+historical_profile_binary    c9e4fb48a3240eb4b1377b6f5d9a9764d80d42175fa9430aba98b335f23f42fd
+historical_accepted_binary   b729b5d681af8778f1b967b13340a1d70548a112e059d761d324816d9e9e4a91
+current_reference_perf_1     e5f7fea74044556a665ce43413a69a773175cd932d5e34b668565c1b1702356d
+current_reference_perf_2     e8c50800a1b83d629f1c284a5eee420af63a1b534ff9b77f81ce00323da1c9dc
+current_candidate_perf_1     bb4bf46fd93ac47e7545888dbccfbb7ffadb7cb6c37855c3e80217b084711942
+current_candidate_perf_2     6efd004d465a188ccc8658144b72b5782daa58673bf204990e40150139c67455
+historical_candidate_perf_1  bbd3d6b6eee33a0aef36cba1cf2d8a6a86da65d6511f2bd704dc38dc2ed22831
+historical_candidate_perf_2  d8afc5ee4abd012c49071ddf70007a6b63c93b76e48951bc1812f747aeadf7a6
+current_reference_cycles     44583486754; 44427795498
+current_candidate_cycles     81094240255; 80918602808
+historical_candidate_cycles  71324114323; 71301986428
+historical_evidence_commit   341035aafcf776c1fd3ace90a0eb4bd57c96858a
+historical_checksums_sha256  57dd390d522820e286d0056aeb568daac63ee429930bad447670b40e23410c07
+current_evidence_commit      d995b7297be2601bc955a36b89a5fa4a12b94067
+current_checksums_sha256     e5eb7aba8ba2783a630379129aa22e7ef9a27b4b6d10352d7bdf882bf2b661c7

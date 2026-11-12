@@ -1706,6 +1706,7 @@ mod output_layout_tests {
             repeated_blocks: 0,
             unlifted_instructions: 0,
             target_va_symbol_calls: 0,
+            emission: Default::default(),
         }
     }
 

@@ -1234,6 +1234,146 @@ fn apply_target_function_filter(
     ))
 }
 
+fn reconcile_block_ledger(
+    function: &FunctionIr,
+    accounting: &flutterdec_ir::IrBuildAccounting,
+    split_source_by_va: &HashMap<u64, u64>,
+    split_records: bool,
+    noreturn_pruned: &[flutterdec_decompiler::BlockIdentity],
+    artifact: &mut PseudocodeArtifact,
+) {
+    assert_eq!(function.function_id, artifact.function_id, "IR/artifact order");
+    // The emitter replaced this function's body with a diagnostic when its own
+    // ledger failed to reconcile. There is no valid partition to reconcile.
+    if artifact.emission.failure().is_some() {
+        return;
+    }
+    let function_id = function.function_id;
+    let ledger = artifact.emission.block_ledger_mut();
+    if ledger.stages.is_empty() && ledger.invalid_cfg_rejected.is_none() {
+        return;
+    }
+    ledger
+        .stages
+        .retain(|row| row.stage != flutterdec_decompiler::BlockStage::Built);
+    ledger.stages.extend(accounting.built.iter().map(
+        |(dense_id, start_va)| flutterdec_decompiler::StageBlock {
+            stage: flutterdec_decompiler::BlockStage::Built,
+            dense_id: *dense_id,
+            identity: flutterdec_decompiler::BlockIdentity {
+                function_id,
+                start_va: *start_va,
+            },
+        },
+    ));
+    if split_records {
+        let split_rows: Vec<_> = ledger
+            .stages
+            .iter()
+            .filter(|row| row.stage == flutterdec_decompiler::BlockStage::Built)
+            .filter_map(|row| {
+                let old_function_id = split_source_by_va.get(&row.identity.start_va).copied()?;
+                (old_function_id != function_id).then_some((
+                    row.dense_id,
+                    old_function_id,
+                    row.identity,
+                ))
+            })
+            .collect();
+        for (dense_id, old_function_id, to) in split_rows {
+            let from = flutterdec_decompiler::BlockIdentity {
+                function_id: old_function_id,
+                start_va: to.start_va,
+            };
+            if let Some(row) = ledger.stages.iter_mut().find(|row| {
+                row.stage == flutterdec_decompiler::BlockStage::Built && row.identity == to
+            }) {
+                row.identity = from;
+            }
+            ledger.stages.push(flutterdec_decompiler::StageBlock {
+                stage: flutterdec_decompiler::BlockStage::Split,
+                dense_id,
+                identity: to,
+            });
+            ledger.remaps.push(flutterdec_decompiler::BlockRemap {
+                stage: flutterdec_decompiler::BlockStage::Split,
+                from,
+                to: Some(to),
+            });
+        }
+    }
+    ledger.stages.extend(accounting.guard_remaps.iter().map(
+        |(_, start_va, dense_id)| flutterdec_decompiler::StageBlock {
+            stage: flutterdec_decompiler::BlockStage::GuardPruned,
+            dense_id: *dense_id,
+            identity: flutterdec_decompiler::BlockIdentity {
+                function_id,
+                start_va: *start_va,
+            },
+        },
+    ));
+    ledger.remaps.extend(accounting.guard_remaps.iter().map(
+        |(_, start_va, _)| flutterdec_decompiler::BlockRemap {
+            stage: flutterdec_decompiler::BlockStage::GuardPruned,
+            from: flutterdec_decompiler::BlockIdentity {
+                function_id,
+                start_va: *start_va,
+            },
+            to: Some(flutterdec_decompiler::BlockIdentity {
+                function_id,
+                start_va: *start_va,
+            }),
+        },
+    ));
+    for (_, start_va) in &accounting.guard_pruned {
+        let identity = flutterdec_decompiler::BlockIdentity {
+            function_id,
+            start_va: *start_va,
+        };
+        ledger.remaps.push(flutterdec_decompiler::BlockRemap {
+            stage: flutterdec_decompiler::BlockStage::GuardPruned,
+            from: identity,
+            to: None,
+        });
+        ledger
+            .dispositions
+            .push(flutterdec_decompiler::BlockDispositionRecord {
+                identity,
+                disposition: flutterdec_decompiler::BlockDisposition::GuardPruned,
+            });
+    }
+    for identity in noreturn_pruned
+        .iter()
+        .filter(|identity| identity.function_id == function_id)
+    {
+        ledger.stages.retain(|row| {
+            !(row.stage == flutterdec_decompiler::BlockStage::Emission
+                && row.identity == *identity)
+        });
+        ledger.remaps.retain(|remap| {
+            !(remap.stage == flutterdec_decompiler::BlockStage::Emission
+                && remap.from == *identity)
+        });
+        if let Some(row) = ledger
+            .dispositions
+            .iter_mut()
+            .find(|row| row.identity == *identity)
+        {
+            row.disposition = flutterdec_decompiler::BlockDisposition::NoreturnPruned;
+        }
+        ledger.remaps.push(flutterdec_decompiler::BlockRemap {
+            stage: flutterdec_decompiler::BlockStage::NoreturnPruned,
+            from: *identity,
+            to: None,
+        });
+    }
+    assert_eq!(
+        artifact.emission.validate(),
+        Ok(()),
+        "pipeline block ledger did not reconcile"
+    );
+}
+
 pub fn run_decompile(
     layout: &Layout,
     input_path: &Path,
@@ -1393,13 +1533,27 @@ pub fn run_decompile(
     // Records that span several real functions are split before the IR is built, so
     // each piece gets dense block ids and an entry at block 0, which is what
     // `Regions::build` requires. Opt-in, because it multiplies the function count.
+    let split_source_by_va: HashMap<u64, u64> = if opt.split_records {
+        build_program_ir_with_accounting(&disasm)
+            .into_iter()
+            .flat_map(|(function, accounting)| {
+                accounting
+                    .built
+                    .into_iter()
+                    .map(move |(_, start_va)| (start_va, function.function_id))
+            })
+            .collect()
+    } else {
+        HashMap::new()
+    };
     let pre_split_disassembled = disasm.len();
     let (disasm, split_stats) = if opt.split_records {
         split_inflated_records(disasm)
     } else {
         (disasm, SplitStats::default())
     };
-    let mut ir: Vec<FunctionIr> = build_program_ir(&disasm);
+    let built_ir = build_program_ir_with_accounting(&disasm);
+    let (mut ir, build_accounting): (Vec<FunctionIr>, Vec<_>) = built_ir.into_iter().unzip();
     let mut symbol_names: HashMap<u64, String> = HashMap::new();
     let mut symbol_quality: HashMap<u64, SymbolNameQuality> = HashMap::new();
     let mut symbol_merge_stats = SymbolMergeStats::default();
@@ -1569,13 +1723,25 @@ pub fn run_decompile(
         );
     }
     let symbol_quality_counts = collect_symbol_quality_counts(&symbol_quality);
-    let pseudo = emit_program_with_runtime_stubs(
+    let mut pseudo = emit_program_with_runtime_stubs(
         &ir,
         &symbol_names,
         &pool_value_hints,
         &pool_semantic_hints,
         &stub_naming.effects,
     );
+    for ((function, accounting), artifact) in
+        ir.iter().zip(&build_accounting).zip(pseudo.iter_mut())
+    {
+        reconcile_block_ledger(
+            function,
+            accounting,
+            &split_source_by_va,
+            opt.split_records,
+            &noreturn_prune.pruned,
+            artifact,
+        );
+    }
 
     let (root_package, root_package_source) = select_root_package(
         &opt.app_packages,
@@ -1646,7 +1812,12 @@ pub fn run_decompile(
     };
 
     let report =
-        quality_from_artifacts(&selected_model, &pseudo, opt, pre_split_disassembled);
+        quality_from_artifacts(
+            selected_model.functions.len(),
+            &pseudo,
+            opt,
+            pre_split_disassembled,
+        );
     let (semantic_intent, call_fallback, selector_fallback, selector_fallback_top) =
         if opt.engine_options.semantic_reporting {
             let semantic_intent = collect_semantic_intent_summary(&pseudo);
@@ -2185,7 +2356,8 @@ pub fn run_decompile(
             "functions_recovered": split_stats.functions_recovered,
             "rejected_branch_target": split_stats.rejected_branch_target,
             "rejected_not_contained": split_stats.rejected_not_contained,
-            "rejected_no_block": split_stats.rejected_no_block
+            "rejected_no_block": split_stats.rejected_no_block,
+            "rejected_invalid_ir": split_stats.rejected_invalid_ir
         },
         "selector_fallback": {
             "total": selector_fallback.total,
@@ -2200,8 +2372,11 @@ pub fn run_decompile(
             "allocation_named": shared_stub_naming.allocation_named,
             "functions_scanned": shared_stub_naming.scanned,
             "noreturn_pruned_functions": noreturn_prune.functions,
-            "noreturn_pruned_blocks": noreturn_prune.blocks_cut,
+            // The ledger is the authority. Reporting `blocks_cut` here as well
+            // would be a second tally that can drift from the block partition.
+            "noreturn_pruned_blocks": report.emission.noreturn_pruned_blocks,
             "noreturn_pruned_instructions": noreturn_prune.instructions_cut,
+            "noreturn_skipped_invalid_ir": noreturn_prune.skipped_invalid_ir,
             "resolved_backend": resolved_backend.as_str(),
             "profile_id": bundle.dart_profile.as_ref().map(|p| p.profile_version.clone()),
             "sdk_aliases": bundle.dart_profile.as_ref().map(|p| p.aliases.clone()),

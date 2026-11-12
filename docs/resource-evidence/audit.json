@@ -1,0 +1,21 @@
+{
+  "candidate_guard": "passed",
+  "case_count": 33,
+  "cfg_plant": {
+    "cells_over_5_percent": 2,
+    "max_peak_delta": 1.0463171345743059
+  },
+  "emitter_plant": {
+    "cells_over_5_percent": 18,
+    "max_peak_delta": 1.3415537810223666
+  },
+  "max_candidate_delta": {
+    "allocation_count": 0.0,
+    "peak_live_bytes": 0.0,
+    "total_allocated_bytes": 0.0
+  },
+  "noop_control": "passed",
+  "phase_misattribution": "none",
+  "row_count_per_binding": 165,
+  "schema": "flutterdec-resource-audit/1"
+}

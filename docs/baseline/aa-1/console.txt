@@ -1,0 +1,212 @@
+[bench] holding exclusive lock on /tmp/bench-aa-1 (pid 645613)
+[bench] holding exclusive lock on canonical build path /tmp/flutterdec-bench-build (pid 645613)
+[bench] building reference at 1371e42 in /tmp/flutterdec-bench-build/tree
+Preparing worktree (detached HEAD 1371e42)
+warning: Git tree '/tmp/flutterdec-bench-build/tree' is dirty
+   Compiling proc-macro2 v1.0.107
+   Compiling quote v1.0.47
+   Compiling unicode-ident v1.0.24
+   Compiling cfg-if v1.0.4
+   Compiling libc v0.2.189
+   Compiling memchr v2.8.3
+   Compiling once_cell v1.21.4
+   Compiling serde_core v1.0.229
+   Compiling shlex v2.0.1
+   Compiling zmij v1.0.23
+   Compiling find-msvc-tools v0.1.11
+   Compiling anyhow v1.0.104
+   Compiling serde_json v1.0.151
+   Compiling proc-macro2 v0.4.30
+   Compiling serde v1.0.229
+   Compiling rustix v1.1.4
+   Compiling getrandom v0.4.3
+   Compiling bitflags v2.13.1
+   Compiling cc v1.4.3
+   Compiling itoa v1.0.18
+   Compiling regex-syntax v0.8.11
+   Compiling linux-raw-sys v0.12.1
+   Compiling unicode-xid v0.1.0
+   Compiling semver-parser v0.7.0
+   Compiling version_check v0.9.5
+   Compiling fastrand v2.5.0
+   Compiling semver v0.9.0
+   Compiling crc32fast v1.5.0
+   Compiling syn v0.15.44
+   Compiling log v0.4.33
+   Compiling ahash v0.7.8
+   Compiling autocfg v1.5.1
+   Compiling aho-corasick v1.1.5
+   Compiling rustc_version v0.2.3
+   Compiling quote v0.6.13
+   Compiling syn v1.0.109
+   Compiling static_assertions v1.1.0
+   Compiling scroll v0.9.2
+   Compiling num-derive v0.2.5
+   Compiling equivalent v1.0.2
+   Compiling num-traits v0.2.19
+   Compiling bumpalo v3.20.3
+   Compiling zlib-rs v0.6.7
+   Compiling simd-adler32 v0.3.10
+   Compiling hashbrown v0.17.1
+   Compiling syn v3.0.3
+   Compiling syn v2.0.119
+   Compiling zopfli v0.8.3
+   Compiling plain v0.2.3
+   Compiling typed-path v0.12.3
+   Compiling cpp_demangle v0.5.1
+   Compiling capstone-sys v0.18.0
+   Compiling getrandom v0.2.17
+   Compiling indexmap v2.14.0
+   Compiling memmap v0.7.0
+   Compiling cesu8 v1.1.0
+   Compiling hashbrown v0.11.2
+   Compiling bitflags v1.3.2
+   Compiling adler32 v1.2.0
+   Compiling regex-automata v0.4.18
+   Compiling lru v0.6.6
+   Compiling tempfile v3.27.0
+   Compiling scroll_derive v0.9.5
+   Compiling dalvik v0.2.0
+   Compiling getset v0.0.9
+   Compiling scroll_derive v0.13.1
+   Compiling serde_derive v1.0.229
+   Compiling flate2 v1.1.9
+   Compiling zip v8.6.0
+   Compiling dex v0.5.0
+   Compiling scroll v0.13.0
+   Compiling goblin v0.10.7
+   Compiling regex v1.13.1
+   Compiling flutterdec-adapter v0.1.0-alpha.4 (/tmp/flutterdec-bench-build/tree/crates/flutterdec-adapter)
+   Compiling flutterdec-loader v0.1.0-alpha.4 (/tmp/flutterdec-bench-build/tree/crates/flutterdec-loader)
+   Compiling capstone v0.14.0
+   Compiling flutterdec-disasm-arm64 v0.1.0-alpha.4 (/tmp/flutterdec-bench-build/tree/crates/flutterdec-disasm-arm64)
+   Compiling flutterdec-ir v0.1.0-alpha.4 (/tmp/flutterdec-bench-build/tree/crates/flutterdec-ir)
+   Compiling flutterdec-decompiler v0.1.0-alpha.4 (/tmp/flutterdec-bench-build/tree/crates/flutterdec-decompiler)
+   Compiling flutterdec-core v0.1.0-alpha.4 (/tmp/flutterdec-bench-build/tree/crates/flutterdec-core)
+   Compiling flutterdec-bench v0.1.0-alpha.4 (/tmp/flutterdec-bench-build/tree/crates/flutterdec-bench)
+    Finished `release` profile [optimized] target(s) in 34.65s
+[bench] reference product revision: 1371e42549472ec388f58bc1fd5dbdf96e8dcdd1
+[bench] building candidate at 1371e42 in /tmp/flutterdec-bench-build/tree
+Preparing worktree (detached HEAD 1371e42)
+warning: Git tree '/tmp/flutterdec-bench-build/tree' is dirty
+   Compiling proc-macro2 v1.0.107
+   Compiling unicode-ident v1.0.24
+   Compiling quote v1.0.47
+   Compiling cfg-if v1.0.4
+   Compiling libc v0.2.189
+   Compiling memchr v2.8.3
+   Compiling once_cell v1.21.4
+   Compiling serde_core v1.0.229
+   Compiling shlex v2.0.1
+   Compiling zmij v1.0.23
+   Compiling find-msvc-tools v0.1.11
+   Compiling proc-macro2 v0.4.30
+   Compiling anyhow v1.0.104
+   Compiling rustix v1.1.4
+   Compiling serde_json v1.0.151
+   Compiling getrandom v0.4.3
+   Compiling serde v1.0.229
+   Compiling version_check v0.9.5
+   Compiling cc v1.4.3
+   Compiling unicode-xid v0.1.0
+   Compiling semver-parser v0.7.0
+   Compiling bitflags v2.13.1
+   Compiling regex-syntax v0.8.11
+   Compiling linux-raw-sys v0.12.1
+   Compiling itoa v1.0.18
+   Compiling ahash v0.7.8
+   Compiling semver v0.9.0
+   Compiling fastrand v2.5.0
+   Compiling crc32fast v1.5.0
+   Compiling log v0.4.33
+   Compiling syn v0.15.44
+   Compiling aho-corasick v1.1.5
+   Compiling rustc_version v0.2.3
+   Compiling syn v1.0.109
+   Compiling quote v0.6.13
+   Compiling autocfg v1.5.1
+   Compiling static_assertions v1.1.0
+   Compiling scroll v0.9.2
+   Compiling zlib-rs v0.6.7
+   Compiling num-derive v0.2.5
+   Compiling hashbrown v0.17.1
+   Compiling simd-adler32 v0.3.10
+   Compiling syn v3.0.3
+   Compiling syn v2.0.119
+   Compiling num-traits v0.2.19
+   Compiling bumpalo v3.20.3
+   Compiling equivalent v1.0.2
+   Compiling zopfli v0.8.3
+   Compiling typed-path v0.12.3
+   Compiling cpp_demangle v0.5.1
+   Compiling plain v0.2.3
+   Compiling capstone-sys v0.18.0
+   Compiling getrandom v0.2.17
+   Compiling indexmap v2.14.0
+   Compiling memmap v0.7.0
+   Compiling hashbrown v0.11.2
+   Compiling bitflags v1.3.2
+   Compiling cesu8 v1.1.0
+   Compiling regex-automata v0.4.18
+   Compiling lru v0.6.6
+   Compiling adler32 v1.2.0
+   Compiling tempfile v3.27.0
+   Compiling scroll_derive v0.9.5
+   Compiling dalvik v0.2.0
+   Compiling flate2 v1.1.9
+   Compiling scroll_derive v0.13.1
+   Compiling serde_derive v1.0.229
+   Compiling getset v0.0.9
+   Compiling zip v8.6.0
+   Compiling dex v0.5.0
+   Compiling scroll v0.13.0
+   Compiling goblin v0.10.7
+   Compiling regex v1.13.1
+   Compiling flutterdec-adapter v0.1.0-alpha.4 (/tmp/flutterdec-bench-build/tree/crates/flutterdec-adapter)
+   Compiling flutterdec-loader v0.1.0-alpha.4 (/tmp/flutterdec-bench-build/tree/crates/flutterdec-loader)
+   Compiling capstone v0.14.0
+   Compiling flutterdec-disasm-arm64 v0.1.0-alpha.4 (/tmp/flutterdec-bench-build/tree/crates/flutterdec-disasm-arm64)
+   Compiling flutterdec-ir v0.1.0-alpha.4 (/tmp/flutterdec-bench-build/tree/crates/flutterdec-ir)
+   Compiling flutterdec-decompiler v0.1.0-alpha.4 (/tmp/flutterdec-bench-build/tree/crates/flutterdec-decompiler)
+   Compiling flutterdec-core v0.1.0-alpha.4 (/tmp/flutterdec-bench-build/tree/crates/flutterdec-core)
+   Compiling flutterdec-bench v0.1.0-alpha.4 (/tmp/flutterdec-bench-build/tree/crates/flutterdec-bench)
+    Finished `release` profile [optimized] target(s) in 34.62s
+[bench] candidate product revision: 1371e42549472ec388f58bc1fd5dbdf96e8dcdd1
+[identity-gate] both sides at 1371e42549472ec388f58bc1fd5dbdf96e8dcdd1 and byte-identical: bc06f2bf3243dd4861c70e9139c88708413c8de7eb336f933075352f78d63369
+[bench] warming reference with 3 unmeasured pass(es) and the correctness pass
+[bench] warming candidate with 3 unmeasured pass(es) and the correctness pass
+[bench] 15 interleaved pairs at zero per-pair warmups, alternating order
+[bench] pair 1/15 done
+[bench] pair 2/15 done
+[bench] pair 3/15 done
+[bench] pair 4/15 done
+[bench] pair 5/15 done
+[bench] pair 6/15 done
+[bench] pair 7/15 done
+[bench] pair 8/15 done
+[bench] pair 9/15 done
+[bench] pair 10/15 done
+[bench] pair 11/15 done
+[bench] pair 12/15 done
+[bench] pair 13/15 done
+[bench] pair 14/15 done
+[bench] pair 15/15 done
+[bench] pair order verified alternating across 15 pairs
+[bench] wrote /tmp/bench-aa-1/analysis.json
+harness_ref                8e7f08096434b614a1e8dc6d3092ff6a67bb44c9
+patch_sha256               14413796ca8a89cc1328497b5c87629b1c55f945ec58e73eebb3838df0700460
+reference_product_ref      1371e42549472ec388f58bc1fd5dbdf96e8dcdd1
+candidate_product_ref      1371e42549472ec388f58bc1fd5dbdf96e8dcdd1
+reference_binary_sha256    bc06f2bf3243dd4861c70e9139c88708413c8de7eb336f933075352f78d63369
+candidate_binary_sha256    bc06f2bf3243dd4861c70e9139c88708413c8de7eb336f933075352f78d63369
+canonical_build_path       /tmp/flutterdec-bench-build/tree
+build_order                sequential, one side at a time in the canonical path
+identity_gate              passed: equal product commits and equal binary sha256
+matrix                     disclosed
+pairs                      15
+preliminary_warmups        3
+warmups_per_measured_pair  0
+pair_order                 alternating: reference first on even pairs, candidate first on odd
+pair_order_log             raw/pair-order.tsv
+pair_order_verified        yes
+correctness_documents      warmup-reference.json warmup-candidate.json

@@ -6,15 +6,16 @@
 //! library would race whichever unit test emitted first and silently observe no
 //! audit at all.
 //!
-//! There is exactly one test here for the same reason: the audit file is
-//! append-only and shared, so two tests writing it concurrently would each see
-//! the other's records.
+//! Only one test here emits: the audit file is append-only and shared, so two
+//! tests writing it concurrently would each see the other's records. The loader
+//! guard below is safe to sit alongside it because it emits nothing, sets no
+//! environment variable, and only reads the source tree.
 
 use flutterdec_decompiler::{
     emit_program_with_runtime_stubs, RuntimeStubEffect, PRE_CALL_ANNOTATION,
 };
 use flutterdec_ir::{BasicBlock, FunctionIr, IROp, LlirInstr};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -91,6 +92,606 @@ fn field<'a>(row: &'a str, name: &str) -> &'a str {
     } else {
         let end = rest.find([',', '}']).expect("terminated value");
         &rest[..end]
+    }
+}
+
+const PROTOCOL: &str = "docs/oracle-protocol-ir-cfg-emitter.md";
+/// The two lanes that must name the integration test targets explicitly: the
+/// local parity script and the GitHub job, which must enforce the same surfaces.
+const CI_LANES: [&str; 2] = ["scripts/ci-check.sh", ".github/workflows/ci.yml"];
+/// The compiled-inventory checker, which is the correctness oracle for whether a
+/// protected file is compiled at all. It has to be reached from a real lane, or
+/// it protects nothing.
+const INVENTORY_CHECKER: &str = "scripts/check-oracle-inventory.py";
+/// Whole command lines every lane in `CI_LANES` must run, byte-identical in both.
+/// A guard only a developer's machine runs is a guard the next push can drop, so
+/// each of these is matched as a complete line: an `echo` of it, a `|| true`
+/// suffix, or a divergent flag in one lane and not the other all fail.
+const REQUIRED_LANE_COMMANDS: [&str; 4] = [
+    "nix develop -c ./scripts/lint-python.sh",
+    "./scripts/bench-identity-gate-test.sh",
+    "nix develop -c python3 scripts/check-oracle-inventory.py",
+    "nix develop -c python3 scripts/check-resource-ruler.py",
+];
+const DECOMPILER_MANIFEST: &str = "crates/flutterdec-decompiler/Cargo.toml";
+const CORE_MANIFEST: &str = "crates/flutterdec-core/Cargo.toml";
+const IR_MANIFEST: &str = "crates/flutterdec-ir/Cargo.toml";
+const DECOMPILER_LOADER: &str = "crates/flutterdec-decompiler/src/tests.rs";
+/// The control-flow loader. Unlike the four loaders under `src/tests/`, this one
+/// also pulls in five product modules, so its `include!` count is not a fixed
+/// number this guard can pin: adding a control-flow module is ordinary work.
+const CONTROL_FLOW_LOADER: &str = "crates/flutterdec-decompiler/src/control_flow.rs";
+
+/// The anchor sentence that opens the protocol's Oracle test files table. The
+/// guard parses that one table and no other: the other section 7 tables are
+/// goldens, scripts, and fixtures, which no loader pulls into a test target.
+const ORACLE_TABLE_ANCHOR: &str =
+    "Oracle test files. Adding a case to one of these is expected work;";
+
+/// How a protected oracle file reaches a compiled test target. Nothing else does:
+/// a protected file with no live hook is dead weight whose digest still matches.
+enum Hook {
+    /// A `#[cfg(test)]` module declaration, needed verbatim in `file`.
+    Module {
+        file: &'static str,
+        decl: &'static str,
+    },
+    /// An `include!` of this path, relative to `loader`'s own directory.
+    ///
+    /// `exclusive` says whether `loader` holds nothing but protected oracle
+    /// includes. When it does, the total `include!` count is pinned below, so the
+    /// loader cannot grow an oracle section 7 does not record. When it does not -
+    /// `control_flow.rs` loads five product modules beside its one oracle - that
+    /// count is ordinary work and pinning it would fire on legitimate change.
+    Include {
+        loader: &'static str,
+        exclusive: bool,
+    },
+    /// Cargo's automatic integration-test discovery for `manifest`'s crate, which
+    /// `autotests = false` would switch off for every file under `tests/`.
+    Autotest { manifest: &'static str },
+}
+
+/// Every row of the protocol's Oracle test files table, with the hook that
+/// compiles it. Kept in this guard rather than in the protocol table because the
+/// hooks live in product source and manifests, which later work must edit, so a
+/// whole-file digest for any of them would fire on legitimate change.
+fn loader_map() -> Vec<(String, Hook)> {
+    let mut map = vec![
+        (
+            DECOMPILER_LOADER.to_string(),
+            Hook::Module {
+                file: "crates/flutterdec-decompiler/src/lib.rs",
+                decl: "#[cfg(test)]\nmod tests;",
+            },
+        ),
+        (
+            "crates/flutterdec-decompiler/tests/provenance_audit.rs".to_string(),
+            Hook::Autotest {
+                manifest: DECOMPILER_MANIFEST,
+            },
+        ),
+        (
+            "crates/flutterdec-decompiler/tests/loop_entry_provenance_audit.rs".to_string(),
+            Hook::Autotest {
+                manifest: DECOMPILER_MANIFEST,
+            },
+        ),
+        (
+            "crates/flutterdec-core/src/pipeline/runners/tests.rs".to_string(),
+            Hook::Module {
+                file: "crates/flutterdec-core/src/pipeline/runners.rs",
+                decl: "#[cfg(test)]\n#[path = \"runners/tests.rs\"]\nmod runners_tests;",
+            },
+        ),
+        (
+            "crates/flutterdec-core/src/pipeline/symbol_map/tests.rs".to_string(),
+            Hook::Module {
+                file: "crates/flutterdec-core/src/pipeline/symbol_map.rs",
+                decl: "#[cfg(test)]\n#[path = \"symbol_map/tests.rs\"]\nmod tests;",
+            },
+        ),
+        (
+            "crates/flutterdec-decompiler/src/control_flow/emission_taxonomy_tests.rs"
+                .to_string(),
+            Hook::Module {
+                file: "crates/flutterdec-decompiler/src/control_flow/emission_taxonomy.rs",
+                decl: "#[cfg(test)]\n#[path = \"emission_taxonomy_tests.rs\"]\nmod emission_taxonomy_tests;",
+            },
+        ),
+        (
+            "crates/flutterdec-decompiler/src/control_flow/annotation_anchor_tests.rs"
+                .to_string(),
+            Hook::Module {
+                file: "crates/flutterdec-decompiler/src/control_flow/structured.rs",
+                decl: "#[cfg(test)]\n#[path = \"annotation_anchor_tests.rs\"]\nmod annotation_anchor_tests;",
+            },
+        ),
+        (
+            "crates/flutterdec-decompiler/src/line_identity_tests.rs".to_string(),
+            Hook::Module {
+                file: "crates/flutterdec-decompiler/src/lib.rs",
+                decl: "#[cfg(test)]\nmod line_identity_tests;",
+            },
+        ),
+        (
+            "crates/flutterdec-decompiler/tests/helper_syntax_boundaries.rs".to_string(),
+            Hook::Autotest {
+                manifest: DECOMPILER_MANIFEST,
+            },
+        ),
+        (
+            "crates/flutterdec-decompiler/tests/rewrite_boundaries.rs".to_string(),
+            Hook::Autotest {
+                manifest: DECOMPILER_MANIFEST,
+            },
+        ),
+        (
+            "crates/flutterdec-decompiler/tests/unmodelled_write_effects.rs".to_string(),
+            Hook::Autotest {
+                manifest: DECOMPILER_MANIFEST,
+            },
+        ),
+        (
+            "crates/flutterdec-decompiler/tests/register_width_provenance.rs".to_string(),
+            Hook::Autotest {
+                manifest: DECOMPILER_MANIFEST,
+            },
+        ),
+        (
+            "crates/flutterdec-decompiler/tests/atomic_rmw_effects.rs".to_string(),
+            Hook::Autotest {
+                manifest: DECOMPILER_MANIFEST,
+            },
+        ),
+        (
+            "crates/flutterdec-decompiler/tests/annotation_anchor_identity.rs".to_string(),
+            Hook::Autotest {
+                manifest: DECOMPILER_MANIFEST,
+            },
+        ),
+        (
+            "crates/flutterdec-decompiler/tests/provenance_accounting.rs".to_string(),
+            Hook::Autotest {
+                manifest: DECOMPILER_MANIFEST,
+            },
+        ),
+        (
+            "crates/flutterdec-core/tests/pipeline_determinism.rs".to_string(),
+            Hook::Autotest {
+                manifest: CORE_MANIFEST,
+            },
+        ),
+        (
+            "crates/flutterdec-ir/tests/branch_target_radix.rs".to_string(),
+            Hook::Autotest {
+                manifest: IR_MANIFEST,
+            },
+        ),
+        // The IR and CFG boundary oracles. Each was an inline module in the
+        // product file beside it until it was moved out: a digest can only
+        // protect a file later work is not expected to edit, and `lib.rs`,
+        // `validate.rs`, `quality.rs`, `split.rs`, `stubs.rs` and `regions.rs`
+        // are all edited by ordinary work.
+        (
+            "crates/flutterdec-ir/src/tests/control_effects.rs".to_string(),
+            Hook::Module {
+                file: "crates/flutterdec-ir/src/lib.rs",
+                decl: "#[cfg(test)]\n#[path = \"tests/control_effects.rs\"]\nmod control_effect_tests;",
+            },
+        ),
+        (
+            "crates/flutterdec-ir/src/validate/tests.rs".to_string(),
+            Hook::Module {
+                file: "crates/flutterdec-ir/src/validate.rs",
+                decl: "#[cfg(test)]\n#[path = \"validate/tests.rs\"]\nmod tests;",
+            },
+        ),
+        (
+            "crates/flutterdec-core/src/pipeline/quality/control_effect_tests.rs".to_string(),
+            Hook::Module {
+                file: "crates/flutterdec-core/src/pipeline/quality.rs",
+                decl: "#[cfg(test)]\n#[path = \"quality/control_effect_tests.rs\"]\nmod quality_control_effect_tests;",
+            },
+        ),
+        (
+            "crates/flutterdec-core/src/pipeline/runners/split/identity_tests.rs".to_string(),
+            Hook::Module {
+                file: "crates/flutterdec-core/src/pipeline/runners/split.rs",
+                decl: "#[cfg(test)]\n#[path = \"split/identity_tests.rs\"]\nmod split_identity_tests;",
+            },
+        ),
+        (
+            "crates/flutterdec-core/src/pipeline/runners/stubs/identity_tests.rs".to_string(),
+            Hook::Module {
+                file: "crates/flutterdec-core/src/pipeline/runners/stubs.rs",
+                decl: "#[cfg(test)]\n#[path = \"stubs/identity_tests.rs\"]\nmod stubs_identity_tests;",
+            },
+        ),
+        (
+            "crates/flutterdec-decompiler/src/control_flow/regions/identity_boundary_tests.rs"
+                .to_string(),
+            Hook::Module {
+                file: "crates/flutterdec-decompiler/src/control_flow/regions.rs",
+                decl: "#[cfg(test)]\n#[path = \"regions/identity_boundary_tests.rs\"]\nmod identity_boundary_tests;",
+            },
+        ),
+        // The CFG relation oracle is loaded the way the control-flow product
+        // modules are, by an `include!` in a loader that is not exclusively
+        // oracle includes.
+        (
+            "crates/flutterdec-decompiler/src/control_flow/relation_oracle.rs".to_string(),
+            Hook::Include {
+                loader: CONTROL_FLOW_LOADER,
+                exclusive: false,
+            },
+        ),
+        (
+            "crates/flutterdec-decompiler/tests/arm64_control_effects.rs".to_string(),
+            Hook::Autotest {
+                manifest: DECOMPILER_MANIFEST,
+            },
+        ),
+        (
+            "crates/flutterdec-decompiler/tests/cfg_identity.rs".to_string(),
+            Hook::Autotest {
+                manifest: DECOMPILER_MANIFEST,
+            },
+        ),
+        (
+            "crates/flutterdec-decompiler/tests/dfs_loop_address_invariance.rs".to_string(),
+            Hook::Autotest {
+                manifest: DECOMPILER_MANIFEST,
+            },
+        ),
+        (
+            "crates/flutterdec-decompiler/tests/entry_loop_state_merge.rs".to_string(),
+            Hook::Autotest {
+                manifest: DECOMPILER_MANIFEST,
+            },
+        ),
+        (
+            "crates/flutterdec-decompiler/tests/block_ledger_contract.rs".to_string(),
+            Hook::Autotest {
+                manifest: DECOMPILER_MANIFEST,
+            },
+        ),
+    ];
+
+    // Loader file, then every protected file it includes. A loader's include
+    // directory is its own path without the extension, so the expected
+    // `include!` text is derived rather than repeated.
+    let nested: [(&'static str, &[&str]); 4] = [
+        (
+            DECOMPILER_LOADER,
+            &[
+                "shared.rs",
+                "emit_and_helpers.rs",
+                "cfg_and_stack.rs",
+                "compaction_and_aliasing.rs",
+                "golden_and_parser.rs",
+            ],
+        ),
+        (
+            "crates/flutterdec-decompiler/src/tests/cfg_and_stack.rs",
+            &[
+                "annotation_caps.rs",
+                "call_and_loops.rs",
+                "call_annotations.rs",
+                "omitted_path_and_stack.rs",
+                "dispatch_table.rs",
+                "join_capture.rs",
+                "order_totality.rs",
+                "structuring.rs",
+            ],
+        ),
+        (
+            "crates/flutterdec-decompiler/src/tests/compaction_and_aliasing.rs",
+            &["control_flow_compaction.rs", "alias_and_expr_cleanup.rs"],
+        ),
+        (
+            "crates/flutterdec-decompiler/src/tests/emit_and_helpers.rs",
+            &[
+                "annotation_literals.rs",
+                "candidate_whitelist.rs",
+                "helper_inlining.rs",
+                "readability_and_naming.rs",
+            ],
+        ),
+    ];
+    for (loader, included) in nested {
+        let dir = loader
+            .strip_suffix(".rs")
+            .expect("a loader is a Rust source file");
+        for file in included {
+            map.push((
+                format!("{dir}/{file}"),
+                Hook::Include {
+                    loader,
+                    exclusive: true,
+                },
+            ));
+        }
+    }
+    map
+}
+
+/// First ancestor holding the protocol, so the guard reads the workspace the same
+/// way from a crate directory, the workspace root, or a worktree copy.
+fn workspace_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .find(|dir| dir.join(PROTOCOL).is_file())
+        .unwrap_or_else(|| panic!("an ancestor of this crate must hold {PROTOCOL}"))
+        .to_path_buf()
+}
+
+/// The backticked paths of exactly the Oracle test files table: everything from
+/// its anchor sentence to the end of section 7.
+fn oracle_test_file_rows(protocol: &str) -> Vec<String> {
+    let after = protocol
+        .split_once(ORACLE_TABLE_ANCHOR)
+        .unwrap_or_else(|| {
+            panic!("{PROTOCOL} must keep the Oracle test files table anchor verbatim")
+        })
+        .1;
+    let section = after
+        .split("\n## ")
+        .next()
+        .expect("splitting always yields a first part");
+    section
+        .lines()
+        .filter(|line| line.starts_with("| `"))
+        .map(|line| {
+            line.split('`')
+                .nth(1)
+                .expect("a row's path is backticked")
+                .to_string()
+        })
+        .collect()
+}
+
+/// Every protected oracle file needs a live hook into a compiled test target, and
+/// every hook needs a protected file. The hooks are `#[cfg(test)]` module
+/// lines, nineteen `include!` lines across four exclusive loaders under
+/// `src/tests/`, one more `include!` in `src/control_flow.rs`, which loads five
+/// product modules beside it, module declarations across `flutterdec-ir`,
+/// `flutterdec-core` and the decompiler's control-flow code, and Cargo's
+/// automatic discovery of the fourteen integration
+/// tests. Delete any one of them and the affected test binary still prints
+/// `test result: ok`, with fewer tests and a whole protected oracle silenced
+/// while its digest still matches.
+///
+/// What this test does *not* do is decide whether a hook is live by looking at
+/// its text. It cannot: `/* /* */`, a leading `//`, `#[cfg(any())]`, a feature
+/// that no manifest declares, or a macro that swallows its argument all leave the
+/// hook's bytes exactly where they were while removing the item from compilation.
+/// The hook text is reported here as a diagnostic and nothing more. The
+/// correctness oracle is `scripts/check-oracle-inventory.py`, which asks the
+/// compiler: it lists each protected target's tests and requires a sentinel that
+/// exists only if the file was compiled. This test asserts that the checker is
+/// wired into a real lane, so it cannot be quietly dropped.
+///
+/// The map is compared against the protocol's Oracle test files table in both
+/// directions, so a new protected row with no hook fails here, and a hook for a
+/// file that left the table fails too.
+///
+/// This lives in an integration test on purpose: it compiles as its own crate, so
+/// it cannot be silenced by the loaders it protects. A `#[test]` inside either
+/// library would disappear along with everything else the moment its `mod tests;`
+/// went away. `scripts/ci-check.sh` invokes this target by name, so deleting the
+/// file or turning off `autotests` fails CI instead of quietly running nothing.
+#[test]
+fn the_protected_oracle_loader_chain_is_intact() {
+    let root = workspace_root();
+    let protocol = std::fs::read_to_string(root.join(PROTOCOL)).expect("the protocol is readable");
+
+    let rows = oracle_test_file_rows(&protocol);
+    assert!(
+        rows.len() > 20,
+        "parsed only {} rows from the {PROTOCOL} Oracle test files table, so the parse, \
+         not the loader, is what broke",
+        rows.len()
+    );
+    for row in &rows {
+        assert!(
+            row.ends_with(".rs"),
+            "`{row}` is a non-Rust row in the Oracle test files table; this guard only knows \
+             how Rust oracles are loaded, so extend it before adding that row"
+        );
+    }
+
+    let map = loader_map();
+    let tabled: BTreeSet<&str> = rows.iter().map(String::as_str).collect();
+    let mapped: BTreeSet<&str> = map.iter().map(|(path, _)| path.as_str()).collect();
+    let unmapped: Vec<&&str> = tabled.difference(&mapped).collect();
+    assert!(
+        unmapped.is_empty(),
+        "protected oracle rows with no loader hook recorded in this guard: {unmapped:?}. \
+         A row that nothing compiles is a digest over dead code"
+    );
+    let unprotected: Vec<&&str> = mapped.difference(&tabled).collect();
+    assert!(
+        unprotected.is_empty(),
+        "this guard maps files that section 7 of {PROTOCOL} no longer protects: {unprotected:?}"
+    );
+
+    let mut expected_includes: BTreeMap<&str, usize> = BTreeMap::new();
+    let mut autotest_stems: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+    // Source-text observations about the hooks. Reported, never asserted: matching
+    // bytes does not mean the item compiled, so treating these as a verdict is
+    // exactly the fake pass the inventory checker exists to remove.
+    let mut diagnostics: Vec<String> = Vec::new();
+    for (path, hook) in &map {
+        let full = root.join(path);
+        assert!(
+            full.is_file(),
+            "protected oracle file {path} is gone, so nothing it asserts runs"
+        );
+        match hook {
+            Hook::Module { file, decl } => {
+                let source = std::fs::read_to_string(root.join(file))
+                    .unwrap_or_else(|_| panic!("{file} is readable"));
+                if !source.contains(decl) {
+                    diagnostics.push(format!(
+                        "{file} no longer holds `{}` verbatim, the recorded hook for {path}",
+                        decl.replace('\n', " ")
+                    ));
+                }
+            }
+            Hook::Include { loader, exclusive } => {
+                let (loader_dir, _) = loader
+                    .rsplit_once('/')
+                    .expect("a loader path has a directory");
+                let relative = path
+                    .strip_prefix(loader_dir)
+                    .and_then(|rest| rest.strip_prefix('/'))
+                    .unwrap_or_else(|| panic!("{path} must sit under {loader_dir}"));
+                let line = format!("include!(\"{relative}\");");
+                let source = std::fs::read_to_string(root.join(loader))
+                    .unwrap_or_else(|_| panic!("{loader} is readable"));
+                if !source.contains(&line) {
+                    diagnostics.push(format!(
+                        "{loader} no longer holds `{line}`, the recorded hook for {path}"
+                    ));
+                }
+                if *exclusive {
+                    *expected_includes.entry(loader).or_default() += 1;
+                }
+            }
+            Hook::Autotest { manifest } => {
+                let stem = path
+                    .rsplit_once('/')
+                    .and_then(|(dir, file)| {
+                        dir.ends_with("/tests")
+                            .then(|| file.trim_end_matches(".rs"))
+                    })
+                    .unwrap_or_else(|| {
+                        panic!("{path} must sit in a crate's tests/ directory to be discovered")
+                    });
+                autotest_stems.entry(manifest).or_default().push(stem);
+            }
+        }
+    }
+
+    // Both lanes must run the integration targets by name, in one real invocation
+    // rather than in an `echo` of one. `cargo test --workspace` cannot stand in:
+    // with `autotests = false` it reports a smaller suite and still exits 0.
+    assert!(
+        !autotest_stems.is_empty(),
+        "the map records no automatically discovered integration test, so the lane check below \
+         would pass over nothing"
+    );
+    for lane in CI_LANES {
+        let script = std::fs::read_to_string(root.join(lane))
+            .unwrap_or_else(|_| panic!("{lane} is readable"));
+        for (manifest, stems) in &autotest_stems {
+            let package = match *manifest {
+                DECOMPILER_MANIFEST => "flutterdec-decompiler",
+                CORE_MANIFEST => "flutterdec-core",
+                IR_MANIFEST => "flutterdec-ir",
+                _ => panic!("{manifest} has no named integration-test lane"),
+            };
+            let prefix = format!("nix develop -c cargo test -p {package}");
+            let invocations: Vec<&str> = script
+                .lines()
+                .map(|line| line.trim().trim_start_matches("run: "))
+                .filter(|line| line.starts_with(&prefix))
+                .collect();
+            let covering = invocations.iter().find(|line| {
+                stems
+                    .iter()
+                    .all(|stem| line.contains(&format!("--test {stem}")))
+            });
+            assert!(
+                covering.is_some(),
+                "{lane} must invoke every discovered integration target in one command line, \
+                 `{prefix}{}`, so deleting one of them or setting `autotests = false` in \
+                 {manifest} is a hard error instead of a quietly smaller suite. Invocation \
+                 lines found: {invocations:?}",
+                stems
+                    .iter()
+                    .map(|stem| format!(" --test {stem}"))
+                    .collect::<String>()
+            );
+        }
+    }
+
+    // The compiled-inventory checker decides whether a protected file is really
+    // compiled, so a lane has to run it. Matched as a whole command line, so an
+    // `echo` of it does not count.
+    assert!(
+        root.join(INVENTORY_CHECKER).is_file(),
+        "{INVENTORY_CHECKER} is missing, so nothing asks the compiler whether the protected \
+         oracles are compiled"
+    );
+    let inventory_lane = format!("nix develop -c python3 {INVENTORY_CHECKER}");
+    assert!(
+        REQUIRED_LANE_COMMANDS.contains(&inventory_lane.as_str()),
+        "the compiled-inventory checker moved, so `{inventory_lane}` is no longer one of the \
+         required lane commands and the loop below would pass over it"
+    );
+    for lane in CI_LANES {
+        let script = std::fs::read_to_string(root.join(lane))
+            .unwrap_or_else(|_| panic!("{lane} is readable"));
+        for required in REQUIRED_LANE_COMMANDS {
+            assert!(
+                script
+                    .lines()
+                    .any(|line| line.trim().trim_start_matches("run: ") == required),
+                "{lane} must run `{required}` as a lane of its own, identically to the other \
+                 lane. The hook checks in this test are diagnostics; these commands are the \
+                 checkers that decide whether a protected oracle reached a compiled test \
+                 target, whether the Python plant tests and checker self-tests ran at all, \
+                 whether the benchmark identity gate still refuses both directions of a void \
+                 comparison, and whether the auxiliary resource inventory is intact. A guard \
+                 that runs only in `scripts/ci-check.sh` is enforced by whoever remembers to \
+                 run it"
+            );
+        }
+    }
+
+    for (loader, expected) in expected_includes {
+        let source = std::fs::read_to_string(root.join(loader))
+            .unwrap_or_else(|_| panic!("{loader} is readable"));
+        assert_eq!(
+            source.matches("include!").count(),
+            expected,
+            "{loader} is exactly its {expected} protected includes, nothing else, so it cannot \
+             grow an oracle that section 7 does not record:\n{source}"
+        );
+    }
+
+    // A manifest can silence a whole test target without touching one line of the
+    // loaders above: `test = false` drops the library's unit tests, `harness =
+    // false` replaces the harness that reports them, and `autotests = false`
+    // stops Cargo from discovering anything under `tests/`.
+    for manifest in [DECOMPILER_MANIFEST, CORE_MANIFEST, IR_MANIFEST] {
+        let source = std::fs::read_to_string(root.join(manifest))
+            .unwrap_or_else(|_| panic!("{manifest} is readable"));
+        for line in source.lines() {
+            let setting: String = line
+                .split('#')
+                .next()
+                .expect("splitting always yields a first part")
+                .chars()
+                .filter(|c| !c.is_whitespace())
+                .collect();
+            for disabled in ["test=false", "harness=false", "autotests=false"] {
+                assert_ne!(
+                    setting, disabled,
+                    "{manifest} sets `{line}`, which silences protected oracles while every \
+                     digest in section 7 still matches"
+                );
+            }
+        }
+    }
+
+    // Printed, not asserted. A hook whose text moved is worth knowing about, but
+    // `scripts/check-oracle-inventory.py` is what decides whether the oracle it
+    // loads still compiles.
+    for note in &diagnostics {
+        println!("loader-hook diagnostic: {note}");
     }
 }
 

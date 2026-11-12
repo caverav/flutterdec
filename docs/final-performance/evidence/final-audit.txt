@@ -1,0 +1,7 @@
+disclosed	emission_exclusive	estimate=-0.15058869	noise=0.00401237	mde=0.05000000	pass=True
+disclosed	combined	estimate=-0.11794302	noise=0.00441203	mde=0.05000000	pass=True
+disclosed	resources	max={'allocation_count': 0.0, 'total_allocated_bytes': 0.0, 'peak_live_bytes': 0.0}	rss=85962752	residue=0.00059379
+held-out	emission_exclusive	estimate=-0.01132099	noise=0.00452143	mde=0.05000000	pass=False
+held-out	combined	estimate=-0.00632902	noise=0.00369699	mde=0.05000000	pass=False
+held-out	resources	max={'allocation_count': 0.0, 'total_allocated_bytes': 0.0, 'peak_live_bytes': 0.0}	rss=96722944	residue=0.00000708
+decision	honest-no-win

@@ -1,0 +1,1669 @@
+{
+  "schema": "flutterdec-bench/resource/1",
+  "binding": {
+    "label": "post-correctness refresh resource reference",
+    "product_ref": "1371e42549472ec388f58bc1fd5dbdf96e8dcdd1",
+    "harness_ref": "b0e615785b28e7e58aa06dd1b929dd58acf06e53",
+    "patch_sha256": "7f1ef7a3cf0d43e839b6356bfa78cfb08502573d24677bc2e3c67cb5c469aa9e",
+    "binary_sha256": "f868a2e3b7f542f78b581a84b0405db81d4439d9873022afe182cf0b0eb23a86",
+    "matrix": "disclosed",
+    "matrix_sha256": "76b617c62858e698710f0ab068c1a8b6d8458feedc83f3738a5f5664cfacbc43",
+    "held_out_seed_hex": null,
+    "warmups": 3,
+    "threads": 1,
+    "plant": "none",
+    "profile": "release"
+  },
+  "cases": [
+    {
+      "case": "linear/64/base",
+      "epoch": 2,
+      "instrumentation_recursions": 0,
+      "process_peak_rss_bytes": 85749760,
+      "phases": [
+        {
+          "phase": "ir",
+          "metrics": {
+            "allocation_count": 3008,
+            "total_allocated_bytes": 229014,
+            "peak_live_bytes": 160089,
+            "live_bytes_at_snapshot": 84709
+          }
+        },
+        {
+          "phase": "cfg",
+          "metrics": {
+            "allocation_count": 556,
+            "total_allocated_bytes": 302632,
+            "peak_live_bytes": 121128,
+            "live_bytes_at_snapshot": 0
+          }
+        },
+        {
+          "phase": "emission_exclusive",
+          "metrics": {
+            "allocation_count": 132345,
+            "total_allocated_bytes": 2016369,
+            "peak_live_bytes": 40480,
+            "live_bytes_at_snapshot": 6858
+          }
+        },
+        {
+          "phase": "serialization",
+          "metrics": {
+            "allocation_count": 12094,
+            "total_allocated_bytes": 341915,
+            "peak_live_bytes": 131072,
+            "live_bytes_at_snapshot": 0
+          }
+        }
+      ],
+      "combined": {
+        "allocation_count": 148003,
+        "total_allocated_bytes": 2889930,
+        "peak_live_bytes": 222639,
+        "live_bytes_at_snapshot": 91567
+      }
+    },
+    {
+      "case": "linear/64/light",
+      "epoch": 3,
+      "instrumentation_recursions": 0,
+      "process_peak_rss_bytes": 85749760,
+      "phases": [
+        {
+          "phase": "ir",
+          "metrics": {
+            "allocation_count": 3415,
+            "total_allocated_bytes": 247192,
+            "peak_live_bytes": 177114,
+            "live_bytes_at_snapshot": 86599
+          }
+        },
+        {
+          "phase": "cfg",
+          "metrics": {
+            "allocation_count": 556,
+            "total_allocated_bytes": 302632,
+            "peak_live_bytes": 121128,
+            "live_bytes_at_snapshot": 0
+          }
+        },
+        {
+          "phase": "emission_exclusive",
+          "metrics": {
+            "allocation_count": 147394,
+            "total_allocated_bytes": 2230240,
+            "peak_live_bytes": 40132,
+            "live_bytes_at_snapshot": 6666
+          }
+        },
+        {
+          "phase": "serialization",
+          "metrics": {
+            "allocation_count": 12094,
+            "total_allocated_bytes": 341531,
+            "peak_live_bytes": 131072,
+            "live_bytes_at_snapshot": 0
+          }
+        }
+      ],
+      "combined": {
+        "allocation_count": 163459,
+        "total_allocated_bytes": 3121595,
+        "peak_live_bytes": 224337,
+        "live_bytes_at_snapshot": 93265
+      }
+    },
+    {
+      "case": "linear/64/heavy",
+      "epoch": 4,
+      "instrumentation_recursions": 0,
+      "process_peak_rss_bytes": 85749760,
+      "phases": [
+        {
+          "phase": "ir",
+          "metrics": {
+            "allocation_count": 9622,
+            "total_allocated_bytes": 905081,
+            "peak_live_bytes": 621115,
+            "live_bytes_at_snapshot": 311528
+          }
+        },
+        {
+          "phase": "cfg",
+          "metrics": {
+            "allocation_count": 556,
+            "total_allocated_bytes": 302632,
+            "peak_live_bytes": 121128,
+            "live_bytes_at_snapshot": 0
+          }
+        },
+        {
+          "phase": "emission_exclusive",
+          "metrics": {
+            "allocation_count": 303717,
+            "total_allocated_bytes": 6714970,
+            "peak_live_bytes": 93317,
+            "live_bytes_at_snapshot": 26671
+          }
+        },
+        {
+          "phase": "serialization",
+          "metrics": {
+            "allocation_count": 12096,
+            "total_allocated_bytes": 1167973,
+            "peak_live_bytes": 524288,
+            "live_bytes_at_snapshot": 0
+          }
+        }
+      ],
+      "combined": {
+        "allocation_count": 325991,
+        "total_allocated_bytes": 9090656,
+        "peak_live_bytes": 862487,
+        "live_bytes_at_snapshot": 338199
+      }
+    },
+    {
+      "case": "linear/256/base",
+      "epoch": 5,
+      "instrumentation_recursions": 0,
+      "process_peak_rss_bytes": 85749760,
+      "phases": [
+        {
+          "phase": "ir",
+          "metrics": {
+            "allocation_count": 12035,
+            "total_allocated_bytes": 920903,
+            "peak_live_bytes": 643641,
+            "live_bytes_at_snapshot": 339038
+          }
+        },
+        {
+          "phase": "cfg",
+          "metrics": {
+            "allocation_count": 2106,
+            "total_allocated_bytes": 4453672,
+            "peak_live_bytes": 1737576,
+            "live_bytes_at_snapshot": 0
+          }
+        },
+        {
+          "phase": "emission_exclusive",
+          "metrics": {
+            "allocation_count": 524606,
+            "total_allocated_bytes": 7949680,
+            "peak_live_bytes": 151711,
+            "live_bytes_at_snapshot": 27057
+          }
+        },
+        {
+          "phase": "serialization",
+          "metrics": {
+            "allocation_count": 47424,
+            "total_allocated_bytes": 1346537,
+            "peak_live_bytes": 524288,
+            "live_bytes_at_snapshot": 0
+          }
+        }
+      ],
+      "combined": {
+        "allocation_count": 586171,
+        "total_allocated_bytes": 14670792,
+        "peak_live_bytes": 2095363,
+        "live_bytes_at_snapshot": 366095
+      }
+    },
+    {
+      "case": "linear/256/light",
+      "epoch": 6,
+      "instrumentation_recursions": 0,
+      "process_peak_rss_bytes": 85749760,
+      "phases": [
+        {
+          "phase": "ir",
+          "metrics": {
+            "allocation_count": 13656,
+            "total_allocated_bytes": 991497,
+            "peak_live_bytes": 709626,
+            "live_bytes_at_snapshot": 346592
+          }
+        },
+        {
+          "phase": "cfg",
+          "metrics": {
+            "allocation_count": 2106,
+            "total_allocated_bytes": 4453672,
+            "peak_live_bytes": 1737576,
+            "live_bytes_at_snapshot": 0
+          }
+        },
+        {
+          "phase": "emission_exclusive",
+          "metrics": {
+            "allocation_count": 585646,
+            "total_allocated_bytes": 8822318,
+            "peak_live_bytes": 149945,
+            "live_bytes_at_snapshot": 26337
+          }
+        },
+        {
+          "phase": "serialization",
+          "metrics": {
+            "allocation_count": 47424,
+            "total_allocated_bytes": 1345097,
+            "peak_live_bytes": 524288,
+            "live_bytes_at_snapshot": 0
+          }
+        }
+      ],
+      "combined": {
+        "allocation_count": 648832,
+        "total_allocated_bytes": 15612584,
+        "peak_live_bytes": 2102919,
+        "live_bytes_at_snapshot": 372929
+      }
+    },
+    {
+      "case": "linear/256/heavy",
+      "epoch": 7,
+      "instrumentation_recursions": 0,
+      "process_peak_rss_bytes": 85749760,
+      "phases": [
+        {
+          "phase": "ir",
+          "metrics": {
+            "allocation_count": 38488,
+            "total_allocated_bytes": 3624490,
+            "peak_live_bytes": 2487067,
+            "live_bytes_at_snapshot": 1246305
+          }
+        },
+        {
+          "phase": "cfg",
+          "metrics": {
+            "allocation_count": 2106,
+            "total_allocated_bytes": 4453672,
+            "peak_live_bytes": 1737576,
+            "live_bytes_at_snapshot": 0
+          }
+        },
+        {
+          "phase": "emission_exclusive",
+          "metrics": {
+            "allocation_count": 1207327,
+            "total_allocated_bytes": 26721483,
+            "peak_live_bytes": 364570,
+            "live_bytes_at_snapshot": 106390
+          }
+        },
+        {
+          "phase": "serialization",
+          "metrics": {
+            "allocation_count": 47426,
+            "total_allocated_bytes": 4650931,
+            "peak_live_bytes": 2097152,
+            "live_bytes_at_snapshot": 0
+          }
+        }
+      ],
+      "combined": {
+        "allocation_count": 1295347,
+        "total_allocated_bytes": 39450576,
+        "peak_live_bytes": 3449847,
+        "live_bytes_at_snapshot": 1352695
+      }
+    },
+    {
+      "case": "linear/1024/base",
+      "epoch": 8,
+      "instrumentation_recursions": 0,
+      "process_peak_rss_bytes": 85749760,
+      "phases": [
+        {
+          "phase": "ir",
+          "metrics": {
+            "allocation_count": 48137,
+            "total_allocated_bytes": 3687888,
+            "peak_live_bytes": 2577273,
+            "live_bytes_at_snapshot": 1356351
+          }
+        },
+        {
+          "phase": "cfg",
+          "metrics": {
+            "allocation_count": 8264,
+            "total_allocated_bytes": 69717736,
+            "peak_live_bytes": 27004008,
+            "live_bytes_at_snapshot": 0
+          }
+        },
+        {
+          "phase": "emission_exclusive",
+          "metrics": {
+            "allocation_count": 2093620,
+            "total_allocated_bytes": 31709210,
+            "peak_live_bytes": 602944,
+            "live_bytes_at_snapshot": 108012
+          }
+        },
+        {
+          "phase": "serialization",
+          "metrics": {
+            "allocation_count": 188738,
+            "total_allocated_bytes": 5365343,
+            "peak_live_bytes": 2097152,
+            "live_bytes_at_snapshot": 0
+          }
+        }
+      ],
+      "combined": {
+        "allocation_count": 2338759,
+        "total_allocated_bytes": 110480177,
+        "peak_live_bytes": 28431334,
+        "live_bytes_at_snapshot": 1464363
+      }
+    },
+    {
+      "case": "linear/1024/light",
+      "epoch": 9,
+      "instrumentation_recursions": 0,
+      "process_peak_rss_bytes": 85749760,
+      "phases": [
+        {
+          "phase": "ir",
+          "metrics": {
+            "allocation_count": 54622,
+            "total_allocated_bytes": 3970450,
+            "peak_live_bytes": 2841402,
+            "live_bytes_at_snapshot": 1386561
+          }
+        },
+        {
+          "phase": "cfg",
+          "metrics": {
+            "allocation_count": 8264,
+            "total_allocated_bytes": 69717736,
+            "peak_live_bytes": 27004008,
+            "live_bytes_at_snapshot": 0
+          }
+        },
+        {
+          "phase": "emission_exclusive",
+          "metrics": {
+            "allocation_count": 2338619,
+            "total_allocated_bytes": 35217976,
+            "peak_live_bytes": 596010,
+            "live_bytes_at_snapshot": 105196
+          }
+        },
+        {
+          "phase": "serialization",
+          "metrics": {
+            "allocation_count": 188738,
+            "total_allocated_bytes": 5359679,
+            "peak_live_bytes": 2097152,
+            "live_bytes_at_snapshot": 0
+          }
+        }
+      ],
+      "combined": {
+        "allocation_count": 2590243,
+        "total_allocated_bytes": 114265841,
+        "peak_live_bytes": 28461562,
+        "live_bytes_at_snapshot": 1491757
+      }
+    },
+    {
+      "case": "linear/1024/heavy",
+      "epoch": 10,
+      "instrumentation_recursions": 0,
+      "process_peak_rss_bytes": 85803008,
+      "phases": [
+        {
+          "phase": "ir",
+          "metrics": {
+            "allocation_count": 153950,
+            "total_allocated_bytes": 14502323,
+            "peak_live_bytes": 9951067,
+            "live_bytes_at_snapshot": 4985410
+          }
+        },
+        {
+          "phase": "cfg",
+          "metrics": {
+            "allocation_count": 8264,
+            "total_allocated_bytes": 69717736,
+            "peak_live_bytes": 27004008,
+            "live_bytes_at_snapshot": 0
+          }
+        },
+        {
+          "phase": "emission_exclusive",
+          "metrics": {
+            "allocation_count": 4821868,
+            "total_allocated_bytes": 106790736,
+            "peak_live_bytes": 1450075,
+            "live_bytes_at_snapshot": 425441
+          }
+        },
+        {
+          "phase": "serialization",
+          "metrics": {
+            "allocation_count": 188740,
+            "total_allocated_bytes": 18583081,
+            "peak_live_bytes": 8388608,
+            "live_bytes_at_snapshot": 0
+          }
+        }
+      ],
+      "combined": {
+        "allocation_count": 5172822,
+        "total_allocated_bytes": 209593876,
+        "peak_live_bytes": 32060411,
+        "live_bytes_at_snapshot": 5410851
+      }
+    },
+    {
+      "case": "diamond-chain/64/base",
+      "epoch": 11,
+      "instrumentation_recursions": 0,
+      "process_peak_rss_bytes": 85803008,
+      "phases": [
+        {
+          "phase": "ir",
+          "metrics": {
+            "allocation_count": 3014,
+            "total_allocated_bytes": 230397,
+            "peak_live_bytes": 160137,
+            "live_bytes_at_snapshot": 84764
+          }
+        },
+        {
+          "phase": "cfg",
+          "metrics": {
+            "allocation_count": 784,
+            "total_allocated_bytes": 273144,
+            "peak_live_bytes": 106184,
+            "live_bytes_at_snapshot": 0
+          }
+        },
+        {
+          "phase": "emission_exclusive",
+          "metrics": {
+            "allocation_count": 225061,
+            "total_allocated_bytes": 3440890,
+            "peak_live_bytes": 76394,
+            "live_bytes_at_snapshot": 7633
+          }
+        },
+        {
+          "phase": "serialization",
+          "metrics": {
+            "allocation_count": 17982,
+            "total_allocated_bytes": 373065,
+            "peak_live_bytes": 131072,
+            "live_bytes_at_snapshot": 0
+          }
+        }
+      ],
+      "combined": {
+        "allocation_count": 246841,
+        "total_allocated_bytes": 4317496,
+        "peak_live_bytes": 223469,
+        "live_bytes_at_snapshot": 92397
+      }
+    },
+    {
+      "case": "diamond-chain/64/light",
+      "epoch": 12,
+      "instrumentation_recursions": 0,
+      "process_peak_rss_bytes": 85803008,
+      "phases": [
+        {
+          "phase": "ir",
+          "metrics": {
+            "allocation_count": 3421,
+            "total_allocated_bytes": 248575,
+            "peak_live_bytes": 177162,
+            "live_bytes_at_snapshot": 86654
+          }
+        },
+        {
+          "phase": "cfg",
+          "metrics": {
+            "allocation_count": 784,
+            "total_allocated_bytes": 273144,
+            "peak_live_bytes": 106184,
+            "live_bytes_at_snapshot": 0
+          }
+        },
+        {
+          "phase": "emission_exclusive",
+          "metrics": {
+            "allocation_count": 241761,
+            "total_allocated_bytes": 3687810,
+            "peak_live_bytes": 76121,
+            "live_bytes_at_snapshot": 7441
+          }
+        },
+        {
+          "phase": "serialization",
+          "metrics": {
+            "allocation_count": 17982,
+            "total_allocated_bytes": 372681,
+            "peak_live_bytes": 131072,
+            "live_bytes_at_snapshot": 0
+          }
+        }
+      ],
+      "combined": {
+        "allocation_count": 263948,
+        "total_allocated_bytes": 4582210,
+        "peak_live_bytes": 225167,
+        "live_bytes_at_snapshot": 94095
+      }
+    },
+    {
+      "case": "diamond-chain/64/heavy",
+      "epoch": 13,
+      "instrumentation_recursions": 0,
+      "process_peak_rss_bytes": 85803008,
+      "phases": [
+        {
+          "phase": "ir",
+          "metrics": {
+            "allocation_count": 9628,
+            "total_allocated_bytes": 906464,
+            "peak_live_bytes": 621163,
+            "live_bytes_at_snapshot": 311583
+          }
+        },
+        {
+          "phase": "cfg",
+          "metrics": {
+            "allocation_count": 784,
+            "total_allocated_bytes": 273144,
+            "peak_live_bytes": 106184,
+            "live_bytes_at_snapshot": 0
+          }
+        },
+        {
+          "phase": "emission_exclusive",
+          "metrics": {
+            "allocation_count": 485379,
+            "total_allocated_bytes": 9705312,
+            "peak_live_bytes": 159319,
+            "live_bytes_at_snapshot": 27446
+          }
+        },
+        {
+          "phase": "serialization",
+          "metrics": {
+            "allocation_count": 17984,
+            "total_allocated_bytes": 1199123,
+            "peak_live_bytes": 524288,
+            "live_bytes_at_snapshot": 0
+          }
+        }
+      ],
+      "combined": {
+        "allocation_count": 513775,
+        "total_allocated_bytes": 12084043,
+        "peak_live_bytes": 863317,
+        "live_bytes_at_snapshot": 339029
+      }
+    },
+    {
+      "case": "diamond-chain/256/base",
+      "epoch": 14,
+      "instrumentation_recursions": 0,
+      "process_peak_rss_bytes": 85803008,
+      "phases": [
+        {
+          "phase": "ir",
+          "metrics": {
+            "allocation_count": 12045,
+            "total_allocated_bytes": 926798,
+            "peak_live_bytes": 643833,
+            "live_bytes_at_snapshot": 339237
+          }
+        },
+        {
+          "phase": "cfg",
+          "metrics": {
+            "allocation_count": 3472,
+            "total_allocated_bytes": 3969272,
+            "peak_live_bytes": 1493000,
+            "live_bytes_at_snapshot": 0
+          }
+        },
+        {
+          "phase": "emission_exclusive",
+          "metrics": {
+            "allocation_count": 893998,
+            "total_allocated_bytes": 13628676,
+            "peak_live_bytes": 294624,
+            "live_bytes_at_snapshot": 30088
+          }
+        },
+        {
+          "phase": "serialization",
+          "metrics": {
+            "allocation_count": 70976,
+            "total_allocated_bytes": 1471095,
+            "peak_live_bytes": 524288,
+            "live_bytes_at_snapshot": 0
+          }
+        }
+      ],
+      "combined": {
+        "allocation_count": 980491,
+        "total_allocated_bytes": 19995841,
+        "peak_live_bytes": 1851016,
+        "live_bytes_at_snapshot": 369325
+      }
+    },
+    {
+      "case": "diamond-chain/256/light",
+      "epoch": 15,
+      "instrumentation_recursions": 0,
+      "process_peak_rss_bytes": 85803008,
+      "phases": [
+        {
+          "phase": "ir",
+          "metrics": {
+            "allocation_count": 13666,
+            "total_allocated_bytes": 997392,
+            "peak_live_bytes": 709818,
+            "live_bytes_at_snapshot": 346791
+          }
+        },
+        {
+          "phase": "cfg",
+          "metrics": {
+            "allocation_count": 3472,
+            "total_allocated_bytes": 3969272,
+            "peak_live_bytes": 1493000,
+            "live_bytes_at_snapshot": 0
+          }
+        },
+        {
+          "phase": "emission_exclusive",
+          "metrics": {
+            "allocation_count": 961727,
+            "total_allocated_bytes": 14634443,
+            "peak_live_bytes": 293173,
+            "live_bytes_at_snapshot": 29368
+          }
+        },
+        {
+          "phase": "serialization",
+          "metrics": {
+            "allocation_count": 70976,
+            "total_allocated_bytes": 1469655,
+            "peak_live_bytes": 524288,
+            "live_bytes_at_snapshot": 0
+          }
+        }
+      ],
+      "combined": {
+        "allocation_count": 1049841,
+        "total_allocated_bytes": 21070762,
+        "peak_live_bytes": 1858572,
+        "live_bytes_at_snapshot": 376159
+      }
+    },
+    {
+      "case": "diamond-chain/256/heavy",
+      "epoch": 16,
+      "instrumentation_recursions": 0,
+      "process_peak_rss_bytes": 85803008,
+      "phases": [
+        {
+          "phase": "ir",
+          "metrics": {
+            "allocation_count": 38498,
+            "total_allocated_bytes": 3630385,
+            "peak_live_bytes": 2487259,
+            "live_bytes_at_snapshot": 1246504
+          }
+        },
+        {
+          "phase": "cfg",
+          "metrics": {
+            "allocation_count": 3472,
+            "total_allocated_bytes": 3969272,
+            "peak_live_bytes": 1493000,
+            "live_bytes_at_snapshot": 0
+          }
+        },
+        {
+          "phase": "emission_exclusive",
+          "metrics": {
+            "allocation_count": 1934703,
+            "total_allocated_bytes": 38695036,
+            "peak_live_bytes": 628483,
+            "live_bytes_at_snapshot": 109421
+          }
+        },
+        {
+          "phase": "serialization",
+          "metrics": {
+            "allocation_count": 70978,
+            "total_allocated_bytes": 4775489,
+            "peak_live_bytes": 2097152,
+            "live_bytes_at_snapshot": 0
+          }
+        }
+      ],
+      "combined": {
+        "allocation_count": 2047651,
+        "total_allocated_bytes": 51070182,
+        "peak_live_bytes": 3453077,
+        "live_bytes_at_snapshot": 1355925
+      }
+    },
+    {
+      "case": "diamond-chain/1024/base",
+      "epoch": 17,
+      "instrumentation_recursions": 0,
+      "process_peak_rss_bytes": 85803008,
+      "phases": [
+        {
+          "phase": "ir",
+          "metrics": {
+            "allocation_count": 48151,
+            "total_allocated_bytes": 3711831,
+            "peak_live_bytes": 2578041,
+            "live_bytes_at_snapshot": 1357126
+          }
+        },
+        {
+          "phase": "cfg",
+          "metrics": {
+            "allocation_count": 15712,
+            "total_allocated_bytes": 61908664,
+            "peak_live_bytes": 23076104,
+            "live_bytes_at_snapshot": 0
+          }
+        },
+        {
+          "phase": "emission_exclusive",
+          "metrics": {
+            "allocation_count": 3569702,
+            "total_allocated_bytes": 54406298,
+            "peak_live_bytes": 1174581,
+            "live_bytes_at_snapshot": 120067
+          }
+        },
+        {
+          "phase": "serialization",
+          "metrics": {
+            "allocation_count": 282946,
+            "total_allocated_bytes": 5863533,
+            "peak_live_bytes": 2097152,
+            "live_bytes_at_snapshot": 0
+          }
+        }
+      ],
+      "combined": {
+        "allocation_count": 3916511,
+        "total_allocated_bytes": 125890326,
+        "peak_live_bytes": 24504235,
+        "live_bytes_at_snapshot": 1477193
+      }
+    },
+    {
+      "case": "diamond-chain/1024/light",
+      "epoch": 18,
+      "instrumentation_recursions": 0,
+      "process_peak_rss_bytes": 85803008,
+      "phases": [
+        {
+          "phase": "ir",
+          "metrics": {
+            "allocation_count": 54636,
+            "total_allocated_bytes": 3994393,
+            "peak_live_bytes": 2842170,
+            "live_bytes_at_snapshot": 1387336
+          }
+        },
+        {
+          "phase": "cfg",
+          "metrics": {
+            "allocation_count": 15712,
+            "total_allocated_bytes": 61908664,
+            "peak_live_bytes": 23076104,
+            "live_bytes_at_snapshot": 0
+          }
+        },
+        {
+          "phase": "emission_exclusive",
+          "metrics": {
+            "allocation_count": 3841551,
+            "total_allocated_bytes": 58448961,
+            "peak_live_bytes": 1168906,
+            "live_bytes_at_snapshot": 117235
+          }
+        },
+        {
+          "phase": "serialization",
+          "metrics": {
+            "allocation_count": 282946,
+            "total_allocated_bytes": 5857869,
+            "peak_live_bytes": 2097152,
+            "live_bytes_at_snapshot": 0
+          }
+        }
+      ],
+      "combined": {
+        "allocation_count": 4194845,
+        "total_allocated_bytes": 130209887,
+        "peak_live_bytes": 24534447,
+        "live_bytes_at_snapshot": 1504571
+      }
+    },
+    {
+      "case": "diamond-chain/1024/heavy",
+      "epoch": 19,
+      "instrumentation_recursions": 0,
+      "process_peak_rss_bytes": 85803008,
+      "phases": [
+        {
+          "phase": "ir",
+          "metrics": {
+            "allocation_count": 153964,
+            "total_allocated_bytes": 14526266,
+            "peak_live_bytes": 9951835,
+            "live_bytes_at_snapshot": 4986185
+          }
+        },
+        {
+          "phase": "cfg",
+          "metrics": {
+            "allocation_count": 15712,
+            "total_allocated_bytes": 61908664,
+            "peak_live_bytes": 23076104,
+            "live_bytes_at_snapshot": 0
+          }
+        },
+        {
+          "phase": "emission_exclusive",
+          "metrics": {
+            "allocation_count": 7732095,
+            "total_allocated_bytes": 154697773,
+            "peak_live_bytes": 2505736,
+            "live_bytes_at_snapshot": 437480
+          }
+        },
+        {
+          "phase": "serialization",
+          "metrics": {
+            "allocation_count": 282948,
+            "total_allocated_bytes": 19081271,
+            "peak_live_bytes": 8388608,
+            "live_bytes_at_snapshot": 0
+          }
+        }
+      ],
+      "combined": {
+        "allocation_count": 8184719,
+        "total_allocated_bytes": 250213974,
+        "peak_live_bytes": 28133296,
+        "live_bytes_at_snapshot": 5423665
+      }
+    },
+    {
+      "case": "fan-in/64/base",
+      "epoch": 20,
+      "instrumentation_recursions": 0,
+      "process_peak_rss_bytes": 85803008,
+      "phases": [
+        {
+          "phase": "ir",
+          "metrics": {
+            "allocation_count": 3012,
+            "total_allocated_bytes": 231834,
+            "peak_live_bytes": 160275,
+            "live_bytes_at_snapshot": 85375
+          }
+        },
+        {
+          "phase": "cfg",
+          "metrics": {
+            "allocation_count": 799,
+            "total_allocated_bytes": 254944,
+            "peak_live_bytes": 120516,
+            "live_bytes_at_snapshot": 0
+          }
+        },
+        {
+          "phase": "emission_exclusive",
+          "metrics": {
+            "allocation_count": 360240,
+            "total_allocated_bytes": 7483325,
+            "peak_live_bytes": 223815,
+            "live_bytes_at_snapshot": 24032
+          }
+        },
+        {
+          "phase": "serialization",
+          "metrics": {
+            "allocation_count": 23502,
+            "total_allocated_bytes": 433675,
+            "peak_live_bytes": 131072,
+            "live_bytes_at_snapshot": 0
+          }
+        }
+      ],
+      "combined": {
+        "allocation_count": 387553,
+        "total_allocated_bytes": 8403778,
+        "peak_live_bytes": 317862,
+        "live_bytes_at_snapshot": 109407
+      }
+    },
+    {
+      "case": "fan-in/256/base",
+      "epoch": 21,
+      "instrumentation_recursions": 0,
+      "process_peak_rss_bytes": 85803008,
+      "phases": [
+        {
+          "phase": "ir",
+          "metrics": {
+            "allocation_count": 12041,
+            "total_allocated_bytes": 932555,
+            "peak_live_bytes": 644403,
+            "live_bytes_at_snapshot": 341816
+          }
+        },
+        {
+          "phase": "cfg",
+          "metrics": {
+            "allocation_count": 3115,
+            "total_allocated_bytes": 3527328,
+            "peak_live_bytes": 1735044,
+            "live_bytes_at_snapshot": 0
+          }
+        },
+        {
+          "phase": "emission_exclusive",
+          "metrics": {
+            "allocation_count": 3321553,
+            "total_allocated_bytes": 59700320,
+            "peak_live_bytes": 945613,
+            "live_bytes_at_snapshot": 3446
+          }
+        },
+        {
+          "phase": "serialization",
+          "metrics": {
+            "allocation_count": 8140,
+            "total_allocated_bytes": 1101612,
+            "peak_live_bytes": 524288,
+            "live_bytes_at_snapshot": 0
+          }
+        }
+      ],
+      "combined": {
+        "allocation_count": 3344849,
+        "total_allocated_bytes": 65261815,
+        "peak_live_bytes": 2095609,
+        "live_bytes_at_snapshot": 345262
+      }
+    },
+    {
+      "case": "fan-in/1024/base",
+      "epoch": 22,
+      "instrumentation_recursions": 0,
+      "process_peak_rss_bytes": 85803008,
+      "phases": [
+        {
+          "phase": "ir",
+          "metrics": {
+            "allocation_count": 48145,
+            "total_allocated_bytes": 3734868,
+            "peak_live_bytes": 2580339,
+            "live_bytes_at_snapshot": 1367577
+          }
+        },
+        {
+          "phase": "cfg",
+          "metrics": {
+            "allocation_count": 12343,
+            "total_allocated_bytes": 54217760,
+            "peak_live_bytes": 26993796,
+            "live_bytes_at_snapshot": 0
+          }
+        },
+        {
+          "phase": "emission_exclusive",
+          "metrics": {
+            "allocation_count": 31515261,
+            "total_allocated_bytes": 564520988,
+            "peak_live_bytes": 3012763,
+            "live_bytes_at_snapshot": 3931
+          }
+        },
+        {
+          "phase": "serialization",
+          "metrics": {
+            "allocation_count": 8142,
+            "total_allocated_bytes": 4248310,
+            "peak_live_bytes": 2097152,
+            "live_bytes_at_snapshot": 0
+          }
+        }
+      ],
+      "combined": {
+        "allocation_count": 31583891,
+        "total_allocated_bytes": 626721926,
+        "peak_live_bytes": 28432348,
+        "live_bytes_at_snapshot": 1371508
+      }
+    },
+    {
+      "case": "nested-loop/64/base",
+      "epoch": 23,
+      "instrumentation_recursions": 0,
+      "process_peak_rss_bytes": 85803008,
+      "phases": [
+        {
+          "phase": "ir",
+          "metrics": {
+            "allocation_count": 3009,
+            "total_allocated_bytes": 229111,
+            "peak_live_bytes": 160095,
+            "live_bytes_at_snapshot": 84752
+          }
+        },
+        {
+          "phase": "cfg",
+          "metrics": {
+            "allocation_count": 718,
+            "total_allocated_bytes": 453596,
+            "peak_live_bytes": 120712,
+            "live_bytes_at_snapshot": 0
+          }
+        },
+        {
+          "phase": "emission_exclusive",
+          "metrics": {
+            "allocation_count": 149000,
+            "total_allocated_bytes": 2383825,
+            "peak_live_bytes": 44474,
+            "live_bytes_at_snapshot": 7540
+          }
+        },
+        {
+          "phase": "serialization",
+          "metrics": {
+            "allocation_count": 13198,
+            "total_allocated_bytes": 348803,
+            "peak_live_bytes": 131072,
+            "live_bytes_at_snapshot": 0
+          }
+        }
+      ],
+      "combined": {
+        "allocation_count": 165925,
+        "total_allocated_bytes": 3415335,
+        "peak_live_bytes": 223364,
+        "live_bytes_at_snapshot": 92292
+      }
+    },
+    {
+      "case": "nested-loop/256/base",
+      "epoch": 24,
+      "instrumentation_recursions": 0,
+      "process_peak_rss_bytes": 85803008,
+      "phases": [
+        {
+          "phase": "ir",
+          "metrics": {
+            "allocation_count": 12036,
+            "total_allocated_bytes": 921000,
+            "peak_live_bytes": 643647,
+            "live_bytes_at_snapshot": 339081
+          }
+        },
+        {
+          "phase": "cfg",
+          "metrics": {
+            "allocation_count": 2658,
+            "total_allocated_bytes": 6822716,
+            "peak_live_bytes": 1735432,
+            "live_bytes_at_snapshot": 0
+          }
+        },
+        {
+          "phase": "emission_exclusive",
+          "metrics": {
+            "allocation_count": 573909,
+            "total_allocated_bytes": 9153544,
+            "peak_live_bytes": 165027,
+            "live_bytes_at_snapshot": 29275
+          }
+        },
+        {
+          "phase": "serialization",
+          "metrics": {
+            "allocation_count": 48528,
+            "total_allocated_bytes": 1356497,
+            "peak_live_bytes": 524288,
+            "live_bytes_at_snapshot": 0
+          }
+        }
+      ],
+      "combined": {
+        "allocation_count": 637131,
+        "total_allocated_bytes": 18253757,
+        "peak_live_bytes": 2093288,
+        "live_bytes_at_snapshot": 368356
+      }
+    },
+    {
+      "case": "nested-loop/1024/base",
+      "epoch": 25,
+      "instrumentation_recursions": 0,
+      "process_peak_rss_bytes": 85803008,
+      "phases": [
+        {
+          "phase": "ir",
+          "metrics": {
+            "allocation_count": 48138,
+            "total_allocated_bytes": 3687985,
+            "peak_live_bytes": 2577279,
+            "live_bytes_at_snapshot": 1356394
+          }
+        },
+        {
+          "phase": "cfg",
+          "metrics": {
+            "allocation_count": 10358,
+            "total_allocated_bytes": 107500892,
+            "peak_live_bytes": 26994952,
+            "live_bytes_at_snapshot": 0
+          }
+        },
+        {
+          "phase": "emission_exclusive",
+          "metrics": {
+            "allocation_count": 2273489,
+            "total_allocated_bytes": 36258742,
+            "peak_live_bytes": 648660,
+            "live_bytes_at_snapshot": 116374
+          }
+        },
+        {
+          "phase": "serialization",
+          "metrics": {
+            "allocation_count": 189842,
+            "total_allocated_bytes": 5387591,
+            "peak_live_bytes": 2097152,
+            "live_bytes_at_snapshot": 0
+          }
+        }
+      ],
+      "combined": {
+        "allocation_count": 2521827,
+        "total_allocated_bytes": 152835210,
+        "peak_live_bytes": 28422347,
+        "live_bytes_at_snapshot": 1472768
+      }
+    },
+    {
+      "case": "multi-exit/64/base",
+      "epoch": 26,
+      "instrumentation_recursions": 0,
+      "process_peak_rss_bytes": 85803008,
+      "phases": [
+        {
+          "phase": "ir",
+          "metrics": {
+            "allocation_count": 2990,
+            "total_allocated_bytes": 231132,
+            "peak_live_bytes": 160053,
+            "live_bytes_at_snapshot": 85159
+          }
+        },
+        {
+          "phase": "cfg",
+          "metrics": {
+            "allocation_count": 939,
+            "total_allocated_bytes": 261476,
+            "peak_live_bytes": 117080,
+            "live_bytes_at_snapshot": 0
+          }
+        },
+        {
+          "phase": "emission_exclusive",
+          "metrics": {
+            "allocation_count": 1037386,
+            "total_allocated_bytes": 19175214,
+            "peak_live_bytes": 309100,
+            "live_bytes_at_snapshot": 34044
+          }
+        },
+        {
+          "phase": "serialization",
+          "metrics": {
+            "allocation_count": 46594,
+            "total_allocated_bytes": 569880,
+            "peak_live_bytes": 131072,
+            "live_bytes_at_snapshot": 0
+          }
+        }
+      ],
+      "combined": {
+        "allocation_count": 1087909,
+        "total_allocated_bytes": 20237702,
+        "peak_live_bytes": 404299,
+        "live_bytes_at_snapshot": 119203
+      }
+    },
+    {
+      "case": "multi-exit/256/base",
+      "epoch": 27,
+      "instrumentation_recursions": 0,
+      "process_peak_rss_bytes": 85803008,
+      "phases": [
+        {
+          "phase": "ir",
+          "metrics": {
+            "allocation_count": 12025,
+            "total_allocated_bytes": 931853,
+            "peak_live_bytes": 644181,
+            "live_bytes_at_snapshot": 341600
+          }
+        },
+        {
+          "phase": "cfg",
+          "metrics": {
+            "allocation_count": 3745,
+            "total_allocated_bytes": 3558468,
+            "peak_live_bytes": 1721240,
+            "live_bytes_at_snapshot": 0
+          }
+        },
+        {
+          "phase": "emission_exclusive",
+          "metrics": {
+            "allocation_count": 4976430,
+            "total_allocated_bytes": 90016059,
+            "peak_live_bytes": 966375,
+            "live_bytes_at_snapshot": 3631
+          }
+        },
+        {
+          "phase": "serialization",
+          "metrics": {
+            "allocation_count": 8140,
+            "total_allocated_bytes": 1101950,
+            "peak_live_bytes": 524288,
+            "live_bytes_at_snapshot": 0
+          }
+        }
+      ],
+      "combined": {
+        "allocation_count": 5000340,
+        "total_allocated_bytes": 95608330,
+        "peak_live_bytes": 2081613,
+        "live_bytes_at_snapshot": 345231
+      }
+    },
+    {
+      "case": "multi-exit/1024/base",
+      "epoch": 28,
+      "instrumentation_recursions": 0,
+      "process_peak_rss_bytes": 85803008,
+      "phases": [
+        {
+          "phase": "ir",
+          "metrics": {
+            "allocation_count": 48135,
+            "total_allocated_bytes": 3734166,
+            "peak_live_bytes": 2580117,
+            "live_bytes_at_snapshot": 1367361
+          }
+        },
+        {
+          "phase": "cfg",
+          "metrics": {
+            "allocation_count": 14903,
+            "total_allocated_bytes": 54347236,
+            "peak_live_bytes": 26938520,
+            "live_bytes_at_snapshot": 0
+          }
+        },
+        {
+          "phase": "emission_exclusive",
+          "metrics": {
+            "allocation_count": 37194013,
+            "total_allocated_bytes": 670481539,
+            "peak_live_bytes": 3039981,
+            "live_bytes_at_snapshot": 4107
+          }
+        },
+        {
+          "phase": "serialization",
+          "metrics": {
+            "allocation_count": 8142,
+            "total_allocated_bytes": 4248630,
+            "peak_live_bytes": 2097152,
+            "live_bytes_at_snapshot": 0
+          }
+        }
+      ],
+      "combined": {
+        "allocation_count": 37265193,
+        "total_allocated_bytes": 732811571,
+        "peak_live_bytes": 28376880,
+        "live_bytes_at_snapshot": 1371468
+      }
+    },
+    {
+      "case": "no-exit/64/base",
+      "epoch": 29,
+      "instrumentation_recursions": 0,
+      "process_peak_rss_bytes": 85803008,
+      "phases": [
+        {
+          "phase": "ir",
+          "metrics": {
+            "allocation_count": 3018,
+            "total_allocated_bytes": 229199,
+            "peak_live_bytes": 160160,
+            "live_bytes_at_snapshot": 84791
+          }
+        },
+        {
+          "phase": "cfg",
+          "metrics": {
+            "allocation_count": 493,
+            "total_allocated_bytes": 314200,
+            "peak_live_bytes": 122276,
+            "live_bytes_at_snapshot": 0
+          }
+        },
+        {
+          "phase": "emission_exclusive",
+          "metrics": {
+            "allocation_count": 137185,
+            "total_allocated_bytes": 2128487,
+            "peak_live_bytes": 41162,
+            "live_bytes_at_snapshot": 7133
+          }
+        },
+        {
+          "phase": "serialization",
+          "metrics": {
+            "allocation_count": 12278,
+            "total_allocated_bytes": 343391,
+            "peak_live_bytes": 131072,
+            "live_bytes_at_snapshot": 0
+          }
+        }
+      ],
+      "combined": {
+        "allocation_count": 152974,
+        "total_allocated_bytes": 3015277,
+        "peak_live_bytes": 222996,
+        "live_bytes_at_snapshot": 91924
+      }
+    },
+    {
+      "case": "no-exit/256/base",
+      "epoch": 30,
+      "instrumentation_recursions": 0,
+      "process_peak_rss_bytes": 85803008,
+      "phases": [
+        {
+          "phase": "ir",
+          "metrics": {
+            "allocation_count": 12045,
+            "total_allocated_bytes": 921088,
+            "peak_live_bytes": 643712,
+            "live_bytes_at_snapshot": 339120
+          }
+        },
+        {
+          "phase": "cfg",
+          "metrics": {
+            "allocation_count": 1849,
+            "total_allocated_bytes": 4646456,
+            "peak_live_bytes": 1742180,
+            "live_bytes_at_snapshot": 0
+          }
+        },
+        {
+          "phase": "emission_exclusive",
+          "metrics": {
+            "allocation_count": 545386,
+            "total_allocated_bytes": 8412612,
+            "peak_live_bytes": 154499,
+            "live_bytes_at_snapshot": 28099
+          }
+        },
+        {
+          "phase": "serialization",
+          "metrics": {
+            "allocation_count": 47608,
+            "total_allocated_bytes": 1349547,
+            "peak_live_bytes": 524288,
+            "live_bytes_at_snapshot": 0
+          }
+        }
+      ],
+      "combined": {
+        "allocation_count": 606888,
+        "total_allocated_bytes": 15329703,
+        "peak_live_bytes": 2100051,
+        "live_bytes_at_snapshot": 367219
+      }
+    },
+    {
+      "case": "no-exit/1024/base",
+      "epoch": 31,
+      "instrumentation_recursions": 0,
+      "process_peak_rss_bytes": 85803008,
+      "phases": [
+        {
+          "phase": "ir",
+          "metrics": {
+            "allocation_count": 48147,
+            "total_allocated_bytes": 3688073,
+            "peak_live_bytes": 2577344,
+            "live_bytes_at_snapshot": 1356433
+          }
+        },
+        {
+          "phase": "cfg",
+          "metrics": {
+            "allocation_count": 7237,
+            "total_allocated_bytes": 72847320,
+            "peak_live_bytes": 27022436,
+            "live_bytes_at_snapshot": 0
+          }
+        },
+        {
+          "phase": "emission_exclusive",
+          "metrics": {
+            "allocation_count": 2178145,
+            "total_allocated_bytes": 33575016,
+            "peak_live_bytes": 613618,
+            "live_bytes_at_snapshot": 112141
+          }
+        },
+        {
+          "phase": "serialization",
+          "metrics": {
+            "allocation_count": 188922,
+            "total_allocated_bytes": 5374495,
+            "peak_live_bytes": 2097152,
+            "live_bytes_at_snapshot": 0
+          }
+        }
+      ],
+      "combined": {
+        "allocation_count": 2422451,
+        "total_allocated_bytes": 115484904,
+        "peak_live_bytes": 28449862,
+        "live_bytes_at_snapshot": 1468574
+      }
+    },
+    {
+      "case": "irreducible/64/base",
+      "epoch": 32,
+      "instrumentation_recursions": 0,
+      "process_peak_rss_bytes": 85803008,
+      "phases": [
+        {
+          "phase": "ir",
+          "metrics": {
+            "allocation_count": 3014,
+            "total_allocated_bytes": 231355,
+            "peak_live_bytes": 160233,
+            "live_bytes_at_snapshot": 84858
+          }
+        },
+        {
+          "phase": "cfg",
+          "metrics": {
+            "allocation_count": 670,
+            "total_allocated_bytes": 170632,
+            "peak_live_bytes": 86468,
+            "live_bytes_at_snapshot": 0
+          }
+        },
+        {
+          "phase": "emission_exclusive",
+          "metrics": {
+            "allocation_count": 13761044,
+            "total_allocated_bytes": 204561774,
+            "peak_live_bytes": 9310250,
+            "live_bytes_at_snapshot": 26889
+          }
+        },
+        {
+          "phase": "serialization",
+          "metrics": {
+            "allocation_count": 61038,
+            "total_allocated_bytes": 628259,
+            "peak_live_bytes": 131072,
+            "live_bytes_at_snapshot": 0
+          }
+        }
+      ],
+      "combined": {
+        "allocation_count": 13825766,
+        "total_allocated_bytes": 205592020,
+        "peak_live_bytes": 9395108,
+        "live_bytes_at_snapshot": 111747
+      }
+    },
+    {
+      "case": "irreducible/256/base",
+      "epoch": 33,
+      "instrumentation_recursions": 0,
+      "process_peak_rss_bytes": 85803008,
+      "phases": [
+        {
+          "phase": "ir",
+          "metrics": {
+            "allocation_count": 12045,
+            "total_allocated_bytes": 930636,
+            "peak_live_bytes": 644217,
+            "live_bytes_at_snapshot": 339619
+          }
+        },
+        {
+          "phase": "cfg",
+          "metrics": {
+            "allocation_count": 3342,
+            "total_allocated_bytes": 2497960,
+            "peak_live_bytes": 1230596,
+            "live_bytes_at_snapshot": 0
+          }
+        },
+        {
+          "phase": "emission_exclusive",
+          "metrics": {
+            "allocation_count": 38934923,
+            "total_allocated_bytes": 421987451,
+            "peak_live_bytes": 11752787,
+            "live_bytes_at_snapshot": 28193
+          }
+        },
+        {
+          "phase": "serialization",
+          "metrics": {
+            "allocation_count": 61040,
+            "total_allocated_bytes": 1417299,
+            "peak_live_bytes": 524288,
+            "live_bytes_at_snapshot": 0
+          }
+        }
+      ],
+      "combined": {
+        "allocation_count": 39011350,
+        "total_allocated_bytes": 426833346,
+        "peak_live_bytes": 12092406,
+        "live_bytes_at_snapshot": 367812
+      }
+    },
+    {
+      "case": "irreducible/1024/base",
+      "epoch": 34,
+      "instrumentation_recursions": 0,
+      "process_peak_rss_bytes": 85803008,
+      "phases": [
+        {
+          "phase": "ir",
+          "metrics": {
+            "allocation_count": 48151,
+            "total_allocated_bytes": 3727189,
+            "peak_live_bytes": 2579577,
+            "live_bytes_at_snapshot": 1358660
+          }
+        },
+        {
+          "phase": "cfg",
+          "metrics": {
+            "allocation_count": 16310,
+            "total_allocated_bytes": 38938888,
+            "peak_live_bytes": 19078148,
+            "live_bytes_at_snapshot": 0
+          }
+        },
+        {
+          "phase": "emission_exclusive",
+          "metrics": {
+            "allocation_count": 106327532,
+            "total_allocated_bytes": 1057768923,
+            "peak_live_bytes": 14824260,
+            "live_bytes_at_snapshot": 33314
+          }
+        },
+        {
+          "phase": "serialization",
+          "metrics": {
+            "allocation_count": 61042,
+            "total_allocated_bytes": 4573269,
+            "peak_live_bytes": 2097152,
+            "live_bytes_at_snapshot": 0
+          }
+        }
+      ],
+      "combined": {
+        "allocation_count": 106453035,
+        "total_allocated_bytes": 1105008269,
+        "peak_live_bytes": 20507809,
+        "live_bytes_at_snapshot": 1391974
+      }
+    }
+  ]
+}

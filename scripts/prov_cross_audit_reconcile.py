@@ -8,12 +8,14 @@ claims, is excused by all three and verified by none while every per-site count
 reads zero. This script closes it by reading the *population* rather than one
 site's rows.
 
-Nothing here is derived from the emitter's bookkeeping. Annotation spans are
-parsed out of the emitted `.dartpseudo` files by this script's own scanner, the
-control-flow facts come from the IR the same run emitted with `--emit-ir`, and
-the audit is only ever the thing being checked.
+Coordinates and control-flow claims are not derived from the emitter's
+bookkeeping. Annotation spans come from this script's own scan of the emitted
+`.dartpseudo` files, and predecessor identity comes from the IR emitted by the
+same run with `--emit-ir`. Candidate values are checked against the full
+register end-state snapshot for that IR predecessor, not against the candidate
+array or its deduplicated output.
 
-Seven counts, each of which must be 0:
+Eight counts, each of which must be 0:
 
   1 unmatched_annotation   an annotation span in the corpus with no audit record
                            at its `(function_id, output_line, output_col)`
@@ -28,13 +30,18 @@ Seven counts, each of which must be 0:
                            emitted IR, to a real construct of the declared kind
   7 anchor_disagrees       `(loss_site, site_key, path_key, register)` is not what
                            the output-anchor mapping says produced this annotation
+  8 predecessor_disagrees  a join or loop-entry candidate is not the value in
+                           the named predecessor's emitted end-state snapshot
 
-Six and seven are different claims. Six proves the label names a *real* construct:
+Six, seven and eight are different claims. Six proves the label names a *real* construct:
 without it, an emitter writing `("join", 7)` for an annotation produced at block 42
 is internally coherent at every step - the tag is declared, the coordinate matches,
 the snapshot is its own - and the provenance is still false. Seven proves it names
 *the* construct at that coordinate, which six cannot: block 7 can be a genuine
 non-loop join with a genuine predecessor and a genuine drop of the same register.
+Eight binds every claimed value to that exact real predecessor. Predecessor
+coverage and the deduplicated rendered list cannot do that: both stay unchanged
+when values are permuted among four real predecessors carrying `7, 7, 9, 9`.
 
 The anchor mapping is the `anchor` field: the rendering anchor the emitter
 inserted the span from, recorded in terms the IR resolves on its own - `["block",
@@ -48,9 +55,9 @@ the record's register.
 What this does *not* establish, stated because a zero is worth only what it
 covers: the join and loop sites place their span by searching forward for a line
 carrying the register's spellings, so the anchor confirms the coordinate, the
-values and the loss, but not that the annotated line descends from the anchor
-block. Count 7 binds the label to the anchor and the anchor to the IR; it does not
-close that last step.
+predecessor-bound values and the loss, but not that the annotated line descends
+from the anchor block. Count 7 binds the label to the anchor and the anchor to
+the IR; it does not close that last step.
 
 Usage:
     prov_cross_audit_reconcile.py AUDIT.jsonl --pseudocode DIR --ir DIR
@@ -297,7 +304,7 @@ class IrIndex:
 
 
 def load_audit(path: pathlib.Path):
-    annotations, malformed = [], []
+    snapshots, annotations, malformed = {}, [], []
     with path.open() as handle:
         for number, line in enumerate(handle, start=1):
             line = line.strip()
@@ -308,9 +315,11 @@ def load_audit(path: pathlib.Path):
             except json.JSONDecodeError as error:
                 malformed.append((number, str(error)))
                 continue
-            if row.get("record") == "annotation":
+            if row.get("record") == "snapshot":
+                snapshots[(row.get("function_id"), row.get("snapshot_id"))] = row
+            elif row.get("record") == "annotation":
                 annotations.append(row)
-    return annotations, malformed
+    return snapshots, annotations, malformed
 
 
 def recorded_values(record):
@@ -396,7 +405,7 @@ def resolve_path(ir: Ir, site, path):
 
 def reconcile(audit: pathlib.Path, pseudocode_dir: pathlib.Path, ir_dir: pathlib.Path):
     corpus = parse_corpus(pseudocode_dir)
-    annotations, malformed = load_audit(audit)
+    snapshots, annotations, malformed = load_audit(audit)
     irs = IrIndex(ir_dir)
 
     by_coordinate = defaultdict(list)
@@ -417,6 +426,7 @@ def reconcile(audit: pathlib.Path, pseudocode_dir: pathlib.Path, ir_dir: pathlib
         "rendered_disagrees",
         "site_not_real",
         "anchor_disagrees",
+        "predecessor_disagrees",
     )}
 
     def note(name, where, reason):
@@ -473,6 +483,25 @@ def reconcile(audit: pathlib.Path, pseudocode_dir: pathlib.Path, ir_dir: pathlib
                     problem = resolve_path(ir, site, path)
                     if problem:
                         note("site_not_real", where, f"candidates[{index}] {path}: {problem}")
+                    elif site[0] in ("join", "loop"):
+                        snapshot = snapshots.get(
+                            (record.get("function_id"), candidate.get("snapshot_id"))
+                        )
+                        snapshot_path = key_of(snapshot.get("site_key")) if snapshot else None
+                        registers = dict(snapshot.get("registers") or []) if snapshot else {}
+                        register = record.get("register")
+                        if (
+                            snapshot_path != path
+                            or registers.get(register) != candidate.get("value")
+                        ):
+                            note(
+                                "predecessor_disagrees",
+                                where,
+                                f"candidates[{index}] {path} claims {register}="
+                                f"{candidate.get('value')!r}, but snapshot "
+                                f"{candidate.get('snapshot_id')!r} records path "
+                                f"{snapshot_path} and {register}={registers.get(register)!r}",
+                            )
 
         # Count 7. The anchor is the construct the emitter inserted this span
         # from; the IR says what kind of construct that is, and the label has to
@@ -576,14 +605,27 @@ SELF_TEST_IR = {
     "entry_va": 0x1000,
     "blocks": [
         {"id": 0, "start_va": 0x1000, "succs": [1, 2], "instrs": []},
-        {"id": 1, "start_va": 0x1010, "succs": [3], "instrs": []},
-        {"id": 2, "start_va": 0x1020, "succs": [3], "instrs": []},
+        {
+            "id": 1,
+            "start_va": 0x1010,
+            "succs": [3],
+            "instrs": [{"va": 0x1010, "op": "Other", "src": "mov x0, #7", "target": ""}],
+        },
+        {
+            "id": 2,
+            "start_va": 0x1020,
+            "succs": [3],
+            "instrs": [{"va": 0x1020, "op": "Other", "src": "mov x0, #9", "target": ""}],
+        },
         # Block 3 is the join: two predecessors, not a loop header.
         {
             "id": 3,
             "start_va": 0x1030,
             "succs": [4],
-            "instrs": [{"va": 0x1030, "op": "Call", "src": "bl #0x2000", "target": ""}],
+            "instrs": [
+                {"va": 0x1030, "op": "Call", "src": "bl #0x2000", "target": ""},
+                {"va": 0x1034, "op": "Other", "src": "mov x1, #3", "target": ""},
+            ],
         },
         # Block 4 is a natural loop header: block 5 is dominated by it and
         # branches back.
@@ -600,6 +642,36 @@ SELF_TEST_LINES = [
     "  var b = reg2" + PRE_CALL_OPEN + "5" + ANNOTATION_CLOSE + ";",
     "}",
 ]
+
+SELF_TEST_WIDE_IR = {
+    "function_id": 8,
+    "name": "wide",
+    "entry_va": 0x2000,
+    "blocks": [
+        {"id": 0, "start_va": 0x2000, "succs": [1, 2], "instrs": []},
+        {"id": 1, "start_va": 0x2010, "succs": [3, 4], "instrs": []},
+        {"id": 2, "start_va": 0x2020, "succs": [5, 6], "instrs": []},
+        {"id": 3, "start_va": 0x2030, "succs": [7], "instrs": []},
+        {"id": 4, "start_va": 0x2040, "succs": [7], "instrs": []},
+        {"id": 5, "start_va": 0x2050, "succs": [7], "instrs": []},
+        {"id": 6, "start_va": 0x2060, "succs": [7], "instrs": []},
+        {"id": 7, "start_va": 0x2070, "succs": [], "instrs": []},
+    ],
+}
+
+SELF_TEST_LOOP_IR = {
+    "function_id": 9,
+    "name": "loop_paths",
+    "entry_va": 0x3000,
+    "blocks": [
+        {"id": 0, "start_va": 0x3000, "succs": [1, 2], "instrs": []},
+        {"id": 1, "start_va": 0x3010, "succs": [3], "instrs": []},
+        {"id": 2, "start_va": 0x3020, "succs": [3], "instrs": []},
+        {"id": 3, "start_va": 0x3030, "succs": [4, 5], "instrs": []},
+        {"id": 4, "start_va": 0x3040, "succs": [3], "instrs": []},
+        {"id": 5, "start_va": 0x3050, "succs": [], "instrs": []},
+    ],
+}
 
 
 def self_test_records():
@@ -647,6 +719,97 @@ def self_test_records():
                 {"path_key": ["call", 0x1030], "value": "5", "snapshot_id": "call:0x1030:0"},
             ],
         },
+        {
+            "schema_version": 1,
+            "record": "annotation",
+            "function_id": 8,
+            "output_line": 2,
+            "output_col": len("  return reg3") + 1,
+            "loss_site": "join",
+            "site_key": ["join", 7],
+            "anchor": ["block", 7],
+            "register": "x3",
+            "candidates": [
+                {"path_key": ["block", 3], "value": "7", "snapshot_id": "join:7:pred:3:0"},
+                {"path_key": ["block", 4], "value": "7", "snapshot_id": "join:7:pred:4:1"},
+                {"path_key": ["block", 5], "value": "9", "snapshot_id": "join:7:pred:5:2"},
+                {"path_key": ["block", 6], "value": "9", "snapshot_id": "join:7:pred:6:3"},
+            ],
+        },
+        {
+            "schema_version": 1,
+            "record": "annotation",
+            "function_id": 9,
+            "output_line": 2,
+            "output_col": len("  return reg4") + 1,
+            "loss_site": "loop_entry",
+            "site_key": ["loop", 3],
+            "anchor": ["block", 3],
+            "register": "x4",
+            "candidates": [
+                {"path_key": ["block", 1], "value": "21", "snapshot_id": "loop:3:pred:1:0"},
+                {"path_key": ["block", 2], "value": "23", "snapshot_id": "loop:3:pred:2:1"},
+            ],
+        },
+        {
+            "schema_version": 1,
+            "record": "snapshot",
+            "function_id": 7,
+            "snapshot_id": "join:3:pred:1:0",
+            "site_key": ["block", 1],
+            "registers": [["x0", "7"]],
+        },
+        {
+            "schema_version": 1,
+            "record": "snapshot",
+            "function_id": 7,
+            "snapshot_id": "join:3:pred:2:0",
+            "site_key": ["block", 2],
+            "registers": [["x0", "9"]],
+        },
+        {
+            "schema_version": 1,
+            "record": "snapshot",
+            "function_id": 7,
+            "snapshot_id": "loop:4:pred:3:0",
+            "site_key": ["block", 3],
+            "registers": [["x1", "3"]],
+        },
+        {
+            "schema_version": 1,
+            "record": "snapshot",
+            "function_id": 7,
+            "snapshot_id": "call:0x1030:0",
+            "site_key": ["call", 0x1030],
+            "registers": [["x2", "5"]],
+        },
+        *[
+            {
+                "schema_version": 1,
+                "record": "snapshot",
+                "function_id": 8,
+                "snapshot_id": f"join:7:pred:{pred}:{pred - 3}",
+                "site_key": ["block", pred],
+                "registers": [["x3", value]],
+            }
+            for pred, value in ((3, "7"), (4, "7"), (5, "9"), (6, "9"))
+        ],
+        {
+            "schema_version": 1,
+            "record": "snapshot",
+            "function_id": 9,
+            "snapshot_id": "loop:3:pred:1:0",
+            "site_key": ["block", 1],
+            "registers": [["x4", "21"]],
+        },
+        {
+            "schema_version": 1,
+            "record": "snapshot",
+            "function_id": 9,
+            "snapshot_id": "loop:3:pred:2:1",
+            "site_key": ["block", 2],
+            "registers": [["x4", "23"]],
+        },
     ]
 
 
@@ -655,6 +818,14 @@ def write_self_test(root: pathlib.Path, records, lines):
     (root / "ir").mkdir(parents=True, exist_ok=True)
     (root / "pseudocode" / "00007_planted.dartpseudo").write_text("\n".join(lines))
     (root / "ir" / "00007_planted.json").write_text(json.dumps(SELF_TEST_IR))
+    (root / "pseudocode" / "00008_wide.dartpseudo").write_text(
+        "void wide() {\n  return reg3 /* = 7 | 9 */;\n}"
+    )
+    (root / "ir" / "00008_wide.json").write_text(json.dumps(SELF_TEST_WIDE_IR))
+    (root / "pseudocode" / "00009_loop_paths.dartpseudo").write_text(
+        "void loopPaths() {\n  return reg4 /* loop-entry value: 21 | 23 */;\n}"
+    )
+    (root / "ir" / "00009_loop_paths.json").write_text(json.dumps(SELF_TEST_LOOP_IR))
     audit = root / "audit.jsonl"
     audit.write_text("".join(json.dumps(record) + "\n" for record in records))
     return audit
@@ -742,7 +913,37 @@ def self_test():
         result = run(mutate, mutate_lines)
         assert result[name] > 0, f"planting for {name} produced {result}"
 
-    print(f"self-test ok: clean fixture reconciles, {len(plants)} plants all detected")
+    def moved_real_predecessor(records):
+        records[0]["candidates"][0]["path_key"] = ["block", 2]
+
+    def permuted_four_predecessors(records):
+        record = next(row for row in records if row.get("function_id") == 8)
+        record["candidates"][1]["value"] = "9"
+        record["candidates"][2]["value"] = "7"
+
+    def retargeted_loop_entry(records):
+        record = next(row for row in records if row.get("function_id") == 9)
+        record["candidates"][0]["path_key"] = ["block", 2]
+
+    binding_plants = (
+        ("moved real predecessor", moved_real_predecessor),
+        ("four-predecessor permutation", permuted_four_predecessors),
+        ("loop-entry retarget", retargeted_loop_entry),
+    )
+    for name, mutate in binding_plants:
+        result = run(mutate)
+        legacy_total = sum(
+            count for key, count in result.items() if key != "predecessor_disagrees"
+        )
+        assert legacy_total == 0, f"the legacy seven counts reject {name}: {result}"
+        assert result["predecessor_disagrees"] > 0, (
+            f"the predecessor binding accepts {name}: {result}"
+        )
+
+    print(
+        f"self-test ok: clean fixture reconciles, {len(plants)} count plants and "
+        f"{len(binding_plants)} legacy-accepted predecessor plants all detected"
+    )
     return 0
 
 

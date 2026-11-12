@@ -1,0 +1,188 @@
+{
+  "schema": "flutterdec-bench/result/1",
+  "binding": {
+    "label": "final held-out candidate warmup",
+    "product_ref": "9b82e07fa62f97654aea5153d9fb6a2ef57a377a",
+    "harness_ref": "4c127aba4e74fb6f8d486c4cb066586bb0d74846",
+    "patch_sha256": "14413796ca8a89cc1328497b5c87629b1c55f945ec58e73eebb3838df0700460",
+    "binary_sha256": "142253244fabb79894e9ab3622d93dc816623d92f8fa5dcbbc9a1b6b949046d5",
+    "matrix": "held-out",
+    "matrix_sha256": "797fa5817a5cdb025b2ab869b1ad32215c648c6ec3144d6ca94a7668891f1af3",
+    "held_out_seed_hex": "522fd89869ed6662b16def9f47e45194",
+    "disclosed_seed": 1592614637,
+    "profile": "release",
+    "warmups": 3,
+    "measured_runs": 0,
+    "correctness_checked": true,
+    "command": "/home/camilo/flutterdec/.post-correctness-tmp/final-performance-run/bin/timing/candidate/flutterdec-bench run --matrix held-out --held-out-seed 522fd89869ed6662b16def9f47e45194 --warmups 3 --runs 0 --correctness on --product-ref 9b82e07fa62f97654aea5153d9fb6a2ef57a377a --harness-ref 4c127aba4e74fb6f8d486c4cb066586bb0d74846 --patch-sha256 14413796ca8a89cc1328497b5c87629b1c55f945ec58e73eebb3838df0700460 --binary-sha256 142253244fabb79894e9ab3622d93dc816623d92f8fa5dcbbc9a1b6b949046d5 --label final held-out candidate warmup --out /home/camilo/flutterdec/.post-correctness-tmp/final-performance-run/held-out/timing/warmup-candidate.json",
+    "threads": 1
+  },
+  "host": {
+    "hostname": "gentoo",
+    "kernel": "Linux 6.9.3-gentoo-dist",
+    "cpu_model": "AMD Ryzen 7 7700X 8-Core Processor",
+    "logical_cpus": 16
+  },
+  "limits": {
+    "timeout_seconds": 120,
+    "memory_limit_bytes": 2147483648,
+    "peak_rss_bytes": 93523968,
+    "within_memory_limit": true,
+    "runs_over_timeout": []
+  },
+  "timer": {
+    "overhead_nanos": 20,
+    "calibration_samples": 4096,
+    "reconciliation_tolerance": 0.020000,
+    "worst_unaccounted_fraction": 0.000000,
+    "reconciliation_failures": []
+  },
+  "cases": [
+    {
+      "case": "held-out/0/1579",
+      "topology": "mixed",
+      "blocks": 1579,
+      "load": "held-out",
+      "instructions_per_block": 8,
+      "instructions": 12632,
+      "workload_sha256": "ddebdcae360879168b55bdecc877e9d8b37590c3f22a9923e9afff99c2c3d228",
+      "correctness": {
+        "block_count_matches": true,
+        "successors_match": true,
+        "dense_block_ids": true,
+        "predecessors_reciprocate": true,
+        "artifact_non_empty": true,
+        "artifact_declares_a_function": true,
+        "no_dangling_helper_call": true,
+        "emission_is_deterministic": true,
+        "passed": true,
+        "artifact_sha256": "567267520bb631f2b4bc1747e2553d8118a48c6cfab620f75612d1978ca505cb",
+        "source_lines": 2385,
+        "helper_definitions": 62,
+        "helper_references": 62
+      }
+    },
+    {
+      "case": "held-out/1/1206",
+      "topology": "mixed",
+      "blocks": 1206,
+      "load": "held-out",
+      "instructions_per_block": 8,
+      "instructions": 9648,
+      "workload_sha256": "26dd33ef26b8d91e3d23ba8db9cdfce74c3376e8b75341076afbac526b3fac20",
+      "correctness": {
+        "block_count_matches": true,
+        "successors_match": true,
+        "dense_block_ids": true,
+        "predecessors_reciprocate": true,
+        "artifact_non_empty": true,
+        "artifact_declares_a_function": true,
+        "no_dangling_helper_call": true,
+        "emission_is_deterministic": true,
+        "passed": true,
+        "artifact_sha256": "64535d9333a96927554270c81f0fce2532828bb22087ca4b060a9c752e445c6e",
+        "source_lines": 2295,
+        "helper_definitions": 61,
+        "helper_references": 61
+      }
+    },
+    {
+      "case": "held-out/2/1926",
+      "topology": "mixed",
+      "blocks": 1926,
+      "load": "held-out",
+      "instructions_per_block": 8,
+      "instructions": 15408,
+      "workload_sha256": "a8113a6e9406b6828beb58047b178332bbe48ee4d4693d3b56482f0fe0ed128c",
+      "correctness": {
+        "block_count_matches": true,
+        "successors_match": true,
+        "dense_block_ids": true,
+        "predecessors_reciprocate": true,
+        "artifact_non_empty": true,
+        "artifact_declares_a_function": true,
+        "no_dangling_helper_call": true,
+        "emission_is_deterministic": true,
+        "passed": true,
+        "artifact_sha256": "b078ec083d99d144aadcaba954145ed858c6d77c1b237ecdf02746217a9bee14",
+        "source_lines": 2393,
+        "helper_definitions": 63,
+        "helper_references": 63
+      }
+    },
+    {
+      "case": "held-out/3/1522",
+      "topology": "mixed",
+      "blocks": 1522,
+      "load": "held-out",
+      "instructions_per_block": 8,
+      "instructions": 12176,
+      "workload_sha256": "fe8c6df727289a5888023c9427f626ecd2f14562cffeda38cfb7dc35180964a9",
+      "correctness": {
+        "block_count_matches": true,
+        "successors_match": true,
+        "dense_block_ids": true,
+        "predecessors_reciprocate": true,
+        "artifact_non_empty": true,
+        "artifact_declares_a_function": true,
+        "no_dangling_helper_call": true,
+        "emission_is_deterministic": true,
+        "passed": true,
+        "artifact_sha256": "57ad5df6937b8b9a576a662c03232eaff8f6151fa0226b7568440c47908ca0ca",
+        "source_lines": 2363,
+        "helper_definitions": 59,
+        "helper_references": 59
+      }
+    },
+    {
+      "case": "held-out/4/1795",
+      "topology": "mixed",
+      "blocks": 1795,
+      "load": "held-out",
+      "instructions_per_block": 8,
+      "instructions": 14360,
+      "workload_sha256": "8afd5edba27f4f70bc542c0c1f5f112bafa2d26f61b096bd50aae4d92989b189",
+      "correctness": {
+        "block_count_matches": true,
+        "successors_match": true,
+        "dense_block_ids": true,
+        "predecessors_reciprocate": true,
+        "artifact_non_empty": true,
+        "artifact_declares_a_function": true,
+        "no_dangling_helper_call": true,
+        "emission_is_deterministic": true,
+        "passed": true,
+        "artifact_sha256": "a55dd216b4a26c3114a28938062021a8050cab1d5d6105010b8a6d9c2b29998f",
+        "source_lines": 2454,
+        "helper_definitions": 61,
+        "helper_references": 61
+      }
+    },
+    {
+      "case": "held-out/5/1361",
+      "topology": "mixed",
+      "blocks": 1361,
+      "load": "held-out",
+      "instructions_per_block": 8,
+      "instructions": 10888,
+      "workload_sha256": "eb0f7a39a8f66ea247d703466bc22a937eb26e4bf522a46bb45bc4d167ec182e",
+      "correctness": {
+        "block_count_matches": true,
+        "successors_match": true,
+        "dense_block_ids": true,
+        "predecessors_reciprocate": true,
+        "artifact_non_empty": true,
+        "artifact_declares_a_function": true,
+        "no_dangling_helper_call": true,
+        "emission_is_deterministic": true,
+        "passed": true,
+        "artifact_sha256": "25db58e845517b4020ca5d2f399f40aa34e07fcb7558017a4e7cefbce53077c6",
+        "source_lines": 2578,
+        "helper_definitions": 63,
+        "helper_references": 63
+      }
+    }
+  ],
+  "correctness_failures": [],
+  "runs": []
+}

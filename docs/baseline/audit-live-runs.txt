@@ -1,0 +1,61 @@
+== windows (raw sample mtimes, epoch seconds)
+bench-aa-1 1787035198.4 .. 1787035434.9
+bench-aa-2 1787035600.1 .. 1787035836.9
+gap between runs: 165.2s
+
+== timer reconciliation, measured passes (combined minus the four parts)
+bench-aa-1/reference  passes=495 worst=+0.000755 at pair=9 linear/64/base median=0.000004 negative=0 over-tolerance=0 tolerance=0.02
+bench-aa-1/candidate  passes=495 worst=+0.000656 at pair=10 linear/64/base median=0.000003 negative=0 over-tolerance=0 tolerance=0.02
+bench-aa-2/reference  passes=495 worst=+0.001204 at pair=2 linear/64/base median=0.000003 negative=0 over-tolerance=0 tolerance=0.02
+bench-aa-2/candidate  passes=495 worst=+0.000560 at pair=5 linear/64/base median=0.000004 negative=0 over-tolerance=0 tolerance=0.02
+
+== per-phase pooled (recomputed independently)
+bench-aa-1 ir                   d=-0.00086 noise=0.01795 mde=0.0539 clears=no pairs=495
+bench-aa-1 cfg                  d=-0.00145 noise=0.01725 mde=0.0518 clears=no pairs=495
+bench-aa-1 emission_exclusive   d=+0.00065 noise=0.01047 mde=0.0500 clears=no pairs=495
+bench-aa-1 serialization        d=+0.00425 noise=0.02633 mde=0.0790 clears=no pairs=495
+bench-aa-1 combined             d=+0.00067 noise=0.01078 mde=0.0500 clears=no pairs=495
+bench-aa-2 ir                   d=+0.00123 noise=0.01593 mde=0.0500 clears=no pairs=495
+bench-aa-2 cfg                  d=+0.00149 noise=0.01687 mde=0.0506 clears=no pairs=495
+bench-aa-2 emission_exclusive   d=-0.00309 noise=0.01017 mde=0.0500 clears=no pairs=495
+bench-aa-2 serialization        d=+0.00362 noise=0.02263 mde=0.0679 clears=no pairs=495
+bench-aa-2 combined             d=-0.00106 noise=0.01070 mde=0.0500 clears=no pairs=495
+
+== cross-check vs analysis.json by_phase (tolerance 1e-4)
+bench-aa-1 cfg                  aggregator d=-0.00145 mine d=-0.00145 OK
+bench-aa-1 combined             aggregator d=+0.00067 mine d=+0.00067 OK
+bench-aa-1 emission_exclusive   aggregator d=+0.00065 mine d=+0.00065 OK
+bench-aa-1 ir                   aggregator d=-0.00086 mine d=-0.00086 OK
+bench-aa-1 serialization        aggregator d=+0.00425 mine d=+0.00425 OK
+bench-aa-2 cfg                  aggregator d=+0.00149 mine d=+0.00149 OK
+bench-aa-2 combined             aggregator d=-0.00105 mine d=-0.00106 OK
+bench-aa-2 emission_exclusive   aggregator d=-0.00309 mine d=-0.00309 OK
+bench-aa-2 ir                   aggregator d=+0.00123 mine d=+0.00123 OK
+bench-aa-2 serialization        aggregator d=+0.00362 mine d=+0.00362 OK
+
+== order bias: within one side, (second - first) / first on combined
+bench-aa-1 reference  (second-first)/first=-0.00154 MAD=0.00421 firsts=8 seconds=7 cases=33
+bench-aa-1 candidate  (second-first)/first=+0.00309 MAD=0.00247 firsts=7 seconds=8 cases=33
+bench-aa-2 reference  (second-first)/first=-0.00461 MAD=0.00399 firsts=8 seconds=7 cases=33
+bench-aa-2 candidate  (second-first)/first=-0.00184 MAD=0.00600 firsts=7 seconds=8 cases=33
+
+== order bias: candidate vs reference holding position fixed
+bench-aa-1 emission_exclusive   both-first=-0.00190 both-second=+0.00312
+bench-aa-1 combined             both-first=+0.00033 both-second=+0.00395
+bench-aa-2 emission_exclusive   both-first=-0.00422 both-second=-0.00296
+bench-aa-2 combined             both-first=-0.00431 both-second=-0.00050
+
+== sign balance and cells clearing MDE
+bench-aa-1: cells=165 candidate-slower=86 faster=79 |delta|>=2%=8 (slower 3) clearing-own-MDE=0 largest|delta|=+0.03143 at diamond-chain/64/heavy/serialization
+bench-aa-2: cells=165 candidate-slower=83 faster=82 |delta|>=2%=5 (slower 5) clearing-own-MDE=0 largest|delta|=+0.07658 at fan-in/64/base/ir
+
+== run to run, same cells (bench-aa-1 vs bench-aa-2)
+cells=165 median shift=-0.00031 MAD=0.00624 mde=0.0500
+
+== workload digests
+distinct matrix_sha256 across all four binaries: 1 -> ['76b617c62858e698710f0ab068c1a8b6d8458feedc83f3738a5f5664cfacbc43']
+cases with a non-unique workload digest: 0
+distinct manifest sha256 across both runs: 1 -> ['bfb167600ee186d4e360958348cc8892e3dee2620f9dcdeaf9fcd60c20fd3bc7']
+
+== VERDICT
+no reject condition triggered
