@@ -649,7 +649,7 @@ fn cause_and_event_vocabularies_are_closed() {
     }
     assert!(!text.contains("GenericDecline"));
     assert!(!text.contains("Rollback"));
-    assert_eq!(TraversalEventKind::ALL.len(), 3);
+    assert_eq!(TraversalEventKind::ALL.len(), 4);
 
     let unknown_cause = serde_json::json!({
         "decline": { "cause": "GenericDecline", "block_start_va": null },

@@ -1243,8 +1243,16 @@ fn reconcile_block_ledger(
     artifact: &mut PseudocodeArtifact,
 ) {
     assert_eq!(function.function_id, artifact.function_id, "IR/artifact order");
+    // The emitter replaced this function's body with a diagnostic when its own
+    // ledger failed to reconcile. There is no valid partition to reconcile.
+    if artifact.emission.failure().is_some() {
+        return;
+    }
     let function_id = function.function_id;
     let ledger = artifact.emission.block_ledger_mut();
+    if ledger.stages.is_empty() && ledger.invalid_cfg_rejected.is_none() {
+        return;
+    }
     ledger
         .stages
         .retain(|row| row.stage != flutterdec_decompiler::BlockStage::Built);

@@ -124,6 +124,7 @@ Traversal-event counters:
 | `dfs_depth_omissions` | traversal events | DFS edges omitted because the walk was already at its depth budget. |
 | `dfs_visit_omissions` | traversal events | DFS edges omitted because the target had reached its visit budget. The target block may still have been emitted elsewhere. |
 | `helper_cap_omissions` | traversal events | Helper paths omitted because the helper-definition budget was exhausted. |
+| `unrenderable_edge_omissions` | traversal events | Graph edges omitted because the terminator cannot render them, such as a third successor on a conditional branch or a jump target the retained edges do not name. |
 
 Final block-ledger counters:
 
@@ -136,13 +137,17 @@ Final block-ledger counters:
 | `retained_unreachable_blocks` | blocks | Final block identities retained in the valid graph but unreachable from the function entry and therefore not emitted. |
 | `reachable_unemitted_blocks` | blocks | Final block identities reachable from the function entry but not emitted. Each has a ledger explanation that links it to a traversal event through valid graph edges. |
 | `invalid_cfg_rejected_functions` | functions | Functions whose invalid raw CFG was rejected before it could enter the valid block partition. |
+| `emission_failed_functions` | functions | Functions whose valid graph produced an emission ledger that did not reconcile. The body is a diagnostic and the function carries no block partition. |
 
 The per-function `block_ledger` in `ir/*.json` tracks immutable block identities
 through dense-id stages and remaps. For a valid source graph, each terminal block
 identity has exactly one final disposition: structured-emitted, DFS-emitted,
 guard-pruned, no-return-pruned, retained-unreachable, or reachable-unemitted.
 An invalid graph is reported separately and does not carry a partial valid-graph
-partition.
+partition. A valid graph whose ledger fails reconciliation is also reported
+separately: its body is a diagnostic that names the failure, it carries no block
+partition, and `emission_failed_functions` counts it. One such function does not
+abort the rest of the run.
 
 Do not compare `quality.json.emission.reachable_unemitted_blocks` directly with
 `quality.json.omitted_path_markers`. The former counts distinct final block

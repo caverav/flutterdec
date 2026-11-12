@@ -104,13 +104,19 @@ pub enum TraversalEventKind {
     /// The helper budget was exhausted, so the omitted block never got a
     /// definition and its call site carries an explicit omission instead.
     HelperCapOmission,
+    /// The source graph named a successor the instruction cannot render as an
+    /// arm, such as a third successor on a conditional branch or a jump whose
+    /// target disagrees with the retained edges. The edge is recorded rather
+    /// than left as a helper call that dead-code compaction would remove.
+    UnrenderableEdgeOmission,
 }
 
 impl TraversalEventKind {
-    pub const ALL: [TraversalEventKind; 3] = [
+    pub const ALL: [TraversalEventKind; 4] = [
         TraversalEventKind::DfsDepthOmission,
         TraversalEventKind::DfsVisitOmission,
         TraversalEventKind::HelperCapOmission,
+        TraversalEventKind::UnrenderableEdgeOmission,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -118,6 +124,7 @@ impl TraversalEventKind {
             TraversalEventKind::DfsDepthOmission => "dfs-depth-omission",
             TraversalEventKind::DfsVisitOmission => "dfs-visit-omission",
             TraversalEventKind::HelperCapOmission => "helper-cap-omission",
+            TraversalEventKind::UnrenderableEdgeOmission => "unrenderable-edge-omission",
         }
     }
 }
@@ -711,6 +718,11 @@ pub struct EmissionAccounting {
     decline: Option<StructuredDecline>,
     events: Vec<TraversalEvent>,
     block_ledger: BlockLedger,
+    /// Set when the walk produced a ledger that did not reconcile. The artifact
+    /// then carries a diagnostic body instead of pretending the ledger holds.
+    /// Kept optional so normal output is byte-identical.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    failure: Option<String>,
 }
 
 impl EmissionAccounting {
@@ -747,6 +759,7 @@ impl EmissionAccounting {
                     "DfsDepthOmission",
                     "DfsVisitOmission",
                     "HelperCapOmission",
+                    "UnrenderableEdgeOmission",
                 ]
                 .contains(&kind)
                 {
@@ -796,6 +809,18 @@ impl EmissionAccounting {
 
     pub fn block_ledger_mut(&mut self) -> &mut BlockLedger {
         &mut self.block_ledger
+    }
+
+    /// The diagnostic that replaced a body whose block ledger did not
+    /// reconcile, if any. This is a primary fact, not a counter.
+    pub fn failure(&self) -> Option<&str> {
+        self.failure.as_deref()
+    }
+
+    pub(crate) fn record_failure(&mut self, message: String) {
+        if self.failure.is_none() {
+            self.failure = Some(message);
+        }
     }
 
     pub fn event_count(&self, kind: TraversalEventKind) -> usize {

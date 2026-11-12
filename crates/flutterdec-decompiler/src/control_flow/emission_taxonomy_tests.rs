@@ -528,6 +528,58 @@ fn unsupported_region_fixture(function_id: u64) -> FunctionIr {
     ir
 }
 
+#[test]
+fn an_extended_branch_records_its_extra_edge_instead_of_a_dead_helper_call() {
+    let ir = unsupported_region_fixture(9210);
+    let artifact = artifact_of(&ir);
+    assert!(
+        artifact
+            .source
+            .contains("// extended branch paths omitted: block 3"),
+        "the branch site must state the omitted edge:\n{}",
+        artifact.source
+    );
+    assert!(
+        !artifact.source.contains("_block_3()"),
+        "a helper call after a terminal arm is removed by compaction, so it cannot stand for the edge:\n{}",
+        artifact.source
+    );
+    assert!(
+        artifact.emission.events().iter().any(|event| {
+            event.kind == TraversalEventKind::UnrenderableEdgeOmission
+                && event.target == TraversalTarget::Block { start_va: va(3) }
+        }),
+        "the omitted edge must be a traversal event"
+    );
+    let row = artifact
+        .emission
+        .block_ledger()
+        .dispositions
+        .iter()
+        .find(|row| row.identity.start_va == va(3))
+        .expect("the omitted block has a disposition");
+    assert_eq!(row.disposition, BlockDisposition::ReachableUnemitted);
+    assert_eq!(
+        artifact
+            .emission
+            .block_ledger()
+            .validate(artifact.emission.events()),
+        Ok(())
+    );
+}
+
+#[test]
+fn a_failed_ledger_becomes_a_diagnostic_artifact_instead_of_a_panic() {
+    let ir = graph(9211, &[Vec::new()]);
+    let artifact =
+        crate::emission_failure_artifact(&ir, "fixture9211", "reachable-unemitted identity 0x1");
+    assert!(artifact.source.contains(EMISSION_FAILURE_NOTE));
+    assert!(artifact.source.contains("reachable-unemitted identity 0x1"));
+    assert_eq!(artifact.unresolved_cf, 1);
+    assert_eq!(artifact.emission.failure(), Some("reachable-unemitted identity 0x1"));
+    assert_eq!(artifact.emission.validate(), Ok(()));
+}
+
 /// A spine whose blocks all branch into one shared region larger than the repeat
 /// budget, and whose last block returns without entering it, so the region is
 /// nobody's follow node and would have to be repeated.

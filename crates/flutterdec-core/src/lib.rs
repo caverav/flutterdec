@@ -536,6 +536,7 @@ pub struct EmissionReport {
     pub dfs_depth_omissions: usize,
     pub dfs_visit_omissions: usize,
     pub helper_cap_omissions: usize,
+    pub unrenderable_edge_omissions: usize,
     pub structured_emitted_blocks: usize,
     pub dfs_emitted_blocks: usize,
     pub guard_pruned_blocks: usize,
@@ -543,6 +544,7 @@ pub struct EmissionReport {
     pub retained_unreachable_blocks: usize,
     pub reachable_unemitted_blocks: usize,
     pub invalid_cfg_rejected_functions: usize,
+    pub emission_failed_functions: usize,
 }
 
 #[derive(Debug, Clone, Serialize)]

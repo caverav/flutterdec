@@ -87,6 +87,9 @@ fn quality_from_artifacts(
         emission.helper_cap_omissions += p
             .emission
             .event_count(TraversalEventKind::HelperCapOmission);
+        emission.unrenderable_edge_omissions += p
+            .emission
+            .event_count(TraversalEventKind::UnrenderableEdgeOmission);
         // Derived from the causes above, one function at a time, so the totals
         // are sums of the same primary facts and not a second tally.
         emission.structured_declines += p.emission.structured_declines();
@@ -111,6 +114,7 @@ fn quality_from_artifacts(
             .disposition_count(BlockDisposition::ReachableUnemitted);
         emission.invalid_cfg_rejected_functions +=
             usize::from(p.emission.block_ledger().invalid_cfg_rejected.is_some());
+        emission.emission_failed_functions += usize::from(p.emission.failure().is_some());
         total_calls += p.total_calls;
         indirect_calls += p.indirect_calls;
         placeholder_ifs += p.placeholder_ifs;
@@ -563,6 +567,7 @@ mod quality_tests {
             ("dfs depth", emission.dfs_depth_omissions),
             ("dfs visit", emission.dfs_visit_omissions),
             ("helper cap", emission.helper_cap_omissions),
+            ("unrenderable edge", emission.unrenderable_edge_omissions),
         ] {
             assert!(
                 counted > 0,
@@ -600,6 +605,7 @@ mod quality_tests {
                 emission.dfs_depth_omissions,
                 emission.dfs_visit_omissions,
                 emission.helper_cap_omissions,
+                emission.unrenderable_edge_omissions,
             ],
             TraversalEventKind::ALL.map(sum_event),
             "each event counter is that event kind, summed over the artifacts"
@@ -666,7 +672,8 @@ mod quality_tests {
         assert_eq!(
             emission.dfs_depth_omissions
                 + emission.dfs_visit_omissions
-                + emission.helper_cap_omissions,
+                + emission.helper_cap_omissions
+                + emission.unrenderable_edge_omissions,
             events,
             "every traversal event is counted under exactly one kind"
         );

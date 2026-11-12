@@ -1368,6 +1368,39 @@ impl<'a> FuncEmitter<'a> {
                         }
                     };
 
+                    // A malformed/extended branch may carry more successors
+                    // than the instruction can render as taken/not-taken arms.
+                    // They have no condition, and a helper call after the arms
+                    // is dead code that compaction removes. Record each edge at
+                    // the branch site and state the omission before the `if`, so
+                    // the ledger and the artifact say the same thing.
+                    let extras: Vec<usize> = block
+                        .succs
+                        .iter()
+                        .copied()
+                        .filter(|succ| Some(*succ) != true_id && Some(*succ) != false_id)
+                        .collect();
+                    if !extras.is_empty() {
+                        for extra in &extras {
+                            self.record_traversal_event(
+                                TraversalEventKind::UnrenderableEdgeOmission,
+                                id,
+                                TraversalTarget::Block {
+                                    start_va: self.block_start_va(*extra),
+                                },
+                            );
+                        }
+                        let listed = extras
+                            .iter()
+                            .map(|extra| format!("block {}", extra))
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        self.push_line(
+                            indent,
+                            &format!("// extended branch paths omitted: {listed}"),
+                        );
+                    }
+
                     self.push_line(indent, &format!("if ({}) {{", cond_str));
                     if let Some(tid) = true_id {
                         if self.can_inline(tid, depth + 1) {
@@ -1404,20 +1437,6 @@ impl<'a> FuncEmitter<'a> {
                             self.emit_unrenderable_successor(indent + 1, fid, depth + 1);
                         }
                         self.push_line(indent, "}");
-                    }
-
-                    // A malformed/extended branch may carry more successors
-                    // than the instruction can render as taken/not-taken arms.
-                    // Preserve every additional path as a helper request; the
-                    // helper ledger will either emit it or record the cap event
-                    // that explains why it remains reachable-unemitted.
-                    for extra in block
-                        .succs
-                        .iter()
-                        .copied()
-                        .filter(|succ| Some(*succ) != true_id && Some(*succ) != false_id)
-                    {
-                        self.emit_omitted_path(indent, Some(extra));
                     }
 
                     self.active_stack.pop();

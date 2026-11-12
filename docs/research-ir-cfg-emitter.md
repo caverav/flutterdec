@@ -1376,12 +1376,17 @@ three post-mutation ones; neither is stored beside them, so neither can drift
 from them, and rollback is not a cause of its own.
 
 A traversal event is a property of one walk at one site: `DfsDepthOmission`,
-`DfsVisitOmission`, `HelperCapOmission`, keyed by function, source block start
-address, target block start address or helper id, and the ordinal of the event in
-the function. An event is not a block disposition. A visit omission names an edge
-the budget refused while the block it names is emitted elsewhere in the same
-artifact, and `a_visit_omission_can_name_a_block_that_was_also_emitted` is the
-fixture for exactly that.
+`DfsVisitOmission`, `HelperCapOmission`, `UnrenderableEdgeOmission`, keyed by
+function, source block start address, target block start address or helper id,
+and the ordinal of the event in the function. An event is not a block
+disposition. A visit omission names an edge the budget refused while the block it
+names is emitted elsewhere in the same artifact, and
+`a_visit_omission_can_name_a_block_that_was_also_emitted` is the fixture for
+exactly that. An unrenderable-edge omission names an edge the terminator cannot
+spell, such as a third successor on a conditional branch. It is recorded at the
+branch site instead of as a helper call after a terminal arm, because dead-code
+compaction would remove that call and leave the ledger claiming a path it no
+longer carried.
 
 Both reach consumers: `PseudocodeArtifact.emission` per function,
 `QualityReport.emission` per program.

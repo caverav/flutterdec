@@ -698,30 +698,36 @@ impl<'a> FuncEmitter<'a> {
         // Every candidate each site considered is now an emitted annotation, a
         // recorded rejection or a recorded budget drop. Stated here rather than
         // left to the fixtures because it holds for every function, not only for
-        // the shapes a test happens to build - and it is only an assertion
-        // because the counters it reads are ungated, so a release run still
-        // reports them.
+        // the shapes a test happens to build. A malformed function degrades to a
+        // diagnostic artifact; it does not abort the rest of the program.
         for stream in [
             &self.call_provenance,
             &self.join_provenance,
             &self.loop_provenance,
         ] {
-            assert_eq!(
-                stream.unaccounted_candidates(),
-                0,
-                "{} considered {} candidates and accounted for {}",
-                stream.loss_site,
-                stream.candidates_considered,
-                stream.accounted_candidates()
-            );
+            if stream.unaccounted_candidates() != 0 {
+                let error = format!(
+                    "{} considered {} candidates and accounted for {}",
+                    stream.loss_site,
+                    stream.candidates_considered,
+                    stream.accounted_candidates()
+                );
+                return (
+                    emission_failure_artifact(self.ir, &fn_name, &error),
+                    Vec::new(),
+                );
+            }
         }
 
         let block_ledger = self.block_ledger(structured);
-        assert_eq!(
-            block_ledger.validate(self.accounting.events()),
-            Ok(()),
-            "emission block ledger did not reconcile"
-        );
+        if let Err(error) = block_ledger.validate(self.accounting.events()) {
+            // A malformed function degrades to a diagnostic artifact. Asserting
+            // here would abort every remaining function in a release run.
+            return (
+                emission_failure_artifact(self.ir, &fn_name, &error),
+                Vec::new(),
+            );
+        }
         *self.accounting.block_ledger_mut() = block_ledger;
         let (total_calls, indirect_calls) = self.rendered_call_counts();
         let artifact = PseudocodeArtifact {
@@ -1177,6 +1183,11 @@ pub struct RuntimeStubEffect {
 /// matching on prose, and so a fixture cannot drift from what the emitter writes.
 pub const INVALID_CFG_NOTE: &str = "invalid CFG";
 
+/// The marker on a body the emitter could not publish because its own block
+/// ledger did not reconcile. Distinct from `INVALID_CFG_NOTE`: the graph was
+/// valid, the emission audit failed.
+pub const EMISSION_FAILURE_NOTE: &str = "emission failed";
+
 /// The whole artifact for a `FunctionIr` no consumer may index.
 ///
 /// Nothing here reads `blocks`, so no relation is computed off a graph whose
@@ -1231,6 +1242,46 @@ fn invalid_cfg_artifact(ir: &FunctionIr, defect: &CfgDefect) -> PseudocodeArtifa
         target_va_symbol_calls: 0,
         // Neither emitter ran, so there is no decline to attribute and no
         // traversal to omit anything.
+        emission,
+    }
+}
+
+/// The artifact for a valid graph whose emission ledger did not reconcile.
+///
+/// One malformed function must not abort the whole program. The body is a
+/// diagnostic rather than a partial rendering, and the failure is carried as a
+/// primary accounting fact so quality output can count it without parsing prose.
+fn emission_failure_artifact(
+    ir: &FunctionIr,
+    function_name: &str,
+    error: &str,
+) -> PseudocodeArtifact {
+    let params = (0..DART_ARGUMENT_REGISTERS.len())
+        .map(|i| format!("dynamic arg{i}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let diagnostic = error.replace(['\n', '\r'], " ");
+    let mut emission = EmissionAccounting::default();
+    emission.block_ledger_mut().function_id = ir.function_id;
+    emission.record_failure(diagnostic.clone());
+    PseudocodeArtifact {
+        function_id: ir.function_id,
+        source: format!(
+            "dynamic {function_name}({params}) {{\n  // {EMISSION_FAILURE_NOTE}: {diagnostic}; control flow not recovered\n}}"
+        ),
+        function_name: function_name.to_string(),
+        placeholder_ifs: 0,
+        unresolved_cf: 1,
+        raw_register_calls: 0,
+        total_calls: 0,
+        indirect_calls: 0,
+        semantic_direct_calls: 0,
+        semantic_indirect_calls: 0,
+        dispatch_selector_calls: 0,
+        dispatch_table_calls: 0,
+        repeated_blocks: 0,
+        unlifted_instructions: 0,
+        target_va_symbol_calls: 0,
         emission,
     }
 }
