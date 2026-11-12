@@ -965,10 +965,11 @@ mod raw_json {
 /// Absolute output paths only. Nothing may be added here after a comparison has
 /// been attempted, so a byte difference outside these is a determinism failure
 /// and never a reason to grow the list.
-const FROZEN_POINTERS: [&str; 9] = [
+const FROZEN_POINTERS: [&str; 10] = [
     "/input",
     "/libapp",
     "/adapter_selection/provider/adapter_exec_path",
+    "/adapter_selection/provider/containment/process_count/limit",
     "/extra_symbol_elfs/*",
     "/extra_symbol_map_targets/*",
     "/engine_symbol_ingestion/manifest_path",
