@@ -1452,18 +1452,39 @@ impl<'a> FuncEmitter<'a> {
                         }
                     } else {
                         let target = normalize_target(&ins.target);
+                        // The graph is the partition authority. If it still
+                        // names successors while the instruction target cannot
+                        // be resolved to one of them, those edges cannot be
+                        // rendered as arms. Record them at the jump site and
+                        // state the omission before the terminal, because a
+                        // helper call after a return is dead code that
+                        // compaction removes.
+                        if !block.succs.is_empty() {
+                            for successor in &block.succs {
+                                self.record_traversal_event(
+                                    TraversalEventKind::UnrenderableEdgeOmission,
+                                    id,
+                                    TraversalTarget::Block {
+                                        start_va: self.block_start_va(*successor),
+                                    },
+                                );
+                            }
+                            let listed = block
+                                .succs
+                                .iter()
+                                .map(|successor| format!("block {}", successor))
+                                .collect::<Vec<_>>()
+                                .join(", ");
+                            self.push_line(
+                                indent,
+                                &format!("// jump target is not in the retained graph; omitted edges: {listed}"),
+                            );
+                        }
                         if target.starts_with("0x") {
                             self.push_line(indent, &format!("return tailCall_{}();", target));
                         } else {
                             self.unresolved_cf += 1;
                             self.push_line(indent, &format!("// {UNRESOLVED_JUMP_NOTE}"));
-                        }
-                        // The graph is the partition authority. If it still
-                        // names successors while the instruction target cannot
-                        // be resolved to one of them, retain those paths as
-                        // helpers instead of silently losing reachable blocks.
-                        for successor in &block.succs {
-                            self.emit_omitted_path(indent, Some(*successor));
                         }
                     }
                     self.active_stack.pop();

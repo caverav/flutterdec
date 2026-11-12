@@ -1383,8 +1383,9 @@ disposition. A visit omission names an edge the budget refused while the block i
 names is emitted elsewhere in the same artifact, and
 `a_visit_omission_can_name_a_block_that_was_also_emitted` is the fixture for
 exactly that. An unrenderable-edge omission names an edge the terminator cannot
-spell, such as a third successor on a conditional branch. It is recorded at the
-branch site instead of as a helper call after a terminal arm, because dead-code
+spell, such as a third successor on a conditional branch or a jump target that
+does not name any retained successor. It is recorded at the source site instead
+of as a helper call after a terminal arm or return, because dead-code
 compaction would remove that call and leave the ledger claiming a path it no
 longer carried.
 

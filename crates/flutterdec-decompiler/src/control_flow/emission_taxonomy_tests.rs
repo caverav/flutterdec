@@ -528,6 +528,18 @@ fn unsupported_region_fixture(function_id: u64) -> FunctionIr {
     ir
 }
 
+/// A jump whose instruction target does not name its retained edge. The graph
+/// still says block 1 follows, so that edge is reachable but unrenderable.
+fn unresolved_jump_fixture(function_id: u64) -> FunctionIr {
+    let mut ir = graph(function_id, &[vec![1], Vec::new()]);
+    if let Some(entry) = ir.blocks.iter_mut().find(|b| b.id == 0) {
+        if let Some(jump) = entry.instrs.iter_mut().find(|ins| ins.op == IROp::Jump) {
+            jump.target = "#0xdead".to_string();
+        }
+    }
+    ir
+}
+
 #[test]
 fn an_extended_branch_records_its_extra_edge_instead_of_a_dead_helper_call() {
     let ir = unsupported_region_fixture(9210);
@@ -559,6 +571,38 @@ fn an_extended_branch_records_its_extra_edge_instead_of_a_dead_helper_call() {
         .find(|row| row.identity.start_va == va(3))
         .expect("the omitted block has a disposition");
     assert_eq!(row.disposition, BlockDisposition::ReachableUnemitted);
+    assert_eq!(
+        artifact
+            .emission
+            .block_ledger()
+            .validate(artifact.emission.events()),
+        Ok(())
+    );
+}
+
+#[test]
+fn an_unresolved_jump_records_its_omitted_edges_before_the_terminal() {
+    let ir = unresolved_jump_fixture(9212);
+    let artifact = artifact_of(&ir);
+    assert!(
+        artifact
+            .source
+            .contains("// jump target is not in the retained graph; omitted edges: block 1"),
+        "the jump site must state the omitted edge:\n{}",
+        artifact.source
+    );
+    assert!(
+        !artifact.source.contains("_block_1()"),
+        "a helper call after the terminal is dead code, so it cannot stand for the edge:\n{}",
+        artifact.source
+    );
+    assert!(
+        artifact.emission.events().iter().any(|event| {
+            event.kind == TraversalEventKind::UnrenderableEdgeOmission
+                && event.target == TraversalTarget::Block { start_va: va(1) }
+        }),
+        "the omitted jump edge must be a traversal event"
+    );
     assert_eq!(
         artifact
             .emission
