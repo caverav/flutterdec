@@ -2372,7 +2372,9 @@ pub fn run_decompile(
             "allocation_named": shared_stub_naming.allocation_named,
             "functions_scanned": shared_stub_naming.scanned,
             "noreturn_pruned_functions": noreturn_prune.functions,
-            "noreturn_pruned_blocks": noreturn_prune.blocks_cut,
+            // The ledger is the authority. Reporting `blocks_cut` here as well
+            // would be a second tally that can drift from the block partition.
+            "noreturn_pruned_blocks": report.emission.noreturn_pruned_blocks,
             "noreturn_pruned_instructions": noreturn_prune.instructions_cut,
             "noreturn_skipped_invalid_ir": noreturn_prune.skipped_invalid_ir,
             "resolved_backend": resolved_backend.as_str(),

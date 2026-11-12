@@ -109,6 +109,7 @@ struct Series {
 fn pair(reference: &[Sample], candidate: &[Sample]) -> (Vec<Series>, usize) {
     let mut keys: Vec<(String, String)> = reference
         .iter()
+        .chain(candidate)
         .map(|s| (s.case.clone(), s.phase.clone()))
         .collect();
     keys.sort();
@@ -348,6 +349,23 @@ mod tests {
         let rendered = analyse(&reference, &candidate).to_pretty();
         assert!(rendered.contains("\"pairs\": 14"), "{rendered}");
         assert!(rendered.contains("\"unpaired_samples\": 1"), "{rendered}");
+    }
+
+    #[test]
+    fn candidate_only_series_is_counted_as_unpaired() {
+        let reference: Vec<Sample> = (0..15)
+            .map(|run| sample(run, "shared", "ir", 1000))
+            .collect();
+        let mut candidate: Vec<Sample> = (0..15)
+            .map(|run| sample(run, "shared", "ir", 1000))
+            .collect();
+        candidate.push(sample(15, "candidate-only", "ir", 1000));
+        let rendered = analyse(&reference, &candidate).to_pretty();
+        assert!(rendered.contains("\"pairs\": 15"), "{rendered}");
+        assert!(
+            rendered.contains("\"unpaired_samples\": 1"),
+            "a candidate-only series must be counted, not silently dropped: {rendered}"
+        );
     }
 
     #[test]
