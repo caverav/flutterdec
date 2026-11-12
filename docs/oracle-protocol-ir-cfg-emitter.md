@@ -314,21 +314,22 @@ regular file, and a protected file whose bytes changed are each a hard CI
 failure. That checker is itself one of the rows below, so it verifies its own
 bytes.
 
-Seven rows now hold a digest other than the one first pinned for them. The rule
+Sixteen rows now hold a digest other than the one first pinned for them. The rule
 is the same for every row, whenever it joined this table: a row's first pinned
 digest is the digest it carried in the commit that added it here, and the row
-counts if its current digest differs from that one. Five of the seven were
-already protected at `1371e42`. The other two joined later and have moved since,
-so they count under exactly that rule: `scripts/check-oracle-inventory.py`,
+counts if its current digest differs from that one. Section 26 moves eleven of
+them, nine of which were not movers before. Twelve of the sixteen were already
+protected at `1371e42`. The other four joined later and have moved since, so
+they count under exactly that rule: `scripts/check-oracle-inventory.py`,
 which became a row in section 13 at
 `d882132e87cb4625ebdac88ab310e405b00133bd546e172db282be7e1bbf47bf`, and
 `crates/flutterdec-decompiler/src/control_flow/relation_oracle.rs`, which became
 a row in section 15 at
 `75fe720e04cfa6bbb859981f1b39ebba0e0ed932e8973d3bab730058cedcfa96` and has moved
 twice since, in section 19 and in section 21. A row that joined after `1371e42`
-and still carries its first pinned digest is not one of the seven.
+and still carries its first pinned digest is not one of the sixteen.
 
-`scripts/ci-check.sh` has moved twelve times. Section 10 adjudicates the first
+`scripts/ci-check.sh` has moved thirteen times. Section 10 adjudicates the first
 three as one chain from the original fixed reference. The fourth is in section
 12, the fifth in section 13, the sixth in section 15, and the seventh in section
 19. The eighth belongs to the auxiliary resource inventory rather than to this
@@ -337,7 +338,8 @@ was created, at
 `b1600c29ccbda98b751e8a337c6aa875dfc56eef3dc66efb9edb00952c78188c`, which is the
 prior value section 20 starts from, and every later move is adjudicated in both
 documents. The ninth is in section 20, the tenth in section 21, the eleventh in
-section 22, and the twelfth in section 23. Section 24 leaves it byte-unchanged.
+section 22, the twelfth in section 23, and the thirteenth in section 26. Section
+24 leaves it byte-unchanged before section 26.
 
 `crates/flutterdec-decompiler/tests/provenance_audit.rs` has moved ten times: the
 first in section 11, the second in section 12, the third in section 13, the
@@ -347,7 +349,7 @@ tenth in section 24.
 
 `crates/flutterdec-decompiler/src/tests/cfg_and_stack/omitted_path_and_stack.rs`
 and `crates/flutterdec-core/src/pipeline/runners/tests.rs` each moved once, in
-section 16. `scripts/prov_cross_audit_reconcile.py` moved once, in section 18.
+section 16. `runners/tests.rs` moved a second time in section 26. `scripts/prov_cross_audit_reconcile.py` moved once, in section 18.
 
 `scripts/check-oracle-inventory.py` became a row in section 13, and has moved
 seven times since: in section 15, section 17, section 19, section 20,
@@ -368,11 +370,12 @@ never moved since it was added; its file already existed at `1371e42` with the
 same bytes it has today, but it was not a protected row until section 10, which
 is why it is counted here and not among the forty-five.
 
-The other sixty-four rows hold the digest first pinned for them, and they split
-the same way the forty-five and the twenty-six do. Forty of the forty-five rows
-pinned at `1371e42` still hold their `1371e42` bytes; the other five are the five
-movers named above. Twenty-four of the twenty-six later rows still hold the
-digest they joined with; the other two are the two later joiners named above. No
+The other fifty-five rows hold the digest first pinned for them, and they split
+the same way the forty-five and the twenty-six do. Thirty-three of the forty-five rows
+pinned at `1371e42` still hold their `1371e42` bytes; the other twelve are the
+movers named above and in section 26. Twenty-two of the twenty-six later rows
+still hold the digest they joined with; the other four are the later joiners
+named above and in section 26. No
 claim is made here about `1371e42` bytes for the twenty-five paths that did not
 exist at `1371e42`: every later row except the section 10 loader is such a path,
 and that loader is the one whose file did exist there, unchanged since. One of
@@ -396,7 +399,7 @@ Checkers, scanners, and their plant tests:
 
 | Path | sha256 |
 | --- | --- |
-| `scripts/check-annotation-provenance.py` | `c4e40e0122f1d87c82b5b587d8ed1ac6c74f550bed114463765f2568ea6b6f93` |
+| `scripts/check-annotation-provenance.py` | `cbf04fdef2e7292446623599fad4cbca3ef95b748ae47dcef936090bb2dfb535` |
 | `scripts/check-candidate-whitelist.py` | `d8c67c8565c372c2044f6749bfe2a7b092a374c9758930c7e2ef5b45d3a6cac5` |
 | `scripts/check-oracle-inventory.py` | `3900f505ea8aea59500c99fcf598013cffac55e9128ec9498f7811738bcbf71a` |
 | `scripts/prov_cross_audit_reconcile.py` | `f7a21d2c497ff2c47e118cf3df208d869265eb11a561605f4f14d9c50febe870` |
@@ -406,14 +409,14 @@ Checkers, scanners, and their plant tests:
 | `scripts/scan-annotation-safety.py` | `946f2a91a3c6df6c81707d455686dfe145b6fa05934391ce6d23933b7367a6c4` |
 | `scripts/scan_annotation_safety_plant_test.py` | `2747be4387d23b9083d49668b8abc54ef91d2c63f472dc968287eb8530b8d698` |
 | `scripts/scan-loop-entry-annotations.py` | `999753fbe0a59884c5fdaac48d4d8e207994323d9888e016219ef7398ab850b6` |
-| `scripts/annotation_boundary_corpus_check.py` | `f925d0c53ffa173fb4d3fe7fc419006382eba69bec38db8c06289167ba187c03` |
+| `scripts/annotation_boundary_corpus_check.py` | `b28f6c08b10fda38860703abb35ce3b1351ca6153da73f8ce2187b951322b500` |
 | `scripts/build-annotation-ledger.py` | `6376d7dc6cfea2b35147ead30f5d7227b79f0c6c47381def5730e9fd65b1ef35` |
 
 Gate and harness scripts:
 
 | Path | sha256 |
 | --- | --- |
-| `scripts/ci-check.sh` | `9dac174b7a2a4e3a0d14d182d292dac0dbc8b6c63679e859da7cc8dad21ea45e` |
+| `scripts/ci-check.sh` | `c58c07a30e3baa43caec7708f03b6f52240aff35cd3c7bab1c09ce3600034ba7` |
 | `scripts/test-suite.sh` | `b1d2efd5cda5794dbb9e60c41f92eede0cc65996d66f6c73c19e905be451c38a` |
 | `scripts/lint-python.sh` | `eef80907146b5d1b3d662ad823372a8b6a33df99b458582077b0c1578680e2d7` |
 | `scripts/lint-shell.sh` | `4554f41d5dbeeadf4d2478ce97af416392b14a78cfa417673b35914877d316ab` |
@@ -527,13 +530,13 @@ false` would switch any crate's targets off wholesale.
 | `crates/flutterdec-decompiler/src/tests/emit_and_helpers/annotation_literals.rs` | `4aa98c35997fbcc4d740d81abab1d1b3e5e8861c1f8b897d77fe1763514ecfa5` |
 | `crates/flutterdec-decompiler/src/tests/emit_and_helpers/candidate_whitelist.rs` | `db3fdcef810f15ec61b349f15c88b2b82caad4fbcc130c83a41dc1f1bdae198b` |
 | `crates/flutterdec-decompiler/src/tests/emit_and_helpers/readability_and_naming.rs` | `7a185febb042ee53b865b8561e7d68c091003fa1a5ef066cb8ac31a9c4639bd2` |
-| `crates/flutterdec-core/src/pipeline/runners/tests.rs` | `7d1d87fa9401d07ab19b4bbb190edf1c53538a6da83ccd0e891b851b63200e63` |
-| `crates/flutterdec-core/src/pipeline/symbol_map/tests.rs` | `019220e1a5915365e1663a36353ff3ba2177f567bb5e1094e6575b47f01b39f5` |
-| `crates/flutterdec-ir/src/tests/control_effects.rs` | `9d6755a0001bfc839cd814fd326648e8cb8ccc186eeb3b30f3551dc8384fdf59` |
-| `crates/flutterdec-ir/tests/branch_target_radix.rs` | `989b28c3c64a271eec2afc26eb4373e3325ac1f9b5d5d477a96a472d14c37af0` |
-| `crates/flutterdec-ir/src/validate/tests.rs` | `2e3e3b3bd980c1edd2de99da166e09d5bf154cbed390e87f701a50f8316e8470` |
-| `crates/flutterdec-core/src/pipeline/quality/control_effect_tests.rs` | `2dd80c63de5919b45de14a89259f90824d827c37ab7b7d943e58221587ed8c69` |
-| `crates/flutterdec-core/src/pipeline/runners/split/identity_tests.rs` | `6de85f091ee07dd84c2469784f8f4288d982b83cf38ebffa1ae3691d28fdc4d2` |
+| `crates/flutterdec-core/src/pipeline/runners/tests.rs` | `fa1c51f7fe4c4ab91741c72c514f2c9dba9888655b6b2035ef886117cec38323` |
+| `crates/flutterdec-core/src/pipeline/symbol_map/tests.rs` | `94e263af715dad3705be3e18cea8b86f3a92538a92cfe52ace2c1deb55a8d6ca` |
+| `crates/flutterdec-ir/src/tests/control_effects.rs` | `9ad7f205445dbba45f4fc1e3710464c6611037af7ddb1f2b67a2dc4c5aeb04b1` |
+| `crates/flutterdec-ir/tests/branch_target_radix.rs` | `3654dc0a08ec44034e408c529c6be15b5971b5aaade5ddeb530153b6b228bc04` |
+| `crates/flutterdec-ir/src/validate/tests.rs` | `376ae796bf9c248651170955dc3fd986760e2299d9f902f61590d4e2ce407ec2` |
+| `crates/flutterdec-core/src/pipeline/quality/control_effect_tests.rs` | `d2846d4960173ff1d68ac13046f4f78405c2b73b8f7a9392f44322ed2e1657c2` |
+| `crates/flutterdec-core/src/pipeline/runners/split/identity_tests.rs` | `709fb13a249a24f6f3c7eae1cb8022f035881df1976258fb6ed40281c083a8ae` |
 | `crates/flutterdec-core/src/pipeline/runners/stubs/identity_tests.rs` | `a13fd1a26bafc8224edfbc9d1e8e1aa6441e935e50a5a4021315c119973e120d` |
 | `crates/flutterdec-decompiler/src/control_flow/regions/identity_boundary_tests.rs` | `84b619616bab352c6e49fab1190d80a1df4606b691811c72835266003dfcf42d` |
 | `crates/flutterdec-decompiler/src/control_flow/relation_oracle.rs` | `e53dd455ddbbdf2c0b00d184f1f2d788833cbfd6a0db070ad69b9372297da849` |
@@ -547,7 +550,7 @@ false` would switch any crate's targets off wholesale.
 | `crates/flutterdec-decompiler/tests/atomic_rmw_effects.rs` | `32e189118af32909ef6bcd501924f0ecc35c2c70d8fe40ce9f1ca88758cde31d` |
 | `crates/flutterdec-decompiler/tests/annotation_anchor_identity.rs` | `ed8d10588cf72adf42753152313e1795cde307eb9064a178093a18b0aa365004` |
 | `crates/flutterdec-decompiler/tests/provenance_accounting.rs` | `adf39625d5a0c222f160cb5df2e916eb1fb3a4434f7d62aebad3f24e5a9b2bbd` |
-| `crates/flutterdec-core/tests/pipeline_determinism.rs` | `0e278f988febcec7701881f4058ab98d9afe3cb67caabd73564e182886a763c8` |
+| `crates/flutterdec-core/tests/pipeline_determinism.rs` | `97267600927fdac55e985d1237d30a30fb143077f711eba5b9572c3017b1c43b` |
 | `crates/flutterdec-decompiler/tests/arm64_control_effects.rs` | `c50439b4e6157d6d8e5321a6c49c22a1a74a9405d7c7924b6235c84db8ca3617` |
 | `crates/flutterdec-decompiler/tests/cfg_identity.rs` | `a5e0177808c50050bfd3517a7f89a234f650ae9ec01cc75b413ba8e2b4014ac8` |
 | `crates/flutterdec-decompiler/tests/dfs_loop_address_invariance.rs` | `1c2c0403303e619de9fe840f62f61c1af92dbec77fe554fd66d3505755b37db3` |
@@ -3440,3 +3443,87 @@ reference commit `1371e42` remains unchanged.
    compatibility evidence in a separate documentation commit.
 6. L5: `scripts/check-oracle-inventory.py` and the full
    `scripts/ci-check.sh` are rerun after this record.
+
+## 26. Adjudication record: porting the IR, CFG, and emitter work to ProgramModel v4
+
+This is the section 9 record for the eleven protected files moved while bringing
+this branch onto the post-v4 `main`. The port keeps the assertions in those
+files. It changes the model surface they compile against, the output layout
+their fixtures produce, and the CI lanes the local gate runs. The prior bytes
+remain recoverable with `git show 31dcdb5:<path>`, and the fixed reference
+`1371e42` is unchanged.
+
+### 26.1 Invariant and test delta
+
+The invariant is that every protected test still asserts the same behavior it
+asserted before the port, and every protected checker still rejects the same
+defects. No assertion was deleted, relaxed, or made conditional.
+
+- `crates/flutterdec-ir/src/tests/control_effects.rs`,
+  `crates/flutterdec-ir/src/validate/tests.rs` and
+  `crates/flutterdec-ir/tests/branch_target_radix.rs` now wrap fixture names and
+  owners in `Some(...)`. ProgramModel v4 made `Function.name` and
+  `Function.owner` optional, so the old literals no longer compile. The tests
+  still require the same target edges, branch destinations, and validation
+  outcomes.
+- `crates/flutterdec-core/src/pipeline/quality/control_effect_tests.rs` and
+  `crates/flutterdec-core/src/pipeline/runners/split/identity_tests.rs` make the
+  same `Some(...)` change, and the first also passes a function count to
+  `quality_from_artifacts` after that function stopped taking a whole
+  `ProgramModel`. The emitted counts and the identity assertions are unchanged.
+- `crates/flutterdec-core/src/pipeline/runners/tests.rs` and
+  `crates/flutterdec-core/src/pipeline/symbol_map/tests.rs` carry the same
+  model-surface edits from the merge, with their test bodies intact.
+- `crates/flutterdec-core/tests/pipeline_determinism.rs` now builds its synthetic
+  adapter fixture in the v4 JSON shape, passes the registry and store contract
+  the current loader expects, and selects `.dart` detail artifacts instead of
+  the retired `pseudocode/` prefix. It still compares complete artifact bytes
+  across twenty child processes. The containment process-count limit is frozen
+  because that limit is a host policy value, not decompiler output.
+- `scripts/annotation_boundary_corpus_check.py` and
+  `scripts/check-annotation-provenance.py` now recognize the current `.dart`
+  output tree, per-function artifacts, and provenance sidecars. They still
+  reject mixed layouts and still require every annotation site to resolve.
+- `scripts/ci-check.sh` keeps every lane this branch added and every lane
+  `main` added after the original base. The conflict was resolved by listing
+  both sets, not by dropping either one.
+
+### 26.2 Digest chain
+
+| Protected path | Prior sha256 | Current sha256 in section 7 |
+| --- | --- | --- |
+| `crates/flutterdec-core/src/pipeline/quality/control_effect_tests.rs` | `2dd80c63de5919b45de14a89259f90824d827c37ab7b7d943e58221587ed8c69` | `d2846d4960173ff1d68ac13046f4f78405c2b73b8f7a9392f44322ed2e1657c2` |
+| `crates/flutterdec-core/src/pipeline/runners/split/identity_tests.rs` | `6de85f091ee07dd84c2469784f8f4288d982b83cf38ebffa1ae3691d28fdc4d2` | `709fb13a249a24f6f3c7eae1cb8022f035881df1976258fb6ed40281c083a8ae` |
+| `crates/flutterdec-core/src/pipeline/runners/tests.rs` | `7d1d87fa9401d07ab19b4bbb190edf1c53538a6da83ccd0e891b851b63200e63` | `fa1c51f7fe4c4ab91741c72c514f2c9dba9888655b6b2035ef886117cec38323` |
+| `crates/flutterdec-core/src/pipeline/symbol_map/tests.rs` | `019220e1a5915365e1663a36353ff3ba2177f567bb5e1094e6575b47f01b39f5` | `94e263af715dad3705be3e18cea8b86f3a92538a92cfe52ace2c1deb55a8d6ca` |
+| `crates/flutterdec-core/tests/pipeline_determinism.rs` | `0e278f988febcec7701881f4058ab98d9afe3cb67caabd73564e182886a763c8` | `97267600927fdac55e985d1237d30a30fb143077f711eba5b9572c3017b1c43b` |
+| `crates/flutterdec-ir/src/tests/control_effects.rs` | `9d6755a0001bfc839cd814fd326648e8cb8ccc186eeb3b30f3551dc8384fdf59` | `9ad7f205445dbba45f4fc1e3710464c6611037af7ddb1f2b67a2dc4c5aeb04b1` |
+| `crates/flutterdec-ir/src/validate/tests.rs` | `2e3e3b3bd980c1edd2de99da166e09d5bf154cbed390e87f701a50f8316e8470` | `376ae796bf9c248651170955dc3fd986760e2299d9f902f61590d4e2ce407ec2` |
+| `crates/flutterdec-ir/tests/branch_target_radix.rs` | `989b28c3c64a271eec2afc26eb4373e3325ac1f9b5d5d477a96a472d14c37af0` | `3654dc0a08ec44034e408c529c6be15b5971b5aaade5ddeb530153b6b228bc04` |
+| `scripts/annotation_boundary_corpus_check.py` | `f925d0c53ffa173fb4d3fe7fc419006382eba69bec38db8c06289167ba187c03` | `b28f6c08b10fda38860703abb35ce3b1351ca6153da73f8ce2187b951322b500` |
+| `scripts/check-annotation-provenance.py` | `c4e40e0122f1d87c82b5b587d8ed1ac6c74f550bed114463765f2568ea6b6f93` | `cbf04fdef2e7292446623599fad4cbca3ef95b748ae47dcef936090bb2dfb535` |
+| `scripts/ci-check.sh` | `9dac174b7a2a4e3a0d14d182d292dac0dbc8b6c63679e859da7cc8dad21ea45e` | `c58c07a30e3baa43caec7708f03b6f52240aff35cd3c7bab1c09ce3600034ba7` |
+
+### 26.3 Section 9 steps
+
+1. Invariant: section 26.1, stated at the model boundary and at the emitted
+   artifact, independent of any single test run.
+2. Tests: the eleven files above run in `cargo test --workspace`; the determinism
+   test fails if two processes differ anywhere except the frozen host scalars.
+3. Diff and digests: 26.1 names every edit category and 26.2 gives both old and
+   new digests.
+4. Reference preserved: the old bytes are at `31dcdb5`, and `1371e42` remains
+   untouched.
+5. Atomicity: the merge resolution and the fixture adaptations are one port
+   commit; this digest refresh and record are a separate documentation commit.
+6. L5: `scripts/ci-check.sh` is rerun on the final tree after the refresh.
+
+### 26.4 Verification
+
+The port tree passes `cargo fmt --all -- --check`, `cargo clippy --workspace
+--all-targets -- -D warnings`, and `cargo test --workspace`. A release full-model
+run over the LocalSend snapshot decompiles 44,991 functions into 5,401 source
+files and 1,223 libraries. All 40,813 attributed entries carry a line span that
+contains their declaration, with zero missing files, zero non-`.dart` paths, and
+zero duplicate declarations inside a file. The oracle inventory, the resource
+ruler, and `scripts/ci-check.sh` are rerun after this record and are clean.
