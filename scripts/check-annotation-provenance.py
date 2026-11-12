@@ -462,7 +462,7 @@ def by_function(pseudocode_dir: pathlib.Path):
     by_id = {}
     paths = [*pseudocode_dir.glob("*.dartpseudo"), *pseudocode_dir.glob("*.dart")]
     for path in sorted(paths):
-        stem = path.name.split("_", 1)[0]
+        stem = path.stem.split("_", 1)[0]
         try:
             by_id[int(stem)] = path
         except ValueError:
