@@ -374,7 +374,7 @@ fn file_uri_directory(uri: &str) -> String {
         if segments.len() >= 2 {
             let target = segments.remove(0);
             let rest = segments.join("/");
-            return format!("build/{}/{}/", sanitize_dir(target), sanitize_path(&rest));
+            return format!("build/{}/{}", sanitize_dir(target), sanitize_path(&rest));
         }
         if segments.len() == 1 {
             return format!("build/{}/", sanitize_dir(segments[0]));
@@ -507,23 +507,32 @@ fn plan_layout(
         });
     }
 
-    let mut path_groups: BTreeMap<String, Vec<usize>> = BTreeMap::new();
-    for (candidate_index, candidate) in candidates.iter().enumerate() {
-        path_groups
-            .entry(candidate.path.to_ascii_lowercase())
-            .or_default()
-            .push(candidate_index);
-    }
-    for (_, mut group) in path_groups {
-        group.sort_by_key(|candidate_index| {
-            functions[candidates[*candidate_index].function_index].function_id
-        });
-        for candidate_index in group.into_iter().skip(1) {
-            let candidate = &mut candidates[candidate_index];
-            let function_id = functions[candidate.function_index].function_id;
-            candidate.path = append_file_suffix(&candidate.path, &format!("__{function_id}"));
+    let mut ordered = (0..candidates.len()).collect::<Vec<_>>();
+    ordered.sort_by_key(|candidate_index| {
+        (
+            functions[candidates[*candidate_index].function_index].function_id,
+            *candidate_index,
+        )
+    });
+    let mut used_paths = HashSet::new();
+    for candidate_index in ordered {
+        let candidate = &mut candidates[candidate_index];
+        let mut path = candidate.path.clone();
+        let function_id = functions[candidate.function_index].function_id;
+        if used_paths.contains(&path.to_ascii_lowercase()) {
+            let base = path.clone();
+            let mut suffix = format!("__{function_id}");
+            path = append_file_suffix(&base, &suffix);
+            let mut attempt = 2;
+            while used_paths.contains(&path.to_ascii_lowercase()) {
+                suffix = format!("__{function_id}_{attempt}");
+                path = append_file_suffix(&base, &suffix);
+                attempt += 1;
+            }
             candidate.collision = true;
         }
+        used_paths.insert(path.to_ascii_lowercase());
+        candidate.path = path;
     }
 
     let mut entries = candidates
@@ -749,7 +758,7 @@ fn project_readme(root_package: Option<&str>, layout: OutputLayout) -> String {
          - `sdk/` holds Dart SDK libraries.\n\
          - `build/` holds libraries from Flutter build paths.\n\
          - `unattributed/` holds functions the model could not place.\n\
-         - `artifacts/` holds optional assembly and IR artifacts.\n\n\
+         - `artifacts/` holds optional assembly, IR, and provenance source artifacts.\n\n\
          {shape}\n\
          Use `index.json` to map every function to its source file, function id,\n\
          library, class, entry address and provenance. Composed functions also\n\
@@ -803,27 +812,20 @@ fn cleanup_stale_files(out_dir: &Path, new_paths: &HashSet<String>) -> Result<()
         if new_paths.contains(&entry.path) || !entry.path.ends_with(".dart") {
             continue;
         }
-        let stale = [
-            entry.path.clone(),
-            artifact_path("asm", &entry.path, "s"),
-            artifact_path("ir", &entry.path, "json"),
-        ];
-        for relative in stale {
-            let Ok(path) = safe_join(out_dir, &relative) else {
-                continue;
-            };
-            if path.is_file() {
-                fs::remove_file(&path)?;
-                let mut parent = path.parent();
-                while let Some(directory) = parent {
-                    if directory == out_dir {
-                        break;
-                    }
-                    if fs::remove_dir(directory).is_err() {
-                        break;
-                    }
-                    parent = directory.parent();
+        let Ok(path) = safe_join(out_dir, &entry.path) else {
+            continue;
+        };
+        if path.is_file() {
+            fs::remove_file(&path)?;
+            let mut parent = path.parent();
+            while let Some(directory) = parent {
+                if directory == out_dir {
+                    break;
                 }
+                if fs::remove_dir(directory).is_err() {
+                    break;
+                }
+                parent = directory.parent();
             }
         }
     }
@@ -836,11 +838,11 @@ fn artifact_path(kind: &str, source_path: &str, extension: &str) -> String {
 }
 
 /// Remove the artifact trees this writer owns before a run. The source tree may
-/// keep a file that a previous run also produced, so stale asm/IR files cannot
-/// be found by comparing source paths alone. Clearing both trees keeps layout
-/// switches and emit-flag changes deterministic.
+/// keep a file that a previous run also produced, so stale asm/IR/audit-source
+/// files cannot be found by comparing source paths alone. Clearing the trees
+/// keeps layout switches and emit-flag changes deterministic.
 fn reset_artifact_trees(out_dir: &Path) -> Result<()> {
-    for kind in ["asm", "ir"] {
+    for kind in ["asm", "ir", "functions"] {
         let path = out_dir.join("artifacts").join(kind);
         if path.is_dir() {
             fs::remove_dir_all(&path)?;
@@ -902,7 +904,14 @@ fn write_project_layout(
     let ir_by_id: HashMap<u64, &FunctionIr> =
         ir.iter().map(|function| (function.function_id, function)).collect();
 
-    let mut new_paths = HashSet::new();
+    let new_paths: HashSet<String> = plan
+        .entries
+        .iter()
+        .map(|entry| entry.path.clone())
+        .collect();
+    // Remove the previous run's sources before writing this run's, so a
+    // case-only path change cannot delete the file that was just written.
+    cleanup_stale_files(out_dir, &new_paths)?;
     for entry in &plan.entries {
         let artifact = pseudo_by_id.get(&entry.function_id).with_context(|| {
             format!(
@@ -911,7 +920,6 @@ fn write_project_layout(
             )
         })?;
         write_relative(out_dir, &entry.path, terminated(&artifact.source).as_bytes())?;
-        new_paths.insert(entry.path.clone());
 
         if emit_asm {
             if let Some(function) = disasm_by_id.get(&entry.function_id) {
@@ -943,7 +951,6 @@ fn write_project_layout(
         "README.md",
         project_readme(plan.root_package.as_deref(), OutputLayout::Project).as_bytes(),
     )?;
-    cleanup_stale_files(out_dir, &new_paths)?;
 
     let index = OutputIndex {
         schema_version: 1,
@@ -1275,7 +1282,39 @@ fn write_library_layout(
         group.path = candidate;
     }
 
-    let mut new_paths = HashSet::new();
+    let new_paths: HashSet<String> = groups
+        .iter()
+        .map(|group| group.path.clone())
+        .chain(
+            entries
+                .iter()
+                .enumerate()
+                .filter(|(index, _)| !composed_indices.contains(index))
+                .map(|(_, entry)| entry.path.clone()),
+        )
+        .collect();
+    // Clean sources before composing, not after. A case-only rename resolves to
+    // the same file on a case-insensitive filesystem, so writing first and
+    // removing the old spelling would delete the new library.
+    cleanup_stale_files(out_dir, &new_paths)?;
+
+    // The provenance audit records coordinates against each function's own
+    // source, before composition changes line numbers or helper names. Keep
+    // those exact sources under artifacts/functions when an audit is requested
+    // so the coordinates remain resolvable in library layout.
+    if std::env::var_os("FLUTTERDEC_PROV_AUDIT").is_some() {
+        for entry in &entries {
+            let artifact = pseudo_by_id.get(&entry.function_id).with_context(|| {
+                format!(
+                    "layout entry {} has no pseudocode artifact",
+                    entry.function_id
+                )
+            })?;
+            let path = format!("artifacts/functions/{}.dart", entry.function_id);
+            write_relative(out_dir, &path, terminated(&artifact.source).as_bytes())?;
+        }
+    }
+
     for group in &groups {
         let mut composed = format!(
             "// library: {}\n\
@@ -1329,7 +1368,6 @@ fn write_library_layout(
             entry.collision = group.collision;
         }
         write_relative(out_dir, &group.path, terminated(&composed).as_bytes())?;
-        new_paths.insert(group.path.clone());
     }
 
     for (index, entry) in entries.iter_mut().enumerate() {
@@ -1343,7 +1381,6 @@ fn write_library_layout(
             )
         })?;
         write_relative(out_dir, &entry.path, terminated(&artifact.source).as_bytes())?;
-        new_paths.insert(entry.path.clone());
     }
 
     for entry in &entries {
@@ -1377,7 +1414,6 @@ fn write_library_layout(
         "README.md",
         project_readme(plan.root_package.as_deref(), OutputLayout::Library).as_bytes(),
     )?;
-    cleanup_stale_files(out_dir, &new_paths)?;
 
     let collisions = entries.iter().filter(|entry| entry.collision).count();
     let index = OutputIndex {
@@ -1496,6 +1532,36 @@ mod output_layout_tests {
             directory_for_uri(None, Some("localsend_app")),
             ("unattributed/".to_string(), Placement::None)
         );
+        assert_eq!(
+            file_uri_directory(
+                "file:///tmp/app/.dart_tool/flutter_build/hash/dart_plugin_registrant.dart"
+            ),
+            "build/hash/dart_plugin_registrant/"
+        );
+    }
+
+    #[test]
+    fn rechecks_generated_collision_suffixes_against_allocated_paths() {
+        let functions = vec![
+            layout_function(1, 0x10, "foo", None, None),
+            layout_function(2, 0x20, "foo", None, None),
+            layout_function(3, 0x30, "foo__2", None, None),
+        ];
+        let plan = plan_layout(&functions, Some("app"), "flag");
+        let paths = plan
+            .entries
+            .iter()
+            .map(|entry| entry.path.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            paths,
+            vec![
+                "unattributed/foo.dart",
+                "unattributed/foo__2.dart",
+                "unattributed/foo__2__3.dart",
+            ]
+        );
+        assert_eq!(plan.collisions, 2);
     }
 
     #[test]
@@ -1717,6 +1783,62 @@ mod output_layout_tests {
             .exists());
         assert!(!out.join("unattributed/fn_0x1234.dart").exists());
         assert!(out.join("lib/main/HomePage.build.dart").is_file());
+    }
+
+    #[test]
+    fn library_layout_keeps_artifacts_it_writes_after_a_layout_switch() {
+        let directory = tempfile::tempdir().expect("temp dir");
+        let out = directory.path();
+        let functions = vec![layout_function(
+            1,
+            0x10,
+            "build",
+            Some("HomePage"),
+            Some("package:app/main.dart"),
+        )];
+        let pseudo = vec![artifact(1, "build", "dynamic build() {}\n")];
+        let project_plan = plan_layout(&functions, Some("app"), "flag");
+        let project_options = WriteOptions {
+            layout: OutputLayout::Project,
+            emit_asm: false,
+            emit_asm_opcodes: false,
+            emit_ir: false,
+            snapshot_hash: "80a49c7111088100a233b2ae788e1f48",
+            target_arch: "arm64",
+        };
+        write_project_layout(out, &project_plan, &pseudo, &[], &[], project_options)
+            .expect("write project layout");
+        assert!(out.join("lib/main/HomePage.build.dart").is_file());
+
+        let library_plan = plan_layout(&functions, Some("app"), "flag");
+        let disasm = vec![FunctionDisassembly {
+            function_id: 1,
+            function_name: Some("build".to_string()),
+            owner_class: Some("HomePage".to_string()),
+            entry_va: 0x10,
+            size: 0,
+            instructions: Vec::new(),
+        }];
+        let library_options = WriteOptions {
+            layout: OutputLayout::Library,
+            emit_asm: true,
+            emit_asm_opcodes: false,
+            emit_ir: false,
+            snapshot_hash: "80a49c7111088100a233b2ae788e1f48",
+            target_arch: "arm64",
+        };
+        write_project_layout(
+            out,
+            &library_plan,
+            &pseudo,
+            &disasm,
+            &[],
+            library_options,
+        )
+        .expect("write library layout");
+        assert!(!out.join("lib/main/HomePage.build.dart").exists());
+        assert!(out.join("lib/main.dart").is_file());
+        assert!(out.join("artifacts/asm/lib/main/HomePage.build.s").is_file());
     }
 
     #[test]

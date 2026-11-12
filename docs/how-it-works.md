@@ -15,6 +15,7 @@ Output:
 - `index.json` path-to-function mapping
 - optional assembly files (`.s`) under `artifacts/asm/`
 - optional IR files (`.json`) under `artifacts/ir/`
+- optional per-function provenance sources under `artifacts/functions/` when `FLUTTERDEC_PROV_AUDIT` is set
 - quality report (`quality.json`)
 - summary report (`report.json`)
 
@@ -915,15 +916,18 @@ Interpretation guidance:
 - `out_dir/ghidra_apply_symbols.py` (when `--emit-ghidra-script`)
 - `out_dir/ida_apply_symbols.py` (when `--emit-ida-script`)
 - `out_dir/artifacts/ir/**/*.json` (when `--emit-ir`)
+- `out_dir/artifacts/functions/**/*.dart` (when `FLUTTERDEC_PROV_AUDIT` is set)
 - `out_dir/quality.json`
 - `out_dir/report.json`
 
 File naming convention:
 
-- source: `<directory>/<Class>.<function>.dart`; constructors use `new`; an unnamed function uses `fn_0x<entry_va>.dart`
-- a case-insensitive path collision appends `__<function_id>` to the stem
-- asm: the source path under `artifacts/asm/`, with `.s`
-- ir: the source path under `artifacts/ir/`, with `.json`
+- library source (default): `<library path>.dart`, one file per library; declarations are owner-qualified functions such as `<Class>_<function>`
+- `--layout project` source: `<directory>/<Class>.<function>.dart`; constructors use `new`; an unnamed function uses `fn_0x<entry_va>.dart`
+- a case-insensitive path collision appends `__<function_id>` to the stem, and a numeric suffix if that is also taken
+- asm: `<per-function source path>.s` under `artifacts/asm/`, using the function's own projected path, not the composed library path
+- ir: `<per-function source path>.json` under `artifacts/ir/`, named the same way
+- provenance audit sources: `artifacts/functions/<function_id>.dart` when `FLUTTERDEC_PROV_AUDIT` is set; audit coordinates refer to these per-function files, not to composed libraries
 
 `report.json` includes:
 

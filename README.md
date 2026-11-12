@@ -480,8 +480,9 @@ Everything is written under the `-o <DIR>` you pass:
 | `README.md` | `decompile` | Orientation for the generated tree |
 | `report.json` | `decompile` | Analysis report and diagnostics |
 | `quality.json` | `decompile` | Quality counters and gate results |
-| `artifacts/asm/**/*.s` | `--emit-asm` | Per-function ARM64 disassembly, mirroring the source tree |
-| `artifacts/ir/**/*.json` | `--emit-ir` | Intermediate representation, mirroring the source tree |
+| `artifacts/asm/**/*.s` | `--emit-asm` | Per-function ARM64 disassembly named from the function's own source path, not the composed library file |
+| `artifacts/ir/**/*.json` | `--emit-ir` | Per-function intermediate representation, named the same way |
+| `artifacts/functions/**/*.dart` | `FLUTTERDEC_PROV_AUDIT` | Per-function sources backing audit line and column coordinates |
 | `ghidra_apply_symbols.py` | `--emit-ghidra-script` | Recovered symbols for Ghidra |
 | `ida_apply_symbols.py` | `--emit-ida-script` | Recovered symbols for IDA |
 | `diff_report.json` | `diff` | Added, removed, and common functions plus package churn |

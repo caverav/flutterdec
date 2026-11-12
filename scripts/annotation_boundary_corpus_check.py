@@ -25,7 +25,9 @@ tail.
 Usage:
     annotation_boundary_corpus_check.py CANDIDATE_OUT REFERENCE_OUT
 where each argument is a decompile output directory containing either a
-`pseudocode/` directory or the project-shaped `.dart` tree.
+`pseudocode/` directory or the project-shaped `.dart` tree. A `pseudocode/`
+directory is used only when the same root has no `index.json`, so a reused
+output directory cannot hide a laid-out tree behind a stale legacy directory.
 """
 
 import json
@@ -105,9 +107,14 @@ def strip_annotations(line: bytes, counts=None) -> bytes:
 
 
 def source_files(root):
-    """Return the source root and its relative files, legacy or project layout."""
+    """Return the source root and its relative files, legacy or project layout.
+
+    `index.json` is the marker the writer uses for a laid-out tree. A reused
+    output directory may still contain a pre-layout `pseudocode/`, so that
+    directory is only authoritative when no index exists.
+    """
     legacy = root / "pseudocode"
-    if legacy.is_dir():
+    if legacy.is_dir() and not (root / "index.json").is_file():
         return legacy, {p.relative_to(legacy) for p in legacy.rglob("*") if p.is_file()}
     return root, {p.relative_to(root) for p in root.rglob("*.dart") if p.is_file()}
 
