@@ -322,11 +322,14 @@ them, nine of which were not movers before. Twelve of the sixteen were already
 protected at `1371e42`. The other four joined later and have moved since, so
 they count under exactly that rule: `scripts/check-oracle-inventory.py`,
 which became a row in section 13 at
-`d882132e87cb4625ebdac88ab310e405b00133bd546e172db282be7e1bbf47bf`, and
+`d882132e87cb4625ebdac88ab310e405b00133bd546e172db282be7e1bbf47bf`,
 `crates/flutterdec-decompiler/src/control_flow/relation_oracle.rs`, which became
 a row in section 15 at
 `75fe720e04cfa6bbb859981f1b39ebba0e0ed932e8973d3bab730058cedcfa96` and has moved
-twice since, in section 19 and in section 21. A row that joined after `1371e42`
+twice since, in section 19 and in section 21,
+`crates/flutterdec-core/tests/pipeline_determinism.rs`, which joined in section
+19, and `crates/flutterdec-ir/tests/branch_target_radix.rs`, which joined in
+section 20. A row that joined after `1371e42`
 and still carries its first pinned digest is not one of the sixteen.
 
 `scripts/ci-check.sh` has moved thirteen times. Section 10 adjudicates the first
@@ -349,7 +352,8 @@ tenth in section 24.
 
 `crates/flutterdec-decompiler/src/tests/cfg_and_stack/omitted_path_and_stack.rs`
 and `crates/flutterdec-core/src/pipeline/runners/tests.rs` each moved once, in
-section 16. `runners/tests.rs` moved a second time in section 26. `scripts/prov_cross_audit_reconcile.py` moved once, in section 18.
+section 16. `runners/tests.rs` moved a second time in section 26.
+`scripts/prov_cross_audit_reconcile.py` moved once, in section 18.
 
 `scripts/check-oracle-inventory.py` became a row in section 13, and has moved
 seven times since: in section 15, section 17, section 19, section 20,

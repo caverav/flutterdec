@@ -235,8 +235,8 @@ fn build_case(
 
     let disasm = FunctionDisassembly {
         function_id: 1,
-        function_name: name.clone(),
-        owner_class: "Global".to_string(),
+        function_name: Some(name.clone()),
+        owner_class: Some("Global".to_string()),
         entry_va: ENTRY_VA,
         size: (instructions.len() * 4) as u64,
         instructions,

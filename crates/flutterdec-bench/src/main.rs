@@ -965,7 +965,7 @@ mod tests {
     #[test]
     fn spans_are_disjoint_and_reconcile_with_the_combined_time() {
         let symbols = HashMap::new();
-            let options = flutterdec_core::bench_spans::balanced_options();
+        let options = flutterdec_core::bench_spans::balanced_options();
         for case in workload::disclosed_cases()
             .into_iter()
             .filter(|c| c.blocks == 64)
@@ -997,7 +997,7 @@ mod tests {
     #[test]
     fn the_cfg_span_is_charged_from_inside_emission() {
         let symbols = HashMap::new();
-            let options = flutterdec_core::bench_spans::balanced_options();
+        let options = flutterdec_core::bench_spans::balanced_options();
         let case = workload::disclosed_cases()
             .into_iter()
             .find(|c| c.name == "nested-loop/1024/base")
