@@ -82,7 +82,7 @@ struct DecompileCmd {
     #[arg(short = 'o', long = "out", value_name = "DIR")]
     out_dir: PathBuf,
 
-    /// Write per-function ARM64 disassembly to asm/*.s
+    /// Write per-function ARM64 disassembly under artifacts/asm/
     #[arg(long, help_heading = "Emitted artifacts")]
     emit_asm: bool,
     /// Prefix asm lines with raw 32-bit opcode words (requires --emit-asm)
@@ -94,7 +94,7 @@ struct DecompileCmd {
     /// Write ida_apply_symbols.py to apply recovered symbols in IDA
     #[arg(long, help_heading = "Emitted artifacts")]
     emit_ida_script: bool,
-    /// Write the intermediate representation to ir/*.json
+    /// Write the intermediate representation under artifacts/ir/
     #[arg(long, help_heading = "Emitted artifacts")]
     emit_ir: bool,
     /// Split a function record that spans more than one real function.

@@ -11,9 +11,10 @@ Input:
 
 Output:
 
-- pseudo Dart files (`.dartpseudo`)
-- optional assembly files (`.s`)
-- optional IR files (`.json`)
+- pseudo Dart files (`.dart`) in a project-shaped tree
+- `index.json` path-to-function mapping
+- optional assembly files (`.s`) under `artifacts/asm/`
+- optional IR files (`.json`) under `artifacts/ir/`
 - quality report (`quality.json`)
 - summary report (`report.json`)
 
@@ -195,9 +196,9 @@ symbols = normalize external names (demangle + canonical runtime/native/stdlib a
 symbols = canonicalize adapter-owned Dart/Flutter standard names from selected_model class/library metadata
 pseudo = emit_program(ir, symbols)
 
-write pseudocode files
-optionally write asm files
-optionally write ir files
+write project-shaped .dart tree, index.json, pubspec.yaml, README.md
+optionally write asm files under artifacts/asm
+optionally write ir files under artifacts/ir
 
 quality = quality_from_artifacts(selected_model, disasm, pseudo, options)
 write quality.json
@@ -898,22 +899,29 @@ Interpretation guidance:
 
 ## Output layout
 
-`decompile -o out_dir` writes:
+`decompile -o out_dir` writes a project-shaped tree:
 
-- `out_dir/pseudocode/*.dartpseudo`
-- `out_dir/asm/*.s` (when `--emit-asm`)
+- `out_dir/lib/**/*.dart` for the root package
+- `out_dir/packages/<package>/lib/**/*.dart` for dependency packages
+- `out_dir/sdk/**/*.dart` for Dart SDK libraries
+- `out_dir/build/**/*.dart` for Flutter build-path libraries
+- `out_dir/unattributed/*.dart` for functions with no library
+- `out_dir/index.json` mapping every path to its function id, library, class, entry address, and provenance
+- `out_dir/pubspec.yaml` and `out_dir/README.md`
+- `out_dir/artifacts/asm/**/*.s` (when `--emit-asm`)
 - asm lines include raw opcode words when `--emit-asm-opcodes` is set
 - `out_dir/ghidra_apply_symbols.py` (when `--emit-ghidra-script`)
 - `out_dir/ida_apply_symbols.py` (when `--emit-ida-script`)
-- `out_dir/ir/*.json` (when `--emit-ir`)
+- `out_dir/artifacts/ir/**/*.json` (when `--emit-ir`)
 - `out_dir/quality.json`
 - `out_dir/report.json`
 
 File naming convention:
 
-- pseudocode: `{function_id:05}_{sanitized_name}.dartpseudo`
-- asm: `{function_id:05}_{sanitized_name}.s`
-- ir: `{function_id:05}_{sanitized_name}.json`
+- source: `<directory>/<Class>.<function>.dart`; constructors use `new`; an unnamed function uses `fn_0x<entry_va>.dart`
+- a case-insensitive path collision appends `__<function_id>` to the stem
+- asm: the source path under `artifacts/asm/`, with `.s`
+- ir: the source path under `artifacts/ir/`, with `.json`
 
 `report.json` includes:
 
@@ -991,7 +999,7 @@ flutterdec decompile app.apk -o out
 4. inspect:
 
 - `out/quality.json`
-- `out/pseudocode/*`
+- `out/index.json` and `out/lib/**/*.dart`
 
 5. iterate on adapter and decompiler passes
 

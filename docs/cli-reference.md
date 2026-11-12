@@ -58,7 +58,7 @@ Required:
 General options:
 
 - `--emit-asm`
-- `--emit-asm-opcodes` (requires `--emit-asm`; prepends raw 32-bit opcode words in `asm/*.s`)
+- `--emit-asm-opcodes` (requires `--emit-asm`; prepends raw 32-bit opcode words in `artifacts/asm/**/*.s`)
 - `--emit-ghidra-script` (writes `ghidra_apply_symbols.py` with function/label symbol application helpers)
 - `--emit-ida-script` (writes `ida_apply_symbols.py` with function/label symbol application helpers)
 - `--emit-ir`

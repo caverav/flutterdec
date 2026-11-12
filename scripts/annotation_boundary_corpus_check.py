@@ -24,7 +24,8 @@ tail.
 
 Usage:
     annotation_boundary_corpus_check.py CANDIDATE_OUT REFERENCE_OUT
-where each argument is a decompile output directory containing `pseudocode/`.
+where each argument is a decompile output directory containing either a
+`pseudocode/` directory or the project-shaped `.dart` tree.
 """
 
 import json
@@ -103,14 +104,19 @@ def strip_annotations(line: bytes, counts=None) -> bytes:
     return bytes(out)
 
 
+def source_files(root):
+    """Return the source root and its relative files, legacy or project layout."""
+    legacy = root / "pseudocode"
+    if legacy.is_dir():
+        return legacy, {p.relative_to(legacy) for p in legacy.rglob("*") if p.is_file()}
+    return root, {p.relative_to(root) for p in root.rglob("*.dart") if p.is_file()}
+
+
 def main():
     if len(sys.argv) != 3:
         raise SystemExit(__doc__)
-    candidate = pathlib.Path(sys.argv[1]) / "pseudocode"
-    reference = pathlib.Path(sys.argv[2]) / "pseudocode"
-
-    cand_files = {p.relative_to(candidate) for p in candidate.rglob("*") if p.is_file()}
-    ref_files = {p.relative_to(reference) for p in reference.rglob("*") if p.is_file()}
+    candidate, cand_files = source_files(pathlib.Path(sys.argv[1]))
+    reference, ref_files = source_files(pathlib.Path(sys.argv[2]))
     result = {
         "candidate_files": len(cand_files),
         "reference_files": len(ref_files),

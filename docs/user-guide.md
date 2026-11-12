@@ -215,7 +215,8 @@ flutterdec decompile ./sample.apk -o ./out
 
 4. Start with:
 
-- `out/pseudocode/*.dartpseudo`
+- `out/lib/**/*.dart` and `out/packages/**/lib/**/*.dart`
+- `out/index.json`
 - `out/report.json`
 - `out/quality.json`
 
@@ -426,18 +427,20 @@ When the cached build id matches the APK's embedded `libflutter.so`, `decompile`
 
 Main output artifacts:
 
-- `pseudocode/*.dartpseudo`
+- `lib/**/*.dart`, `packages/**/lib/**/*.dart`, `sdk/**/*.dart`, `build/**/*.dart`, and `unattributed/*.dart`
+- `index.json`
+- `pubspec.yaml` and `README.md`
 - `report.json`
 - `quality.json`
-- `asm/*.s` if `--emit-asm`
-- `ir/*.json` if `--emit-ir`
+- `artifacts/asm/**/*.s` if `--emit-asm`
+- `artifacts/ir/**/*.json` if `--emit-ir`
 - `ghidra_apply_symbols.py` if `--emit-ghidra-script`
 - `ida_apply_symbols.py` if `--emit-ida-script`
 - `diff_report.json` if you run `flutterdec diff`
 
 Most users should start by reading:
 
-- `pseudocode/*.dartpseudo`
+- `lib/**/*.dart`, then `index.json`
 - `report.json.android_startup`
 - `quality.json`
 

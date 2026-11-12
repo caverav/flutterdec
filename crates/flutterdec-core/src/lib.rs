@@ -541,6 +541,7 @@ pub struct DiffReport {
 }
 
 include!("pipeline/helpers.rs");
+include!("pipeline/output_layout.rs");
 include!("pipeline/fallback.rs");
 include!("pipeline/model.rs");
 include!("pipeline/quality.rs");
