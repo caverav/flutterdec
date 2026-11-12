@@ -14,7 +14,7 @@ build-to-build diffs, and structured reports. Everything runs offline on your ma
 is never executed.
 
 - **Input**: a Flutter app for Android built for ARM64, as an APK or a bare `libapp.so`
-- **Output**: `pseudocode/*.dartpseudo` plus `report.json` and `quality.json`, with optional asm, IR, and symbol scripts
+- **Output**: a project-shaped tree of `.dart` files under `lib/`, `packages/`, and `sdk/`, with one file per library by default (`--layout project` keeps one file per function), plus `index.json`, `report.json`, and `quality.json`, with optional asm, IR, and symbol scripts
 - **Use it for**: reversing an app, reviewing it for hardcoded secrets or logic flaws, or diffing two releases
 - **Status**: alpha research tool; see [Project status](#project-status)
 
@@ -46,9 +46,11 @@ If you remember only three commands:
 
 | Artifact | What it is |
 | --- | --- |
-| `pseudocode/*.dartpseudo` | The recovered logic: branches, loops, returns, and named callsites. Start here. |
+| `lib/**/*.dart` | App or root-package code, one file per library by default. Start here. |
+| `packages/**/lib/**/*.dart` | Dependency-package code, rooted at each package name. |
+| `index.json` | Function-to-source mapping with ids, libraries, classes, line spans for composed functions, entry addresses, and provenance. |
 | `report.json` and `quality.json` | What was analyzed, what was recovered, and how complete it was. |
-| `asm/*.s` and `ir/*.json` | Lower-level views to verify the pseudocode (`--emit-asm --emit-ir`). |
+| `artifacts/asm/**/*.s` and `artifacts/ir/**/*.json` | Lower-level views to verify the pseudocode (`--emit-asm --emit-ir`). |
 | `ghidra_apply_symbols.py` / `ida_apply_symbols.py` | Recovered names for Ghidra or IDA (`--emit-ghidra-script`, `--emit-ida-script`). |
 | `diff_report.json` | Function and package churn between two builds (`flutterdec diff`). |
 
@@ -215,11 +217,12 @@ Dart framework internals.
 
 ### Step 4: Read the results
 
-Start with these three files, in this order:
+Start with these files, in this order:
 
-1. `out/pseudocode/*.dartpseudo` - the recovered logic
-2. `out/report.json` - what was analyzed and what was recovered
-3. `out/quality.json` - how complete the recovery was
+1. `out/lib/**/*.dart` - the recovered logic, one file per library
+2. `out/index.json` - the map from each function to its source file, line span, and provenance
+3. `out/report.json` - what was analyzed and what was recovered
+4. `out/quality.json` - how complete the recovery was
 
 ### About the exit code 1 you will probably see
 
@@ -467,11 +470,19 @@ Everything is written under the `-o <DIR>` you pass:
 
 | File | Written by | Purpose |
 | --- | --- | --- |
-| `pseudocode/*.dartpseudo` | `decompile` | Recovered pseudo-Dart, one file per function |
+| `lib/**/*.dart` | `decompile` | Root-package pseudo-Dart, one file per library by default |
+| `packages/<package>/lib/**/*.dart` | `decompile` | Dependency-package pseudo-Dart, one file per library |
+| `sdk/**/*.dart` | `decompile` | Dart SDK library pseudo-Dart, one file per library |
+| `build/**/*.dart` | `decompile` | Libraries recovered from Flutter build paths |
+| `unattributed/*.dart` | `decompile` | Functions the model could not place, one file per function |
+| `index.json` | `decompile` | Function-to-source mapping, line spans, and layout counters |
+| `pubspec.yaml` | `decompile` | Minimal Flutter project scaffold |
+| `README.md` | `decompile` | Orientation for the generated tree |
 | `report.json` | `decompile` | Analysis report and diagnostics |
 | `quality.json` | `decompile` | Quality counters and gate results |
-| `asm/*.s` | `--emit-asm` | Per-function ARM64 disassembly |
-| `ir/*.json` | `--emit-ir` | Intermediate representation |
+| `artifacts/asm/**/*.s` | `--emit-asm` | Per-function ARM64 disassembly named from the function's own source path, not the composed library file |
+| `artifacts/ir/**/*.json` | `--emit-ir` | Per-function intermediate representation, named the same way |
+| `artifacts/functions/**/*.dart` | `FLUTTERDEC_PROV_AUDIT` | Per-function sources backing audit line and column coordinates |
 | `ghidra_apply_symbols.py` | `--emit-ghidra-script` | Recovered symbols for Ghidra |
 | `ida_apply_symbols.py` | `--emit-ida-script` | Recovered symbols for IDA |
 | `diff_report.json` | `diff` | Added, removed, and common functions plus package churn |
@@ -490,6 +501,7 @@ Everything is written under the `-o <DIR>` you pass:
   observed Android embedder startup stages per source method, including ownership, stage ordering,
   completeness, and missing steps
 - `function_scope`: scope selection, package counts, and prioritization hints
+- `output`: layout, root package, source and library file counts, unattributed count, and path collisions
 - `target_selection`: how `--target` resolved
 - `pool_metadata`: index-space authority and why hints were suppressed
 - `engine_symbol_ingestion`: auto-loaded local engine symbol cache matches keyed by `libflutter.so`
@@ -503,8 +515,9 @@ Not sure where to start? Pick a file by question:
 
 | If you want to... | Start with... |
 | --- | --- |
-| Read recovered logic | `pseudocode/*.dartpseudo` |
-| Validate the decompiler | `asm/*.s` and `ir/*.json` |
+| Read recovered logic | `lib/**/*.dart`, then `index.json` |
+| Find a function by name or id | `index.json` or `grep -r` |
+| Validate the decompiler | `artifacts/asm/**/*.s` and `artifacts/ir/**/*.json` |
 | Understand app startup | `report.json.android_startup` |
 | Check analysis health | `quality.json` and `report.json` |
 | Review version-to-version changes | `diff_report.json` |

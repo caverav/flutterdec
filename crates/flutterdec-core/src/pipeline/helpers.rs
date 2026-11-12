@@ -1,11 +1,3 @@
-/// Longest sanitized function name we put in an artifact file name.
-///
-/// Recovered Dart names routinely exceed the 255-byte `NAME_MAX` on their own
-/// (mangled generics, `@`-suffixed private names, deep owner chains), which used to
-/// abort a whole run with `File name too long`. Artifact names are already prefixed
-/// with the unique function id, so truncating the stem cannot collide.
-const MAX_FILE_NAME_STEM: usize = 160;
-
 /// Give a text artifact the trailing newline a POSIX text file is supposed to have.
 ///
 /// Emitted bodies are built by joining lines, so they ended at the last character with
@@ -24,21 +16,6 @@ fn terminated(body: &str) -> String {
     let mut out = String::with_capacity(body.len() + 1);
     out.push_str(body);
     out.push('\n');
-    out
-}
-
-fn normalize_file_name(name: &str) -> String {
-    let mut out = String::new();
-    for c in name.chars() {
-        if out.len() >= MAX_FILE_NAME_STEM {
-            break;
-        }
-        if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
-            out.push(c);
-        } else {
-            out.push('_');
-        }
-    }
     out
 }
 
@@ -87,22 +64,6 @@ mod helpers_tests {
     fn count_ident_token_handles_utf8_text() {
         let hay = r#"dynamic x = local; final s = "Možete"; local = 2;"#;
         assert_eq!(count_ident_token(hay, "local"), 2);
-    }
-
-    #[test]
-    fn normalize_file_name_caps_long_recovered_dart_names() {
-        let long = format!("method_{}_deserialize", "Isar_CollectionSchema".repeat(40));
-        let out = normalize_file_name(&long);
-        assert_eq!(out.len(), MAX_FILE_NAME_STEM);
-        assert!(out.starts_with("method_Isar_CollectionSchema"));
-        // Leaves room for the `{id:05}_` prefix and the longest extension we emit.
-        assert!("00000_".len() + out.len() + ".dartpseudo".len() < 255);
-    }
-
-    #[test]
-    fn normalize_file_name_keeps_short_names_intact() {
-        assert_eq!(normalize_file_name("sub_652b98"), "sub_652b98");
-        assert_eq!(normalize_file_name("method.Duration.dyn:_"), "method_Duration_dyn__");
     }
 
     #[test]

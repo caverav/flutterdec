@@ -35,6 +35,16 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum OutputLayout {
+    /// One file per library, with owner-qualified top-level declarations.
+    #[default]
+    Library,
+    /// One file per recovered function.
+    Project,
+}
+
 #[derive(Debug, Clone)]
 pub struct DecompileOptions {
     pub out_dir: PathBuf,
@@ -43,6 +53,8 @@ pub struct DecompileOptions {
     pub emit_ghidra_script: bool,
     pub emit_ida_script: bool,
     pub emit_ir: bool,
+    /// Shape of the written source tree.
+    pub output_layout: OutputLayout,
     /// Split a function record that spans more than one real function.
     /// Opt-in: it multiplies the emitted function count, which moves every
     /// absolute quality counter and makes the model-derived disassembly ratio
@@ -541,6 +553,7 @@ pub struct DiffReport {
 }
 
 include!("pipeline/helpers.rs");
+include!("pipeline/output_layout.rs");
 include!("pipeline/fallback.rs");
 include!("pipeline/model.rs");
 include!("pipeline/quality.rs");

@@ -11,9 +11,11 @@ Input:
 
 Output:
 
-- pseudo Dart files (`.dartpseudo`)
-- optional assembly files (`.s`)
-- optional IR files (`.json`)
+- pseudo Dart files (`.dart`) in a project-shaped tree
+- `index.json` path-to-function mapping
+- optional assembly files (`.s`) under `artifacts/asm/`
+- optional IR files (`.json`) under `artifacts/ir/`
+- optional per-function provenance sources under `artifacts/functions/` when `FLUTTERDEC_PROV_AUDIT` is set
 - quality report (`quality.json`)
 - summary report (`report.json`)
 
@@ -195,9 +197,10 @@ symbols = normalize external names (demangle + canonical runtime/native/stdlib a
 symbols = canonicalize adapter-owned Dart/Flutter standard names from selected_model class/library metadata
 pseudo = emit_program(ir, symbols)
 
-write pseudocode files
-optionally write asm files
-optionally write ir files
+write project-shaped .dart tree, one file per library by default
+write index.json mapping each function to its file and line span, plus pubspec.yaml and README.md
+optionally write asm files under artifacts/asm
+optionally write ir files under artifacts/ir
 
 quality = quality_from_artifacts(selected_model, disasm, pseudo, options)
 write quality.json
@@ -898,22 +901,33 @@ Interpretation guidance:
 
 ## Output layout
 
-`decompile -o out_dir` writes:
+`decompile -o out_dir` writes a project-shaped tree, one file per library by default:
 
-- `out_dir/pseudocode/*.dartpseudo`
-- `out_dir/asm/*.s` (when `--emit-asm`)
+- `out_dir/lib/**/*.dart` for the root package
+- `out_dir/packages/<package>/lib/**/*.dart` for dependency packages
+- `out_dir/sdk/**/*.dart` for Dart SDK libraries
+- `out_dir/build/**/*.dart` for Flutter build-path libraries
+- `out_dir/unattributed/*.dart` for functions with no library, one file per function
+- `out_dir/index.json` mapping every function to its file, library, class, entry address, and provenance, with `line_start` and `line_end` on composed declarations
+- owner-qualified declarations such as `HomePage_build`; pass `--layout project` for one file per function
+- `out_dir/pubspec.yaml` and `out_dir/README.md`
+- `out_dir/artifacts/asm/**/*.s` (when `--emit-asm`)
 - asm lines include raw opcode words when `--emit-asm-opcodes` is set
 - `out_dir/ghidra_apply_symbols.py` (when `--emit-ghidra-script`)
 - `out_dir/ida_apply_symbols.py` (when `--emit-ida-script`)
-- `out_dir/ir/*.json` (when `--emit-ir`)
+- `out_dir/artifacts/ir/**/*.json` (when `--emit-ir`)
+- `out_dir/artifacts/functions/**/*.dart` (when `FLUTTERDEC_PROV_AUDIT` is set)
 - `out_dir/quality.json`
 - `out_dir/report.json`
 
 File naming convention:
 
-- pseudocode: `{function_id:05}_{sanitized_name}.dartpseudo`
-- asm: `{function_id:05}_{sanitized_name}.s`
-- ir: `{function_id:05}_{sanitized_name}.json`
+- library source (default): `<library path>.dart`, one file per library; declarations are owner-qualified functions such as `<Class>_<function>`
+- `--layout project` source: `<directory>/<Class>.<function>.dart`; constructors use `new`; an unnamed function uses `fn_0x<entry_va>.dart`
+- a case-insensitive path collision appends `__<function_id>` to the stem, and a numeric suffix if that is also taken
+- asm: `<per-function source path>.s` under `artifacts/asm/`, using the function's own projected path, not the composed library path
+- ir: `<per-function source path>.json` under `artifacts/ir/`, named the same way
+- provenance audit sources: `artifacts/functions/<function_id>.dart` when `FLUTTERDEC_PROV_AUDIT` is set; audit coordinates refer to these per-function files, not to composed libraries
 
 `report.json` includes:
 
@@ -991,7 +1005,7 @@ flutterdec decompile app.apk -o out
 4. inspect:
 
 - `out/quality.json`
-- `out/pseudocode/*`
+- `out/index.json` and `out/lib/**/*.dart`
 
 5. iterate on adapter and decompiler passes
 

@@ -58,10 +58,12 @@ Required:
 General options:
 
 - `--emit-asm`
-- `--emit-asm-opcodes` (requires `--emit-asm`; prepends raw 32-bit opcode words in `asm/*.s`)
+- `--emit-asm-opcodes` (requires `--emit-asm`; prepends raw 32-bit opcode words in `artifacts/asm/**/*.s`)
 - `--emit-ghidra-script` (writes `ghidra_apply_symbols.py` with function/label symbol application helpers)
 - `--emit-ida-script` (writes `ida_apply_symbols.py` with function/label symbol application helpers)
 - `--emit-ir`
+- `--layout <library|project>` (default `library`: one `.dart` file per library with owner-qualified
+  declarations; `project`: one file per recovered function, named `<class>.<function>.dart`)
 - `--focus <FOCUS>`
 - `--target <TARGET>` (decompile/disassemble a specific function by selector: `id:<N>`, `va:0x<ADDR>`, `0x<ADDR>`, or `<N>`; ambiguous `<N>` matches fail and require explicit prefix)
 - `--max-functions <N>`

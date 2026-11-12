@@ -57,6 +57,22 @@ fn out_dir(prefix: &Prefix, name: &str) -> PathBuf {
     prefix.root().join(name)
 }
 
+fn count_dart_files(root: &Path) -> usize {
+    let mut count = 0;
+    let Ok(entries) = fs::read_dir(root) else {
+        return 0;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            count += count_dart_files(&path);
+        } else if path.extension().and_then(|extension| extension.to_str()) == Some("dart") {
+            count += 1;
+        }
+    }
+    count
+}
+
 /// Every domain a snapshot parser would supply, and none of which instruction
 /// bytes can.
 const SEMANTIC_DOMAINS: &[&str] = &[
@@ -157,10 +173,20 @@ fn an_unknown_snapshot_is_recovered_by_core_with_no_adapter_execution() {
             > 0,
         "no candidate reached the disassembler: {summary}"
     );
-    let pseudocode = fs::read_dir(out.join("pseudocode"))
-        .expect("pseudocode dir")
-        .count();
-    assert!(pseudocode > 0, "no pseudocode was written");
+    let source_files = count_dart_files(&out);
+    assert!(source_files > 0, "no source files were written");
+    let index = read_json(&out.join("index.json"));
+    assert_eq!(
+        index["counts"]["source_files"].as_u64().unwrap_or(0),
+        source_files as u64
+    );
+    for entry in index["entries"].as_array().expect("index entries") {
+        let path = entry["path"].as_str().expect("entry path");
+        assert!(
+            out.join(path).is_file(),
+            "index entry does not exist: {path}"
+        );
+    }
 
     // And no semantic record was fabricated to get there.
     assert_eq!(summary["counts"]["libraries"], Value::from(0));

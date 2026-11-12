@@ -1577,49 +1577,39 @@ pub fn run_decompile(
         &stub_naming.effects,
     );
 
-    let asm_dir = opt.out_dir.join("asm");
-    let ir_dir = opt.out_dir.join("ir");
-    let pseudo_dir = opt.out_dir.join("pseudocode");
-    fs::create_dir_all(&pseudo_dir).context("create pseudocode out dir")?;
-    if opt.emit_asm {
-        fs::create_dir_all(&asm_dir)?;
-    }
-    if opt.emit_ir {
-        fs::create_dir_all(&ir_dir)?;
-    }
-
-    for p in &pseudo {
-        let filename = format!(
-            "{:05}_{}.dartpseudo",
-            p.function_id,
-            normalize_file_name(&p.function_name)
-        );
-        fs::write(pseudo_dir.join(filename), terminated(&p.source))?;
-    }
-
-    if opt.emit_asm {
-        for f in &disasm {
-            let mut lines = Vec::new();
-            for i in &f.instructions {
-                lines.push(format_asm_instruction_line(i, opt.emit_asm_opcodes));
-            }
-            let filename = format!(
-                "{:05}_{}.s",
-                f.function_id,
-                normalize_file_name(&f.display_name())
-            );
-            fs::write(asm_dir.join(filename), terminated(&lines.join("\n")))?;
-        }
-    }
-
-    if opt.emit_ir {
-        for f in &ir {
-            let filename = format!("{:05}_{}.json", f.function_id, normalize_file_name(&f.name));
-            let mut body = serde_json::to_vec_pretty(f)?;
-            body.push(b'\n');
-            fs::write(ir_dir.join(filename), body)?;
-        }
-    }
+    let (root_package, root_package_source) = select_root_package(
+        &opt.app_packages,
+        &hints,
+        &priority_package_hints,
+        &app_package_counts,
+    );
+    let layout_functions = build_layout_functions(
+        &model,
+        &pseudo,
+        &disasm,
+        &hints,
+        root_package.as_deref(),
+    );
+    let layout_plan = plan_layout(
+        &layout_functions,
+        root_package.as_deref(),
+        root_package_source,
+    );
+    let layout_summary = write_project_layout(
+        &opt.out_dir,
+        &layout_plan,
+        &pseudo,
+        &disasm,
+        &ir,
+        WriteOptions {
+            layout: opt.output_layout,
+            emit_asm: opt.emit_asm,
+            emit_asm_opcodes: opt.emit_asm_opcodes,
+            emit_ir: opt.emit_ir,
+            snapshot_hash: &bundle.snapshot_hash,
+            target_arch: bundle.identity.target_arch.as_str(),
+        },
+    )?;
 
     let ghidra_script_path = if opt.emit_ghidra_script {
         Some(opt.out_dir.join("ghidra_apply_symbols.py"))
@@ -1948,6 +1938,7 @@ pub fn run_decompile(
             "pool_index_space_addressable": pool_metadata.addressable,
             "pool_heuristic_entries": pool_metadata.heuristic
         },
+        "output": layout_summary.to_json(),
         "engine_fingerprint_context": {
             "detected": engine_context.detected,
             "source": engine_context.source,

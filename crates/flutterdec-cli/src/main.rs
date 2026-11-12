@@ -5,7 +5,7 @@ use flutterdec_core::{
     available_adapters, error_category, run_decompile, run_diff, run_engine_fingerprint, run_info,
     run_symbol_map, AdapterBackend, DecompileAnalysisProfile, DecompileEngineOptionOverrides,
     DecompileEngineOptions, DecompileOptions, DiffOptions, EngineFingerprintOptions, FunctionScope,
-    FunctionTarget, ProviderReport, SymbolMapOptions,
+    FunctionTarget, OutputLayout, ProviderReport, SymbolMapOptions,
 };
 use flutterdec_loader::layout::Layout;
 use flutterdec_loader::registry::CompatibilityRegistry;
@@ -82,7 +82,17 @@ struct DecompileCmd {
     #[arg(short = 'o', long = "out", value_name = "DIR")]
     out_dir: PathBuf,
 
-    /// Write per-function ARM64 disassembly to asm/*.s
+    /// Source tree shape: one file per library, or one file per function
+    #[arg(
+        long,
+        value_enum,
+        default_value_t = OutputLayoutArg::Library,
+        value_name = "LAYOUT",
+        help_heading = "Emitted artifacts"
+    )]
+    layout: OutputLayoutArg,
+
+    /// Write per-function ARM64 disassembly under artifacts/asm/
     #[arg(long, help_heading = "Emitted artifacts")]
     emit_asm: bool,
     /// Prefix asm lines with raw 32-bit opcode words (requires --emit-asm)
@@ -94,7 +104,7 @@ struct DecompileCmd {
     /// Write ida_apply_symbols.py to apply recovered symbols in IDA
     #[arg(long, help_heading = "Emitted artifacts")]
     emit_ida_script: bool,
-    /// Write the intermediate representation to ir/*.json
+    /// Write the intermediate representation under artifacts/ir/
     #[arg(long, help_heading = "Emitted artifacts")]
     emit_ir: bool,
     /// Split a function record that spans more than one real function.
@@ -349,6 +359,23 @@ impl AnalysisProfileArg {
         match self {
             Self::Light => DecompileAnalysisProfile::Light,
             Self::Balanced => DecompileAnalysisProfile::Balanced,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum OutputLayoutArg {
+    /// One file per library, with owner-qualified top-level functions
+    Library,
+    /// One file per recovered function
+    Project,
+}
+
+impl OutputLayoutArg {
+    fn to_core(self) -> OutputLayout {
+        match self {
+            Self::Library => OutputLayout::Library,
+            Self::Project => OutputLayout::Project,
         }
     }
 }
@@ -791,6 +818,7 @@ fn build_decompile_options(cmd: DecompileCmd) -> Result<DecompileOptions> {
     let engine_options = DecompileEngineOptions::for_profile(profile).with_overrides(&overrides);
     Ok(DecompileOptions {
         out_dir: cmd.out_dir,
+        output_layout: cmd.layout.to_core(),
         emit_asm: cmd.emit_asm,
         emit_asm_opcodes: cmd.emit_asm_opcodes,
         emit_ghidra_script: cmd.emit_ghidra_script,
@@ -1092,6 +1120,34 @@ fn resolve_toggle(with: bool, without: bool, name: &str) -> Result<Option<bool>>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn decompile_layout_defaults_to_library() {
+        let cli = Cli::try_parse_from(["flutterdec", "decompile", "sample.apk", "-o", "out"])
+            .expect("parse");
+        let Command::Decompile(cmd) = cli.command else {
+            panic!("expected decompile command");
+        };
+        assert!(matches!(cmd.layout, OutputLayoutArg::Library));
+    }
+
+    #[test]
+    fn decompile_layout_accepts_project() {
+        let cli = Cli::try_parse_from([
+            "flutterdec",
+            "decompile",
+            "sample.apk",
+            "-o",
+            "out",
+            "--layout",
+            "project",
+        ])
+        .expect("parse");
+        let Command::Decompile(cmd) = cli.command else {
+            panic!("expected decompile command");
+        };
+        assert!(matches!(cmd.layout, OutputLayoutArg::Project));
+    }
 
     #[test]
     fn decompile_scope_defaults_to_app_unknown() {
