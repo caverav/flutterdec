@@ -47,6 +47,16 @@ struct LayoutEntry {
     library_provenance: Option<&'static str>,
     placement: Placement,
     collision: bool,
+    /// Per-function path used for asm and IR artifacts. In library layout this
+    /// is the Phase A path even though `path` names the composed library file.
+    #[serde(skip)]
+    detail_path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    line_start: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    line_end: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    declared_name: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -60,9 +70,11 @@ struct LayoutPlan {
 
 #[derive(Debug, Clone)]
 struct OutputLayoutSummary {
+    layout: &'static str,
     root_package: Option<String>,
     root_package_source: &'static str,
     source_files: usize,
+    libraries: usize,
     unattributed: usize,
     path_collisions: usize,
 }
@@ -70,11 +82,12 @@ struct OutputLayoutSummary {
 impl OutputLayoutSummary {
     fn to_json(&self) -> serde_json::Value {
         json!({
-            "layout": "project",
+            "layout": self.layout,
             "layout_version": LAYOUT_VERSION,
             "root_package": self.root_package.as_deref(),
             "root_package_source": self.root_package_source,
             "source_files": self.source_files,
+            "libraries": self.libraries,
             "unattributed_functions": self.unattributed,
             "path_collisions": self.path_collisions,
             "index_path": "index.json"
@@ -105,6 +118,7 @@ struct OutputIndexInput<'a> {
 struct OutputIndexCounts {
     functions: usize,
     source_files: usize,
+    libraries: usize,
     unattributed: usize,
     path_collisions: usize,
 }
@@ -542,6 +556,10 @@ fn plan_layout(
                 library_provenance: function.library_provenance.map(Provenance::as_str),
                 placement,
                 collision: candidate.collision,
+                detail_path: candidate.path.clone(),
+                line_start: None,
+                line_end: None,
+                declared_name: None,
             }
         })
         .collect::<Vec<_>>();
@@ -703,10 +721,22 @@ fn pubspec_name(root_package: Option<&str>) -> String {
     out
 }
 
-fn project_readme(root_package: Option<&str>) -> String {
+fn project_readme(root_package: Option<&str>, layout: OutputLayout) -> String {
     let root_line = match root_package {
         Some(package) => format!("- `lib/` is the root package, `{package}`."),
         None => "- `lib/` is not present because no root package was selected.".to_string(),
+    };
+    let shape = match layout {
+        OutputLayout::Library => {
+            "Each `.dart` file holds the functions recovered for one library, except \
+             `unattributed/`, which keeps one function per file. Declarations are \
+             owner-qualified top-level functions; the class membership is recorded \
+             in `index.json`, not asserted as a class body.\n"
+        }
+        OutputLayout::Project => {
+            "Each `.dart` file holds one recovered function, named for its class \
+             and function when the model knows them.\n"
+        }
     };
     format!(
         "# Recovered Flutter project tree\n\n\
@@ -720,9 +750,11 @@ fn project_readme(root_package: Option<&str>) -> String {
          - `build/` holds libraries from Flutter build paths.\n\
          - `unattributed/` holds functions the model could not place.\n\
          - `artifacts/` holds optional assembly and IR artifacts.\n\n\
-         Use `index.json` to map every emitted file to its function id, library,\n\
-         class, entry address and provenance. File names are display names; the\n\
-         `model_name` field keeps the exact recovered name.\n"
+         {shape}\n\
+         Use `index.json` to map every function to its source file, function id,\n\
+         library, class, entry address and provenance. Composed functions also\n\
+         carry `line_start` and `line_end`. `name` is the display name;\n\
+         `model_name` keeps the exact recovered name.\n"
     )
 }
 
@@ -798,12 +830,32 @@ fn cleanup_stale_files(out_dir: &Path, new_paths: &HashSet<String>) -> Result<()
     Ok(())
 }
 
-fn artifact_path(kind: &str, dart_path: &str, extension: &str) -> String {
-    let stem = dart_path.strip_suffix(".dart").unwrap_or(dart_path);
+fn artifact_path(kind: &str, source_path: &str, extension: &str) -> String {
+    let stem = source_path.strip_suffix(".dart").unwrap_or(source_path);
     format!("artifacts/{kind}/{stem}.{extension}")
 }
 
+/// Remove the artifact trees this writer owns before a run. The source tree may
+/// keep a file that a previous run also produced, so stale asm/IR files cannot
+/// be found by comparing source paths alone. Clearing both trees keeps layout
+/// switches and emit-flag changes deterministic.
+fn reset_artifact_trees(out_dir: &Path) -> Result<()> {
+    for kind in ["asm", "ir"] {
+        let path = out_dir.join("artifacts").join(kind);
+        if path.is_dir() {
+            fs::remove_dir_all(&path)?;
+        }
+    }
+    let artifacts = out_dir.join("artifacts");
+    if artifacts.is_dir() && fs::read_dir(&artifacts)?.next().is_none() {
+        fs::remove_dir(&artifacts)?;
+    }
+    Ok(())
+}
+
+#[derive(Clone, Copy)]
 struct WriteOptions<'a> {
+    layout: OutputLayout,
     emit_asm: bool,
     emit_asm_opcodes: bool,
     emit_ir: bool,
@@ -819,7 +871,11 @@ fn write_project_layout(
     ir: &[FunctionIr],
     options: WriteOptions<'_>,
 ) -> Result<OutputLayoutSummary> {
+    if options.layout == OutputLayout::Library {
+        return write_library_layout(out_dir, plan, pseudo, disasm, ir, options);
+    }
     let WriteOptions {
+        layout: _,
         emit_asm,
         emit_asm_opcodes,
         emit_ir,
@@ -827,6 +883,7 @@ fn write_project_layout(
         target_arch,
     } = options;
     fs::create_dir_all(out_dir)?;
+    reset_artifact_trees(out_dir)?;
     if out_dir.join("pseudocode").is_dir() && !out_dir.join("index.json").is_file() {
         eprintln!(
             "warning: {} contains a pre-layout `pseudocode/` tree; the new files are written \
@@ -884,7 +941,7 @@ fn write_project_layout(
     write_relative(
         out_dir,
         "README.md",
-        project_readme(plan.root_package.as_deref()).as_bytes(),
+        project_readme(plan.root_package.as_deref(), OutputLayout::Project).as_bytes(),
     )?;
     cleanup_stale_files(out_dir, &new_paths)?;
 
@@ -902,6 +959,7 @@ fn write_project_layout(
         counts: OutputIndexCounts {
             functions: plan.entries.len(),
             source_files: plan.entries.len(),
+            libraries: 0,
             unattributed: plan.unattributed,
             path_collisions: plan.collisions,
         },
@@ -912,11 +970,448 @@ fn write_project_layout(
     write_relative(out_dir, "index.json", &index_bytes)?;
 
     Ok(OutputLayoutSummary {
+        layout: "project",
         root_package: plan.root_package.clone(),
         root_package_source: plan.root_package_source,
         source_files: plan.entries.len(),
+        libraries: 0,
         unattributed: plan.unattributed,
         path_collisions: plan.collisions,
+    })
+}
+
+#[derive(Debug, Clone)]
+struct LibraryGroup {
+    uri: String,
+    directory: String,
+    path: String,
+    collision: bool,
+    entries: Vec<usize>,
+}
+
+fn append_library_suffix(path: &str, suffix: &str) -> String {
+    let stem = path.strip_suffix(".dart").unwrap_or(path);
+    format!("{stem}__{suffix}.dart")
+}
+
+fn composed_declaration_name(entry: &LayoutEntry, used: &mut HashSet<String>) -> String {
+    let class = entry.class.as_deref().map(display_class);
+    let raw = match class {
+        Some(class) => format!("{class}_{}", entry.name),
+        None => entry.name.clone(),
+    };
+    let mut name = sanitize_identifier(&raw);
+    if used.contains(&name) {
+        name = sanitize_identifier(&format!(
+            "{}_{}",
+            name.trim_end_matches('_'),
+            entry.function_id
+        ));
+    }
+    while used.contains(&name) {
+        name.push('_');
+    }
+    used.insert(name.clone());
+    name
+}
+
+fn sanitize_identifier(raw: &str) -> String {
+    let mut out = String::new();
+    for c in raw.chars() {
+        if c.is_ascii_alphanumeric() || c == '_' {
+            out.push(c);
+        } else {
+            out.push('_');
+        }
+    }
+    if out.is_empty() {
+        out.push_str("fn");
+    }
+    if out.as_bytes()[0].is_ascii_digit() {
+        out.insert(0, '_');
+    }
+    if is_dart_keyword(&out) {
+        out.insert(0, '_');
+    }
+    out
+}
+
+fn is_dart_keyword(name: &str) -> bool {
+    matches!(
+        name,
+        "abstract"
+            | "as"
+            | "assert"
+            | "async"
+            | "await"
+            | "break"
+            | "case"
+            | "catch"
+            | "class"
+            | "const"
+            | "continue"
+            | "covariant"
+            | "default"
+            | "deferred"
+            | "do"
+            | "dynamic"
+            | "else"
+            | "enum"
+            | "export"
+            | "extends"
+            | "extension"
+            | "external"
+            | "factory"
+            | "false"
+            | "final"
+            | "finally"
+            | "for"
+            | "Function"
+            | "get"
+            | "hide"
+            | "if"
+            | "implements"
+            | "import"
+            | "in"
+            | "interface"
+            | "is"
+            | "late"
+            | "library"
+            | "mixin"
+            | "new"
+            | "null"
+            | "on"
+            | "operator"
+            | "part"
+            | "required"
+            | "rethrow"
+            | "return"
+            | "set"
+            | "show"
+            | "static"
+            | "super"
+            | "switch"
+            | "sync"
+            | "this"
+            | "throw"
+            | "true"
+            | "try"
+            | "typedef"
+            | "var"
+            | "void"
+            | "while"
+            | "with"
+            | "yield"
+    )
+}
+
+fn rename_function_declaration(source: &str, old: &str, new: &str) -> String {
+    if old == new {
+        return source.to_string();
+    }
+    let marker = format!("dynamic {old}(");
+    let Some(position) = source.find(&marker) else {
+        return source.to_string();
+    };
+    let mut out = String::with_capacity(source.len() + new.len());
+    out.push_str(&source[..position]);
+    out.push_str(&format!("dynamic {new}("));
+    out.push_str(&source[position + marker.len()..]);
+    out
+}
+
+/// Rename `_block_<n>` helpers so several functions can share one file. The
+/// scanner skips comments and strings; a body's block helper names are an
+/// emitter detail, not a claim about the source program.
+fn rename_block_helpers(source: &str, function_id: u64) -> String {
+    let bytes = source.as_bytes();
+    let mut out = String::with_capacity(source.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'/' && i + 1 < bytes.len() && bytes[i + 1] == b'/' {
+            let start = i;
+            i += 2;
+            while i < bytes.len() && bytes[i] != b'\n' {
+                i += 1;
+            }
+            out.push_str(&source[start..i]);
+            continue;
+        }
+        if bytes[i] == b'/' && i + 1 < bytes.len() && bytes[i + 1] == b'*' {
+            let start = i;
+            i += 2;
+            while i + 1 < bytes.len() && !(bytes[i] == b'*' && bytes[i + 1] == b'/') {
+                i += 1;
+            }
+            i = (i + 2).min(bytes.len());
+            out.push_str(&source[start..i]);
+            continue;
+        }
+        if bytes[i] == b'"' || bytes[i] == b'\'' {
+            let quote = bytes[i];
+            let start = i;
+            i += 1;
+            while i < bytes.len() {
+                if bytes[i] == b'\\' {
+                    i = (i + 2).min(bytes.len());
+                } else if bytes[i] == quote {
+                    i += 1;
+                    break;
+                } else {
+                    i += 1;
+                }
+            }
+            out.push_str(&source[start..i]);
+            continue;
+        }
+        if bytes[i].is_ascii_alphabetic() || bytes[i] == b'_' {
+            let start = i;
+            i += 1;
+            while i < bytes.len() && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_') {
+                i += 1;
+            }
+            let identifier = &source[start..i];
+            if let Some(number) = identifier.strip_prefix("_block_") {
+                if !number.is_empty() && number.bytes().all(|byte| byte.is_ascii_digit()) {
+                    out.push_str(&format!("_block_{function_id}_{number}"));
+                    continue;
+                }
+            }
+            out.push_str(identifier);
+            continue;
+        }
+        let ch = source[i..].chars().next().expect("in bounds");
+        out.push(ch);
+        i += ch.len_utf8();
+    }
+    out
+}
+
+fn write_library_layout(
+    out_dir: &Path,
+    plan: &LayoutPlan,
+    pseudo: &[PseudocodeArtifact],
+    disasm: &[FunctionDisassembly],
+    ir: &[FunctionIr],
+    options: WriteOptions<'_>,
+) -> Result<OutputLayoutSummary> {
+    let WriteOptions {
+        layout: _,
+        emit_asm,
+        emit_asm_opcodes,
+        emit_ir,
+        snapshot_hash,
+        target_arch,
+    } = options;
+    fs::create_dir_all(out_dir)?;
+    reset_artifact_trees(out_dir)?;
+    if out_dir.join("pseudocode").is_dir() && !out_dir.join("index.json").is_file() {
+        eprintln!(
+            "warning: {} contains a pre-layout `pseudocode/` tree; the new files are written \
+             alongside it. Remove that directory if you no longer need the old flat output.",
+            out_dir.display()
+        );
+    }
+    let pseudo_by_id: HashMap<u64, &PseudocodeArtifact> = pseudo
+        .iter()
+        .map(|artifact| (artifact.function_id, artifact))
+        .collect();
+    let disasm_by_id: HashMap<u64, &FunctionDisassembly> = disasm
+        .iter()
+        .map(|function| (function.function_id, function))
+        .collect();
+    let ir_by_id: HashMap<u64, &FunctionIr> =
+        ir.iter().map(|function| (function.function_id, function)).collect();
+
+    let mut entries = plan.entries.clone();
+    let mut groups_by_uri: BTreeMap<String, Vec<usize>> = BTreeMap::new();
+    for (index, entry) in entries.iter().enumerate() {
+        if entry.library.is_some() && !entry.path.starts_with("unattributed/") {
+            groups_by_uri
+                .entry(entry.library.clone().expect("checked above"))
+                .or_default()
+                .push(index);
+        }
+    }
+    let mut groups = groups_by_uri
+        .into_iter()
+        .filter_map(|(uri, entries_for_group)| {
+            let directory = entries
+                .get(entries_for_group[0])
+                .and_then(|entry| entry.path.rsplit_once('/').map(|(directory, _)| directory))?;
+            if directory.is_empty() {
+                return None;
+            }
+            Some(LibraryGroup {
+                uri,
+                directory: directory.to_string(),
+                path: String::new(),
+                collision: false,
+                entries: entries_for_group,
+            })
+        })
+        .collect::<Vec<_>>();
+    let composed_indices: HashSet<usize> = groups
+        .iter()
+        .flat_map(|group| group.entries.iter().copied())
+        .collect();
+    let mut used_paths: HashSet<String> = entries
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| !composed_indices.contains(index))
+        .map(|(_, entry)| entry.path.to_ascii_lowercase())
+        .collect();
+    for group in &mut groups {
+        let mut candidate = format!("{}.dart", group.directory);
+        if candidate.len() > MAX_RELATIVE_PATH_BYTES {
+            candidate = append_library_suffix(&candidate, &hash8(&group.uri));
+            group.collision = true;
+        }
+        while used_paths.contains(&candidate.to_ascii_lowercase()) {
+            candidate = append_library_suffix(&candidate, &hash8(&group.uri));
+            group.collision = true;
+        }
+        used_paths.insert(candidate.to_ascii_lowercase());
+        group.path = candidate;
+    }
+
+    let mut new_paths = HashSet::new();
+    for group in &groups {
+        let mut composed = format!(
+            "// library: {}\n\
+             // Recovered pseudo-Dart by flutterdec. Not original source.\n\
+             // Functions in this file: {}\n\n",
+            group.uri,
+            group.entries.len()
+        );
+        let mut used_names = HashSet::new();
+        let mut ordered = group.entries.clone();
+        ordered.sort_by(|a, b| {
+            let a = &entries[*a];
+            let b = &entries[*b];
+            a.class
+                .cmp(&b.class)
+                .then_with(|| a.name.cmp(&b.name))
+                .then_with(|| a.function_id.cmp(&b.function_id))
+        });
+        let mut next_line = composed.lines().count() + 1;
+        for index in ordered {
+            let entry = &mut entries[index];
+            let artifact = pseudo_by_id.get(&entry.function_id).with_context(|| {
+                format!(
+                    "layout entry {} has no pseudocode artifact",
+                    entry.function_id
+                )
+            })?;
+            let declared = composed_declaration_name(entry, &mut used_names);
+            let mut source = rename_block_helpers(&artifact.source, entry.function_id);
+            source = rename_function_declaration(&source, &artifact.function_name, &declared);
+            let source = source.trim_end_matches('\n');
+            let header = format!(
+                "// function_id: {} | class: {} | function: {} | entry_va: {}\n",
+                entry.function_id,
+                entry.class.as_deref().unwrap_or("-"),
+                entry.model_name.as_deref().unwrap_or("-"),
+                entry.entry_va
+            );
+            let start = next_line + header.lines().count();
+            let body_lines = source.lines().count();
+            composed.push_str(&header);
+            composed.push_str(source);
+            composed.push('\n');
+            composed.push('\n');
+            next_line = start + body_lines + 1;
+            let end = start + body_lines.saturating_sub(1);
+            entry.path = group.path.clone();
+            entry.line_start = Some(start);
+            entry.line_end = Some(end);
+            entry.declared_name = Some(declared);
+            entry.collision = group.collision;
+        }
+        write_relative(out_dir, &group.path, terminated(&composed).as_bytes())?;
+        new_paths.insert(group.path.clone());
+    }
+
+    for (index, entry) in entries.iter_mut().enumerate() {
+        if composed_indices.contains(&index) {
+            continue;
+        }
+        let artifact = pseudo_by_id.get(&entry.function_id).with_context(|| {
+            format!(
+                "layout entry {} has no pseudocode artifact",
+                entry.function_id
+            )
+        })?;
+        write_relative(out_dir, &entry.path, terminated(&artifact.source).as_bytes())?;
+        new_paths.insert(entry.path.clone());
+    }
+
+    for entry in &entries {
+        if emit_asm {
+            if let Some(function) = disasm_by_id.get(&entry.function_id) {
+                let mut lines = Vec::with_capacity(function.instructions.len());
+                for instruction in &function.instructions {
+                    lines.push(format_asm_instruction_line(instruction, emit_asm_opcodes));
+                }
+                let path = artifact_path("asm", &entry.detail_path, "s");
+                write_relative(out_dir, &path, terminated(&lines.join("\n")).as_bytes())?;
+            }
+        }
+        if emit_ir {
+            if let Some(function) = ir_by_id.get(&entry.function_id) {
+                let mut body = serde_json::to_vec_pretty(function)?;
+                body.push(b'\n');
+                let path = artifact_path("ir", &entry.detail_path, "json");
+                write_relative(out_dir, &path, &body)?;
+            }
+        }
+    }
+
+    let pubspec = format!(
+        "name: {}\ndescription: Recovered pseudocode written by flutterdec. Not original source.\npublish_to: none\n",
+        pubspec_name(plan.root_package.as_deref())
+    );
+    write_relative(out_dir, "pubspec.yaml", pubspec.as_bytes())?;
+    write_relative(
+        out_dir,
+        "README.md",
+        project_readme(plan.root_package.as_deref(), OutputLayout::Library).as_bytes(),
+    )?;
+    cleanup_stale_files(out_dir, &new_paths)?;
+
+    let collisions = entries.iter().filter(|entry| entry.collision).count();
+    let index = OutputIndex {
+        schema_version: 2,
+        layout: "library",
+        layout_version: LAYOUT_VERSION,
+        tool: format!("flutterdec {}", env!("CARGO_PKG_VERSION")),
+        input: OutputIndexInput {
+            snapshot_hash,
+            target_arch,
+        },
+        root_package: plan.root_package.as_deref(),
+        root_package_source: plan.root_package_source,
+        counts: OutputIndexCounts {
+            functions: entries.len(),
+            source_files: new_paths.len(),
+            libraries: groups.len(),
+            unattributed: plan.unattributed,
+            path_collisions: collisions,
+        },
+        entries: &entries,
+    };
+    let mut index_bytes = serde_json::to_vec_pretty(&index)?;
+    index_bytes.push(b'\n');
+    write_relative(out_dir, "index.json", &index_bytes)?;
+
+    Ok(OutputLayoutSummary {
+        layout: "library",
+        root_package: plan.root_package.clone(),
+        root_package_source: plan.root_package_source,
+        source_files: new_paths.len(),
+        libraries: groups.len(),
+        unattributed: plan.unattributed,
+        path_collisions: collisions,
     })
 }
 
@@ -1181,6 +1676,7 @@ mod output_layout_tests {
             artifact(3, "fn_0x1234", "dynamic fn_0x1234() {}\n"),
         ];
         let options = WriteOptions {
+            layout: OutputLayout::Project,
             emit_asm: false,
             emit_asm_opcodes: false,
             emit_ir: false,
@@ -1207,6 +1703,7 @@ mod output_layout_tests {
 
         let plan = plan_layout(&functions[..1], Some("app"), "flag");
         let options = WriteOptions {
+            layout: OutputLayout::Project,
             emit_asm: false,
             emit_asm_opcodes: false,
             emit_ir: false,
@@ -1220,6 +1717,107 @@ mod output_layout_tests {
             .exists());
         assert!(!out.join("unattributed/fn_0x1234.dart").exists());
         assert!(out.join("lib/main/HomePage.build.dart").is_file());
+    }
+
+    #[test]
+    fn composes_one_file_per_library_and_renames_helpers() {
+        let directory = tempfile::tempdir().expect("temp dir");
+        let out = directory.path();
+        let functions = vec![
+            layout_function(1, 0x10, "build", Some("HomePage"), Some("package:app/main.dart")),
+            layout_function(
+                2,
+                0x20,
+                "initState",
+                Some("HomePage"),
+                Some("package:app/main.dart"),
+            ),
+            layout_function(
+                3,
+                0x30,
+                "build",
+                Some("OtherPage"),
+                Some("package:app/pages/other.dart"),
+            ),
+            layout_function(4, 0x40, "fn_0x40", None, None),
+        ];
+        let plan = plan_layout(&functions, Some("app"), "flag");
+        let pseudo = vec![
+            artifact(
+                1,
+                "build",
+                "dynamic build() {\n  return _block_1();\n}\n\ndynamic _block_1() {\n  return null;\n}\n",
+            ),
+            artifact(
+                2,
+                "initState",
+                "dynamic initState() {\n  return _block_1();\n}\n\ndynamic _block_1() {\n  return null;\n}\n",
+            ),
+            artifact(3, "build", "dynamic build() {}\n"),
+            artifact(4, "fn_0x40", "dynamic fn_0x40() {}\n"),
+        ];
+        let options = WriteOptions {
+            layout: OutputLayout::Library,
+            emit_asm: false,
+            emit_asm_opcodes: false,
+            emit_ir: false,
+            snapshot_hash: "80a49c7111088100a233b2ae788e1f48",
+            target_arch: "arm64",
+        };
+        let summary = write_project_layout(out, &plan, &pseudo, &[], &[], options)
+            .expect("write library layout");
+        assert_eq!(summary.layout, "library");
+        assert_eq!(summary.source_files, 3);
+        assert_eq!(summary.libraries, 2);
+        assert_eq!(summary.unattributed, 1);
+
+        assert!(out.join("lib/main.dart").is_file());
+        assert!(out.join("lib/pages/other.dart").is_file());
+        assert!(out.join("unattributed/fn_0x40.dart").is_file());
+        assert!(!out.join("lib/main/HomePage.build.dart").exists());
+        let main = fs::read_to_string(out.join("lib/main.dart")).unwrap();
+        assert!(main.contains("dynamic HomePage_build("));
+        assert!(main.contains("dynamic HomePage_initState("));
+        assert!(main.contains("_block_1_1"));
+        assert!(!main.contains("dynamic build("));
+        assert!(!main.contains("dynamic initState("));
+        let other = fs::read_to_string(out.join("lib/pages/other.dart")).unwrap();
+        assert!(other.contains("dynamic OtherPage_build("));
+
+        let index: serde_json::Value =
+            serde_json::from_slice(&fs::read(out.join("index.json")).unwrap()).unwrap();
+        assert_eq!(index["schema_version"], 2);
+        assert_eq!(index["layout"], "library");
+        assert_eq!(index["counts"]["source_files"], 3);
+        assert_eq!(index["counts"]["libraries"], 2);
+        let entries = index["entries"].as_array().expect("entries");
+        assert_eq!(entries[0]["path"], "lib/main.dart");
+        assert_eq!(entries[0]["declared_name"], "HomePage_build");
+        assert_eq!(entries[0]["line_start"], 6);
+        assert_eq!(entries[0]["line_end"], 12);
+        assert_eq!(entries[1]["path"], "lib/main.dart");
+        assert_eq!(entries[1]["declared_name"], "HomePage_initState");
+        assert_eq!(entries[1]["line_start"], 15);
+        let main_lines: Vec<&str> = main.lines().collect();
+        assert!(main_lines[5].starts_with("dynamic HomePage_build("));
+        assert!(main_lines[11].trim() == "}");
+        assert!(main_lines[14].starts_with("dynamic HomePage_initState("));
+        assert_eq!(entries[2]["path"], "lib/pages/other.dart");
+        assert_eq!(entries[2]["declared_name"], "OtherPage_build");
+        assert_eq!(entries[2]["line_start"], 6);
+        assert_eq!(entries[3]["path"], "unattributed/fn_0x40.dart");
+        assert!(entries[3].get("declared_name").is_none());
+    }
+
+    #[test]
+    fn helper_rename_skips_comments_and_strings_and_preserves_unicode() {
+        let source = "// _block_1\nlet x = \"_block_1\";\ndynamic _block_1() {}\nlet y = _block_1(); // ü\n";
+        let renamed = rename_block_helpers(source, 7);
+        assert!(renamed.contains("// _block_1"));
+        assert!(renamed.contains("\"_block_1\""));
+        assert!(renamed.contains("dynamic _block_7_1()"));
+        assert!(renamed.contains("let y = _block_7_1();"));
+        assert!(renamed.contains("// ü"));
     }
 
 }

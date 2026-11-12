@@ -1602,6 +1602,7 @@ pub fn run_decompile(
         &disasm,
         &ir,
         WriteOptions {
+            layout: opt.output_layout,
             emit_asm: opt.emit_asm,
             emit_asm_opcodes: opt.emit_asm_opcodes,
             emit_ir: opt.emit_ir,

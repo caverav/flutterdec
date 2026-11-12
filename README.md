@@ -14,7 +14,7 @@ build-to-build diffs, and structured reports. Everything runs offline on your ma
 is never executed.
 
 - **Input**: a Flutter app for Android built for ARM64, as an APK or a bare `libapp.so`
-- **Output**: a project-shaped tree of `.dart` files under `lib/`, `packages/`, and `sdk/`, plus `index.json`, `report.json`, and `quality.json`, with optional asm, IR, and symbol scripts
+- **Output**: a project-shaped tree of `.dart` files under `lib/`, `packages/`, and `sdk/`, with one file per library by default (`--layout project` keeps one file per function), plus `index.json`, `report.json`, and `quality.json`, with optional asm, IR, and symbol scripts
 - **Use it for**: reversing an app, reviewing it for hardcoded secrets or logic flaws, or diffing two releases
 - **Status**: alpha research tool; see [Project status](#project-status)
 
@@ -46,9 +46,9 @@ If you remember only three commands:
 
 | Artifact | What it is |
 | --- | --- |
-| `lib/**/*.dart` | App or root-package code, one file per recovered function. Start here. |
+| `lib/**/*.dart` | App or root-package code, one file per library by default. Start here. |
 | `packages/**/lib/**/*.dart` | Dependency-package code, rooted at each package name. |
-| `index.json` | Path-to-function mapping with ids, libraries, classes, entry addresses, and provenance. |
+| `index.json` | Function-to-source mapping with ids, libraries, classes, line spans for composed functions, entry addresses, and provenance. |
 | `report.json` and `quality.json` | What was analyzed, what was recovered, and how complete it was. |
 | `artifacts/asm/**/*.s` and `artifacts/ir/**/*.json` | Lower-level views to verify the pseudocode (`--emit-asm --emit-ir`). |
 | `ghidra_apply_symbols.py` / `ida_apply_symbols.py` | Recovered names for Ghidra or IDA (`--emit-ghidra-script`, `--emit-ida-script`). |
@@ -219,8 +219,8 @@ Dart framework internals.
 
 Start with these files, in this order:
 
-1. `out/lib/**/*.dart` - the recovered logic, arranged by library and class
-2. `out/index.json` - the map from each path to its function id and provenance
+1. `out/lib/**/*.dart` - the recovered logic, one file per library
+2. `out/index.json` - the map from each function to its source file, line span, and provenance
 3. `out/report.json` - what was analyzed and what was recovered
 4. `out/quality.json` - how complete the recovery was
 
@@ -470,12 +470,12 @@ Everything is written under the `-o <DIR>` you pass:
 
 | File | Written by | Purpose |
 | --- | --- | --- |
-| `lib/**/*.dart` | `decompile` | Root-package pseudo-Dart, one file per function |
-| `packages/<package>/lib/**/*.dart` | `decompile` | Dependency-package pseudo-Dart |
-| `sdk/**/*.dart` | `decompile` | Dart SDK library pseudo-Dart |
+| `lib/**/*.dart` | `decompile` | Root-package pseudo-Dart, one file per library by default |
+| `packages/<package>/lib/**/*.dart` | `decompile` | Dependency-package pseudo-Dart, one file per library |
+| `sdk/**/*.dart` | `decompile` | Dart SDK library pseudo-Dart, one file per library |
 | `build/**/*.dart` | `decompile` | Libraries recovered from Flutter build paths |
-| `unattributed/*.dart` | `decompile` | Functions the model could not place |
-| `index.json` | `decompile` | Path-to-function mapping and layout counters |
+| `unattributed/*.dart` | `decompile` | Functions the model could not place, one file per function |
+| `index.json` | `decompile` | Function-to-source mapping, line spans, and layout counters |
 | `pubspec.yaml` | `decompile` | Minimal Flutter project scaffold |
 | `README.md` | `decompile` | Orientation for the generated tree |
 | `report.json` | `decompile` | Analysis report and diagnostics |
@@ -500,7 +500,7 @@ Everything is written under the `-o <DIR>` you pass:
   observed Android embedder startup stages per source method, including ownership, stage ordering,
   completeness, and missing steps
 - `function_scope`: scope selection, package counts, and prioritization hints
-- `output`: layout version, root package, source file count, unattributed count, and path collisions
+- `output`: layout, root package, source and library file counts, unattributed count, and path collisions
 - `target_selection`: how `--target` resolved
 - `pool_metadata`: index-space authority and why hints were suppressed
 - `engine_symbol_ingestion`: auto-loaded local engine symbol cache matches keyed by `libflutter.so`

@@ -438,6 +438,11 @@ Main output artifacts:
 - `ida_apply_symbols.py` if `--emit-ida-script`
 - `diff_report.json` if you run `flutterdec diff`
 
+By default each library becomes one `.dart` file and each recovered function becomes an
+owner-qualified top-level declaration such as `HomePage_build`. Pass `--layout project` to get
+one file per function instead. Functions with no library stay under `unattributed/`, one file
+per function in either layout.
+
 Most users should start by reading:
 
 - `lib/**/*.dart`, then `index.json`

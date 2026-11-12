@@ -196,7 +196,8 @@ symbols = normalize external names (demangle + canonical runtime/native/stdlib a
 symbols = canonicalize adapter-owned Dart/Flutter standard names from selected_model class/library metadata
 pseudo = emit_program(ir, symbols)
 
-write project-shaped .dart tree, index.json, pubspec.yaml, README.md
+write project-shaped .dart tree, one file per library by default
+write index.json mapping each function to its file and line span, plus pubspec.yaml and README.md
 optionally write asm files under artifacts/asm
 optionally write ir files under artifacts/ir
 
@@ -899,14 +900,15 @@ Interpretation guidance:
 
 ## Output layout
 
-`decompile -o out_dir` writes a project-shaped tree:
+`decompile -o out_dir` writes a project-shaped tree, one file per library by default:
 
 - `out_dir/lib/**/*.dart` for the root package
 - `out_dir/packages/<package>/lib/**/*.dart` for dependency packages
 - `out_dir/sdk/**/*.dart` for Dart SDK libraries
 - `out_dir/build/**/*.dart` for Flutter build-path libraries
-- `out_dir/unattributed/*.dart` for functions with no library
-- `out_dir/index.json` mapping every path to its function id, library, class, entry address, and provenance
+- `out_dir/unattributed/*.dart` for functions with no library, one file per function
+- `out_dir/index.json` mapping every function to its file, library, class, entry address, and provenance, with `line_start` and `line_end` on composed declarations
+- owner-qualified declarations such as `HomePage_build`; pass `--layout project` for one file per function
 - `out_dir/pubspec.yaml` and `out_dir/README.md`
 - `out_dir/artifacts/asm/**/*.s` (when `--emit-asm`)
 - asm lines include raw opcode words when `--emit-asm-opcodes` is set
