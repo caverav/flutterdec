@@ -100,7 +100,8 @@ pub fn walk_snapshot(adapter_input: &SnapshotInput<'_>) -> anyhow::Result<Progra
     // manually set it before passing the instructions produce_model_object_info
     // the core already determined it for us
 
-    //TO-DO: add vm snapshot deserialization
+    //TO-DO: add vm snapshot deserialization TO HAVE IN MIND: this only applies to versions prior to 3.13.4 because
+    // following versions completely eliminated the VM isolate and VM instructions snapshots
     isolate_instr_snapshot.image_va = isolate_instr_region.virtual_address.ok_or_else(|| {
         anyhow::anyhow!("Core didn't provide a virtual address for the instruction image!")
     })?;
