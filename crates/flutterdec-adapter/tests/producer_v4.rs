@@ -835,6 +835,46 @@ fn class_relationships_stay_unavailable_when_no_superclass_resolves() {
     );
 }
 
+/// `auto` lets the producer choose among its backends, but only among the ones
+/// the record authorizes.
+///
+/// The reference producer tries r2flutter first under `auto`. With a record that
+/// serves only blutter, an r2flutter answer is a backend nothing authorized, and
+/// the host refuses it. The control runs the same producer under the record as
+/// installed, which lists r2flutter, and accepts the answer.
+#[test]
+fn auto_cannot_resolve_a_backend_the_record_does_not_serve() {
+    let identity = support::identity();
+    let (installed, _dir, target) = install_with_fake_r2flutter(&identity, "[]");
+    let run = |record: &flutterdec_adapter::registry::CompatibilityRecord| {
+        run_adapter(
+            &installed.exec,
+            &AdapterInput {
+                identity: &identity,
+                authorization: installed.authorization_for(record),
+                producer: installed.producer_for(record),
+                compatibility: installed.binding_for(record),
+                regions: regions(&empty_snapshot()),
+                input_path: None,
+                libapp: Some(LibappSource::File(&target)),
+                requested_backend: RequestedBackend::Auto,
+                limits: Limits::default(),
+            },
+        )
+    };
+
+    let accepted = run(&installed.record).expect("the record serves r2flutter");
+    assert_eq!(accepted.resolved_backend, BackendId::R2Flutter);
+
+    let mut narrow = installed.record.clone();
+    narrow.backends = vec!["blutter".to_string()];
+    let refused = run(&narrow).expect_err("the record does not serve r2flutter");
+    assert!(
+        refused.to_string().contains("does not serve (blutter)"),
+        "{refused}"
+    );
+}
+
 /// The registry content-addresses the producer that ships with it, so editing
 /// one and not the other publishes a record no install can satisfy.
 ///

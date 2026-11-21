@@ -340,12 +340,13 @@ additionally allowed to be `auto`, which is the only case in which a producer ma
 backend and the only case in which `fallback_reason` may be set: a pinned backend fails
 rather than substituting.
 
-Each compatibility record also lists the pinned backends its adapter serves in
+Each compatibility record also lists the backends its adapter serves in
 `backends`: `serwalker` for Serwalker records, `blutter` and `r2flutter` for the
 reference producer. The host compares a pinned backend against that list before it
 resolves an artifact or spawns anything, so `--adapter-backend serwalker` is never
 handed to a producer whose only possible answer is a refusal. `auto` always runs the
-record's adapter.
+record's adapter, and the host refuses an `auto` result that resolved a backend the
+record does not list. The producer's own `internal` scan is the one exception.
 
 ### When no adapter is authorized
 

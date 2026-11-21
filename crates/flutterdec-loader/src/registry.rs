@@ -106,11 +106,13 @@ pub struct CompatibilityRecord {
     #[serde(default, alias = "aliases")]
     pub sdk_aliases: Vec<SdkAlias>,
     pub parser_family: ParserFamilyReference,
-    /// The pinned `--adapter-backend` values this record's adapter serves.
+    /// The `--adapter-backend` values this record's adapter may resolve.
     ///
     /// The host refuses a pinned backend the record does not list before it
     /// spawns anything, so `--adapter-backend serwalker` cannot be handed to a
-    /// producer that only knows Blutter and r2flutter.
+    /// producer that only knows Blutter and r2flutter. Under `auto` it refuses
+    /// a result that resolved anything else, except the producer's own
+    /// `internal` scan.
     pub backends: Vec<String>,
     pub profile: ProfileReference,
     pub artifact: ArtifactReference,
