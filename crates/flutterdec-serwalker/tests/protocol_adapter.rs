@@ -244,6 +244,22 @@ fn a_registry_authorized_serwalker_process_parses_a_real_snapshot() {
         directory.path().join("symbols"),
     );
     let identity = &bundle.identity;
+    // The record below is built from the fixture itself, so it would select no
+    // matter what ships. The shipped registry has to select this fixture on its
+    // own, with the same profile, or `auto` silently stops using Serwalker.
+    let shipped = CompatibilityRegistry::load(
+        &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../adapters/registry.json"),
+    )
+    .unwrap();
+    let selected = shipped
+        .select(identity)
+        .expect("the shipped registry selects the real fixture");
+    assert_eq!(selected.record().parser_family.id, "flutterdec-serwalker");
+    assert_eq!(selected.record().backends, ["serwalker"]);
+    assert_eq!(
+        selected.record().profile.sha256,
+        Sha256Digest::of(&profile).to_string()
+    );
     let record: CompatibilityRecord = serde_json::from_value(serde_json::json!({
         "snapshot_hash": identity.hash,
         "snapshot_kind": identity.kind,
