@@ -151,11 +151,12 @@ impl DecompileAnalysisProfile {
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 pub enum AdapterBackend {
-    /// Use an exact registry-selected adapter, or machine-code-only recovery.
+    /// Run the adapter the registry authorizes for the snapshot, Serwalker
+    /// wherever it is registered, or machine-code-only recovery when none is.
     Auto,
     /// Machine-code-only recovery. No semantic names or real ObjectPool.
     Internal,
-    /// Require the registry-authorized Serwalker executable, with no fallback.
+    /// Require Serwalker, the native snapshot parser, with no fallback.
     Serwalker,
     Blutter,
     /// `r2flutter` (MIT, radareorg): deserializes the AOT snapshot for exact

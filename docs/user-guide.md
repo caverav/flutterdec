@@ -323,11 +323,14 @@ flutterdec decompile ./sample.apk -o ./out --analysis-profile light
 
 Adapter backend options:
 
-- `--adapter-backend auto` (default): use an exact registry-selected adapter, or machine-code-only recovery
+- `--adapter-backend auto` (default): run the adapter the registry authorizes for the snapshot (Serwalker, the native parser, wherever it is registered), or machine-code-only recovery when none is authorized and installed
 - `--adapter-backend internal`: force machine-code-only recovery without profile lookup or snapshot deserialization
-- `--adapter-backend serwalker`: require the registry-authorized Serwalker executable with no fallback
+- `--adapter-backend serwalker`: require Serwalker with no fallback
 - `--adapter-backend blutter`: require Blutter bridge backend with no fallback
 - `--adapter-backend r2-flutter`: require the r2flutter backend with no fallback
+
+A pinned backend must be one the selected record lists in `backends`; otherwise it is refused
+before anything runs (`compatibility_unsupported`).
 - `--require-snapshot-hash-match`: fail unless the snapshot identity came from a real header
 
 Requested and resolved backend are separate facts. `auto` may fall back, and the

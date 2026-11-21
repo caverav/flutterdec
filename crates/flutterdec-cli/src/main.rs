@@ -194,9 +194,15 @@ further within a scope."
         long_help = "\
 Which snapshot adapter backend to use.
 
-Backends are located through the environment: FLUTTERDEC_R2FLUTTER_BIN or
-FLUTTERDEC_R2FLUTTER_CMD for r2flutter, and FLUTTERDEC_BLUTTER_CMD or
-FLUTTERDEC_BLUTTER_PY for the Blutter bridge."
+The compatibility registry decides which adapter may parse a snapshot. auto
+runs it: Serwalker, the native parser bundled with flutterdec, for every
+snapshot it is registered for, and machine-code-only recovery when no adapter
+is authorized and installed. A pinned serwalker, blutter or r2-flutter fails
+instead when the authorized adapter does not serve that backend.
+
+blutter and r2-flutter run inside the reference producer, which finds them
+through FLUTTERDEC_BLUTTER_CMD or FLUTTERDEC_BLUTTER_PY and
+FLUTTERDEC_R2FLUTTER_BIN or FLUTTERDEC_R2FLUTTER_CMD."
     )]
     adapter_backend: AdapterBackendArg,
     /// Wall-clock deadline for one adapter invocation, in seconds
@@ -405,11 +411,12 @@ impl FunctionScopeArg {
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
 enum AdapterBackendArg {
-    /// Use an exact registry-selected adapter, or machine-code-only recovery
+    /// Run the adapter the registry authorizes (Serwalker where registered), or
+    /// machine-code-only recovery when none is
     Auto,
     /// Force machine-code-only recovery without a snapshot parser
     Internal,
-    /// Require the registry-authorized Serwalker executable, with no fallback
+    /// Require Serwalker, the native snapshot parser, with no fallback
     Serwalker,
     /// Require the Blutter bridge, with no fallback
     Blutter,
