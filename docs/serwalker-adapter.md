@@ -53,6 +53,14 @@ scripts/stage-release-prefix.sh target/release/flutterdec /tmp/flutterdec-prefix
 
 Rebuilding the adapter changes its digest: stage again and reinstall.
 
+The same holds for every flutterdec upgrade. Each release archive and each Nix
+rebuild ships a Serwalker build with a new digest. Until
+`flutterdec adapter install --dart-hash <hash>` runs again for each Serwalker hash
+that was installed, `adapter list` reports it `corrupt` (exit 2) and `info` and
+`decompile` refuse it with `registry_artifact_rejected`. An install of
+`80a49c7111088100a233b2ae788e1f48` made by an earlier release, which served that
+hash with the reference producer, needs the same reinstall.
+
 ## Local experimental setup
 
 For a snapshot no shipped record covers, prepare a new isolated data directory for

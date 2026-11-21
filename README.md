@@ -149,9 +149,13 @@ nix develop -c cargo build -p flutterdec-cli --release
 ./target/release/flutterdec --help
 ```
 
-You can also run directly from the checkout without building, with `nix run . -- --help`. The
-resulting CLI finds the `adapters/` registry and `data/` profiles in the repository, so adapters
-work out of the box.
+You can also run directly from the checkout without building, with `nix run . -- --help`. That
+runs the Nix package, which bundles Serwalker, so every shipped adapter can be installed.
+
+A plain `cargo build` CLI finds the `adapters/` registry and `data/` profiles in the repository but
+bundles no Serwalker executable: `adapter list` reports the Serwalker records `incompatible` and
+`adapter install` refuses them. To use Serwalker from a source build, stage a prefix as described in
+[Serwalker adapter](docs/serwalker-adapter.md#shipped-records-and-packaging).
 
 ## Quick start: your first decompile
 
@@ -575,6 +579,10 @@ The compatibility registry has no record for that snapshot identity, or the reco
 this host. Run `decompile` anyway: it falls back to core recovery. An adapter for that hash has to
 be contributed to the registry before it can be installed.
 
+If the error says the adapter "is pinned when a package bundles it", the record is a Serwalker
+record and this build bundles no Serwalker executable. Use a release archive or `nix run .`, or
+stage a prefix as described in [Serwalker adapter](docs/serwalker-adapter.md#shipped-records-and-packaging).
+
 </details>
 
 <details>
@@ -584,6 +592,11 @@ The store holds an entry that is `missing` or `corrupt`, so the store is treated
 than silently ignored. Reinstall the affected record with
 `flutterdec adapter install --dart-hash <HASH>`, or point `FLUTTERDEC_ADAPTER_STORE` at a fresh
 directory.
+
+This is expected after upgrading flutterdec: each release and each Nix rebuild ships a Serwalker
+build with a new digest, so a Serwalker adapter installed by the previous version reads as
+`corrupt`, and `info` and `decompile` refuse it with `registry_artifact_rejected`, until it is
+reinstalled.
 
 </details>
 

@@ -328,10 +328,10 @@ Adapter backend options:
 - `--adapter-backend serwalker`: require Serwalker with no fallback
 - `--adapter-backend blutter`: require Blutter bridge backend with no fallback
 - `--adapter-backend r2-flutter`: require the r2flutter backend with no fallback
+- `--require-snapshot-hash-match`: fail unless the snapshot identity came from a real header
 
 A pinned backend must be one the selected record lists in `backends`; otherwise it is refused
 before anything runs (`compatibility_unsupported`).
-- `--require-snapshot-hash-match`: fail unless the snapshot identity came from a real header
 
 Requested and resolved backend are separate facts. `auto` may fall back, and the
 result says which backend answered and why it differed; a named backend either runs or
