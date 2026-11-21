@@ -43,31 +43,38 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: sudo apt-get update -qq && sudo apt-get install -y musl-tools musl-dev
 
-      - name: Build release CLI
-        run: cargo build -p flutterdec-cli --release --target ${{ matrix.target }}
+      # Serwalker ships inside the archive: stage-release-prefix.sh bundles the
+      # executable and pins its digest into the staged registry with the
+      # bundle_registry tool, so all three are built for the same target.
+      - name: Build release CLI and bundled Serwalker
+        run: >-
+          cargo build -p flutterdec-cli -p flutterdec-serwalker --release
+          --bins --example bundle_registry --target ${{ matrix.target }}
 
       - name: Verify artifact is portable
         shell: bash
         run: |
           set -euo pipefail
-          bin="target/${{ matrix.target }}/release/flutterdec"
-          if [ "${{ runner.os }}" = "Linux" ]; then
-            # musl static-pie: `file` reports "static-pie linked". Anything
-            # dynamic would name an ELF interpreter, which is exactly the
-            # /nix/store breakage this guard exists to catch.
-            if ! file "$bin" | grep -q 'static'; then
-              echo "::error::expected a static binary"
-              file "$bin"
-              exit 1
+          for name in flutterdec flutterdec-serwalker; do
+            bin="target/${{ matrix.target }}/release/$name"
+            if [ "${{ runner.os }}" = "Linux" ]; then
+              # musl static-pie: `file` reports "static-pie linked". Anything
+              # dynamic would name an ELF interpreter, which is exactly the
+              # /nix/store breakage this guard exists to catch.
+              if ! file "$bin" | grep -q 'static'; then
+                echo "::error::expected a static binary: $name"
+                file "$bin"
+                exit 1
+              fi
+            else
+              if otool -L "$bin" | grep -q '/nix/store'; then
+                echo "::error::binary links against /nix/store: $name"
+                otool -L "$bin"
+                exit 1
+              fi
             fi
-          else
-            if otool -L "$bin" | grep -q '/nix/store'; then
-              echo "::error::binary links against /nix/store"
-              otool -L "$bin"
-              exit 1
-            fi
-          fi
-          "$bin" --version
+            "$bin" --version
+          done
 
       # The archive carries a prefix, not a lone binary. Runtime discovery is
       # executable-relative: the CLI reads its compatibility registry, runtime

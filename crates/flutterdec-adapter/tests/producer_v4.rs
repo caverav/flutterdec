@@ -876,3 +876,58 @@ fn the_registry_declares_the_digest_of_the_producer_that_ships_with_it() {
     }
     assert!(variants > 0, "the checked-in registry declares no artifact");
 }
+
+/// What the checked-in registry may claim about each parser family.
+///
+/// Serwalker records pin a checked-in profile and leave the executable to
+/// packaging, which is the only place its bytes exist. The reference producer
+/// serves exactly the backends `adapter_template.py` builds when pinned, so a
+/// record cannot promise `--adapter-backend serwalker` to a producer that would
+/// refuse it.
+#[test]
+fn the_registry_names_what_each_shipped_adapter_serves() {
+    let root = repo_root();
+    let registry = flutterdec_adapter::registry::CompatibilityRegistry::load(
+        &root.join("adapters/registry.json"),
+    )
+    .expect("the checked-in registry is valid");
+
+    let mut serwalker = 0;
+    for record in &registry.records {
+        let hash = &record.snapshot_hash;
+        if record.parser_family.id != "flutterdec-serwalker" {
+            assert_eq!(
+                record.backends,
+                ["blutter", "r2flutter"],
+                "record {hash} promises backends the reference producer does not build"
+            );
+            continue;
+        }
+        serwalker += 1;
+        assert_eq!(record.backends, ["serwalker"], "record {hash}");
+        assert_eq!(record.artifact.id, "flutterdec-serwalker", "record {hash}");
+        assert!(
+            record.artifact.variants.is_empty(),
+            "record {hash} pins Serwalker bytes, which only a package build can know"
+        );
+        assert!(
+            record
+                .profile
+                .path
+                .starts_with(&format!("data/serwalker_profiles/profile_{}_", &hash[..8])),
+            "record {hash} names a profile for another snapshot: {}",
+            record.profile.path
+        );
+        flutterdec_loader::dart_profile::load_profile_artifact(
+            &root.join(&record.profile.path),
+            &record.profile.id,
+            &record.profile.sha256,
+            record.sdk_aliases.clone(),
+        )
+        .unwrap_or_else(|err| panic!("record {hash} profile does not verify: {err}"));
+    }
+    assert!(
+        serwalker > 0,
+        "the checked-in registry registers no Serwalker snapshot"
+    );
+}

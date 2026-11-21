@@ -939,10 +939,6 @@ fn installing_a_record_only_a_package_can_supply_says_so() {
     );
 }
 
-/// The feature tuple both shipped records declare, as a snapshot header spells
-/// it. Order is not significant: the selection key normalizes before comparing.
-const SHIPPED_FEATURES: &str = "product no-code_comments compressed-pointers arm64 android";
-
 /// The store ledger, as JSON, for an observation to be reported alongside.
 fn ledger(store: &Path) -> Value {
     match fs::read(store.join("store.json")) {
@@ -965,29 +961,36 @@ fn row_for<'a>(rows: &'a Value, hash: &str) -> &'a Value {
 /// identical artifact bytes, and what `adapter list` reports must be what
 /// `info` does — in both directions.
 ///
-/// This drives the *shipped* registry rather than the fixture because that is
-/// where the two records collide: both name `artifacts/flutterdec-local-python`
-/// with the same digest, so the file on disk cannot tell them apart. Only the
-/// store ledger records which record something was installed for, and it is the
-/// ledger `adapter list` reports from.
+/// Two records here name `artifacts/dart_adapter` with the same digest, so the
+/// file on disk cannot tell them apart. Only the store ledger records which
+/// record something was installed for, and it is the ledger `adapter list`
+/// reports from. Shipped Serwalker records share their artifact the same way
+/// once a package bundles it.
 #[test]
 fn an_install_for_one_record_does_not_authorize_another_sharing_its_artifact() {
-    let prefix = Prefix::new();
-    let checkout = checkout_root();
-    let checkout_before = tree_digests(&checkout.join("adapters"));
-    let store = prefix.root().join("shipped-store");
-    let env = [
-        ("FLUTTERDEC_DATA_DIR", checkout.to_str().expect("path")),
-        (
-            "FLUTTERDEC_ADAPTER_STORE",
-            store.to_str().expect("store path"),
-        ),
-    ];
+    let prefix = Prefix::answering();
+    let producer = fs::read(prefix.producer()).expect("read producer");
+    let profile = fs::read(prefix.share().join("data/fixture-profile.json")).expect("read profile");
+    let record = |hash| {
+        record_json(
+            hash,
+            ARTIFACT_RELATIVE,
+            std::env::consts::OS,
+            std::env::consts::ARCH,
+            &producer,
+            &profile,
+        )
+    };
+    let registry = serde_json::json!({"version": 1, "records": [record(HASH), record(OTHER_HASH)]});
+    fs::write(
+        prefix.share().join("adapters/registry.json"),
+        serde_json::to_vec_pretty(&registry).expect("serialize registry"),
+    )
+    .expect("write registry");
+    let data_before = tree_digests(&prefix.share());
+    let store = prefix.store();
 
-    let install = prefix.run_with(
-        &env,
-        &["adapter", "install", "--dart-hash", OTHER_HASH, "--json"],
-    );
+    let install = prefix.run(&["adapter", "install", "--dart-hash", OTHER_HASH, "--json"]);
     assert_eq!(code(&install), 0, "install failed: {}", stderr(&install));
 
     // Exactly one record is installed, and the ledger says which one.
@@ -1003,7 +1006,7 @@ fn an_install_for_one_record_does_not_authorize_another_sharing_its_artifact() {
         "store.json: {claimed:#}"
     );
 
-    let rows = json(&prefix.run_with(&env, &["adapter", "list", "--json"]));
+    let rows = json(&prefix.list());
     assert_eq!(
         row_for(&rows, OTHER_HASH)["state"],
         text("verified"),
@@ -1019,14 +1022,14 @@ fn an_install_for_one_record_does_not_authorize_another_sharing_its_artifact() {
     assert_eq!(
         row_for(&rows, HASH)["artifact_path"],
         row_for(&rows, OTHER_HASH)["artifact_path"],
-        "the shipped records no longer share an artifact path: {rows:#}"
+        "the fixture records no longer share an artifact path: {rows:#}"
     );
 
     let libapp = prefix.root().join("other-record-libapp.so");
-    fs::write(&libapp, synthetic_libapp(HASH, SHIPPED_FEATURES)).expect("write libapp");
+    fs::write(&libapp, synthetic_libapp(HASH, FEATURES)).expect("write libapp");
     let input = libapp.to_str().expect("path").to_string();
 
-    let info = prefix.run_with(&env, &["info", &input, "--json"]);
+    let info = prefix.run(&["info", &input, "--json"]);
     let report = json(&info);
     assert_eq!(
         report["snapshot_hash"],
@@ -1055,10 +1058,15 @@ fn an_install_for_one_record_does_not_authorize_another_sharing_its_artifact() {
         text("registered"),
         "an unavailable record produced a registered producer\nstore.json: {claimed:#}\ninfo: {report:#}"
     );
+    assert_eq!(
+        prefix.spawns(),
+        0,
+        "an unavailable record spawned its producer"
+    );
 
     // The other direction: once the ledger does hold this record, `list` says
     // verified and authorization does not refuse for want of an installation.
-    let install = prefix.run_with(&env, &["adapter", "install", "--dart-hash", HASH, "--json"]);
+    let install = prefix.run(&["adapter", "install", "--dart-hash", HASH, "--json"]);
     assert_eq!(code(&install), 0, "install failed: {}", stderr(&install));
     let claimed = ledger(&store);
     assert_eq!(
@@ -1067,14 +1075,14 @@ fn an_install_for_one_record_does_not_authorize_another_sharing_its_artifact() {
         "store.json: {claimed:#}"
     );
 
-    let rows = json(&prefix.run_with(&env, &["adapter", "list", "--json"]));
+    let rows = json(&prefix.list());
     assert_eq!(
         row_for(&rows, HASH)["state"],
         text("verified"),
         "store.json: {claimed:#}\nrows: {rows:#}"
     );
 
-    let info = prefix.run_with(&env, &["info", &input, "--json"]);
+    let info = prefix.run(&["info", &input, "--json"]);
     let report = json(&info);
     assert_eq!(
         report["adapter_installed"],
@@ -1094,8 +1102,8 @@ fn an_install_for_one_record_does_not_authorize_another_sharing_its_artifact() {
     );
 
     assert_eq!(
-        checkout_before,
-        tree_digests(&checkout.join("adapters")),
+        data_before,
+        tree_digests(&prefix.share()),
         "the run mutated read-only package data"
     );
 }

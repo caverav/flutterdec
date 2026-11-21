@@ -170,6 +170,7 @@ EOF
               "-p" "flutterdec-serwalker"
               "--bins"
               "--example" "prepare_adapter"
+              "--example" "bundle_registry"
             ];
             doCheck = false;
             nativeBuildInputs = with pkgs; [ pkg-config ];
@@ -179,12 +180,15 @@ EOF
             # checked-in producer have to be part of the package. Without them a
             # release binary has no registry to select from and nothing to
             # install. The adapter executable and the experimental registry
-            # preparation tool ship in bin/ as well. Installing the adapter into
+            # preparation tool ship in bin/ as well. Serwalker is also bundled
+            # under share/, with its digest pinned into the packaged registry by
+            # bundle_registry, which is what `flutterdec adapter install`
+            # publishes for a Serwalker record. Installing the adapter into
             # the user's writable store is still a runtime action performed by
             # `flutterdec adapter install`, not something this package does.
             postInstall = ''
               share="$out/share/flutterdec"
-              install -Dm444 adapters/registry.json "$share/adapters/registry.json"
+              install -Dm644 adapters/registry.json "$share/adapters/registry.json"
               install -Dm444 adapters/python/adapter_template.py \
                 "$share/adapters/python/adapter_template.py"
               for profile in data/*.json; do
@@ -201,6 +205,16 @@ EOF
               install -Dm755 "$prepare_bin" "$out/bin/flutterdec-prepare-adapter"
               test -f "$share/adapters/registry.json"
               test -f "$share/data/dart-profiles.json"
+            '';
+            # After fixup, because strip and patchelf rewrite executables there
+            # and the bundled copy must be the bytes its digest names.
+            postFixup = ''
+              share="$out/share/flutterdec"
+              bundle_bin="$(find target -type f -path '*/release/examples/bundle_registry' -perm -u+x -print -quit)"
+              test -n "$bundle_bin"
+              "$bundle_bin" --data-dir "$share" --artifact "$out/bin/flutterdec-serwalker"
+              chmod 444 "$share/adapters/registry.json"
+              test -x "$share/artifacts/flutterdec-serwalker"
             '';
           };
         in {
