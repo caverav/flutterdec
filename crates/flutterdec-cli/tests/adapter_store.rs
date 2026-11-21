@@ -859,6 +859,86 @@ fn info_and_the_decompile_report_state_which_containment_controls_were_establish
     );
 }
 
+/// A package that bundles an adapter executable installs that file, not the
+/// reference producer.
+///
+/// Release archives and the Nix package bundle Serwalker under
+/// `share/flutterdec/<variant path>`. The control proves the bundled file is
+/// what satisfied the record: without it the reference producer is read, and
+/// its bytes are not the bytes the record declares.
+#[test]
+fn install_publishes_the_artifact_a_package_bundles_for_the_record() {
+    let bundled = b"#!/bin/sh\n# a bundled adapter, not the reference producer\nexit 3\n";
+    let declare_bundled = |prefix: &Prefix| {
+        edit_registry(prefix, |registry| {
+            let variant = &mut registry["records"][0]["artifact"]["variants"][0];
+            variant["size"] = bundled.len().into();
+            variant["sha256"] = digest(bundled).into();
+        });
+    };
+
+    let prefix = Prefix::new();
+    declare_bundled(&prefix);
+    let target = prefix.share().join(ARTIFACT_RELATIVE);
+    fs::create_dir_all(target.parent().expect("artifact parent")).expect("mkdir artifacts");
+    fs::write(&target, bundled).expect("write bundled artifact");
+
+    let install = prefix.install();
+    assert_eq!(code(&install), 0, "install failed: {}", stderr(&install));
+    assert_eq!(
+        json(&install)["record"]["source"],
+        text("packaged-producer")
+    );
+    assert_eq!(
+        fs::read(prefix.artifact()).expect("read installed artifact"),
+        bundled.to_vec(),
+        "the store holds something other than the bundled artifact"
+    );
+    let list = prefix.list();
+    assert_eq!(
+        json(&list)[0]["state"],
+        text("verified"),
+        "{}",
+        stdout(&list)
+    );
+
+    let control = Prefix::new();
+    declare_bundled(&control);
+    let install = control.install();
+    assert_eq!(
+        category(&install),
+        "store_artifact_digest_mismatch",
+        "without the bundled file the install should read the reference producer: {}",
+        stderr(&install)
+    );
+}
+
+/// A record that leaves its artifact to packaging names what a source build is
+/// missing instead of only reporting the host.
+#[test]
+fn installing_a_record_only_a_package_can_supply_says_so() {
+    let prefix = Prefix::new();
+    edit_registry(&prefix, |registry| {
+        registry["records"][0]["artifact"]["variants"] = serde_json::json!([]);
+    });
+    let install = prefix.install();
+    assert_eq!(
+        category(&install),
+        "store_incompatible",
+        "{}",
+        stderr(&install)
+    );
+    assert!(
+        stderr(&install).contains("fixture-artifact is pinned when a package bundles it"),
+        "{}",
+        stderr(&install)
+    );
+    assert!(
+        store_files(&prefix.store()).is_empty(),
+        "a refused install wrote to the store"
+    );
+}
+
 /// The feature tuple both shipped records declare, as a snapshot header spells
 /// it. Order is not significant: the selection key normalizes before comparing.
 const SHIPPED_FEATURES: &str = "product no-code_comments compressed-pointers arm64 android";
