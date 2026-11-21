@@ -670,12 +670,17 @@ fn packaged_source(layout: &Layout, variant: &HostArtifactVariant) -> Result<Pat
         .data_dir()
         .join(contained_relative(&variant.path, "artifact path")?);
     // `symlink_metadata`, so a symlink or directory planted there is read, and
-    // refused, rather than silently skipped.
-    Ok(if fs::symlink_metadata(&bundled).is_ok() {
-        bundled
-    } else {
-        layout.producer_path()
-    })
+    // refused, rather than silently skipped. Only absence falls back: a bundled
+    // file that cannot be inspected is reported as itself, not as a digest
+    // mismatch against the reference producer.
+    match fs::symlink_metadata(&bundled) {
+        Ok(_) => Ok(bundled),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(layout.producer_path()),
+        Err(err) => Err(StoreError::Source(format!(
+            "inspect bundled artifact {}: {err}",
+            bundled.display()
+        ))),
+    }
 }
 
 /// Install the adapter authorized for `hash` into the layout's store.

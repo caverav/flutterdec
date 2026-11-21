@@ -605,13 +605,22 @@ impl RegistrySelection {
             )));
         }
         let path = resolve_contained(root, &variant.path, "adapter artifact")?;
+        // Every upgrade that ships a new adapter build lands here until the
+        // operator reinstalls, so the refusal names the remedy.
         verify_file(
             &path,
             variant.size,
             &variant.sha256,
             MAX_ARTIFACT_BYTES,
             "adapter artifact",
-        )?;
+        )
+        .map_err(|err| match err {
+            RegistryError::Artifact(detail) => RegistryError::Artifact(format!(
+                "{detail}; reinstall it with `flutterdec adapter install --dart-hash {}`",
+                self.record.snapshot_hash
+            )),
+            other => other,
+        })?;
         Ok(ResolvedArtifact { path, variant })
     }
 

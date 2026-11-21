@@ -939,6 +939,54 @@ fn installing_a_record_only_a_package_can_supply_says_so() {
     );
 }
 
+/// An installed adapter whose bytes are no longer the ones the record declares,
+/// which is what every upgrade that ships a new adapter build looks like, is
+/// refused with the command that fixes it, and reinstalling does fix it.
+#[test]
+fn a_superseded_install_is_refused_with_the_reinstall_command() {
+    let prefix = Prefix::answering();
+    let install = prefix.install();
+    assert_eq!(code(&install), 0, "install failed: {}", stderr(&install));
+    let mut bytes = fs::read(prefix.artifact()).expect("read installed artifact");
+    bytes.extend_from_slice(b"\n# a previous build\n");
+    fs::set_permissions(prefix.artifact(), fs::Permissions::from_mode(0o755)).expect("chmod");
+    fs::write(prefix.artifact(), &bytes).expect("rewrite installed artifact");
+
+    let libapp = prefix.root().join("libapp.so");
+    fs::write(&libapp, synthetic_libapp(HASH, FEATURES)).expect("write libapp");
+    let input = libapp.to_str().expect("path");
+
+    let report = json(&prefix.run(&["info", input, "--json"]));
+    assert_eq!(
+        report["adapter_error_category"],
+        text("registry_artifact_rejected"),
+        "{report:#}"
+    );
+    let error = report["adapter_error"].as_str().unwrap_or_default();
+    assert!(
+        error.contains(&format!(
+            "reinstall it with `flutterdec adapter install --dart-hash {HASH}`"
+        )),
+        "{error}"
+    );
+    assert_eq!(prefix.spawns(), 0, "a superseded adapter was executed");
+
+    let reinstall = prefix.install();
+    assert_eq!(
+        code(&reinstall),
+        0,
+        "reinstall failed: {}",
+        stderr(&reinstall)
+    );
+    let report = json(&prefix.run(&["info", input, "--json"]));
+    assert_eq!(report["adapter_error"], Value::Null, "{report:#}");
+    assert_eq!(
+        report["provider"]["adapter_executed"],
+        Value::Bool(true),
+        "{report:#}"
+    );
+}
+
 /// The store ledger, as JSON, for an observation to be reported alongside.
 fn ledger(store: &Path) -> Value {
     match fs::read(store.join("store.json")) {
