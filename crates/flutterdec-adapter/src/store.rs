@@ -657,10 +657,37 @@ fn verify_profile(layout: &Layout, record: &CompatibilityRecord) -> Result<PathB
     Ok(path)
 }
 
+/// The artifact the package ships for `variant`.
+///
+/// A package that bundles an adapter executable, as release archives and the
+/// Nix package bundle Serwalker, places it in the read-only data directory at
+/// the same relative path the record installs it to in the store. Anything
+/// else falls back to the checked-in reference producer, which predates that
+/// convention. Which file is read decides nothing: its bytes must still match
+/// the record's digest and size.
+fn packaged_source(layout: &Layout, variant: &HostArtifactVariant) -> Result<PathBuf, StoreError> {
+    let bundled = layout
+        .data_dir()
+        .join(contained_relative(&variant.path, "artifact path")?);
+    // `symlink_metadata`, so a symlink or directory planted there is read, and
+    // refused, rather than silently skipped. Only absence falls back: a bundled
+    // file that cannot be inspected is reported as itself, not as a digest
+    // mismatch against the reference producer.
+    match fs::symlink_metadata(&bundled) {
+        Ok(_) => Ok(bundled),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(layout.producer_path()),
+        Err(err) => Err(StoreError::Source(format!(
+            "inspect bundled artifact {}: {err}",
+            bundled.display()
+        ))),
+    }
+}
+
 /// Install the adapter authorized for `hash` into the layout's store.
 ///
-/// `source` overrides the artifact bytes; the default is the checked-in producer
-/// in the read-only data directory. Either way the bytes must match the record's
+/// `source` overrides the artifact bytes; the default is the artifact the
+/// package bundles for the record, else the checked-in producer, both in the
+/// read-only data directory. Either way the bytes must match the record's
 /// declared digest and size, so an operator cannot install something the
 /// registry did not authorize.
 pub fn install(
@@ -681,8 +708,18 @@ pub fn install(
     let host_os = std::env::consts::OS;
     let host_arch = std::env::consts::ARCH;
     let variant = variant_for_host(record, host_os, host_arch).ok_or_else(|| {
+        // No variant for any host is how the checked-in registry leaves an
+        // artifact to packaging, so a source build is told what it is missing.
+        let hint = if record.artifact.variants.is_empty() {
+            format!(
+                "; {} is pinned when a package bundles it, and this data directory bundles none",
+                record.artifact.id
+            )
+        } else {
+            String::new()
+        };
         StoreError::Incompatible(format!(
-            "record for snapshot hash {hash} has no artifact variant for host {host_os}/{host_arch}"
+            "record for snapshot hash {hash} has no artifact variant for host {host_os}/{host_arch}{hint}"
         ))
     })?;
 
@@ -698,7 +735,7 @@ pub fn install(
         ),
         None => (
             read_regular_file(
-                &layout.producer_path(),
+                &packaged_source(layout, variant)?,
                 "packaged producer",
                 MAX_ARTIFACT_BYTES,
             )?,
@@ -1171,6 +1208,7 @@ mod tests {
                 version: Some("1".to_string()),
                 sha256: None,
             },
+            backends: vec!["blutter".to_string(), "r2flutter".to_string()],
             profile: ProfileReference {
                 id: "test-profile".to_string(),
                 path: "data/test-profile.json".to_string(),

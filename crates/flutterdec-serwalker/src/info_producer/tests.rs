@@ -742,6 +742,7 @@ fn v4_real_snapshot_round_trips_and_passes_host_validation() {
         "features": bundle.identity.features.normalized,
         "feature_fingerprint": Sha256Digest::of(b"test-features"),
         "parser_family": {"id": "serwalker"},
+        "backends": ["serwalker"],
         "profile": {"id": "test-profile", "path": "profile.json", "sha256": profile_digest},
         "artifact": {"id": "serwalker-test", "variants": [{"host_os": "linux", "host_arch": "x86_64",
             "path": "serwalker-test", "size": 14, "sha256": artifact_digest, "provenance": "test"}]},

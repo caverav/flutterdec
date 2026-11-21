@@ -125,6 +125,7 @@ impl SpyRepo {
                 version: Some("test".to_string()),
                 sha256: None,
             },
+            backends: vec!["r2flutter".to_string()],
             profile: ProfileReference {
                 id: "test-profile".to_string(),
                 path: "data/test-profile.json".to_string(),
@@ -390,6 +391,42 @@ fn a_full_aot_snapshot_reaches_selection_and_execution() {
     // And an adapter that ran and failed stays a failure. Core recovery is for
     // snapshots nothing was authorized to parse, not a way to paper over a
     // producer that broke.
+    assert_eq!(error_category(&err), "adapter_no_result", "{err:#}");
+}
+
+/// A pinned backend the selected record does not serve is a compatibility fact,
+/// decided before anything is resolved, loaded or spawned.
+///
+/// The spy record serves only `r2flutter`. Pinning `serwalker` or `blutter`
+/// used to reach the adapter, which could only refuse, and the refusal came back
+/// as an adapter failure instead of naming the record that does not serve it.
+#[test]
+fn a_pinned_backend_the_record_does_not_serve_is_refused_before_execution() {
+    let repo = valid_registry_repo();
+    for backend in [AdapterBackend::Serwalker, AdapterBackend::Blutter] {
+        let mut bundle = bundle(full_aot());
+        let err = load_program(&repo.layout, &mut bundle, backend, None)
+            .expect_err("a record that does not serve the pinned backend cannot run it");
+
+        let rendered = format!("{err:#}");
+        assert_eq!(error_category(&err), "compatibility_unsupported", "{rendered}");
+        assert!(
+            rendered.contains("flutterdec-spy") && rendered.contains("serves r2flutter"),
+            "the refusal does not name the record and what it serves: {rendered}"
+        );
+        assert!(!repo.spawned(), "{} executed the adapter", backend.as_str());
+        assert!(
+            bundle.dart_profile.is_none(),
+            "{} loaded a profile for a run it could not make",
+            backend.as_str()
+        );
+    }
+
+    // The control: the backend the record does serve reaches execution.
+    let mut bundle = bundle(full_aot());
+    let err = load_program(&repo.layout, &mut bundle, AdapterBackend::R2Flutter, None)
+        .expect_err("the spy adapter cannot produce a model");
+    assert!(repo.spawned(), "a served pinned backend did not run: {err:#}");
     assert_eq!(error_category(&err), "adapter_no_result", "{err:#}");
 }
 

@@ -340,13 +340,25 @@ additionally allowed to be `auto`, which is the only case in which a producer ma
 backend and the only case in which `fallback_reason` may be set: a pinned backend fails
 rather than substituting.
 
+Each compatibility record also lists the backends its adapter serves in
+`backends`: `serwalker` for Serwalker records, `blutter` and `r2flutter` for the
+reference producer. The host compares a pinned backend against that list before it
+resolves an artifact or spawns anything, so `--adapter-backend serwalker` is never
+handed to a producer whose only possible answer is a refusal. `auto` always runs the
+record's adapter, and the host refuses an `auto` result that resolved a backend the
+record does not list. The producer's own `internal` scan is the one exception.
+
 ### When no adapter is authorized
 
 An explicit `internal` request uses machine-code-only recovery. It does not read a
 profile, consult the registry, deserialize snapshot objects, or spawn an adapter.
-Serwalker is a separate protocol-v1 executable selected by an exact registry record.
-The host stages the verified profile bytes at `in/profile.json`; the adapter checks
-them against the compatibility binding before decoding. No filename-based recipe
+Serwalker is a separate protocol-v1 executable selected by an exact registry record,
+and the default backend wherever such a record exists. The checked-in registry pins
+each Serwalker profile but not the executable, whose bytes only exist once a package
+is built: packaging bundles it at `share/flutterdec/artifacts/flutterdec-serwalker`
+and writes its digest into the staged registry, and `adapter install` publishes that
+bundled file. The host stages the verified profile bytes at `in/profile.json`; the
+adapter checks them against the compatibility binding before decoding. No filename-based recipe
 discovery is used for an authorized adapter invocation.
 
 External selection can end without an adapter to run: the identity gate refused the snapshot, no
@@ -609,7 +621,7 @@ The current Python template adapter:
 - guesses libraries from `package:...dart` strings
 - recovers function starts with simple ARM64 heuristics
 - builds object pool from extracted strings
-- core supports `auto|internal|serwalker|blutter|r2flutter`; the reference Python producer supports `internal|blutter|r2flutter`, while Serwalker is a separate executable
+- core supports `auto|internal|serwalker|blutter|r2flutter`; the reference Python producer supports `internal|blutter|r2flutter` (its records list `blutter` and `r2flutter` as pinnable), while Serwalker is a separate executable
 - in Blutter mode, parses `asm/*.dart` and `pp.txt`; a declaration it cannot parse yields a function with no name, not a synthesized one
 - in r2flutter mode, shells out to `r2flutter -jH/-ji/-jc/-jxz/-jzz/-jp` and maps the AOT instruction table, class table, and ObjectPool-referenced strings onto the model
 - emits ProgramModel v4 and an adapter protocol v1 result

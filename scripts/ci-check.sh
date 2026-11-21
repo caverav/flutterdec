@@ -13,7 +13,8 @@ Runs the same checks as CI from the local workspace:
   4) scripts/lint-python.sh
   5) cargo clippy --workspace --all-targets -- -D warnings
   6) cargo test --workspace            (unless --skip-tests)
-  7) cargo build -p flutterdec-cli --release
+  7) cargo build -p flutterdec-cli -p flutterdec-serwalker --release --bins \
+       --example bundle_registry
   8) scripts/release-layout-smoke.sh
 EOF
 }
@@ -61,8 +62,8 @@ if [[ "$skip_tests" != "1" ]]; then
   nix develop -c cargo test --workspace
 fi
 
-echo "[ci-check] cargo build -p flutterdec-cli --release"
-nix develop -c cargo build -p flutterdec-cli --release
+echo "[ci-check] cargo build -p flutterdec-cli -p flutterdec-serwalker --release --bins --example bundle_registry"
+nix develop -c cargo build -p flutterdec-cli -p flutterdec-serwalker --release --bins --example bundle_registry
 
 echo "[ci-check] scripts/release-layout-smoke.sh"
 nix develop -c ./scripts/release-layout-smoke.sh target/release/flutterdec

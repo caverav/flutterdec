@@ -43,6 +43,7 @@ fn main() -> Result<()> {
         "features": key.features,
         "feature_fingerprint": canonical_feature_fingerprint(&key.features),
         "parser_family": {"id": "flutterdec-serwalker", "version": env!("CARGO_PKG_VERSION")},
+        "backends": ["serwalker"],
         "profile": {"id": "local-serwalker-profile", "path": "data/profile.json", "sha256": profile_digest},
         "artifact": {"id": "flutterdec-serwalker", "variants": [{
             "host_os": std::env::consts::OS,

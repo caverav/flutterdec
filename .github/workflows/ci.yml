@@ -54,8 +54,8 @@ jobs:
       - name: Test
         run: nix develop -c cargo test --workspace
 
-      - name: Build release CLI
-        run: nix develop -c cargo build -p flutterdec-cli --release
+      - name: Build release CLI and bundled Serwalker
+        run: nix develop -c cargo build -p flutterdec-cli -p flutterdec-serwalker --release --bins --example bundle_registry
 
       - name: Release layout smoke
         run: nix develop -c ./scripts/release-layout-smoke.sh target/release/flutterdec

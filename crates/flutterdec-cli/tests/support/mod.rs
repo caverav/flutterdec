@@ -350,6 +350,7 @@ pub fn record_json(
         "forbidden_features": ["no-compressed-pointers"],
         "sdk_aliases": [],
         "parser_family": {"id": "fixture-family", "version": "1", "sha256": null},
+        "backends": ["blutter", "r2flutter"],
         "profile": {
             "id": "fixture-profile",
             "path": "data/fixture-profile.json",

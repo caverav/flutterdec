@@ -859,9 +859,133 @@ fn info_and_the_decompile_report_state_which_containment_controls_were_establish
     );
 }
 
-/// The feature tuple both shipped records declare, as a snapshot header spells
-/// it. Order is not significant: the selection key normalizes before comparing.
-const SHIPPED_FEATURES: &str = "product no-code_comments compressed-pointers arm64 android";
+/// A package that bundles an adapter executable installs that file, not the
+/// reference producer.
+///
+/// Release archives and the Nix package bundle Serwalker under
+/// `share/flutterdec/<variant path>`. The control proves the bundled file is
+/// what satisfied the record: without it the reference producer is read, and
+/// its bytes are not the bytes the record declares.
+#[test]
+fn install_publishes_the_artifact_a_package_bundles_for_the_record() {
+    let bundled = b"#!/bin/sh\n# a bundled adapter, not the reference producer\nexit 3\n";
+    let declare_bundled = |prefix: &Prefix| {
+        edit_registry(prefix, |registry| {
+            let variant = &mut registry["records"][0]["artifact"]["variants"][0];
+            variant["size"] = bundled.len().into();
+            variant["sha256"] = digest(bundled).into();
+        });
+    };
+
+    let prefix = Prefix::new();
+    declare_bundled(&prefix);
+    let target = prefix.share().join(ARTIFACT_RELATIVE);
+    fs::create_dir_all(target.parent().expect("artifact parent")).expect("mkdir artifacts");
+    fs::write(&target, bundled).expect("write bundled artifact");
+
+    let install = prefix.install();
+    assert_eq!(code(&install), 0, "install failed: {}", stderr(&install));
+    assert_eq!(
+        json(&install)["record"]["source"],
+        text("packaged-producer")
+    );
+    assert_eq!(
+        fs::read(prefix.artifact()).expect("read installed artifact"),
+        bundled.to_vec(),
+        "the store holds something other than the bundled artifact"
+    );
+    let list = prefix.list();
+    assert_eq!(
+        json(&list)[0]["state"],
+        text("verified"),
+        "{}",
+        stdout(&list)
+    );
+
+    let control = Prefix::new();
+    declare_bundled(&control);
+    let install = control.install();
+    assert_eq!(
+        category(&install),
+        "store_artifact_digest_mismatch",
+        "without the bundled file the install should read the reference producer: {}",
+        stderr(&install)
+    );
+}
+
+/// A record that leaves its artifact to packaging names what a source build is
+/// missing instead of only reporting the host.
+#[test]
+fn installing_a_record_only_a_package_can_supply_says_so() {
+    let prefix = Prefix::new();
+    edit_registry(&prefix, |registry| {
+        registry["records"][0]["artifact"]["variants"] = serde_json::json!([]);
+    });
+    let install = prefix.install();
+    assert_eq!(
+        category(&install),
+        "store_incompatible",
+        "{}",
+        stderr(&install)
+    );
+    assert!(
+        stderr(&install).contains("fixture-artifact is pinned when a package bundles it"),
+        "{}",
+        stderr(&install)
+    );
+    assert!(
+        store_files(&prefix.store()).is_empty(),
+        "a refused install wrote to the store"
+    );
+}
+
+/// An installed adapter whose bytes are no longer the ones the record declares,
+/// which is what every upgrade that ships a new adapter build looks like, is
+/// refused with the command that fixes it, and reinstalling does fix it.
+#[test]
+fn a_superseded_install_is_refused_with_the_reinstall_command() {
+    let prefix = Prefix::answering();
+    let install = prefix.install();
+    assert_eq!(code(&install), 0, "install failed: {}", stderr(&install));
+    let mut bytes = fs::read(prefix.artifact()).expect("read installed artifact");
+    bytes.extend_from_slice(b"\n# a previous build\n");
+    fs::set_permissions(prefix.artifact(), fs::Permissions::from_mode(0o755)).expect("chmod");
+    fs::write(prefix.artifact(), &bytes).expect("rewrite installed artifact");
+
+    let libapp = prefix.root().join("libapp.so");
+    fs::write(&libapp, synthetic_libapp(HASH, FEATURES)).expect("write libapp");
+    let input = libapp.to_str().expect("path");
+
+    let report = json(&prefix.run(&["info", input, "--json"]));
+    assert_eq!(
+        report["adapter_error_category"],
+        text("registry_artifact_rejected"),
+        "{report:#}"
+    );
+    let error = report["adapter_error"].as_str().unwrap_or_default();
+    assert!(
+        error.contains(&format!(
+            "reinstall it with `flutterdec adapter install --dart-hash {HASH}`"
+        )),
+        "{error}"
+    );
+    assert_eq!(prefix.spawns(), 0, "a superseded adapter was executed");
+
+    let reinstall = prefix.install();
+    assert_eq!(
+        code(&reinstall),
+        0,
+        "reinstall failed: {}",
+        stderr(&reinstall)
+    );
+    let report = json(&prefix.run(&["info", input, "--json"]));
+    assert_eq!(report["adapter_error"], Value::Null, "{report:#}");
+    assert_eq!(
+        report["provider"]["adapter_executed"],
+        Value::Bool(true),
+        "{report:#}"
+    );
+}
 
 /// The store ledger, as JSON, for an observation to be reported alongside.
 fn ledger(store: &Path) -> Value {
@@ -885,29 +1009,36 @@ fn row_for<'a>(rows: &'a Value, hash: &str) -> &'a Value {
 /// identical artifact bytes, and what `adapter list` reports must be what
 /// `info` does — in both directions.
 ///
-/// This drives the *shipped* registry rather than the fixture because that is
-/// where the two records collide: both name `artifacts/flutterdec-local-python`
-/// with the same digest, so the file on disk cannot tell them apart. Only the
-/// store ledger records which record something was installed for, and it is the
-/// ledger `adapter list` reports from.
+/// Two records here name `artifacts/dart_adapter` with the same digest, so the
+/// file on disk cannot tell them apart. Only the store ledger records which
+/// record something was installed for, and it is the ledger `adapter list`
+/// reports from. Shipped Serwalker records share their artifact the same way
+/// once a package bundles it.
 #[test]
 fn an_install_for_one_record_does_not_authorize_another_sharing_its_artifact() {
-    let prefix = Prefix::new();
-    let checkout = checkout_root();
-    let checkout_before = tree_digests(&checkout.join("adapters"));
-    let store = prefix.root().join("shipped-store");
-    let env = [
-        ("FLUTTERDEC_DATA_DIR", checkout.to_str().expect("path")),
-        (
-            "FLUTTERDEC_ADAPTER_STORE",
-            store.to_str().expect("store path"),
-        ),
-    ];
+    let prefix = Prefix::answering();
+    let producer = fs::read(prefix.producer()).expect("read producer");
+    let profile = fs::read(prefix.share().join("data/fixture-profile.json")).expect("read profile");
+    let record = |hash| {
+        record_json(
+            hash,
+            ARTIFACT_RELATIVE,
+            std::env::consts::OS,
+            std::env::consts::ARCH,
+            &producer,
+            &profile,
+        )
+    };
+    let registry = serde_json::json!({"version": 1, "records": [record(HASH), record(OTHER_HASH)]});
+    fs::write(
+        prefix.share().join("adapters/registry.json"),
+        serde_json::to_vec_pretty(&registry).expect("serialize registry"),
+    )
+    .expect("write registry");
+    let data_before = tree_digests(&prefix.share());
+    let store = prefix.store();
 
-    let install = prefix.run_with(
-        &env,
-        &["adapter", "install", "--dart-hash", OTHER_HASH, "--json"],
-    );
+    let install = prefix.run(&["adapter", "install", "--dart-hash", OTHER_HASH, "--json"]);
     assert_eq!(code(&install), 0, "install failed: {}", stderr(&install));
 
     // Exactly one record is installed, and the ledger says which one.
@@ -923,7 +1054,7 @@ fn an_install_for_one_record_does_not_authorize_another_sharing_its_artifact() {
         "store.json: {claimed:#}"
     );
 
-    let rows = json(&prefix.run_with(&env, &["adapter", "list", "--json"]));
+    let rows = json(&prefix.list());
     assert_eq!(
         row_for(&rows, OTHER_HASH)["state"],
         text("verified"),
@@ -939,14 +1070,14 @@ fn an_install_for_one_record_does_not_authorize_another_sharing_its_artifact() {
     assert_eq!(
         row_for(&rows, HASH)["artifact_path"],
         row_for(&rows, OTHER_HASH)["artifact_path"],
-        "the shipped records no longer share an artifact path: {rows:#}"
+        "the fixture records no longer share an artifact path: {rows:#}"
     );
 
     let libapp = prefix.root().join("other-record-libapp.so");
-    fs::write(&libapp, synthetic_libapp(HASH, SHIPPED_FEATURES)).expect("write libapp");
+    fs::write(&libapp, synthetic_libapp(HASH, FEATURES)).expect("write libapp");
     let input = libapp.to_str().expect("path").to_string();
 
-    let info = prefix.run_with(&env, &["info", &input, "--json"]);
+    let info = prefix.run(&["info", &input, "--json"]);
     let report = json(&info);
     assert_eq!(
         report["snapshot_hash"],
@@ -975,10 +1106,15 @@ fn an_install_for_one_record_does_not_authorize_another_sharing_its_artifact() {
         text("registered"),
         "an unavailable record produced a registered producer\nstore.json: {claimed:#}\ninfo: {report:#}"
     );
+    assert_eq!(
+        prefix.spawns(),
+        0,
+        "an unavailable record spawned its producer"
+    );
 
     // The other direction: once the ledger does hold this record, `list` says
     // verified and authorization does not refuse for want of an installation.
-    let install = prefix.run_with(&env, &["adapter", "install", "--dart-hash", HASH, "--json"]);
+    let install = prefix.run(&["adapter", "install", "--dart-hash", HASH, "--json"]);
     assert_eq!(code(&install), 0, "install failed: {}", stderr(&install));
     let claimed = ledger(&store);
     assert_eq!(
@@ -987,14 +1123,14 @@ fn an_install_for_one_record_does_not_authorize_another_sharing_its_artifact() {
         "store.json: {claimed:#}"
     );
 
-    let rows = json(&prefix.run_with(&env, &["adapter", "list", "--json"]));
+    let rows = json(&prefix.list());
     assert_eq!(
         row_for(&rows, HASH)["state"],
         text("verified"),
         "store.json: {claimed:#}\nrows: {rows:#}"
     );
 
-    let info = prefix.run_with(&env, &["info", &input, "--json"]);
+    let info = prefix.run(&["info", &input, "--json"]);
     let report = json(&info);
     assert_eq!(
         report["adapter_installed"],
@@ -1014,8 +1150,8 @@ fn an_install_for_one_record_does_not_authorize_another_sharing_its_artifact() {
     );
 
     assert_eq!(
-        checkout_before,
-        tree_digests(&checkout.join("adapters")),
+        data_before,
+        tree_digests(&prefix.share()),
         "the run mutated read-only package data"
     );
 }

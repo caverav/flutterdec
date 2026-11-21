@@ -235,6 +235,14 @@ fn pins_external_backend(backend: AdapterBackend) -> bool {
     )
 }
 
+/// Whether a record lists `backend` among the backends its adapter serves.
+fn record_serves(record: &CompatibilityRecord, backend: AdapterBackend) -> bool {
+    record
+        .backends
+        .iter()
+        .any(|served| served == backend.as_str())
+}
+
 /// Whether a registry refusal is a fact about *this snapshot* rather than about
 /// the host's own installed data.
 ///
@@ -328,8 +336,9 @@ fn pinned_backend_refused(
 ) -> anyhow::Error {
     let message = format!(
         "--adapter-backend {} cannot be served for this snapshot ({}): {}. \
-         use --adapter-backend internal for machine-code-only recovery, or auto \
-         to allow recovery when no parser can be authorized",
+         use --adapter-backend auto to run the adapter the registry authorizes \
+         (machine-code-only recovery when none is), or internal for \
+         machine-code-only recovery",
         backend.as_str(),
         reason.as_str(),
         detail
@@ -414,6 +423,23 @@ fn load_program(
         Ok(selection) => selection,
         Err(error) => return recover_or_refuse(bundle, backend, error, None),
     };
+    // A pinned backend is part of what the record must authorize, and it is
+    // checked here rather than left to the adapter. Handing `serwalker` to the
+    // reference producer, or `r2flutter` to Serwalker, used to spawn a process
+    // whose only possible answer was a refusal, reported as an adapter failure
+    // rather than as the compatibility fact it is.
+    if pins_external_backend(backend) && !record_serves(selection.record(), backend) {
+        let record = selection.record();
+        return Err(pinned_backend_refused(
+            backend,
+            CoreFallbackReason::CompatibilityUnsupported,
+            &format!(
+                "the compatibility record for this snapshot authorizes {}, which serves {}",
+                record.parser_family.id,
+                record.backends.join(", ")
+            ),
+        ));
+    }
     let artifact = match selection.resolve_current_artifact(layout.store_dir()) {
         Ok(artifact) => artifact,
         Err(error) => {

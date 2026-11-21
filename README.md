@@ -149,9 +149,13 @@ nix develop -c cargo build -p flutterdec-cli --release
 ./target/release/flutterdec --help
 ```
 
-You can also run directly from the checkout without building, with `nix run . -- --help`. The
-resulting CLI finds the `adapters/` registry and `data/` profiles in the repository, so adapters
-work out of the box.
+You can also run directly from the checkout without building, with `nix run . -- --help`. That
+runs the Nix package, which bundles Serwalker, so every shipped adapter can be installed.
+
+A plain `cargo build` CLI finds the `adapters/` registry and `data/` profiles in the repository but
+bundles no Serwalker executable: `adapter list` reports the Serwalker records `incompatible` and
+`adapter install` refuses them. To use Serwalker from a source build, stage a prefix as described in
+[Serwalker adapter](docs/serwalker-adapter.md#shipped-records-and-packaging).
 
 ## Quick start: your first decompile
 
@@ -194,7 +198,8 @@ flutterdec adapter list
 
 An *adapter* is a small, hash-specific parser that knows how one Dart snapshot version lays out
 libraries, classes, function names, and the object pool. Installing the adapter for your target is
-what turns anonymous ARM64 into named, readable code.
+what turns anonymous ARM64 into named, readable code. For a snapshot Serwalker supports, this
+publishes the Serwalker executable bundled with flutterdec.
 
 - `adapter install` refuses a hash the compatibility registry has no record for, a record that does
   not serve this host, and any artifact whose bytes do not match the digest and size the record
@@ -300,14 +305,22 @@ The backend that parses the snapshot decides how much is actually recovered:
 | `blutter` | scraped from Blutter's rendered source, heuristic | yes | Blutter `pp.txt` entries, ordinal index space |
 | `r2flutter` | exact, from the AOT instruction table | yes, library attribution unavailable | real slots, resolvable from `x27` displacements |
 
-`--adapter-backend auto` (the default) selects an external adapter through an exact compatibility
-record, or permits machine-code-only recovery when no parser can be authorized.
+Serwalker is flutterdec's native snapshot parser and the default backend. Release archives and the
+Nix package bundle it, and the shipped registry authorizes it for the exact snapshot identities it
+has profiles for: currently Dart 3.11.1 and the Dart 3.5.0 snapshot of the LocalSend 1.17.0
+fixture, both ARM64 with compressed pointers. Install it once per hash with `adapter install`, and
+`--adapter-backend auto` (the default) runs it.
+
+`auto` runs whichever adapter the compatibility record for the snapshot authorizes, or permits
+machine-code-only recovery when no adapter is authorized and installed.
 `--adapter-backend internal` always requests that recovery directly: it never runs Serwalker,
 loads a parsing profile, or requires an adapter installation.
-`--adapter-backend serwalker`, `blutter`, and `r2-flutter` pin a parser choice; the authorized
-adapter must serve it or fail without heuristic substitution. Serwalker runs as a separate
-protocol-v1 executable with a registry-pinned recipe, not as a core dependency. See
-[Serwalker adapter setup](docs/serwalker-adapter.md) for local builds and experimental registration.
+`--adapter-backend serwalker`, `blutter`, and `r2-flutter` pin a parser choice. Each record lists the
+backends its adapter serves, and a pinned backend the record does not list is refused before anything
+runs, without heuristic substitution. Serwalker runs as a separate protocol-v1 executable with a
+registry-pinned recipe, not as a core dependency. See
+[Serwalker adapter](docs/serwalker-adapter.md) for packaging, local builds and experimental
+registration.
 
 Every recovered domain carries a capability level (`complete` / `partial` / `unavailable`) and
 every fact a provenance (`exact` / `derived` / `heuristic`), so `report.json` distinguishes "not
@@ -566,6 +579,10 @@ The compatibility registry has no record for that snapshot identity, or the reco
 this host. Run `decompile` anyway: it falls back to core recovery. An adapter for that hash has to
 be contributed to the registry before it can be installed.
 
+If the error says the adapter "is pinned when a package bundles it", the record is a Serwalker
+record and this build bundles no Serwalker executable. Use a release archive or `nix run .`, or
+stage a prefix as described in [Serwalker adapter](docs/serwalker-adapter.md#shipped-records-and-packaging).
+
 </details>
 
 <details>
@@ -575,6 +592,11 @@ The store holds an entry that is `missing` or `corrupt`, so the store is treated
 than silently ignored. Reinstall the affected record with
 `flutterdec adapter install --dart-hash <HASH>`, or point `FLUTTERDEC_ADAPTER_STORE` at a fresh
 directory.
+
+This is expected after upgrading flutterdec: each release and each Nix rebuild ships a Serwalker
+build with a new digest, so a Serwalker adapter installed by the previous version reads as
+`corrupt`, and `info` and `decompile` refuse it with `registry_artifact_rejected`, until it is
+reinstalled.
 
 </details>
 

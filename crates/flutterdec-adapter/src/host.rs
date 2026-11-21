@@ -1219,6 +1219,25 @@ pub fn run_adapter(exec_path: &Path, input: &AdapterInput<'_>) -> Result<Adapter
     result
         .validate_against(&request)
         .map_err(|err| HostError::ResultMismatch(err.to_string()))?;
+    // `auto` lets the producer pick, but only among what the record authorizes.
+    // A pinned backend was already checked against the record before spawn, and
+    // `internal` is the producer's own machine-code scan, which every record
+    // permits.
+    if let Some(resolved) = result.resolved_backend {
+        let record = input.authorization.record;
+        if resolved != BackendId::Internal
+            && !record
+                .backends
+                .iter()
+                .any(|served| served == resolved.as_str())
+        {
+            return Err(HostError::ResultMismatch(format!(
+                "the adapter resolved backend {resolved}, which the record for {} does not serve ({})",
+                record.snapshot_hash,
+                record.backends.join(", ")
+            )));
+        }
+    }
 
     if result.status != AdapterStatus::Ok {
         let error = result

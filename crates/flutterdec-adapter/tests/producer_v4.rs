@@ -835,6 +835,46 @@ fn class_relationships_stay_unavailable_when_no_superclass_resolves() {
     );
 }
 
+/// `auto` lets the producer choose among its backends, but only among the ones
+/// the record authorizes.
+///
+/// The reference producer tries r2flutter first under `auto`. With a record that
+/// serves only blutter, an r2flutter answer is a backend nothing authorized, and
+/// the host refuses it. The control runs the same producer under the record as
+/// installed, which lists r2flutter, and accepts the answer.
+#[test]
+fn auto_cannot_resolve_a_backend_the_record_does_not_serve() {
+    let identity = support::identity();
+    let (installed, _dir, target) = install_with_fake_r2flutter(&identity, "[]");
+    let run = |record: &flutterdec_adapter::registry::CompatibilityRecord| {
+        run_adapter(
+            &installed.exec,
+            &AdapterInput {
+                identity: &identity,
+                authorization: installed.authorization_for(record),
+                producer: installed.producer_for(record),
+                compatibility: installed.binding_for(record),
+                regions: regions(&empty_snapshot()),
+                input_path: None,
+                libapp: Some(LibappSource::File(&target)),
+                requested_backend: RequestedBackend::Auto,
+                limits: Limits::default(),
+            },
+        )
+    };
+
+    let accepted = run(&installed.record).expect("the record serves r2flutter");
+    assert_eq!(accepted.resolved_backend, BackendId::R2Flutter);
+
+    let mut narrow = installed.record.clone();
+    narrow.backends = vec!["blutter".to_string()];
+    let refused = run(&narrow).expect_err("the record does not serve r2flutter");
+    assert!(
+        refused.to_string().contains("does not serve (blutter)"),
+        "{refused}"
+    );
+}
+
 /// The registry content-addresses the producer that ships with it, so editing
 /// one and not the other publishes a record no install can satisfy.
 ///
@@ -875,4 +915,59 @@ fn the_registry_declares_the_digest_of_the_producer_that_ships_with_it() {
         }
     }
     assert!(variants > 0, "the checked-in registry declares no artifact");
+}
+
+/// What the checked-in registry may claim about each parser family.
+///
+/// Serwalker records pin a checked-in profile and leave the executable to
+/// packaging, which is the only place its bytes exist. The reference producer
+/// serves exactly the backends `adapter_template.py` builds when pinned, so a
+/// record cannot promise `--adapter-backend serwalker` to a producer that would
+/// refuse it.
+#[test]
+fn the_registry_names_what_each_shipped_adapter_serves() {
+    let root = repo_root();
+    let registry = flutterdec_adapter::registry::CompatibilityRegistry::load(
+        &root.join("adapters/registry.json"),
+    )
+    .expect("the checked-in registry is valid");
+
+    let mut serwalker = 0;
+    for record in &registry.records {
+        let hash = &record.snapshot_hash;
+        if record.parser_family.id != "flutterdec-serwalker" {
+            assert_eq!(
+                record.backends,
+                ["blutter", "r2flutter"],
+                "record {hash} promises backends the reference producer does not build"
+            );
+            continue;
+        }
+        serwalker += 1;
+        assert_eq!(record.backends, ["serwalker"], "record {hash}");
+        assert_eq!(record.artifact.id, "flutterdec-serwalker", "record {hash}");
+        assert!(
+            record.artifact.variants.is_empty(),
+            "record {hash} pins Serwalker bytes, which only a package build can know"
+        );
+        assert!(
+            record
+                .profile
+                .path
+                .starts_with(&format!("data/serwalker_profiles/profile_{}_", &hash[..8])),
+            "record {hash} names a profile for another snapshot: {}",
+            record.profile.path
+        );
+        flutterdec_loader::dart_profile::load_profile_artifact(
+            &root.join(&record.profile.path),
+            &record.profile.id,
+            &record.profile.sha256,
+            record.sdk_aliases.clone(),
+        )
+        .unwrap_or_else(|err| panic!("record {hash} profile does not verify: {err}"));
+    }
+    assert!(
+        serwalker > 0,
+        "the checked-in registry registers no Serwalker snapshot"
+    );
 }

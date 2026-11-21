@@ -16,7 +16,7 @@ Arguments:
 
 - `<INPUT>`: APK or `libapp.so`
 - `--json`: print JSON output
-- `--adapter-backend <auto|internal|serwalker|blutter|r2-flutter>` (default `auto`; exact registry selection or machine-code-only recovery)
+- `--adapter-backend <auto|internal|serwalker|blutter|r2-flutter>` (default `auto`: the registry-authorized adapter, Serwalker where registered, or machine-code-only recovery)
 - `--adapter-timeout <SECONDS>`: wall-clock deadline for one adapter invocation
 
 Exit status is nonzero when an adapter was authorized, ran, and failed. The
@@ -81,7 +81,7 @@ General options:
   `disassembly_ratio` deliberately keeps the model's pre-split function list as its denominator, so the
   ratio is not inflated by split pieces. Comparing a split run against an unsplit one compares unlike
   populations.
-- `--adapter-backend <auto|internal|serwalker|blutter|r2-flutter>` (default `auto`; exact registry selection or machine-code-only recovery)
+- `--adapter-backend <auto|internal|serwalker|blutter|r2-flutter>` (default `auto`: the registry-authorized adapter, Serwalker where registered, or machine-code-only recovery)
 - `--adapter-timeout <SECONDS>`: wall-clock deadline for one adapter invocation
 - `--require-snapshot-hash-match` (fail if adapter-reported snapshot hash differs from loader hash)
 
@@ -213,8 +213,10 @@ flutterdec adapter install --dart-hash <HASH> [--target-arch <ARCH>] [--from <PA
 
 - `--dart-hash <HASH>`: 32 lowercase hexadecimal characters, as `info` reports it
 - `--target-arch <ARCH>`: required only when one hash has records for more than one target
-- `--from <PATH>`: publish this artifact instead of the packaged producer. It must still match the
-  digest and size the compatibility record declares
+- `--from <PATH>`: publish this artifact instead of the packaged one. Without it, install reads the
+  artifact the package bundles at the record's artifact path under the data directory (Serwalker, in
+  release archives and the Nix package), else the reference producer. Either way the bytes must match
+  the digest and size the compatibility record declares
 - `--json`: print the installation record as JSON
 
 The compatibility registry is the only install authority: a hash with no record, a record that serves
@@ -293,8 +295,12 @@ spawned, and then failed.
 
 `--adapter-backend serwalker`, `--adapter-backend blutter`, and
 `--adapter-backend r2-flutter` are refused rather than answered by core recovery when
-the requested parser cannot be authorized. A started parser that fails is also an error,
-including under `auto`; a parsing failure is not an unsupported-identity fallback.
+the requested parser cannot be authorized. That includes a record whose `backends`
+list does not name the pinned backend: Serwalker records serve `serwalker`, and the
+reference producer's records serve `blutter` and `r2flutter`. The refusal is decided
+before any artifact is resolved or spawned and reports `compatibility_unsupported`.
+A started parser that fails is also an error, including under `auto`; a parsing
+failure is not an unsupported-identity fallback.
 
 ## Error categories
 
@@ -306,6 +312,10 @@ The message is for a human and may be reworded; the token is stable.
   `registry_malformed`, `registry_unsupported_version`, `registry_invalid_record`,
   `registry_profile_rejected`, `registry_artifact_absent`,
   `registry_artifact_rejected`
+- a pinned `serwalker`, `blutter` or `r2-flutter` that cannot be served, by the
+  reason it was refused: `identity_rejected`,
+  `no_compatibility_record`, `compatibility_unsupported` (including a record that
+  does not serve the pinned backend) or `adapter_not_installed`
 - refused before any child existed: `record_invalid`, `record_digest_mismatch`,
   `unsupported_majors`, `identity_record_mismatch`, `target_mismatch`,
   `feature_mismatch`, `host_variant_mismatch`, `variant_not_in_record`,

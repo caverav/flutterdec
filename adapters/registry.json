@@ -2,6 +2,63 @@
   "version": 1,
   "records": [
     {
+      "snapshot_hash": "78da37fed6bf1489361a312568249f3f",
+      "snapshot_kind": "full_aot",
+      "target_arch": "arm64",
+      "features": [
+        "android",
+        "arm64",
+        "compressed-pointers",
+        "dedup_instructions",
+        "no-asan",
+        "no-code_comments",
+        "no-dwarf_stack_traces_mode",
+        "no-msan",
+        "no-shared_data",
+        "no-tsan",
+        "product"
+      ],
+      "feature_fingerprint": "98aa751c675a04e6ec56ce77e58c69c122db566cf9b5634b15df5715396dce01",
+      "known_features": [],
+      "forbidden_features": [
+        "no-compressed-pointers"
+      ],
+      "sdk_aliases": [
+        {
+          "ecosystem": "dart",
+          "version": "3.11.1",
+          "provenance": "serwalker-constants"
+        }
+      ],
+      "parser_family": {
+        "id": "flutterdec-serwalker",
+        "version": null,
+        "sha256": null
+      },
+      "backends": [
+        "serwalker"
+      ],
+      "profile": {
+        "id": "profile_78da37fe_compr_arm64",
+        "path": "data/serwalker_profiles/profile_78da37fe_compr_arm64.json",
+        "sha256": "98e6b3219166d3dd59dc4a5d1ae1a155a56b49f32eb784c8ca52ca03cc24b257"
+      },
+      "artifact": {
+        "id": "flutterdec-serwalker",
+        "variants": []
+      },
+      "evidence": {
+        "source": "data/serwalker_profiles/profile_78da37fe_compr_arm64.json",
+        "provenance": "Dart SDK 3.11.1 snapshot hash; feature tuple observed on a Flutter release arm64 build; no SDK-matched reference comparison yet",
+        "references": [
+          "crates/flutterdec-serwalker/src/constants.rs DART_3_11_1_SNAPSHOT_HASH"
+        ]
+      },
+      "trust_tier": "experimental",
+      "protocol_major": 1,
+      "model_major": 4
+    },
+    {
       "snapshot_hash": "80a49c7111088100a233b2ae788e1f48",
       "snapshot_kind": "full_aot",
       "target_arch": "arm64",
@@ -9,23 +66,15 @@
         "android",
         "arm64",
         "compressed-pointers",
+        "dedup_instructions",
         "no-code_comments",
+        "no-dwarf_stack_traces_mode",
+        "no-msan",
+        "no-tsan",
         "product"
       ],
-      "feature_fingerprint": "cd3b1581739bbd05f45b1be681daa14bd4b9ad241f750325347095b98b6b7709",
-      "known_features": [
-        "android",
-        "arm64",
-        "compressed-pointers",
-        "no-code_comments",
-        "product",
-        "no-compressed-pointers",
-        "x64",
-        "arm",
-        "ia32",
-        "riscv32",
-        "riscv64"
-      ],
+      "feature_fingerprint": "4930213f73cb9ca36bd9e1e95877c065288d58015aa3fb5be9aaf8707afab8a1",
+      "known_features": [],
       "forbidden_features": [
         "no-compressed-pointers"
       ],
@@ -42,53 +91,31 @@
         }
       ],
       "parser_family": {
-        "id": "flutterdec-local-python",
-        "version": "1",
+        "id": "flutterdec-serwalker",
+        "version": null,
         "sha256": null
       },
+      "backends": [
+        "serwalker"
+      ],
       "profile": {
-        "id": "3.5.0",
-        "path": "data/dart-profiles.json",
-        "sha256": "a1ce86ebf936c3e780413090974b753520c1c8a9f1854d3a0367158d48f77e0f"
+        "id": "profile_80a49c71_compr_arm64",
+        "path": "data/serwalker_profiles/profile_80a49c71_compr_arm64.json",
+        "sha256": "f58a831da5736f9657958f492a2d884c8c589851fc8f9710b5a9af1fcabff4e7"
       },
       "artifact": {
-        "id": "flutterdec-local-python",
-        "variants": [
-          {
-            "host_os": "linux",
-            "host_arch": "x86_64",
-            "path": "artifacts/flutterdec-local-python",
-            "size": 44979,
-            "sha256": "efb78b09100ca1f378436168e32373e22102c389f62f219a3079a1a845350bd3",
-            "provenance": "checked-in reference producer, published by adapter install"
-          },
-          {
-            "host_os": "macos",
-            "host_arch": "x86_64",
-            "path": "artifacts/flutterdec-local-python",
-            "size": 44979,
-            "sha256": "efb78b09100ca1f378436168e32373e22102c389f62f219a3079a1a845350bd3",
-            "provenance": "checked-in reference producer, published by adapter install"
-          },
-          {
-            "host_os": "macos",
-            "host_arch": "aarch64",
-            "path": "artifacts/flutterdec-local-python",
-            "size": 44979,
-            "sha256": "efb78b09100ca1f378436168e32373e22102c389f62f219a3079a1a845350bd3",
-            "provenance": "checked-in reference producer, published by adapter install"
-          }
-        ]
+        "id": "flutterdec-serwalker",
+        "variants": []
       },
       "evidence": {
-        "source": "data/dart-profiles.json",
-        "provenance": "checked-in-profile-and-fixture",
+        "source": "data/serwalker_profiles/profile_80a49c71_compr_arm64.json",
+        "provenance": "real-fixture regression tests; no SDK-matched reference comparison yet",
         "references": [
-          "LocalSend 1.17.0 sample",
-          "r2flutter offsets.json"
+          "LocalSend 1.17.0 arm64 libapp.so SHA-256 3df9e9983424fc1f5b08345b19e6ce912291692e60a86e63c0608ff350512023 (scripts/fetch-real-snapshot.sh)",
+          "crates/flutterdec-serwalker/tests/protocol_adapter.rs"
         ]
       },
-      "trust_tier": "verified",
+      "trust_tier": "experimental",
       "protocol_major": 1,
       "model_major": 4
     },
@@ -132,6 +159,10 @@
         "version": "1",
         "sha256": null
       },
+      "backends": [
+        "blutter",
+        "r2flutter"
+      ],
       "profile": {
         "id": "3.9.0",
         "path": "data/dart-profiles.json",
