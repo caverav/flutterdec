@@ -20,6 +20,12 @@ pub const REGISTRY_VERSION: u32 = 1;
 pub const MAX_REGISTRY_BYTES: u64 = 4 * 1024 * 1024;
 pub const MAX_ARTIFACT_BYTES: u64 = 128 * 1024 * 1024;
 
+/// The `--adapter-backend` values a record may claim to serve.
+///
+/// `auto` is not listed because every adapter accepts it, and `internal` is not
+/// listed because an explicit internal request never reads the registry.
+pub const PINNABLE_BACKENDS: [&str; 3] = ["serwalker", "blutter", "r2flutter"];
+
 /// A parser implementation, independent from the snapshot identities it serves.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -100,6 +106,12 @@ pub struct CompatibilityRecord {
     #[serde(default, alias = "aliases")]
     pub sdk_aliases: Vec<SdkAlias>,
     pub parser_family: ParserFamilyReference,
+    /// The pinned `--adapter-backend` values this record's adapter serves.
+    ///
+    /// The host refuses a pinned backend the record does not list before it
+    /// spawns anything, so `--adapter-backend serwalker` cannot be handed to a
+    /// producer that only knows Blutter and r2flutter.
+    pub backends: Vec<String>,
     pub profile: ProfileReference,
     pub artifact: ArtifactReference,
     pub evidence: CompatibilityEvidence,
@@ -293,6 +305,24 @@ impl CompatibilityRecord {
                 return Err(RegistryError::InvalidRecord(
                     "parser family digest is not lowercase SHA-256".to_string(),
                 ));
+            }
+        }
+        if self.backends.is_empty() {
+            return Err(RegistryError::InvalidRecord(
+                "record serves no backend".to_string(),
+            ));
+        }
+        let mut backends = HashSet::new();
+        for backend in &self.backends {
+            if !PINNABLE_BACKENDS.contains(&backend.as_str()) {
+                return Err(RegistryError::InvalidRecord(format!(
+                    "backend {backend:?} is not one of {PINNABLE_BACKENDS:?}"
+                )));
+            }
+            if !backends.insert(backend) {
+                return Err(RegistryError::InvalidRecord(format!(
+                    "backend {backend:?} is listed twice"
+                )));
             }
         }
         validate_nonempty("profile id", &self.profile.id)?;
@@ -700,6 +730,7 @@ mod tests {
                 version: None,
                 sha256: None,
             },
+            backends: vec!["serwalker".to_string()],
             profile: ProfileReference {
                 id: "profile".to_string(),
                 path: "profile.json".to_string(),
@@ -769,6 +800,26 @@ mod tests {
             records: vec![one],
         };
         single.validate().expect("one record is not ambiguous");
+    }
+
+    #[test]
+    fn a_record_must_name_the_backends_it_serves() {
+        let mut none = record(&["arm64"]);
+        none.backends.clear();
+        let mut unknown = record(&["arm64"]);
+        unknown.backends = vec!["internal".to_string()];
+        let mut twice = record(&["arm64"]);
+        twice.backends = vec!["blutter".to_string(), "blutter".to_string()];
+        for bad in [none, unknown, twice] {
+            assert!(
+                matches!(bad.validate(), Err(RegistryError::InvalidRecord(_))),
+                "{:?} validated",
+                bad.backends
+            );
+        }
+        let mut both = record(&["arm64"]);
+        both.backends = vec!["blutter".to_string(), "r2flutter".to_string()];
+        both.validate().expect("two distinct backends are valid");
     }
 
     #[test]

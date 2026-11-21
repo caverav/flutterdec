@@ -251,6 +251,7 @@ fn a_registry_authorized_serwalker_process_parses_a_real_snapshot() {
         "features": identity.features.normalized,
         "feature_fingerprint": canonical_feature_fingerprint(&identity.features.normalized),
         "parser_family": {"id": "flutterdec-serwalker", "version": env!("CARGO_PKG_VERSION")},
+        "backends": ["serwalker"],
         "profile": {"id": "fixture-profile", "path": "profile.json", "sha256": Sha256Digest::of(&profile)},
         "artifact": {"id": "flutterdec-serwalker", "variants": [{
             "host_os": std::env::consts::OS, "host_arch": std::env::consts::ARCH,

@@ -125,6 +125,7 @@ impl SpyRepo {
                 version: Some("test".to_string()),
                 sha256: None,
             },
+            backends: vec!["r2flutter".to_string()],
             profile: ProfileReference {
                 id: "test-profile".to_string(),
                 path: "data/test-profile.json".to_string(),

@@ -46,6 +46,10 @@
         "version": "1",
         "sha256": null
       },
+      "backends": [
+        "blutter",
+        "r2flutter"
+      ],
       "profile": {
         "id": "3.5.0",
         "path": "data/dart-profiles.json",
@@ -132,6 +136,10 @@
         "version": "1",
         "sha256": null
       },
+      "backends": [
+        "blutter",
+        "r2flutter"
+      ],
       "profile": {
         "id": "3.9.0",
         "path": "data/dart-profiles.json",

@@ -380,6 +380,7 @@ impl Authorized {
                 version: Some("fixture".to_string()),
                 sha256: None,
             },
+            backends: vec!["blutter".to_string(), "r2flutter".to_string()],
             profile: ProfileReference {
                 id: "fixture-profile".to_string(),
                 path: PROFILE_FILE.to_string(),
