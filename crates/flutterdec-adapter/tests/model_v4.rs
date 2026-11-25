@@ -692,11 +692,14 @@ fn genuine_unknown_names_are_accepted() {
 /// `main` and `Null` are real Dart identifiers. The placeholder rule rejects
 /// admissions of ignorance, not ordinary identifiers that happen to look
 /// suspicious or share a root with sentinels. In particular `Null` (the Dart core
-/// class) and `None`/`Nil` (common in functional packages) are accepted, whereas
-/// lowercase `null`/`none`/`nil` emitted by naive adapter scripts are rejected.
+/// class), `None`/`Nil` (common in functional packages), and `na`/`Na`/`NA` (short
+/// identifiers the Dart AOT obfuscator emits) are accepted, whereas lowercase
+/// `null`/`none`/`nil` emitted by naive adapter scripts are rejected.
 #[test]
 fn ordinary_names_that_resemble_defaults_are_still_accepted() {
-    for name in ["main", "Global", "build", "Object", "Null", "None", "Nil"] {
+    for name in [
+        "main", "Global", "build", "Object", "Null", "None", "Nil", "na", "Na", "NA",
+    ] {
         let bytes = mutated(model_json(&maximal_model()), |v| {
             v["functions"][0]["name"]["text"] = json!(name)
         });

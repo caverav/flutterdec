@@ -48,8 +48,8 @@ pub struct HostSelectedContext {
 /// downstream then treated it as one.
 ///
 /// Most entries are punctuation or prose, but several are valid Dart
-/// identifiers. `not_placeholder_name` allows the word "unknown" for class and
-/// function names because a real declaration can carry it; the sentinel form is
+/// identifiers. `not_placeholder_name` allows "unknown" and "na" for class and
+/// function names because a real declaration can carry them; the sentinel form is
 /// "<unknown>". The rest remain rejected for names as common sentinel
 /// spellings. Plain "none", "null", and "nil" are matched exact/lowercase-only:
 /// in Dart `Null` is a standard core class (`dart:core::Null`), and `None` or
@@ -539,14 +539,16 @@ fn not_placeholder(value: &str, field: &'static str) -> Check {
     Ok(())
 }
 
-/// Names are identifiers, and `unknown` is a valid Dart identifier. Treat it as
-/// a real name here, not as an admission that the parser failed; the sentinel
-/// form for that is `<unknown>`. The broader placeholder list still applies to
-/// fields whose values are not identifiers, such as library URIs and pool
-/// values.
+/// Names are identifiers, and `unknown` and `na` are valid Dart identifiers.
+/// Treat them as real names here, not as an admission that the parser failed:
+/// the sentinel form of `unknown` is `<unknown>`, and the Dart AOT obfuscator
+/// emits short identifiers such as `na`/`Na`/`NA`. The broader placeholder list
+/// still applies to fields whose values are not identifiers, such as library
+/// URIs and pool values.
 fn not_placeholder_name(value: &str, field: &'static str) -> Check {
     non_empty(value, field)?;
-    if value.trim().eq_ignore_ascii_case("unknown") {
+    let trimmed = value.trim();
+    if trimmed.eq_ignore_ascii_case("unknown") || trimmed.eq_ignore_ascii_case("na") {
         return Ok(());
     }
     not_placeholder(value, field)
