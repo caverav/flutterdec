@@ -647,6 +647,12 @@ fn placeholder_strings_cannot_stand_in_for_unrecovered_names() {
             "N/A",
             Box::new(|v: &mut Value| v["libraries"][0]["display_name"] = json!("N/A")),
         ),
+        // `nil` is accepted as a name but not as a value, so a pool entry with it is still rejected.
+        (
+            "object pool entry value",
+            "nil",
+            Box::new(|v: &mut Value| v["object_pool"]["entries"][0]["value"] = json!("nil")),
+        ),
     ];
     for (field, value, mutate) in cases {
         let bytes = mutated(model_json(&maximal_model()), mutate);
@@ -689,16 +695,13 @@ fn genuine_unknown_names_are_accepted() {
     }
 }
 
-/// `main` and `Null` are real Dart identifiers. The placeholder rule rejects
-/// admissions of ignorance, not ordinary identifiers that happen to look
-/// suspicious or share a root with sentinels. In particular `Null` (the Dart core
-/// class), `None`/`Nil` (common in functional packages), and `na`/`Na`/`NA` (short
-/// identifiers the Dart AOT obfuscator emits) are accepted, whereas lowercase
-/// `null`/`none`/`nil` emitted by naive adapter scripts are rejected.
+/// Real identifiers that only look like placeholders are still accepted as names:
+/// `Null`, `None`/`Nil`, and the obfuscated `na`, `tbd`, and lowercase `nil`.
+/// Lowercase `null` and `none` are rejected.
 #[test]
 fn ordinary_names_that_resemble_defaults_are_still_accepted() {
     for name in [
-        "main", "Global", "build", "Object", "Null", "None", "Nil", "na", "Na", "NA",
+        "main", "Global", "build", "Object", "Null", "None", "Nil", "na", "Na", "NA", "tbd", "Tbd", "TBD", "nil",
     ] {
         let bytes = mutated(model_json(&maximal_model()), |v| {
             v["functions"][0]["name"]["text"] = json!(name)
@@ -711,8 +714,11 @@ fn ordinary_names_that_resemble_defaults_are_still_accepted() {
         parse_and_validate(&bytes).unwrap_or_else(|err| panic!("class {name} rejected: {err}"));
     }
 
-    // Lowercase sentinels remain rejected.
-    for sentinel in ["null", "none", "nil"] {
+    // Lowercase sentinels remain rejected as names.
+    // `nil` is exempt because the obfuscator emits it.
+    // `null` and `none` are not emitted in practice because you need at least 741,690 identifiers before
+    // the first of these shows up.
+    for sentinel in ["null", "none"] {
         let bytes = mutated(model_json(&maximal_model()), |v| {
             v["classes"][0]["name"] = json!(sentinel)
         });
