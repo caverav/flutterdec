@@ -47,15 +47,11 @@ pub struct HostSelectedContext {
 /// required field is how v3 turned "no name" into a name, and every consumer
 /// downstream then treated it as one.
 ///
-/// Most entries are punctuation or prose, but several are valid Dart
-/// identifiers. `not_placeholder_name` allows the word "unknown" for class and
-/// function names because a real declaration can carry it; the sentinel form is
-/// "<unknown>". The rest remain rejected for names as common sentinel
-/// spellings. Plain "none", "null", and "nil" are matched exact/lowercase-only:
-/// in Dart `Null` is a standard core class (`dart:core::Null`), and `None` or
-/// `Nil` are common class names in functional Dart packages, whereas lowercase
-/// "null" / "none" / "nil" are dummy sentinel values emitted by naive adapter
-/// scripts.
+/// Most entries are punctuation or prose. Several are valid Dart identifiers that
+/// `not_placeholder_name` still accepts as class and function names; the rest are
+/// rejected everywhere. "none", "null", and "nil" are matched lowercase-only, because
+/// `Null` is a core class (`dart:core::Null`) and `None`/`Nil` are common names in
+/// functional packages.
 const CASE_INSENSITIVE_PLACEHOLDERS: &[&str] = &[
     "",
     "-",
@@ -539,14 +535,19 @@ fn not_placeholder(value: &str, field: &'static str) -> Check {
     Ok(())
 }
 
-/// Names are identifiers, and `unknown` is a valid Dart identifier. Treat it as
-/// a real name here, not as an admission that the parser failed; the sentinel
-/// form for that is `<unknown>`. The broader placeholder list still applies to
-/// fields whose values are not identifiers, such as library URIs and pool
-/// values.
+/// Some real identifiers match a placeholder spelling. Accept those as names:
+/// `unknown`, and the short names `na`, `tbd`, and `nil` that the Dart obfuscator
+/// emits in real apps. `null` and `none` are longer and effectively never emitted, so
+/// they stay rejected. `nil` is accepted in lowercase only, since `Nil`/`NIL` were
+/// never placeholders.
 fn not_placeholder_name(value: &str, field: &'static str) -> Check {
     non_empty(value, field)?;
-    if value.trim().eq_ignore_ascii_case("unknown") {
+    let trimmed = value.trim();
+    if trimmed.eq_ignore_ascii_case("unknown")
+        || trimmed.eq_ignore_ascii_case("na")
+        || trimmed.eq_ignore_ascii_case("tbd")
+        || trimmed == "nil"
+    {
         return Ok(());
     }
     not_placeholder(value, field)
